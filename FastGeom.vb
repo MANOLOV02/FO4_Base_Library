@@ -95,7 +95,6 @@ Public Module FastGeom
             src(off + 12), src(off + 13), src(off + 14), src(off + 15))
     End Function
 
-    ''' <summary>Arma la paleta plana de una lista de matrices. UNA vez por shape.</summary>
     ''' <summary>Elementos por matriz en la paleta de SINGLE. Son 16 y no 12 a proposito: 12 no es
     ''' divisible por 8 (el ancho de <c>Vector(Of Single)</c> con AVX2) y el bucle llevaria cola, que
     ''' es justo lo que este layout existe para evitar. 16 divide a 16/8/4/2/1.</summary>
@@ -202,13 +201,13 @@ Public Module FastGeom
         Loop
     End Sub
 
-    ''' <summary>SOLO PARA EL GATE: apaga el camino vectorial del blend. Antes el self-test forzaba el
-    ''' escalar pasando <c>flatPal:=Nothing</c>, lo que hacia caer en un camino que acumulaba en Matrix4d
-    ''' (Double) — o sea que comparaba dos LEYES distintas, no dos implementaciones de una. Con la paleta en
-    ''' Single ese contraste dejo de ser valido y el toggle es la forma correcta: los dos caminos leen los
-    ''' MISMOS datos y tienen que dar bit a bit lo mismo.</summary>
     ''' <summary>Fuerza el camino escalar del kernel de Single. SOLO PARA COMPARAR el vectorial contra
     ''' el escalar; no es un modo de la app.
+    '''
+    ''' <para>⛔ ES EL UNICO CONTRASTE VALIDO. Forzar el escalar pasando <c>flatPal:=Nothing</c> cae en un
+    ''' camino que acumula en <c>Matrix4d</c>, o sea que compara dos LEYES distintas y no dos
+    ''' implementaciones de una. Con el toggle los dos caminos leen los MISMOS datos y tienen que dar bit a
+    ''' bit lo mismo.</para>
     '''
     ''' <para>ES POR HILO (<c>ThreadStatic</c>), Y ESO NO ES UN DETALLE. Quien la enciende es
     ''' <c>SkinningHelper.SkinningSimdSelfTest</c>, que corre EN EL PROCESO DEL USUARIO: el gate
@@ -473,15 +472,14 @@ Public Module FastGeom
         ' ===========================================================================================
         ' EL MISMO BARRIDO, SOBRE EL KERNEL DE SINGLE — QUE ES EL QUE SE HORNEA.
         '
-        ' TODO LO DE ARRIBA PRUEBA CODIGO QUE YA NO TIENE CONSUMIDOR. `BuildFlatPalette`,
-        ' `BlendInto`, `BlendIntoScalar` y `ScaleAcc` son el kernel de DOUBLE, y desde que la paleta paso
-        ' a Single produccion va por `BuildFlatPaletteS` -> `BlendEnScratch` -> `BlendIntoS`. O sea que el
-        ' corpus de valores especiales de arriba —el cero NEGATIVO, los denormales, el overflow— no tocaba
-        ' NI UNA VEZ el kernel que de verdad escribe bytes en un NIF. El gate quedaba en verde probando
-        ' otra cosa.
+        ' ⛔ TODO LO DE ARRIBA PRUEBA EL KERNEL DE DOUBLE, QUE YA NO TIENE CONSUMIDOR. `BuildFlatPalette`,
+        ' `BlendInto`, `BlendIntoScalar` y `ScaleAcc` quedaron sin llamador cuando la paleta paso a Single:
+        ' produccion va por `BuildFlatPaletteS` -> `BlendEnScratch` -> `BlendIntoS`. O sea que el corpus de
+        ' valores especiales de arriba —el cero NEGATIVO, los denormales, el overflow— no toca el kernel que
+        ' de verdad escribe bytes en un NIF, y por si solo dejaria el gate en verde probando otra cosa.
         '
-        ' Lo que se perdia no era simetria: era COBERTURA. Justamente en esos valores es donde un FMA
-        ' colado por el JIT, o un reordenamiento de la suma, separa el camino vectorial del escalar — y
+        ' Por eso el barrido de abajo NO es simetria: es COBERTURA. Justamente en esos valores es donde un
+        ' FMA colado por el JIT, o un reordenamiento de la suma, separa el camino vectorial del escalar — y
         ' este self-test viaja en el binario y ABORTA UN BAKE cuando falla, asi que su veredicto tiene que
         ' ser sobre el kernel que hornea.
         ' ===========================================================================================

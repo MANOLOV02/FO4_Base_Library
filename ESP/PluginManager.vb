@@ -99,7 +99,7 @@ Public Class PluginManager
         ' Each plugin is parsed into its own PluginReader (reader.Records / .Masters / flags are 100%
         ' per-reader; PluginReader.Load opens its own FileStream). Results land in a pre-sized array indexed
         ' by LOAD-ORDER position so the merge below can replay them in exactly the sequential order. A failed
-        ' parse leaves readers(i) = Nothing (and logs, same as before). Nothing here writes Plugins /
+        ' parse leaves readers(i) = Nothing (and logs). Nothing here writes Plugins /
         ' AllRecords / the slot dicts, so this runs BEFORE taking the write lock.
         Dim readers(Math.Max(0, n - 1)) As PluginReader
         Dim bytesDone As Long = 0
@@ -178,7 +178,8 @@ Public Class PluginManager
 
         ' ---- Fan-in merge (sequential, load order 0..N-1, under the write lock) ----
         ' Replaying IndexAndMergePlugin in order preserves: FileID slot assignment order, last-override-wins,
-        ' and the order AllRecords / RecordsByType are populated — byte-identical to the old sequential loop.
+        ' and the order AllRecords / RecordsByType are populated — so the parallel fan-out above cannot
+        ' change the resolved record set.
         _rwLock.EnterWriteLock()
         Try
             For Each r In mergeOrder
@@ -192,12 +193,6 @@ Public Class PluginManager
     End Sub
 
 
-    ''' <summary>Append a loaded <see cref="PluginReader"/> as the next plugin in load order:
-    ''' record it in the name→index map, assign its engine-faithful FileID slot, and merge its
-    ''' records. Shared by <see cref="LoadAllPlugins"/> (batched: caller runs BuildTypeIndex once
-    ''' at the end) and <see cref="MergeOverridePlugin"/> (which rebuilds the type index itself).
-    ''' Slot assignment is done BEFORE MergeRecords so this plugin's own records (self-refs)
-    ''' resolve via its just-assigned slot, and master-refs resolve via earlier plugins' slots.</summary>
     ''' <summary>Order the parsed plugins so every master precedes the file that declares it.
     ''' <para>This is what makes resolution correct at all: <see cref="MergeRecords"/> resolves each
     ''' record AS IT MERGES, against the index built so far. A plugin merged before one of its masters
@@ -311,6 +306,12 @@ Public Class PluginManager
         Return ordered
     End Function
 
+    ''' <summary>Append a loaded <see cref="PluginReader"/> as the next plugin in load order:
+    ''' record it in the name→index map, assign its engine-faithful FileID slot, and merge its
+    ''' records. Shared by <see cref="LoadAllPlugins"/> (batched: caller runs BuildTypeIndex once
+    ''' at the end) and <see cref="MergeOverridePlugin"/> (which rebuilds the type index itself).
+    ''' Slot assignment is done BEFORE MergeRecords so this plugin's own records (self-refs)
+    ''' resolve via its just-assigned slot, and master-refs resolve via earlier plugins' slots.</summary>
     Private Sub IndexAndMergePlugin(reader As PluginReader)
         _pluginIndex(reader.FileName) = Plugins.Count
         Plugins.Add(reader)
@@ -321,7 +322,7 @@ Public Class PluginManager
     ''' <summary>Assign the engine-faithful FileID slot for a plugin: ESL → next light slot, full
     ''' (ESM/ESP) → next full slot. Done BEFORE MergeRecords so self-refs resolve via this slot.
     ''' Uses max-index+1 (not dict.Count) so it stays correct if a prior re-slot left a gap; at load
-    ''' time the dicts are dense so this equals Count (no behaviour change).</summary>
+    ''' time the dicts are dense so this equals Count.</summary>
     Private Sub AssignFileIdSlot(reader As PluginReader)
         If reader.IsESL Then
             Dim ls = NextSlotIndex(_nameByLightSlot)
@@ -494,7 +495,7 @@ Public Class PluginManager
         Dim masterIndex = CInt(localFormID >> 24)
         Dim objectID = localFormID And &HFFFFFFUI
 
-        ' RANGO HARDCODED. Esta rama faltaba entera acá. La regla completa:
+        ' RANGO HARDCODED. La regla completa:
         '     si el object id es < 0x800:
         '       si el archivo permite el rango hardcoded:
         '         si el FormID entero también es < 0x800, pasa SIN TOCAR
@@ -506,8 +507,8 @@ Public Class PluginManager
         '   (b) permitido + FileID != 0 ⇒ sigue de largo, el archivo posee records ahí legítimamente;
         '   (c) NO permitido ⇒ FileID := 0. En espacio de load order el slot 0 es el master del juego,
         '       y como el objectID ya es < 0x800 el resultado ES el objectID.
-        ' El escritor ya cortaba en 0x800 (TryMapGlobalToFileLocal); el lector no, o sea que las dos
-        ' direcciones estaban asimétricas y un ida-y-vuelta podía no cerrar.
+        ' Las DOS direcciones tienen que cortar en 0x800 — el escritor lo hace en
+        ' TryMapGlobalToFileLocal. Si sólo corta una, el ida-y-vuelta no cierra.
         If objectID < &H800UI Then
             If AllowsHardcodedRange(plugin.HeaderVersion, plugin.Masters.Count, Config_App.Current.DataPath) Then
                 If localFormID < &H800UI Then Return localFormID          ' (a)
@@ -534,11 +535,10 @@ Public Class PluginManager
 
     ''' <summary>Build the global FormID for a record owned by <paramref name="owner"/>: full plugins →
     ''' (fullSlot &lt;&lt; 24) | object24; ESL plugins → 0xFE | (lightSlot &lt;&lt; 12) | object12.</summary>
-    ''' <para>A plugin with NO slot assigned is a broken invariant, not a value to guess at. The
-    ''' old code used <c>TryGetValue</c> and ignored the result, so a missing slot silently became
-    ''' slot <b>0</b> — i.e. the GAME MASTER — and every record of that plugin was handed out as a
-    ''' Fallout4.esm/Skyrim.esm FormID. That is the worst possible default for a failure, so this raises
-    ''' instead. Both call sites reach here with an owner taken from
+    ''' <para>A plugin with NO slot assigned is a broken invariant, not a value to guess at: NEVER
+    ''' ignore the <c>TryGetValue</c> result here. A missing slot would silently become slot <b>0</b>
+    ''' — i.e. the GAME MASTER — handing out every record of that plugin as a Fallout4.esm/Skyrim.esm
+    ''' FormID, the worst possible default for a failure. Both call sites reach here with an owner taken from
     ''' <c>_pluginIndex</c>, and <see cref="IndexAndMergePlugin"/>/<see cref="MergeOverridePlugin"/>
     ''' assign the slot BEFORE <see cref="MergeRecords"/> runs, so this throw is an assertion on an
     ''' invariant that holds today — if it ever fires, the bug is ours and upstream.</para>
@@ -570,12 +570,10 @@ Public Class PluginManager
     ''' LooksMenu, que en un ESL trae además el light slot en los bits 12..23. <see cref="MakeGlobalFormID"/>
     ''' enmascara al ancho del dueño, así que las dos entran al mismo resultado y un identificador viejo con el
     ''' slot embebido sigue resolviendo sin migración.</para>
-    ''' <para>Acá había DOS funciones públicas con el cuerpo IDÉNTICO —ésta y
-    ''' <c>GlobalFormIDFromIdentifierLocal</c>— y un doc que afirmaba que se comportaban distinto. La diferencia
-    ''' existió mientras la segunda hacía un OR crudo de 0xFE, y dejó de existir cuando pasó a delegar en
-    ''' <see cref="MakeGlobalFormID"/>; el doc quedó describiendo un comportamiento muerto, que es peor que no
-    ''' documentar: manda al próximo lector a "restaurar" el OR crudo y a romper los 12 call sites de la otra.
-    ''' Ahora es UNA sola función y <c>GlobalFormIDFromIdentifierLocal</c> es un alias que reenvía.</para></summary>
+    ''' <para><c>GlobalFormIDFromIdentifierLocal</c> es un ALIAS que reenvía acá, NO una segunda ley: se
+    ''' comportan idéntico. ⛔ No "restaurarle" un OR crudo de 0xFE — el enmascarado por ancho del dueño
+    ''' de <see cref="MakeGlobalFormID"/> es lo que hace que las dos formas de entrada entren igual, y
+    ''' partirlas rompe los 12 call sites del alias.</para></summary>
     Public Function GlobalFormIDFromObjectID(pluginName As String, objectID As UInteger) As UInteger
         _rwLock.EnterReadLock()
         Try
@@ -609,7 +607,7 @@ Public Class PluginManager
     ''' (<c>CanonBridge.NormalizarReferencias</c>) resuelve el plugin UNA vez y toma el lock UNA vez
     ''' para todo el record, y después llama acá por cada referencia.</para>
     '''
-    ''' <para>Estuvo escrita en los dos sitios y ya habían empezado a divergir en el corte del nombre
+    ''' <para>⛔ NO reescribirla en el llamador: dos copias divergen en detalles como el corte del nombre
     ''' vacío. Es el mismo modo de falla que <c>WbFormIdWalker.EsReferencia</c> viene a evitar del otro
     ''' lado: dos traducciones distintas para el mismo FormID en la misma sesión, y un ESP que sale
     ''' apuntando a otro mod sin ningún aviso.</para>
@@ -754,15 +752,13 @@ Public Class PluginManager
     ''' (numeración local: el byte alto es un índice en ESA MAST). Es LA conversión entre las dos
     ''' numeraciones, y vive acá una sola vez.
     '''
-    ''' <para>Existía DOS veces, con la misma aritmética y distinta lista de masters: el remapper de
+    ''' <para>La usan DOS llamadores con listas de masters distintas: el remapper de
     ''' <c>SaveNpcEspWriter</c> (contra la MAST NUEVA que se está escribiendo) y
-    ''' <c>NpcOverrideSaver.MapGlobalToLocalInPlugin</c> (contra la MAST VIEJA del disco). La copia del
-    ''' saver además resolvía mal el caso "el dueño no está en la MAST": lo trataba como SELF, que es la
-    ''' respuesta correcta sólo cuando el dueño ES el archivo destino. Con un master todavía ausente daba
-    ''' un FormID local que colisiona con los records propios del archivo (los drafts arrancan en 0x800 y
-    ''' los records nuevos de cualquier mod también, por la convención del CK), y ese FormID se usaba
-    ''' para DESCARTAR
-    ''' records al preservar.</para>
+    ''' <c>NpcOverrideSaver.MapGlobalToLocalInPlugin</c> (contra la MAST VIEJA del disco). ⛔ Ninguno la
+    ''' reimplementa. En particular, "el dueño no está en la MAST" NO es SELF: SELF vale sólo cuando el
+    ''' dueño ES el archivo destino. Con un master todavía ausente, tratarlo como SELF da un FormID local
+    ''' que colisiona con los records propios (drafts y records nuevos de cualquier mod arrancan en 0x800,
+    ''' por la convención del CK), y ese FormID se usa para DESCARTAR records al preservar.</para>
     '''
     ''' <para>El ancho del object id lo decide el ENCODING DE ORIGEN, no el destino: un global light es
     ''' <c>0xFE | lightSlot&lt;&lt;12 | object12</c>, así que enmascarar con 0xFFFFFF conservaría los bits del
@@ -778,9 +774,8 @@ Public Class PluginManager
                                             ByRef localFormID As UInteger) As FileLocalMapResult
         localFormID = 0UI
 
-        ' Un FormID HARDCODED (object id < 0x800) pasa SIN TOCAR: no pertenece a ningún archivo, lo define
-        ' el motor. Es la primera comprobación de la conversión: un FormID se considera hardcoded cuando
-        ' su valor entero es menor que 0x800, y en ese caso se devuelve sin tocar.
+        ' Un FormID HARDCODED (valor entero < 0x800) pasa SIN TOCAR: no pertenece a ningún archivo, lo
+        ' define el motor. Va PRIMERO, antes de resolver dueño alguno.
         If globalFormID < &H800UI Then
             localFormID = globalFormID
             Return FileLocalMapResult.Ok
@@ -825,9 +820,9 @@ Public Class PluginManager
         If rec IsNot Nothing AndAlso rec.SourcePluginIsLocalized AndAlso rec.SourcePluginName <> "" AndAlso sr.Data.Length >= 4 Then
             Dim stringId = BitConverter.ToUInt32(sr.Data, 0)
             ' lstring ID 0 is the canonical "no string" sentinel (an ABSENT/empty translatable field) — it
-            ' should render BLANK, it is NOT an error. Returning the "<Error: Unknown lstring ID 00000000>" placeholder here was
-            ' the bug: that human-readable placeholder got stored as the field's TEXT (e.g. ARMO DESC / FULL) and then
-            ' re-emitted verbatim on save, so an override of a record whose DESC is a 0-id sprouted a bogus description.
+            ' must render BLANK, it is NOT an error. NEVER return the "<Error: Unknown lstring ID ...>"
+            ' placeholder for id 0: it gets stored as the field's TEXT (e.g. ARMO DESC / FULL) and re-emitted
+            ' verbatim on save, so an override of a record whose DESC is a 0-id sprouts a bogus description.
             ' Only a NON-ZERO id that fails to resolve is a real error (missing STRINGS sidecar).
             If stringId = 0UI Then Return ""
             If _localizedStrings IsNot Nothing Then
@@ -1038,9 +1033,8 @@ Public Class PluginManager
         ' permite a un mod tipo CBBEHeadRearFix.esp "limpiar" un TNAM que CBBE.esp puso.
         ' Lo que otras herramientas de edición muestran como "valor heredado" en columnas de override es display-only;
         ' el binario del override no contiene ese subrecord.
-        ' Intento previo de subrecord-level merge: REVERTIDO. Era un invento mío que rompía
-        ' el caso CBBEHeadRearFix (heredaba TNAM=SkinHeadRearCBBE de CBBE.esp pisando la
-        ' decisión del modder de borrarlo).
+        ' ⛔ NO hacer merge a nivel de subrecord: heredaría TNAM=SkinHeadRearCBBE de CBBE.esp y
+        ' pisaría la decisión del modder de borrarlo en CBBEHeadRearFix.esp.
         ' When an APP-authored (NPC_Manager) plugin is about to override a FormID, remember the record it's
         ' overriding — the WINNING non-app version (app plugins load last, so AllRecords[fid] currently holds it) —
         ' so "revert override" can restore exactly that in memory. ContainsKey guard keeps the FIRST such capture,
@@ -1149,7 +1143,7 @@ Public Class PluginManager
     ''' tenga comprado: una instalacion con 74 plugins de cc mide 3602 NPC de Skyrim y otra sin ninguno
     ''' mide bastante menos, asi que dos corridas no se pueden comparar cuenta contra cuenta. Con esto en
     ''' True el corpus es REPRODUCIBLE entre maquinas.</para>
-    ''' <para>Default False: sin tocarlo, el comportamiento es exactamente el de antes.</para></summary>
+    ''' <para>Default False (comportamiento app).</para></summary>
     Public Shared ExcludeCreationClub As Boolean = False
 
     ''' <summary>Plugin oficial de Bethesda (vanilla + DLC FO4/SSE + master VR + Creation Club cc*). Lo demás
@@ -1212,16 +1206,15 @@ Public Class PluginManager
     ''' disk. So the exe the user pointed at decides which game's files we read; folder existence is only
     ''' a last-resort fallback. SSE's exe is SkyrimSE.exe and FO4's is Fallout4.exe, so neither matches
     ''' the VR suffix.</summary>
-    ''' <para>El discriminador se mudó a <see cref="GamePathsResolver.IdentifyExe"/>, que compara contra los
-    ''' cuatro nombres canónicos en vez de mirar si la ruta TERMINA en "VR". El criterio viejo daba False
-    ''' para un usuario que apuntaba a <c>skse64_loader.exe</c> al lado de <c>SkyrimVR.exe</c> — y de esa
-    ''' respuesta cuelga el master implícito de VR del load order.</para>
+    ''' <para>El discriminador vive en <see cref="GamePathsResolver.IdentifyExe"/> y compara contra los cuatro
+    ''' nombres canónicos: NO alcanza con mirar si la ruta TERMINA en "VR", que da False para un usuario que
+    ''' apunta a <c>skse64_loader.exe</c> al lado de <c>SkyrimVR.exe</c> — y de esa respuesta cuelga el
+    ''' master implícito de VR del load order.</para>
     ''' <para>MEMOIZADO. <c>ResolveFormID</c> lo llama por CADA FormID con object id &lt; 0x800, y por debajo
     ''' hace <c>GamePathsResolver.IdentifyExe</c>, que cuando el exe configurado no es uno de los cuatro
     ''' canónicos (caso REAL y documentado: <c>f4se_loader.exe</c>) prueba hasta cuatro <c>File.Exists</c>.
-    ''' MEDIDO por el revisor, 200k llamadas: 0,095 µs con <c>Fallout4.exe</c> contra <b>5,6 µs</b> con
-    ''' <c>f4se_loader.exe</c> y <b>8,0 µs</b> con <c>SkyrimVR.exe</c> — 58× y 84×.
-    ''' <c>GamePathsResolver.Resolve()</c> ya está memoizado; esto se había quedado afuera.</para>
+    ''' MEDIDO, 200k llamadas: 0,095 µs con <c>Fallout4.exe</c> contra <b>5,6 µs</b> con
+    ''' <c>f4se_loader.exe</c> y <b>8,0 µs</b> con <c>SkyrimVR.exe</c> — 58× y 84×.</para>
     ''' <para>La clave es la ruta del exe configurado, así que cambiar de juego o de exe lo recalcula solo.</para>
     Private Shared _vrBuildMemoExe As String = Nothing
     Private Shared _vrBuildMemoValue As Boolean = False
@@ -1242,8 +1235,8 @@ Public Class PluginManager
     ''' The folder is named after the game itself, directly under LocalAppData: flat "Fallout4" /
     ''' "Skyrim Special Edition", VR "Fallout4VR" / "Skyrim VR", with Plugins.txt right inside it.
     ''' PREFERENCE FOLLOWS THE EXE (<see cref="IsVrBuild"/>): a VR exe reads the VR folder first and only
-    ''' falls back to the flat one if the VR folder is absent; a flat exe does the reverse. Previously the
-    ''' flat folder always won when it existed, so a VR user with both games installed got the FLAT game's
+    ''' falls back to the flat one if the VR folder is absent; a flat exe does the reverse. If the flat
+    ''' folder always won when it existed, a VR user with both games installed would get the FLAT game's
     ''' load order. Always returns the preferred path when neither exists, so callers can still build a
     ''' (non-existent) file path without crashing.</summary>
     Public Shared Function ResolveGameAppDataDir() As String
@@ -1263,8 +1256,8 @@ Public Class PluginManager
     '''
     ''' <para>Existe porque el modo de falla de todo esto es MUDO: sin Plugins.txt,
     ''' <see cref="ReadActiveLoadOrder"/> devuelve los masters implícitos y nada más, o sea una lista
-    ''' perfectamente válida que representa un juego sin un solo mod. Ningún caller podía distinguir eso de
-    ''' "el usuario efectivamente no tiene mods". Ahora sí.</para></summary>
+    ''' perfectamente válida que representa un juego sin un solo mod. Sin esto ningún caller puede
+    ''' distinguir eso de "el usuario efectivamente no tiene mods".</para></summary>
     Public Shared Function LoadOrderSourceProblem() As String
         Dim r = GamePathsResolver.Resolve()
         If r.HasPluginsTxt Then Return ""
@@ -1285,10 +1278,10 @@ Public Class PluginManager
     ''' create the ini file in My Games by default, they use the one in the game folder instead — so for
     ''' a VR build, if the ini is NOT in My Games, fall back to the game root — the
     ''' folder that contains Data, i.e. the exe's own folder. Returns the My Games path when nothing exists.</summary>
-    ''' <para>Ahora puede devolver "" (carpeta de inis sin resolver). Los dos consumidores
-    ''' (<c>PluginEncodingSettings.ReadSLanguageFrom</c> y <c>LocalizedStrings</c>) ya arrancan con un
+    ''' <para>Puede devolver "" (carpeta de inis sin resolver). Los dos consumidores
+    ''' (<c>PluginEncodingSettings.ReadSLanguageFrom</c> y <c>LocalizedStrings</c>) arrancan con un
     ''' <c>File.Exists</c> que trata "" como ausente, que es la semántica correcta: sin ini no hay
-    ''' <c>sLanguage</c> y se cae al default del juego, igual que antes cuando el archivo no existía.</para>
+    ''' <c>sLanguage</c> y se cae al default del juego, igual que si el archivo no existiera.</para>
     Public Shared Function ResolveGameIniPath(iniFileName As String) As String
         Return GamePathsResolver.ResolveIniPath(iniFileName)
     End Function
@@ -1300,15 +1293,12 @@ Public Class PluginManager
     ''' <para>Es UN SOLO booleano del que cuelgan las DOS capacidades. Por eso vive en una función sola y
     ''' <see cref="LightIsSupported"/> y <see cref="UpdateIsSupported"/> la llaman: si algún día cambia la
     ''' detección, cambia para las dos.</para></summary>
-    ''' <para>⛔ NO MEMOIZAR. Lo intenté: un revisor señaló —con razón— que esto cuelga de
-    ''' <see cref="AllowsHardcodedRange"/>, al que <see cref="ResolveFormIDNoLock"/> llama por CADA
-    ''' referencia con object id &lt; 0x800, así que en un build de VR son decenas de miles de
-    ''' <c>File.Exists</c>. Pero un memo por (exe, dataPath, juego) <b>no puede ver que el archivo
-    ''' apareció o desapareció</b>, que es justamente el dato: instalar VRESL sin reiniciar la
-    ''' aplicación dejaría de tener efecto. Lo cazó <c>SlotResolutionProbe</c> (114/1: el caso
-    ''' "SkyrimVR CON VRESL" pasaba a responder que no, porque el memo tenía la respuesta del caso
-    ''' anterior). Un cambio que rompe un gate verde, cuyo beneficio no se puede medir acá —no hay
-    ''' rig de VR— y que sólo afecta a esa configuración, no se paga.
+    ''' <para>⛔ NO MEMOIZAR, aunque tiente: esto cuelga de <see cref="AllowsHardcodedRange"/>, al que
+    ''' <see cref="ResolveFormIDNoLock"/> llama por CADA referencia con object id &lt; 0x800, o sea decenas
+    ''' de miles de <c>File.Exists</c> en un build de VR. Pero un memo por (exe, dataPath, juego) <b>no
+    ''' puede ver que el archivo apareció o desapareció</b>, que es justamente el dato: instalar VRESL sin
+    ''' reiniciar la aplicación dejaría de tener efecto. Rompe <c>SlotResolutionProbe</c> (114/1: el caso
+    ''' "SkyrimVR CON VRESL" responde que no, con la respuesta memoizada del caso anterior).
     ''' <para>Para el usuario que NO está en VR el costo ya es cero: la primera línea corta antes de
     ''' tocar el disco, y <see cref="IsVrBuild"/> sí está memoizado. Si algún día hay que arreglarlo
     ''' para VR, el camino es sacar la llamada del bucle por referencia, no cachear el resultado.</para></summary>
@@ -1334,7 +1324,7 @@ Public Class PluginManager
     ''' <b>NO</b> están soportados por defecto, así que el flag 0x100 sólo significa
     ''' algo en VR con VRESL. En FO4/SSE normales el resultado de IsUpdate es False
     ''' SIEMPRE, esté o no puesto el bit — el corte está en si el juego soporta el flag en absoluto, no
-    ''' en el header. MEDIDO 2026-08-18: 0 de 71 plugins de FO4 y 0 de 103 de SSE tienen 0x100, así que hoy
+    ''' en el header. MEDIDO: 0 de 71 plugins de FO4 y 0 de 103 de SSE tienen 0x100, así que hoy
     ''' es inerte en los dos rigs — pero la ley se implementa igual, porque VR con VRESL sí lo activa.</para>
     ''' <para>El "pseudo update" que existe en otras herramientas de edición de plugins NO se replica acá:
     ''' es un modo de línea de comandos propio de esas herramientas, no una propiedad del juego.</para></summary>
@@ -1365,9 +1355,9 @@ Public Class PluginManager
         ' GUARDA QUE ENVUELVE A LOS DOS DISYUNTOS, no sólo al de la extensión: SIN soporte light NINGÚN
         ' plugin es light — ni siquiera con el flag 0x200 puesto — y un .esl sin soporte ni siquiera
         ' entra al load order.
-        ' Es la MISMA guarda que ya estaba en IsMasterGroup y que acá se me había pasado: en un rig VR sin el
-        ' plugin VRESL, darle un slot light a un .esl lo mete en el espacio 0xFE y corre a TODOS los full que
-        ' vengan después — cada FormID que poseen resuelve al archivo equivocado.
+        ' Es la MISMA guarda que IsMasterGroup: en un rig VR sin el plugin VRESL, darle un slot light a un
+        ' .esl lo mete en el espacio 0xFE y corre a TODOS los full que vengan después — cada FormID que
+        ' poseen resuelve al archivo equivocado.
         If Not LightIsSupported(dataPath) Then Return False
         If (headerFlags And FLAG_ESL) <> 0 Then Return True                     ' IsLight (0x200)
         If name Is Nothing OrElse Not name.EndsWith(".esl", StringComparison.OrdinalIgnoreCase) Then Return False
@@ -1375,19 +1365,11 @@ Public Class PluginManager
         Return Not isUpdate                                                     ' extensión .esl, sólo en el ELSE
     End Function
 
-    ''' <summary>Memo de <see cref="IsMasterGroup"/> con vida de proceso, clavada a la IDENTIDAD del archivo
-    ''' (ruta + fecha de modificación + tamaño) y no sólo al nombre: la app REESCRIBE plugins, y un ESP al que
-    ''' se le acaba de tildar "Mark as master" cambia de grupo sin cambiar de nombre.
-    ''' <para>Por qué existe: MEDIDO por el revisor sobre el rig real (50 activos, 49 <c>.esp</c>),
-    ''' <b>4,558 ms por barrido</b> de sólo I/O, y <c>ReadActiveLoadOrder</c> no cachea nada. Peor:
-    ''' <c>CheckSlotCap</c> lo llama y acto seguido vuelve a abrir el header de cada plugin, o sea 2× el
-    ''' barrido por activación. Lineal en la cantidad de <c>.esp</c>: ~23 ms con 250.</para></summary>
     ''' <summary>Discriminante de la memo de grupo: "flat" / "vr" / "vr+esl". Va en la CLAVE porque el valor
     ''' depende de VR y de VRESL, no sólo del archivo.
-    ''' <para>NO se memoiza. Lo intenté y rompió <c>Case17c</c> del LoadOrderActivatorProbe: el memo cachea
-    ''' un estado del FILESYSTEM (si está el dll de VRESL) que puede cambiar mientras el proceso vive — en el
-    ''' caso del gate, el dll se planta DESPUÉS de la primera consulta y el memo se quedaba con "vr". Un memo
-    ''' que oculta un cambio de disco es el mismo defecto que la clave sin variante que vino a arreglar.</para>
+    ''' <para>⛔ NO MEMOIZAR esta función: cachearía un estado del FILESYSTEM (si está el dll de VRESL) que
+    ''' puede cambiar mientras el proceso vive. Rompe <c>Case17c</c> del LoadOrderActivatorProbe, donde el
+    ''' dll se planta DESPUÉS de la primera consulta y el memo se queda con "vr".</para>
     ''' <para>El costo real es acotado: fuera de VR <see cref="IsVrBuild"/> está memoizado y devuelve False sin
     ''' tocar disco, así que no hay ni un <c>File.Exists</c>. Sólo en un rig VR se paga un stat por consulta.</para></summary>
     Private Shared Function GroupMemoVariant(dataPath As String) As String
@@ -1395,6 +1377,13 @@ Public Class PluginManager
         Return If(VreslInstalled(dataPath), "vr+esl", "vr")
     End Function
 
+    ''' <summary>Memo de <see cref="IsMasterGroup"/> con vida de proceso, clavada a la IDENTIDAD del archivo
+    ''' (ruta + fecha de modificación + tamaño) y no sólo al nombre: la app REESCRIBE plugins, y un ESP al que
+    ''' se le acaba de tildar "Mark as master" cambia de grupo sin cambiar de nombre.
+    ''' <para>Por qué existe: MEDIDO sobre el rig real (50 activos, 49 <c>.esp</c>),
+    ''' <b>4,558 ms por barrido</b> de sólo I/O, y <c>ReadActiveLoadOrder</c> no cachea nada. Peor:
+    ''' <c>CheckSlotCap</c> lo llama y acto seguido vuelve a abrir el header de cada plugin, o sea 2× el
+    ''' barrido por activación. Lineal en la cantidad de <c>.esp</c>: ~23 ms con 250.</para></summary>
     Private Shared ReadOnly _masterGroupMemo As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
 
     ''' <summary>Si un archivo puede usar el RANGO HARDCODED, o sea object ids por debajo de <c>0x800</c>.
@@ -1440,9 +1429,9 @@ Public Class PluginManager
     ''' si el flag 0x01 (ESM) del header está puesto: (B) grupo master
     ''' </code>
     ''' <para>(A) aplica a nuestros dos juegos, que son los dos más nuevos de la familia que soportamos.
-    ''' Pero para <c>.esl</c> hay además
-    ''' la precondición de <see cref="LightIsSupported"/> — ver ahí, es la parte que se me pasó por leer sólo
-    ''' el cuerpo del <c>if</c> y no su guarda.</para>
+    ''' Pero para <c>.esl</c> hay además la precondición de <see cref="LightIsSupported"/>: está en la
+    ''' GUARDA del <c>if</c> canónico, no en su cuerpo, y saltearla da un light de más en un rig VR sin
+    ''' VRESL.</para>
     ''' <para>El flag LIGHT (0x200) por sí solo NO alcanza: es una bandera distinta de la de grupo master,
     ''' y el comparador de orden sólo mira la de grupo master. Un <c>.esp</c> con 0x200 y sin 0x01 es light y NO es grupo
     ''' master; un <c>.esp</c> con 0x201 SÍ lo es por (B). MEDIDO en el rig del usuario: los 30
@@ -1509,21 +1498,21 @@ Public Class PluginManager
     ''' si no: gana el que sea del grupo master
     ''' </code>
     ''' <para>Es <c>Public</c> y toma <paramref name="dataPath"/> explícito, las dos cosas a propósito.
-    ''' Explícito, porque leyendo <c>Config_App.Current.DataPath</c> por su cuenta era INGATEABLE: el revisor
-    ''' invirtió la partición entera y el probe siguió dando 33/33. Pública, porque no la usa sólo el lector:
+    ''' Explícito, porque leyendo <c>Config_App.Current.DataPath</c> por su cuenta es INGATEABLE: se puede
+    ''' invertir la partición entera y el probe sigue dando 33/33. Pública, porque no la usa sólo el lector:
     ''' el Preflight de NPC Manager ordena con ELLA la selección del usuario, que es otro Plugins.txt virtual.
     ''' Una ley, una implementación (00-reglas-paridad-canonica §15).</para>
     ''' <para>Arranca en <paramref name="forcedCount"/> y no antes: los masters implícitos y el
     ''' Creation Club se ordenan por su propio índice forzado, que en el comparador
     ''' está ANTES del grupo. Particionarlos los reordenaría contra el motor.</para>
-    ''' <para>Un plugin cuyo grupo NO se puede determinar (no está en Data) se queda CLAVADO en su índice:
+    ''' <para>⚠ Un plugin cuyo grupo NO se puede determinar (no está en Data) se queda CLAVADO en su índice:
     ''' no entra en ningún bucket. Para el motor ese módulo no existe (el propio comparador lo salta si no
     ''' puede leer el header), pero la app sí lo conserva en la lista, y esta lista es la
     ''' que <c>FilesDictionary.BuildArchivePriority</c> usa para dar prioridad a los BA2/BSA POR POSICIÓN. Si lo
     ''' mandáramos al fondo con los no-masters, el <c>.ba2</c> de un plugin desinstalado pasaría a ganarle el
     ''' conflicto de texturas a todos los mods que estaban después. <c>Nothing</c> no es False ni True: es
     ''' "no lo toques".</para>
-    ''' <para>Por qué esto FALTABA y por qué importa aunque hoy no se note: MEDIDO 2026-08-18 sobre los dos
+    ''' <para>Por qué importa aunque hoy no se note: MEDIDO sobre los dos
     ''' rigs reales del usuario, 0 posiciones y 0 slots de diferencia — pero sólo porque los dos
     ''' <c>Plugins.txt</c> ya venían particionados. Control negativo del mismo arnés: moviendo UN grupo-master
     ''' (<c>ShowCollectibles.esl</c>) detrás de los no-masters, la lista se corre 20 posiciones y 9 plugins
@@ -1716,8 +1705,8 @@ Public Class PluginManager
         Return FilterOfficialIfRequested(ordered)
     End Function
 
-    ''' <summary>Backward-compat alias. Old callers expected "all plugins from loadorder.txt"
-    ''' but the right semantic is "active load order". Returns same list as ReadActiveLoadOrder.</summary>
+    ''' <summary>Alias de <see cref="ReadActiveLoadOrder"/>, conservado por sus call sites. ⚠ El nombre
+    ''' sugiere "todos los plugins de loadorder.txt"; la semántica real es "el load order ACTIVO".</summary>
     Public Shared Function ReadLoadOrder() As List(Of String)
         Return ReadActiveLoadOrder()
     End Function

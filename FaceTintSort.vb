@@ -66,16 +66,17 @@ Public Class FaceTintSortRule
     Public Property Descending As Boolean
 End Class
 
-''' <summary>Config completa de orden, persistida en Config_App. Default = comportamiento previo:
-''' tints = [PhysIndex desc] (+ tiebreak estable NpcListOrder asc implícito en el builder);
-''' swaps = [] (vacío = orden de build/forward = grupo×preset asc); skintone = Positional.</summary>
+''' <summary>Config completa de orden, persistida en Config_App. Defaults (ver el constructor):
+''' tints = [Group_Index desc, Option_Index desc] (+ tiebreak estable NpcListOrder asc implícito en el
+''' builder); swaps = [Group_Index asc, Preset_Index asc] (= orden de build/forward); skintone =
+''' Positional.</summary>
 Public Class FaceTintSortSettings
     Public Property TintRules As List(Of FaceTintSortRule)
     Public Property SwapRules As List(Of FaceTintSortRule)
     Public Property SkinTonePlacement As Integer   ' FaceTintSkinTonePlacement
 
     Public Sub New()
-        ' Default = orden previo (= el viejo PhysIndex desc): GroupIndex desc, luego OptionInGroup desc.
+        ' Default = el orden que antes daba la clave PhysIndex desc: GroupIndex desc, luego OptionInGroup desc.
         TintRules = New List(Of FaceTintSortRule) From {
             New FaceTintSortRule With {.Key = CInt(FaceTintSortKey.Group_Index), .Descending = True},
             New FaceTintSortRule With {.Key = CInt(FaceTintSortKey.Option_Index), .Descending = True}

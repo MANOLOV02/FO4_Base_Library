@@ -64,9 +64,9 @@ Public NotInheritable Class SseNam9MorphMap
     Public Const Nam9SliderCount As Integer = 18
 
     ''' <summary>El vector NAMA por defecto: TODAS las familias en el centinela "sin tipo asignado"
-    ''' (<see cref="NamaUnset"/>), que NO es lo mismo que el tipo 0. Existe para que las cuatro ramas que
-    ''' construyen un NAMA vacio digan lo mismo — estaban repartidas entre MainForm y PresetCategoryFilter y
-    ''' dos de ellas devolvian CEROS, o sea el tipo 0 real.</summary>
+    ''' (<see cref="NamaUnset"/>). Toda rama que construya un NAMA vacio tiene que llamar ACA: rellenarlo con
+    ''' CEROS es el tipo 0 REAL (un morph que el motor aplica), no "sin asignar" — ver
+    ''' 23-barrido-editores-altas-bajas.</summary>
     Public Shared Function DefaultNamaVector() As UInteger()
         Dim v(NamaFamilyCount - 1) As UInteger
         For i = 0 To v.Length - 1 : v(i) = NamaUnset : Next
@@ -74,8 +74,8 @@ Public NotInheritable Class SseNam9MorphMap
     End Function
     ''' <summary>El slot 18 del NAM9 (VampireMorph), o Nothing si el vector no llega a ese slot.
     ''' <para>Vive ACA y no en cada consumidor porque son TRES los que lo necesitan (BuildPresetFromState en sus
-    ''' dos ramas, y el revert de la categoria FaceVertexMorphs) y la primera version quedo escrita en una sola,
-    ''' con lo cual el arreglo era inerte en el camino normal.</para>
+    ''' dos ramas, y el revert de la categoria FaceVertexMorphs): escrito en uno solo, el arreglo queda inerte
+    ''' en el camino normal.</para>
     ''' <para>NAM9 son 19 floats; el modelo editable dimensiona 18 sliders, asi que este slot no entra en
     ''' <c>SseNam9</c> y hay que llevarlo aparte.</para></summary>
     Public Shared Function VampireMorphDe(nam9 As Single()) As Single?
@@ -90,10 +90,10 @@ Public NotInheritable Class SseNam9MorphMap
     ''' ZERO TEST, NOT A DEADZONE. SOURCE: RaceMenu tests <c>value != 0</c> (FaceMorphInterface.cpp:1140 and
     ''' :1512) and the engine only compares the slot against FLT_MAX (the "never set" sentinel) before applying
     ''' the value unconditionally — NEITHER has a magnitude threshold, so inventing one is a divergence.
-    ''' The old <c>Math.Abs(value) &lt; 0.001F</c> deadzone silently dropped 25 vanilla values; all 25 are
-    ''' DENORMALS (~1e-38), i.e. numeric noise that a plain <c>&lt;&gt; 0</c> also has to route somewhere, while
-    ''' the smallest genuinely AUTHORED value in the corpus is 0.02 — two orders of magnitude above the old
-    ''' threshold, so no authored value was ever in the deadzone and none changes behavior here.
+    ''' A magnitude deadzone (e.g. <c>Math.Abs(value) &lt; 0.001F</c>) silently drops 25 vanilla values; all 25
+    ''' are DENORMALS (~1e-38), i.e. numeric noise that a plain <c>&lt;&gt; 0</c> also has to route somewhere,
+    ''' while the smallest genuinely AUTHORED value in the corpus is 0.02 — two orders of magnitude above that
+    ''' threshold, so no authored value ever falls in the deadzone.
     ''' The NaN/Inf guard is KEPT: those are not values the engine's sentinel check would let through.</summary>
     Public Shared Function MorphForSlider(sliderIndex As Integer, value As Single) As String
         If sliderIndex < 0 OrElse sliderIndex >= Sliders.Length Then Return ""
@@ -146,7 +146,7 @@ Public NotInheritable Class SseNam9MorphMap
     Public NotInheritable Class NamaTypeCatalog
         ''' <summary>Por familia, los N disponibles ORDENADOS y SIN REPETIR. El dedup no es cosmético:
         ''' <c>femaleheadchargen.tri</c> trae <c>NoseType9</c> DUPLICADO (índices 44 y 45) y
-        ''' <c>mouthhumanfchargen.tri</c> repite <c>LipType18</c> — medido 2026-08-17 con
+        ''' <c>mouthhumanfchargen.tri</c> repite <c>LipType18</c> — medido con
         ''' <c>NpcSseRoundtripProbe --tricollide</c>. Sin dedup el combo mostraría dos filas idénticas.</summary>
         Public ReadOnly Available As List(Of UInteger)()
         ''' <summary>Por familia: ¿existe el morph "Default" (el que selecciona el valor 0)?</summary>
@@ -183,7 +183,8 @@ Public NotInheritable Class SseNam9MorphMap
 
     ''' <summary>Arma el catálogo desde los nombres de morph de los chargen .tri en juego. PURO: sin I/O y sin
     ''' UI, así que lo consumen por igual el editor y el reverse-engineer de morphs (una sola ley, un solo lugar).
-    ''' <paramref name="morphNames"/> vacío ⇒ catálogo <c>IsKnown=False</c>.</summary>
+    ''' <paramref name="morphNames"/> <c>Nothing</c> ⇒ catálogo <c>IsKnown=False</c>; una lista VACÍA devuelve un
+    ''' catálogo CONOCIDO y vacío (ver la nota del final del cuerpo).</summary>
     Public Shared Function BuildTypeCatalog(morphNames As IEnumerable(Of String)) As NamaTypeCatalog
         If morphNames Is Nothing Then Return NamaTypeCatalog.Unknown()
         Dim seen(NamaFamilyCount - 1) As HashSet(Of UInteger)
@@ -204,10 +205,10 @@ Public NotInheritable Class SseNam9MorphMap
                 If TryParseFamilyMember(f, nm, n) AndAlso seen(f).Add(n) Then available(f).Add(n)
             Next
         Next
-        ' Esta función NO opina sobre known-ness: siempre devuelve un catálogo CONOCIDO (aunque quede
-        ' vacío). Quién sabe si los datos se pudieron leer es el LLAMADOR — antes acá había un segundo
-        ' "si no vi ningún nombre ⇒ Unknown" que PISABA esa decisión, y un .tri que parsea con 0 morphs
-        ' terminaba deshabilitando el combo por el motivo equivocado. Una sola ley, en un solo lugar.
+        ' Esta función NO opina sobre known-ness: siempre devuelve un catálogo CONOCIDO (aunque quede vacío).
+        ' Quién sabe si los datos se pudieron leer es el LLAMADOR. Un segundo "si no vi ningún nombre ⇒
+        ' Unknown" acá PISA esa decisión, y un .tri que parsea con 0 morphs termina deshabilitando el combo
+        ' por el motivo equivocado.
         For f = 0 To NamaFamilyCount - 1 : available(f).Sort() : Next
         Return New NamaTypeCatalog(available, hasDefault, True)
     End Function

@@ -13,8 +13,8 @@ Imports System.Numerics
 '''   - <see cref="ConnectPointMountResolver"/> — engine canónica vanilla FO4
 '''     ("P-X" en parents matchea "C-X" en children, suffix tras el prefix-2-chars).
 '''
-''' Apps que ya tienen otro consumer real (PA path C en NPC_Manager hoy, weapon preview en
-''' WM mañana) consumen la misma interface — la lógica de match no se duplica entre apps.
+''' Las dos apps consumen la MISMA interface (PA path C en NPC_Manager, weapon preview en WM):
+''' la lógica de match no se duplica entre apps.
 ''' </summary>
 Public Interface IMountResolver
 

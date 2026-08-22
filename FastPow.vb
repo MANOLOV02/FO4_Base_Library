@@ -260,14 +260,14 @@ Public Module FastPow
         Return New Vector(Of Single)(v)
     End Function
 
-    ''' <summary>Idem pero como MÁSCARA de bits (se arma en Integer y se reinterpreta): el uso típico es
-    ''' (−1,−1,−1,0) = "toca RGB, no toques el alpha".</summary>
-    ''' <summary>Devuelve la máscara en <c>Vector(Of Integer)</c>, NO en Single. Las comparaciones
+    ''' <summary>Idem pero como MÁSCARA de bits: el uso típico es (−1,−1,−1,0) = "toca RGB, no toques el
+    ''' alpha".
+    ''' <para>⛔ Devuelve la máscara en <c>Vector(Of Integer)</c>, NO en Single. Las comparaciones
     ''' vectoriales NO genéricas devuelven <c>Vector(Of Integer)</c>, y
     ''' <c>ConditionalSelect(Vector(Of Integer), Vector(Of Single), Vector(Of Single))</c> las consume
     ''' directamente. Tener la máscara en Single obligaba a usar la sobrecarga GENÉRICA de las
     ''' comparaciones — MEDIDO: 118,8 % más lenta (38 ms vs 17 ms / 40M iter), porque no está
-    ''' intrinsificada igual. Fue la causa de una regresión real de ~8,8 % en el compose de SSE.</summary>
+    ''' intrinsificada igual. Costo ~8,8 % en el compose de SSE.</para></summary>
     Public Function VPerChannelMask(m0 As Integer, m1 As Integer, m2 As Integer, m3 As Integer) As Vector(Of Integer)
         Dim n = Vector(Of Integer).Count
         Dim v(n - 1) As Integer

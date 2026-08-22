@@ -28,14 +28,14 @@ Public Interface IRenderableShape
     ReadOnly Property NifSkin As INiSkin
     ReadOnly Property NifShader As INiShader
     ''' <summary>Geometría auxiliar que el MOTOR no dibuja nunca. Predicado del canónico
-    ''' (BodySlide/OutfitStudio <c>GLSurface.cpp:1298</c>): <c>!shader || (shape-&gt;flags &amp; 1) != 0</c>,
-    ''' con el comentario de <c>Mesh.h:169</c>: "true for shapes with no shader or with the hidden flag
-    ''' set (e.g. collisions)". Ellos lo exponen con la casilla "Show Helper Shapes".
+    ''' (BodySlide/OutfitStudio, <c>GLSurface.cpp</c>): <c>!shader || (shape-&gt;flags &amp; 1) != 0</c>,
+    ''' con el comentario de <c>bHelperShape</c> en <c>Mesh.h</c>: "true for shapes with no shader or with
+    ''' the hidden flag set (e.g. collisions)". Ellos lo exponen con la casilla "Show Helper Shapes".
     ''' <para>Las dos señales: <b>(a)</b> sin <c>BSShaderProperty</c> — así marca HDT-SMP sus proxies de
     ''' colisión (<c>VirtualHairCollision_*</c>), vanilla la colisión Havok (<c>SKY_HAV_MAT_*</c> en los
     ''' <c>*_col.nif</c>), los <c>EditorMarker</c> y los volúmenes de emisor; <b>(b)</b> bit 0 de
-    ''' <c>NiAVObject.Flags</c> = Hidden (NifSkope <c>spells/flags.cpp:539</c>; BodySlide
-    ''' <c>BodySlideApp.cpp:3864</c> <c>shape-&gt;flags |= 1</c>) — la sangre de las armas, el
+    ''' <c>NiAVObject.Flags</c> = Hidden (NifSkope <c>spells/flags.cpp</c>; BodySlide
+    ''' <c>BodySlideApp.cpp</c>, <c>shape-&gt;flags |= 1</c>) — la sangre de las armas, el
     ''' <c>PageText</c> de los libros, el glow del Pip-Boy.</para>
     ''' <para><b>NO ES UN GUARD DE NULO.</b> Quien pregunta "¿puedo LEER el shader?" usa
     ''' <c>NifShader Is Nothing</c> — ver <c>OSP_Clases</c> (plan de clonado) y los gates del editor de

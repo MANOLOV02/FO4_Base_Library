@@ -199,8 +199,8 @@ Public NotInheritable Class HkxPoseImportSession
         If skeletonHkxBytes IsNot Nothing AndAlso skeletonHkxBytes.Length > 0 Then
             Dim skeletonPack = HkxPackfileParser_Class.Parse(skeletonHkxBytes)
             Dim skeletonGraph = HkxObjectGraphParser_Class.BuildGraph(skeletonPack)
-            ' El skeleton.hkx trae el esqueleto de ANIMACIÓN (completo) + uno de RAGDOLL reducido; el binding
-            ' se autoriza contra el de animación → elegir el de MÁS huesos, no FirstOrDefault (sería el ragdoll).
+            ' El skeleton.hkx trae el esqueleto de ANIMACIÓN + uno de RAGDOLL; el binding se autoriza
+            ' contra el de animación ⇒ SelectAnimationSkeleton, no FirstOrDefault (puede dar el ragdoll).
             Dim externalSkeleton = SelectAnimationSkeleton(skeletonGraph)
             If IsValidSkeleton(externalSkeleton) = False Then
                 Throw New InvalidDataException("Skeleton HKX does not contain a readable hkaSkeleton with matching reference pose.")
@@ -306,15 +306,15 @@ Public NotInheritable Class HkxPoseImportSession
             Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, additive, diagnostics)
             Dim naMask As Byte = If(resolved.LiveBone IsNot Nothing, resolved.LiveBone.NoAnimSyncMask, CByte(0))
             Dim delta As Transform_Class
-            ' [UNIFICADO additive/no-additive 2026-07-03] Ambos paths hacen lo MISMO: (1) construir el LOCAL ABSOLUTO
-            ' del hueso en el frame, (2) re-basarlo a la skeleton viva ⇒ Δ = inv(S)∘absoluto (S=OriginalLocaL∘Mount).
+            ' Ambos caminos hacen lo MISMO: (1) construir el LOCAL ABSOLUTO del hueso en el frame,
+            ' (2) re-basarlo a la skeleton viva ⇒ Δ = inv(S)∘absoluto (S=OriginalLocaL∘Mount).
             ' Difieren SOLO en cómo se arma el absoluto:
             '   • no-additive: el clip YA es el absoluto (componentes no-animadas ← S).
             '   • additive: el clip es un DELTA relativo al reference pose ⇒ absoluto = additive × base = delta∘S
-            '     (base=S ADENTRO, additive AFUERA). PROBADO con --animsynccheck [ADD-ORDER] (LeftPropeller vertibird
-            '     f110): additive×base ⇒ d(rest)=0.2 (root fijo, gira en su lugar) vs base×additive ⇒ d=748.1 (vuela).
-            '     La traslación del delta compensa EXACTO la rotación, así que SOLO con la rotación afuera el root queda
-            '     fijo. El orden viejo (S∘delta = base×additive) desarmaba el vertibird (palas a las esquinas).
+            '     (base=S ADENTRO, additive AFUERA). ⛔ NO invertir el orden: S∘delta (= base×additive) desarma
+            '     el vertibird (palas a las esquinas). Medido con --animsynccheck [ADD-ORDER] (LeftPropeller
+            '     f110): additive×base ⇒ d(rest)=0.2 (root fijo, gira en su lugar) vs base×additive ⇒ d=748.1.
+            '     La traslación del delta compensa EXACTO la rotación: sólo con la rotación afuera el root queda fijo.
             Dim absoluteLocal As Transform_Class
             If additive Then
                 absoluteLocal = BuildNoAnimSyncLocal(frameLocal, New Transform_Class(), naMask).ComposeTransforms(resolved.StructuralLocal)
@@ -680,7 +680,7 @@ Public NotInheritable Class HkxPoseImportSession
 
     ''' <summary>Liga cada track al hueso del esqueleto vivo, captura su local ESTRUCTURAL
     ''' <c>S_b = O×Mount</c> y el refPose del rig del clip.
-    ''' <para>MODELO FINAL (2026-06-11): la animación es REEMPLAZO TOTAL del local en el frame del
+    ''' <para>MODELO: la animación es REEMPLAZO TOTAL del local en el frame del
     ''' rig del clip — <c>local_b(t) = L_anim_b(t)</c>, con componentes identity ← refPose del
     ''' skeleton.hkx (semántica del engine). En la capa Δ del getter <c>O×Mount×Morph×Δ</c>:
     ''' <c>Δ_b = inv(S_b) × L_anim_b</c>, UNIVERSAL, sin modos. Funciona porque el MOUNT EN REPOSO
@@ -736,21 +736,18 @@ Public NotInheritable Class HkxPoseImportSession
     End Sub
 
     ''' <remarks>⛔ Copia sólo <c>Scale</c> aunque <c>PoseTransformData</c> tenga <c>ScaleX/Y/Z</c>.
-    ''' Se probó copiar también <c>ScaleVector</c> y HOY es un no-op, pero la razón NO es que el
-    ''' <c>source</c> no pueda traer per-eje: los dos llamadores le pasan un <c>ComposeTransforms</c>
-    ''' (un delta), no un producto de <see cref="HkxTransformConventionHelper"/>. La razón real es
-    ''' que ese delta tiene escala ≈1 y el epsilon ABSOLUTO de uniformidad (1e-6) lo clasifica
-    ''' uniforme, así que <c>ComposeTransforms</c> emite <c>ScaleVector=(1,1,1)</c>.
-    ''' <para>⚠️ Deja de valer en cuanto un delta traiga escala per-eje de verdad — p.ej. con un
-    ''' mount no uniforme, porque <c>BuildNoAnimSyncLocal</c> copia <c>ScaleVector</c> del local
-    ''' estructural. Ahí <c>ComposeTransforms</c> pondría <c>Scale = 1.0F</c> y esta línea escribiría
-    ''' 1, tirando la escala entera y en silencio.</para>
-    ''' <para>Y arreglarlo no es agregar tres asignaciones: <c>ScaleX/Y/Z</c> son <c>JsonIgnore</c>,
-    ''' ni el export SAM ni <c>SaveImportedHkxPoseXml</c> ni <c>Poses_class.Clone</c> los guardan —o
-    ''' sea previsualizar y guardar darían poses distintas— y <c>PoseTransformData.Isidentity</c> los
-    ''' mira, así que cambiaría QUÉ HUESOS entran a la pose, no sólo sus valores. Aparte, el clip HKX
-    ''' ya perdió su per-eje antes, en <c>ResolveUniformScale</c>, que PROMEDIA los tres ejes. Es un
-    ''' frente propio, no una línea.</para></remarks>
+    ''' Copiar además <c>ScaleVector</c> es un no-op sólo porque los dos llamadores pasan un delta con
+    ''' escala ≈1 y el epsilon ABSOLUTO de uniformidad (1e-6) lo clasifica uniforme ⇒
+    ''' <c>ComposeTransforms</c> emite <c>ScaleVector=(1,1,1)</c>.
+    ''' <para>⚠️ Deja de valer en cuanto un delta traiga escala per-eje de verdad — p.ej. con un mount
+    ''' no uniforme, porque <c>BuildNoAnimSyncLocal</c> copia <c>ScaleVector</c> del local estructural.
+    ''' Ahí <c>ComposeTransforms</c> pone <c>Scale = 1.0F</c> y esta línea escribe 1, tirando la escala
+    ''' entera y en silencio.</para>
+    ''' <para>Arreglarlo NO son tres asignaciones: <c>ScaleX/Y/Z</c> son <c>JsonIgnore</c> (ni el export
+    ''' SAM ni <c>SaveImportedHkxPoseXml</c> ni <c>Poses_class.Clone</c> los guardan ⇒ previsualizar y
+    ''' guardar darían poses distintas) y <c>PoseTransformData.Isidentity</c> los mira ⇒ cambiaría QUÉ
+    ''' HUESOS entran a la pose. Aparte el clip HKX ya perdió su per-eje en
+    ''' <c>ResolveUniformScale</c>, que PROMEDIA los tres ejes.</para></remarks>
     Private Shared Function ToPoseTransformData(source As Transform_Class) As PoseTransformData
         Dim rot = Transform_Class.Matrix33ToBSRotation(source.Rotation)
         Return New PoseTransformData With {

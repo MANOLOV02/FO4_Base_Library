@@ -19,14 +19,12 @@ Public Module PluginEncodingSettings
     ' (LocalizedStrings.DecodeWithEncoding: intenta UTF-8 primero, si tira cae a cp1252). Con el
     ' Encoding.UTF8 default de .NET (fallback de reemplazo) el decoder NUNCA tira, el catch queda
     ' codigo muerto, y un .STRINGS en cp1252 leido como UTF-8 da mojibake U+FFFD en vez de caer a
-    ' cp1252. (Un comentario anterior decia lo contrario — ese fue el bug que causo el reporte de
-    ' mojibake en STRINGS de coreano/espanol.)
+    ' cp1252 — el mojibake reportado en STRINGS de coreano/espanol.
     '
     ' throwOnInvalidBytes afecta al DECODER (lectura). El ENCODER nunca tira para strings validos
     ' de .NET (UTF-8 codifica cualquier scalar Unicode), asi que esto NO reintroduce el problema de
-    ' EncoderFallback a mitad de guardado — ese estaba en MBCSEncoding(cp) con ExceptionFallback,
-    ' arreglado aparte (MBCSEncoding ahora reemplaza en silencio los caracteres no codificables,
-    ' en vez de tirar).
+    ' EncoderFallback a mitad de guardado: ese es de MBCSEncoding(cp), que reemplaza en silencio los
+    ' caracteres no codificables en vez de tirar.
     Private ReadOnly _utf8 As Encoding = New UTF8Encoding(encoderShouldEmitUTF8Identifier:=False, throwOnInvalidBytes:=True)
     Private ReadOnly _encodingCache As New Dictionary(Of Integer, Encoding)()
 
@@ -202,7 +200,7 @@ Public Module PluginEncodingSettings
 
             ' Puebla _languageMapPrimary segun el juego.
             ' Game_Enum.Fallout4 = FO4; Game_Enum.Skyrim se trata como SSE en el resto de la lib
-            ' (PluginWriter.vb:50), asi que cae en la rama de SSE aca.
+            ' (ver PluginWriter.TES4_RECORD_VERSION_SSE), asi que cae en la rama de SSE aca.
             Dim primary As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
             Select Case game
                 Case Config_App.Game_Enum.Fallout4
@@ -217,9 +215,9 @@ Public Module PluginEncodingSettings
                     Next
             End Select
 
-            ' NOTA: el coreano NO se agrega al mapa primario (eso era un parche fragil — CP949 en el
-            ' primario nunca tira, asi que un plugin coreano que resultara ser UTF-8 quedaria
-            ' mojibake en silencio). En cambio korean/ko/kor→949 vive en el mapa completo/fallback, y
+            ' ⛔ El coreano NO va en el mapa primario: CP949 nunca tira, asi que un plugin coreano que
+            ' resultara ser UTF-8 quedaria mojibake en silencio.
+            ' En cambio korean/ko/kor→949 vive en el mapa completo/fallback, y
             ' el fallback inline (DecodeTranslatable: intenta UTF-8 → si tira, cae al codepage de
             ' sLanguage) lee bien tanto plugins CP949 como UTF-8 en coreano. Mismo modelo de
             ' UTF-8-primero + fallback-por-codepage que el sidecar .STRINGS.
@@ -247,9 +245,9 @@ Public Module PluginEncodingSettings
     '''
     ''' Esta resolucion corre INCONDICIONALMENTE: un sLanguage vacio o ausente tambien pasa por el
     ''' lookup, que falla y devuelve el default primario (UTF-8 para FO4). Por eso un idioma vacio
-    ''' TIENE que fijar _translatable = UTF-8, no dejarlo en un cp1252 viejo. (Antes esto retornaba
-    ''' temprano, dejando cp1252 → rompia plugins en coreano/chino cuando el INI del usuario no
-    ''' tenia entrada de sLanguage.)
+    ''' TIENE que fijar _translatable = UTF-8, no dejarlo en un cp1252 previo. (⛔ NO retornar temprano
+    ''' con un idioma vacio: deja cp1252 y rompe los plugins en coreano/chino cuando el INI del usuario no
+    ''' tiene entrada de sLanguage.)
     ''' </summary>
     Public Sub SetLanguage(language As String)
         EnsureInitialized()
@@ -487,11 +485,11 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>Codifica el NOMBRE DE ARCHIVO de un master (TES4.MAST) y REHÚSA si no sobrevive el viaje.
-    ''' <para>Acá vivía el peor caso de "lector ≠ escritor" del dominio: los dos writers usaban
-    ''' <c>Encoding.ASCII.GetBytes</c>, que SUSTITUYE por <c>?</c> sin lanzar, mientras el lector decodifica el
+    ''' <para>⛔ NUNCA <c>Encoding.ASCII.GetBytes</c> acá — es el peor caso de "lector ≠ escritor" del
+    ''' dominio: SUSTITUYE por <c>?</c> sin lanzar, mientras el lector decodifica el
     ''' MAST con la General (<see cref="DecodeGeneral"/>, PluginReader.ReadTES4) porque ese campo del formato
     ''' es un string normal/overrideable ⇒ encoding General, no Translatable. Un master <c>Café Mod.esp</c>
-    ''' salía como <c>Caf? Mod.esp</c>: un archivo que no existe, así que el motor y el CK rechazan el plugin
+    ''' sale como <c>Caf? Mod.esp</c>: un archivo que no existe, así que el motor y el CK rechazan el plugin
     ''' ENTERO y toda referencia a ese mod queda rota.</para>
     ''' <para>El nombre de un master no es texto de presentación: es una CLAVE de búsqueda en disco, así que
     ''' una sustitución silenciosa no degrada, invalida. Por eso, a diferencia de
@@ -678,10 +676,10 @@ Public Module PluginEncodingSettings
 
     Private Sub EnsureInitialized()
         If _initialized Then Return
-        ' EL JUEGO SALE DE LA CONFIG, NO HARDCODEADO. Estaba fijo en Fallout4: el PRIMERO que tocara
-        ' cualquier getter fijaba el mapa de idiomas de FO4 y marcaba `_initialized`, así que en una sesión
-        ' de Skyrim el `SetLanguage("english")` posterior fallaba el lookup y caía a UTF-8 — un default
-        ' silencioso que decide cómo se DECODIFICA todo el plugin.
+        ' EL JUEGO SALE DE LA CONFIG, NO HARDCODEADO. Con un juego cableado acá, el PRIMERO que toque
+        ' cualquier getter fija ESE mapa de idiomas y marca `_initialized`, así que en una sesión del otro
+        ' juego el `SetLanguage` posterior falla el lookup y cae a UTF-8 — un default silencioso que
+        ' decide cómo se DECODIFICA todo el plugin.
         InitializeForGame(Config_App.Current.Game)
     End Sub
 

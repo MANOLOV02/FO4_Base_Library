@@ -39,9 +39,9 @@ Public Partial Class HkxObjectGraph_Class
         Dynamic = 2
     End Enum
 
-    ' Memoizes parsed skeletons by source RelativeOffset so ParseSkeletonMapper does not re-parse
-    ' the same full skeleton once per mapper (HKX-007). ParseSkeleton is a pure function of its
-    ' source object, so the cached HkaSkeletonGraph_Class yields identical bone names.
+    ' Memoiza esqueletos parseados por RelativeOffset del origen, para que ParseSkeletonMapper no
+    ' re-parsee el mismo esqueleto completo una vez por mapper. Es equivalente porque ParseSkeleton
+    ' es función pura de su objeto de origen.
     Private ReadOnly _parsedSkeletonCache As New Dictionary(Of Integer, HkaSkeletonGraph_Class)
 
     Private Function ParseSkeletonMemoized(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class

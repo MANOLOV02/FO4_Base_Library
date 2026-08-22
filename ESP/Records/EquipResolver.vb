@@ -3,10 +3,9 @@ Imports System.Linq
 
 ''' <summary>LEY ÚNICA DE EQUIP. Quién sobrevive cuando dos prendas se pisan, y con qué máscara se
 ''' decide. Vive acá —al lado de <see cref="OutfitResolver"/>, que resuelve OTFT→ARMO— porque es ley del
-''' MOTOR sobre registros: no necesita UI, ni GL, ni mallas, ni estado de ninguna app. Antes estaba
-''' repartida en seis lugares (el render, el bake vía un delegado a un <c>Friend Shared</c> de un
-''' formulario, el editor de outfits, el gate de piel, el chequeo de raza y el editor de ARMO), cada uno
-''' recalculando la misma máscara a mano y divergiendo entre sí.
+''' MOTOR sobre registros: no necesita UI, ni GL, ni mallas, ni estado de ninguna app. ⛔ NO recalcular
+''' la máscara a mano en el render, el bake, el editor de outfits, el gate de piel, el chequeo de raza ni
+''' el editor de ARMO: seis copias de la misma cuenta divergen entre sí.
 '''
 ''' ══ LA UNIDAD ES EL ARMO, NUNCA LA ARMA ══
 ''' RE del Fallout4.exe instalado (VAs re-localizadas por patrón; las de las memorias viejas ya no
@@ -19,14 +18,15 @@ Imports System.Linq
 ''' ⇒ el mutex se decide con el BOD2 del ARMO (<see cref="ArmoFootprint.EquipMask"/>). Los bits que sólo
 ''' declara la ARMA (34 Forearms, 38 Calves, 41 LongHair…) gobiernan PARTICIONES, no equip.
 '''
-''' ══ LAS TRES MÁSCARAS ══ (un solo campo las mezclaba y cada lector entendía otra cosa)
+''' ══ LAS TRES MÁSCARAS ══ (⛔ NO colapsarlas en un solo campo: cada lector entiende otra cosa)
 '''   · <see cref="ArmoFootprint.EquipMask"/>      BOD2 crudo del ARMO      → mutex de equip.
 '''   · <see cref="ArmoFootprint.GeometryMask"/>   unión de ARMA válidas    → particiones, segmentos, dedup.
 '''   · <see cref="ArmoFootprint.OcclusionMask"/>  geometría ∪ (ARMO ∩ headwear) → oclusión de head-parts,
-'''     categoría Headwear del toggle de render, cobertura de piel. Es la que el render venía usando como
+'''     categoría Headwear del toggle de render, cobertura de piel. Es la que el render usa como
 ''' `candidate.SlotMask` — salvo que el render le suma además los slots de oclusión que declara la
-'''     RACE (`headOcclGate`, NpcMeshCollector.vb:396), así que para razas modeadas su candidate.SlotMask
-'''     puede traer bits que este footprint no tiene. NO migrar el render a este campo sin contemplarlo.
+'''     RACE (`headOcclGate`, en <c>NpcMeshCollector.CollectArmoCandidates</c>), así que para razas
+'''     modeadas su candidate.SlotMask puede traer bits que este footprint no tiene. ⛔ NO migrar el
+'''     render a este campo sin contemplarlo.
 ''' La cobertura de piel se queda acá y NO sube a EquipMask: subirla le da a dos ARMO de guantes los
 '''     bits 34/35 y vuelve la regresión histórica "broke hands".
 '''
@@ -38,49 +38,50 @@ Imports System.Linq
 Public Module EquipResolver
 
     ' ════════════════════════════════════════════════════════════════════════════════════════════════
-    ' LA LEY, VERIFICADA EN LOS DOS MOTORES (RE 2026-08-19 sobre los binarios instalados)
+    ' LA LEY, VERIFICADA EN LOS DOS MOTORES (RE sobre los binarios instalados)
     ' ════════════════════════════════════════════════════════════════════════════════════════════════
 
-    ''' <summary>Gana el ÚLTIMO equipado: el ítem nuevo entra y el motor DESEQUIPA al viejo con el que
-    ''' choca. Verificado por desensamblado en LOS DOS juegos, no heredado de notas:
-    '''
-    ''' · FO4 (`Fallout4.exe` instalado, base 0x140000000) — resolver `0x140988CD0`: recorre los equipados
-    '''   del actor (`[actor+0xF8]+0x58` datos / `+0x68` count, stride 0x10) y por cada uno llama a
-    '''   `SlotsOverlap 0x1402FCB00`. Al solapar guarda el puntero del ítem **YA EQUIPADO** y baja el flag
-    '''   de "sin conflicto"; en `0x140988EE8` le pasa ESE (el viejo) al despachador `0x140992FF0`, que por
-    '''   la vtable del actor (`+0x368` → `0x140C9ACD0`) llega a `0x140D323B0`, que busca el nodo
-    '''   `(forma, slot)` en la lista de ítems adjuntos y lo DESENLAZA Y LIBERA. El ítem nuevo queda.
-    '''
-    ''' · Skyrim SE 1.6.1170.0 (desempacado con Steamless; VAs cruzadas contra la Address Library
-    '''   `versionlib-1-6-1170-0.bin`) — `Actor::AddWornItem 0x1406A0AA0` (slot 0x2B8 de la vtable de Actor):
-    '''   recorre los 32 slots del caché de equipados y por cada ocupante que solapa llama a
-    '''   `ActorEquipManager::UnequipObject 0x1406CA010` sobre EL VIEJO, y después marca el nuevo como worn.
-    '''   El motor tiene además dos particularidades: (a) el ARMO de PIEL está exento de ser tratado como
-    '''   ocupante desplazable — eso la app SÍ lo cumple, la piel ni entra al torneo
-    '''   (`NpcMeshCollector.SelectWinningCandidates`); (b) si el ocupante viejo está protegido por quest la
-    ''' llamada ABORTA y se rechaza el ítem NUEVO — eso la app NO lo modela: no hay estado de quest en
-    '''   un editor, y la app siempre deja ganar al nuevo. PENDIENTE declarado, no cubierto.
-    '''
-    ''' Antes de este RE la app usaba first-wins en Skyrim, y eso es lo que dejaba a `Beem-Ja`
-    ''' (`dunIronbindBarrowBeemJaOutfit`) con el torso desnudo: su INAM es botas[37], circlet[42],
-    ''' guantes[33], anillo y túnica de mago[31,32,42]; con first-wins el circlet reclamaba el 42 y la
-    ''' túnica ENTERA se caía. 98 de 2382 realizaciones vanilla SSE dependían de esto.</summary>
-    ''' <summary>Y el ORDEN con el que se resuelve el torneo ES el del INAM, ascendente — también
-    ''' verificado con bytes (SSE 1.6.1170.0), porque con last-wins el resultado depende enteramente de él:
-    ''' `InitOutfitItems 0x14022E730` → worker `0x14023A2B0` recorre `BGSOutfit::outfitItems`
-    ''' (data `+0x20`, count `+0x30`) hacia ADELANTE (`add rsi,8` / `cmp rsi,end`), y por cada ítem inserta
-    ''' en el `entryList` de `InventoryChanges` con `0x14023B3A0`, que camina hasta `next==NULL` y hace
-    ''' `[tail+8] = nuevo`: es APPEND, no prepend. Después `AddWornOutfit 0x1402E1B00` recorre ese mismo
-    ''' `entryList` de cabeza a cola equipando cada entrada tageada con el FormID del outfit. Leer-adelante
-    ''' + insertar-al-final + recorrer-adelante ⇒ el orden del INAM se preserva de punta a punta.
-    '''
-    ''' Lo que ESO todavía no explica: `DA13MissileOutfit` (30 NPC, los Afflicted de Bthardamz) lleva el
-    ''' LVLI de sombrero DESPUÉS del de cuerpo, así que con last-wins un sombrero {31,42} desequipa una
-    ''' túnica con capucha {31,32,42} y el NPC queda sin torso en el 3,2 % de las realizaciones. El orden es
-    ''' el correcto y la dirección también, así que falta OTRA regla del motor. Único candidato vivo: una
-    ''' pasada posterior de "el NPC se pone lo de mayor valor" en `0x1403BD380`, gateada por un contador
-    ''' persistente del NPC_ (`TESNPC+0x241`, que arranca en 1, no en 0) y por un predicado virtual del
-    ''' actor; no está confirmado que corra al instanciar un NPC genérico. Divergencia conocida y medida.</summary>
+    ' Gana el ÚLTIMO equipado: el ítem nuevo entra y el motor DESEQUIPA al viejo con el que
+    ' choca. Verificado por desensamblado en LOS DOS juegos, no heredado de notas:
+    '
+    ' · FO4 (`Fallout4.exe` instalado, base 0x140000000) — resolver `0x140988CD0`: recorre los equipados
+    '   del actor (`[actor+0xF8]+0x58` datos / `+0x68` count, stride 0x10) y por cada uno llama a
+    '   `SlotsOverlap 0x1402FCB00`. Al solapar guarda el puntero del ítem **YA EQUIPADO** y baja el flag
+    '   de "sin conflicto"; en `0x140988EE8` le pasa ESE (el viejo) al despachador `0x140992FF0`, que por
+    '   la vtable del actor (`+0x368` → `0x140C9ACD0`) llega a `0x140D323B0`, que busca el nodo
+    '   `(forma, slot)` en la lista de ítems adjuntos y lo DESENLAZA Y LIBERA. El ítem nuevo queda.
+    '
+    ' · Skyrim SE 1.6.1170.0 (desempacado con Steamless; VAs cruzadas contra la Address Library
+    '   `versionlib-1-6-1170-0.bin`) — `Actor::AddWornItem 0x1406A0AA0` (slot 0x2B8 de la vtable de Actor):
+    '   recorre los 32 slots del caché de equipados y por cada ocupante que solapa llama a
+    '   `ActorEquipManager::UnequipObject 0x1406CA010` sobre EL VIEJO, y después marca el nuevo como worn.
+    '   El motor tiene además dos particularidades: (a) el ARMO de PIEL está exento de ser tratado como
+    '   ocupante desplazable — eso la app SÍ lo cumple, la piel ni entra al torneo
+    '   (`NpcMeshCollector.SelectWinningCandidates`); (b) si el ocupante viejo está protegido por quest la
+    ' llamada ABORTA y se rechaza el ítem NUEVO — eso la app NO lo modela: no hay estado de quest en
+    '   un editor, y la app siempre deja ganar al nuevo. PENDIENTE declarado, no cubierto.
+    '
+    ' ⛔ NO volver a first-wins en Skyrim: deja a `Beem-Ja` (`dunIronbindBarrowBeemJaOutfit`) con el
+    ' torso desnudo — su INAM es botas[37], circlet[42], guantes[33], anillo y túnica de mago[31,32,42],
+    ' y el circlet reclama el 42 tirando la túnica ENTERA. 98 de 2382 realizaciones vanilla SSE
+    ' dependen de esto.
+    '
+    ' Y el ORDEN con el que se resuelve el torneo ES el del INAM, ascendente — también
+    ' verificado con bytes (SSE 1.6.1170.0), porque con last-wins el resultado depende enteramente de él:
+    ' `InitOutfitItems 0x14022E730` → worker `0x14023A2B0` recorre `BGSOutfit::outfitItems`
+    ' (data `+0x20`, count `+0x30`) hacia ADELANTE (`add rsi,8` / `cmp rsi,end`), y por cada ítem inserta
+    ' en el `entryList` de `InventoryChanges` con `0x14023B3A0`, que camina hasta `next==NULL` y hace
+    ' `[tail+8] = nuevo`: es APPEND, no prepend. Después `AddWornOutfit 0x1402E1B00` recorre ese mismo
+    ' `entryList` de cabeza a cola equipando cada entrada tageada con el FormID del outfit. Leer-adelante
+    ' + insertar-al-final + recorrer-adelante ⇒ el orden del INAM se preserva de punta a punta.
+    '
+    ' Lo que ESO todavía no explica: `DA13MissileOutfit` (30 NPC, los Afflicted de Bthardamz) lleva el
+    ' LVLI de sombrero DESPUÉS del de cuerpo, así que con last-wins un sombrero {31,42} desequipa una
+    ' túnica con capucha {31,32,42} y el NPC queda sin torso en el 3,2 % de las realizaciones. El orden es
+    ' el correcto y la dirección también, así que falta OTRA regla del motor. Único candidato vivo: una
+    ' pasada posterior de "el NPC se pone lo de mayor valor" en `0x1403BD380`, gateada por un contador
+    ' persistente del NPC_ (`TESNPC+0x241`, que arranca en 1, no en 0) y por un predicado virtual del
+    ' actor; no está confirmado que corra al instanciar un NPC genérico. Divergencia conocida y medida.
 
     ''' <summary>CON QUÉ MÁSCARA se decide el mutex: el BOD2 CRUDO DEL ARMO, en los DOS juegos. La ARMA
     ''' NUNCA entra — sus bits (34 Forearms, 38 Calves, 41 LongHair…) gobiernan particiones, no equip.
@@ -110,8 +111,8 @@ Public Module EquipResolver
     ''' lado lo que es suyo (mallas, material swaps, facebones, bone scale).</summary>
     Public Class ArmaFootprint
         Public ArmaFormID As UInteger
-        ''' <summary><c>arma.SlotMask</c>, o el del ARMO cuando la ARMA no declara ninguno (regla única de
-        ''' footprint por armature; era <c>MainForm.EffectiveArmaSlotMask</c>).</summary>
+        ''' <summary><c>arma.SlotMask</c>, o el del ARMO cuando la ARMA no declara ninguno. Es la regla
+        ''' ÚNICA de footprint por armature.</summary>
         Public GeometryMask As UInteger
         ''' <summary>La ARMA matchea la raza (RaceFormID o AdditionalRaces, con el redirect RNAM ya
         ''' resuelto por el caller en <see cref="EquipContext.EffectiveArmorRaces"/>).</summary>
@@ -374,9 +375,9 @@ Public Module EquipResolver
                 extendedSet.Add(it)
                 Dim m = MutexMaskOf(it)
                 ' La MISMA máscara que acumula `occupied`. Mezclar las dos (EquipMask acá y MutexMaskOf
-                ' allá) dejaba el bit 60 fuera de `occupied` para siempre ⇒ `freeBits` nunca daba 0 para un
-                ' ítem que lo declarara y el guard de abajo quedaba decorativo: dos underarmor extendidos con
-                ' BOD2 idéntico {33,41,60} ganaban LOS DOS (dos torsos dibujados uno sobre otro). Sin
+                ' allá) deja el bit 60 fuera de `occupied` para siempre ⇒ `freeBits` nunca da 0 para un
+                ' ítem que lo declare y el guard de abajo queda decorativo: dos underarmor extendidos con
+                ' BOD2 idéntico {33,41,60} ganan LOS DOS (dos torsos dibujados uno sobre otro). Sin
                 ' alcance vanilla (0 de 79 extended-underarmor de FO4 declaran el 60), pero alcanzable con
                 ' mods y tildando el slot a mano en el editor de ARMO.
                 Dim freeBits = m And Not occupied
@@ -392,9 +393,9 @@ Public Module EquipResolver
         End If
 
         ' Pasada 1b — mutex atómico any-bit. Descendente por Order = gana el último equipado, que es la ley
-        ' verificada en LOS DOS motores (ver LAST_EQUIPPED_WINS). Que `Order` sea el orden del INAM del
-        ' outfit es premisa NUESTRA: el RE estableció la DIRECCIÓN, no en qué orden el motor equipa los
-        ' ítems de un outfit. Ver el comentario de LAST_EQUIPPED_WINS.
+        ' verificada en LOS DOS motores (ver el bloque "LA LEY, VERIFICADA EN LOS DOS MOTORES", arriba en
+        ' este archivo). Que `Order` sea el orden del INAM del outfit es premisa NUESTRA: el RE estableció
+        ' la DIRECCIÓN, no en qué orden el motor equipa los ítems de un outfit.
         Dim ordered = contenders.Where(Function(x) Not extendedSet.Contains(x)).
                                  OrderByDescending(Function(x) x.Order).ToList()
         Dim acceptedRest As New List(Of EquipItem)

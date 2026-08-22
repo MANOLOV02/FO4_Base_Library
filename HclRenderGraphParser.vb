@@ -3,24 +3,18 @@ Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' ESTADO: DEBUG / EN REVISIÓN — NO CERRADO
-' -----------------------------------------------------------------------------
-' Parseo de operadores de render/skin del HKX de tela.
-' NO conectado al render actual. Built but unused.
+' Parseo de operadores de render/skin del HKX de tela. Lo llama HclClothPackageParser; el
+' consumidor final es Wardrobe_Manager/PhysicsWeightCollapseHelper (no la ruta del render).
 '
-' PENDIENTES CONOCIDOS:
-'  - ParseObjectSpaceSkinPNOperator: offsets (+0x10 name, +0x18 header, +0x20
-'    BoneTransforms, +0x30 BoneIndices, +0x48 TransformSubset, etc.) determinados
-'    empíricamente. NO verificados contra Havok SDK. Gap de 8 bytes en +0x40 y
-'    entre +0x78 y +0x88 sin identificar.
-'  - ParseSimpleMeshBoneDeformOperator: boneIndex = packedBone \ 64 (bits 6-15)
-'    es reverse-engineered. Internamente consistente pero no confirmado.
-'    TriangleIndex = packedValue \ 6: misma situación.
-'  - ParseWeightedTransformSubset: layout SIMD 16-lane asumido. Tamaños 224/176/128
-'    para 4/3/2 blend son consistentes con la fórmula pero no verificados.
-'  - ReadMatrix4: stride 64 bytes (4×4 floats). Correcto para hkMatrix4.
-'  - DecodeQuantizedVector3: scale=256.0 para posiciones, 32767.0 para normales.
-'    Origen de estos valores: no documentado. A verificar.
+' LO QUE SIGUE SIN CONFIRMAR CONTRA EL SDK DE HAVOK (todo lo demás está medido):
+'  - ParseObjectSpaceSkinPNOperator: offsets (+0x10 name, +0x18 header, +0x20 BoneTransforms,
+'    +0x30 BoneIndices, +0x48 TransformSubset, …) empíricos. Gap de 8 bytes en +0x40 y entre
+'    +0x78 y +0x88 sin identificar.
+'  - ParseSimpleMeshBoneDeformOperator: boneIndex = packedBone \ 64 (bits 6-15) y
+'    TriangleIndex = packedValue \ 6 son reverse-engineered; internamente consistentes.
+'  - ParseWeightedTransformSubset: layout SIMD de 16 lanes asumido. Los tamaños 224/176/128
+'    para 4/3/2 blend salen de la fórmula, no de una medición.
+' La escala de cuantización SÍ está medida — ver PositionScaleFromW.
 ' =============================================================================
 
 Imports System.Collections.Generic
@@ -275,8 +269,8 @@ Friend NotInheritable Class HclRenderGraphParser_Class
 
     ' ObjectSpaceSkin POSITION quantization: la escala es per-vértice {256, 512}, seleccionada por el
     ' bit 7 del 4º int16 ('w' tag) del propio vector: w=0x3380 (bit7=1) -> 256, w=0x3300 (bit7=0) -> 512.
-    ' Derivado bit-exacto del dato vanilla (reproduce DefaultClothPose a ~0.001u; antes /256 fijo daba
-    ' ~2× para el 85% de los vértices). Solo aplica a posiciones; las normales usan 32767 fijo.
+    ' Derivado bit-exacto del dato vanilla (reproduce DefaultClothPose a ~0.001u). ⛔ NO usar /256 fijo:
+    ' da ~2× de error en el 85% de los vértices. Solo aplica a posiciones; las normales usan 32767 fijo.
     ' Ver memoria 25-cloth-objectspaceskin.
     Private Shared Function PositionScaleFromW(values As IReadOnlyList(Of Short)) As Double
         If values Is Nothing OrElse values.Count < 4 Then Return 256.0R

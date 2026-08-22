@@ -3,21 +3,15 @@ Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' ESTADO: DEBUG / EN REVISIÓN — NO CERRADO
-' -----------------------------------------------------------------------------
-' Parsing del header y secciones del formato Havok Packfile binario.
-' Actualmente usado por SkeletonClothOverlayHelper (ruta activa del render).
+' Header y secciones del formato Havok Packfile binario. Entry point de todo el parseo
+' HKX: SkeletonClothOverlayHelper, HkxPoseImportHelper y los Hcl*/Hkx* parten de acá.
 '
-' Lo que está bien:
-'  - Lectura de header, secciones, classnames, local/global/virtual fixups.
-'  - Validaciones de bounds, magic y variante de packfile soportada.
-'  - Detección de variantes Bethesda: Skyrim LE/SE y Fallout 4 (little-endian).
+' Variantes soportadas (FileVersion / PointerSize): 11/8 = Fallout 4 (hk_2014),
+' 8/8 = Skyrim SE (hk_2010), 8/4 = Skyrim LE. Solo little-endian (Endianness=1).
 '
-' PENDIENTES CONOCIDOS:
-'  - El grafo HCL sigue basado en offsets verificados sobre FO4 64-bit.
-'    El soporte 32/64-bit genérico de este parser se usa principalmente para
-'    arrays/base object layouts compartidos (root container, skeleton, animation).
-'  - Solo soporta little-endian (Endianness=1). Big-endian lanza excepción; correcto.
+' ALCANCE: el layout 32/64-bit genérico de acá cubre hkArray, root container, skeleton y
+' animation. Los offsets de campo HCL siguen verificados sólo sobre FO4 64-bit
+' (ver HclStructuredGraphParser).
 ' =============================================================================
 
 Imports System.IO
@@ -390,11 +384,9 @@ Public Class HkxPackfile_Class
         Return Sections(index)
     End Function
 
-    ' Lazily-built lookup keyed by EntryRelativeOffset AND StringRelativeOffset, mapping each
-    ' offset value to the FIRST ClassNames entry (in list order) matching it by either field.
-    ' Replaces a per-object linear FirstOrDefault scan (HKX-010); returns the identical entry
-    ' FirstOrDefault would have returned. Built on first use because ClassNames is populated
-    ' during parsing and is stable thereafter.
+    ' Lookup por EntryRelativeOffset Y StringRelativeOffset → la PRIMERA entrada de ClassNames
+    ' (en orden de lista) que coincida por cualquiera de los dos campos. Se arma en el primer uso
+    ' porque ClassNames se puebla durante el parseo y no cambia después.
     Private _classNameByOffset As Dictionary(Of Integer, HkxClassNameEntry_Class)
 
     Public Function GetClassName(sectionIndex As Integer, entryRelativeOffset As Integer) As HkxClassNameEntry_Class
@@ -404,8 +396,8 @@ Public Class HkxPackfile_Class
         If _classNameByOffset Is Nothing Then
             Dim lookup As New Dictionary(Of Integer, HkxClassNameEntry_Class)
             For Each entry In ClassNames
-                ' TryAdd keeps the earliest entry in list order for each offset value, matching
-                ' FirstOrDefault's behavior. An entry registers under both its offsets.
+                ' TryAdd y NO asignación: ante offsets repetidos gana la PRIMERA entrada de la
+                ' lista. Cada entrada se registra bajo sus DOS offsets.
                 lookup.TryAdd(entry.EntryRelativeOffset, entry)
                 lookup.TryAdd(entry.StringRelativeOffset, entry)
             Next

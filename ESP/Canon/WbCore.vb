@@ -261,9 +261,8 @@ Namespace Canon
     ''' árbol por hilo y el bake recorre árboles distintos en paralelo, que es lo que hace hoy.
     ''' <para>Escribir no: los hijos y los campos poco usados viven en objetos que se crean al primer uso
     ''' (<c>HijosMutables</c>, <c>ExtrasMutables</c>), y dos hilos que escriban campos DISTINTOS del mismo
-    ''' nodo pueden crear cada uno el suyo y perder la escritura del otro. Con los campos planos de antes
-    ''' eso no podía pasar — por accidente, no por diseño: nunca hubo un escritor concurrente sobre el
-    ''' mismo nodo, y el día que lo haya hace falta sincronizarlo acá.</para></remarks>
+    ''' nodo pueden crear cada uno el suyo y perder la escritura del otro. Hoy no hay ningún escritor
+    ''' concurrente sobre el mismo nodo; el día que lo haya hay que sincronizar acá.</para></remarks>
     Public NotInheritable Class WbNode
         Public ReadOnly Property Def As WbDef
         Public Property Parent As WbNode
@@ -721,13 +720,12 @@ Namespace Canon
         ''' <para>La diferencia importa cuando dos hermanos comparten la firma y sólo se distinguen
         ''' por el nombre de su valor. Pasa de verdad: una raza declara el esqueleto masculino y el
         ''' femenino con la MISMA firma, uno detrás del otro. Quedarse con el primero que coincide
-        ''' hacía que la ruta del femenino no resolviera nunca, y leerlo devolvía vacío sin ningún
+        ''' hace que la ruta del femenino no resuelva nunca, y leerlo devuelve vacío sin ningún
         ''' aviso — que es exactamente la peor forma de fallar.</para>
         '''
-        ''' <para>El orden en que se prueban los candidatos es el mismo de siempre: primero los que
-        ''' coinciden por nombre, después los envoltorios sin nombre, y al final los que coinciden
-        ''' por firma. Así una ruta que ya resolvía sigue resolviendo al mismo nodo; lo único que
-        ''' cambia es que ahora, si ese camino no llega a destino, se prueba el siguiente.</para></summary>
+        ''' <para>El orden en que se prueban los candidatos: primero los que coinciden por nombre,
+        ''' después los envoltorios sin nombre, y al final los que coinciden por firma. Si un camino
+        ''' no llega a destino, se prueba el siguiente.</para></summary>
         Private Shared Function ResolverCampo(cur As WbNode, pasos As String(), idx As Integer) As WbNode
             If cur Is Nothing Then Return Nothing
             If idx >= pasos.Length Then Return Desenvolver(cur)
@@ -771,13 +769,12 @@ Namespace Canon
         ''' se distinguen por el nombre de su valor —una raza declara el esqueleto masculino y el
         ''' femenino con la MISMA firma, uno detrás del otro—, así que aplanar las fases (todos los
         ''' nombres a toda profundidad primero, después todas las firmas) hace que una ruta ambigua
-        ''' resuelva a OTRO hermano. Ese defecto ya pasó: el femenino de RACE leía vacío para siempre,
-        ''' sin ningún aviso.</para>
+        ''' resuelva a OTRO hermano — el femenino de RACE leyendo vacío para siempre, sin ningún aviso.</para>
         '''
-        ''' <para>Antes esto era un iterador que devolvía los candidatos y el que lo llamaba los
-        ''' probaba. Devolver el resultado en vez de los candidatos da EXACTAMENTE el mismo orden
-        ''' —fase por fase, con la misma recursión— y saca una máquina de estados por nodo visitado,
-        ''' que era el grueso del costo de leer un campo.</para></summary>
+        ''' <para>⛔ NO convertirlo en un iterador que devuelva los candidatos para que el llamador los
+        ''' pruebe: agrega una máquina de estados por nodo visitado, que es el grueso del costo de leer
+        ''' un campo. Devolver el resultado da EXACTAMENTE el mismo orden —fase por fase, con la misma
+        ''' recursión—.</para></summary>
         Private Shared Function ProbarCandidatos(cur As WbNode, s As String, pasos As String(), idx As Integer) As WbNode
             Dim hijos = cur.Children
 

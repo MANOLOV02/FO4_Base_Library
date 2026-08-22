@@ -138,7 +138,7 @@ End Interface
 ''' <para><b>Contrato.</b> Se invoca EN SERIE al principio de <c>PipelineStep_Morphs</c>, antes del
 ''' <c>Parallel.ForEach</c> de los resolvers y solo para los shapes dirty. La implementacion tiene que escribir
 ''' IN PLACE en <c>geom.NifLocalVertices</c> (<see cref="SkinnedGeometry"/> es Structure: mutar los elementos
-''' propaga, reasignar el array no); â›” NUNCA leer <c>geom.Vertices</c> -lo reescribe ApplyMorphPlan en cada
+''' propaga, reasignar el array no); ⛔ NUNCA leer <c>geom.Vertices</c> -lo reescribe ApplyMorphPlan en cada
 ''' pasada, o sea que se REALIMENTA- ni <c>geom.PerVertexSkinMatrix</c>, que queda stale dentro de este paso; y
 ''' ser ABSOLUTA, no incremental, partiendo siempre de una copia pristina propia.</para>
 ''' <para>Devuelve True si reescribio la base de ese shape (solo informativo).</para></summary>
@@ -162,24 +162,6 @@ End Interface
 ''' </summary>
 Public Class MorphEngine
 
-    ''' <summary>
-    ''' Pure-math entry point: apply position-morph channels to a vertex buffer and return
-    ''' the result, without any of the runtime concerns (dirty flags, mask, world cache,
-    ''' TBN recalc) that <see cref="ApplyMorphPlan"/> handles for the live render pipeline.
-    '''
-    ''' Semantics:
-    '''   out[i] = baseVerts[i] + Σ channel.Weight × channel.Deltas[i].PosDiff   for non-zap channels
-    ''' Zap channels (channel.IsZap = True) are skipped here — they only make sense for the
-    ''' renderable mesh (mask flag), not for an offline bake of vertex positions.
-    '''
-    ''' Vertex storage uses <see cref="Vector3d"/> (double) to match the runtime pipeline
-    ''' (SkinnedGeometry.NifLocalVertices). Morph deltas are <see cref="Vector3"/> (float)
-    ''' from the .tri file format; they get implicitly widened to double on the add.
-    '''
-    ''' Use this from offline bakes / file builders / anything that needs the morph math
-    ''' without spinning up a SkinnedGeometry. The runtime renderer goes through ApplyMorphPlan,
-    ''' which delegates the inner loop here so the two paths can never drift.
-    ''' </summary>
     ''' <summary>
     ''' Restaura las UVs desde <see cref="SkinnedGeometry.BaseUvs_Weight"/>. Es el equivalente exacto
     ''' de partir las posiciones desde <c>NifLocalVertices</c>: <c>ApplyUVDiff</c> ACUMULA, asi que sin
@@ -236,6 +218,24 @@ Public Class MorphEngine
         Return wrote
     End Function
 
+    ''' <summary>
+    ''' Pure-math entry point: apply position-morph channels to a vertex buffer and return
+    ''' the result, without any of the runtime concerns (dirty flags, mask, world cache,
+    ''' TBN recalc) that <see cref="ApplyMorphPlan"/> handles for the live render pipeline.
+    '''
+    ''' Semantics:
+    '''   out[i] = baseVerts[i] + Σ channel.Weight × channel.Deltas[i].PosDiff   for non-zap channels
+    ''' Zap channels (channel.IsZap = True) are skipped here — they only make sense for the
+    ''' renderable mesh (mask flag), not for an offline bake of vertex positions.
+    '''
+    ''' Vertex storage uses <see cref="Vector3d"/> (double) to match the runtime pipeline
+    ''' (SkinnedGeometry.NifLocalVertices). Morph deltas are <see cref="Vector3"/> (float)
+    ''' from the .tri file format; they get implicitly widened to double on the add.
+    '''
+    ''' Use this from offline bakes / file builders / anything that needs the morph math
+    ''' without spinning up a SkinnedGeometry. The runtime renderer goes through ApplyMorphPlan,
+    ''' which delegates the inner loop here so the two paths can never drift.
+    ''' </summary>
     Public Shared Function ApplyChannelsToVertexArray(baseVerts As Vector3d(), plan As MorphPlan) As Vector3d()
         If baseVerts Is Nothing Then Return Nothing
         Dim count = baseVerts.Length
@@ -257,9 +257,9 @@ Public Class MorphEngine
         ' CK − malla fuente es el canal gateado puro).
         ' El bloque de cola es LOAD-BEARING, no cosmético: 821 bloques parciales se aplican pese a estar bajo
         '    umbral, y 3.407 de 4.617 shapes tienen nV mod 4 <> 0.
-        ' Esto REEMPLAZA el viejo skip por-vértice `|delta·peso|² < 0.000001F` (= |delta| < 0,001), que era un
-        ' proxy tosco de esta regla: por eso quitarlo EMPEORABA el corpus (694→716 NPCs) — sin él aplicábamos
-        ' todavía más deltas que el CK nunca aplica.
+        ' NO volver al skip por-vértice `|delta·peso|² < 0.000001F` (= |delta| < 0,001): es un proxy tosco de
+        ' esta regla, y quitarlo SIN reemplazo empeora el corpus (694→716 NPCs) porque se aplican todavía más
+        ' deltas que el CK nunca aplica.
         ' Explica todas las paradojas que bloqueaban el caso: v91 (delta 2,5e-05) se aplica porque comparte el
         ' bloque 88-91 con v88 (2,1e-02); v111, 350× más grande, se saltea porque su bloque entero queda bajo
         ' umbral; los gemelos especulares caen en bloques distintos. Y BrowsMaleHumanoid04 aplica 0 de 88 porque
@@ -413,22 +413,15 @@ Public Class MorphEngine
                 End If
             Next
         Else
-            ' NO alcanza con poner la mascara en 0 del lado CPU: el vertice que DEJA de estar zapeado
-            ' tiene que SUBIRSE al vboMask, y UpdateUpdateSkinBuffersMask_GL sale temprano cuando
-            ' dirtyMaskIndices esta vacio (Render.vb). El `Array.Clear` + `dirtyMaskIndices.Clear()`
-            ' hacia justo lo contrario: limpiaba la mascara Y borraba la lista de "hay que subir", asi
-            ' que la GPU se quedaba con el -1 y el shader seguia descartando esos vertices.
-            '
-            ' Era ASIMETRICO: PRENDER un zap si subia (el loop de zaps de abajo hace
-            ' `dirtyMaskIndices.Add`), APAGARLO no. La rama de arriba (allowMask) ya lo hacia bien.
-            '
-            ' SINTOMA MEDIDO (CBBE Underwear, zap `Remove Bow Ties 1`): se zapea la shape en el editor,
-            ' se vuelve al preview principal y se cambia a un preset que no trae el zap — la shape NO
-            ' reaparece. Solo volvia cambiando de proyecto y regresando, porque esa recarga pasa por
-            ' Setup_GL, que recrea el vboMask con BufferData desde el array ya en cero.
-            '
-            ' Tampoco se limpia el set: una entrada pendiente de una pasada anterior todavia
-            ' necesita subirse. El uploader lo vacia el mismo despues de escribir.
+            ' NO alcanza con poner la mascara en 0 del lado CPU: el vertice que DEJA de estar zapeado tiene
+            ' que SUBIRSE al vboMask, y UpdateUpdateSkinBuffersMask_GL (Render.vb) sale temprano cuando
+            ' dirtyMaskIndices esta vacio. Por eso NO va un `Array.Clear` + `dirtyMaskIndices.Clear()`: eso
+            ' limpia la mascara Y borra la lista de "hay que subir", la GPU se queda con el -1 y el shader
+            ' sigue descartando esos vertices — sintoma medido (CBBE Underwear, zap `Remove Bow Ties 1`):
+            ' se apaga el zap y la shape NO reaparece hasta cambiar de proyecto y volver (esa recarga pasa
+            ' por Setup_GL, que recrea el vboMask desde el array ya en cero).
+            ' Tampoco se limpia el set: una entrada pendiente de una pasada anterior todavia necesita
+            ' subirse. El uploader lo vacia el mismo despues de escribir.
             For i = 0 To count - 1
                 If geom.VertexMask(i) <> 0 Then
                     geom.VertexMask(i) = 0
@@ -445,12 +438,10 @@ Public Class MorphEngine
         ' Position-morph application: pure math in ApplyChannelsToVertexArray.
         Dim verts = ApplyChannelsToVertexArray(geom.NifLocalVertices, plan)
 
-        ' Zap channels — mask flag setup (mismo paso ANTES en el bucle anterior; preserva
-        ' comportamiento exacto del runtime para el toggle on/off de zaps).
+        ' Zap channels — mask flag setup.
         ' Gate por HasZaps (no HasMorphs): un plan SÓLO-zap (sin canales de posición — el caso de la
-        ' hairline HNAM-extra, que recibe el zap pero ningún chargen-TRI morph) debe entrar igual a
-        ' setear VertexMask=-1. HasMorphs (=Channels.Count>0) ya lo cubría, pero HasZaps deja explícito
-        ' que el zap-only NO se puede saltear y blinda el gate ante futuros cambios del predicado.
+        ' hairline HNAM-extra, que recibe el zap pero ningún chargen-TRI morph) tiene que entrar igual a
+        ' setear VertexMask=-1.
         If plan IsNot Nothing AndAlso plan.HasZaps Then
             For Each channel In plan.Channels
                 If Not channel.IsZap Then Continue For
@@ -527,11 +518,10 @@ Public Class MorphEngine
         ' 0,279 con las posiciones IDENTICAS. Mover un slider uv un 1 % te cambiaba todas las
         ' normales de la malla.
         Dim huboCambioDePosicion As Boolean = geom.dirtyVertexIndices.Count > 0
-        ' La condicion es `Not (pidioNormales AndAlso huboCambioDePosicion)`, NO
-        ' `uv AndAlso Not posicion`. Esa version anterior cubria solo el caso UV-PURO: con un slider
-        ' uv Y uno de posicion a la vez, `huboCambioDePosicion` daba True, KeepExistingNormals caia a
-        ' False y las normales se recalculaban AUNQUE el ajuste estuviera apagado — o sea que el uv
-        ' reactivaba por la ventana un recalculo que el usuario habia desactivado.
+        ' La condicion es `Not (pidioNormales AndAlso huboCambioDePosicion)`, NO `uv AndAlso Not posicion`:
+        ' esa segunda forma cubre solo el caso UV-PURO — con un slider uv Y uno de posicion a la vez,
+        ' `huboCambioDePosicion` da True, KeepExistingNormals cae a False y las normales se recalculan
+        ' AUNQUE el ajuste este apagado, o sea que el uv reactiva por la ventana un recalculo desactivado.
         ' Las normales se recomputan si y solo si el usuario lo pidio Y se movio geometria; las UVs
         ' nunca las tocan. Es la separacion del canonico: `if (!lockNormals) CalcNormalsForShape`
         ' (posiciones) y `CalcTangentsForShape` (UVs) son dos pases independientes
@@ -542,10 +532,6 @@ Public Class MorphEngine
             ' la clausura sola (dirty -> triangulos incidentes -> los 3 vertices de cada uno) y
             ' dimensiona los acumuladores A ESA CLAUSURA, no a la malla. Marcar la malla entera
             ' forzaba el maximo trabajo posible en CADA tick del arrastre.
-            ' Este comentario decia "elige acumuladores SPARSE por debajo del 40 % de los
-            ' triangulos": esa rama YA NO EXISTE. Se fue al unificar el camino sparse y el full en uno
-            ' solo indexado por ranura. Un comentario que describe una rama muerta manda a buscar un
-            ' umbral que no esta en ningun lado.
             For Each iv In uvTocados
                 If iv >= 0 AndAlso iv < count Then
                     geom.dirtyVertexIndices.Add(iv)
@@ -558,15 +544,15 @@ Public Class MorphEngine
         ' ABIERTO: el canonico llama `CalcTangentsForShape` INCONDICIONAL (BodySlideApp.cpp:4501);
         ' aca se gatea por `recalculateNormals` (decision de WM, el switch del usuario manda) Y ademas
         ' por si se movio algo. Un shape que el preset no toca conserva las tangentes AUTORADAS.
-        ' PROBADO Y DESCARTADO: forzar el recalculo completo cuando no hay nada sucio NO cambio el
+        ' PROBADO Y DESCARTADO: forzar el recalculo completo cuando no hay nada sucio NO cambia el
         ' resultado de `BaseUndies` (35,20 grados, identico en 4 versiones distintas del codigo), asi
-        ' que la divergencia de ese shape NO esta aca — sus tangentes llegan al NIF por otro camino.
-        ' Se revirtio para no pagar un recalculo de malla entera por frame sin beneficio medido.
+        ' que la divergencia de ese shape NO esta aca — sus tangentes llegan al NIF por otro camino, y
+        ' forzarlo cuesta un recalculo de malla entera por frame sin beneficio medido.
         If ((recalculateNormals AndAlso huboCambioDePosicion) OrElse uvsCambiaron) AndAlso geom.dirtyVertexIndices.Count > 0 Then
             Dim opt As RecalcTBN.TBNOptions = Config_App.Current.Setting_TBN
             opt.KeepExistingNormals = soloTangentes
             ' Devuelve una List, no un HashSet, y puede repetir vertices que ya estaban sucios: los
-            ' dos Add de abajo son idempotentes, asi que el ExceptWith que habia aca era optimizacion.
+            ' dos Add de abajo son idempotentes, asi que no hace falta filtrarla.
             Dim adicionales = RecalcTBN.RecalculateNormalsTangentsBitangents(geom, opt)
             For Each ad In adicionales
                 geom.dirtyVertexIndices.Add(ad)

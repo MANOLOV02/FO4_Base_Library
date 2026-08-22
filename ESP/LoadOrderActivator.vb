@@ -42,14 +42,14 @@ Public NotInheritable Class LoadOrderActivator
 
     ''' <summary>El Plugins.txt sobre el que se va a escribir, o "" + motivo si no hay uno confiable.
     '''
-    ''' <para>ESTE ES EL PUNTO MÁS PELIGROSO DE TODA LA RESOLUCIÓN DE RUTAS, y hasta ahora fallaba para el
-    ''' lado malo. La versión vieja componía la ruta contra la carpeta "preferida" aunque no existiera, y
-    ''' <see cref="WriteEntries"/> la CREA: un usuario de la edición de GOG terminaba con un
+    ''' <para>ESTE ES EL PUNTO MÁS PELIGROSO DE TODA LA RESOLUCIÓN DE RUTAS. ⛔ NO componer la ruta contra
+    ''' la carpeta "preferida" sin confirmar que existe, porque
+    ''' <see cref="WriteEntries"/> la CREA: un usuario de la edición de GOG termina con un
     ''' <c>%LOCALAPPDATA%\Skyrim Special Edition\Plugins.txt</c> recién nacido, con un solo plugin adentro,
-    ''' y un mensaje diciéndole que se había activado. El juego no lo leía nunca. Un archivo equivocado
+    ''' y un mensaje diciéndole que se activó. El juego no lo lee nunca. Un archivo equivocado
     ''' escrito con cara de éxito es peor que un error.</para>
     '''
-    ''' <para>Ahora: si el resolver no llegó a una ubicación, no se escribe nada. Sí se permite CREAR el
+    ''' <para>La ley: si el resolver no llegó a una ubicación, no se escribe nada. Sí se permite CREAR el
     ''' archivo cuando la carpeta salió de evidencia real (el .ini del juego está ahí, pero el usuario
     ''' todavía no corrió el juego) o cuando la ruta la fijó el usuario a mano — en los dos casos el destino
     ''' está confirmado por algo que no es una suposición nuestra.</para></summary>
@@ -413,25 +413,20 @@ Public NotInheritable Class LoadOrderActivator
             desired = Math.Min(previousIndex, entries.Count)
         End If
 
-        ' ACÁ VIVÍA UN "TOPE DEL GRUPO DE MASTERS" (bajar nuestra línea hasta el primer no-master) Y SE
-        ' BORRÓ ENTERO. No era un tope mal calibrado: NO TENÍA QUE EXISTIR, y lo pagué con tres rondas de
-        ' revisión persiguiendo sus efectos.
+        ' ⛔ NO REPONER acá un "tope del grupo de masters" (bajar nuestra línea hasta el primer no-master).
         '
         ' La ley canónica es que el motor PARTICIONA: con dos módulos del MISMO
         ' grupo desempata por índice literal de Plugins.txt, y con dos de grupos DISTINTOS el master gana
         ' siempre, esté donde esté la línea. O sea que la posición de un plugin del grupo master RESPECTO DE
-        ' LOS NO-MASTERS no puede cambiar quién gana un override. Un tope que sólo mueve esa relación no
-        ' arregla nada por construcción.
+        ' LOS NO-MASTERS no puede cambiar quién gana un override: un tope que sólo mueve esa relación no
+        ' arregla nada por construcción, y MEDIDO rompe dos cosas: (a) en la rama "plugin nuevo" baja
+        ' nuestro ESP por encima de OTRO grupo-master que esté más abajo, y ahí sí le cambia la precedencia
+        ' —un tercero le gana a nuestro propio output—; (b) `MirrorToLoadOrderTxt` fuerza `Active = True` en
+        ' todas las líneas y llama a ESTA MISMA función, así que un tope que filtre por `.Active` es una ley
+        ' con dos verdades, y deja Plugins.txt y loadorder.txt en desacuerdo sobre quién gana.
         '
-        ' Lo que sí hacía, MEDIDO por el revisor: (a) en la rama "plugin nuevo" bajaba nuestro ESP por encima
-        ' de OTRO grupo-master que estaba más abajo, y ahí sí le cambiaba la precedencia — a un tercero le
-        ' ganaba a nuestro propio output; (b) `MirrorToLoadOrderTxt` fuerza `Active = True` en todas las
-        ' líneas y llamaba a ESTA MISMA función, cuyo tope filtraba por `.Active`: una ley con dos verdades,
-        ' que dejaba Plugins.txt y loadorder.txt en desacuerdo sobre quién gana.
-        '
-        ' El síntoma que este tope intentaba tapar (la app y el motor discrepando sobre quién gana) era real,
-        ' pero vivía en el LECTOR: `PluginManager.ReadActiveLoadOrder` no aplicaba la partición del motor.
-        ' Se arregló ahí, en `StablePartitionMasterGroup`. NO REPONER ESTE TOPE.
+        ' La discrepancia real entre la app y el motor sobre quién gana vive en el LECTOR, y ahí se aplica:
+        ' `PluginManager.StablePartitionMasterGroup`.
         '
         ' `minIndex` (los masters que nos bloquean) sí se queda: es la otra ley, "después de tus masters".
         Dim minIndex = LastIndexOfAny(entries, blocking) + 1

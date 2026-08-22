@@ -4,9 +4,9 @@
 ''' más el conjunto de los que están tildados — al ORDEN EFECTIVO que usaría el motor, y reporta los conflictos
 ''' de masters que queden.
 '''
-''' <para>Vive acá y no adentro del formulario del Preflight por una razón concreta y cara: la vez anterior la
-''' ley nueva quedó en un método privado que leía <c>Config_App</c> por su cuenta, y el revisor pudo INVERTIRLA
-''' ENTERA sin que un solo gate se pusiera en rojo. Acá todo entra por parámetro y es <c>Public Shared</c>, así
+''' <para>Vive acá y no adentro del formulario del Preflight por una razón concreta y cara: una ley encerrada
+''' en un método privado que lee <c>Config_App</c> por su cuenta se puede INVERTIR ENTERA sin que un solo gate
+''' se ponga en rojo. Acá todo entra por parámetro y es <c>Public Shared</c>, así
 ''' que el probe llama exactamente al mismo código que la UI. Ver 00-reglas-predicciones-que-no-pueden-fallar.</para>
 '''
 ''' <para>Las dos leyes canónicas del motor que aplica:
@@ -43,10 +43,10 @@ Public NotInheritable Class LoadOrderPlanner
 
         ''' <summary>Cuántas FILAS quedaron en una posición distinta de la que tenían. Se muestra en la barra
         ''' de estado: mover filas por debajo del usuario sin decírselo es peor que no moverlas.
-        ''' <para>Se llamaba <c>MastersMoved</c> y contaba "cuántos masters subí", que con el orden
-        ''' topológico ya no es una cantidad bien definida: subir un master baja a otro, y un solo intercambio
-        ''' cambia DOS posiciones. Contar filas desplazadas es lo que realmente pasó y lo que el usuario puede
-        ''' verificar mirando la grilla.</para></summary>
+        ''' <para>⛔ NO contar "cuántos masters subí": con el orden topológico no es una cantidad bien
+        ''' definida —subir un master baja a otro, y un solo intercambio cambia DOS posiciones—. Filas
+        ''' desplazadas es lo que realmente pasó y lo que el usuario puede verificar mirando la
+        ''' grilla.</para></summary>
         Public Property RowsReordered As Integer
     End Class
 
@@ -79,9 +79,8 @@ Public NotInheritable Class LoadOrderPlanner
         ' no hay nada que ordenar entre buckets.
         Dim sel = order.Where(isChecked).ToList()
         ' Los dos buckets usan EL MISMO predicado que la partición (PluginManager.IsMasterGroup con
-        ' GetValueOrDefault), así que un grupo desconocido cae del mismo lado en los dos lugares. Antes acá se
-        ' decidía con GetValueOrDefault y allá se lo clavaba en su índice: dos reglas para la misma pregunta
-        ' dentro de la misma función.
+        ' GetValueOrDefault), así que un grupo desconocido cae del mismo lado en los dos lugares. Cambiar el
+        ' criterio acá serían dos reglas para la misma pregunta dentro de la misma función.
         Dim buckets As New List(Of List(Of String))() From {
             sel.Where(Function(n) isMasterGroup(n)).ToList(),
             sel.Where(Function(n) Not isMasterGroup(n)).ToList()
@@ -89,10 +88,10 @@ Public NotInheritable Class LoadOrderPlanner
 
         ' ── 2. Dentro de cada bucket, orden topológico ESTABLE: los masters antes que sus dependientes y,
         ' entre nodos sin relación, se conserva el orden que eligió el usuario.
-        ' Reemplaza a un bucle que subía UN master por vuelta y volvía a empezar, con tope de 500 vueltas.
-        ' MEDIDO con 1500 plugins encadenados: se agotaba el tope y dejaba 999 conflictos sin resolver, o sea
-        ' que en un rig grande la app se rendía en silencio. Kahn con desempate por posición original es
-        ' O(n + aristas) y resuelve la cadena entera de una.
+        ' ⛔ NO volver a un bucle que suba UN master por vuelta con tope de vueltas: MEDIDO con 1500 plugins
+        ' encadenados, un tope de 500 se agota y deja 999 conflictos sin resolver — en un rig grande la app
+        ' se rinde en silencio. Kahn con desempate por posición original es O(n + aristas) y resuelve la
+        ' cadena entera de una.
         Dim reordered As Integer = 0
         Dim ordenadoPorBucket As New List(Of List(Of String))()
         For Each bucket In buckets
@@ -101,8 +100,8 @@ Public NotInheritable Class LoadOrderPlanner
 
         ' ── 3. Reinyectar CONSERVANDO EL LAYOUT LITERAL.
         ' Los buckets sirven SÓLO para acotar las aristas del topo-sort, NO para reordenar la lista que ve
-        ' el usuario. Concatenarlos particionaba el orden LITERAL — o sea, le reescribía su Plugins.txt y
-        ' dejaba sin sentido la columna "Load #", que existe justamente para mostrar que el motor particiona
+        ' el usuario. Concatenarlos particiona el orden LITERAL — o sea, le reescribe su Plugins.txt y
+        ' deja sin sentido la columna "Load #", que existe justamente para mostrar que el motor particiona
         ' sin que el archivo cambie. Cada ranura literal se rellena desde el bucket al que pertenecía su
         ' ocupante original, así que un plugin del grupo master sigue en una ranura de grupo master.
         ' Los NO tildados se quedan clavados en su índice.

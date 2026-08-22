@@ -7,7 +7,7 @@ Imports OpenTK.Mathematics
 Public Class Transform_Class
 
     ' ───────────────────────────────────────────────────────────────────────────────────────────
-    ' CONVENCIÓN DE NON-UNIFORM SCALE (column-multiply, ÚNICA) — fijada 2026-06-24.
+    ' CONVENCIÓN DE NON-UNIFORM SCALE (column-multiply, ÚNICA).
     '
     ' La 3×3 final es L = R · diag(ScaleVector): column-multiply, L[i,j] = Rotation[i,j]·sv[j].
     ' Semántica: "rotate first, then scale per-axis en el frame del PARENT (post-rotación)".
@@ -20,12 +20,9 @@ Public Class Transform_Class
     ' ToMatrix4/ToMatrix4d recomponen por columna y el roundtrip cierra (exacto en reales, ~1 ULP
     ' en float).
     '
-    ' Hubo un toggle ScaleThenRotate_LocalFrame (row-multiply, diag(s)·R) para A/B-testear cuál usa
-    ' el engine. Se ELIMINÓ (2026-06-24): nunca tuvo call-site fuera de esta clase, el único A/B lo
-    ' desfavoreció visualmente, y era incompatible con la descomposición column (su roundtrip NO
-    ' cerraba para non-uniform). Si algún día hay evidencia de que el engine usa row-multiply para
-    ' non-uniform, hay que re-introducir la convención Y alinear la descomposición de los ctors/
-    ' ComposeTransforms/Inverse a la MISMA convención (no alcanza con cambiar solo ToMatrix4d).
+    ' ⛔ Si algún día hay evidencia de que el engine usa row-multiply (diag(s)·R), NO alcanza con
+    ' cambiar ToMatrix4d: hay que alinear a la MISMA convención los ctors New(Matrix4/Matrix4d),
+    ' ComposeTransforms e Inverse, o el roundtrip deja de cerrar para non-uniform.
     '
     ' CUIDADO — invariante de shear (NO forzado por código, respetarlo al programar):
     '   ComposeTransforms con scale non-uniform puede dejar una Rotation con columnas NO mutuamente
@@ -58,32 +55,27 @@ Public Class Transform_Class
     Public Property Translation As Numerics.Vector3 = New Numerics.Vector3(0, 0, 0)
     Public Property Scale As Single = 1
     ''' <summary>
-    ''' Per-axis scale (X, Y, Z). Default (1, 1, 1) = uniform-via-legacy-Scale.
-    ''' Convención de bridge con Scale escalar (acordado 2026-04-29):
-    '''   - Consumidor legacy escribe Scale = s   → ScaleVector queda (1, 1, 1) (uniform);
+    ''' Per-axis scale (X, Y, Z). Default (1, 1, 1) = escala uniforme llevada por <c>Scale</c>.
+    ''' Convención de bridge con Scale escalar:
+    '''   - Quien escribe sólo Scale = s   → ScaleVector queda (1, 1, 1) (uniform);
     '''     scale efectivo es Scale · ScaleVector componentwise = (s, s, s).
-    '''   - Consumidor nuevo escribe ScaleVector = (sx, sy, sz) y deja Scale = 1
+    '''   - Quien escribe ScaleVector = (sx, sy, sz) deja Scale = 1
     '''     → scale efectivo = (sx, sy, sz).
     '''   - Lectura como escalar (para destinos sin per-eje): <see cref="EscalaComoEscalar"/>,
-    '''     que devuelve scale_eff.X y AVISA por su parámetro si la proyección perdió algo.
-    '''     ⛔ Acá decía "proyectar a avg(X,Y,Z)" y NUNCA hubo tal promedio implementado.
+    '''     que devuelve scale_eff.X (NO un promedio) y AVISA por su parámetro si la proyección
+    '''     perdió algo.
     ''' Toda operación interna (ComposeTransforms, ToMatrix4d, Inverse) opera sobre el
-    ''' scale efectivo combinado = Scale · ScaleVector. Para input legacy uniform,
-    ''' ScaleVector=(1,1,1) → comportamiento idéntico a antes (no-op).
+    ''' scale efectivo combinado = Scale · ScaleVector; con ScaleVector=(1,1,1) es no-op.
     ''' </summary>
     Public Property ScaleVector As Numerics.Vector3 = New Numerics.Vector3(1, 1, 1)
 
-    ''' <summary>Scale efectivo combinado: Scale (legacy uniform) · ScaleVector (per-axis).</summary>
+    ''' <summary>Scale efectivo combinado: <c>Scale</c> (uniforme) · <c>ScaleVector</c> (per-eje). Es un
+    ''' PRODUCTO de campos disjuntos, no una redundancia — ver <see cref="EscalaComoEscalar"/>.</summary>
     Public ReadOnly Property EffectiveScale As Numerics.Vector3
         Get
             Return New Numerics.Vector3(Scale * ScaleVector.X, Scale * ScaleVector.Y, Scale * ScaleVector.Z)
         End Get
     End Property
-
-    ' BORRADA IsUniformScale (2026-08-21). Su unico llamador era Inverse(), y era una trampa: el
-    ' nombre invita a emparejarla con .Scale, que es exactamente el defecto que se saco de Inverse
-    ' (medir EffectiveScale y dividir por Scale). Quien necesite el test tiene EffectiveScale, y
-    ' quien necesite proyectar a un escalar tiene EscalaComoEscalar, que abajo.
 
     ''' <summary>UNA sola ley de uniformidad para los TRES descompositores: <c>New(Matrix4d)</c>,
     ''' <c>New(Matrix4)</c> y <c>ComposeTransforms</c>. Recibe las tres longitudes de columna y
@@ -93,17 +85,14 @@ Public Class Transform_Class
     ''' aflojara el snap en uno solo de los tres descompositores, <c>Inverse</c> empezaría a rutear
     ''' al camino numérico en silencio — no rompe, sólo mueve bits. Por eso la decisión vive acá y
     ''' no tipeada tres veces.
-    ''' <para>⚠️ UMBRAL — recibe <c>Double</c> Y COMPARA EN <c>Double</c>, A PROPÓSITO. Los tres
-    ''' sitios no tenían el mismo umbral: <c>New(Matrix4d)</c> comparaba en <c>Double</c> contra 1e-6
-    ''' exacto, y los otros dos en <c>Single</c> contra 1e-6F (= 9,99999997e-7). Se unificó en la
-    ''' variante <c>Double</c> porque ENSANCHAR un <c>Single</c> a <c>Double</c> es exacto, así que
-    ''' los dos llamadores <c>Single</c> conservan sus operandos intactos y sólo cambian de umbral en
-    ''' 2,5e-15 — una ventana en la que nada real cae.
-    ''' <para>⛔ Se probó al revés (firma <c>Single</c>) y estaba MAL: estrechar redondea los
-    ''' OPERANDOS del llamador <c>Double</c>, y 1 ULP de <c>Single</c> vale 1,2e-7 con |c|≈1 pero
-    ''' 7,6e-6 con |c|≈100, o sea 7,6 VECES el umbral. Medido: 5 clasificaciones cambiaban sobre
-    ''' 1.537.956 matrices reales, una de ellas en el <c>skeleton.nif</c> del juego. La perturbación
-    ''' no es la diferencia entre las constantes; es el redondeo de lo que se compara.</para></remarks>
+    ''' <para>⚠️ UMBRAL — recibe <c>Double</c> Y COMPARA EN <c>Double</c>, A PROPÓSITO: ensanchar un
+    ''' <c>Single</c> a <c>Double</c> es exacto, así que los llamadores <c>Single</c> conservan sus
+    ''' operandos intactos.
+    ''' <para>⛔ NO pasar la firma a <c>Single</c>: estrechar redondea los OPERANDOS del llamador
+    ''' <c>Double</c>, y 1 ULP de <c>Single</c> vale 1,2e-7 con |c|≈1 pero 7,6e-6 con |c|≈100, o sea
+    ''' 7,6 VECES el umbral. Medido: 5 clasificaciones cambian sobre 1.537.956 matrices reales, una
+    ''' de ellas en el <c>skeleton.nif</c> del juego. Lo que perturba no es la diferencia entre las
+    ''' constantes; es el redondeo de lo que se compara.</para></remarks>
     Friend Shared Function NormalizarEscala(cx As Double, cy As Double, cz As Double,
                                             ByRef escala As Single,
                                             ByRef vector As Numerics.Vector3) As Boolean
@@ -202,29 +191,21 @@ Public Class Transform_Class
 #End If
                 Throw New Exception
         End Select
-        ' Non-uniform scale → ScaleVector como property explícita (no se baked-in en Rotation).
-        ' Para input uniform (ScaleX=ScaleY=ScaleZ=1, default): ScaleVector queda (1,1,1) → no-op
-        ' en todas las operaciones (ToMatrix4d/ComposeTransforms/Inverse multiplican por identidad).
-        ' Para non-uniform: ScaleVector tiene los valores per-axis y Rotation queda PURA (orthonormal).
-        ' Refactor 2026-04-29: eliminado el column-multiply hack que rompía orthonormalidad de Rotation
-        ' cuando había non-uniform scale, lo cual a su vez rompía Inverse() (Transpose válido solo
-        ' para R orthonormal). Ahora la responsabilidad de combinar Rotation+ScaleVector vive en
-        ' los métodos que producen la matriz final (ToMatrix4d) o la inversa.
+        ' ⛔ El scale non-uniform NO se hornea en Rotation: va como property explícita y Rotation queda
+        ' PURA (orthonormal). Hornearlo acá rompe Inverse(), cuya rama cerrada transpone — y Transpose
+        ' sólo es la inversa de una R ortonormal. Combinar Rotation+ScaleVector es trabajo de quien
+        ' produce la matriz final (ToMatrix4d/ComposeTransforms/Inverse).
         ScaleVector = New Numerics.Vector3(Origen.ScaleX, Origen.ScaleY, Origen.ScaleZ)
     End Sub
     Public Sub New(m As Matrix4d)
-        ' Refactor 2026-06-24: descomposición por COLUMNAS, consistente con ToMatrix4d y ComposeTransforms
-        ' (ambos recomponen por column-multiply: M[i,j] = R[i,j]·ScaleVector[j]). En aritmética REAL el
-        ' roundtrip New(m).ToMatrix4d() reproduce m para CUALQUIER matriz lineal — incluido shear (columnas
-        ' no mutuamente ortogonales) — porque (m[i,j]/colLen_j)·colLen_j = m[i,j]. En float difiere ~1 ULP
-        ' (medido ~10% de elementos off-by-1-ULP; impacto práctico nulo).
+        ' Descomposición por COLUMNAS, consistente con ToMatrix4d y ComposeTransforms (ambos recomponen por
+        ' column-multiply: M[i,j] = R[i,j]·ScaleVector[j]). En aritmética REAL el roundtrip
+        ' New(m).ToMatrix4d() reproduce m para CUALQUIER matriz lineal — incluido shear (columnas no
+        ' mutuamente ortogonales) — porque (m[i,j]/colLen_j)·colLen_j = m[i,j]. En float difiere ~1 ULP
+        ' (medido ~10% de elementos off-by-1-ULP).
         '
-        ' Reemplaza la normalización por filas previa, que NO roundtripeaba con el column-multiply para
-        ' escala no-uniforme (las variables se llamaban col* pero tomaban filas). Era un bug latente que
-        ' contaminaba el resultado de Inverse() (numerical path) en cuanto el scale no era uniforme.
-        ' Para escala UNIFORME el resultado es igual al legacy SALVO redondeo (~1 ULP): norma de fila y de
-        ' columna coinciden en reales pero se computan de elementos distintos. NO afecta el path byte-exact
-        ' de FaceGen (ese va por ComposeTransforms/ToMatrix4d, no por este ctor).
+        ' ⛔ NO normalizar por FILAS: con escala no uniforme el roundtrip no cierra contra el
+        ' column-multiply y el error contamina en silencio el camino numérico de Inverse().
         Translation = New Numerics.Vector3(m.M41, m.M42, m.M43)
 
         ' Columnas (convención row-major OpenTK): col j = (M1j, M2j, M3j).
@@ -251,8 +232,8 @@ Public Class Transform_Class
         }
     End Sub
     Public Sub New(m As Matrix4)
-        ' Ver comentario en Sub New(Matrix4d) — misma lógica column-based con singles. Roundtrip exacto en
-        ' reales con ToMatrix4d (column-multiply); igual al legacy salvo ~1 ULP de redondeo para uniforme.
+        ' Ver Sub New(Matrix4d) — misma lógica column-based con singles. Roundtrip exacto en reales con
+        ' ToMatrix4d (column-multiply).
         Translation = New Numerics.Vector3(m.M41, m.M42, m.M43)
 
         ' Columnas (convención row-major OpenTK): col j = (M1j, M2j, M3j).
@@ -324,12 +305,10 @@ Public Class Transform_Class
         ' Convierte ángulos Z (yaw), Y (pitch), X (roll) en grados
         ' en la matriz 3×3 que produce ComposeTransforms directamente.
 
-        ' 1) A radianes
         Dim yaw = yawDeg * Math.PI / 180.0  ' Z
         Dim pitch = pitchDeg * Math.PI / 180.0  ' Y
         Dim roll = rollDeg * Math.PI / 180.0  ' X
 
-        ' 2) Senos y cosenos
         Dim cz = Math.Cos(yaw)
         Dim sz = Math.Sin(yaw)
         Dim cy = Math.Cos(pitch)
@@ -337,10 +316,8 @@ Public Class Transform_Class
         Dim cx = Math.Cos(roll)
         Dim sx = Math.Sin(roll)
 
-        ' 3) Componer R_temp = Rx(roll) · Ry(pitch) · Rz(yaw)
+        ' R_temp = Rx(roll) · Ry(pitch) · Rz(yaw). Primero A = Rx · Ry.
         Dim R_temp As New Matrix33()
-        ' Rx * Ry:
-        ' A = Rx * Ry
         Dim A11 = 1 * cy + 0 * 0 + 0 * (-sy)
         Dim A12 = 0
         Dim A13 = 1 * sy
@@ -353,7 +330,7 @@ Public Class Transform_Class
         Dim A32 = sx
         Dim A33 = cx * cy
 
-        ' Ahora R_temp = A * Rz
+        ' R_temp = A · Rz
         R_temp.M11 = A11 * cz + A12 * sz + A13 * 0
         R_temp.M12 = -A11 * sz + A12 * cz + A13 * 0
         R_temp.M13 = A13 * 1
@@ -366,7 +343,8 @@ Public Class Transform_Class
         R_temp.M32 = -A31 * sz + A32 * cz + A33 * 0
         R_temp.M33 = A33 * 1
 
-        ' 4) Aplicar la permutación J·R_temp·J
+        ' Permutación J·R_temp·J con J = anti-identidad, o sea R[i,j] = R_temp[4-i,4-j]. La inversa de
+        ' este paso es lo primero que hace Matrix33ToEulerXYZ (misma J); mover una hay que mover las dos.
         Dim R As New Matrix33 With {
             .M11 = R_temp.M33,
             .M12 = R_temp.M32,
@@ -382,55 +360,47 @@ Public Class Transform_Class
         Return R
     End Function
     Public Shared Function Matrix33ToEulerXYZ(ByVal R As Matrix33) As Numerics.Vector3
-        ' Robustez (2026-06-24): si R NO es ortonormal (p.ej. una Rotation column-normalized con shear
-        ' tras un ComposeTransforms non-uniform), extraer Euler directo daría ángulos espurios. Polar-
-        ' descomponemos a la rotación más cercana antes de continuar. El stretch/shear se pierde aquí
-        ' (Euler no puede representarlo) — best-effort para serialización de poses; el render NUNCA usa
-        ' este path (va por ToMatrix4d, que preserva el shear exacto). Para R ya ortonormal el
-        ' short-circuit deja el cálculo legacy intacto ⇒ bit-idéntico.
+        ' Si R NO es ortonormal (una Rotation column-normalized con shear, tras un ComposeTransforms
+        ' non-uniform), extraer Euler directo da ángulos espurios: polar-descomponer primero. El
+        ' stretch/shear SE PIERDE acá — Euler no puede representarlo. Sólo lo usa la serialización de
+        ' poses; el render NUNCA pasa por acá (va por ToMatrix4d, que preserva el shear exacto).
         If Not IsRotationOrthonormal(R, OrtoEpsExtractores) Then R = PolarRotation(R)
 
-        ' Primero deshacer la permutación: R_temp = J·R·J
+        ' Deshacer la permutación de EulerXYZToMatrix33: R_temp = J·R·J
         Dim Rt As New Matrix33 With {
         .M11 = R.M33, .M12 = R.M32, .M13 = R.M31,
         .M21 = R.M23, .M22 = R.M22, .M23 = R.M21,
         .M31 = R.M13, .M32 = R.M12, .M33 = R.M11
     }
 
-        ' Clamp por posibles error numérico
+        ' Clamp: Asin() abajo exige [-1, 1] y el error numérico puede pasarse por 1 ULP.
         Dim sy As Double = Rt.M13
-        ' Clamp manual en VB
         If sy > 1.0 Then
             sy = 1.0
         ElseIf sy < -1.0 Then
             sy = -1.0
         End If
 
-        ' Ángulo pitch
         Dim pitchRad As Double = Math.Asin(sy)
-
-        ' Calcular cos(pitch) para uso en denominadores
         Dim cp As Double = Math.Cos(pitchRad)
 
         Dim yawRad As Double
         Dim rollRad As Double
 
-        ' Verificar singularidad (cp cerca de cero)
         If Math.Abs(cp) > 0.000001 Then
             ' yaw   a partir de Rt.M11 = cy*cz, Rt.M12 = -cy*sz
             yawRad = Math.Atan2(-Rt.M12, Rt.M11)
             ' roll  a partir de Rt.M23 = -sx*cy, Rt.M33 = cx*cy
             rollRad = Math.Atan2(-Rt.M23, Rt.M33)
         Else
-            ' Gimbal lock: cos(pitch)=0
-            ' Cuando pitch≈+90° (sy≈+1) ó -90° (sy≈-1)
-            ' Configuramos yaw según rotación residual en XZ plano
+            ' Gimbal lock (pitch ≈ ±90°): yaw y roll dejan de ser separables. Se fija yaw = 0 y todo el
+            ' residuo va al roll; cualquier otro reparto da la MISMA matriz, pero no los mismos números
+            ' en el editor de poses.
             yawRad = 0.0
             ' roll a partir de Rt.M21 = sx*sy*cz+cx*sz y Rt.M22 = -sx*sy*sz+cx*cz
             rollRad = Math.Atan2(Rt.M21, Rt.M22)
         End If
 
-        ' Convertir a grados
         Dim rad2deg As Double = 180.0 / Math.PI
         Return New Numerics.Vector3(
         CSng(yawRad * rad2deg),  ' Z (yaw)
@@ -445,7 +415,7 @@ Public Class Transform_Class
         Dim sinang As Double = Math.Sin(angle)
         Dim onemcosang As Double
 
-        ' Evitar pérdida de precisión en 1 - cos(angle)
+        ' 1 - cos(angle) cancela catastróficamente cerca de 0; con cos > 0.5 va por sin²/(1+cos).
         If cosang > 0.5 Then
             onemcosang = (sinang * sinang) / (1 + cosang)
         Else
@@ -481,9 +451,8 @@ Public Class Transform_Class
         Return m
     End Function
     Public Shared Function Matrix33ToBSRotation(ByVal M As Matrix33) As Numerics.Vector3
-        ' Robustez (2026-06-24): igual que Matrix33ToEulerXYZ — si M tiene shear (no ortonormal) la
-        ' fórmula axis-angle abajo da basura (la traza/(M-Mᵀ) asumen rotación pura). Polar-descomponemos
-        ' a la rotación más cercana primero. Short-circuit para M ya ortonormal ⇒ bit-idéntico al legacy.
+        ' Igual que Matrix33ToEulerXYZ: si M tiene shear (no ortonormal) la fórmula axis-angle de abajo da
+        ' basura, porque la traza y (M − Mᵀ) asumen rotación pura. Polar-descomponer primero.
         If Not IsRotationOrthonormal(M, OrtoEpsExtractores) Then M = PolarRotation(M)
 
         ' 1) θ = acos((tr(M) – 1)/2)
@@ -517,13 +486,12 @@ Public Class Transform_Class
                 uy = uy / len * angle
                 uz = uz / len * angle
             ElseIf cosA < 0.0 Then
-                ' ACÁ SE DEVOLVÍA (1,0,0) CON EL COMENTARIO "caso degenerado de 180° con eje indefinido".
-                ' EL EJE NO ES INDEFINIDO: para una rotación de 180° es el autovector de autovalor +1, y está
-                ' perfectamente determinado. Lo único ambiguo es el SIGNO (n y −n describen la misma rotación de
-                ' 180°), que es inocuo. Lo que se anula a θ=π es (M − Mᵀ), o sea la fórmula de arriba — no el eje.
-                ' Síntoma medible sin ningún preset: tipear 180 en el slider de rotación Z hacía girar el hueso
-                ' sobre X. Y desde que el .jslot y el ESP re-emiten la matriz CRUDA, el preview quedaba mostrando
-                ' un eje y el juego otro, que es justo la regla que este proyecto no negocia.
+                ' θ ≈ π. ⛔ El eje NO es indefinido acá: para una rotación de 180° es el autovector de
+                ' autovalor +1 y está perfectamente determinado (sólo el SIGNO es ambiguo, y n y −n describen
+                ' la misma rotación). Lo que se anula a θ=π es (M − Mᵀ), o sea la fórmula de arriba — no el
+                ' eje. Devolver un eje fijo (1,0,0) acá hace que tipear 180 en el slider de rotación Z gire
+                ' el hueso sobre X, y como el .jslot y el ESP re-emiten la matriz CRUDA, el preview muestra
+                ' un eje y el juego otro.
                 '
                 ' Para una rotación de 180°: M + I = 2·n·nᵀ, así que TODA columna de (M + I) es paralela a n. Se
                 ' toma la de mayor norma por estabilidad numérica (las otras pueden ser ~0 si n tiene componentes
@@ -541,13 +509,12 @@ Public Class Transform_Class
                     Dim inv = angle / Math.Sqrt(bestN)
                     ux = best(0) * inv : uy = best(1) * inv : uz = best(2) * inv
                 Else
-                    ' M + I ≈ 0 no puede pasar con una rotación real (implicaría M = −I, det = −1). Si llegara acá
-                    ' el input no era una rotación; se conserva el legacy en vez de inventar.
+                    ' M + I ≈ 0 no puede pasar con una rotación real (implicaría M = −I, det = −1): si se llega
+                    ' acá el input no era una rotación. Se devuelve el eje X en vez de inventar uno.
                     ux = angle : uy = 0 : uz = 0
                 End If
             Else
-                ' θ ≈ 0: la rotación es la identidad. Se conserva EXACTO el legacy (angle≈0 ⇒ vector ≈ 0), así que
-                ' esta rama no cambia ni un byte.
+                ' θ ≈ 0: la rotación es la identidad ⇒ el vector sale ≈ 0 y el eje da igual.
                 ux = angle : uy = 0 : uz = 0
             End If
         Else
@@ -561,13 +528,9 @@ Public Class Transform_Class
         Return New Numerics.Vector3(CSng(ux), CSng(uy), CSng(uz))
     End Function
     Public Function ComposeTransforms(b As Transform_Class) As Transform_Class
-        ' Refactor 2026-04-29: soporta non-uniform scale via ScaleVector. Para uniform input
-        ' (ambos ScaleVector=(1,1,1)), output bit-idéntico al legacy.
-        '
-        ' Math: T_x(v) = R_x · diag(EffectiveScale_x) · v + t_x. ComposeTransforms semántica:
-        ' a.Compose(b) ≡ "apply b first then a" (row-vector convention, validated empíricamente).
-        ' En notación column-vector: result.Rotation = R_b_eff · R_a_eff donde R_x_eff = R_x · diag(s_x_eff).
-        ' Translation usa la fórmula legacy (preservada bit-a-bit) pero con la rotación efectiva.
+        ' T_x(v) = R_x · diag(EffectiveScale_x) · v + t_x, y a.Compose(b) ≡ "aplicar b primero, después a"
+        ' (row-vector convention, validada empíricamente). En notación column-vector:
+        ' result.Rotation = R_b_eff · R_a_eff, con R_x_eff = R_x · diag(s_x_eff).
         Dim a = Me
         Dim result As New Transform_Class()
 
@@ -601,9 +564,9 @@ Public Class Transform_Class
         rFull.M32 = bRotEff.M31 * aRotEff.M12 + bRotEff.M32 * aRotEff.M22 + bRotEff.M33 * aRotEff.M32
         rFull.M33 = bRotEff.M31 * aRotEff.M13 + bRotEff.M32 * aRotEff.M23 + bRotEff.M33 * aRotEff.M33
 
-        ' Decomposición: extraer column lengths y normalizar. Si uniform → guardar en Scale legacy
-        ' (ScaleVector=(1,1,1)). Si non-uniform → guardar ScaleVector con per-axis (Scale=1).
-        ' Esto preserva bit-identidad para uniform: result.Scale = a.Scale·b.Scale, R orthonormal.
+        ' Descomposición: extraer column lengths y normalizar. Si uniform → todo a Scale escalar
+        ' (ScaleVector=(1,1,1), R ortonormal, Scale = a.Scale·b.Scale). Si non-uniform → ScaleVector
+        ' con el per-axis y Scale = 1.
         Dim col0Len = CSng(Math.Sqrt(rFull.M11 * rFull.M11 + rFull.M21 * rFull.M21 + rFull.M31 * rFull.M31))
         Dim col1Len = CSng(Math.Sqrt(rFull.M12 * rFull.M12 + rFull.M22 * rFull.M22 + rFull.M32 * rFull.M32))
         Dim col2Len = CSng(Math.Sqrt(rFull.M13 * rFull.M13 + rFull.M23 * rFull.M23 + rFull.M33 * rFull.M33))
@@ -612,8 +575,8 @@ Public Class Transform_Class
         Dim isResultUniform As Boolean = NormalizarEscala(col0Len, col1Len, col2Len, escRes, svRes)
 
         If isResultUniform Then
-            ' Uniform path: legacy semantics. result.Scale = column length (≈ a.Scale · b.Scale).
-            ' result.ScaleVector = (1,1,1). result.Rotation = column-normalized (orthonormal).
+            ' Las tres columnas miden lo mismo dentro del eps de NormalizarEscala: se normalizan todas
+            ' por col0Len, que es el valor que quedó en Scale.
             result.Scale = escRes
             result.ScaleVector = svRes
             If col0Len > 0 Then
@@ -627,26 +590,13 @@ Public Class Transform_Class
                 result.Rotation = rFull
             End If
         Else
-            ' Non-uniform path: column lengths capturan el scale per-axis efectivo. ScaleVector
-            ' guarda (col0Len, col1Len, col2Len). Rotation se normaliza columna a columna.
+            ' Los column lengths SON el scale per-axis efectivo, y Rotation se normaliza columna a columna.
+            ' El roundtrip NO pierde nada: ToMatrix4d recompone M[i,j] = (rFull[i,j]/c_j)·c_j = rFull[i,j].
             '
-            ' Roundtrip exact (NO lossy): ToMatrix4d con column-multiply rebuild
-            '   M[i,j] = R_normalized[i,j] · ScaleVector[j] = (rFull[i,j]/c_j) · c_j = rFull[i,j]
-            ' bit-a-bit. R_normalized puede tener columnas no-mutuamente-ortogonales si rFull
-            ' tiene shear, pero el contrato (R + ScaleVector reconstruyen rFull vía column-multiply)
-            ' se cumple exact.
-            '
-            ' NOTA (auditoría 2026-06-24, resuelta): la R resultante puede tener columnas NO mutuamente
-            ' ortogonales (shear) cuando el compose non-uniform mezcla rotación con escala per-eje. El
-            ' roundtrip con ToMatrix4d (column-multiply) reproduce la matriz compuesta (exacto en reales,
-            ' ~1 ULP en float), así que el RENDER es correcto (CPU y GPU skinning, bake FaceGen y mount van
-            ' todos por ToMatrix4d, nunca leen .Rotation).
-            ' Los extractores de rotación (Matrix33ToBSRotation/Matrix33ToEulerXYZ) — usados solo por
-            ' serialización/edición de poses (export SAM, Poses_class.Clone) — detectan la
-            ' no-ortonormalidad y polar-descomponen a la rotación más cercana (best-effort: ese formato
-            ' no puede representar shear). Los ctors New(Matrix4/Matrix4d) e Inverse() también son
-            ' column-based y roundtripean exacto. Invariante: el componente de shear SOLO debe vivir en
-            ' capas estructurales (MorphDeltaTransform/MountDeltaTransform), nunca serializarse a pose.
+            ' ⚠️ Si rFull tiene shear, la R resultante queda con columnas NO mutuamente ortogonales. El
+            ' render es correcto igual (skinning CPU/GPU, bake FaceGen y mount van todos por ToMatrix4d y
+            ' nunca leen .Rotation), pero los extractores SÍ lo pierden. Ver el invariante de shear en la
+            ' cabecera de la clase: nunca serializar a pose una capa con shear.
             result.Scale = escRes
             result.ScaleVector = svRes
             Dim invX As Single = If(col0Len > 0, 1.0F / col0Len, 1.0F)
@@ -688,7 +638,7 @@ Public Class Transform_Class
     End Function
 
     Private Shared Function MultiplyMatrixVector(m As Matrix33, v As Numerics.Vector3) As Numerics.Vector3
-        ' Coincide con la forma en que ComposeTransforms aplica la rotación
+        ' ⛔ PESE AL NOMBRE, computa v·m (vector como FILA), no m·v — igual que ComposeTransforms.
         Return New Numerics.Vector3(
         m.M11 * v.X + m.M21 * v.Y + m.M31 * v.Z,
         m.M12 * v.X + m.M22 * v.Y + m.M32 * v.Z,
@@ -702,15 +652,13 @@ Public Class Transform_Class
     ' |ci·cj| ≤ eps, que son exactamente las entradas de E ≡ RᵀR − I. De |Eij| ≤ eps sale
     ' ‖E‖∞ ≤ 3·eps. Y como Rᵀ = (I+E)·R⁻¹, resulta Rᵀ − R⁻¹ = E·R⁻¹, o sea que usar la transpuesta
     ' en vez de la inversa tiene error RELATIVO ≤ ‖E‖∞ ≤ 3·eps. Con este valor: 3e-5 (0,003 %).
-    ' Con el 1e-3 anterior daba 0,3 %.
     '
-    ' MEDIDO 2026-08-20 sobre skeleton_fo4, skeleton_male_sse, skeleton_female_sse, skeleton_male_sk
-    ' y skeleton_female_sf, computando max |(RtR - I)ij| del global de CADA nodo con este mismo
+    ' MEDIDO sobre skeleton_fo4, skeleton_male_sse, skeleton_female_sse, skeleton_male_sk y
+    ' skeleton_female_sf, computando max |(RtR - I)ij| del global de CADA nodo con este mismo
     ' ComposeTransforms: el peor caso de 1.637 nodos, a profundidad de hasta 31, es 1,8e-6. Y NO
     ' crece con la profundidad: a 500 composes encadenados sigue en 1,9e-6, porque cada compose
     ' renormaliza las columnas y el error queda acotado por el redondeo de UN paso, no por el largo
-    ' de la cadena. Margen 5,3x. El valor anterior era 1e-3, o sea 500 veces mas flojo que el peor
-    ' caso real, y admitia hasta 0,3 % de error.
+    ' de la cadena. Margen 5,3x.
     Private Const OrthonormalEps As Single = 0.00001F
 
     ''' <summary>Inversa afin exacta.</summary>
@@ -733,15 +681,16 @@ Public Class Transform_Class
     '''
     ''' La igualdad de (1) es EXACTA a proposito, sin epsilon: si e = (s, s+δ, s+δ') y se divide por
     ''' s, el error relativo es |δ|/s, que con un epsilon ABSOLUTO explota cuando s es chico. Medido:
-    ''' la igualdad exacta rutea identico al epsilon absoluto de 1e-6 anterior en 1.637/1.637 nodos
-    ''' de los cinco esqueletos, porque ComposeTransforms y New(Matrix4*) emiten ScaleVector=(1,1,1)
-    ''' exacto en su rama uniforme, o columnas que difieren ≥1e-6 en la otra.
+    ''' la igualdad exacta rutea identico a un epsilon absoluto de 1e-6 en 1.637/1.637 nodos de los
+    ''' cinco esqueletos, porque ComposeTransforms y New(Matrix4*) emiten ScaleVector=(1,1,1) exacto
+    ''' en su rama uniforme, o columnas que difieren ≥1e-6 en la otra.
     '''
-    ''' Reemplaza una version cuya guarda medía EffectiveScale pero cuya rama dividia por Scale: con
-    ''' Scale=1 y ScaleVector=(k,k,k) —la forma que arma FaceBonePoseBuilder cuando un morph de cara
-    ''' escala uniforme— la guarda pasaba y la inversa salia con escala 1 en vez de 1/k, perdiendo el
-    ''' factor entero. Y el Throw de escala cero solo miraba Scale, asi que un cero alojado en
-    ''' ScaleVector devolvia Rᵀ, un resultado finito para una matriz singular.
+    ''' ⛔ LA GUARDA Y LA RAMA TIENEN QUE MEDIR LO MISMO — las dos, la escala EFECTIVA. Guardar por
+    ''' EffectiveScale y después dividir por <c>Scale</c> es el defecto que se cuela solo: con Scale=1 y
+    ''' ScaleVector=(k,k,k) —la forma que arma FaceBonePoseBuilder para un morph de cara con escala
+    ''' uniforme— la guarda pasa y la inversa sale con escala 1 en vez de 1/k, perdiendo el factor
+    ''' entero. Lo mismo con el cero: mirando sólo <c>Scale</c>, un cero alojado en ScaleVector devuelve
+    ''' Rᵀ, o sea un resultado finito para una matriz singular.
     ''' </remarks>
     Public Function Inverse() As Transform_Class
         Dim e = Me.EffectiveScale
@@ -777,9 +726,8 @@ Public Class Transform_Class
     ' polar-descomponer, y un falso negativo cuesta una descomposición de más, no un resultado malo.
     Private Const OrtoEpsExtractores As Single = 0.001F
 
-    ' ⛔ SIN Optional: había un default de 1e-3 que un llamador nuevo heredaba sin enterarse, y que
-    ' es 500 veces más flojo que el peor caso real medido (1,8e-6). Cada llamador nombra su
-    ' tolerancia y su motivo.
+    ' ⛔ SIN Optional a propósito: las dos tolerancias del archivo difieren 100x y un default haría que
+    ' un llamador nuevo herede la floja sin enterarse. Cada llamador nombra la suya y su motivo.
     Private Shared Function IsRotationOrthonormal(r As Matrix33, eps As Single) As Boolean
         ' Test rápido: cada columna debe tener norma ≈ 1 y ser ortogonal a las demás.
         Dim c0x = r.M11, c0y = r.M21, c0z = r.M31

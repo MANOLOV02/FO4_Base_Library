@@ -372,7 +372,7 @@ Namespace Canon
                 If textLen > 0 Then Buffer.BlockCopy(data, offset, raw, 0, textLen)
                 n.RawOverride = raw
                 ' Aviso al contenedor de que ACÁ hubo un crudo. Sin esto, el subrecord que envuelve a
-                ' esta hoja tiene que recorrer todo su subárbol para averiguarlo, y lo hacía SIEMPRE
+                ' esta hoja tiene que recorrer todo su subárbol para averiguarlo, y lo haría SIEMPRE
                 ' — también en el 99,9 % de los subrecords donde no hay ningún texto. Ver
                 ' WbSubrecordDef.Parse. Sólo lo incrementa ESTA clase, que es la única cuyo nodo
                 ' cuenta para ese aviso (el filtro de allá es `TypeOf leaf.Def Is WbStringDef`).

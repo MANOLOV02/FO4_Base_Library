@@ -379,7 +379,7 @@ Namespace Canon
         ''' <summary>Envuelve un árbol en la vista del record y juego que dice el contexto.
         ''' <para>Lo usan copiar y comparar, que son la misma operación para todos los
         ''' records: sin esto haría falta una versión escrita a mano por cada tipo.</para></summary>
-        Friend Function Reenvolver(vista As CanonView, raiz As WbNode) As CanonView
+        Friend Function Reenvolver(vista As CanonRecordView, raiz As WbNode) As CanonRecordView
             If vista Is Nothing OrElse raiz Is Nothing Then Return Nothing
             Dim ctx = vista.Context
             If ctx Is Nothing Then Return Nothing

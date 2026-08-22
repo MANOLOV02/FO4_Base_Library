@@ -4,7 +4,8 @@ Imports System.Text
 ''' The skeleton NODE NAMES RaceMenu (skee64) offers as body-scale / node-transform sliders — reconstructed the
 ''' same way RaceMenu itself builds that list: by reading the installed Papyrus scripts and collecting the node
 ''' arguments each one passes to <c>NiOverride.Add/SetNodeTransform{Scale,Position,Rotation}</c>. RaceMenu has NO
-''' skeleton scan and NO fixed catalog in C++ (PapyrusNiOverride.cpp:1381 enumerates only nodes that ALREADY carry
+''' skeleton scan and NO fixed catalog in C++ (PapyrusNiOverride.cpp / <c>GetNodeTransformNames</c> enumerates,
+''' through <c>Impl_VisitNodes</c>, only nodes that ALREADY carry
 ''' an override); the slider list the user sees is exactly the UNION of what <c>RaceMenuPlugin.psc</c>, XPMSE and any
 ''' other mod register through that API. This is the node-transform analogue of <see cref="RaceMenuPaintCatalog"/>.
 '''

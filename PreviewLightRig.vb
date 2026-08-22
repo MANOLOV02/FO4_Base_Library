@@ -1,11 +1,10 @@
 ﻿' Rig de luces del previewer GL (4 direccionales + ambient hemisférico), compartido FO4/SSE.
 '
-' SIN COMPATIBILIDAD con el `Setting_Lightrig` / `LightsRig_struct` anterior: aquel guardaba los
-' colores como `System.Numerics.Vector3`, cuyos X/Y/Z son CAMPOS, y System.Text.Json (IncludeFields =
-' False por default) los serializaba como `{}` -> al releer volvían (0,0,0) = ambient NEGRO, mientras
-' que la UI los mostraba blancos (fallback del swatch) y los "arreglaba" en memoria al abrir el diálogo.
-' De ahí el síntoma: preview oscuro que cambiaba solo con abrir el rig. Acá TODO son PROPIEDADES de
-' tipos primitivos => round-trip exacto por JSON, sin converters ni fallbacks "(0,0,0) = blanco".
+' ⛔ TODO ES PROPIEDAD DE TIPO PRIMITIVO, y no es estilo: System.Text.Json va con IncludeFields = False,
+' asi que un color guardado como `System.Numerics.Vector3` —cuyos X/Y/Z son CAMPOS— serializa como `{}` y
+' al releer vuelve (0,0,0) = ambient NEGRO. El sintoma no apunta al JSON: preview oscuro que se "arregla"
+' solo al abrir el diálogo, porque la UI le pone el blanco del swatch en memoria. Con propiedades el
+' round-trip es exacto y no hacen falta converters ni fallbacks "(0,0,0) = blanco".
 '
 ' El rig es POR JUEGO (Config_App.Setting_LightRig_FO4 / _SSE, igual que las opciones de CharGen).
 ' Nadie toca los campos por juego directamente: Render y LightRigForm van SIEMPRE por
@@ -47,18 +46,14 @@ End Structure
 
 ''' <summary>Una direccional del rig: fuerza + color + su dirección en el MUNDO, como azimut y elevación.
 '''
-''' <para>LAS LUCES SON FIJAS AL MUNDO. Hasta 2026-08-11 la dirección se construía con 6
-''' multiplicadores relativos a la base de la CÁMARA (Up/Down/Left/Right/Forward/Back), así que el rig
-''' entero giraba al orbitar. Con sombras proyectadas eso es indefendible: la sombra de la nariz barre la
-''' cara mientras el usuario gira, y nadie lo lee como "iluminación consistente". Un estudio real —y el
-''' motor— tienen las luces quietas y es el modelo el que se gira.</para>
+''' <para>⛔ LAS LUCES SON FIJAS AL MUNDO: azimut y elevación de MUNDO, NO multiplicadores relativos a la
+''' base de la cámara. Con la dirección atada a la cámara el rig entero gira al orbitar, y con sombras
+''' proyectadas eso es indefendible — la sombra de la nariz barre la cara mientras el usuario gira, y nadie
+''' lo lee como "iluminación consistente". Un estudio real, y el motor, tienen las luces quietas y giran el
+''' modelo.</para>
 '''
-''' <para>NO HAY CONVERSIÓN DESDE EL ESQUEMA VIEJO, y este párrafo la describía. Existió una
-''' <c>FromCameraRelative</c> que convertía los 6 multiplicadores evaluándolos en la vista por defecto
-''' —donde la base de cámara ES la del mundo (<c>Forward=(0,1,0)</c>, <c>right=(1,0,0)</c>), así que la
-''' conversión no perdía nada—, y se borró entera cuando se re-autoraron los presets: convertir un rig
-''' viejo lo dejaría fuera del set nuevo igual. Hoy tampoco hay VERSIÓN ni reparación: la propiedad que
-''' persiste el rig se renombró, así que un rig viejo no se convierte ni se pisa — no se lee. Ver el
+''' <para>NO HAY CONVERSIÓN NI VERSIÓN DE ESQUEMA para un rig viejo: la invalidación se hace RENOMBRANDO
+''' la propiedad que lo persiste, así que el dato viejo no se convierte ni se pisa — no se lee. Ver el
 ''' bloque de <c>Setting_LightRig_*</c> en <c>Config_Class.vb</c>.</para>
 '''
 ''' <para>Convención: azimut 0 = +Y del mundo (de donde mira la cámara por defecto), creciendo hacia +X;
@@ -78,10 +73,10 @@ Public Structure PreviewLight
     ''' la cosa cierre: "que luces castean" es una propiedad de la LUZ y viaja con el preset; "como se
     ''' dibujan las sombras" (calidad, suavidad, oscuridad, bias, receptor de suelo) es global a todas y
     ''' vive del otro lado. Mezclarlas obligaria a versionar dos esquemas por el mismo cambio.</para>
-    ''' <para>Default por preset: SOLO la key. Cada luz casteante extra cuesta un mapa de profundidad
-    ''' completo —+16 MB a 2048, y +32 si ademas esta el receptor de suelo, que reserva su propio array del
-    ''' mismo tamano— mas un lookup de PCF por fragmento; que las cuatro PUEDAN no significa que ninguna
-    ''' arranque prendida.</para></summary>
+    ''' <para>Cuantas castean lo decide CADA preset (ver <see cref="Presets"/>): la mayoria solo la key,
+    ''' Studio las cuatro. Cada luz casteante extra cuesta un mapa de profundidad completo —+16 MB a 2048, y
+    ''' +32 si ademas esta el receptor de suelo, que reserva su propio array del mismo tamano— mas un lookup
+    ''' de PCF por fragmento.</para></summary>
     Public Property CastsShadow As Boolean
 
     ''' <summary>True si esta luz puede oscurecer algo: castea Y aporta luz.
@@ -99,14 +94,12 @@ Public Structure PreviewLight
     ''' <summary>TODOS LOS CAMPOS, TODOS OBLIGATORIOS, EN UN SOLO PASO. Ninguno es opcional y ninguno
     ''' se completa despues con un <c>With { }</c>.
     '''
-    ''' <para>ESTO NO ES ESTILO: LA CONSTRUCCION EN DOS FASES YA COSTO EL PEOR DEFECTO DE ESTA FEATURE.
-    ''' El ctor tomaba (strength, azimut, elevacion), ponia el color en blanco por su cuenta, y el caller
-    ''' completaba <c>Color</c> y <c>CastsShadow</c> con un inicializador de objeto. El rig que pinea
-    ''' <c>Tools/ShadowGate</c> se escribio asi y se OLVIDO el <c>CastsShadow</c>: como
-    ''' <c>PreviewLight</c> es una Structure, el campo quedo en False —el default del TIPO— ninguna luz
-    ''' casteo, el arnes entero paso a medir CERO en todos sus A/B de sombra, y encima reventaba con
-    ''' NullReferenceException porque el target ni se instanciaba. Un arnes verde que no medi­a nada.
-    ''' Con el ctor completo, olvidarse un campo es un ERROR DE COMPILACION.</para>
+    ''' <para>⛔ ESTO NO ES ESTILO. Con un ctor parcial + <c>With { }</c>, olvidarse <c>CastsShadow</c> no
+    ''' es un error: <c>PreviewLight</c> es una Structure y el campo queda en False, el default del TIPO. Asi
+    ''' se escribio el rig que pinea <c>Tools/ShadowGate</c>, ninguna luz casteo, y el arnes entero paso a
+    ''' medir CERO en todos sus A/B de sombra —verde, sin medir nada— ademas de reventar con
+    ''' NullReferenceException porque el target ni se instanciaba. Con el ctor completo eso es un ERROR DE
+    ''' COMPILACION.</para>
     '''
     ''' <para>Lo que NO se puede evitar en VB: <c>New PreviewLight()</c> sin argumentos existe siempre en
     ''' una Structure y da todos los campos en cero. Por eso el ctor completo es una guia fuerte, no una
@@ -156,15 +149,14 @@ Public Structure PreviewLightRig
     ''' <see cref="AmbientGroundDiffuse"/> sino en <c>Render.ResolveFrameLights</c>. Un TINTE se autora en
     ''' espacio perceptual y se decodea al subir —es un color—; esto NO es un color, es un COCIENTE DE
     ''' RADIANCIAS entre los dos hemisferios, y el <c>mix()</c> del shader que lo consume opera en lineal.
-    ''' <para>Estuvo del otro lado —multiplicando al color antes del pow— y ahi la perilla entregaba
-    ''' <c>nivel^2.2</c>: el 0,45 del Studio llegaba al shader como 17,3 % del cielo, no 45 %. MEDIDO con
+    ''' <para>⛔ NO MOVERLO ADENTRO DEL POW (multiplicando al color): ahi la perilla entrega
+    ''' <c>nivel^2.2</c> y un 0,45 llega al shader como 17,3 % del cielo, no 45 %. MEDIDO con
     ''' `ShadowGate --ambient` sobre la escena canonica: pintar el hemisferio de abajo de ROJO PURO movia
     ''' 0,48/255 de promedio contra los 3,00 del MISMO gesto sobre el cielo (6,25x menos), y la mitad
-    ''' inferior del slider era indistinguible de cero (0,00 vs 0,20 = 0,14/255). O sea la perilla existia,
+    ''' inferior del slider era indistinguible de cero (0,00 vs 0,20 = 0,14/255). La perilla existia,
     ''' llegaba al uniform, y no se sentia.</para>
-    ''' <para>El cambio REINTERPRETA los configs existentes a proposito (decision del usuario, no se
-    ''' migro el esquema): un 0,45 guardado antes valia 17,3 % y ahora vale 45 %, o sea el suelo de todo rig
-    ''' ya guardado se aclara ~2,6x. Los presets tampoco se reexpresaron.</para></para></summary>
+    ''' <para>Los configs y los presets ya guardados NO se migraron, a proposito (decision del usuario): el
+    ''' mismo numero vale hoy ~2,6x mas claro que cuando se calibro.</para></para></summary>
     Public Property AmbientGroundLevel As Single
     ''' <summary>TINTE del hemisferio de arriba (normal hacia world +Z). Blanco = neutro.</summary>
     Public Property AmbientSkyColor As RigColor
@@ -187,8 +179,8 @@ Public Structure PreviewLightRig
     ' placa no da — un preset de ILUMINACION no tiene por que tocar el presupuesto de video, y el sintoma
     ' (se traba el preview despues de aplicar un preset) no apunta al preset.
     '
-    ' Consecuencia deliberada: tocar estas tres AHORA marca el combo de presets como "Custom", cosa que
-    ' antes no pasaba. Es correcto — el rig efectivamente dejo de coincidir con el preset. Ver RigCoincide.
+    ' Consecuencia deliberada: tocar estas tres marca el combo de presets como "Custom", porque el rig
+    ' efectivamente dejo de coincidir con el preset. Ver RigCoincide.
 
     ''' <summary>Radio del kernel de PCF en TEXELES del mapa. Fraccionario: la parte entera son los taps y
     ''' el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo. Acotado a
@@ -205,21 +197,19 @@ Public Structure PreviewLightRig
     ''' capas que el del personaje, o sea que prenderlo DUPLICA la VRAM de la feature.</para></summary>
     Public Property ShadowOnGround As Boolean
 
-    ' ESTE RIG NO TIENE VERSION DE ESQUEMA, Y ES A PROPOSITO. Tenia una (`SchemaVersion` +
-    ' `CurrentSchemaVersion`) que `Config_App.LoadConfig` comparaba para reponer los defaults; se borraron
-    ' las tres cosas. La invalidacion pasó a hacerse RENOMBRANDO la propiedad que persiste el rig
-    ' (`Setting_PreviewLights_*` -> `Setting_LightRig_*`), con lo cual el dato viejo no se detecta: no se
-    ' lee. Ver el bloque de `Setting_LightRig_*` en Config_Class.vb, que tiene el mecanismo y su precio.
-    ' El motivo: una version obliga a mantener una rama que PUEDE no dispararse —y este proyecto ya tuvo
-    ' tres mecanismos distintos de invalidacion conviviendo, uno de ellos ciego a "la clave existia y
-    ' significaba otra cosa"—. Una clave que no existe no se puede leer mal.
+    ' ⛔ ESTE RIG NO TIENE VERSION DE ESQUEMA, Y ES A PROPOSITO. La invalidacion se hace RENOMBRANDO la
+    ' propiedad que persiste el rig, con lo cual el dato viejo no se detecta: no se lee. Ver el bloque de
+    ' `Setting_LightRig_*` en Config_Class.vb, que tiene el mecanismo y su precio.
+    ' El motivo: un `SchemaVersion` obliga a mantener una rama de migracion que PUEDE no dispararse, y es
+    ' ciega justo al caso peor —"la clave existia y significaba otra cosa"—. Una clave que no existe no se
+    ' puede leer mal.
 
     ''' <summary>El rig por default = preset <b>"Portrait"</b>, que es también al que vuelve el botón
     ''' Reset. Una sola fuente de verdad.
     ''' <para>ALCANCE: lo comparten las TRES apps. Cambiarlo mueve el aspecto por default de Wardrobe
     ''' Manager y NPC Manager para quien todavía no tenga un rig guardado en su <c>config.json</c>, y
     ''' para todo el que apriete "Reset Lighting to default". No toca a quien ya haya guardado el suyo:
-    ''' la config persistida gana. Decisión del usuario, 2026-08-17.</para>
+    ''' la config persistida gana. Cambiarlo es decisión del usuario.</para>
     ''' <para>Se busca POR NOMBRE y no por índice: reordenar <see cref="Presets"/> —cosa que pasa cada vez
     ''' que se agrega uno— cambiaría el default en silencio. Si el nombre no estuviera, cae al primero.</para></summary>
     Public Shared Function Defaults() As PreviewLightRig
@@ -238,39 +228,35 @@ Public Structure PreviewLightRig
     ''' del lado OPUESTO al de la pantalla (queda del rig anterior): por eso la luz "Left" usa Right y
     ''' viceversa — los presets respetan esa convención para que la etiqueta del grupo siga valiendo.
     '''
-    ''' DOS TRAMPAS AL DISEÑAR UN SET (las dos me quemaron un intento previo). Render sube
-    ''' `Vector_to_Linear(color × strength)` = **pow 2.2 sobre el producto**, así que:
+    ''' DOS TRAMPAS AL DISEÑAR UN SET. Render sube `Vector_to_Linear(color × strength)` = **pow 2.2 sobre
+    ''' el producto**, así que:
     '''   1. LA SATURACIÓN SE AMPLIFICA. Un tinte "naranja antorcha" (1.00, 0.58, 0.22) llega al shader
     '''      como (1.00, 0.30, 0.035) = rojo casi puro, y si además lo llevan 3 de las 4 luces, TODO el
     '''      modelo se tiñe. Regla: ningún canal por debajo de ~0.62 salvo la key de un escenario
     '''      explícitamente coloreado, y que las otras luces lleven la temperatura CONTRARIA o neutra.
     '''   2. LA FUERZA NO ES LINEAL. strength 0.6 = 0.33 lineal, pero 1.35 = 1.94 = SEIS veces la key de
     '''      Studio -> quemado. Presupuesto de referencia (Studio, que es el calibrado): directas ≈ 0.62
-    ''' lineal sumadas, ambient sky 0.83 / ground 0.37. EL GROUND LINEAL CAMBIO SIN QUE SE TOCARA UN
-    '''      PRESET: el nivel dejo de ir adentro del pow (ver AmbientGroundLevel), asi que el 0.45 del Studio
-    '''      pasa de valer 0.14 lineal a valer 0.37. Los cinco sets se dejaron como estaban a proposito, o
-    '''      sea todos tienen hoy el suelo mas claro de lo que tenian cuando se calibraron. Cada set se
-    '''      queda cerca de ese total y gasta
-    '''      la diferencia en CONTRASTE (dónde está la luz y cuánto baja el ambiente), no en potencia.</summary>
+    '''      lineal sumadas, ambient sky 0.83 / ground 0.37. Cada set se queda cerca de ese total y gasta la
+    '''      diferencia en CONTRASTE (dónde está la luz y cuánto baja el ambiente), no en potencia.
+    '''      ⚠️ El ground lineal de los cinco sets es ~2,6x mas claro que cuando se calibraron: el nivel
+    '''      dejo de ir adentro del pow (ver AmbientGroundLevel) y los presets no se reexpresaron.</summary>
     Public Shared Function Presets() As LightRigPreset()
-        ' LA KEY DE STUDIO ESTABA A 0 GRADOS DE LA CAMARA (forward:=1 y nada mas), y una luz frontal
-        ' pura NO PROYECTA SOMBRA VISIBLE por construccion: lo que ocluye tapa exactamente su propia
-        ' sombra. MEDIDO con Tools/ShadowGate sobre cabeza+pelo+cuerpo vanilla: con aquel Studio, prender
-        ' las sombras movia 6797 px (1,05 % de la pantalla) con un delta maximo de canal de 23 sobre 255.
-        ' El gate `studio-rig` de Tools/ParityGate lo impide desde entonces.
-        ' LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO. Estuvieron con 5 decimales porque eran DERIVADOS
-        ' de una conversion del esquema viejo y 2 decimales volteaban pixeles sueltos en bordes con
-        ' alpha-test (340 px de 648.000 medidos). Esa conversion ya no existe: los sets se autoran a mano,
-        ' en multiplos de 15 grados y 0,05 de fuerza, y el golden `rig-presets` los congela con tolerancia
-        ' 0,00005 grados — no por precision, sino porque un golden flojo no congela nada.
-        ' TODA KEY POR ENCIMA DE ShadowMapMath.ElevacionMinimaGrados (11,54). La key de Dungeon estuvo en
-        ' -22,29 grados, o sea bajo el horizonte, y con eso ExpandForGroundShadow rechaza el encuadre: el
-        ' receptor de suelo quedaba PERMANENTEMENTE deshabilitado en ese preset y la UI se lo decia al
-        ' usuario en un cartel. Un preset que apaga una feature no es una eleccion de escenario. Ley 5 de
-        ' `studio-rig`.
-        ' SOLO LA KEY CASTEA EN LOS CINCO SETS. Cada luz casteante extra es un shadow map completo
-        ' (+16 MB a 2048) y un lookup de PCF por fragmento; el usuario puede prender las otras tres desde el
-        ' dialogo, pero ningun preset se las estrena por el.
+        ' ⛔ NINGUNA KEY A 0 GRADOS DE LA CAMARA. Una luz frontal pura NO PROYECTA SOMBRA VISIBLE por
+        ' construccion: lo que ocluye tapa exactamente su propia sombra. MEDIDO con Tools/ShadowGate sobre
+        ' cabeza+pelo+cuerpo vanilla: con una key asi, prender las sombras mueve 6797 px (1,05 % de la
+        ' pantalla) con un delta maximo de canal de 23 sobre 255. Lo impide el gate `studio-rig`.
+        ' ⛔ TODA KEY POR ENCIMA DE ShadowMapMath.ElevacionMinimaGrados (11,54). Bajo el horizonte
+        ' ExpandForGroundShadow rechaza el encuadre, el receptor de suelo queda PERMANENTEMENTE
+        ' deshabilitado en ese preset y la UI se lo tiene que decir al usuario en un cartel. Un preset que
+        ' apaga una feature no es una eleccion de escenario. Ley 5 de `studio-rig`.
+        ' LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO: multiplos de 15 grados y 0,05 de fuerza, autorados a
+        ' mano. Angulos derivados de una conversion llevaban 5 decimales, y redondearlos a 2 volteaba pixeles
+        ' sueltos en bordes con alpha-test (340 px de 648.000 medidos). El golden `rig-presets` los congela
+        ' con tolerancia 0,00005 grados — no por precision, sino porque un golden flojo no congela nada.
+        ' CUANTAS LUCES CASTEAN POR SET, y no es gratis: cada luz casteante extra es un shadow map completo
+        ' (+16 MB a 2048) y un lookup de PCF por fragmento. Studio castea con las CUATRO (es un set de
+        ' estudio y la simetria es el punto), Portrait con key + fill izquierdo, y Sunny day / Full moon /
+        ' Sunset solo con la key. Agregar una casilla mas a un preset le sube la VRAM a todo el que lo aplique.
         Return New LightRigPreset() {
             New LightRigPreset("Studio",
                 "Studio Setting, 4 directional lights simetrics with all casting shadows.",
@@ -352,9 +338,9 @@ Public Structure PreviewLightRig
     ''' <summary>Color del hemisferio de abajo: tinte × intensidad (sin linearizar). SIMETRICA con
     ''' <see cref="AmbientSkyDiffuse"/> a proposito — las dos devuelven color×intensidad y nada mas.
     ''' <para>EL NIVEL DE SUELO NO ESTA ACA. Va aplicado despues del pow 2.2, en
-    ''' <c>Render.ResolveFrameLights</c>; ver <see cref="AmbientGroundLevel"/> para el por que y para lo
-    ''' que costo tenerlo del otro lado. Si algun dia esto vuelve a multiplicar por el nivel, la perilla
-    ''' se vuelve a apagar sola y no hay gate que lo cace.</para></summary>
+    ''' <c>Render.ResolveFrameLights</c>; ver <see cref="AmbientGroundLevel"/> para el por que y la
+    ''' medicion. ⛔ Si esto vuelve a multiplicar por el nivel, la perilla se apaga sola y no hay gate que
+    ''' lo cace.</para></summary>
     Public Function AmbientGroundDiffuse() As OpenTK.Mathematics.Vector3
         Return AmbientGroundColor.ToVector3() * AmbientIntensity
     End Function

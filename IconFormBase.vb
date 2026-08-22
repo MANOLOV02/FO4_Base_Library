@@ -12,10 +12,9 @@
 ''' miniaturas. Es el camino nativo del diseñador: se ve en el lienzo.</para>
 '''
 ''' <para><b>Qué se gana.</b> Los bytes de los iconos viven UNA sola vez, en el <c>.resx</c> de este
-''' formulario, dentro de la librería. Medido en un arnés de dos ensamblados: la app que hereda no
-''' lleva ni un byte de imagen (lib.dll 84 KB con los 57 iconos, app.dll 7 KB, cero .resx propio).
-''' Antes cada formulario guardaba su propia copia en su resx — tres en Wardrobe Manager, una en
-''' Ba2 — así que cambiar un icono había que hacerlo en cada uno.</para>
+''' formulario, dentro de la librería: un icono se cambia en un solo lugar y la app que hereda no
+''' lleva ni un byte de imagen. Medido en un arnés de dos ensamblados: lib.dll 84 KB con los 57
+''' iconos, app.dll 7 KB, cero <c>.resx</c> propio.</para>
 '''
 ''' <para>Para agregar o cambiar un icono: se toca el PNG en <c>Resources\Icons\&lt;medida&gt;</c> y se
 ''' reimporta en el <c>ImageList</c> de ESTE formulario. Con eso cambia en las tres apps. Ver

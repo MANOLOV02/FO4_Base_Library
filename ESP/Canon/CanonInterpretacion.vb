@@ -629,9 +629,8 @@ Namespace Canon
         End Function
 
         ''' <summary>Lista plana de todos los Morph Presets de todos los grupos del genero
-        ''' pedido — copia de compatibilidad para quien busca por Index sin pasar por el grupo
-        ''' dueño (el parser viejo tambien la mantenia aparte, ya que a su vez era una copia de
-        ''' los grupos: la vista nueva sigue sin declarar una coleccion plana propia).</summary>
+        ''' pedido, para quien busca por Index sin pasar por el grupo dueño. Es una VISTA derivada de
+        ''' los grupos, no una coleccion propia: la declaracion del formato no tiene una plana.</summary>
         <Extension>
         Public Function ReadMorphPresetsFlat(fo4 As RaceFO4, isFemale As Boolean) _
                 As List(Of RACE_MorphPresetDef)
@@ -905,7 +904,11 @@ Namespace Canon
         ''' cada vez que se migra uno nuevo, y la que falta no se nota hasta que alguien edita.</para></summary>
         <Extension>
         Public Function Copia(Of T As Class)(rec As T) As T
-            Dim v = TryCast(rec, CanonView)
+            ' CanonRecordView y no CanonView: Reenvolver decide la clase por la FIRMA del record,
+            ' así que sólo tiene sentido sobre una vista de record. Con la base común, pasarle una
+            ' vista de elemento devolvía el nodo del elemento envuelto como record entero: basura
+            ' que compilaba y andaba hasta que alguien la leía.
+            Dim v = TryCast(rec, CanonRecordView)
             If v Is Nothing OrElse v.Node Is Nothing Then Return Nothing
             Return TryCast(CanonRecords.Reenvolver(v, v.Node.Clonar()), T)
         End Function
@@ -928,7 +931,12 @@ Namespace Canon
                     Using bw As New BinaryWriter(ms)
                         md.Emit(c, bw, v.Context)
                     End Using
-                    total += Math.Max(0, CInt(ms.Length) - 6)
+                    ' ToArray() y NO ms.Length: al cerrarse, el BinaryWriter CIERRA el stream que envuelve,
+                    ' y pedirle Length a un MemoryStream cerrado tira ObjectDisposedException. ToArray() es el
+                    ' unico acceso que sigue valiendo despues del cierre, y por eso lo usa el resto del emisor
+                    ' (WbMemberDefs.Emit, WbWriter.EmitBody). Medir ANTES del End Using tampoco vale: el flush
+                    ' del writer al cerrarse es lo que garantiza que esten TODOS los bytes.
+                    total += Math.Max(0, ms.ToArray().Length - 6)
                 End Using
             Next
             Return total
@@ -1147,9 +1155,9 @@ Namespace Canon
         <Extension>
         Public Function ColorDeIluminacionDeTextura(npc As INpc) As Color
             If npc Is Nothing OrElse Not npc.TextureLightingRedPresente Then Return Color.Empty
-            ' El alpha sale de UN solo lugar. Estaba escrito dos veces con defaults opuestos: aca
-            ' arrancaba en cero, o sea transparente, y el tono de piel del cuerpo se componia con
-            ' opacidad nula contra una cara si tintada — la costura que este camino existe para evitar.
+            ' El alpha sale de UN solo lugar (AlphaDeIluminacionDeTextura), cuyo neutro es 1 = opaco.
+            ' Con un default de cero aca, el tono de piel del cuerpo se compone con opacidad nula
+            ' contra una cara si tintada — la costura que este camino existe para evitar.
             Return Color.FromArgb(CanalDeColorNormalizado(npc.AlphaDeIluminacionDeTextura()),
                                   CanalDeColorNormalizado(npc.TextureLightingRed),
                                   CanalDeColorNormalizado(npc.TextureLightingGreen),
@@ -1189,8 +1197,8 @@ Namespace Canon
         ''' <para>Son CUATRO casos, no dos: el centinela con signo positivo, el mismo con signo
         ''' negativo, el no-numero, y el infinito. Dejar pasar cualquiera de ellos como si fuera un
         ''' peso escala los huesos por una magnitud absurda.</para>
-        ''' <para>Vive aca, en un solo lugar, porque estaba escrito dos veces con criterios distintos
-        ''' y el que resolvia los valores por defecto de la raza ni siquiera miraba el centinela.</para></summary>
+        ''' <para>⛔ Un solo lugar: quien resuelve los valores por defecto de la raza tiene que
+        ''' preguntar POR ACA, no repetir el criterio.</para></summary>
         Public Function EsPesoSinValor(v As Single) As Boolean
             If Single.IsNaN(v) OrElse Single.IsInfinity(v) Then Return True
             Return v = Single.MaxValue OrElse v = -Single.MaxValue

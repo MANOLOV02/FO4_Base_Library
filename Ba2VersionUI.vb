@@ -1,6 +1,6 @@
-' Mapeo compartido índice-de-combo ↔ versión de header BA2 (FO4) + populate del combo.
-' Antes estaba duplicado en WM Config_Form y NPC SaveEsp_Form. La visibilidad FO4-only
-' se queda en cada form. La opción "Loose" (índice 2 / versión 0) solo la ofrece NPC.
+' Mapeo compartido índice-de-combo ↔ versión de header BA2 (FO4) + populate del combo, usado por
+' WM Config_Form y NPC SaveEsp_Form. La visibilidad FO4-only se decide en cada form. La opción
+' "Loose" (índice 2 / versión 0) sólo la ofrece NPC.
 Public Module Ba2VersionUI
     ' Versiones de header BA2 (FO4).
     Public Const NextGen As UInteger = 8UI        ' índice 0

@@ -43,12 +43,10 @@ Imports System.Windows.Forms
 ''' <c>Overridable</c>. <c>ValidateEditText</c> es el embudo: lo llaman <c>OnLostFocus</c>, los botones de
 ''' incremento, y —esto es lo que hace que el commit al cerrar funcione— el GETTER de <c>Value</c> cuando
 ''' hay una edicion pendiente.</para>
-''' <para>NO lo llama <c>OnValidating</c>, o sea que <c>ValidateChildren()</c> NO commitea un
+''' <para>⛔ NO lo llama <c>OnValidating</c>: <c>ValidateChildren()</c> NO commitea un
 ''' <c>NumericUpDown</c>. MEDIDO contando llamadas al override: tras tipear, <c>ValidateChildren()</c>
-''' devuelve True con <c>UserEdit=True</c> y CERO llamadas; leer <c>.Value</c> da una. Este renglon decia lo
-''' contrario, y esa afirmacion exacta es la que ya causo una regresion (ver la nota de
-''' <c>LightRigForm.FormClosing</c>): por eso ese <c>FormClosing</c> necesita LOS DOS mecanismos, uno por
-''' familia de control.</para></summary>
+''' devuelve True con <c>UserEdit=True</c> y CERO llamadas; leer <c>.Value</c> da una. Por eso
+''' <c>LightRigForm.FormClosing</c> necesita LOS DOS mecanismos, uno por familia de control.</para></summary>
 Friend Class NumericUpDownCultura
     Inherits NumericUpDown
 
@@ -65,11 +63,10 @@ Friend Class NumericUpDownCultura
         End If
 
         ' Decimal tiene menos rango que Double: un 1e40 pegado a mano tira OverflowException.
-        ' SE CONSERVA EL VALOR VIGENTE, NO SE SALTA AL EXTREMO. Antes esto hacia
-        ' `v = If(d < 0, Minimum, Maximum)`, y medido con `1e40` en el epsilon de weld el control saltaba a
-        ' 0,001 — o sea el MISMO modo de falla que esta clase existe para cerrar ("el usuario ve saltar el
-        ' valor y no entiende por que"), entrando por el otro extremo. El NumericUpDown de stock, ante un
-        ' overflow al parsear, conserva lo que habia; se hace lo mismo delegando en la base.
+        ' SE CONSERVA EL VALOR VIGENTE (delegando en la base, igual que el NumericUpDown de stock).
+        ' ⛔ NO saltar al extremo con `v = If(d < 0, Minimum, Maximum)`: medido con `1e40` en el epsilon
+        ' de weld el control salta a 0,001, o sea el MISMO modo de falla que esta clase existe para cerrar
+        ' ("el usuario ve saltar el valor y no entiende por que"), entrando por el otro extremo.
         Dim v As Decimal
         Try
             v = Convert.ToDecimal(d)

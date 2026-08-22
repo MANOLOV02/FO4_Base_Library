@@ -112,11 +112,11 @@ Friend NotInheritable Class LocalizedStringTable
     ''' <summary>Identificador → DÓNDE empieza su texto dentro de <see cref="_data"/>. Se arma
     ''' recorriendo el directorio, SIN decodificar nada.
     '''
-    ''' <para>⛔ Antes acá había un diccionario de identificador → TEXTO, y se llenaba decodificando
-    ''' la tabla ENTERA al construirla. Las tablas del juego traen del orden de cien mil textos —
-    ''' todos los diálogos, todas las descripciones— y la aplicación usa unos pocos miles: los
-    ''' nombres de los NPC que muestra la lista. MEDIDO en el orden de carga real: <b>1,35 s</b> de
-    ''' arranque y una cadena por entrada, para tirar el 95 %. Y lo pagaba también la 1.5.6.</para>
+    ''' <para>⛔ NO guardar acá identificador → TEXTO decodificando la tabla ENTERA al construirla.
+    ''' Las tablas del juego traen del orden de cien mil textos —todos los diálogos, todas las
+    ''' descripciones— y la aplicación usa unos pocos miles: los nombres de los NPC que muestra la
+    ''' lista. MEDIDO en el orden de carga real: <b>1,35 s</b> de arranque y una cadena por entrada,
+    ''' para tirar el 95 %.</para>
     '''
     ''' <para>El directorio es aritmética pura sobre el arreglo de bytes, así que indexarlo cuesta
     ''' milisegundos; el texto se decodifica cuando alguien lo pide, y no antes.</para></summary>
@@ -177,8 +177,8 @@ Friend NotInheritable Class LocalizedStringTable
     End Sub
 
     ''' <summary>El texto de ese identificador, o "" si la tabla no lo trae.
-    ''' <para>Un identificador que el directorio no declara —o que declaraba un desplazamiento fuera
-    ''' de la tabla— devuelve "", igual que antes: esos nunca entraron al índice.</para></summary>
+    ''' <para>Un identificador que el directorio no declara —o que declara un desplazamiento fuera
+    ''' de la tabla— devuelve "": esos nunca entraron al índice.</para></summary>
     Public Function Resolve(stringId As UInteger) As String
         Dim yaEsta As String = Nothing
         If _decodificados.TryGetValue(stringId, yaEsta) Then Return yaEsta
@@ -193,10 +193,9 @@ Friend NotInheritable Class LocalizedStringTable
 
     ''' <summary>Recorre el DIRECTORIO y anota dónde empieza cada texto. No decodifica ninguno.
     '''
-    ''' <para>La aceptación de entradas es EXACTAMENTE la de antes: un desplazamiento que se va de
-    ''' la tabla se saltea (y entonces ese identificador no existe, y <see cref="Resolve"/> devuelve
-    ''' ""), y si el mismo identificador aparece dos veces gana el ÚLTIMO. Que eso siga igual es lo
-    ''' que hace que el cambio no mueva ni un texto.</para></summary>
+    ''' <para>REGLA de aceptación: un desplazamiento que se va de la tabla se saltea (y entonces ese
+    ''' identificador no existe, y <see cref="Resolve"/> devuelve ""), y si el mismo identificador
+    ''' aparece dos veces gana el ÚLTIMO.</para></summary>
     Private Sub Indexar(data As Byte())
         If data Is Nothing OrElse data.Length < 8 Then Return
 
@@ -364,12 +363,12 @@ Friend NotInheritable Class LocalizedStringResolver
     ''' Data ya resolvio, en el preflight, cual es el archivo final para esta carga de plugins — incluida
     ''' la precedencia del suelto sobre el empaquetado y el orden entre archives. Aca solo queda elegir
     ''' el IDIOMA, que es lo unico que este resolver decide por si mismo.
-    ''' <para>⚠️ ESTO CAMBIA LA PRECEDENCIA ENTRE IDIOMA Y MEDIO, a proposito. Antes se probaban TODOS los
-    ''' idiomas preferidos en SUELTOS y recien despues todos en archives, asi que un `X_en.STRINGS` suelto
-    ''' le ganaba a un `X_de.STRINGS` empaquetado aunque el INI dijera aleman. Ahora manda el idioma y el
-    ''' medio lo decide el diccionario —que es como resuelve el motor: pide `Strings\X_&lt;sLanguage&gt;.STRINGS`
-    ''' y la capa de archivos elige suelto o empaquetado—. El gate de textos no puede ver esta diferencia:
-    ''' el corpus tiene un solo idioma instalado.</para>
+    ''' <para>⚠️ PRECEDENCIA ENTRE IDIOMA Y MEDIO: manda el IDIOMA, y el medio lo decide el diccionario
+    ''' —que es como resuelve el motor: pide `Strings\X_&lt;sLanguage&gt;.STRINGS` y la capa de archivos
+    ''' elige suelto o empaquetado—. ⛔ NO probar TODOS los idiomas preferidos en SUELTOS y recién
+    ''' después todos en archives: así un `X_en.STRINGS` suelto le gana a un `X_de.STRINGS` empaquetado
+    ''' aunque el INI diga aleman. El gate de textos no puede ver esta diferencia: el corpus tiene un
+    ''' solo idioma instalado.</para>
     ''' <para>Las DOS fases estan escritas separadas y no como `preferidos.Concat(descubiertos)` a
     ''' proposito: VB evalua los argumentos ANTES de llamar, asi que ese Concat corria el descubrimiento
     ''' —que recorre el diccionario entero— aunque el primer nombre preferido acertara. Con las fases

@@ -6,7 +6,7 @@
     ''' subrecords, qué campos van y de qué tamaño es cada uno salen de la declaración, no de una
     ''' secuencia de llamadas escrita para cada caso.</para>
     '''
-    ''' <para>Eso borra la diferencia entre los tres modos que antes tenían su propia secuencia
+    ''' <para>Eso borra la diferencia entre los tres modos
     ''' —sobrescribir en un juego, sobrescribir en el otro, crear uno nuevo—: los tres son el mismo
     ''' recorrido sobre árboles que se armaron distinto. Un record sobrescrito reproduce los campos
     ''' que traía la fuente porque el árbol viene de leerla; uno nuevo arranca con los que el

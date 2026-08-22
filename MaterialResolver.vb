@@ -22,12 +22,11 @@ Public Module MaterialResolver
             End If
             Return Nothing
         End If
-        ' Single dictionary lookup: TryGetValue replaces the prior ContainsKey + the redundant
-        ' GetBytes(correctedPath) lookup inside Deserialize(Diccionario,...). `loc.GetBytes()` on the
-        ' entry found here returns the SAME bytes the old GetBytes(correctedPath) path returned:
-        ' correctedPath came from CorrectMaterialPath (already Correct_Path_Separator-normalized), and
-        ' GetBytes(String) re-keys via NormalizeDictionaryKey = Correct_Path_Separator (idempotent), so
-        ' both resolve to this identical entry. The sidecar is still resolved via correctedPath unchanged.
+        ' A SINGLE dictionary lookup is enough: `loc.GetBytes()` on the entry found here yields the SAME
+        ' bytes a GetBytes(correctedPath) call would — correctedPath comes from CorrectMaterialPath
+        ' (already Correct_Path_Separator-normalized) and GetBytes(String) re-keys via
+        ' NormalizeDictionaryKey = Correct_Path_Separator, which is idempotent, so both resolve to this
+        ' identical entry. The sidecar is still resolved via correctedPath.
         Dim loc As FilesDictionary_class.File_Location = Nothing
         If Not FilesDictionary_class.Dictionary.TryGetValue(correctedPath, loc) Then
             If logEnabled Then

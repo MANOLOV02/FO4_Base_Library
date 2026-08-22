@@ -26,9 +26,9 @@ Imports FO4_Base_Library.Canon.CanonInterpretacion
 ''' silently skipped — they have no rendering side-effect.
 '''
 ''' OMOD chunks (FormType=NPC_ with non-empty ModelPath) are NOT applied here — they need
-''' AttachPoint mounting via BSConnectPoint, which is the next-session work for the robot
-''' rendering rewrite. They're logged with [OMOD-MESH-DEFERRED] so we can see where the
-''' shapes would have gone.
+''' AttachPoint mounting via BSConnectPoint, which is a different path
+''' (ConnectPointMountResolver + BSConnectPointBoneInjector). They're logged with
+''' [OMOD-MESH-DEFERRED] so we can see where the shapes would have gone.
 ''' </summary>
 Public Module OmodResolutionApplier
 

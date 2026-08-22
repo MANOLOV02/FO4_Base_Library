@@ -226,7 +226,7 @@ Public Module SaveNpcEspWriter
     ''' es un RGBA de 4 bytes [R,G,B,A]; medido sobre Skyrim.esm, los 178 CLFM llevan A=0 y los 15 de
     ''' pelo FNAM=1
     ''' (Playable), que son los valores que recibe un color sintetizado. El CLFM no lleva FormID en el cuerpo.</para>
-    ''' <para>âš ï¸ SSE-ONLY por construccion (lo gatea el caller): un CLFM de pelo de FO4 lleva RemappingIndex en
+    ''' <para>⚠ï¸ SSE-ONLY por construccion (lo gatea el caller): un CLFM de pelo de FO4 lleva RemappingIndex en
     ''' vez de RGB. El writer en si se mantiene game-agnostic.</para></summary>
     Public Class ClfmRecordEntry
         ''' <summary>El record a grabar. De acá sale todo el cuerpo: EDID + [FULL] + CNAM + FNAM. Los
@@ -239,8 +239,8 @@ Public Module SaveNpcEspWriter
         Public EditorID As String = ""
         ''' <summary>FULL — optional display name, the string the CK / our own editor combo show
         ''' instead of the EditorID. NEW entries author it here (see NpcOverrideSaver.MaterializeSseHairColors:
-        ''' "NPC Manager custom hair color #RRGGBB"); empty = no FULL emitted, which is what every CLFM this
-        ''' writer produced before carried. ENCODING: emitted with <c>EncodeTranslatable</c> (FULL is a
+        ''' "NPC Manager custom hair color #RRGGBB"); empty = no FULL emitted.
+        ''' ENCODING: emitted with <c>EncodeTranslatable</c> (FULL is a
         ''' translatable lstring — NOT the cp1252 General encoder that EDID uses),
         ''' and that encoder has an ExceptionFallback, so an authored name MUST be ASCII-only: this record is
         ''' not covered by the Phase 2b encoding-conflict pre-check (that one walks NPC_ FULL/SHRT/ATTX), and a
@@ -470,11 +470,10 @@ Public Module SaveNpcEspWriter
 
         ' ====================================================================
         ' Paso 1: el walk de EMISION, parametrizado por el remapper.
-        ' Es la UNICA ley sobre que FormID terminan en el archivo. Antes la MAST se armaba con un juego de
-        ' COLECTORES que caminaban el modelo en paralelo a los emisores: dos leyes mantenidas a mano que ya
-        ' divergieron dos veces (OBTS y CSDI), y cada divergencia es una referencia apuntando al mod
-        ' equivocado. Ahora la MAST se DERIVA de lo que estos bucles realmente escriben, asi que no puede
-        ' quedar corta por construccion.
+        ' Es la UNICA ley sobre que FormID terminan en el archivo: la MAST se DERIVA de lo que estos
+        ' bucles realmente escriben, asi que no puede quedar corta por construccion. NO reintroducir
+        ' COLECTORES que caminen el modelo en paralelo a los emisores: son dos leyes mantenidas a mano,
+        ' ya divergieron en OBTS y en CSDI, y cada divergencia es una referencia al mod equivocado.
         ' Se corre DOS veces porque el indice de master va horneado en cada FormID emitido y
         ' selfMasterIdx = sortedMasters.Count: el valor a escribir depende del conjunto COMPLETO de masters,
         ' que recien se conoce cuando el recorrido termino. La primera pasada solo DESCUBRE (remapper
@@ -618,14 +617,13 @@ Public Module SaveNpcEspWriter
         Next
 
         ' Paso 2c: ORDENAR la MAST por LOAD ORDER, con el game master forzado al índice 0.
-        ' La MAST de un plugin válido está siempre en load order. El paso 2a sólo SACA masters, nunca
-        ' agrega, así que preserva el orden que ya traía ordenado. Pero al AGREGAR uno que carga antes
-        ' que otro ya presente, el paso 2b lo dejaba al final y la lista quedaba fuera de orden.
+        ' La MAST de un plugin válido está siempre en load order. El paso 2a sólo SACA masters, así que
+        ' preserva el orden; el 2b APENDEA al final, y un master que carga antes que otro ya presente
+        ' deja la lista fuera de orden.
         ' In-game es inerte (el motor resuelve la MAST por NOMBRE y nuestros tres consumidores son
-        ' posicionales), pero el archivo dejaba de ser canónico: la MAST ya no reflejaba el load order,
-        ' así que cualquier operación futura que dependa de esa convención (comparar archivos, fusionar,
-        ' reordenar masters) partía de un estado inconsistente.
-        ' Un plugin NUEVO ya salía ordenado (el paso 2b recorre pluginManager.Plugins en load order), así que
+        ' posicionales), pero el archivo deja de ser canónico y toda operación que dependa de esa
+        ' convención (comparar archivos, fusionar, reordenar masters) parte de un estado inconsistente.
+        ' Un plugin NUEVO ya sale ordenado (el paso 2b recorre pluginManager.Plugins en load order), así que
         ' esto sólo mueve bytes en un "Update existing" cuyo MAST estaba desordenado.
         Dim loadOrderRank As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
         For i = 0 To pluginManager.Plugins.Count - 1
@@ -749,10 +747,9 @@ Public Module SaveNpcEspWriter
         End If
 
         ' Semilla = el contador del HEDR ENMASCARADO, y nada más: sin piso en este paso. El único piso
-        ' lo pone la recuperación de abajo. Acá había un SEGUNDO piso cableado en 0x800 que el
-        ' formato no exige: en SSE (donde el piso real es 1) un HEDR en 0x300 —alcanzable sólo si un
-        ' guardado previo ya envolvió al rango hardcoded— saltaba a 0x800 y tiraba ~1280 ids todavía
-        ' vigentes.
+        ' lo pone la recuperación de abajo. NO cablear acá un SEGUNDO piso en 0x800: el formato no lo
+        ' exige, y en SSE (donde el piso real es 1) un HEDR en 0x300 —alcanzable sólo si un guardado
+        ' previo ya envolvió al rango hardcoded— saltaría a 0x800 tirando ~1280 ids todavía vigentes.
         ' El caso "plugin NUEVO" (sin HEDR en disco, existingNextObjectId = 0) sí arranca en 0x800: es la
         ' convención del CK y lo que PluginWriter escribe en el header, y mantenerla deja los FormID de un
         ' guardado corriente donde estaban.
@@ -768,10 +765,9 @@ Public Module SaveNpcEspWriter
         '     piso 0x800
         ' Para SSE corre la PRIMERA (ver PluginWriter.AllowsHardcodedRange); confundir las dos
         ' ramas mandaría al próximo lector a "corregir" el código hacia la rama que no se ejecuta.
-        ' El término `= Mask` NO es decorativo: es EXACTAMENTE el valor que escribía el código pre-fix
-        ' cuando CLAMPEABA el HEDR, así que cualquier ESL que la app haya guardado tocando el tope lo tiene
-        ' en disco. Ese valor se lee como "contador ya rodó, no confiable" y hay que re-sembrar; tomarlo
-        ' como bueno sería confiar en el número que dejó el bug.
+        ' El término `= Mask` NO es decorativo: hay ESL en disco guardados por esta app con ese valor
+        ' exacto en el HEDR (lo dejaba un clamp que ya no está). Se lee como "contador ya rodó, no
+        ' confiable" y hay que re-sembrar; tomarlo como bueno sería confiar en el número que dejó el bug.
         If nextSelfObjIndex < objectIdFloor OrElse nextSelfObjIndex = objectIdMask Then
             Dim highest As UInteger = objectIdFloor
             For Each u In usedObjectIds
@@ -882,10 +878,10 @@ Public Module SaveNpcEspWriter
 
                 Dim pname = pluginManager.GetOriginatingPluginName(globalFormID)
                 If mapRes = PluginManager.FileLocalMapResult.NoOwner Then
-                    ' Was "best effort: keep raw", which wrote the GLOBAL FormID into a file where the
-                    ' high byte means an index into THIS file's MAST — two different numbering spaces. The
-                    ' reference silently ended up pointing at whatever plugin sat at that index.
-                    ' Every way a FormID could reach here without a resolvable owner is now closed
+                    ' NEVER fall back to "best effort: keep raw". The global FormID's high byte is a
+                    ' load-order slot; in the output file it means an index into THIS file's MAST — two
+                    ' numbering spaces, so the reference silently points at whatever plugin sits there.
+                    ' Every way a FormID could reach here without a resolvable owner is closed
                     ' upstream: the .esl extension gets a light slot (PluginReader.ReadTES4), a re-mount
                     ' keeps its slot instead of vacating one (MergeOverridePlugin), a persisted identifier
                     ' no longer carries a stale slot (GlobalFormIDFromIdentifierLocal), masters are merged
@@ -897,20 +893,17 @@ Public Module SaveNpcEspWriter
                         "re-mastered into the output. Writing it unchanged would silently repoint it at " &
                         "whichever plugin occupies that index in the new master list.")
                 End If
-                ' OwnerNotInMasterList: el owner resolvio pero no quedo en la MAST. Esta rama nacio como
-                ' detector de drift entre los COLECTORES (que armaban la MAST caminando el modelo) y los
-                ' EMISORES (que producian los bytes) — dos leyes paralelas mantenidas a mano, que ya
-                ' habian divergido dos veces. Los colectores ya no existen: la MAST se DERIVA del walk de
-                ' emision (Paso 1), la misma pasada que produce estos bytes, asi que todo FormID que llega
-                ' hasta aca ya paso por discoveryRemapper y su plugin ya esta en la lista. Por
-                ' construccion, inalcanzable.
+                ' OwnerNotInMasterList: el owner resolvio pero no quedo en la MAST. INALCANZABLE por
+                ' construccion: la MAST se DERIVA del walk de emision (Paso 1), la misma pasada que
+                ' produce estos bytes, asi que todo FormID que llega hasta aca ya paso por
+                ' discoveryRemapper y su plugin ya esta en la lista.
                 '
                 ' Para el WRITER es una asercion y por eso lanza; el otro llamador de
                 ' TryMapGlobalToFileLocal (NpcOverrideSaver, que mapea contra la MAST VIEJA del disco)
                 ' necesita lo OPUESTO — ahi este caso es legitimo y frecuente. Por eso la funcion
                 ' compartida devuelve un enum en vez de decidir por los dos.
                 '
-                ' Sigue tirando en vez de devolver el FormID crudo: el crudo esta indexado
+                ' Tira en vez de devolver el FormID crudo: el crudo esta indexado
                 ' por load order, mientras que el byte alto de un FormID en el archivo de salida es un
                 ' indice en la MAST de ESTE archivo, asi que escribirlo repuntaria la referencia en
                 ' silencio al plugin que ocupe ese indice. Si algun dia se dispara, lo que se rompio es la
@@ -973,7 +966,7 @@ Public Module SaveNpcEspWriter
         ' CLFM -> MSWP -> ARMA -> ARMO -> OTFT -> LVLN -> LVLI -> NPC_ (un record referenciado precede a su
         ' referrer). La resolucion de FormID es global, asi que al motor el orden no le importa: es para que el
         ' archivo quede legible.
-        ' âš ï¸ Es una desviacion DELIBERADA y PREEXISTENTE del orden de GRUP canonico, que en los dos
+        ' ⚠ï¸ Es una desviacion DELIBERADA del orden de GRUP canonico, que en los dos
         ' juegos pone CLFM cerca del FINAL. Este writer ya emite referenced-first para los otros 7 grupos y CLFM
         ' sigue la MISMA convencion local en vez de partir el orden del archivo en dos reglas. Nada lo rechaza:
         ' el orden de GRUP no significa nada para el motor ni para el CK, así que reordenarlo acá no
@@ -999,9 +992,9 @@ Public Module SaveNpcEspWriter
         ' por la semilla.
         ' El ancho (objectIdMask) ya se aplico AL REPARTIR, arriba, que es donde corresponde aplicarlo.
         ' Aca solo queda ENVOLVER a 0x800 si el contador quedo justo pasado del tope.
-        ' Antes esto CLAMPEABA a objectIdMask, y ese clamp era el motor del defecto: dejaba el contador
-        ' congelado en 0xFFF, asi que el guardado siguiente se sembraba ahi y volvia a repartir 0xFFF a un
-        ' record distinto. Con el reparto ya acotado y el skip de ocupados, el clamp no protegia nada.
+        ' NO clampear a objectIdMask aca: el clamp congela el contador en 0xFFF, el guardado siguiente se
+        ' siembra ahi y vuelve a repartir 0xFFF a OTRO record. Con el reparto ya acotado y el salteo de
+        ' ocupados no protege nada.
         ' ====================================================================
         Dim nextObjectId As UInteger = nextSelfObjIndex
         If nextObjectId > objectIdMask Then nextObjectId = objectIdFloor
@@ -1048,7 +1041,7 @@ Public Module SaveNpcEspWriter
         ' plugin NO EXISTE. Si el Delete sale bien y el Move falla (un handle con FILE_SHARE_DELETE de un
         ' antivirus o del mod manager deja el borrado pendiente, un corte), el usuario se queda SIN el .esp y con
         ' un .esp.tmp al lado — después de haber guardado 300 NPC.
-        ' `File.Replace` es el primitivo correcto y ya se usaba en este árbol (LoadOrderActivator.vb:376); exige
+        ' `File.Replace` es el primitivo correcto y ya se usaba en este árbol (LoadOrderActivator.WriteEntries); exige
         ' que el destino exista, así que el Move queda para el caso "archivo nuevo".
         If File.Exists(outputPath) Then
             File.Replace(tmpPath, outputPath, Nothing, ignoreMetadataErrors:=True)
@@ -1098,11 +1091,11 @@ Public Module SaveNpcEspWriter
     ''' FormID is the entry's provisional sentinel which the remapper rewrites to the real self-index.</summary>
     Private Function SerializeNpcCreateRecord(entry As NpcCreateEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
                                               game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
-        Dim origen = If(entry.NpcData Is Nothing, Nothing, entry.NpcData.Record)
+        Dim origen = entry.NpcData?.Record
         If origen Is Nothing Then
             ' Sin record del que clonar: arranca con los campos que el formato marca como obligatorios.
             ' Las banderas de cabecera quedan en cero y la version de formulario tambien, que es lo que
-            ' el envoltorio interpreta como "la del juego" - igual que antes.
+            ' el envoltorio interpreta como "la del juego".
             origen = Canon.CanonRecords.NpcNuevo(JuegoCanonico(game))
         End If
         Dim vista = TryCast(origen, Canon.CanonView)
@@ -1126,8 +1119,8 @@ Public Module SaveNpcEspWriter
         ' record (raros en un plugin generado por la aplicacion) no tienen camino: ver el throw.
         If rec.Header.Signature = "NPC_" Then
             Dim parsed = RecordParsers.ParseNPC(rec, pluginManager)
-            ' ParseNPC copies rec.Header.FormID verbatim into parsed.FormID
-            ' (RecordParsers.vb:1735). For records coming from a fresh PluginReader (the
+            ' RecordParsers.ParseNPC copies rec.Header.FormID verbatim into parsed.FormID.
+            ' For records coming from a fresh PluginReader (the
             ' update-existing path) that value is LOCAL — but SerializeNpcRecord passes it to
             ' the remapper, which expects GLOBAL (GetOriginatingPluginName indexes the high
             ' byte against load order). Without this resolve the record's master high byte
@@ -1148,7 +1141,6 @@ Public Module SaveNpcEspWriter
         ' load time. If a non-NPC record reaches here, the safest action is to throw — silent
         ' copy-through risks corrupting non-FormID 4-byte subrecords (NAM6 height float, KSIZ
         ' counter, etc. would be misidentified as FormIDs and re-mapped, producing garbage).
-        ' See revisor finding m6.
         Throw New NotSupportedException(
             $"SaveNpcEspWriter currently only supports NPC_ records. Encountered '{rec.Header.Signature}' " &
             "while preserving existing records. The plugin file may have been edited externally and contains " &
@@ -1214,8 +1206,10 @@ Public Module SaveNpcEspWriter
 
     ''' <summary>Serialize one MSWP (Material Swap) record. Body order:
     ''' EDID, FNAM 'Tree Folder' (optional), then per substitution BNAM 'Original Material' +
-    ''' SNAM 'Replacement Material' + CNAM 'Color Remapping Index' (float, only when present). The obsolete
-    ''' per-substitution FNAM (12808) is deliberately NOT emitted. MSWP body has no FormIDs; only its own
+    ''' SNAM 'Replacement Material' + CNAM 'Color Remapping Index' (float, only when present). El FNAM
+    ''' obsoleto POR SUSTITUCION se emite FIEL A LA FUENTE (decision del usuario 2026-08-21): si la
+    ''' sustitucion lo trae, se graba; si no, no se inventa — el emisor viejo lo tiraba en silencio y
+    ''' re-guardar un plugin ajeno lo modificaba. MSWP body has no FormIDs; only its own
     ''' record FormID is remapped. Header flags = 0 for NEW records; for OVERRIDE the source header flags
     ''' (COMPRESSED stripped) and source Version are preserved while the body is fully re-emitted from the
     ''' entry — MSWP has no body FormIDs and a simple substitution list, so no subrecord merge is needed.</summary>
@@ -1411,8 +1405,8 @@ Public Module SaveNpcEspWriter
     ' El orden de los subrecords, que campos van y de que tamano es cada uno salen de la
     ' declaracion del formato, no de una secuencia de llamadas escrita para cada tipo de record.
     '
-    ' Eso borra la diferencia entre los tres modos que antes tenian cada uno su propia secuencia
-    ' -crear uno nuevo, sobrescribir en un juego, sobrescribir en el otro-: los tres son el mismo
+    ' Eso borra la diferencia entre los tres modos -crear uno nuevo, sobrescribir en un juego,
+    ' sobrescribir en el otro-: los tres son el mismo
     ' recorrido sobre arboles que se armaron distinto. Un record sobrescrito reproduce los campos
     ' que traia la fuente porque su arbol viene de leerla, y uno nuevo arranca con los que el
     ' formato marca como obligatorios.

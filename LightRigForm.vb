@@ -103,14 +103,13 @@ Partial Public Class LightRigForm
                                        ' El commit vive en OnLostFocus y en el GETTER de `.Value`. Leerlos
                                        ' es lo que convierte el texto, dispara ValueChanged y deja el valor
                                        ' donde `VolcarRenderEnModelo` lo va a encontrar.
-                                       ' Y sin esto el `_cerrando` de abajo EMPEORABA el caso: antes el
-                                       ' Tick corría 400 ms tarde y al menos escribía; con el flag, el
-                                       ' ValueChanged tardío se descarta y el valor se perdía SIEMPRE.
-                                       ' LOS SEIS, no los cuatro de TBN. `nudFloorSize` y `nudFloorStep`
-                                       ' quedaban afuera, y su único camino de commit es `ValueChanged` —
-                                       ' que al cerrar con una edición pendiente NO se dispara nunca, ni
-                                       ' antes de FormClosed ni después de Dispose. O sea que el tamaño y
-                                       ' el paso del piso no se perdían "a veces": se perdían SIEMPRE.
+                                       ' ⛔ Y el `_cerrando` de abajo lo vuelve OBLIGATORIO: con el flag
+                                       ' puesto, el ValueChanged tardío se DESCARTA, así que sin esta
+                                       ' lectura el valor se pierde siempre, no "a veces".
+                                       ' LOS SEIS, no los cuatro de TBN: `nudFloorSize` y `nudFloorStep`
+                                       ' sólo commitean por `ValueChanged`, que al cerrar con una edición
+                                       ' pendiente NO se dispara nunca — ni antes de FormClosed ni después
+                                       ' de Dispose.
                                        Dim forzarCommit = nudSeamAngle.Value + nudWeldPos.Value +
                                                           nudWeldUv.Value + nudEpsPos.Value +
                                                           nudFloorSize.Value + nudFloorStep.Value
@@ -193,10 +192,9 @@ Partial Public Class LightRigForm
         ' El azimut se compara MODULO 360: 0 y 360 son la misma dirección y el NUD deja escribir los dos.
         ' Sin esto, aplicar un preset con azimut 0 y que el control redondee a 360 deseleccionaba el combo.
         ' `dAz` ES la diferencia angular en [0,180], y la resta cruda daria 360 para el mismo rayo.
-        ' LA TOLERANCIA ES LA MISMA EN LOS DOS EJES. Estuvo un tiempo en 0,5° para el azimut y 0,005°
-        ' para la elevación, para absorber el redondeo del NUD: asimétrica no absorbía nada —la elevación
-        ' sola ya mandaba el combo a "Custom"— y encima tapaba el problema real, que era que el modelo se
-        ' cuantizaba. Eso lo arregla AnguloDesdeNud; acá alcanza con el epsilon de siempre.
+        ' LA TOLERANCIA ES LA MISMA EN LOS DOS EJES. Aflojar sólo el azimut para absorber el redondeo del
+        ' control no absorbe nada —la elevación sola ya manda el combo a "Custom"— y encima tapa el problema
+        ' real, que es que el modelo se cuantice. De eso se ocupa AnguloDesdeNud; acá alcanza el epsilon.
         Dim dAz As Single = Math.Abs(((a.AzimuthDeg - b.AzimuthDeg) Mod 360.0F + 540.0F) Mod 360.0F - 180.0F)
         ' EL FLAG DE CASTEO ENTRA EN LA COMPARACION. Sin esto, prender la sombra de un fill dejaba el
         ' combo diciendo "Studio" cuando el rig ya NO es Studio — y Apply habilitado, o sea un click de
@@ -357,9 +355,9 @@ Partial Public Class LightRigForm
     ''' <c>Config_Class.vb</c> es True —es la ayuda de inspeccion de Wardrobe Manager— asi que un reset
     ''' ciego se lo PRENDERIA a FO4_NPC_Manager, que depende de la oclusion por segmento y no expone la
     ''' casilla. Ver AllowHiddenSegments.
-    ''' <para>Este doc decia "y el de la libreria False". Es al reves: el default de la libreria ES True
-    ''' (Config_Class.vb:52). Quien lo leyera para decidir si el guard de NPC Manager seguia haciendo falta
-    ''' concluia justo lo contrario.</para></para>
+    ''' ⛔ El default de la libreria ES True (ver <c>Setting_DrawHiddenSegments</c> en
+    ''' <c>Config_Class.vb</c>): leerlo al reves lleva a concluir que el guard de NPC Manager ya no hace
+    ''' falta.</para>
     ''' </summary>
     Private Sub BtnResetRender_Click(sender As Object, e As EventArgs) Handles btnResetRender.Click
         If MessageBox.Show("Reset every setting on the Rendering tab to its default?",
@@ -439,14 +437,12 @@ Partial Public Class LightRigForm
                 End If
             Next
         End If
-        ' NINGUNA DE LAS DOS CASILLAS ANUNCIA "(follows the camera)" EN SU TEXTO — decision del usuario.
-        ' La del suelo lo decia cuando `Setting_LightsFollowCamera` estaba prendido, para explicar por que
-        ' seguia habilitada aunque la elevacion AUTORADA del rig fuera baja: con el rig pegado a la camara la
-        ' direccion efectiva la decide el arrastre, asi que el corte no se puede evaluar de antemano y la
-        ' casilla se deja habilitada siempre.
-        ' Esa razon SIGUE VIVA y por eso no se borro: se movio al TOOLTIP. El rotulo se leia mal —parecia una
-        ' propiedad del receptor de suelo cuando en realidad describe al rig entero— y encima crecia justo en
-        ' el control mas ancho del grupo.
+        ' NINGUNA DE LAS DOS CASILLAS ANUNCIA "(follows the camera)" EN SU TEXTO — decision del usuario: en
+        ' el rotulo se lee como una propiedad del receptor de suelo cuando en realidad describe al rig
+        ' entero, y encima ensancha el control mas ancho del grupo. Va en el TOOLTIP.
+        ' Lo que el tooltip TIENE que explicar: con `Setting_LightsFollowCamera` prendido la casilla del
+        ' suelo queda habilitada aunque la elevacion AUTORADA del rig sea baja, porque la direccion efectiva
+        ' la decide el arrastre y el corte no se puede evaluar de antemano.
         If sigueALaCamara Then
             chkGroundShadow.Text = "Shadow on the ground"
             ToolTip1.SetToolTip(chkGroundShadow,
@@ -516,8 +512,8 @@ Partial Public Class LightRigForm
         ' VAN A VolcarUIenModelo (el RIG), no a VolcarSombrasEnModelo: blandura, oscuridad y receptor de
         ' suelo se mudaron al rig. Cruzarlos escribiria en la estructura equivocada y el sintoma seria que
         ' la perilla se olvida al cerrar el dialogo.
-        ' Y por eso mismo tocarlas AHORA marca el combo como "Custom" y Apply/Reset las restauran: son
-        ' parte del preset. Antes Reset te devolvia las luces y te dejaba la sombra como estaba.
+        ' Y por eso mismo tocarlas marca el combo como "Custom" y Apply/Reset las restauran: son parte del
+        ' preset. Sacarlas de ahi hace que Reset devuelva las luces y deje la sombra como estaba.
         AddHandler chkGroundShadow.CheckedChanged, Sub(sender, e)
                                                        VolcarUIenModelo()
                                                        ActualizarCartelDeVram()
@@ -584,11 +580,10 @@ Partial Public Class LightRigForm
         ' + subida a GPU. Y los tres epsilons tienen `DecimalPlaces = 12`: escribir "0,000000000005" a mano
         ' son ~14 `ValueChanged`, o sea ~14 RECARGAS COMPLETAS del proyecto en pantalla encoladas mientras
         ' el usuario todavia esta tipeando. Cada flechita del seam angle, una mas.
-        ' Este mismo archivo ya documenta el caso hermano: sacaron camara y grilla de `AjustesDeGeometria`
-        ' porque "tipear '500' en el tamano del piso costaba TRES recargas completas de un NPC con outfit".
-        ' El problema quedo abierto justo en los campos donde la recarga es mas cara.
-        ' El anterior mecanismo de WM era un boton "Apply to rendered project" explicito; al mudar la
-        ' pestana a este dialogo compartido se perdio y quedaron todos en vivo.
+        ' Es el mismo caso por el que camara y grilla salieron de `AjustesDeGeometria`: tipear "500" en el
+        ' tamano del piso costaba TRES recargas completas de un NPC con outfit. ⚠️ Estos campos no tienen
+        ' boton explicito de aplicar —WM tenia uno ("Apply to rendered project") y se perdio al mudar la
+        ' pestana a este dialogo compartido—, asi que la demora es lo unico que los contiene.
         For Each nud In New NumericUpDown() {nudSeamAngle, nudWeldPos, nudWeldUv, nudEpsPos}
             AddHandler nud.ValueChanged, Sub(sender, e)
                                              If _preventchanges OrElse _cerrando Then Return
@@ -674,11 +669,11 @@ Partial Public Class LightRigForm
             Next
         End If
         Dim idx = Array.FindIndex(ShadowQualities, Function(q) q.Size = mapSize)
-        ' UN TAMANO FUERA DE LA LISTA NO SE PISA EN SILENCIO — y hasta ahora SI SE PISABA, contra lo que
-        ' decia este mismo comentario. `VolcarSombrasEnModelo` es el handler de TODAS las perillas de sombra
-        ' (la casilla, el suelo, suavidad, intensidad) y escribia `sh.MapSize` desde el combo cada vez. O sea
-        ' que un usuario con MapSize = 8192 —legitimo: Sanitized() lo permite y hay un gate que lo prueba—
-        ' lo perdia apenas movia el slider de Darkness, sin tocar la calidad.
+        ' ⛔ UN TAMANO FUERA DE LA LISTA NO SE PISA EN SILENCIO. `VolcarSombrasEnModelo` es el handler de
+        ' TODAS las perillas de sombra (la casilla, el suelo, suavidad, intensidad), asi que escribir
+        ' `sh.MapSize` desde el combo en cada pasada le borra la calidad a un usuario con MapSize = 8192
+        ' —legitimo: Sanitized() lo permite y hay un gate que lo prueba— apenas mueve el slider de Darkness,
+        ' sin haber tocado la calidad.
         ' Se recuerda el valor original y se sigue escribiendo ESE hasta que el usuario cambie el combo a
         ' proposito. El combo, mientras tanto, muestra el mas cercano para no mentir.
         _mapSizeFueraDeLista = 0
@@ -720,15 +715,14 @@ Partial Public Class LightRigForm
     ''' <para>La cuenta es lado^2 x 4 bytes (DepthComponent24 se almacena en 32 bits en todo driver de
     ''' escritorio) x capas, y por DOS si el receptor de suelo esta activo: desde que su array se reserva
     ''' fijo —del mismo lado y con las mismas capas que el del personaje, que es lo que evita recrearlo al
-    ''' orbitar— prenderlo DUPLICA exactamente la reserva. Este doc decia "se menciona sin numero en vez de
-    ''' inventarlo", que era cierto cuando el mapa ancho se dimensionaba solo y ya no lo es: ahora el numero
-    ''' se conoce y decir la mitad de un costo es peor que no decirlo.</para></summary>
+    ''' orbitar— prenderlo DUPLICA exactamente la reserva. ⛔ El receptor de suelo TIENE que entrar en la
+    ''' cuenta: decir la mitad de un costo es peor que no decirlo.</para></summary>
     Private Sub ActualizarCartelDeVram()
         ' CUENTA CON EL MISMO PREDICADO QUE EL RENDER, no las casillas tildadas. `SlotsDeSombra` reparte
         ' capas con `CasteaDeVerdad()`, que descarta la luz que no APORTA luz (Strength 0 o color negro):
-        ' una luz tildada y apagada no reserva un byte. Contando `Checked` el cartel cobraba VRAM que la GPU
-        ' no reserva — un error "del lado seguro", pero el doc de aca abajo afirma ser LA cuenta, y una
-        ' cuenta que sobra no es la cuenta.
+        ' una luz tildada y apagada no reserva un byte. Contando `Checked` el cartel cobra VRAM que la GPU no
+        ' reserva — un error "del lado seguro", pero este cartel afirma ser LA cuenta, y una cuenta que sobra
+        ' no es la cuenta.
         Dim rigActual = Config_App.Current.ActiveLights()
         Dim n As Integer = 0
         For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
@@ -864,10 +858,8 @@ Partial Public Class LightRigForm
         ' lo mismo: con Increment = 5, subir una flecha y bajarla vuelve EXACTAMENTE al valor cargado (es
         ' aritmetica Decimal, no hay error), el Tag matchea de nuevo y el modelo se queda con el angulo
         ' nudgeado mientras el NUD muestra el original. Tres estados en desacuerdo —control, modelo y combo
-        ' de presets— y ninguna forma de volver.
-        ' El argumento de arriba hablaba de `Increment = 5` del NumericUpDown; con TinySliderTextBox el
-        ' equivalente es `SmallChange`/`LargeChange`, y el razonamiento no cambia: cualquier gesto que
-        ' devuelva el control a su valor de partida haria matchear el Tag otra vez.
+        ' de presets— y ninguna forma de volver. (Con TinySliderTextBox el paso es
+        ' `SmallChange`/`LargeChange`; el razonamiento no depende de cual sea.)
         nud.Tag = Nothing
         Return CSng(nud.Value)
     End Function
@@ -900,8 +892,9 @@ Partial Public Class LightRigForm
     End Sub
 
     Private Sub BtnReset_Click(sender As Object, e As EventArgs) Handles btnReset.Click
-        ' Reset = preset Studio + background al default del config (DarkGray). CargarValoresIniciales
-        ' recarga el combo de background desde Setting_BackColor; el VolcarUIenModelo final refresca el preview.
+        ' Reset = PreviewLightRig.Defaults() (hoy el preset "Portrait" — se busca por nombre alla, no se
+        ' nombra aca) + background al default del config (DarkGray). CargarValoresIniciales recarga el combo
+        ' de background desde Setting_BackColor; el VolcarUIenModelo final refresca el preview.
         Config_App.Current.Setting_BackColorName = Color.DarkGray.Name
         ' Reset devuelve TODO el estado de iluminacion del preview, sombras incluidas: dejarlas afuera
         ' hacia que "Reset" no reseteara la mitad del dialogo.

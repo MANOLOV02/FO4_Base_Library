@@ -55,7 +55,7 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
         If String.IsNullOrEmpty(socket.ParentBoneName) Then Return 0
         If Not targetSkeleton.SkeletonDictionary.TryGetValue(socket.ParentBoneName, targetBone) Then Return 0
 
-        ' REGLA (2026-06-14, idea del usuario — INFIERE el transform de la DIFERENCIA, sin tocar el
+        ' REGLA (idea del usuario — INFIERE el transform de la DIFERENCIA, sin tocar el
         ' árbol de nodos del NIF, que puede ser plano). Un hueso privado (no existe en el actor;
         ' verificado que NO está en skeleton.nif/hkx ni en otro chunk) va a su world ACTOR. El
         ' transform chunk→actor 'A' se infiere de un hueso COMPARTIDO (que SÍ está en el skeleton,
@@ -102,7 +102,8 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
             }
             targetBone.Childrens.Add(anchorBone)
             targetSkeleton.SkeletonDictionary.Add(anchorName, anchorBone)
-            ' Chunk/socket bones son parte de la BASE (el HKX los provee); NO injected. Solo cloth queda injected.
+            ' Chunk/socket bones son parte de la BASE (el HKX los provee): NO se registran en
+            ' SkeletonInstance.InjectedBones — ese registro es solo para cloth.
         End If
 
         Dim injected As Integer = 0
@@ -180,7 +181,8 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
         End If
 
         targetSkeleton.SkeletonDictionary.Add(boneName, nuevo)
-        ' Chunk bones son parte de la BASE (el HKX los provee); NO injected. Solo cloth queda injected.
+        ' El contador es el valor de retorno, NO un alta en SkeletonInstance.InjectedBones: los chunk
+        ' bones son parte de la BASE (el HKX los provee) y ese registro es solo para cloth.
         injectedCounter += 1
 
         Return nuevo
@@ -257,13 +259,14 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
         }
         parentBone.Childrens.Add(nuevo)
         targetSkeleton.SkeletonDictionary.Add(cName, nuevo)
-        ' Socket counterpart (C-X) es parte de la BASE; NO injected. Solo cloth queda injected.
+        ' El counterpart (C-X) es parte de la BASE: NO se registra en SkeletonInstance.InjectedBones.
         Return cName
     End Function
 
     ''' <summary>Composición Transform_Class desde una BSConnectPointReader.ConnectPointInfo
-    ''' (Translation + Rotation quaternion + Scale). La quat se baka a Matrix33 vía la fórmula
-    ''' estándar de quaternion-to-matrix.</summary>
+    ''' (Translation + Rotation quaternion + Scale). La quat se convierte con
+    ''' <see cref="BSConnectPointReader.QuatToMatrix33"/> — NO con una fórmula manual quat→matrix:
+    ''' ver ahí la convención de componentes y por qué la manual daba rotaciones espejadas.</summary>
     Private Shared Function SocketToTransform(socket As BSConnectPointReader.ConnectPointInfo) As Transform_Class
         Dim t As New Transform_Class With {
             .Translation = socket.Translation,

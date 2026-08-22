@@ -459,10 +459,9 @@ Public Class PreviewControl
         Dim texID As Integer = GL.GenTexture()
         GL.BindTexture(TextureTarget.Texture2D, texID)
 
-        ' Alineación segura para ESTA subida, y despues se devuelve. Antes se dejaba el UNPACK_ALIGNMENT
-        ' global en 1 para toda la vida del contexto: como esto corre en GenerateDefaultTextures (OnLoad),
-        ' el default del contexto pasaba a ser 1, y el `Finally` del loader de DDS —que restauraba el valor
-        ' que habia leido— terminaba restaurando algo que ya no era el default de OpenGL.
+        ' El UNPACK_ALIGNMENT se fija para ESTA subida y se restaura al salir. Dejarlo en 1 globalmente
+        ' (esto corre en GenerateDefaultTextures/OnLoad) hace que el `Finally` del loader de DDS restaure 1
+        ' en vez del default del contexto.
         Dim alineacionPrevia As Integer = 4
         GL.GetInteger(CType(&HCF5, GetPName), alineacionPrevia)   ' GL_UNPACK_ALIGNMENT
         GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
@@ -729,13 +728,12 @@ Public Class PreviewControl
     ' ------------------------------------------------------------------
 
     ''' <summary>Los ajustes que gobiernan la GEOMETRIA, tal como los uso la ULTIMA recarga completa.
-    ''' <para>SE SELLA EN LA RECARGA, no en el diálogo. La primera version guardaba el valor dentro de
-    ''' <see cref="ApplyRenderSettingsFromConfig"/> y por eso el PRIMER cambio de skinning de la sesion se
-    ''' tragaba el evento: sin valor previo no habia con que comparar, y el gesto mas obvio —abrir el
-    ''' dialogo y destildar GPU skinning— era justo el que no avisaba, dejando la cara oscura. Sellando lo
-    ''' que uso el ultimo frame reconstruido, la comparacion es contra lo que hay EN PANTALLA, que es lo
-    ''' que importa, y no depende de por donde se haya tocado la config (el menu de la camara tambien la
-    ''' escribe).</para></summary>
+    ''' <para>SE SELLA EN LA RECARGA, no en el diálogo. Sellarlo dentro de
+    ''' <see cref="ApplyRenderSettingsFromConfig"/> se traga el PRIMER cambio de skinning de la sesion —sin
+    ''' valor previo no hay con que comparar— y el gesto mas obvio, abrir el dialogo y destildar GPU skinning,
+    ''' es justo el que no avisa, dejando la cara oscura. Sellando lo que uso el ultimo frame reconstruido, la
+    ''' comparacion es contra lo que hay EN PANTALLA y no depende de por donde se haya tocado la config (el
+    ''' menu de la camara tambien la escribe).</para></summary>
     Private Structure AjustesDeGeometria
         Public Gpu As Boolean
         Public Recalc As Boolean
@@ -760,15 +758,13 @@ Public Class PreviewControl
     ''' Floor (Enabled/Size/StepSize/Color). Cambiar la config sin empujarlos no hace nada visible, y el
     ''' usuario ve una casilla que "no funciona".</para>
     '''
-    ''' <para>Vive ACA y no en cada app: hasta ahora esto lo hacia a mano el boton "Apply to rendered
-    ''' project" de Config_Form de Wardrobe Manager, y FO4_NPC_Manager —que comparte la misma libreria y
-    ''' la misma config— no tenia equivalente. Con el dialogo de render compartido, la copia se volvia
-    ''' dos.</para>
+    ''' <para>Vive ACA y no en cada app: la libreria y la config son compartidas por las dos, y una copia por
+    ''' app se vuelve dos.</para>
     '''
     ''' <para>Marca <c>Force</c> —que es una RECARGA COMPLETA: Clean, esqueleto, LoadShapesParallel,
-    ''' TBN, welding, morphs y subida a GPU— SOLO si cambio algo que la geometria mira. Antes la marcaba
-    ''' siempre, y como el diálogo escribe en cada <c>ValueChanged</c>, tipear "500" en el tamano del piso
-    ''' costaba TRES recargas completas de un NPC con outfit. La camara y la grilla no tocan geometria.
+    ''' TBN, welding, morphs y subida a GPU— SOLO si cambio algo que la geometria mira. Marcarlo siempre sale
+    ''' carisimo: el diálogo escribe en cada <c>ValueChanged</c>, asi que tipear "500" en el tamano del piso
+    ''' costaria TRES recargas completas de un NPC con outfit. La camara y la grilla no tocan geometria.
     ''' Tampoco se llama <c>Floor.Rebuild()</c> de prepo: recrea VAO/VBO y arma ~1000 floats.</para>
     ''' <para>No marca <c>Camera</c>: mover la camara del usuario sin que lo pida es una molestia.</para>
     ''' </summary>
@@ -980,11 +976,9 @@ Public Class PreviewControl
             ' pose-only durante animacion el set es estable, asi que los bones inyectados del ultimo prepare
             ' siguen vivos (ApplyPose no los toca) y se saltea el churn por frame, caro en WM con fisica.
             ' [RENDER-MS] INSTRUMENTACION DE FASES - TODA gateada por Logger.Enabled.
-            ' â›” La nota vieja decia "gateados por LogLazy; el Stopwatch es ~ns": las dos mitades eran falsas.
-            ' LogLazy hace lazy el STRING, no el CALCULO, asi que esto corria ENTERO en release, y no son unos
-            ' ns sino DOS Stopwatch nuevos POR MALLA POR FRAME mas ~9 lecturas de .Elapsed. Su unico consumidor
-            ' es el [RENDER-MS] del final de este bloque. El flag se toma UNA vez por frame para que el gate no
-            ' cambie a mitad.
+            ' `LogLazy` hace lazy el STRING, no el CALCULO: sin este gate explicito corren en release DOS
+            ' Stopwatch por malla por frame mas ~9 lecturas de .Elapsed. El flag se toma UNA vez por frame
+            ' para que el gate no cambie a mitad.
             Dim _instr As Boolean = Logger.Enabled
             ' [RENDER-MS] período REAL entre pose-updates (= 1000/fps efectivo). vs total = trabajo.
             Dim _periodMs As Double = 0
@@ -1029,21 +1023,12 @@ Public Class PreviewControl
             '   Pasada 2 = GL (MakeCurrent + BufferSubData) → serial en el hilo del contexto.
             Dim cpuSkinMode As Boolean = Not Config_App.Current.Setting_GPUSkinning
             Dim playingNow As Boolean = PlayingAnimation
-            ' CON SOMBRAS ENCENDIDAS LOS BOUNDS SE RECALCULAN TAMBIEN EN PLAY. Congelarlos durante la
-            ' animacion es una optimizacion vieja cuyo unico consumidor era el frustum culling, donde el
-            ' peor caso es que una malla popee. El shadow map los usa para OTRA cosa: ShadowMapMath.Fit
-            ' encuadra el ortho sobre ese AABB, y la pasada 1 del skinning (matrices -> SSBO) SI corre en
-            ' cada frame de play. O sea que el vertice se mueve y la caja no: un brazo que se levanta por
-            ' encima de la cabeza sale del encuadre, su silueta NO se escribe en el mapa, y el receptor lee
-            ' el borde blanco = "iluminado". La sombra del brazo desaparece a mitad de camino.
-            ' El margen que habia era el de la esfera envolvente sobre el AABB: para un cuerpo de 60x40x180
-            ' son ~7,5 u por encima de la cabeza, o sea que cualquier brazo levantado lo pasa.
-            ' El costo es la pasada O(vertices) que Option B salteaba, y MEDIDO sobre las 11 mallas del
-            ' arnes (37.321 vertices) son 1,5 ms por frame — no los 8-10 ms que costaba antes de que
-            ' ComputeBounds dejara de materializar el cache de mundo entero. La diferencia son las normales
-            ' de mundo, que un AABB no lee: ver RenderableMesh.ComputeBounds. Sin ese arreglo previo esta
-            ' correccion no era viable y habia que elegir entre sombra correcta y animacion fluida.
-            ' Con la feature apagada no cambia nada.
+            ' CON SOMBRAS ENCENDIDAS LOS BOUNDS SE RECALCULAN TAMBIEN EN PLAY. Congelarlos durante la animacion
+            ' solo le sirve al frustum culling (peor caso: una malla popea); ShadowMapMath.Fit encuadra el ortho
+            ' sobre ESE AABB y la pasada 1 del skinning si corre por frame, asi que con la caja congelada un brazo
+            ' levantado sale del encuadre, no escribe silueta, y el receptor lee borde blanco = "iluminado".
+            ' El margen de la esfera envolvente no alcanza (~7,5 u sobre la cabeza en un cuerpo de 60x40x180).
+            ' Costo medido de la pasada O(vertices): 1,5 ms/frame sobre 11 mallas / 37.321 vertices.
             Dim sombrasEncendidas As Boolean = Config_App.Current.ActiveShadows().Enabled
             Dim computeBoundsThisFrame As Boolean = (Not playingNow) OrElse needsMorphUpdate OrElse sombrasEncendidas
 
@@ -1510,8 +1495,8 @@ Public Class PreviewControl
         End If
 
         ' Ventana EXACTA de box x box centrada en el punto, recortada contra los bordes del control (en
-        ' coordenadas GL, origen abajo). El calculo previo usaba [x-half, x+half], que para un box PAR daba
-        ' box+1 pixeles (8 -> 9): el tamano pedido tiene que ser el tamano leido.
+        ' coordenadas GL, origen abajo). El tamano pedido tiene que ser el tamano leido: el intervalo
+        ' [x-half, x+half] NO sirve, para un box PAR da box+1 pixeles (8 -> 9).
         Dim half As Integer = box \ 2
         Dim x0 As Integer = Math.Max(0, x - half)
         Dim x1 As Integer = Math.Min(Me.Width - 1, x - half + box - 1)
@@ -1665,10 +1650,9 @@ Public Class PreviewControl
         MyBase.OnMouseDown(e)
         ' Modo picker: el click izquierdo MUESTREA y no orbita.
         If _colorPickMode AndAlso e.Button = MouseButtons.Left Then
-            ' lastX/lastY SE SIEMBRAN IGUAL. Antes se salteaban "porque no hay arrastre que continuar" y eso
-            ' era falso: el handler de ColorPicked desarma el modo dentro de este mismo MouseDown, asi que el
-            ' MouseMove siguiente -con el boton todavia apretado- caia en la orbita con un lastX de hace dos
-            ' interacciones y giraba la camara de golpe. Sembrarlos deja el delta en 0 aunque algo se filtre.
+            ' lastX/lastY SE SIEMBRAN IGUAL aunque no haya arrastre que continuar: el handler de ColorPicked
+            ' desarma el modo dentro de este mismo MouseDown, y el MouseMove siguiente -con el boton todavia
+            ' apretado- caeria en la orbita con un lastX de hace dos interacciones, girando la camara de golpe.
             lastX = e.X
             lastY = e.Y
             _pickSwallowLeftDrag = True
@@ -2248,20 +2232,16 @@ Public Class PreviewControl
             GroundShadowTarget.Dispose()
             GroundShadowTarget = Nothing
         End If
-        ' PONER EL CAMPO EN 0 DESPUES DE BORRAR. Estas ocho lineas borraban y NO anulaban, a
-        ' diferencia del resto de este metodo (que si hace `= Nothing`). Y `Clean` corre DOS veces en el
-        ' cierre normal: `MainForm` llama `Clean()` y enseguida `Dispose()`, que vuelve a llamar `Clean()`.
-        ' En la segunda pasada `_Model` ya es Nothing, asi que NADIE hace current el contexto —el unico
-        ' `EnsureContextCurrent` del camino vive adentro de `Model.Clean`— y estos ocho `DeleteTexture` se
-        ' disparan con ids viejos contra EL CONTEXTO QUE ESTE CURRENT EN ESE HILO, que puede ser el de otro
-        ' PreviewControl vivo. Los nombres GL son por contexto: alla esos ids son texturas en uso.
-        ' [AUDIT-CLEAN] valida el arreglo del doble-delete: en la SEGUNDA pasada de Clean() los ocho
-        ' tienen que venir ya en 0. Si alguno viene distinto de 0 dos veces seguidas, el bug sigue.
-        ' ANULAR NO ES GRATIS DEL TODO: despues del primer Clean(), un `BindTexture(..., defaultWhiteTex)`
-        ' bindea 0, que en GL es NEGRO, no blanco. Hoy no se dispara porque `BeginTeardown` levanta
-        ' `_isTearingDown` y `RenderScene`/`OnPaint` salen antes de dibujar — o sea que esto es una red que
-        ' depende de OTRA red. Si alguna vez se dibuja despues de un Clean(), el sintoma va a ser un modelo
-        ' negro, y el causante es esta linea, no el shader.
+        ' PONER EL CAMPO EN 0 DESPUES DE BORRAR. `Clean` corre DOS veces en el cierre normal (`MainForm` llama
+        ' `Clean()` y enseguida `Dispose()`), y en la segunda pasada `_Model` ya es Nothing, asi que nadie hace
+        ' current el contexto —el unico `EnsureContextCurrent` vive dentro de `Model.Clean`— y estos ocho
+        ' `DeleteTexture` irian con ids viejos contra el contexto de OTRO PreviewControl vivo, donde esos mismos
+        ' ids son texturas en uso (los nombres GL son por contexto).
+        ' [AUDIT-CLEAN] es el gate: en la SEGUNDA pasada de Clean() los ocho tienen que venir ya en 0.
+        ' Efecto lateral a tener presente: con el campo en 0, `BindTexture(..., defaultWhiteTex)` bindea 0, que
+        ' en GL es NEGRO. Hoy no se dispara porque `BeginTeardown` levanta `_isTearingDown` y `RenderScene`/
+        ' `OnPaint` salen antes de dibujar; si alguna vez se dibuja tras un Clean(), el sintoma es un modelo
+        ' negro y el causante es esta linea, no el shader.
         If Logger.Enabled Then
             Dim a1 = defaultWhiteTex, a2 = defaultNormalTex, a3 = defaultFacegenDetailTex, a4 = defaultFacegenTintTex
             Dim a5 = defaultSseMsnSpecTex, a6 = defaultSseEngineGenericTex, a7 = defaultFacegenSubsurfaceTex, a8 = defaultCubeMap
@@ -2559,16 +2539,15 @@ Public Class PreviewModel
             ''' <summary>SSE, camino PLEGADO: clave del diccionario de texturas donde vive el diffuse plegado de
             ''' ESTE NPC. Vacia (default) = camino normal, y entonces <see cref="DiffuseTexture_ID"/> se resuelve
             ''' como siempre, asi que FO4, Wardrobe y el SSE no plegado quedan byte-identicos.
-            ''' <para>â›” Resuelve la contaminacion entre NPCs: el fold instalaba su resultado bajo la clave del
-            ''' COMPLEXION, que es COMPARTIDA entre shapes y entre NPCs de la misma raza, asi que dos cabezas con
-            ''' el mismo complexion en un PreviewModel hacian que la segunda heredara el face-paint de la
-            ''' primera. El facetint no tiene el problema porque su clave ya es per-NPC; esto le aplica la MISMA
-            ''' ley al diffuse.</para>
-            ''' <para>âš ï¸ ES UNA CLAVE (String), NO un Texture_ID, a proposito: guardar el id crudo lo dejaria
+            ''' <para>⛔ LA CLAVE ES PER-NPC, y por eso no hay contaminacion entre NPCs: instalar el resultado
+            ''' del fold bajo la clave del COMPLEXION —que es COMPARTIDA entre shapes y entre NPCs de la misma
+            ''' raza— hace que dos cabezas con el mismo complexion en un PreviewModel compartan el face-paint.
+            ''' Es la MISMA ley que ya cumple el facetint.</para>
+            ''' <para>⚠ï¸ ES UNA CLAVE (String), NO un Texture_ID, a proposito: guardar el id crudo lo dejaria
             ''' COLGADO si alguien limpia el diccionario sin reconstruir este MaterialData, y samplear una
             ''' textura ya borrada da basura. Por clave, un diccionario limpio devuelve 0 y se cae solo al
             ''' complexion real.</para>
-            ''' <para>â›” Y NO se toca <c>MaterialBase.Diffuse_or_Base_Texture</c>: el material sigue apuntando al
+            ''' <para>⛔ Y NO se toca <c>MaterialBase.Diffuse_or_Base_Texture</c>: el material sigue apuntando al
             ''' complexion REAL. Es lo que impide la cara blanca - el loader pide los paths de
             ''' <see cref="Textures_Path_List"/> que no esten ya en el diccionario, asi que una ruta sintetica
             ''' tras un CleanTextures no existiria en disco y la shape saldria BLANCA.</para></summary>
@@ -2735,7 +2714,7 @@ Public Class PreviewModel
                 Get
                     ' SSE plegado: el diffuse de ESTE NPC vive bajo una clave PER-NPC. Ver SseFoldedDiffuseKey.
                     ' Si la clave está vacía (todo FO4, Wardrobe, y el SSE no plegado) o el diccionario ya no la
-                    ' tiene (post-CleanTextures), se cae al complexion real: comportamiento idéntico al previo.
+                    ' tiene (post-CleanTextures), se cae al complexion real.
                     If Not String.IsNullOrEmpty(SseFoldedDiffuseKey) Then
                         Dim foldedId = GetTextureID(SseFoldedDiffuseKey)
                         If foldedId <> 0 Then Return foldedId
@@ -2747,8 +2726,7 @@ Public Class PreviewModel
                 Get
                     ' SSE plegado: el _msn de ESTE NPC (con los normales de overlay compuestos) vive bajo una
                     ' clave PER-NPC. Espejo EXACTO de DiffuseTexture_ID — ver SseFoldedNormalKey. Clave vacía
-                    ' (todo FO4, Wardrobe, SSE sin overlay-normal) o diccionario ya limpiado ⇒ se cae al _msn real:
-                    ' comportamiento idéntico al previo.
+                    ' (todo FO4, Wardrobe, SSE sin overlay-normal) o diccionario ya limpiado ⇒ se cae al _msn real.
                     If Not String.IsNullOrEmpty(SseFoldedNormalKey) Then
                         Dim foldedId = GetTextureID(SseFoldedNormalKey)
                         If foldedId <> 0 Then Return foldedId
@@ -2885,23 +2863,11 @@ Public Class PreviewModel
             MeshData.ParentMesh = Me
         End Sub
 
-        ''' <summary>Sube al GL los buffers del shape ya skineados en CPU (lee <c>PerVertexSkinMatrix</c> y
-        ''' transforma local a world antes del upload). Es el camino que corre con GPU-skinning APAGADO.
-        ''' <para>â›” SYNC: CPU/GPU skinning - es el gemelo del bloque de skinning del vertex shader. Con el
-        ''' toggle en GPU este codigo no corre, asi que una formula cambiada de un solo lado no falla: solo se ve
-        ''' mal en el otro modo. Lista completa de sitios gemelos en <c>SkinningHelper.BlendBoneMatrices</c> y en
-        ''' 00-reglas-ui-y-vb.</para></summary>
-        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el upload completo (full-reload
-        ''' y morph, que no tienen ComputeBounds aparte). El camino de pose pasa False porque sus bounds los
-        ''' maneja la linea gateada del pass 1; incondicional aca bypasseaba ese gate (8,9 ms/frame medidos).
-        ''' El nombre difiere de ComputeBounds a proposito: VB es case-insensitive y un parametro homonimo
-        ''' sombrearia al metodo.</param>
         ''' <summary>
-        ''' Resube el VBO de UV cuando un slider uv movio <c>Uvs_Weight</c>. El buffer se creo
-        ''' <c>StaticDraw</c> porque hasta ahora las UVs no cambiaban nunca despues de cargar el NIF;
-        ''' con sliders uv si cambian, y sin esto el viewport mostraba las UVs viejas mientras el .nif
-        ''' construido salia con las nuevas. Se sube entero (los arrays de UV son chicos y esto solo
-        ''' corre cuando el flag esta prendido, no por frame).
+        ''' Resube el VBO de UV cuando un slider uv movio <c>Uvs_Weight</c>. El buffer es <c>StaticDraw</c>:
+        ''' las UVs solo cambian por slider uv. Sin esta resubida el viewport muestra las UVs previas mientras
+        ''' el .nif construido sale con las nuevas. Se sube entero — los arrays de UV son chicos y esto solo
+        ''' corre con el flag prendido, no por frame.
         ''' </summary>
         Public Sub UpdateUvBuffer_GL()
             If MeshData Is Nothing Then Exit Sub
@@ -2940,6 +2906,17 @@ Public Class PreviewModel
             ReDim _upPos(n - 1) : ReDim _upNrm(n - 1) : ReDim _upTan(n - 1) : ReDim _upBitan(n - 1)
         End Sub
 
+        ''' <summary>Sube al GL los buffers del shape ya skineados en CPU (lee <c>PerVertexSkinMatrix</c> y
+        ''' transforma local a world antes del upload). Es el camino que corre con GPU-skinning APAGADO.
+        ''' <para>⛔ SYNC: CPU/GPU skinning - es el gemelo del bloque de skinning del vertex shader. Con el
+        ''' toggle en GPU este codigo no corre, asi que una formula cambiada de un solo lado no falla: solo se ve
+        ''' mal en el otro modo. Lista completa de sitios gemelos en <c>SkinningHelper.BlendBoneMatrices</c> y en
+        ''' 00-reglas-ui-y-vb.</para></summary>
+        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el upload completo (full-reload
+        ''' y morph, que no tienen ComputeBounds aparte). El camino de pose pasa False porque sus bounds los
+        ''' maneja la linea gateada del pass 1; hacerlo incondicional aca saltea ese gate (8,9 ms/frame medidos).
+        ''' El nombre difiere de ComputeBounds a proposito: VB es case-insensitive y un parametro homonimo
+        ''' sombrearia al metodo.</param>
         Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
             UpdateUvBuffer_GL()
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
@@ -2971,13 +2948,10 @@ Public Class PreviewModel
                 If MeshData.Meshgeometry.dirtyVertexIndices.Count > vertexCount * 0.6 Then
                     ' [RENDER-MS] compute vs upload — gateado (ver la nota del tope de la funcion).
                     Dim _swSkinPhase As System.Diagnostics.Stopwatch = If(_instr, System.Diagnostics.Stopwatch.StartNew(), Nothing)
-                    ' SCRATCH REUTILIZADO, NO CUATRO ARRAYS NUEVOS POR FRAME. Este bloque corre por
-                    ' malla y por frame durante toda una animacion con skinning CPU (y en cada morph), y
-                    ' alocaba `vertexCount * 12 bytes * 4` cada vez: con 130.500 vertices son 6,3 MB de Gen0
-                    ' POR FRAME, ~375 MB/s a 60 fps. Es la misma politica que este archivo ya aplica a
-                    ' _shadowCasters y a BlendScratch, aca sin aplicar.
-                    ' No cambia un bit: mismos valores, mismo orden, mismos indices escritos. Lo unico que
-                    ' desaparece es la alocacion.
+                    ' SCRATCH REUTILIZADO, NO CUATRO ARRAYS NUEVOS POR FRAME: este bloque corre por malla y por
+                    ' frame durante toda una animacion con skinning CPU (y en cada morph); alocar
+                    ' `vertexCount * 12 bytes * 4` son 6,3 MB de Gen0 por frame con 130.500 vertices (~375 MB/s
+                    ' a 60 fps). Misma politica que _shadowCasters y BlendScratch.
                     EnsureUploadScratch(vertexCount)
                     Dim posF = _upPos, nrmF = _upNrm, tanF = _upTan, bitanF = _upBitan
                     Dim _swFase As System.Diagnostics.Stopwatch = If(MedirFasesDeUpload, System.Diagnostics.Stopwatch.StartNew(), Nothing)
@@ -2990,19 +2964,14 @@ Public Class PreviewModel
                         Dim lt = MeshData.Meshgeometry.Tangents
                         Dim lb = MeshData.Meshgeometry.Bitangents
                         Dim isMSN As Boolean = MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals
-                        ' NOTA: antes habia una optimizacion "isSingle" que cacheaba un solo
-                        ' normal matrix cuando mats(0) == mats(vertexCount-1), asumiendo que
-                        ' todos los vertices tenian skinning uniforme. Falso positivo muy
-                        ' facil de disparar (primer y ultimo vertex comparten bone pero los
-                        ' del medio no), causando que las normales del medio usaran el nm3
-                        ' del vertex 0. Se removio — ahora siempre per-vertex para coincidir
-                        ' con el shader GPU que tambien computa skinNormalMat per-vertex.
-                        ' EL BUCLE SE FUE A FastSkin. Era el que dominaba un frame de animacion con
-                        ' skinning por CPU: una inversa 3x3 POR VERTICE, POR MALLA, POR FRAME, escalar y en
-                        ' Double. Medido sobre 130.500 vertices, 9,3 ms de un frame de ~20 — contra 1,3 ms
-                        ' de las cuatro subidas de VBO que vienen despues.
-                        ' Alla la ley esta escrita UNA vez con dos implementaciones (escalar y vectorial)
-                        ' que un gate compara BIT A BIT, y a los dos anchos de vector. Ver FastSkin.
+                        ' Normal matrix SIEMPRE POR VERTICE, para coincidir con el `skinNormalMat` per-vertex
+                        ' del shader GPU. Cachear una sola cuando mats(0) == mats(vertexCount-1) es un falso
+                        ' positivo facil de disparar (primer y ultimo vertice comparten bone y los del medio no)
+                        ' y deja las normales del medio con el nm3 del vertice 0.
+                        ' El bucle vive en FastSkin, donde la ley esta escrita UNA vez con dos implementaciones
+                        ' (escalar y vectorial) que un gate compara BIT A BIT a los dos anchos de vector. Es el
+                        ' hotpath del frame con skinning CPU: una inversa 3x3 por vertice/malla/frame en Double,
+                        ' 9,3 ms de un frame de ~20 sobre 130.500 vertices, contra 1,3 ms de las 4 subidas de VBO.
                         SkinningHelper.FastSkinTransformar(mats, lv, ln, lt, lb, isMSN, vertexCount,
                                                            posF, nrmF, tanF, bitanF)
                     Else
@@ -3011,18 +2980,14 @@ Public Class PreviewModel
                         Dim gn = MeshData.Meshgeometry.Normals
                         Dim gt = MeshData.Meshgeometry.Tangents
                         Dim gb = MeshData.Meshgeometry.Bitangents
-                        ' Partitioner + For interno, NO `Parallel.For(0, n, Sub(i))`. La forma
-                        ' anterior invocaba UN DELEGATE POR VERTICE (22.700 por malla POR FRAME) para
-                        ' un cuerpo que son 12 conversiones y 4 stores: el despacho costaba del orden
-                        ' del trabajo. Es el mismo hallazgo que ya se aplico en el compositor de
-                        ' facetint (ver 61-perf-plan-4-hotpaths §3), acá replicado en el upload.
-                        ' Esto NO cambia un bit: la aritmetica, el orden y el redondeo son los
-                        ' mismos; lo unico que se va es el despacho.
-                        ' Y NO se vectoriza con Vector.Narrow, aunque sea el caso ideal (un run
-                        ' plano de 3N doubles a 3N floats): para eso habria que ver el Vector3d() como
-                        ' Double(), y eso pide MemoryMarshal/Span, que VB.NET no admite en ninguna
-                        ' posicion. Copiar a un staging plano primero cuesta mas trafico de memoria
-                        ' del que ahorra el narrow, asi que el camino escalar es el correcto acá.
+                        ' Partitioner + For interno, NO `Parallel.For(0, n, Sub(i))`: esa forma invoca UN
+                        ' DELEGATE POR VERTICE (22.700 por malla por frame) para un cuerpo de 12 conversiones y
+                        ' 4 stores — el despacho cuesta del orden del trabajo. Mismo hallazgo que el compositor
+                        ' de facetint (ver la memoria 61-perf-plan-4-hotpaths §3).
+                        ' Y NO se vectoriza con Vector.Narrow aunque sea el caso ideal (un run plano de 3N
+                        ' doubles a 3N floats): haria falta ver el Vector3d() como Double(), o sea
+                        ' MemoryMarshal/Span, que VB.NET no admite en ninguna posicion; copiar a un staging
+                        ' plano cuesta mas trafico de memoria del que ahorra el narrow.
                         Dim convertRange As Action(Of Tuple(Of Integer, Integer)) =
                             Sub(rango As Tuple(Of Integer, Integer))
                                 For i = rango.Item1 To rango.Item2 - 1
@@ -3069,12 +3034,10 @@ Public Class PreviewModel
                     End If
 
                     ' Clear all dirty flags since everything was updated.
-                    ' `Array.Clear` Y NO UN BUCLE POR INDICE. Para entrar a esta rama hacen falta MAS DEL
-                    ' 60 % de los vertices sucios, o sea que la lista trae ~78.000 indices sobre el Serena
-                    ' Battle Suit: recorrerla es 78.000 lecturas de la lista mas 78.000 escrituras DISPERSAS
-                    ' al array de flags. `Array.Clear` es un memset contiguo sobre el array entero.
-                    ' Es equivalente y no "de mas": esta rama sube TODOS los vertices, asi que al salir
-                    ' ninguno queda sucio — poner en False los que ya estaban en False no cambia nada.
+                    ' `Array.Clear` Y NO UN BUCLE POR INDICE: para entrar a esta rama hacen falta MAS DEL 60 %
+                    ' de los vertices sucios (~78.000 indices sobre el Serena Battle Suit), o sea 78.000 lecturas
+                    ' de la lista mas 78.000 escrituras DISPERSAS al array de flags; `Array.Clear` es un memset
+                    ' contiguo. Esta rama sube TODOS los vertices, asi que al salir ninguno queda sucio.
                     If MeshData.Meshgeometry.dirtyVertexFlags IsNot Nothing Then
                         Array.Clear(MeshData.Meshgeometry.dirtyVertexFlags, 0, MeshData.Meshgeometry.dirtyVertexFlags.Length)
                     End If
@@ -3084,11 +3047,10 @@ Public Class PreviewModel
                         _swSkinPhase.Restart()
                     End If
 
-                    ' Also recompute bounds after full update — SALVO cuando el caller ya los maneja.
-                    ' En el pose path los computa la línea gateada del pass 1 ('If computeBoundsThisFrame
-                    ' Then mesh.ComputeBounds()'); incondicional acá bypasseaba ese gate Y Option B en CPU
-                    ' (ComputeBounds = pasada per-vértice a mundo; medido 6,9-8,5 ms/frame sobre las 11
-                    ' mallas del arnés, y ya SIN las normales de mundo, que salieron de ese camino).
+                    ' Also recompute bounds after full update — SALVO cuando el caller ya los maneja: en el
+                    ' pose path los computa la línea gateada del pass 1 ('If computeBoundsThisFrame Then
+                    ' mesh.ComputeBounds()'), y hacerlo incondicional acá saltea ese gate. ComputeBounds es una
+                    ' pasada per-vértice a mundo: 6,9-8,5 ms/frame sobre las 11 mallas del arnés.
                     If recomputeBounds Then Me.ComputeBounds()
                     If _instr Then
                         ParentModel.ParentControl._skinBoundsMs += _swSkinPhase.Elapsed.TotalMilliseconds
@@ -3298,7 +3260,7 @@ Public Class PreviewModel
         ' zapeados dejan de estar referenciados. Se reconstruye solo cuando ApplyMorphPlan re-toco la mascara o
         ' cambio el toggle: ApplyMorphPlan es el unico escritor de VertexMask=-1, asi que el flag no puede
         ' quedar rancio.
-        ' âš ï¸ SkinnedGeometry es Structure: 'geom' es una COPIA del campo, asi que el clear de ZapTopologyDirty
+        ' ⚠ï¸ SkinnedGeometry es Structure: 'geom' es una COPIA del campo, asi que el clear de ZapTopologyDirty
         ' hay que escribirlo al campo, no a la copia local. Leer por 'geom' esta bien (los arrays son
         ' referencias).
         Private Sub EnsureZapIndexBuffer()
@@ -3331,7 +3293,7 @@ Public Class PreviewModel
             ' inspection toggle) is True, occl stays Nothing so no per-segment triangle is hidden ->
             ' all geometry draws. The vertex-zap (applyZaps/VertexMask) path is untouched below.
             If Not drawHidden Then
-                Dim subIdx = TryCast(If(MeshData.Shape Is Nothing, Nothing, MeshData.Shape.NifShape), NiflySharp.Blocks.BSSubIndexTriShape)
+                Dim subIdx = TryCast(MeshData.Shape?.NifShape, NiflySharp.Blocks.BSSubIndexTriShape)
                 If subIdx IsNot Nothing Then
                     ' FO4: per-segment occlusion via BSSubIndexTriShape/BSGeometrySegmentData.
                     occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask, MeshData.Shape.OwnSlotsMask)
@@ -3524,24 +3486,22 @@ Public Class PreviewModel
         End Sub
 
         ''' <summary>
-        ''' O3.3: Compute axis-aligned bounding box from world-space vertex positions for frustum culling.
+        ''' Compute axis-aligned bounding box from world-space vertex positions for frustum culling.
         ''' (GPU skinning: Vertices are local-space, so we need world-space for correct bounds.)
-        ''' <para>NO MATERIALIZA EL CACHE DE MUNDO. Antes llamaba a <c>GetWorldVertices</c>, que con el
-        ''' cache invalidado —que es SIEMPRE en este punto: RecomputeGPUBoneMatrices lo invalida un par de
-        ''' lineas antes— construia el cache ENTERO, o sea tambien las normales de mundo: una
-        ''' <c>Create_Normal_Matrix</c> (inversa + transpuesta 3x3) por vertice, mas dos arrays
-        ''' <c>Vector3d()</c> por malla por frame. Un AABB no lee ni una de esas normales. Medido sobre las
-        ''' 11 mallas del arnes (37.321 vertices), invalidando tambien <c>PerVertexMatrixValid</c> —que es
-        ''' como llega el frame de play— el cache completo cuesta 10,4-13,2 ms y esta variante 6,9-8,5 ms:
-        ''' <b>~35 % menos</b>. NO 86 %: esa cifra salio de una medicion que dejaba
-        ''' <c>PerVertexSkinMatrix</c> valida, con lo cual ninguna de las dos pagaba el blend de 4 huesos por
-        ''' vertice, que es lo que domina. El ahorro real es solo la parte de las normales.</para>
-        ''' <para>Quien necesite normales de mundo (picking, exportador, raytracer de oclusion) sigue
-        ''' pidiendolas por <c>GetWorldVertices</c> y las computa en ese momento. Lo que no puede pasar es
-        ''' dejar el cache MEDIO lleno, y por eso la variante sin normales no lo marca valido.</para>
-        ''' <para>Efecto lateral deseable: <c>Minv/Maxv/Boundingcenter</c> quedan en Double exacto. Antes se
-        ''' derivaban de <c>BoundsMin/Max</c>, que son Single, asi que la clave de orden del bucket BLENDED
-        ''' pasaba por un redondeo que no hacia falta.</para></summary>
+        ''' <para>NO MATERIALIZA EL CACHE DE MUNDO: <c>GetWorldVertices</c> con el cache invalidado —que es
+        ''' SIEMPRE en este punto, RecomputeGPUBoneMatrices lo invalida un par de lineas antes— construye el
+        ''' cache ENTERO, incluidas las normales de mundo (una <c>Create_Normal_Matrix</c> por vertice mas dos
+        ''' arrays <c>Vector3d()</c> por malla y por frame) que un AABB no lee. Medido sobre las 11 mallas del
+        ''' arnes (37.321 vertices) con <c>PerVertexMatrixValid</c> invalida —como llega el frame de play—:
+        ''' cache completo 10,4-13,2 ms contra 6,9-8,5 ms de esta variante. El ahorro es SOLO la parte de las
+        ''' normales; el blend de 4 huesos por vertice, que es lo que domina, lo pagan las dos (una medicion
+        ''' que deje <c>PerVertexSkinMatrix</c> valida infla el ahorro aparente).</para>
+        ''' <para>Quien necesite normales de mundo (picking, exportador, raytracer de oclusion) las pide por
+        ''' <c>GetWorldVertices</c> y las computa en ese momento. Lo que no puede pasar es dejar el cache
+        ''' MEDIO lleno, y por eso la variante sin normales no lo marca valido.</para>
+        ''' <para><c>Minv/Maxv/Boundingcenter</c> quedan en Double exacto, NO derivados de
+        ''' <c>BoundsMin/Max</c> (que son Single): asi la clave de orden del bucket BLENDED no pasa por un
+        ''' redondeo de mas.</para></summary>
         Public Sub ComputeBounds()
             If MeshData.Meshgeometry.Vertices Is Nothing OrElse MeshData.Meshgeometry.Vertices.Length = 0 Then
                 BoundsMin = New Vector3(Single.MaxValue)
@@ -3780,11 +3740,9 @@ Public Class PreviewModel
 
             ' matProjection / matView los sube el CALLER una sola vez por pase (son de la luz, no de la
             ' malla). Aca solo va lo que cambia POR MALLA.
-            ' `mv_normalMatrix` SE SUBE, Y SOLO PARA EL EFFECT SHADER. Este comentario decia "NO SE
-            ' SUBE, a proposito: solo alimenta varyings que este fragment ni declara (mv_tbn,
-            ' v_msnMatrix)", y dejo de ser cierto cuando el fragment paso a declararlos para calcular el
-            ' FALLOFF del .bgem. Sin subirlo, esos dos varyings valen la mat3 CERO (el valor inicial por
-            ' spec de GL): `mv_tbn * vec3(0,0,0.5)` da el vector nulo, `normalize` de eso es NaN, y el
+            ' `mv_normalMatrix` SE SUBE, Y SOLO PARA EL EFFECT SHADER: el fragment declara `mv_tbn` y
+            ' `v_msnMatrix` para calcular el FALLOFF del .bgem. Sin subirlo esos varyings valen la mat3 CERO
+            ' (init por spec de GL): `mv_tbn * vec3(0,0,0.5)` da el vector nulo, `normalize` de eso es NaN y el
             ' falloff sale indefinido — con StartOpacity 0 el material entero se descarta y no castea nada.
             ' Se calcula SOLO si hace falta: es un Invert + Transpose por malla y por frame, y la unica
             ' rama que lo lee es la del effect shader. Para un .bgsm no se toca.
@@ -3799,45 +3757,35 @@ Public Class PreviewModel
             ' bShowMask / bShowWeight / bWireframe / bShowVertexColor NO se suben: no afectan ni
             ' gl_Position ni vColor.a, que es todo lo que este pase mira.
 
-            ' DOS CAMINOS DE RECORTE, Y EL SEGUNDO NO EXISTIA.
-            '  · CUTOUT (`AlphaTest`): umbral duro con el `AlphaTestRef` del material. Es lo que ya habia.
-            '  · TRANSLUCIDO (`AlphaBlend` sin test): antes NO SE RECORTABA NADA — el gate era `HasAlphaTest`
-            '    a secas, asi que un material alpha-blend entraba al pase sin un solo `discard` y proyectaba
-            '    la CARD ENTERA. Sintoma concreto y reportado: pelo fino que tira sombra de placa negra.
-            '    Ahora va por el camino estocastico del fragment (dither ordenado 4x4 contra la opacidad
-            '    real), que necesita ADEMAS el escalar Alpha del material — el mismo que el pase iluminado
-            '    multiplica despues del test para el blend.
-            ' En vanilla esto casi no se veia porque los alpha-blend de actor (pelo *_8bit, pestanas,
-            ' eyewet, synthtattoo) traen CastShadows=False y ni entran al pase. Los mods de pelo suelen
-            ' dejarlo en True, y ahi salia la placa.
-            ' LOS DOS FLAGS SON INDEPENDIENTES, COMO EN EL PASE ILUMINADO. Antes el blend estaba
-            ' gateado por `Not doAlphaTest`, con el argumento de que "gana el test, igual que en el pase
-            ' iluminado (ahi se descarta por el umbral y despues se blendea lo que sobrevivio)". La primera
-            ' mitad de esa frase es cierta y la segunda tambien — pero de ESTE pase no se cumplia ninguna
-            ' de las dos: al ganar el cutout, `bAlphaBlend` quedaba en False y el superviviente entraba al
-            ' mapa OPACO, sin pasar nunca por el dither. Y no es un caso raro: `HasAlphaBlend` es
-            ' `AlphaBlendEnabled OrElse Alpha < 1`, o sea que TODO cutout con Alpha < 1 caia ahi. En
-            ' pantalla se dibuja al 30 % de opacidad y su sombra salia tan negra como la de una malla
-            ' solida. Ahora el fragment hace lo mismo que el iluminado: descarta por el umbral Y DESPUES
-            ' aplica el dither sobre lo que sobrevivio.
+            ' DOS CAMINOS DE RECORTE:
+            '  · CUTOUT (`AlphaTest`): umbral duro con el `AlphaTestRef` del material.
+            '  · TRANSLUCIDO (`AlphaBlend` sin test): camino estocastico del fragment (dither ordenado 4x4
+            '    contra la opacidad real), que necesita ADEMAS el escalar Alpha del material — el mismo que el
+            '    pase iluminado multiplica despues del test. Gatear el pase solo por `HasAlphaTest` deja al
+            '    alpha-blend entrar sin un solo `discard` y proyectar la CARD ENTERA: pelo fino con sombra de
+            '    placa negra. En vanilla casi no se ve porque los alpha-blend de actor (pelo *_8bit, pestanas,
+            '    eyewet, synthtattoo) traen CastShadows=False; los mods de pelo suelen dejarlo en True.
+            ' LOS DOS FLAGS SON INDEPENDIENTES, COMO EN EL PASE ILUMINADO: NO gatear el blend con
+            ' `Not doAlphaTest`. Al ganar el cutout `bAlphaBlend` quedaria en False y el superviviente entraria
+            ' al mapa OPACO sin pasar por el dither, y no es un caso raro — `HasAlphaBlend` es
+            ' `AlphaBlendEnabled OrElse Alpha < 1`, o sea que TODO cutout con Alpha < 1 cae ahi: se dibuja al
+            ' 30 % de opacidad y su sombra sale tan negra como la de una malla solida. El fragment hace lo mismo
+            ' que el iluminado: descarta por el umbral Y DESPUES aplica el dither sobre lo que sobrevivio.
             Dim doAlphaTest As Boolean = MeshData.Material.HasAlphaTest
             Dim doAlphaBlend As Boolean = MeshData.Material.HasAlphaBlend
             Dim usaTextura As Boolean = doAlphaTest OrElse doAlphaBlend
             shadowShader.SetBool("bAlphaTest", doAlphaTest)
             shadowShader.SetBool("bAlphaBlend", doAlphaBlend)
-            ' `bShowTexture` ES EL DEL SHAPE, EL MISMO QUE MANDA EL PASE ILUMINADO (`Render.vb`,
-            ' `shader.SetBool("bShowTexture", shape.ShowTexture)`). Antes se mandaba `usaTextura`, o sea
-            ' que el uniform tenia DOS significados distintos en dos programas, y ademas `doAlphaTest` y
-            ' `doAlphaBlend` llevaban `AndAlso shape.ShowTexture` — con lo cual, con la textura apagada,
-            ' este pase no hacia NINGUN descarte mientras el iluminado SI seguia descartando (su
-            ' `bAlphaTest` nunca estuvo gateado por la textura). Concretamente:
+            ' `bShowTexture` ES EL DEL SHAPE, EL MISMO QUE MANDA EL PASE ILUMINADO — NO `usaTextura`: el
+            ' uniform tendria DOS significados distintos en dos programas. Y `doAlphaTest`/`doAlphaBlend` NO
+            ' llevan `AndAlso shape.ShowTexture`: con la textura apagada este pase dejaria de descartar mientras
+            ' el iluminado sigue haciendolo (su `bAlphaTest` nunca estuvo gateado por la textura), y sale la
+            ' placa negra flotante por la puerta de un toggle de la UI:
             '  · .bgem de los dos juegos: el bloque BGEM del fragment iluminado es HERMANO del
-            '    `if (bShowTexture)`, no hijo, asi que `baseMap` se queda en su init `vec4(0.0)` y
-            '    `effAlpha` da 0 ⇒ la shape desaparece de pantalla... y proyectaba la card entera.
-            '  · .bgsm de SSE con Alpha = 0,3 y ref = 128: el escalar entra al test (0,3 < 0,502) ⇒ la
-            '    shape entera se descarta en pantalla... y proyectaba la card entera.
-            ' Es el mismo sintoma de placa negra flotando sin duenio que el dither vino a matar, entrando
-            ' por la puerta de un toggle de la UI.
+            '    `if (bShowTexture)`, no hijo, asi que `baseMap` queda en su init `vec4(0.0)` y `effAlpha` da
+            '    0 ⇒ la shape desaparece de pantalla pero proyecta la card entera.
+            '  · .bgsm de SSE con Alpha = 0,3 y ref = 128: el escalar entra al test (0,3 < 0,502) ⇒ la shape
+            '    entera se descarta en pantalla pero proyecta la card entera.
             shadowShader.SetBool("bShowTexture", shape.ShowTexture)
             Dim esEffectShader As Boolean = materialBase IsNot Nothing AndAlso materialBase.IsBGEM
             shadowShader.SetBool("bIsEffectShader", esEffectShader)
@@ -3846,20 +3794,16 @@ Public Class PreviewModel
             ' para el .bgsm, SSE mete el escalar Alpha DENTRO del test y FO4 no. El juego lo decide ACA,
             ' que es el unico lugar que lo sabe.
             shadowShader.SetBool("bLeySse", Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
-            ' EL GATE DEL ALPHA DE VERTICE ES `UseVertexAlpha` PARA LAS DOS FAMILIAS Y LOS DOS JUEGOS —
-            ' el MISMO que manda el pase iluminado a su vertex shader. Antes, para un .bgem, se mandaba
-            ' `UseVertexColor`, "porque el fragment de FO4 gatea el alpha del effect shader con
-            ' `bShowVertexColor`". Eso plegaba mal una ley de DOS pisos:
-            '   · el VS del pase iluminado gatea SIEMPRE con UseVertexAlpha (es el unico que escribe
-            '     vColor.a), y encima de eso
-            '   · el fragment de FO4 —solo el de FO4— vuelve a gatear con UseVertexColor.
-            ' O sea que el predicado neto de FO4 es `UseVertexAlpha AND UseVertexColor`, y como
-            ' `UseVertexAlpha` YA IMPLICA `UseVertexColor` (ver la propiedad), se reduce a UseVertexAlpha.
-            ' SSE no tiene el segundo piso: usa `vColor.a` crudo, gateado solo por el VS.
-            ' Mandando UseVertexColor, el caso Tree/TreeAnim —UseVertexColor True con UseVertexAlpha
-            ' False— divergia en FO4: el iluminado dejaba vColor.a en 1.0 y la sombra usaba el alpha real
-            ' del vertice. Era transplantar la nota de una ley a la otra, que es el error que este archivo
-            ' ya se comio dos veces con el falloff.
+            ' EL GATE DEL ALPHA DE VERTICE ES `UseVertexAlpha` PARA LAS DOS FAMILIAS Y LOS DOS JUEGOS — el
+            ' MISMO que manda el pase iluminado a su vertex shader. La ley tiene DOS pisos:
+            '   · el VS del pase iluminado gatea SIEMPRE con UseVertexAlpha (es el unico que escribe vColor.a);
+            '   · encima, el fragment de FO4 —solo el de FO4— vuelve a gatear con UseVertexColor.
+            ' El predicado neto de FO4 es `UseVertexAlpha AND UseVertexColor`, y como `UseVertexAlpha` YA
+            ' IMPLICA `UseVertexColor` (ver la propiedad), se reduce a UseVertexAlpha. SSE no tiene el segundo
+            ' piso: usa `vColor.a` crudo, gateado solo por el VS.
+            ' Mandar `UseVertexColor` acá —transplantando el gate del fragment de FO4— rompe Tree/TreeAnim
+            ' (UseVertexColor True con UseVertexAlpha False): el iluminado deja vColor.a en 1.0 y la sombra usa
+            ' el alpha real del vertice.
             shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso MeshData.Material.UseVertexAlpha)
             If usaTextura Then
                 shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
@@ -3897,15 +3841,9 @@ Public Class PreviewModel
                 ' es lo correcto: lo que decide cuanta luz BLOQUEA el material es el angulo con el que la
                 ' luz lo atraviesa.
                 If esEffectShader Then
-                    ' HAY QUE SUBIR `mv_normalMatrix`. El fragment de profundidad ahora LEE `mv_tbn` y
-                    ' `v_msnMatrix` (para el falloff), y los dos salen de ese uniform en el vertex shader.
-                    ' Sin subirlo vale la mat3 CERO por spec de GL: `mv_tbn * vec3(0,0,0.5)` da el vector
-                    ' nulo, `normalize` de eso es NaN, y el falloff sale indefinido — con StartOpacity 0
-                    ' el material entero se descarta y NO castea sombra ninguna.
-                    ' El comentario de mas abajo decia "NO SE SUBE, a proposito: solo alimenta varyings que
-                    ' este fragment ni declara". Dejo de ser cierto al declararlos.
                     ' La MISMA construccion que el pase iluminado (Invert + Transpose de la 3x3 del
                     ' model-view), pero con el model-view DE LA LUZ, que es el de este pase.
+                    ' Por que hace falta subirlo: ver la nota de `mv_normalMatrix` al tope de RenderDepthOnly.
                     Dim nm3 As New Matrix3(modelView.M11, modelView.M12, modelView.M13,
                                            modelView.M21, modelView.M22, modelView.M23,
                                            modelView.M31, modelView.M32, modelView.M33)
@@ -4232,7 +4170,7 @@ Public Class PreviewModel
                 smoothSpecTextureId = 0
             End If
 
-            ' â›” ELIMINADAS DOS HEURISTICAS que existian SOLO para tapar la mascara de environment faltante en
+            ' ⛔ ELIMINADAS DOS HEURISTICAS que existian SOLO para tapar la mascara de environment faltante en
             ' SSE (el slot 5 nunca llegaba al shader). Con el slot 5 ya ruteado arriba, las dos son daninas:
             '  1) "eye": movia el SLOT 7 a la envmask y ademas lo ponia en 0. El slot 7 es el mask ESPECULAR
             '     (t2, mallas MSN) o el BACKLIGHT (t9), medido en OnLoadTextureSet y en SetupMaterial: robarlo
@@ -4258,10 +4196,10 @@ Public Class PreviewModel
                 hasSpecMap = (smoothSpecTextureId <> 0)
             End If
             ' SSE: SIEMPRE hay fuente de mask especular — el motor la toma del alpha del normal (no-MSN) o del
-            ' slot 7 (MSN), y en ambos casos rellena un default si la textura falta, asi que nunca se queda sin
-            ' ninguna. Antes esto era `hasSpecMap OrElse normalTextureId <> 0`; al pasar hasSpecMap a depender de
-            ' MSN, una malla SSE no-MSN con slot 7 pero SIN normal texture perdia bSpecular por completo
-            ' (regresion: el motor si tendria specular, contra su normal por defecto). FO4 conserva su regla.
+            ' slot 7 (MSN), y en ambos casos rellena un default si la textura falta. NO condicionarlo a
+            ' `hasSpecMap OrElse normalTextureId <> 0`: como `hasSpecMap` depende de MSN, una malla SSE no-MSN
+            ' con slot 7 pero SIN normal texture perderia bSpecular por completo, y el motor si le da specular
+            ' contra su normal por defecto. FO4 conserva su regla.
             Dim hasSpecularSource As Boolean = If(isSSE, True, hasSpecMap)
 
             Dim hasCubemap = material.HasCubemap
@@ -4341,9 +4279,8 @@ Public Class PreviewModel
             shader.SetBool("bHide", shape.RenderHide)
 
             '===============================
-            ' ?? ILUMINACIÓN PRINCIPAL
+            ' ILUMINACIÓN PRINCIPAL
             '===============================
-            ' ?? ILUMINACIÓN PRINCIPAL
 
             shader.SetBool("bLightEnabled", True)
             ' El rig de luces se autora en espacio PERCEPTUAL (sRGB) y se decodea a lineal AL SUBIR, así la
@@ -4523,11 +4460,10 @@ Public Class PreviewModel
             shader.SetBool("bModelSpace", materialBase.ModelSpaceNormals)
             shader.SetBool("bEmissive", materialBase.EmitEnabled)
             ' Subsurface (soft lighting) is a per-material property: bind it from the material's own
-            ' Soft_Lighting flag, both engines. (The previous SSE-only `OrElse (isSSE AndAlso Facegen)`
-            ' FORCE was removed 2026-07-23: RE of the SSE lighting-technique composition showed facegen
-            ' subsurface is selected by the material flag via the descriptor SOFT_LIGHTING bit — it is not
-            ' unconditionally forced — and vanilla/mod facegen heads ship the flag OFF, so forcing it added
-            ' subsurface the engine does not apply. Face/body parity is handled by MatchBodySkinSubsurfaceToFace.)
+            ' Soft_Lighting flag, both engines. Do NOT force it for SSE facegen (`OrElse (isSSE AndAlso
+            ' Facegen)`): the engine selects facegen subsurface by the material flag via the descriptor
+            ' SOFT_LIGHTING bit, and vanilla/mod facegen heads ship the flag OFF, so forcing it adds
+            ' subsurface the engine does not apply. Face/body parity: MatchBodySkinSubsurfaceToFace.
             shader.SetBool("bSoftlight", materialBase.SubsurfaceLighting)
             shader.SetBool("bGlowmap", materialBase.Glowmap AndAlso glowTextureId <> 0)
             ' Hair (FO4 carries Hair=true AND Glowmap=true): the glow slot holds the _f strand FLOW map,
@@ -4998,17 +4934,10 @@ Public Class PreviewModel
     ''' </summary>
     Private ReadOnly _pendingBackgroundPaths As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
-    ''' <summary>Increment the per-path failure counter. Once it reaches
-    ''' <see cref="MaxTextureUploadAttempts"/> the path is added to <see cref="Last_Loaded_Textures"/>
-    ''' so <see cref="Process_Textures_GL"/> stops re-enqueuing it. Below the cap the path stays
-    ''' eligible for retry on the next Process_Textures_GL pass.</summary>
-    ''' <summary>Saca una textura del diccionario LIBERANDO su handle GL.
-    ''' <para>Los dos caminos de fallo de subida hacian `Textures_Dictionary.Remove(path)` a secas. Si esa
-    ''' clave ya tenia una textura VIVA —una instalada por el compositor, o una subida anterior— el handle
-    ''' quedaba huerfano: fuera del diccionario, asi que `CleanTextures` no lo encuentra nunca mas. No es
-    ''' memoria reciclable, es VRAM perdida hasta que muere el proceso.</para></summary>
-    ''' <summary>Saca <paramref name="path"/> del diccionario tras una subida FALLIDA, liberando el handle
-    ''' que hubiera quedado colgado. Sin esto la entrada se borraba y el nombre de GL quedaba huerfano.
+    ''' <summary>Saca <paramref name="path"/> del diccionario tras una subida FALLIDA, LIBERANDO el handle GL.
+    ''' Borrar la entrada a secas deja el nombre de GL huerfano —fuera del diccionario, asi que
+    ''' <c>CleanTextures</c> no lo encuentra nunca mas—: no es memoria reciclable, es VRAM perdida hasta que
+    ''' muere el proceso.
     ''' <para>NO TOCA una entrada que sea del COMPOSITOR. Es la misma ley que
     ''' <c>NpcFaceTintResolver.InstallTexture</c>: el gate es <see cref="PreviewModel.Texture_Loaded_Class.OwnedByComposer"/>
     ''' y no "id &lt;&gt; 0". Este helper lo llama el camino de fallo del LOADER, y el loader puede fallar sobre
@@ -5016,8 +4945,8 @@ Public Class PreviewModel
     ''' un slider, <c>NpcSkinLivePreview</c> instala la textura compuesta en esa misma clave, y recien ahi
     ''' vuelve el lote con error. Borrar ahi mata la textura VIVA del preview, y como
     ''' <c>DirectXDDSLoader</c> marca fallidas TODAS las entradas del lote cuando revienta una sola, un DDS
-    ''' malo alcanzaba para llevarse varias. <c>GenTexture</c> recicla el nombre y otro sampler pasa a leer
-    ''' pixeles ajenos, sin un solo error de GL.</para>
+    ''' malo se lleva varias. <c>GenTexture</c> recicla el nombre y otro sampler pasa a leer pixeles ajenos,
+    ''' sin un solo error de GL.</para>
     ''' <para>La entrada del compositor es la AUTORIDAD: un upload del loader que fallo sobre esa clave ya no
     ''' es relevante, asi que se deja como esta. La que se limpia es la del loader, donde el handle no lo
     ''' conserva nadie mas (el diccionario tiene UNA entrada por path).</para></summary>
@@ -5038,6 +4967,10 @@ Public Class PreviewModel
         Textures_Dictionary.Remove(path)
     End Sub
 
+    ''' <summary>Increment the per-path failure counter. Once it reaches
+    ''' <see cref="MaxTextureUploadAttempts"/> the path is added to <see cref="Last_Loaded_Textures"/>
+    ''' so <see cref="Process_Textures_GL"/> stops re-enqueuing it. Below the cap the path stays
+    ''' eligible for retry on the next Process_Textures_GL pass.</summary>
     Private Sub RegisterUploadFailure(path As String, reason As String)
         Dim count As Integer = 0
         _uploadFailureCount.TryGetValue(path, count)
@@ -5515,8 +5448,8 @@ Public Class PreviewModel
     End Structure
 
     ''' <summary>Rig resuelto para el frame en curso. Lo llena <see cref="RenderAll"/> antes de dibujar y lo
-    ''' consume ApplyMaterial. Antes esto se recalculaba POR MALLA — 18 Math.Pow + 4 Direction() idénticos, y
-    ''' otra vuelta por cada overlay layer.
+    ''' consume ApplyMaterial. Se resuelve UNA vez por frame: por malla serian 18 Math.Pow + 4 Direction()
+    ''' idénticos, mas otra vuelta por cada overlay layer.
     ''' <para>Depende del rig activo y, SI <c>Setting_LightsFollowCamera</c> está prendido, también de la
     ''' cámara. Ese flag viene en <b>True</b> por default (decisión del usuario), así que orbitar SÍ mueve
     ''' las direcciones salvo que se apague. Con el flag apagado no cambia ni una.</para></summary>
@@ -5628,16 +5561,15 @@ Public Class PreviewModel
     Private ReadOnly _framePlanes(5) As Vector4
     ''' <summary>Sube lo que recibe un plano de normal +Z: el TOTAL y el aporte de cada capa casteante.
     '''
-    ''' <para>NO ES UNA CONSTANTE ELEGIDA A OJO, y esa es la diferencia entre una sombra y una
-    ''' calcomania. La primera version multiplicaba por <c>1 - a</c>, o sea que con Intensity = 1 el suelo
-    ''' quedaba en NEGRO PURO — y ningun suelo en sombra es negro: le siguen llegando el ambiente y las
-    ''' luces que no estan bloqueadas EN ESE PIXEL. Aca se evalua exactamente eso, con el MISMO rig que
-    ''' esta iluminando al personaje.</para>
+    ''' <para>NO ES UNA CONSTANTE ELEGIDA A OJO, y esa es la diferencia entre una sombra y una calcomania.
+    ''' Multiplicar por <c>1 - a</c> deja el suelo en NEGRO PURO con Intensity = 1, y ningun suelo en sombra
+    ''' es negro: le siguen llegando el ambiente y las luces que no estan bloqueadas EN ESE PIXEL. Aca se
+    ''' evalua exactamente eso, con el MISMO rig que esta iluminando al personaje.</para>
     '''
-    ''' <para>Y AHORA ES POR LUZ, que es lo que lo vuelve correcto con N: el fragment resta el aporte
-    ''' de cada capa ocluida y nada mas, asi que la sombra del suelo se COMPONE igual que la del cuerpo y
-    ''' ademas se TINE — ocluir una key calida donde llega un fill frio deja el piso azulado. La version
-    ''' de un solo tinte no podia expresar eso ni con N mapas.</para>
+    ''' <para>Y ES POR LUZ, que es lo que lo vuelve correcto con N: el fragment resta el aporte de cada capa
+    ''' ocluida y nada mas, asi que la sombra del suelo se COMPONE igual que la del cuerpo y ademas se TINE
+    ''' —ocluir una key calida donde llega un fill frio deja el piso azulado—, cosa que un tinte unico no
+    ''' puede expresar ni con N mapas.</para>
     '''
     ''' <para>El ambiente que entra es el del hemisferio de ARRIBA porque la normal del plano es +Z, que
     ''' es justo donde <c>hemiAmbient</c> devuelve <c>ambientSky</c> puro. El pow 1/2.2 lo hace el
@@ -5826,12 +5758,10 @@ Public Class PreviewModel
         ' SOLTAR LA VRAM EN *TODOS* LOS CAMINOS DE APAGADO, no solo en el de la opcion del suelo. El
         ' criterio "con la sombra apagada no se asigna un byte de GPU" tiene CINCO salidas —opcion apagada,
         ' sin shader, sin casters, encuadre invalido y fallo de Ensure— y liberar en una sola es no
-        ' cumplirlo:
-        ' prender sombras + suelo y despues DESTILDAR sombras dejaba los dos mapas colgados hasta el Clean
-        ' Y LA CUENTA CRECIO: los dos arrays se reservan al MISMO lado y con las MISMAS capas, asi que a
-        ' 2048 con una sola luz son 16 + 16 = 32 MB, con las cuatro 128 MB, y a 4096 con las cuatro 512 MB.
-        ' (Este comentario decia "a 2048 + 1024 son ~16 MB", que era la aritmetica de cuando el mapa ancho se
-        ' dimensionaba solo. Ver el cartel de VRAM del dialogo, que hace exactamente esta cuenta.)
+        ' cumplirlo: prender sombras + suelo y despues DESTILDAR sombras deja los dos mapas colgados hasta el
+        ' Clean. Los dos arrays se reservan al MISMO lado y con las MISMAS capas, asi que a 2048 con una sola
+        ' luz son 16 + 16 = 32 MB, con las cuatro 128 MB, y a 4096 con las cuatro 512 MB. Ver el cartel de VRAM
+        ' del dialogo, que hace exactamente esta cuenta.
         If Not cfg.Enabled Then SoltarMapasDeSombra() : Exit Sub
 
         Dim depthShader = ParentControl.CurrentShadowShader
@@ -5844,11 +5774,10 @@ Public Class PreviewModel
         ' eyelashes, eyewet, eyestearduct, stubble, el pelo *_8bit, beard_8bit* y synthtattoo — o sea los
         ' que proyectarian una barra negra sobre el ojo o un bloque solido en vez de mechones. Sus gemelos
         ' *_1bit (cutout) SI lo traen en True. Por eso no hay excepcion por bucket: alcanza el flag.
-        ' NO HAY OVERRIDE DE ESTE FILTRO, y hubo uno por unas horas. Se agrego una opcion "ignorar el
-        ' flag del material" para poder ver la sombra de mods que traen CastShadows=False — pero eso era
-        ' tapar con una perilla un DEFECTO DE LECTURA: el bit no se estaba leyendo del NIF para materiales
-        ' BGEM (ver FO4UnifiedMaterial_Class.CastShadows). Arreglada la lectura, la perilla sobra, y una
-        ' perilla que existe para compensar un bug es justo lo que la regla "nunca un modo legacy" prohibe.
+        ' NO HAY OVERRIDE DE ESTE FILTRO: una opcion "ignorar el flag del material" para ver la sombra de mods
+        ' que traen CastShadows=False tapa con una perilla un DEFECTO DE LECTURA del bit —el del NIF para
+        ' materiales BGEM, ver FO4UnifiedMaterial_Class.CastShadows—, y una perilla que existe para compensar
+        ' un bug es justo lo que la regla "nunca un modo legacy" prohibe.
         Dim casters = _shadowCasters
         casters.Clear()
         For Each mesh In meshes
@@ -6017,10 +5946,9 @@ Public Class PreviewModel
                         ' LightFit en cero se nota (Valid = False, Radius = 0); uno viejo se cree.
                         _groundFits(capa) = Nothing
                         If Not califica(capa) Then Continue For
-                        ' El tamano LOGICO de esta capa sale de su propio radio: una key alta y un fill
-                        ' rasante conservan cada uno su resolucion optima, que es lo que se perdia al
-                        ' compartir un unico tamano de textura. Sigue siendo la misma funcion pura de
-                        ' siempre, con sus dos trampas cubiertas por `ground-mapsize`.
+                        ' El tamano LOGICO de esta capa sale de su propio radio: una key alta y un fill rasante
+                        ' conservan cada uno su resolucion optima, que un unico tamano de textura para todas
+                        ' pierde. Las dos trampas de la funcion las cubre `ground-mapsize`.
                         Dim dirLuz = _frameLights.DirDeLuz(_groundLuzDeCapa(capa))
                         Dim radioTent = ShadowMapMath.Fit(dirLuz, minPorCapa(capa), maxPorCapa(capa), cfg.MapSize).Radius
                         Dim gLog As Integer = ShadowMapMath.GroundMapSize(_shadowFits(0).Radius, radioTent, cfg.MapSize)
@@ -6033,22 +5961,16 @@ Public Class PreviewModel
                         RenderDepthInto(ParentControl.GroundShadowTarget, capa, gLog, gfit, depthShader, casters)
                         algunaDibujada = True
                     Next
-                    ' ACA HABIA UN "LIMPIAR LAS CAPAS QUE NO CALIFICAN", Y SE SACO PORQUE NO PROTEGIA DE
-                    ' NADA. El argumento era: TexImage3D con IntPtr.Zero deja el contenido indefinido, asi
-                    ' que una capa nunca dibujada se samplearia como profundidad basura. Las dos mitades son
-                    ' falsas hoy:
-                    '  1. La poblacion que se limpiaba y la que el fragment SALTEA son la MISMA por
-                    '     construccion: se limpiaba `Not _groundValida(capa)`, y SubirAporteDelSuelo le pone
-                    '     contribucion CERO a esas mismas capas, y el fragment hace `continue` sobre
-                    '     contribucion cero. Se limpiaba algo que no se lee nunca.
-                    '  2. Y si alguien sacara ese `continue`, limpiar TAMPOCO salvaria: la capa que no
-                    '     califica tiene la ViewProj en cero —se la deja asi el `_groundFits(capa) = Nothing`
-                    '     del bucle de arriba, que es el UNICO punto que deja una capa en cero con
-                    '     `_groundCount` todavia mayor que cero— asi que el lookup divide por w = 0 y las
-                    '     coordenadas salen NaN, sin importar que profundidad haya guardada adentro.
-                    ' Costaba un glFramebufferTextureLayer + un glClear por capa y por frame, o sea la misma
-                    ' revalidacion de FBO que `_capaAttachada` se agrego a evitar. El unico guardian real es
-                    ' el `continue` del fragment, y ahi esta dicho.
+                    ' NO SE LIMPIAN LAS CAPAS QUE NO CALIFICAN, aunque TexImage3D con IntPtr.Zero deje el
+                    ' contenido indefinido: limpiarlas cuesta un glFramebufferTextureLayer + un glClear por capa
+                    ' y por frame —la misma revalidacion de FBO que `_capaAttachada` existe para evitar— y no
+                    ' protegen de nada, porque esas capas nunca se leen:
+                    '  1. `SubirAporteDelSuelo` le pone contribucion CERO a las capas `Not _groundValida(capa)`,
+                    '     y el fragment hace `continue` sobre contribucion cero. Ese `continue` es el guardian.
+                    '  2. Y sin el, limpiar tampoco salvaria: esas capas tienen la ViewProj en cero —se la deja
+                    '     el `_groundFits(capa) = Nothing` del bucle de arriba, UNICO punto que deja una capa en
+                    '     cero con `_groundCount` todavia mayor que cero— asi que el lookup divide por w = 0 y
+                    '     las coordenadas salen NaN, sin importar que profundidad haya guardada adentro.
                     If algunaDibujada Then
                         _groundCount = _shadowCount
                         ' El quad NO se dimensiona con un radio: ese radio es la media diagonal de la

@@ -6,14 +6,14 @@ Imports System.IO
 ''' <c>loadorder.txt</c> bajo <c>%LOCALAPPDATA%</c>, y la carpeta de los .ini bajo
 ''' <c>Documents\My Games</c>. Ambas cuelgan del MISMO nombre interno del juego.
 '''
-''' <para><b>Por qué existe esta clase.</b> Antes el nombre salía de una tabla de dos entradas por juego
-''' (plana + VR) y se elegía con <c>Directory.Exists</c>. Eso rompe en cuanto la tienda cambia el nombre:
-''' la edición de GOG de Skyrim SE usa <c>Skyrim Special Edition GOG</c> en las DOS raíces. Y rompía en
-''' silencio, que es lo peor: en una máquina con la carpeta de Steam presente (aunque vacía) el
-''' <c>Directory.Exists</c> daba True, se leía un Plugins.txt ajeno o inexistente, y la app mostraba el
+''' <para><b>Por qué existe esta clase.</b> ⛔ NO sacar el nombre de una tabla de dos entradas por juego
+''' (plana + VR) elegida con <c>Directory.Exists</c>: se rompe en cuanto la tienda cambia el nombre —la
+''' edición de GOG de Skyrim SE usa <c>Skyrim Special Edition GOG</c> en las DOS raíces— y rompe en
+''' SILENCIO, que es lo peor: en una máquina con la carpeta de Steam presente (aunque vacía) el
+''' <c>Directory.Exists</c> da True, se lee un Plugins.txt ajeno o inexistente, y la app muestra el
 ''' juego sin un solo mod sin emitir ningún error.</para>
 '''
-''' <para><b>NO BUSCA EN DISCO.</b> Decisión explícita del usuario (2026-08-13): esta clase va DIRECTO a
+''' <para><b>NO BUSCA EN DISCO.</b> Decisión explícita del usuario: esta clase va DIRECTO a
 ''' rutas conocidas o le PREGUNTA al usuario. No hay barridos, ni patrones, ni <c>EnumerateDirectories</c>,
 ''' ni escaneo del exe, ni registro, ni parseo de librerías de Steam. El motivo no es el costo medido acá
 ''' —la app se distribuye y esta máquina no autoriza nada— sino la FORMA: un <see cref="File.Exists"/>
@@ -25,8 +25,8 @@ Imports System.IO
 ''' <para><b>Costo total.</b> Con override del usuario: CERO accesos. Sin override: 1-2
 ''' <see cref="File.Exists"/> (uno por candidato de la tabla), y sólo si ninguno acierta, 1-2 más contra
 ''' el .ini. Memoizado por sesión con clave (exe, juego, overrides), así que ese puñado de stats se paga
-''' una vez y no por llamada — hoy <c>ResolveGameAppDataDir</c> hacía 2 <c>Directory.Exists</c> en CADA
-''' invocación, sin caché.</para>
+''' una vez y no por llamada — sin la memo, <c>ResolveGameAppDataDir</c> haría 2 <c>Directory.Exists</c>
+''' en CADA invocación.</para>
 '''
 ''' <para><b>Lo que NO resuelve, a propósito.</b> Una variante que no esté en <see cref="CandidateFolders"/>
 ''' (Epic, Microsoft Store, una tienda futura) cae en <see cref="PathOrigin.NotResolved"/> y termina en el
@@ -173,8 +173,8 @@ Public NotInheritable Class GamePathsResolver
     ''' <para>Si el nombre configurado no es uno de los cuatro canónicos, se prueban los cuatro EN LA MISMA
     ''' CARPETA. Son cuatro <see cref="File.Exists"/> contra rutas armadas, no una enumeración. Cubre el
     ''' caso real de que el usuario apunte a <c>f4se_loader.exe</c>, <c>skse64_loader.exe</c> o
-    ''' <c>Fallout4Launcher.exe</c>, donde el discriminador viejo (<c>EndsWith("VR")</c> sobre la ruta
-    ''' configurada) devolvía cualquier cosa.</para></summary>
+    ''' <c>Fallout4Launcher.exe</c>, donde un discriminador por <c>EndsWith("VR")</c> sobre la ruta
+    ''' configurada devuelve cualquier cosa.</para></summary>
     Public Shared Function IdentifyExe(exePath As String) As (Game As Config_App.Game_Enum, ExeVariant As GameVariant)
         Dim none = (Config_App.Game_Enum.Fallout4, GameVariant.Unknown)
         If String.IsNullOrWhiteSpace(exePath) Then Return none
@@ -198,9 +198,9 @@ Public NotInheritable Class GamePathsResolver
         Return none
     End Function
 
-    ''' <summary>True cuando el exe configurado es el build de VR. Reemplaza al viejo
-    ''' <c>EndsWith("VR")</c>: ahora sale de <see cref="IdentifyExe"/>, así que un
-    ''' <c>skse64_loader.exe</c> al lado de <c>SkyrimVR.exe</c> también da True.</summary>
+    ''' <summary>True cuando el exe configurado es el build de VR. Sale de <see cref="IdentifyExe"/> y NO
+    ''' de un <c>EndsWith("VR")</c> sobre la ruta, así que un <c>skse64_loader.exe</c> al lado de
+    ''' <c>SkyrimVR.exe</c> también da True.</summary>
     Public Shared Function IsVrBuild() As Boolean
         Return IdentifyExe(ConfiguredExePath()).ExeVariant = GameVariant.VR
     End Function

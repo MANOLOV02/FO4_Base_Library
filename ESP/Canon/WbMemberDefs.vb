@@ -151,11 +151,10 @@ Namespace Canon
                 ctx.Report(WbFindingKind.Pending, n.Path, $"{sr.Signature}: {data.Length} bytes sin declarar")
             End If
             ' Fidelidad de texto: se cuenta cada hoja de TEXTO que no vuelve a los mismos bytes.
-            ' El recorrido corre SÓLO si el parseo de este subrecord conservó algún crudo. Antes
-            ' corría siempre: un barrido del subárbol entero POR SUBRECORD, y el caso que busca es el
-            ' 0,02 % (218 hojas en Fallout 4 y 448 en Skyrim, sobre 1,87 millones de nodos).
-            ' El aviso que sale es EL MISMO, con la misma ruta y en el mismo orden: lo único que se
-            ' saltea es el recorrido cuando no hay nada que encontrar.
+            ' El recorrido corre SÓLO si el parseo de este subrecord conservó algún crudo. Correrlo
+            ' siempre es un barrido del subárbol entero POR SUBRECORD para un caso que es el 0,02 %
+            ' (218 hojas en Fallout 4 y 448 en Skyrim, sobre 1,87 millones de nodos). El aviso que sale
+            ' es el mismo, con la misma ruta y en el mismo orden.
             If ctx.TextosCrudos <> crudosAntes Then
                 For Each leaf In n.Walk()
                     If leaf.RawOverride IsNot Nothing AndAlso TypeOf leaf.Def Is WbStringDef Then

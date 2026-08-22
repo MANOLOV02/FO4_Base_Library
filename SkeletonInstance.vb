@@ -24,10 +24,7 @@ Public Class HierarchiBone_class
     ''' escrito por <c>ApplyPose</c>. Aplica AL FINAL, libre para animar sin tocar el morph.</item>
     ''' </list>
     ''' </para>
-    ''' <para>No-op vs pre-refactor (morph en Delta): con <c>DeltaTransform = Nothing</c>
-    ''' (sin animación), <c>OrigL × Mount × Morph</c> es bit-idéntico al viejo
-    ''' <c>OrigL × Mount × Delta(morph)</c> — el mismo Transform por hueso que iba a Delta
-    ''' ahora va a Morph, y componer con Nothing es no-op.</para>
+    ''' <para>Componer con <c>Nothing</c> es no-op, así que una capa ausente no cuesta ni mueve bits.</para>
     ''' <para>Cascade: <c>GetGlobalTransform</c> compone parent chain con esta
     ''' <c>LocaLTransform</c>, propagando Mount/Morph/Delta del parent automáticamente.</para>
     ''' </summary>
@@ -79,12 +76,10 @@ Public Class HierarchiBone_class
             Return Parent.GetGlobalTransform.ComposeTransforms(LocaLTransform)
         End Get
     End Property
-    ''' <summary>Bind chain INCLUYENDO MountDeltaTransform pero EXCLUYENDO DeltaTransform
-    ''' (pose). Replica la semántica pre-refactor de "bind chain con mutaciones V2 aplicadas":
-    ''' antes V2 mutaba <c>OriginalLocaLTransform</c> a <c>newLocal</c>, ahora MountDelta
-    ''' contiene la corrección equivalente y debe propagarse igual en la cadena parent.
-    ''' Sin esto, children que computen <c>newLocal_child = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>
-    ''' no verían la corrección V2 del parent y la cascade quedaría rota.</summary>
+    ''' <summary>Bind chain INCLUYENDO MountDeltaTransform pero EXCLUYENDO DeltaTransform (pose).
+    ''' <para>⛔ MountDelta TIENE que propagarse por la cadena parent: un child que compute
+    ''' <c>newLocal_child = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c> no vería la corrección
+    ''' de mount del parent y la cascade quedaría rota.</para></summary>
     Public ReadOnly Property OriginalGetGlobalTransform As Transform_Class
         Get
             Dim localBind As Transform_Class = OriginalLocaLTransform

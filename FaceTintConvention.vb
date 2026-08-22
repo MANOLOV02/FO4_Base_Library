@@ -2,8 +2,8 @@
 
 ''' <summary>
 ''' Convención de composición FaceTint configurable por estrato. Centraliza la tabla derivada
-''' empíricamente (single-layer B03-06, 2026-05-28) en UN resolver, con enums, para que WS / FW /
-''' MaskConv / Blend sean cambiables y unificables sin tocar el shader ni el builder.
+''' empíricamente (single-layer B03-06) en UN resolver, con enums, para que WS / FW / MaskConv / Blend sean
+''' cambiables y unificables sin tocar el shader ni el builder.
 '''
 ''' Modelo ENGINE-FAITHFUL (re-derivado del b12 BSFaceCustomizationShader, V2 DXBC + V1 CK builder
 ''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified; reemplaza el modelo empírico "ws=entry_type" que
@@ -63,8 +63,8 @@ Public Module FaceTintConvention
 
     ''' <summary>Operador de blend efectivo. 0..4 = dominio del BlendOp del record FO4 (mapea via MapBlend).
     ''' 5..19 = modos separables estándar (Photoshop/W3C) que el record NO emite pero el dispatch SÍ soporta
-    ''' (GL+CPU), agregados por pedido del usuario 2026-06-04. Apéndice: jamás reordenar (el config serializa
-    ''' el entero). Read-only en la UI (no hay selección de blend hoy; sólo del record / Replace).</summary>
+    ''' (GL+CPU). Es un apéndice: jamás reordenar, el config serializa el entero. Read-only en la UI (no hay
+    ''' selección de blend hoy; sólo del record / Replace).</summary>
     Public Enum FaceTintBlend
         Replace = 0
         Multiply = 1
@@ -196,13 +196,11 @@ Public Module FaceTintConvention
     '''   CompositeSpace = espacio donde corre el COMPOSITE (la lerp por cobertura base+cov*(blend−base)).
     '''                  Ley derivada gen3 (Tools/FaceTintDerive): el blend va en su espacio pero el
     '''                  composite-lerp va en LINEAR-light (D/N/S).
-    ''' NO forkea con forBake. Es `= bucket.CompositeSpace`, punto. (Este comentario
-    '''                  afirmaba "para el render (forBake=False) = WorkingSpace": ERA FALSO —
-    '''                  ResolveConvention no lee forBake NI UNA VEZ. Verificado 2026-07-30.)
+    '''                  NO forkea con forBake: es `= bucket.CompositeSpace`, punto —
+    '''                  ResolveConvention no lee forBake NI UNA VEZ.
     '''   OutputSpace  = espacio de ALMACENAMIENTO del canal: el espacio en el que el compose tiene que
     '''                  DEJAR el resultado. Default D=G22, N/S=Linear.
-    ''' Tampoco forkea render-vs-bake: la ley es UNICA (WYSIWYG, el render replica el
-    '''                  bake). El texto viejo "D render=Srgb ; D bake=G22" era falso por el mismo motivo.
+    '''                  Tampoco forkea render-vs-bake: la ley es UNICA (WYSIWYG, el render replica el bake).
     '''   AccumSpace   = espacio en el que VIVE el acumulador DURANTE el compose (ver el campo mas abajo).
     ''' El compositor convierte prev(AccumSpace)->WorkingSpace y src(SrcSpace)->WorkingSpace, blendea,
     ''' luego prev/blend->CompositeSpace, lerpea por cov, y devuelve CompositeSpace->AccumSpace. Al CERRAR
@@ -219,16 +217,16 @@ Public Module FaceTintConvention
         ''' <summary>Espacio en el que VIVE el acumulador MIENTRAS se componen las capas. Lo resuelve
         ''' <see cref="ResolveConvention"/> a un valor CONCRETO (nunca un flag) para que el compositor —CPU y
         ''' GL— siga siendo agnostico: lee este campo y convierte, sin saber por que vale lo que vale.
-        ''' <para>Con <c>AccumSpace = OutputSpace</c> (DEFAULT) el comportamiento es EXACTAMENTE el previo: el
-        ''' acumulador se guarda en OutputSpace y cada capa hace el ida-y-vuelta OutputSpace-&gt;Working/Composite
-        ''' y de vuelta. Con <c>AccumSpace = CompositeSpace</c> el acumulador se queda en el espacio del
-        ''' composite y esas dos conversiones por capa desaparecen (medido: el compose es el 94,9 % del bake y
-        ''' su costo son los <c>Math.Pow</c> de estas conversiones).</para>
-        ''' <para>NO es solo velocidad: quitar el round-trip quita tambien su PERDIDA DE PRECISION, asi que
-        ''' la salida CAMBIA. Que eso ACERQUE o ALEJE del CK es empirico y hay que medirlo — el RE del motor
-        ''' (buffer <c>float4[16]</c> a UN pixel shader image-space) sugiere que el motor NO round-tripea entre
-        ''' capas, con lo que el round-trip seria NUESTRO artefacto. Por eso el default NO cambia y esto se
-        ''' habilita desde el config para poder correr el A/B.</para></summary>
+        ''' <para>Lo gobierna <see cref="FaceTintBucketConvention.AccumInCompositeSpace"/>. Con
+        ''' <c>AccumSpace = CompositeSpace</c> (el default) el acumulador se queda en el espacio del composite y
+        ''' las dos conversiones por capa desaparecen; con <c>AccumSpace = OutputSpace</c> el acumulador se
+        ''' guarda en OutputSpace y cada capa paga el ida-y-vuelta OutputSpace-&gt;Working/Composite y de vuelta
+        ''' (medido: el compose es el 94,9 % del bake y su costo son los <c>Math.Pow</c> de esas
+        ''' conversiones).</para>
+        ''' <para>NO es solo velocidad: quitar el round-trip quita tambien su PERDIDA DE PRECISION, asi que las
+        ''' dos opciones NO dan la misma salida. El RE del motor (buffer <c>float4[16]</c> a UN pixel shader
+        ''' image-space) dice que el motor NO round-tripea entre capas, con lo cual el round-trip es artefacto
+        ''' NUESTRO; que eso acerque o aleje del CK se mide con el A/B del config.</para></summary>
         Public AccumSpace As FaceTintWorkingSpace
         Public MaskConv As FaceTintMaskConv
         Public Framework As FaceTintFramework
@@ -252,15 +250,15 @@ Public Module FaceTintConvention
         ''' <summary>Canal de máscara que aporta la cobertura. Default ByKind (FO4: el compositor lo decide por
         ''' layer-kind). SSE lo fija en R. Configs viejos sin el campo caen a ByKind (= comportamiento previo).</summary>
         Public Property MaskChannel As FaceTintMaskChannel = FaceTintMaskChannel.ByKind
-        ''' <summary>True (DEFAULT desde 2026-07-30) = el acumulador se queda en CompositeSpace durante todo
-        ''' el compose y se convierte a OutputSpace UNA sola vez al final. False = se guarda en OutputSpace y
-        ''' cada capa paga el ida-y-vuelta (dos Math.Pow por canal por capa).
-        ''' <para>Por que ON por default: ese ida-y-vuelta por capa era trabajo puro perdido. Medido sobre una
+        ''' <summary>True (DEFAULT) = el acumulador se queda en CompositeSpace durante todo el compose y se
+        ''' convierte a OutputSpace UNA sola vez al final. False = se guarda en OutputSpace y cada capa paga el
+        ''' ida-y-vuelta (dos Math.Pow por canal por capa).
+        ''' <para>Por que ON por default: ese ida-y-vuelta por capa es trabajo puro perdido. Medido sobre una
         ''' muestra de 200 NPCs de FO4, la fase Textures baja de 180,5 s a 108,8 s (-39,7 %) y el reloj de
         ''' pared de 3:12 a 2:00.</para>
-        ''' <para>CAMBIA LA SALIDA (no es bit-identico al camino previo): al no redondear en cada capa el
-        ''' resultado queda MAS preciso, no distinto por ley. Es editable y reversible desde CharGen Options
-        ''' (checkbox por bucket de canal + Revert to defaults) y se persiste en config.json.</para></summary>
+        ''' <para>LAS DOS OPCIONES NO DAN LA MISMA SALIDA: al no redondear en cada capa el resultado queda MAS
+        ''' preciso, no distinto por ley. Es editable y reversible desde CharGen Options (checkbox por bucket de
+        ''' canal + Revert to defaults) y se persiste en config.json.</para></summary>
         Public Property AccumInCompositeSpace As Boolean = True
     End Class
 
@@ -480,19 +478,15 @@ Public Module FaceTintConvention
             ' materializan para que la UI y el JSON tengan valores concretos (y sean editables).
             If s.Fold Is Nothing Then s.Fold = d.Fold
             If s.Overlay Is Nothing Then s.Overlay = d.Overlay
-            ' -> 4: `Fold` y `Overlay` se RESETEAN ENTEROS al default DEL JUEGO.
-            ' MEDIDO en los config del arnés (2026-08-01): en el slot de SKYRIM los dos buckets traían la
-            ' forma de FALLOUT — ws=G22, src=G22, out=G22, mask=G22Encode, accum=True — mientras el Diffuse de
-            ' SSE es all-Linear/Raw/accum=False. Salieron del CONSTRUCTOR (que es el de FO4) cuando el slot se
-            ' creó, y nadie los corrigió porque hasta ahora NINGÚN compositor los leía: el eje `stage` se
-            ' aceptaba y se descartaba, así que las dos etapas caían al bucket del canal.
-            ' Al volverlas alcanzables, esos valores heredados cambiarían EN SILENCIO el pliegue y los
-            ' overlays de Skyrim. Resetearlos no pierde ninguna elección del usuario POR CONSTRUCCIÓN: un
-            ' campo sin consumidor no pudo haber sido elegido — la UI los mostraba, pero lo que mostraba no
-            ' movía un byte.
-            ' Por eso la versión sube a 4 y no alcanzaba con la 3: los sets ya migrados a la 3 (que sólo
-            ' corregía Fold.SoftLight) salen por el `Return` de arriba y se habrían quedado con el resto de la
-            ' forma equivocada.
+            ' -> 4: `Fold` y `Overlay` se RESETEAN ENTEROS al default DEL JUEGO. Los sets creados mientras el
+            ' eje `stage` se aceptaba y se descartaba salieron del CONSTRUCTOR (que es el de FO4), así que en el
+            ' slot de SKYRIM traen la forma de FALLOUT —ws=G22, src=G22, out=G22, mask=G22Encode, accum=True—
+            ' mientras el Diffuse de SSE es all-Linear/Raw/accum=False: al volverlos alcanzables, esos valores
+            ' heredados cambiarían EN SILENCIO el pliegue y los overlays de Skyrim.
+            ' Resetear no pierde ninguna elección del usuario POR CONSTRUCCIÓN: un campo sin consumidor no pudo
+            ' haber sido elegido — la UI los mostraba, pero lo que mostraba no movía un byte.
+            ' Y hace falta la versión 4, no alcanza la 3: los sets ya migrados a la 3 (que sólo corregía
+            ' Fold.SoftLight) salen por el `Return` de arriba y se quedarían con el resto de la forma equivocada.
             If s.Version < 4 Then
                 s.Fold = d.Fold
                 s.Overlay = d.Overlay
@@ -597,21 +591,14 @@ Public Module FaceTintConvention
     ''' inicializador de <see cref="FaceTintConventionSettings.SeedConstant"/> y NO se re-literaliza acá.</summary>
     Public Function SeedConstantValue() As Single()
         Dim s = ActiveSettings()
-        Dim k As Double() = If(s Is Nothing, Nothing, s.SeedConstant)
+        Dim k As Double() = s?.SeedConstant
         If k Is Nothing OrElse k.Length < 3 Then k = New FaceTintConventionSettings().SeedConstant
         Return New Single() {CSng(k(0)), CSng(k(1)), CSng(k(2))}
     End Function
 
-    ' ELIMINADA `SeedDiffuseOutputSpaceValue` (2026-07-30). Devolvia `Diffuse.OutputSpace` y su doc decia
-    ' "el seed lleva la base a ESE espacio, lo leen ambos compositores". Las DOS cosas dejaron de ser ciertas:
-    ' el seed ahora lleva la base a AccumSpace (ver AccumSpaceForChannel) y no quedaba UN solo lector en el
-    ' repo. Su reemplazo exacto para el OutputSpace del diffuse es `OutputSpaceForChannel(Diffuse)`, que ademas
-    ' es el MISMO resolver que usa el pase final — asi el par (origen, destino) no se puede desalinear.
-    ' Se borra en vez de dejarla: dos formas de pedir lo mismo es como se elige la equivocada.
-
-    ' SLOT_SKINTONE (= 12) se borró en la higiene previa a la unificación: era Private y NO le quedaba UN
-    ' solo lector. Una constante "centralizada para no hardcodear" que nadie lee no centraliza nada — sólo
-    ' sugiere que el 12 sale de acá cuando en realidad sale de donde sea que esté escrito.
+    ' El OutputSpace del diffuse se pide por `OutputSpaceForChannel(Diffuse)`, que es el MISMO resolver que usa
+    ' el pase final: así el par (origen, destino) no se puede desalinear. El seed lleva la base a AccumSpace,
+    ' no a OutputSpace — ver AccumSpaceForChannel.
 
     ''' <summary>CAPACIDAD DECLARADA del compositor CPU que hace de ESPEJO de un camino de compose. Es la
     ''' condicion REAL que gatea <see cref="FaceTintBucketConvention.AccumInCompositeSpace"/>: el acumulador solo
@@ -643,12 +630,10 @@ Public Module FaceTintConvention
     ''' <para>Llamar a esto y NO a ResolveConvention(...).AccumSpace en los caminos del acumulador: asi los dos
     ''' compositores leen el MISMO valor por construccion, y sigue siendo correcto si el usuario cambia los
     ''' settings (hoy en N/S es un no-op porque cs==os==Linear, pero deja de serlo si los cambia).</para>
-    ''' <para>NO TOMA <c>forBake</c> A PROPOSITO. La version previa de este comentario afirmaba que la
-    ''' convencion forkea con ese flag ("OutputSpace del diffuse G22 al hornear y Srgb al renderizar") y que por
-    ''' eso el parametro tenia que ser obligatorio: ERA FALSO. <see cref="ResolveConvention"/> NO referencia
-    ''' <c>forBake</c> ni una vez — la ley es UNICA para render y bake por decision de diseño (WYSIWYG, el render
-    ''' replica el bake), como ya documenta el propio parametro alla. Un parametro obligatorio que no acopla nada
-    ''' es falsa seguridad, asi que se saca en vez de propagarlo.</para></summary>
+    ''' <para>NO TOMA <c>forBake</c> A PROPOSITO: la convencion NO forkea con ese flag.
+    ''' <see cref="ResolveConvention"/> no lo referencia ni una vez — la ley es UNICA para render y bake por
+    ''' decision de diseño (WYSIWYG, el render replica el bake). Un parametro obligatorio que no acopla nada es
+    ''' falsa seguridad.</para></summary>
     ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja ESTE camino. Sin default: el caller es
     ''' el unico que sabe con quien tiene que mantener paridad, y asumirlo es justamente como se rompio antes.</param>
     Public Function AccumSpaceForChannel(channel As FaceTintChannel,
@@ -688,9 +673,9 @@ Public Module FaceTintConvention
 
     ''' <summary>Latchea (solo la primera vez) el aviso de que el <c>OutputSpace</c> del bucket SWAP no coincide
     ''' con el espacio del acumulador del canal. El acumulador es UN buffer que cruza swaps y tints, asi que lo
-    ''' gobierna el bucket del CANAL; el del Swap no participa del storage. Antes del 2026-07-30 la fase de swap
-    ''' usaba el bucket Swap, con lo cual un config que separe los dos combos produce una salida DISTINTA de la
-    ''' version previa (CPU y GL se movieron juntos: la paridad CPU/GPU NO se rompe).
+    ''' gobierna el bucket del CANAL; el del Swap no participa del storage. Un config que separe los dos combos
+    ''' produce una salida DISTINTA de la de un compositor que use el bucket Swap en la fase de swap (CPU y GL
+    ''' aplican la misma ley: la paridad CPU/GPU NO se rompe).
     ''' <para>El mensaje NO dice "poné Swap.OutputSpace = Diffuse.OutputSpace": eso es falso cuando
     ''' <c>AccumInCompositeSpace</c> esta prendido, porque ahi el acumulador vive en CompositeSpace. Se informa
     ''' el valor CONCRETO del acumulador, que es correcto en los dos casos.</para></summary>
@@ -709,12 +694,11 @@ Public Module FaceTintConvention
 
     ''' <summary>LEY UNICA de la INTENSIDAD de un region swap (el MSDV del preset de FaceMorph), compartida
     ''' por el compositor CPU y el GL. Existe para que no haya DOS escrituras de la misma regla.
-    ''' <para>ESTABAN ESCRITAS DISTINTO (2026-07-30): el CPU hacia <c>Math.Max(0.0, CDbl(sw.Intensity))</c>
-    ''' —piso en 0, SIN techo— y el GL <c>Math.Max(0.0F, Math.Min(1.0F, sw.Intensity))</c> —piso Y techo—.
-    ''' Con los datos vanilla es un NO-OP (medido: los MSDV estan en [-1, 1]; sobre los 6 NPCs que cargan la
-    ''' cola de divergencia, 54 valores, el maximo es 1,0000 exacto), asi que NO era la causa de ninguna
-    ''' divergencia CPU/GPU. Se unifica igual: dos caminos que calculan lo mismo no deben estar escritos dos
-    ''' veces, porque el dia que uno cambie el otro no lo sigue y el bug no se ve.</para>
+    ''' <para>NO escribir el clamp por separado en cada compositor: es facil que uno quede con piso SIN techo
+    ''' (<c>Math.Max(0.0, ...)</c>) y el otro con piso Y techo. Con los datos vanilla la diferencia es un NO-OP
+    ''' —medido: los MSDV estan en [-1, 1]; sobre los 6 NPCs que cargan la cola de divergencia, 54 valores, el
+    ''' maximo es 1,0000 exacto—, o sea que no se ve hasta que uno de los dos caminos cambie y el otro no lo
+    ''' siga.</para>
     ''' <para>POR QUE [0,1] y no [-1,1]: la intensidad de un swap es "cuanta de esta textura se mezcla".
     ''' Un valor negativo no tiene significado ahi (no se puede aplicar -73 % de una textura) y 0 = sin swap.
     ''' El rango [-1,1] SI es el correcto para los MORPHS, donde el signo es la DIRECCION del slider
@@ -727,10 +711,9 @@ Public Module FaceTintConvention
         Return Math.Max(0.0F, Math.Min(1.0F, intensity))
     End Function
 
-    ' EL GATE `accum-space` YA NO VIVE ACA. Se mudó a Tools/ParityGate
-    ' (LawGates.AccumSpaceConsistencyGate) el 2026-08-08: es una invariante de la LEY, sin aritmética ni
-    ' SIMD, o sea que da lo mismo en toda máquina. Vigila que las 5 etapas × 3 canales resuelvan el MISMO
-    ' AccumSpace — el acumulador es UN buffer compartido y no puede vivir en dos espacios.
+    ' EL GATE `accum-space` vive en Tools/ParityGate (LawGates.AccumSpaceConsistencyGate): es una invariante de
+    ' la LEY, sin aritmética ni SIMD, o sea que da lo mismo en toda máquina. Vigila que las 5 etapas × 3 canales
+    ' resuelvan el MISMO AccumSpace — el acumulador es UN buffer compartido y no puede vivir en dos espacios.
 
     ''' <summary>OutputSpace del acumulador de un canal — el espacio en el que el compose tiene que DEJAR el
     ''' resultado, y el destino del unico pase final. Mismo resolver y mismos argumentos que
@@ -827,9 +810,9 @@ Public Module FaceTintConvention
         ' V1 CK builder FUN_140ED0E40, ck_bake_facetint_RULE_verified §4): SoftLight en gamma-2.2 (decode
         ' dst+color, GIMP, re-encode), Normal/Multiply/Overlay/HardLight en LINEAR. Replace cancela el ws por
         ' construcción (Cvt(Cvt(src,ss→ws),ws→cs)=Cvt(src,ss→cs)) ⇒ con los defaults esto es BYTE-IDÉNTICO en
-        ' TODA la data vanilla (scan 2026-06-20: 4008/4008 TemplateColors de las 110 RACE de Fallout4.esm+DLCs
-        ' son bop 0 ó 3; CERO Multiply/Overlay/HardLight) y sólo corrige RACEs modeadas con bop 1/2/4 (antes en
-        ' G22, ≠ engine). El usuario puede cambiar el espacio de cada op en config.json. Fallback (modos 5..19
+        ' TODA la data vanilla (scan: 4008/4008 TemplateColors de las 110 RACE de Fallout4.esm+DLCs son bop 0 ó
+        ' 3; CERO Multiply/Overlay/HardLight) y sólo mueve RACEs modeadas con bop 1/2/4, que en G22 salen ≠
+        ' engine. El usuario puede cambiar el espacio de cada op en config.json. Fallback (modos 5..19
         ' app-only y config viejo/null) = bucket.WorkingSpace. GL y CPU lo heredan juntos (mismo resolver).
         If channel = FaceTintChannel.Diffuse AndAlso Not forSwap Then
             Dim wsb = s.DiffuseWorkingSpaceByBlend

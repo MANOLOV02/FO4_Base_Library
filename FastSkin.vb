@@ -10,12 +10,12 @@ Imports System.Runtime.CompilerServices
 ''' <see cref="SelfTest"/> compara las cuatro entre si: <see cref="TransformarDirecto"/> (produccion, AoS
 ''' sin staging), <see cref="UnVertice"/> (produccion, camino sparse del upload, un vertice por vez),
 ''' <see cref="BloqueEscalar"/> (referencia) y <see cref="BloqueVectorial"/>. Si tocas una, tocas las cuatro.
-''' <para>PERO ESO ES UN GATE DE CONSISTENCIA, NO DE CORRECCION, y confundirlos costo caro: comparar las
-''' cuatro entre si prueba que nadie edito una sola, y NADA MAS. Un revisor lo demostro negando la matriz de
-''' normales en las cuatro a la vez —el modelo iluminado del lado equivocado— y el gate quedo VERDE. Por eso
-''' existe <see cref="OraculoDeLaLey"/>, que no conoce los cofactores ni el determinante ni el corte, y
-''' verifica el INVARIANTE con la sola multiplicacion matriz-por-vector. Tres controles negativos que antes
-''' pasaban —normal negada, corte subido a 1e-3, ley transpuesta— hoy fallan ahi.</para>
+''' <para>⛔ PERO ESO ES UN GATE DE CONSISTENCIA, NO DE CORRECCION: comparar las cuatro entre si prueba que
+''' nadie edito una sola, y NADA MAS. Negar la matriz de normales en las cuatro a la vez —el modelo
+''' iluminado del lado equivocado— lo deja VERDE. Por eso existe <see cref="OraculoDeLaLey"/>, que no conoce
+''' los cofactores ni el determinante ni el corte, y verifica el INVARIANTE con la sola multiplicacion
+''' matriz-por-vector: ahi fallan los tres controles negativos —normal negada, corte subido a 1e-3, ley
+''' transpuesta.</para>
 ''' <para>La vectorial solo puede dar bit a bit lo mismo si cada lane
 ''' del vector ejecuta EXACTAMENTE la misma secuencia de operaciones que el escalar, en el mismo orden. Por
 ''' eso aca NO se llama a <c>Matrix3.Inverted()</c> ni a <c>Vector3.Normalize()</c>: son algoritmos ajenos,
@@ -34,7 +34,7 @@ Imports System.Runtime.CompilerServices
 ''' desvio medio 0,0036 grados, peor caso 0,0296.
 ''' <para>NO CONFUNDIR con el numero de [normal-single] (medio 0,000001, peor 0,000017), que contesta otra
 ''' pregunta —cuanto movio la normal evaluar la inversa en Single en vez de en Double— y es cuatro ordenes de
-''' magnitud mas chico. Los dos vivian mezclados en estos docs.</para></para>
+''' magnitud mas chico.</para></para>
 '''
 ''' <para>SE TRABAJA POR BLOQUES, y no es un detalle de estilo. Vectorizar exige los datos en SoA (todos
 ''' los M11 juntos, todos los M12 juntos...), y VB no puede reinterpretar un <c>Matrix4()</c> como
@@ -54,30 +54,26 @@ Friend Module FastSkin
     ''' determinante no se puede juzgar con un numero absoluto: <c>det</c> escala como el CUBO de la
     ''' matriz, asi que el mismo umbral significa cosas distintas segun las unidades.
     '''
-    ''' <para><b>El defecto que esto arregla.</b> El corte era absoluto (<c>1e-12</c>) y venia de cuando
-    ''' el determinante se calculaba en <b>Double</b>. Al pasar el kernel a <b>Single</b>, la cantidad
-    ''' juzgada cambio de precision y el umbral quedo ~5 decadas POR DEBAJO del ruido de redondeo del
-    ''' propio determinante (~1e-7 con entradas de orden 1). Resultado MEDIDO sobre 2000 matrices
+    ''' <para><b>Por que NO puede ser absoluto.</b> Con un corte absoluto de <c>1e-12</c> —que venia de
+    ''' cuando el determinante se calculaba en <b>Double</b>— el umbral queda ~5 decadas POR DEBAJO del
+    ''' ruido de redondeo del determinante EN SINGLE (~1e-7 con entradas de orden 1), o sea que degenera
+    ''' a "det exactamente 0" y deja de detectar lo que tiene que detectar. MEDIDO sobre 2000 matrices
     ''' <b>exactamente singulares</b> (fila 3 = 2 x fila 1): en Double se detectan las 2000; en Single
     ''' solo 713. Las otras <b>1287 pasaban la guarda</b>, tomaban <c>r = 1/det</c> con |det| ~7,5e-8
-    ''' —o sea r ~1,3e7— y salian con una matriz de normales multiplicada por eso.
-    ''' El comentario viejo YA DECIA que en Single el corte era "det exactamente 0"; lo que faltaba
-    ''' era sacar la conclusion de que entonces ya no detectaba lo que tenia que detectar.</para>
+    ''' —o sea r ~1,3e7— y salian con una matriz de normales multiplicada por eso.</para>
     '''
-    ''' <para><b>LO QUE ESTE CAMBIO NO ARREGLA, MEDIDO.</b> Sobre el corpus real
-    ''' (SG172_Serena_BattleSuit, 130.500 vertices) NO mueve NADA: antes y despues el arnes reporta las
-    ''' mismas <b>59</b> matrices degeneradas y los mismos <b>59</b> valores no finitos que salen del
-    ''' camino de produccion. O sea que las degeneradas que aparecen en contenido real son del tipo que
-    ''' el corte absoluto SI atrapaba (fila nula / escala 0 en un eje), no del tipo "una fila es
-    ''' combinacion lineal de las otras". <b>Los 59 no finitos tienen OTRA causa y siguen abiertos</b>:
-    ''' el sospechoso es la normalizacion de <see cref="Rotar"/>, que hace <c>1/sqrt(0)</c> cuando el
-    ''' vector de entrada es nulo — no el determinante. No atribuirle a este corte un defecto que no
-    ''' es suyo: yo lo hice y la medicion me desmintio.</para>
+    ''' <para><b>Y lo que este corte NO explica.</b> Sobre el corpus real (SG172_Serena_BattleSuit,
+    ''' 130.500 vertices) el criterio relativo no mueve NADA respecto del absoluto: las mismas <b>59</b>
+    ''' matrices degeneradas. Las degeneradas del contenido real son del tipo que el absoluto tambien
+    ''' atrapaba (fila nula / escala 0 en un eje), no del tipo "una fila es combinacion lineal de las
+    ''' otras". ⛔ Y los 59 valores NO FINITOS que reportaba el arnes NO son de este corte: son la normal
+    ''' de ENTRADA nula, y los ataja la guarda de <see cref="Rotar"/>. No atribuirle a este umbral un
+    ''' defecto que no es suyo — ese error ya se cometio una vez.</para>
     '''
-    ''' <para>⇒ Este cambio es de ROBUSTEZ: cubre un caso que el corpus no ejercita. Por eso mismo su
-    ''' riesgo de mover bytes horneados, sobre el contenido medido, resulto ser NULO.</para>
+    ''' <para>⇒ Este criterio es de ROBUSTEZ: cubre un caso que el corpus no ejercita, y por eso mismo su
+    ''' riesgo de mover bytes horneados sobre el contenido medido es NULO.</para>
     '''
-    ''' <para><b>Por que no alcanzaba con subir la constante.</b> Se probo: con el corte absoluto en
+    ''' <para><b>Por que no alcanza con subir la constante.</b> Se probo: con el corte absoluto en
     ''' 1e-3 se mandan a Identidad matrices perfectamente sanas (esta anotado mas abajo, en el oraculo).
     ''' Con escala uniforme s el determinante es s^3, asi que CUALQUIER absoluto confunde "matriz chica"
     ''' con "matriz degenerada": una rotacion pura escalada por 0,001 tiene det = 1e-9 y es sana.</para>
@@ -87,8 +83,8 @@ Friend Module FastSkin
     ''' <c>|det| / (F2/3)^(3/2)</c> es ADIMENSIONAL, vale 1 para una matriz ortogonal y 0 para una
     ''' singular, y en ALGEBRA no cambia si se reescala la matriz. Se compara contra <c>EpsDetRel</c>.</para>
     '''
-    ''' <para>LA INVARIANCIA DE ESCALA ES DEL ALGEBRA, NO DE SINGLE, y se rompe en las dos puntas. La
-    ''' decia sin reservas y eso es lo que autoriza al que sigue a no probar el regimen chico:</para>
+    ''' <para>LA INVARIANCIA DE ESCALA ES DEL ALGEBRA, NO DE SINGLE, y se rompe en las dos puntas. No
+    ''' enunciarla sin reservas: es lo que autoriza al que sigue a no probar el regimen chico.</para>
     ''' <list type="bullet">
     ''' <item><c>t &lt; 1,4e-35</c> (entradas RMS &lt; ~2,2e-18): <c>eps^2 * t</c> hace underflow a 0 y el
     ''' predicado degenera a <c>q*q &lt;= 0</c>, o sea al criterio ABSOLUTO "det = 0 exacto" que este cambio
@@ -107,31 +103,22 @@ Friend Module FastSkin
     ''' seis (singular por combinacion lineal, singular por fila nula, rotacion pura, rotacion x 0,001,
     ''' rotacion x 100, y shear fuerte); el absoluto se equivoca en 1970 de 3000 de la primera.</para>
     '''
-    ''' <para>Sigue importando que TODOS los caminos usen ESTE mismo predicado y no una transcripcion.
-    ''' En cambio, sobre el DETERMINANTE la nota vieja estaba equivocada: decia que la expansion por
-    ''' primera fila y <c>OpenTK.Matrix3.Determinant</c> "son sumatorias distintas y discrepan en el
-    ''' borde". MEDIDO sobre 200.000 matrices perturbadas al borde del corte: <b>cero</b> diferencias, ni
-    ''' siquiera de bits. Son la MISMA expansion con los signos redistribuidos
-    ''' (<c>-m12*(m21*m33 - m23*m31)</c> contra <c>+m12*(m23*m31 - m21*m33)</c>) y en IEEE-754 la negacion
-    ''' es exacta. La medicion vieja comparaba un determinante en Double contra uno en Single, que es
-    ''' otra cosa. Igual los dos caminos pasan hoy por <see cref="DetPorPrimeraFila"/>: es gratis y saca
-    ''' la dependencia de un detalle interno de OpenTK.</para></summary>
+    ''' <para>⛔ TODOS los caminos tienen que usar ESTE predicado, no una transcripcion suya: es el
+    ''' predicado el que decide, y dos transcripciones que se separen parten la malla en dos leyes.
+    ''' <para>El DETERMINANTE, en cambio, NO es un punto de divergencia, y no hay que inventarle uno:
+    ''' <see cref="DetPorPrimeraFila"/> y <c>OpenTK.Matrix3.Determinant</c> son la MISMA expansion con los
+    ''' signos redistribuidos (<c>-m12*(m21*m33 - m23*m31)</c> contra <c>+m12*(m23*m31 - m21*m33)</c>), y
+    ''' en IEEE-754 la negacion es exacta. MEDIDO sobre 200.000 matrices perturbadas al borde del corte:
+    ''' <b>cero</b> diferencias, ni siquiera de bits. Comparar un determinante en Double contra uno en
+    ''' Single mide otra cosa y da un falso positivo.</para></para></summary>
     Friend Const EpsDetRel As Single = 0.00001F
 
-    ''' <summary>El predicado de degeneracion, escrito UNA vez. Ver <see cref="EpsDetRel"/>.
-    ''' <para>Sin raiz cuadrada a proposito: se comparan los CUADRADOS, que es lo mismo porque los dos
-    ''' lados son no negativos, y asi el camino caliente no paga un <c>sqrt</c> por vertice.</para>
-    ''' <para>La comparacion es <c>&lt;=</c> y no <c>&lt;</c> para que la matriz NULA (F2 = 0, det = 0,
-    ''' cota = 0) caiga del lado degenerado. Con <c>&lt;</c> se escaparia justo el caso mas degenerado
-    ''' que existe.</para></summary>
     ''' <summary>El determinante EXACTAMENTE como lo calcula el kernel: expansion por la PRIMERA fila.
-    ''' <para>EXISTE PARA QUE NO HAYA DOS. <c>OpenTK.Matrix3.Determinant</c> es otra sumatoria (seis
-    ''' terminos contra tres productos de cofactor) y en Single discrepan en el borde. Mientras el bake
-    ''' usaba el de OpenTK y el render este, una matriz podia caer de lados OPUESTOS del corte: normal
-    ''' IDENTIDAD en el preview y normal TRANSFORMADA en el NIF horneado. Eso no es un redondeo, es
-    ''' RENDER != BAKE — la regla que este proyecto no puede violar.</para>
-    ''' <para>Lo destapo un revisor mirando el gate, no el codigo: el gate alimentaba el predicado con su
-    ''' propia transcripcion y por eso no podia ver la divergencia.</para></summary>
+    ''' <para>EXISTE PARA QUE NO HAYA DOS. El valor coincide bit a bit con
+    ''' <c>OpenTK.Matrix3.Determinant</c> (ver <see cref="EpsDetRel"/>), pero tenerlo escrito aca saca la
+    ''' dependencia de un detalle interno de OpenTK y deja UN solo sitio que tocar.</para>
+    ''' <para>⛔ Y el gate tiene que alimentarse de ESTA funcion, no de una transcripcion propia: un gate
+    ''' que se escribe su propio determinante no puede ver una divergencia entre los dos.</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Friend Function DetPorPrimeraFila(m11 As Single, m12 As Single, m13 As Single,
                                       m21 As Single, m22 As Single, m23 As Single,
@@ -142,6 +129,12 @@ Friend Module FastSkin
         Return m11 * c11 + m12 * c12 + m13 * c13
     End Function
 
+    ''' <summary>El predicado de degeneracion, escrito UNA vez. Ver <see cref="EpsDetRel"/>.
+    ''' <para>Sin raiz cuadrada a proposito: se comparan los CUADRADOS, que es lo mismo porque los dos
+    ''' lados son no negativos, y asi el camino caliente no paga un <c>sqrt</c> por vertice.</para>
+    ''' <para>La comparacion es <c>&lt;=</c> y no <c>&lt;</c> para que la matriz NULA (F2 = 0, det = 0,
+    ''' cota = 0) caiga del lado degenerado. Con <c>&lt;</c> se escaparia justo el caso mas degenerado
+    ''' que existe.</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Friend Function EsDegenerada(det As Single,
                                  m11 As Single, m12 As Single, m13 As Single,
@@ -158,8 +151,7 @@ Friend Module FastSkin
         '  · `det` no finito: con una rotacion escalada por ~7e12 el DETERMINANTE (que va como s^3)
         '    desborda a +Inf cuatro decadas ANTES que f2 (que va como s^2), asi que la guarda de `t` no
         '    lo ve. Sin esto: q = Inf, `Inf <= algo` es False ⇒ "sana" ⇒ r = 1/Inf = 0 ⇒ los nueve
-        '    cofactores en CERO ⇒ la normal sale (0,0,0) o NaN al normalizar. La forma vieja con cubo
-        '    daba Identidad ahi; esta tiene que hacer lo mismo.
+        '    cofactores en CERO ⇒ la normal sale (0,0,0) o NaN al normalizar. Tiene que dar Identidad.
         '  · la RECIPROCA no finita. La guarda de arriba mira `det` HACIA ARRIBA; esta lo mira hacia
         '    ABAJO, que es el otro lado del MISMO `s^3`. Con escala uniforme chica el determinante se
         '    hunde y lo que desborda no es el, es `1/det` — y `1/det` es el numero que despues multiplica
@@ -171,14 +163,15 @@ Friend Module FastSkin
         '    seis entradas de fuera de la diagonal, `Rotar` sacaba `len2 = NaN`, la guarda de longitud
         '    cero no muerde con NaN, y la normal salia (NaN,NaN,NaN) AL VBO. La matriz de ese ejemplo es
         '    una rotacion pura escalada: numero de condicion 1, perfectamente sana en algebra — pero no
-        '    invertible EN SINGLE. Con precision: es un test de FINITUD de la reciproca, no de buen
-        '    condicionamiento — entre s = 2,28e-13 y s = 1,43e-13 el determinante ya es SUBNORMAL (pierde
-        '    mantisa) y el predicado todavia dice SANA. Es inofensivo en magnitud y esta fuera de cualquier
-        '    rig real, pero la frase no promete mas de lo que el codigo hace.
+        '    invertible EN SINGLE. Es un test de FINITUD de la reciproca, NO de buen condicionamiento:
+        '    entre s = 2,28e-13 y s = 1,43e-13 el determinante ya es SUBNORMAL (pierde mantisa) y el
+        '    predicado todavia dice SANA. Inofensivo en magnitud y fuera de cualquier rig real, pero no
+        '    prometer mas de lo que hace.
         '    Se testea `1/det` y no un umbral porque `1/det` ES la cantidad que desborda: cualquier
         '    constante que eligiera seria una discusion, y esto es una medicion.
-        ' Ningun barrido las cubria: el gate `det-degenerado` escalaba SOLO hacia arriba
-        ' ({7e11, 7e12, 1e14}) y el oraculo se saltea por construccion todo |det| < 1e-9.
+        ' ⛔ El oraculo NO puede cubrir estas bandas: se saltea por construccion todo |det| < DetSano
+        ' (1e-9). Las cubre SOLO el corpus de `SelfTest`, en sus clases "MATRIZ ENORME" y "MATRIZ
+        ' DIMINUTA" — si se tocan alla, estas tres guardas quedan sin barrido.
         If Not (t > 0.0F) Then Return True
         If Not (Math.Abs(det) <= Single.MaxValue) Then Return True
         If Not (Math.Abs(1.0F / det) <= Single.MaxValue) Then Return True
@@ -252,16 +245,14 @@ Friend Module FastSkin
     ''' <summary>LA LEY, sobre UN vertice. La usa el camino SPARSE del upload (el de <=60 % de vertices
     ''' sucios), que no puede llamar a <see cref="TransformarDirecto"/> porque escribe por
     ''' <c>Marshal.Copy</c> a un buffer mapeado, indice por indice.
-    ''' <para>RESPECTO DEL CODIGO QUE REEMPLAZA cambian dos precisiones, las dos en el camino del
-    ''' render: la POSICION se acumula en Single (antes se ensanchaba la matriz a Matrix4d y se sumaba en
-    ''' Double) y la NORMALIZACION es `1/MathF.Sqrt` en Single (antes `Vector3d.Normalize`, en Double). El
-    ''' destino es un VBO de floats en los dos casos.</para>
-    ''' <para>EXISTE PARA QUE NO HAYA DOS LEYES EN EL MISMO RENDERER. Cuando el bucle denso se mudo
-    ''' aca, el sparse quedo llamando al <c>Inverted().Transposed()</c> de OpenTK: la misma malla salia
-    ''' con una ley u otra segun cuantos vecinos se hubieran ensuciado ese frame. La diferencia de valor
-    ''' era despreciable, pero la decision de DEGENERACION no —los dos determinantes son sumatorias
-    ''' distintas y discrepan— asi que un vertice podia salir con la normal identidad o con la
-    ''' transformada segun el gesto del usuario.</para></summary>
+    ''' <para>PRECISION: la POSICION se acumula en Single y la NORMALIZACION es <c>1/MathF.Sqrt</c>, tambien
+    ''' en Single. Ensanchar a Double aca mueve bytes del render sin cambiar el destino, que es un VBO de
+    ''' floats.</para>
+    ''' <para>⛔ EXISTE PARA QUE NO HAYA DOS LEYES EN EL MISMO RENDERER. El camino sparse NO puede llamar al
+    ''' <c>Inverted().Transposed()</c> de OpenTK aunque el valor se parezca: la decision de DEGENERACION la
+    ''' toma <see cref="EsDegenerada"/>, y si el sparse usara otra, el MISMO vertice saldria con la normal
+    ''' Identidad o con la transformada segun cuantos vecinos se hubieran ensuciado ese frame — o sea segun
+    ''' el gesto del usuario.</para></summary>
     Friend Sub UnVertice(m As Matrix4, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
                          msn As Boolean,
                          ByRef pos As Vector3, ByRef nrm As Vector3, ByRef tan As Vector3, ByRef bit As Vector3)
@@ -300,10 +291,8 @@ Friend Module FastSkin
             ' ley de la NORMAL y solo de ella — aplicarsela a la tangente la saca del plano
             ' tangente en cuanto hay shear (blend de dos rotaciones distintas, o sea todo
             ' vertice de codo, rodilla u hombro).
-            ' ESTO CAMBIA PIXELES DEL RENDER, y es la otra mitad del arreglo de
-            ' SkinningHelper.PorMatriz3x3: alla se corrigio el bake y aca el render seguia con
-            ' la ley vieja, con lo cual RENDER==BAKE quedaba roto en DOS canales en vez de uno.
-            ' Los dos vertex shaders (FO4 y SSE) llevan el mismo cambio.
+            ' SITIO GEMELO de SkinningHelper.PorMatriz3x3 (el bake) y de los DOS vertex shaders
+            ' (FO4 y SSE). Si se separan, RENDER==BAKE se rompe en DOS canales: tangente Y bitangente.
             tan = Rotar(vt.X, vt.Y, vt.Z, m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33)
             bit = Rotar(vb.X, vb.Y, vb.Z, m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33)
         End If
@@ -383,10 +372,8 @@ Friend Module FastSkin
                         ' ley de la NORMAL y solo de ella — aplicarsela a la tangente la saca del plano
                         ' tangente en cuanto hay shear (blend de dos rotaciones distintas, o sea todo
                         ' vertice de codo, rodilla u hombro).
-                        ' ESTO CAMBIA PIXELES DEL RENDER, y es la otra mitad del arreglo de
-                        ' SkinningHelper.PorMatriz3x3: alla se corrigio el bake y aca el render seguia con
-                        ' la ley vieja, con lo cual RENDER==BAKE quedaba roto en DOS canales en vez de uno.
-                        ' Los dos vertex shaders (FO4 y SSE) llevan el mismo cambio.
+                        ' SITIO GEMELO de SkinningHelper.PorMatriz3x3 (el bake) y de los DOS vertex shaders
+                        ' (FO4 y SSE). Si se separan, RENDER==BAKE se rompe en DOS canales: tangente Y bitangente.
                         tanOut(i) = Rotar(vt.X, vt.Y, vt.Z, m11, m12, m13, m21, m22, m23, m31, m32, m33)
                         bitOut(i) = Rotar(vb.X, vb.Y, vb.Z, m11, m12, m13, m21, m22, m23, m31, m32, m33)
                     End If
@@ -433,12 +420,10 @@ Friend Module FastSkin
     Private Sub Aplanar(sc As Scratch, desde As Integer, cuantos As Integer,
                         mats As SkinMatricesSoA, lv() As Vector3d,
                         ln() As Vector3, lt() As Vector3, lb() As Vector3, msn As Boolean)
-        ' LA MATRIZ YA NO SE APLANA: `mats` ES SoA. Antes esto copiaba 12 floats por vertice desde un
-        ' `Matrix4()` —24 escrituras dispersas contando posicion y TBN— y esa copia era LA razon por la que
-        ' el camino vectorial perdia. Ahora se copian los bloques enteros con `Array.Copy`, que es un
-        ' memmove contiguo, y a partir del refactor de layout ni siquiera haria falta: el kernel podria
-        ' indexar `mats.Secciones(j)(desde + k)` directo. Se conserva la copia por bloque porque el scratch
-        ' tiene tamano fijo `Bloque` y los indices del camino vectorial son locales al bloque.
+        ' LA MATRIZ NO SE APLANA: `mats` ya ES SoA, asi que esto son 12 `Array.Copy` de bloque entero
+        ' (memmove contiguo), no 12 floats por vertice. La copia podria evitarse indexando
+        ' `mats.Secciones(j)(desde + k)` directo; se conserva porque el scratch tiene tamano fijo `Bloque`
+        ' y los indices del camino vectorial son locales al bloque.
         Dim a = sc.A
         For j = 0 To 11
             Array.Copy(mats.Secciones(j), desde, a(j), 0, cuantos)
@@ -449,11 +434,11 @@ Friend Module FastSkin
             sc.P(0)(k) = CSng(p.X) : sc.P(1)(k) = CSng(p.Y) : sc.P(2)(k) = CSng(p.Z)
             ' Con MSN no se copian: en esa rama ninguna de las cuatro implementaciones los lee, asi que
             ' aplanarlos seria mover 6 floats por vertice que nadie mira.
-            ' Es una OPTIMIZACION, no una guarda contra Nothing. `ExtractSkinnedGeometry` — el unico
-            ' constructor de SkinnedGeometry — aloca Tangents y Bitangents a largo completo tenga o no
-            ' tangentes el NIF (SkinningHelper.vb:495-516, las DOS ramas del If HasTangents). Y el camino
-            ' sparse de Render.vb los desreferencia por indice sea MSN o no. Si alguna vez pudieran venir
-            ' en Nothing, el NRE explota alla, no aca, y esta guarda no lo tapa.
+            ' Es una OPTIMIZACION, no una guarda contra Nothing. `SkinningHelper.ExtractSkinnedGeometry`
+            ' —el unico constructor de SkinnedGeometry— aloca Tangents y Bitangents a largo completo tenga
+            ' o no tangentes el NIF, en las DOS ramas de su `If HasTangents`. Y el camino sparse de
+            ' Render.vb los desreferencia por indice sea MSN o no: si alguna vez pudieran venir en
+            ' Nothing, el NRE explota alla, y esta guarda no lo tapa.
             If Not msn Then
                 Dim nn = ln(i) : sc.N(0)(k) = nn.X : sc.N(1)(k) = nn.Y : sc.N(2)(k) = nn.Z
                 Dim tt = lt(i) : sc.T(0)(k) = tt.X : sc.T(1)(k) = tt.Y : sc.T(2)(k) = tt.Z
@@ -561,8 +546,6 @@ Friend Module FastSkin
         Dim untercio As New SN.Vector(Of Single)(1.0F / 3.0F)
         Dim uno = SN.Vector(Of Single).One
         Dim cero = SN.Vector(Of Single).Zero
-        ' Izado con los otros: es loop-invariant y el archivo declara la politica dos bloques arriba
-        ' ("LAS 12 SECCIONES SE TOMAN UNA VEZ, FUERA DEL BUCLE"). Estaba adentro del While.
         Dim maxV As New SN.Vector(Of Single)(Single.MaxValue)
         Dim k = 0
         While k + W <= cuantos
@@ -596,14 +579,13 @@ Friend Module FastSkin
                      m21 * m21 + m22 * m22 + m23 * m23 +
                      m31 * m31 + m32 * m32 + m33 * m33
             Dim tt = f2 * untercio
-            ' TRANSCRIPCION EXACTA DE `EsDegenerada`, INCLUIDAS LAS TRES GUARDAS. Y las guardas van
-            ' como NEGACION de un `GreaterThan`, no como `LessThanOrEqual`: con NaN las dos comparaciones
-            ' dan False, asi que `LessThanOrEqual(NaN, 0)` clasificaba el lane como SANO mientras el
-            ' escalar —que usa `Not (t > 0)`— lo daba DEGENERADO. Esa divergencia es grave y no teorica:
-            ' `Transformar` manda el prefijo alineado al camino vectorial y la COLA del mismo bloque al
-            ' escalar, asi que dentro de la MISMA malla el mismo vertice se clasificaba distinto segun su
-            ' indice mod W; y en una maquina sin aceleracion iba todo por el escalar ⇒ RENDER != BAKE
-            ' segun el hardware del usuario.
+            ' TRANSCRIPCION EXACTA DE `EsDegenerada`, INCLUIDAS LAS TRES GUARDAS. ⛔ Van como NEGACION de
+            ' un `GreaterThan`, NO como `LessThanOrEqual`: con NaN las dos comparaciones dan False, asi que
+            ' `LessThanOrEqual(NaN, 0)` clasifica el lane como SANO mientras el escalar —que usa
+            ' `Not (t > 0)`— lo da DEGENERADO. Y esa divergencia no es teorica: `Transformar` manda el
+            ' prefijo alineado al vectorial y la COLA del mismo bloque al escalar, o sea que dentro de la
+            ' MISMA malla el vertice se clasificaria distinto segun su indice mod W; y en una maquina sin
+            ' aceleracion va todo por el escalar ⇒ RENDER != BAKE segun el hardware del usuario.
             Dim qq = det / tt
             Dim rec = uno / det
             Dim tSano = SN.Vector.GreaterThan(tt, SN.Vector(Of Single).Zero)
@@ -674,8 +656,8 @@ Friend Module FastSkin
         Dim vx = vx0 * e11 + vy0 * e21 + vz0 * e31
         Dim vy = vx0 * e12 + vy0 * e22 + vz0 * e32
         Dim vz = vx0 * e13 + vy0 * e23 + vz0 * e33
-        ' Misma guarda que el escalar: con longitud CERO el vector se devuelve tal cual. Sin ConditionalSelect
-        ' los lanes nulos salian en NaN y divergian del escalar (que ahora los conserva).
+        ' Misma guarda que el escalar: con longitud CERO el vector se devuelve tal cual. Sin el
+        ' ConditionalSelect los lanes nulos salen NaN y divergen del escalar, que los conserva.
         Dim len2 = vx * vx + vy * vy + vz * vz
         Dim nulo = SN.Vector.Equals(len2, SN.Vector(Of Single).Zero)
         Dim inv = SN.Vector(Of Single).One / SN.Vector.SquareRoot(len2)
@@ -733,14 +715,10 @@ Friend Module FastSkin
             lt(i) = New Vector3(sig(), sig(), sig())
             lb(i) = New Vector3(sig(), sig(), sig())
 
-            ' VALORES QUE NO SON NUMEROS NORMALES. El corpus sorteaba SOLO entradas en [-2, 2], asi que
-            ' las guardas —la de normal NULA en `Rotar`, y las de NaN / no-finito en `EsDegenerada`— no se
-            ' ejercitaban NUNCA, y este SelfTest es justo el que compara el camino escalar contra el
-            ' vectorial. Ya costo caro: la guarda vectorial estaba escrita como `LessThanOrEqual(t, 0)`,
-            ' que con NaN da False, mientras la escalar `Not (t > 0)` da True — o sea que el MISMO vertice
-            ' se clasificaba distinto segun cayera en el prefijo vectorial o en la cola escalar, y en una
-            ' maquina sin aceleracion iba todo por el escalar. RENDER != BAKE segun el hardware, con este
-            ' gate en verde.
+            ' VALORES QUE NO SON NUMEROS NORMALES. ⛔ SIN ESTAS CLASES EL GATE PASA EN VACIO: un corpus de
+            ' entradas solo en [-2, 2] no ejercita NUNCA la guarda de normal NULA de `Rotar` ni las de
+            ' NaN / no-finito de `EsDegenerada`, que es justo donde el escalar y el vectorial se separan.
+            ' Ese hueco ya dejo pasar una divergencia de NaN entre las dos guardas.
             ' Van cada 53 y cada 71 —primos entre si y con 37— para que las tres clases se crucen y ningun
             ' indice quede siempre en el mismo camino.
             If i Mod 53 = 0 Then
@@ -759,12 +737,11 @@ Friend Module FastSkin
                 mg.M12 = 0.0F : mg.M13 = 0.0F : mg.M21 = 0.0F : mg.M23 = 0.0F : mg.M31 = 0.0F : mg.M32 = 0.0F
                 mats(i) = mg
             ElseIf i Mod 71 = 2 Then
-                ' MATRIZ DIMINUTA: el SIMETRICO de la de arriba, y NO ESTABA. El corpus tenia el caso
-                ' "s grande" y no su espejo, asi que la banda donde desborda la RECIPROCA —s entre ~1e-15
-                ' y 1,43e-13— no la ejercitaba nadie. Con s = 1e-13: det = 1e-39, las dos guardas viejas
-                ' decian SANA, `1/det` daba +Inf y la normal salia NaN al VBO.
-                ' Se eligen DOS escalas para cubrir las dos formas de romperse: 1e-13 desborda la
-                ' reciproca con det todavia representable, y 1e-19 ademas hace underflow en `eps^2 * t`.
+                ' MATRIZ DIMINUTA: el SIMETRICO de la de arriba, y hace falta. Cubre la banda donde
+                ' desborda la RECIPROCA —s entre ~1e-15 y 1,43e-13—, que sin esto no la ejercita nadie:
+                ' con s = 1e-13 el det es 1e-39, las dos primeras guardas dicen SANA y `1/det` da +Inf.
+                ' DOS escalas para las dos formas de romperse: 1e-13 desborda la reciproca con det todavia
+                ' representable, y 1e-19 ademas hace underflow en `eps^2 * t`.
                 Dim mp = mats(i)
                 Dim sChica = If(i Mod 142 = 2, 0.0000000000001F, 0.0000000000000000001F)
                 mp.M11 = sChica : mp.M22 = sChica : mp.M33 = sChica
@@ -794,18 +771,18 @@ Friend Module FastSkin
             ' alguien toca uno de los bucles, el gate lo agarra.
             Dim pD(N - 1) As Vector3, nD(N - 1) As Vector3, tD(N - 1) As Vector3, bD(N - 1) As Vector3
             TransformarDirecto(mats, lv, ln, lt, lb, msn, N, pD, nD, tD, bD)
-            ' Y el DISPATCHER completo, no solo los bloques sueltos: con N > Bloque hay un bloque
-            ' parcial y un Parallel.For de verdad, o sea la aritmetica de offsets (desde, cuantos,
-            ' baseIdx) que antes no miraba nadie. Ahi es donde un off-by-one escribe el indice de otro.
+            ' Y el DISPATCHER completo, no solo los bloques sueltos: con N > Bloque hay un bloque parcial y
+            ' un Parallel.For de verdad, o sea la aritmetica de offsets (desde, cuantos, baseIdx). Ahi es
+            ' donde un off-by-one escribe el indice de otro.
             Dim pT(N - 1) As Vector3, nT(N - 1) As Vector3, tT(N - 1) As Vector3, bT(N - 1) As Vector3
             Transformar(mats, lv, ln, lt, lb, msn, N, pT, nT, tT, bT)
-            ' DOS RANGOS, Y CONFUNDIRLOS DABA VERDE FALSO. `pE`/`pV` solo estan llenos en [0, MBlq)
-            ' —son las llamadas directas a los bloques— pero `pD` y `pT` cubren [0, N). Comparando todo
-            ' contra MBlq, los indices 1021..1026 no se miraban contra NADA, y ahi adentro esta el bloque
-            ' PARCIAL entero, que es justo lo que N = Bloque + 3 vino a crear.
-            ' Verificado con controles negativos: saltear el bloque parcial (`Parallel.For(0, nBloques-1)`)
-            ' daba PASS, y —peor— hacer que TransformarDirecto perdiera sus ultimos 6 vertices tambien daba
-            ' PASS. Eso ultimo es el camino de PRODUCCION.
+            ' ⛔ DOS RANGOS, Y CONFUNDIRLOS DA VERDE FALSO. `pE`/`pV` solo estan llenos en [0, MBlq) —son
+            ' las llamadas directas a los bloques— pero `pD` y `pT` cubren [0, N). Comparando todo contra
+            ' MBlq, los indices [MBlq, N) no se miran contra NADA, y ahi adentro esta el bloque PARCIAL
+            ' entero, que es justo lo que N = Bloque + 3 vino a crear.
+            ' Controles negativos que ese recorte dejaba pasar en VERDE: saltear el bloque parcial
+            ' (`Parallel.For(0, nBloques-1)`), y hacer que TransformarDirecto —el camino de PRODUCCION—
+            ' perdiera sus ultimos 6 vertices.
             For i = 0 To MBlq - 1
                 Dim dd = PrimeraDiferencia(pE(i), pD(i))
                 If dd Is Nothing Then dd = PrimeraDiferencia(nE(i), nD(i))
@@ -839,15 +816,12 @@ Friend Module FastSkin
             ' finitas, asi que la ley vale para TODO el corpus salvo los indices con NaN de entrada, donde
             ' propagar el NaN es lo correcto.
             For i = 0 To N - 1
-                ' La POSICION entra a los dos lados. Estaba afuera y la ley declarada decia "la normal, la
-                ' tangente y la bitangente" — pero la posicion se escribe al MISMO VBO y un +Inf ahi manda el
-                ' vertice al infinito. Hoy no es alcanzable con este corpus, y la cuenta es: la traslacion
-                ' (m41..m43) SI se sortea en [-2,2) —el ctor de Matrix4 pone tres `sig()` en la cuarta fila,
-                ' y el kernel los suma— y `lv` tambien esta en [-2,2), asi que el peor caso es la clase de
-                ' escala 1e13: 2*1e13 + 2 ~ 2e13, comodamente finito. Es gratis cubrirlo antes de que
-                ' alguien amplie el corpus.
-                ' El comentario anterior afirmaba que "m41..m43 son 0". Era falso, y esa clase de
-                ' afirmacion sobre el corpus es la que hace que la guarda de al lado parezca suficiente.
+                ' LA POSICION ENTRA A LOS DOS LADOS, no solo la normal/tangente/bitangente: se escribe al
+                ' MISMO VBO y un +Inf ahi manda el vertice al infinito. Con este corpus no es alcanzable
+                ' —la traslacion (m41..m43) se sortea en [-2,2), igual que `lv`, asi que el peor caso es la
+                ' clase de escala 1e13: 2*1e13 + 2 ~ 2e13, comodamente finito— pero es gratis cubrirlo
+                ' antes de que alguien amplie el corpus.
+                ' ⛔ Y m41..m43 NO son cero: el ctor de Matrix4 pone tres `sig()` en la cuarta fila.
                 If Not (FinitaM(mats(i)) AndAlso Finito3d(lv(i)) AndAlso Finito3(ln(i)) AndAlso
                         Finito3(lt(i)) AndAlso Finito3(lb(i))) Then Continue For
                 If Finito3(pD(i)) AndAlso Finito3(nD(i)) AndAlso Finito3(tD(i)) AndAlso Finito3(bD(i)) Then Continue For
@@ -880,11 +854,10 @@ Friend Module FastSkin
                            $"corresponde ({dv}). Si el vertice quedo en cero, el bucle se lo salteo."
                 End If
             Next
-            ' HASTA MBlq, no hasta N: `pE` y `pV` salen de llamar a los bloques DIRECTO con MBlq
-            ' vertices, asi que de MBlq en adelante los dos estan en cero y comparar seria comparar ceros
-            ' contra ceros. Es la misma confusion de rangos que el comentario de mas arriba dice haber
-            ' arreglado, que habia sobrevivido en este bucle. Los indices [MBlq, N) los cubren las
-            ' comparaciones contra `pD`/`pT`/UnVertice de arriba, que si estan llenas en todo el rango.
+            ' HASTA MBlq, no hasta N: `pE` y `pV` salen de llamar a los bloques DIRECTO con MBlq vertices,
+            ' asi que de MBlq en adelante los dos estan en cero y comparar seria comparar ceros contra
+            ' ceros. Los indices [MBlq, N) los cubren las comparaciones contra `pD`/`pT`/UnVertice de
+            ' arriba, que si estan llenas en todo el rango.
             For i = 0 To MBlq - 1
                 Dim d = PrimeraDiferencia(pE(i), pV(i))
                 If d Is Nothing Then d = PrimeraDiferencia(nE(i), nV(i))
@@ -944,18 +917,26 @@ Friend Module FastSkin
             Next
         Next
 
-        ' Y AHORA EL ORACULO INDEPENDIENTE. Todo lo de arriba es un gate de CONSISTENCIA: prueba que
-        ' las cuatro transcripciones digan lo mismo, no que digan lo CORRECTO. Un revisor lo demostro
-        ' rompiendolo: cambiar `r = 1/det` por `r = -1/det` en las cuatro —o sea NEGAR la matriz de normales
-        ' entera, que en pantalla es el modelo iluminado del lado equivocado— pasaba en VERDE. Lo mismo
-        ' subiendo EpsDet de 1e-12 a 1e-3, que manda a Identidad a matrices perfectamente sanas.
+        ' Y AHORA EL ORACULO INDEPENDIENTE. Todo lo de arriba es un gate de CONSISTENCIA: prueba que las
+        ' cuatro transcripciones digan lo mismo, no que digan lo CORRECTO. Dos controles negativos que
+        ' pasan en VERDE por este lado y solo caza el oraculo: cambiar `r = 1/det` por `r = -1/det` en las
+        ' cuatro —o sea NEGAR la matriz de normales, que en pantalla es el modelo iluminado del lado
+        ' equivocado—, y subir el corte a 1e-3, que manda a Identidad matrices perfectamente sanas.
         Dim oraculo = OraculoDeLaLey()
         If oraculo IsNot Nothing Then Return oraculo
         Return Nothing
     End Function
 
+    ''' <summary>EL UMBRAL DE SANIDAD DEL ORACULO, y es a proposito que NO sea <see cref="EpsDetRel"/>. Es el
+    ''' contrato que el oraculo afirma: toda matriz con determinante de este orden o mayor tiene que salir
+    ''' TRANSFORMADA, no colapsada a Identidad.
+    ''' <para>⛔ Si esto dijera <c>EpsDetRel</c>, el oraculo seria CIRCULAR — subir el corte agrandaria a la
+    ''' vez el conjunto de matrices maltratadas y el de matrices que el oraculo se saltea. Verificado: con
+    ''' el corte en 1e-3 y este umbral atado a el, el control negativo pasaba en verde.</para></summary>
+    Private Const DetSano As Single = 0.000000001F
+
     ''' <summary>Verifica el INVARIANTE de la matriz de normales, no su mecanismo. No conoce los
-    ''' cofactores, ni el determinante, ni <c>EpsDet</c>: lo unico que usa es la multiplicacion
+    ''' cofactores, ni el determinante, ni el corte: lo unico que usa es la multiplicacion
     ''' matriz-por-vector cruda, escrita a mano aca. Por eso puede contradecir a las cuatro transcripciones
     ''' a la vez.
     ''' <para>EL INVARIANTE. Si <c>G</c> es la matriz de normales de <c>M</c>, entonces por definicion
@@ -975,15 +956,6 @@ Friend Module FastSkin
     ''' <para>Se saltean las MAL CONDICIONADAS. Con matrices aleatorias en [-2,2] las hay casi
     ''' singulares, y ahi el invariante se cumple en algebra exacta pero se pierde en el redondeo de Single:
     ''' rechazarlas por condicionamiento es correcto, taparlas con un umbral flojo no.</para></summary>
-    ''' <summary>EL UMBRAL DE SANIDAD DEL ORACULO, y es a proposito que NO sea <c>EpsDet</c>. Es el
-    ''' contrato que el oraculo afirma: toda matriz con determinante de este orden o mayor tiene que salir
-    ''' TRANSFORMADA, no colapsada a Identidad. Esta 1000x por encima del corte vigente (1e-12), asi que hay
-    ''' tres decadas de margen: bajar el corte no rompe nada y subirlo por encima de aca se caza.
-    ''' <para>Si esto dijera <c>EpsDet</c>, el oraculo seria circular — subir el corte agrandaria a la vez
-    ''' el conjunto de matrices maltratadas y el de matrices que el oraculo se saltea. Verificado: con el
-    ''' corte en 1e-3 y este umbral atado a el, el control negativo pasaba en verde.</para></summary>
-    Private Const DetSano As Single = 0.000000001F
-
     Private Function OraculoDeLaLey() As String
         Const N As Integer = 512
         Dim mats As New SkinMatricesSoA(N)
@@ -999,9 +971,9 @@ Friend Module FastSkin
         ' EL CORPUS TIENE DOS MITADES, Y LA SEGUNDA NO ES DECORATIVA.
         ' La primera es aleatoria, y sirve para la forma general de la ley. Pero un corpus aleatorio en
         ' [-2,2] tiene determinantes de orden 1: NINGUNA de sus matrices se acerca al corte por degeneracion,
-        ' asi que mover `EpsDet` no le cambia una sola normal. Verificado corriendolo: con `EpsDet` subido de
-        ' 1e-12 a 1e-3 —que manda a Identidad a cualquier hueso con escala menor a 0,1— el oraculo con solo
-        ' la mitad aleatoria daba PASS. El filtro de condicionamiento de mas abajo se comia exactamente la
+        ' asi que mover el corte no le cambia una sola normal. Verificado corriendolo: con el corte subido a
+        ' 1e-3 —que manda a Identidad a cualquier hueso con escala menor a 0,1— el oraculo con solo la mitad
+        ' aleatoria daba PASS, porque el filtro de condicionamiento de mas abajo se come exactamente la
         ' poblacion que el defecto mueve.
         ' La segunda mitad son ROTACION x ESCALA UNIFORME con la escala bajando por decadas. Estan
         ' PERFECTAMENTE condicionadas —el invariante se cumple exacto, la inversa es la traspuesta sobre s—
@@ -1066,12 +1038,12 @@ Friend Module FastSkin
             Dim det = m.M11 * (m.M22 * m.M33 - m.M23 * m.M32) +
                       m.M12 * (m.M23 * m.M31 - m.M21 * m.M33) +
                       m.M13 * (m.M21 * m.M32 - m.M22 * m.M31)
-            ' DOS FILTROS, Y EL SEGUNDO NO PUEDE MENCIONAR `EpsDet`.
+            ' DOS FILTROS, Y EL SEGUNDO NO PUEDE MENCIONAR `EpsDetRel`.
             '  (1) CONDICIONAMIENTO, relativo: casi singular respecto de su propia escala. Ahi el invariante
             '      se cumple en algebra exacta pero se pierde en el redondeo de Single, asi que juzgarla
             '      seria acusar al kernel del error del instrumento.
             '  (2) SANIDAD, absoluto y PROPIO DE ESTE ORACULO: `DetSano`. Si el oraculo se salteara todo lo
-            '      que la ley llama degenerado —o sea si mirara `EpsDet`— seria circular: subir `EpsDet`
+            '      que la ley llama degenerado —o sea si mirara `EpsDetRel`— seria circular: subirlo
             '      agrandaria a la vez el conjunto de matrices mal tratadas y el de matrices que el oraculo
             '      no mira, y el defecto quedaria invisible por construccion. Con un umbral propio, el
             '      oraculo AFIRMA algo: "toda matriz con |det| >= DetSano tiene que salir transformada, no

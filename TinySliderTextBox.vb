@@ -799,13 +799,11 @@ Public Class TinySliderTextBox
     ''' <summary>Toma el primer numero del texto SIN interpretar los separadores: conserva el signo,
     ''' los digitos, los <c>.</c> y <c>,</c> y el exponente tal como se tipearon.
     '''
-    ''' <para>NEUTRAL A LA CULTURA A PROPOSITO. La version anterior consultaba
-    ''' <c>NumberFormat.NumberGroupSeparator</c> y DESCARTABA lo que pareciera separador de miles: en
-    ''' es-AR el separador de grupo es "." y por lo tanto <c>41.4</c> salia de aca como <c>"414"</c>.
-    ''' El numero ya venia arruinado y ninguna correccion posterior podia recuperarlo, porque el punto
-    ''' ya no estaba. Decidir CUAL separador es el decimal es trabajo de
-    ''' <see cref="TryParseFlexibleDouble"/>, que aplica la regla del ULTIMO separador y por lo tanto no
-    ''' depende del locale de la maquina.</para></summary>
+    ''' <para>NEUTRAL A LA CULTURA A PROPOSITO. ⛔ NO consultar <c>NumberFormat.NumberGroupSeparator</c>
+    ''' para descartar lo que parezca separador de miles: en es-AR el separador de grupo es "." y
+    ''' <c>41.4</c> saldria de aca como <c>"414"</c> — irrecuperable, porque el punto ya no esta.
+    ''' Decidir CUAL separador es el decimal es trabajo de <see cref="TryParseFlexibleDouble"/>, que
+    ''' aplica la regla del ULTIMO separador y no depende del locale de la maquina.</para></summary>
     Private Shared Function ExtractFirstNumber(text As String) As String
         Dim sb As New System.Text.StringBuilder()
         Dim empezaronDigitos As Boolean = False
@@ -830,7 +828,7 @@ Public Class TinySliderTextBox
 
             If Not empezaronDigitos Then
                 ' Antes del primer digito solo se acepta un signo; el resto (unidades, espacios,
-                ' etiquetas) se saltea, que es lo que este metodo siempre hizo.
+                ' etiquetas) se saltea.
                 If (c = "-"c OrElse c = "+"c) AndAlso Not vioSigno Then
                     sb.Append(c)
                     vioSigno = True

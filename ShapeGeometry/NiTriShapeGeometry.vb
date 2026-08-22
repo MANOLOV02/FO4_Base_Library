@@ -338,7 +338,7 @@ Public Class NiTriShapeGeometry
         ' Resize Vertices via the setter (auto-updates _numVertices, HasVertices).  Other
         ' per-vertex arrays (Normals, Tangents, Bitangents, UVSets, VertexColors) will be
         ' resized on their individual setters via NiGeometryData.HasNormals=true side
-        ' effects.  See NiGeometryData.cs:53-77.
+        ' effects.  See NiGeometryData.cs.
         Dim fresh As New List(Of SysNumerics.Vector3)(vertexCount)
         For i = 0 To vertexCount - 1 : fresh.Add(SysNumerics.Vector3.Zero) : Next
         d.Vertices = fresh
@@ -474,7 +474,7 @@ Public Class NiTriShapeGeometry
         If bsSeg IsNot Nothing AndAlso oldSegments IsNot Nothing AndAlso oldSegments.Count > 0 Then
             ' DEBUGGER.BREAK: TO TEST — first time a BSSegmentedTriShape goes through this
             ' path, verify the redistributed Segments match BS-OS canonical behaviour
-            ' (Geometry.cpp:1248).  Note: BSSegmented is FO3-era and rare in FO4 vanilla;
+            ' (Geometry.cpp).  Note: BSSegmented is FO3-era and rare in FO4 vanilla;
             ' WM filter currently blocks it from split/zap until the deeper NiTri-family
             ' refactor lands (see notes in memory).
 #If DEBUG Then
@@ -516,9 +516,9 @@ Public Class NiTriShapeGeometry
         If skinData Is Nothing OrElse skinData.BoneList Is Nothing Then Return
 
         ' OS-faithful (mirrors BSTriShapeGeometry.RebuildNiSkinData fix): SetShapeBoneWeights
-        ' (NifFile.cpp:2866) unconditionally sets skinData->hasVertWeights=true for !isFO edits
+        ' (NifFile.cpp) unconditionally sets skinData->hasVertWeights=true for !isFO edits
         ' (LE/OB/SSE — all NiTriShape skinned shapes).  Without the flag, NiSkinData.BeforeSync
-        ' (NiSkinData.cs:18-21) zeroes NumVertices and discards the weight arrays we populate
+        ' (NiSkinData.cs) zeroes NumVertices and discards the weight arrays we populate
         ' below → weightless on disk.  Reached only for skinned shapes (Not _shape.IsSkinned
         ' returned early above), matching OS.
         skinData.HasVertexWeights = True
@@ -718,10 +718,10 @@ Public Class NiTriShapeGeometry
         For Each kvp In perVertex
             Dim vIdx = kvp.Key
             Dim list = kvp.Value
-            ' CON DESEMPATE. `List.Sort` es INESTABLE: con dos influencias del mismo peso —un vértice
-            ' a mitad de camino entre dos huesos sale 0,5/0,5 del pintado, no es raro— el orden de slot
-            ' quedaba sin especificar y la salida dejaba de ser función de la entrada. La copia de
-            ' Wardrobe_Manager sí desempataba; ahora las dos usan la misma ley.
+            ' CON DESEMPATE. `List.Sort` es INESTABLE: con dos influencias del mismo peso —un vértice a
+            ' mitad de camino entre dos huesos sale 0,5/0,5 del pintado, no es raro— el orden de slot queda
+            ' sin especificar y la salida deja de ser función de la entrada. El desempate vive en
+            ' BoneInfluencePacker.CompararInfluencias, UNA vez para las dos apps.
             list.Sort(Function(a, b) BoneInfluencePacker.CompararInfluencias(a.weight, a.boneIdx, b.weight, b.boneIdx))
             Dim copy = Math.Min(wpv, list.Count)
             Dim outBase = vIdx * wpv
@@ -742,7 +742,7 @@ Public Class NiTriShapeGeometry
     ' NiTriStripsData's strip storage (_points, _stripLengths, _hasPoints, _numStrips) is
     ' protected in the auto-generated NiflySharp class, with no public accessors.  We use
     ' reflection to read/write those fields directly — same pattern that
-    ' Nifcontent_Class_Manolo.GetTriParts uses on NiSkinPartition.triParts (NifContent_Class.vb:702).
+    ' Nifcontent_Class_Manolo.GetTriParts uses on NiSkinPartition.triParts.
     ' This keeps NiflySharp untouched.
     '
     ' Field cache: looked up once per type (Static field caching) to avoid per-call

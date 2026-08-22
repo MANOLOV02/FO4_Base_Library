@@ -20,8 +20,8 @@ Public Module ShapeMaterialOverrides
         ADD = 2
     End Enum
 
-    ''' <summary>FormID overload: resolve the MSWP record via the plugin manager (GetRecord + ParseMSWP),
-    ''' then delegate to the parsed-data overload. Behavior + signature unchanged (robot/OMOD/WM callers).</summary>
+    ''' <summary>FormID overload: resolve the MSWP record via the plugin manager, then delegate to the
+    ''' parsed-data overload. Callers: robot / OMOD / WM.</summary>
     Public Sub ApplyMaterialSwap(mswpFormID As UInteger,
                                  funcType As MaterialSwapFunction,
                                  shapes As IEnumerable(Of IRenderableShape),
@@ -48,10 +48,10 @@ Public Module ShapeMaterialOverrides
         ApplyMaterialSwap(mswp, funcType, shapes)
     End Sub
 
-    ''' <summary>Parsed-data overload (additive): applies an ALREADY-PARSED <see cref="Canon.IMswp"/> to the
-    ''' shapes. Extracted from the FormID overload so the app can apply a DRAFT MSWP (no record to resolve by
-    ''' FormID) directly from its parsed substitutions. No <see cref="PluginManager"/> is needed — this is pure
-    ''' material-path matching + replacement on the shapes.</summary>
+    ''' <summary>Parsed-data overload: applies an ALREADY-PARSED <see cref="Canon.IMswp"/> to the shapes, so a
+    ''' DRAFT MSWP (no record to resolve by FormID) can be applied straight from its parsed substitutions. No
+    ''' <see cref="PluginManager"/> is needed — this is pure material-path matching + replacement on the
+    ''' shapes.</summary>
     Public Sub ApplyMaterialSwap(mswp As Canon.IMswp,
                                  funcType As MaterialSwapFunction,
                                  shapes As IEnumerable(Of IRenderableShape))
@@ -126,10 +126,9 @@ Public Module ShapeMaterialOverrides
                         relatedMaterial.path = FO4UnifiedMaterial_Class.CorrectMaterialPath(targetPath)
                         ' Per-substitution Color Remap Index (CNAM): in the engine a material-swap
                         ' substitution's color-remap index overrides the swapped-IN material's
-                        ' grayscale-to-palette scale (the palette column selected on lookup). Without
-                        ' applying it here the replacement always rendered at its AUTHORED
-                        ' GrayscaleToPaletteScale, so the value edited in the substitution dialog had no
-                        ' visual effect (same color regardless). Only on SET/ADD (the swap-in direction);
+                        ' grayscale-to-palette scale (the palette column selected on lookup). Skip it and the
+                        ' replacement renders at its AUTHORED GrayscaleToPaletteScale, so the value edited in
+                        ' the substitution dialog has no visual effect. Only on SET/ADD (the swap-in direction);
                         ' a REMOVE restores the original material, whose scale we must not touch. Setting
                         ' it on a non-grayscale material is a harmless visual no-op (matches ApplyColorRemap).
                         If Not isRemove AndAlso sub_.TieneIndiceDeColor() Then

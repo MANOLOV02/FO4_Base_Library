@@ -5,21 +5,21 @@ Imports System.Text
 ''' config files, distinct from the vanilla native-chargen sliders that write to NPC.faceMorph (NAM9/NAMA).
 '''
 ''' Source (SKSE64Plugins skee64):
-'''   • LoadMods (FaceMorphInterface.cpp:517-534): for each installed mod, read
-'''     "Meshes\actors\character\FaceGenMorphs\&lt;modName&gt;\races.ini". SLIDER_MOD_DIRECTORY = FaceMorphInterface.h:28.
-'''   • ReadRaces (:762-830): each line "raceEditorId = file1, file2, ...". A file prefixed ':' is loaded from the
+'''   • LoadMods (FaceMorphInterface.cpp): for each installed mod, read
+'''     "Meshes\actors\character\FaceGenMorphs\&lt;modName&gt;\races.ini" (SLIDER_MOD_DIRECTORY, FaceMorphInterface.h).
+'''   • ReadRaces: each line "raceEditorId = file1, file2, ...". A file prefixed ':' is loaded from the
 '''     shared FaceGenMorphs root instead of the mod subfolder (pathOverride = "").
-'''   • ReadSliders (:844-985): "[Male]"/"[Female]" sections; "sliderName = category, type, [params]".
+'''   • ReadSliders: "[Male]"/"[Female]" sections; "sliderName = category, type, [params]".
 '''       - Slider   : category, "Slider",   lowerBoundMorph, upperBoundMorph   ("None" → empty). Gated by g_extendedMorphs.
 '''       - Preset   : category, "Preset",   morphPrefix,     presetCount.       Gated by g_extendedMorphs.
 '''       - HeadPart : category, "HeadPart", headPartType(count).
-'''   • Categories (FaceMorphInterface.h:73-81): Expressions=1024, Extra=512, Body=4, Head=8, Face=16, Eyes=32,
+'''   • Categories (FaceMorphInterface.h): Expressions=1024, Extra=512, Body=4, Head=8, Face=16, Eyes=32,
 '''     Brow=64, Mouth=128, Hair=256. Types: Slider=0, Preset=1, HeadPart=2.
 '''
-''' The per-actor VALUE of a slider lives in the NiOverride ValueSet keyed by the SLIDER NAME (LoadSliders:1315),
-''' and is what the .jslot "custom" array stores (PresetInterface.cpp:444-456). Application (ApplyMorphs:1229-1247):
+''' The per-actor VALUE of a slider lives in the NiOverride ValueSet keyed by the SLIDER NAME (LoadSliders),
+''' and is what the .jslot "custom" array stores (PresetInterface.cpp). Application (ApplyMorphs):
 ''' value V &lt; 0 ⇒ apply lowerBound morph at |V|; V &gt; 0 ⇒ apply upperBound morph at V; Preset ⇒ morph
-''' (lowerBound &amp; int(V)) at 1.0 — all by NAME against the head TRI (TRIFile::Apply:216).</summary>
+''' (lowerBound &amp; int(V)) at 1.0 — all by NAME against the head TRI (TRIFile::Apply).</summary>
 Public Class RaceMenuSliderCatalog
 
     Public Const FaceGenMorphsDir As String = "actors\character\FaceGenMorphs"
@@ -30,7 +30,7 @@ Public Class RaceMenuSliderCatalog
         HeadPart = 2
     End Enum
 
-    ''' <summary>skee64 category bitflags (FaceMorphInterface.h:73-81). One category per slider.</summary>
+    ''' <summary>skee64 category bitflags (FaceMorphInterface.h). One category per slider.</summary>
     Public Enum SliderCategory
         Body = 4
         Head = 8
@@ -63,12 +63,12 @@ Public Class RaceMenuSliderCatalog
     ''' <summary>skee64's MorphMap (<c>morphs.ini</c>): base head-part <c>.tri</c> → the EXTENDED <c>.tri</c> files
     ''' that carry the extra morphs for it. A slider's LowerBound/UpperBound is a morph NAME; the geometry for
     ''' that name lives in one of these files, NOT in the head's chargen tri. skee64 applies it in
-    ''' <c>MorphVisitor::Accept</c> (SKEEHooks.cpp:687-696): for each mapped file, load it and
+    ''' <c>MorphVisitor::Accept</c> (SKEEHooks.cpp): for each mapped file, load it and
     ''' <c>triFile->Apply(geometry, morphName, relative)</c>. Keys are stored as skee64 writes them (the base tri
     ''' model name); values are relative to <see cref="SliderMorphsDir"/>.</summary>
     Private ReadOnly _morphMap As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
 
-    ''' <summary>SLIDER_DIRECTORY (FaceMorphInterface.h:29) — root of the extended morph .tri files.</summary>
+    ''' <summary>SLIDER_DIRECTORY (FaceMorphInterface.h) — root of the extended morph .tri files.</summary>
     Public Const SliderMorphsDir As String = "actors\character\FaceGenMorphs\morphs"
 
     ''' <summary>The extended morph <c>.tri</c> files registered for a base head-part tri, as MESHES-relative
@@ -89,7 +89,7 @@ Public Class RaceMenuSliderCatalog
         Return result
     End Function
 
-    ''' <summary>ReadMorphs (FaceMorphInterface.cpp:709-760). Lines: <c>extension = &lt;baseTri&gt;, &lt;file1&gt;, &lt;file2&gt;…</c>
+    ''' <summary>ReadMorphs (FaceMorphInterface.cpp). Lines: <c>extension = &lt;baseTri&gt;, &lt;file1&gt;, &lt;file2&gt;…</c>
     ''' The left-hand side must literally be "extension"; the first parameter is the map KEY, the rest are the
     ''' extended tri files added under it. '#' starts a comment.</summary>
     Private Sub ReadMorphs(iniBytes As Byte())
@@ -130,8 +130,8 @@ Public Class RaceMenuSliderCatalog
             If raceBytes Is Nothing Then Continue For
             _configMods.Add(modName)
             ReadRaces(raceBytes, modName, fileCache)
-            ' morphs.ini — the base-tri → extended-tri map (LoadMods reads it from the same mod folder,
-            ' FaceMorphInterface.cpp:517-534). Without it a slider's morph name has no geometry to resolve against.
+            ' morphs.ini — the base-tri → extended-tri map (LoadMods reads it from the same mod folder).
+            ' Without it a slider's morph name has no geometry to resolve against.
             Dim morphBytes = TryReadFile($"meshes\{FaceGenMorphsDir}\{modName}\morphs.ini")
             If morphBytes IsNot Nothing Then ReadMorphs(morphBytes)
         Next
@@ -167,7 +167,8 @@ Public Class RaceMenuSliderCatalog
         Next
     End Sub
 
-    ''' <summary>ReadSliders: parse a .slider file into (gender, def) pairs. Faithful to FaceMorphInterface.cpp:844-985.</summary>
+    ''' <summary>ReadSliders: parse a .slider file into (gender, def) pairs. Faithful to
+    ''' FaceMorphInterface.cpp / ReadSliders.</summary>
     Private Shared Function ReadSliders(bytes As Byte()) As List(Of (Gender As Integer, Def As SliderDef))
         Dim result As New List(Of (Gender As Integer, Def As SliderDef))
         Dim gender As Integer = 0

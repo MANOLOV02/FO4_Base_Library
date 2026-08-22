@@ -3,23 +3,16 @@ Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' ESTADO: DEBUG / EN REVISIÓN — NO CERRADO
-' -----------------------------------------------------------------------------
 ' Orquestador del parseo completo de un HKX de tela embebido en un NIF:
 ' skeleton, collidables, capsule shapes, cloth data, operators, states.
 '
-' BUILT BUT NOT CONNECTED AL RENDER.
-' Ningún caller activo en el proyecto. La ruta del render usa directamente
-' HkxPackfileParser + HkxObjectGraphParser + SkeletonClothOverlayHelper,
-' sin pasar por este parser completo.
+' NO ESTÁ EN LA RUTA DEL RENDER: el render usa HkxPackfileParser + HkxObjectGraphParser +
+' SkeletonClothOverlayHelper directamente. Sus consumidores son
+' Wardrobe_Manager/PhysicsWeightCollapseHelper y las herramientas de Tools/ (ClothDrapeViewer,
+' HkxLoadOrderAudit, CollidableDedupProbe, HkxParserProbe).
 '
-' PENDIENTES CONOCIDOS:
-'  - Heredará todos los problemas de offsets de HclStructuredGraphParser y
-'    HclRenderGraphParser (empíricos, FO4 64-bit only).
-'  - PopulateSkinBoneNames, PopulateStateOperatorLinks, PopulateResolvedCollidableBindings,
-'    etc.: lógica de resolución de referencias cruzadas a revisar cuando se conecte
-'    al render.
-'  - Sin soporte para Skyrim SSE (PointerSize=4).
+' ALCANCE: hereda los offsets empíricos FO4 64-bit de HclStructuredGraphParser y
+' HclRenderGraphParser. Sin soporte para Skyrim (PointerSize=4).
 ' =============================================================================
 
 Imports System.Collections.Generic
@@ -45,10 +38,10 @@ Public NotInheritable Class HclClothPackageParser_Class
             result.Skeleton = graph.ParseSkeleton(skeletonObject)
         End If
 
-        ' HKX-008 — un único memo de collidables por pasada de Parse: lo comparten el parseo a nivel
-        ' package (acá) y el parseo por-sim (ParseSimClothData más abajo), de modo que cada hclCollidable
-        ' se parsea UNA vez aunque esté a nivel package y/o referenciado por varios sims. Keyed por
-        ' RelativeOffset (identidad canónica del objeto en el grafo). Ver nota en ParseCollidable.
+        ' Un único memo de collidables por pasada de Parse, compartido entre el parseo a nivel package
+        ' (acá) y el por-sim (ParseSimClothData), para que cada hclCollidable se parsee UNA vez aunque
+        ' esté a nivel package y/o referenciado por varios sims. Key = RelativeOffset (identidad
+        ' canónica del objeto en el grafo). Ver la nota de ParseCollidable.
         Dim collidableCache As New Dictionary(Of Integer, HclCollidableDetail_Class)
 
         Dim collidables = graph.GetObjectsByClassName("hclCollidable").
@@ -67,11 +60,11 @@ Public NotInheritable Class HclClothPackageParser_Class
             Dim clothData = graph.ParseClothData(clothObject)
             If IsNothing(clothData) Then Continue For
 
-            ' Degradación per-cloth-config: los readers HCL ahora LANZAN (InvalidDataException) en vez
-            ' de devolver ceros silenciosos cuando un offset empírico cae fuera de rango (HKX-002/HKX-009).
-            ' Si UNA config explota por un layout inesperado, se loguea y se omite ESA config — el resto
-            ' del package se sigue parseando (no se pierde todo). Mismo patrón de degradación que el
-            ' consumidor app-level (PhysicsWeightCollapseHelper) ya aplica alrededor de Parse().
+            ' Degradación per-cloth-config: los readers HCL LANZAN (InvalidDataException) cuando un
+            ' offset empírico cae fuera de rango, en vez de devolver ceros silenciosos. Si UNA config
+            ' explota por un layout inesperado se loguea y se omite ESA config — el resto del package
+            ' se sigue parseando. Los llamadores (PhysicsWeightCollapseHelper) envuelven Parse() con el
+            ' mismo criterio.
             Try
                 Dim clothConfig As New HclClothConfigGraph_Class With {
                     .ClothData = clothData
@@ -610,8 +603,8 @@ Public NotInheritable Class HclClothPackageParser_Class
         ' PARTÍCULA de DefaultClothPose (difieren cuando el skin cubre un espacio distinto — p.ej.
         ' maxVertexIndex >= particleCount, visto en CBBE Far Harbor Hunter). El puente correcto
         ' skin→partícula es MoveParticles; sin par, el vértice de skin no tiene partícula correspondiente.
-        ' (Antes: pose.Pose(VertexIndex) directo = cruce de espacios → match/PositionError errados en esos
-        ' items. Es solo metadata diagnóstica, pero ahora correcta. Ver 25-cloth-deform.)
+        ' ⛔ NO indexar pose.Pose con VertexIndex directo: cruza los dos espacios y da match/PositionError
+        ' errados en esos ítems. Ver la memoria 25-cloth-deform.
         Dim vertToParticle As New Dictionary(Of Integer, Integer)
         If config.MoveParticles?.Pairs IsNot Nothing Then
             For Each mpPair In config.MoveParticles.Pairs

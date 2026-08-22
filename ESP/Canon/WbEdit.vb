@@ -71,7 +71,7 @@
         ''' <summary>Pone el valor en un nodo ya resuelto.
         ''' <para>Existe para que quien ya encontró el nodo no tenga que volver a buscarlo por ruta: la
         ''' segunda búsqueda puede usar otras reglas y no llegar al mismo lado, que es justo lo que
-        ''' hacía que un campo se pudiera leer y no escribir.</para>
+        ''' hace que un campo se pueda leer y no escribir.</para>
         ''' <para>Si el nodo es el envoltorio de un subrecord con una sola hoja adentro, el valor va en
         ''' la hoja. Un nodo con estructura debajo no es una hoja y no se toca.</para></summary>
         Public Function PonerValor(n As WbNode, valor As Object) As Boolean
@@ -113,7 +113,7 @@
         ''' <summary>Valor de un campo por (firma, nombre). Nothing = ausente.</summary>
         Public Function GetField(root As WbNode, sig As String, fieldName As String) As Object
             Dim n = FindField(root, sig, fieldName)
-            Return If(n Is Nothing, Nothing, n.Value)
+            Return n?.Value
         End Function
 
         ''' <summary>Escribe un campo por (firma, nombre). False si no existe.</summary>
@@ -141,7 +141,7 @@
         '''
         ''' <para>Existe porque sin esto nada recién creado acepta campos: un record nuevo, o un elemento
         ''' recién agregado a una lista, nacen sólo con lo que el formato marca como obligatorio, y
-        ''' escribirles cualquier otro campo no hacía nada y no avisaba.</para>
+        ''' escribirles cualquier otro campo no hace nada y no avisa.</para>
         '''
         ''' <para>Busca con BACKTRACKING, igual que la lectura: un tramo puede significar más de una cosa
         ''' —bajar por un hijo, nombrar al nodo en el que ya estamos, o pedir otra rama de una
@@ -258,7 +258,7 @@
             If TypeOf nodo.Def Is WbRootDef Then
                 If ctx Is Nothing Then Return Nothing
                 Dim d = WbSchema.Get(ctx.Game, ctx.RecordSignature)
-                Return If(d Is Nothing, Nothing, d.Members)
+                Return d?.Members
             End If
             Return Nothing
         End Function
@@ -287,9 +287,9 @@
         ''' <summary>Dónde insertar el miembro nuevo: delante del primer hijo que venga DESPUÉS en la
         ''' declaración.
         ''' <para>Un hijo que no se puede ubicar NO corta: hay estructuras que se leen aplanadas, y su
-        ''' contenido queda como hijo directo sin ser un miembro de este nivel. Antes esto tiraba, y
-        ''' entonces escribir CUALQUIER campo de un record que trajera una de esas estructuras fallaba
-        ''' entero. Se lo saltea: no dice nada sobre dónde va el nuevo.</para></summary>
+        ''' contenido queda como hijo directo sin ser un miembro de este nivel. Tirar acá haría que
+        ''' escribir CUALQUIER campo de un record que traiga una de esas estructuras fallara entero.
+        ''' Se lo saltea: no dice nada sobre dónde va el nuevo.</para></summary>
         Private Function PosicionDe(nodo As WbNode, miembros As WbMemberDef(), idx As Integer) As Integer
             For c = 0 To nodo.Children.Count - 1
                 Dim i = IndiceDelHijo(miembros, nodo.Children(c))
@@ -418,14 +418,10 @@
             Return Nothing
         End Function
 
-        ''' <summary>Quita un elemento de un arreglo. Devuelve False si el índice no existe.
-        ''' <para>El contador del arreglo, si el formato lo declara aparte, se recalcula solo al
-        ''' escribir: no hay que acordarse de bajarlo a mano.</para></summary>
         ''' <summary>Saca del record el campo que esta en esa ruta, dejandolo AUSENTE.
         ''' <para>Ausente no es lo mismo que valer cero: el formato distingue las dos cosas y hay
-        ''' campos donde el motor se comporta distinto segun el subrecord este o no. Sin esto la API
-        ''' solo sabia preguntar si un campo estaba y ponerle valor, pero no sacarlo.</para>
-        ''' <para>Devuelve False si la ruta no resolvia: no habia nada que sacar.</para></summary>
+        ''' campos donde el motor se comporta distinto segun el subrecord este o no.</para>
+        ''' <para>Devuelve False si la ruta no resuelve: no habia nada que sacar.</para></summary>
         Public Function QuitarCampo(nodo As WbNode, ruta As String) As Boolean
             If nodo Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return False
             Dim destino = nodo.ByFieldPath(ruta)
@@ -444,6 +440,9 @@
             Return False
         End Function
 
+        ''' <summary>Quita un elemento de un arreglo. Devuelve False si el índice no existe.
+        ''' <para>El contador del arreglo, si el formato lo declara aparte, se recalcula solo al
+        ''' escribir: no hay que acordarse de bajarlo a mano.</para></summary>
         Public Function QuitarElemento(contenedor As WbNode, indice As Integer) As Boolean
             If contenedor Is Nothing OrElse indice < 0 OrElse indice >= contenedor.Children.Count Then Return False
             contenedor.QuitarHijoEn(indice)

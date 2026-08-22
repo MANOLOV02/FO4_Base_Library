@@ -38,8 +38,8 @@ End Enum
 ''' magic constants. SrgbOpacity (default) uses the IEC 61966-2-1 transfer; it is the verified
 ''' convention -- the same TTET[0] mask drives diffuse and N/S, and N/S matches CK at slope 1.000
 ''' only under sRGB. Linear is kept for A/B comparison. Applied identically by render and bake.</summary>
-' Enum LEGACY: FaceTintConvention lo reemplaza y lo dice por escrito ("el enum legacy ... sólo tenía
-' Linear/SrgbOpacity"). Única referencia en todo el árbol: esta declaración. Friend hasta que se borre.
+' Enum LEGACY y SIN USO: lo reemplaza FaceTintConvention, y la única referencia en todo el árbol es esta
+' declaración. `Friend` para que no salga en la superficie pública de la librería.
 Friend Enum FaceTintBlendConvention
     Linear = 0       ' coverage = mask * opacity (blend in stored/gamma space)
     SrgbOpacity = 1  ' coverage = sRGB(mask) * opacity (mask shaped by the sRGB transfer)
@@ -403,9 +403,9 @@ Public Module FaceTintCompositor
     Private _glDecodeUseCompress As Boolean? = Nothing
 
 
-    ' === TGA writers (output final + CLI --dump/_3). La instrumentacion de dump/diff (per-layer
-    ' readback GL.GetTexImage, mask/intermediate dump) fue REMOVIDA de la libreria 2026-06-06: los
-    ' dumps viven en el CLI (FO4_FaceTint_CLI --dump). El render GL ya no hace readbacks de debug. ===
+    ' === TGA writers (output final + CLI --dump/_3). La instrumentacion de dump/diff (readback per-layer con
+    ' GL.GetTexImage, dump de mask/intermediate) vive en el CLI (FO4_FaceTint_CLI --dump), NO en la libreria:
+    ' el render GL no hace readbacks de debug. ===
 
     ''' <summary>TEMP DEBUG: write a BGRA buffer as an uncompressed 32-bit TGA (top-left origin,
     ''' matching CK's FaceGen TGA layout). Alpha PRESERVED so the mask channel can be inspected.
@@ -465,26 +465,23 @@ Public Module FaceTintCompositor
     End Sub
 
 
-    ''' <summary>GUARD: los dos shaders tienen que ser ASCII PURO. Devuelve "" si lo son, o el detalle
-    ''' del primer caracter que no lo sea.
-    ''' <para><b>Por qué existe.</b> Un no-ASCII adentro del string GLSL —una flecha, un guion largo, una
-    ''' vocal acentuada en un COMENTARIO— hace que el shader no compile. Y ese fallo es MUDO en producción:
+    ''' <summary>Todos los shaders GLSL que el gate <c>glsl-ascii</c> tiene que revisar. NO sólo los dos de
+    ''' este compositor: el fallo es igual de mudo en los del RENDER, y cubrir dos de ocho es falsa sensación
+    ''' de gate.
+    ''' <para><b>Por qué existe el gate.</b> Un no-ASCII adentro del string GLSL —una flecha, un guion largo,
+    ''' una vocal acentuada en un COMENTARIO— hace que el shader no compile, y ese fallo es MUDO en producción:
     ''' <see cref="EnsureCompositorInitialized"/> reporta el error de compilación por <c>Logger.LogLazy</c>,
     ''' que está APAGADO en Release, y el bake sigue andando porque el bake es CPU. El síntoma es que el
     ''' compositor GL —el que usa el RENDER— deja de dibujar.</para>
-    ''' <para>Y NINGÚN barrido de bytes lo ve: el A/B de corpus corre con <c>FGBAKE_GPU_PARITY=0</c>, o sea
-    ''' con el camino GL apagado. Pasó de verdad (2026-07-31) y costó una corrida entera de paridad: el gate
-    ''' de bytes daba PASS con el shader roto. Por eso el chequeo va acá, donde corre SIEMPRE y sin GL.</para>
-    ''' <para>La regla "GLSL ASCII puro" ya estaba escrita; lo que faltaba era algo que la hiciera cumplir.</para></summary>
-    ''' <summary>Todos los shaders GLSL que el gate tiene que revisar. NO sólo los dos de este compositor:
-    ''' el fallo es igual de mudo en los del RENDER, y cubrir dos de ocho daba una falsa sensación de gate.
-    ''' <para>Los dos del <c>TextOverlayRenderer</c> (Render.vb) YA ESTAN: eran variables locales dentro
-    ''' de un <c>Private Sub</c> —invisibles tanto para esta lista como para el barrido por reflexion del
-    ''' gate, porque una local no es un campo— y se izaron a <c>Friend Const</c> el 2026-08-12. Lo destapo
-    ''' un revisor: quedaba un shader de produccion que NINGUN gate cubria.</para></summary>
-    ''' <remarks>`Friend` y no `Private` para que el gate de BUILD (Tools/ParityGate, `glsl-ascii`) pueda
-    ''' barrer los ocho fuentes. El gate SALIO de esta lib el 2026-08-08: es lexico sobre strings constantes,
-    ''' da lo mismo en toda maquina ⇒ no tiene nada que hacer corriendo en el proceso del usuario.</remarks>
+    ''' <para>Y NINGÚN barrido de bytes lo ve: el A/B de corpus corre con <c>FGBAKE_GPU_PARITY=0</c>, o sea con
+    ''' el camino GL apagado, así que el gate de bytes da PASS con el shader roto.</para>
+    ''' <para>UN SHADER QUE NO ESTÉ EN ESTA LISTA NO ESTÁ CUBIERTO. Los que se declaran como variables LOCALES
+    ''' dentro de un <c>Private Sub</c> son invisibles tanto para esta lista como para el barrido por reflexión
+    ''' del gate —una local no es un campo—: hay que izarlos a <c>Friend Const</c>.</para></summary>
+    ''' <remarks>`Friend` y no `Private` para que el gate de BUILD (Tools/ParityGate,
+    ''' LawGates.ShaderSourceAsciiGate) pueda barrer los ocho fuentes. El gate vive allá y no acá porque es
+    ''' léxico sobre strings constantes —da EXACTAMENTE lo mismo en toda máquina— y acá corría en el proceso
+    ''' del usuario en cada primer bake. Sigue siendo obligatorio antes de publicar.</remarks>
     Friend Function AllShaderSources() As (Name As String, Text As String)()
         Return New (Name As String, Text As String)() {
             ("FACETINT-VERTEX", VertexShaderSource),
@@ -503,11 +500,6 @@ Public Module FaceTintCompositor
             ("OVERLAY-VERTEX", TextOverlayRenderer.VertexOverlaySrc),
             ("OVERLAY-FRAGMENT", TextOverlayRenderer.FragmentOverlaySrc)}
     End Function
-
-    ' EL GATE `glsl-ascii` YA NO VIVE ACA. Se mudó a Tools/ParityGate (LawGates.ShaderSourceAsciiGate) el
-    ' 2026-08-08: es léxico sobre strings constantes, o sea que da EXACTAMENTE lo mismo en toda máquina, y
-    ' corría en el proceso del usuario en cada primer bake. Sigue siendo obligatorio antes de publicar —
-    ' un no-ASCII deja el shader sin compilar y el fallo es MUDO en Release.
 
     Private Const VertexShaderSource As String = "#version 430
 layout(location = 0) in vec2 aPos;
@@ -1145,13 +1137,6 @@ void main() {
     ' the accumulator seeded from this texture preserves the base alpha exactly. srgbToLinear is the
     ' IEC 61966-2-1 standard transfer (same as the compositor's), not a magic curve.
 
-    ' ELIMINADO `ComposeOntoFaceDiffuse` (2026-07-30). Se anunciaba como "backward-compat wrapper" pero
-    ' NO tenia UN SOLO caller en todo el repo, y en esta misma tanda se le habia agregado un parametro
-    ' OBLIGATORIO (cpuMirror) — o sea que su compatibilidad hacia atras ya estaba rota igual. Un wrapper muerto
-    ' que miente en su propio resumen es exactamente la clase de superficie que hace elegir la funcion
-    ' equivocada. El reemplazo es `ComposeOntoFaceTexture(..., FaceTintChannel.Diffuse, cpuMirror)`.
-
-
     ''' <summary>Compone todas las capas que aportan al canal pedido (diffuse/normal/specular) sobre una copia
     ''' de la textura de cara y devuelve el nuevo texture-id; el original queda intacto. Devuelve 0 si falla o
     ''' si ninguna capa aporta datos a ese canal. DEBE correr en el hilo GL.
@@ -1507,12 +1492,12 @@ void main() {
                 GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
                 GL.Uniform1(state._uSoftLightLoc, CInt(conv.SoftLight))   ' modelo de softlight (agnostico) para bop3
                 GL.Uniform1(state._uFrameworkLoc, CInt(conv.Framework))   ' framework de composite (OverPrev default)
-                ' Alpha del _d (corregido 2026-07-20): PASSTHROUGH del alpha del base SÓLO si la cabeza usa
-                ' Diffuse Alpha Test (flag ACBS 0x01000000, canal Diffuse); si no, OPACO en el último layer
-                ' (comportamiento original). El CK aplana el alpha del _d salvo cuando el head material lo testea.
-                ' Valentine (flag SET) → passthrough (transparencia); DiMA (CLEAR) → opaco, como el CK. Antes:
-                ' passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía). Espejo
-                ' del CPU compositor (keepBaseAlpha = flag AndAlso isD). Ver 40-bake-leyes-fo4.
+                ' Alpha del _d: PASSTHROUGH del alpha del base SÓLO si la cabeza usa Diffuse Alpha Test (flag
+                ' ACBS 0x01000000, canal Diffuse); si no, OPACO en el último layer. El CK aplana el alpha del _d
+                ' salvo cuando el head material lo testea: Valentine (flag SET) → passthrough (transparencia),
+                ' DiMA (CLEAR) → opaco. Hacer passthrough incondicional INVENTA el alpha de DiMA (medición:
+                ' DLC03DiMA _d ALPHA varía). Espejo del CPU compositor (keepBaseAlpha = flag AndAlso isD).
+                ' Ver la memoria 40-bake-leyes-fo4.
                 GL.Uniform1(state._uForceOpaqueAlphaLoc, If(headDiffuseAlphaTest AndAlso channel = FaceTintChannel.Diffuse, 0, If(isLast, 1, 0)))
                 GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
                 ' Flat HCLF-RGB tint for TextureSet brow layers. Mutually exclusive with the LUT
@@ -2262,13 +2247,12 @@ void main() {
         ' =========================================================================================
         ' POR QUE HACE FALTA: `GL.Uniform*(-1, ...)` es un NO-OP MUDO. Si un uniform se renombra en el
         ' GLSL, o el compilador lo elimina porque su rama quedo muerta, el codigo lo sigue "escribiendo" y
-        ' el shader corre con el valor por defecto. No falla nada: sale una imagen, DISTINTA. Hasta hoy no
-        ' habia NI UNA guarda sobre las 45 locations.
-        ' Un -1 NO es necesariamente un bug: el compilador GLSL elimina los uniforms que ningun camino
-        ' lee, y eso es legitimo. Por eso esto REPORTA (latcheado, una vez) en vez de abortar.
-        ' MEDIDO 2026-08-01 sobre un link REAL (corrida -GpuParity, 23 NPCs, 21 imagenes comparadas):
-        ' NINGUNA de las 45 quedo en -1. O sea que hoy la lista de "requeridos" son las 45, y CUALQUIER -1
-        ' que aparezca es una regresion — un uniform renombrado en el GLSL o una rama que quedo muerta.
+        ' el shader corre con el valor por defecto. No falla nada: sale una imagen, DISTINTA.
+        ' Un -1 NO es necesariamente un bug: el compilador GLSL elimina los uniforms que ningun camino lee, y
+        ' eso es legitimo. Por eso esto REPORTA (latcheado, una vez) en vez de abortar.
+        ' MEDIDO sobre un link REAL (corrida -GpuParity, 23 NPCs, 21 imagenes comparadas): NINGUNA de las 45
+        ' locations quedo en -1, o sea que las 45 son requeridas y CUALQUIER -1 es una regresion — un uniform
+        ' renombrado en el GLSL o una rama que quedo muerta.
         ' Se reporta en vez de abortar por el mismo criterio que SwapAccumWarning: el bake sigue y el aviso
         ' sale SIEMPRE (por `log()`, no por Logger, que en release esta apagado).
         If _uniMissing.Count > 0 Then
@@ -2409,7 +2393,7 @@ void main() {
     ''' ser validos para el contexto actual. IsFresh=True en los canales donde swap/compose produjo textura
     ''' nueva (el caller la posee); False cuando nada aporto y se devuelve el id de entrada verbatim, que el
     ''' caller NO debe borrar. DEBE correr en el hilo GL con el contexto duenio actual.</para>
-    ''' <para>â›” SYNC: CPU/GPU compositor - este es el camino GL y su espejo es
+    ''' <para>⛔ SYNC: CPU/GPU compositor - este es el camino GL y su espejo es
     ''' <c>FaceTintCpuCompositor.ComposeChannelCpu</c> / <c>ComposeOne</c>. Los dos leen sus parametros del
     ''' MISMO <c>FaceTintConvention.ResolveConvention</c>, por eso la paridad es por construccion. Duele si
     ''' diverge porque el BAKE corre 100 % CPU y el RENDER por aca, asi que un barrido validaria un camino que
@@ -2429,13 +2413,10 @@ void main() {
                                           Optional headDiffuseAlphaTest As Boolean = False,
                                           Optional stage As FaceTintConvention.FaceTintStage? = Nothing) As FaceTintPipelineResult
         ' `stage` va OPCIONAL Y AL FINAL a propósito: así los call sites del otro repositorio (que es un repo
-        ' git independiente, sin commit atómico cruzado) no necesitan una sola edición. Sin valor reproduce
-        ' exactamente lo que hacía antes de existir el eje.
-        ' ES NULLABLE Y NO `= TintDiffuse`. El default fijo era ADEMÁS incorrecto para N/S: esta función
-        ' compone los TRES canales, y en Normal/Specular la etapa correcta es TintNormalSpecular. Con el default
-        ' fijo, el día que alguien empezara a honrar el parámetro, el `_msn` habría resuelto el bucket del
+        ' git independiente, sin commit atómico cruzado) no necesitan una sola edición.
+        ' ES NULLABLE Y NO `= TintDiffuse`: esta función compone los TRES canales, y en Normal/Specular la etapa
+        ' correcta es TintNormalSpecular, así que un default fijo haría que el `_msn` resolviera el bucket del
         ' diffuse. Nothing = "el caller no opina" ⇒ cada canal resuelve SU etapa de tint.
-        ' Y hasta este cambio el parámetro se ACEPTABA Y SE DESCARTABA: no llegaba a ningún ResolveConvention.
         ArgumentNullException.ThrowIfNull(state)
 
         ' SYNC: CPU/GPU compositor — el target de resolución es POR CANAL, no el del diffuse. El `_msn` y
@@ -2444,13 +2425,13 @@ void main() {
         ' largo ⇒ el instrumento de paridad descartaba esos slots y, con GPU encendido, el `_s` ni se
         ' escribía. Se consulta al GL el tamaño real de cada textura fuente; si no existe, se cae al par del
         ' caller.
-        ' Las tres fuentes son PROPIEDAD DEL CALLER — en el camino vivo son las MISMAS texturas del render 3D.
-        ' Antes se les forzaba acá mip 0 + filtro lineal, sin restaurar: eso pisaba el LinearMipmapLinear y la
-        ' anisotropía que el loader les pone a propósito, y quedaba pisado (los parámetros de sampleo viven
-        ' adentro del objeto textura). Se veía cuando la original seguía siendo la que se dibuja: canal que
-        ' vuelve IsFresh=False (sin swap) u objeto compartido bajo la misma clave.
-        ' Ya no hace falta tocar nada: el shader las lee por texelFetch (ver fetchAt), que ignora filtro, wrap,
-        ' nivel de mip y anisotropía. El compositor especifica su sampleo en vez de heredarlo del objeto.
+        ' Las tres fuentes son PROPIEDAD DEL CALLER —en el camino vivo son las MISMAS texturas del render 3D—,
+        ' así que NO se les tocan los parámetros de sampleo. Forzarles mip 0 + filtro lineal pisa el
+        ' LinearMipmapLinear y la anisotropía que el loader les pone a propósito, y queda pisado (esos
+        ' parámetros viven adentro del objeto textura): se ve cuando la original sigue siendo la que se dibuja
+        ' —canal que vuelve IsFresh=False (sin swap) u objeto compartido bajo la misma clave—.
+        ' Y no hace falta: el shader las lee por texelFetch (ver fetchAt), que ignora filtro, wrap, nivel de mip
+        ' y anisotropía. El compositor especifica su sampleo en vez de heredarlo del objeto.
 
         Dim dNat = SourceTextureSize(srcDiffuseId, width, height)
         Dim nNat = SourceTextureSize(srcNormalId, width, height)
@@ -2519,10 +2500,10 @@ void main() {
         ' --- PASE FINAL AccumSpace -> OutputSpace: UNA SOLA VEZ, ACA, PARA LOS TRES CANALES ---
         ' El compose deja el acumulador en AccumSpace y el consumidor (el DDS del bake y el render) espera
         ' OutputSpace. El CPU hace exactamente esta conversion una vez por canal, en el pack.
-        ' â›” POR QUE ACA Y NO EN ProcessChannel: ese se llama DOS VECES por canal (region swaps y tints), asi que
+        ' ⛔ POR QUE ACA Y NO EN ProcessChannel: ese se llama DOS VECES por canal (region swaps y tints), asi que
         ' adentro toda cara CON swaps se comeria DOS conversiones de gamma, la segunda sobre un buffer ya
         ' convertido. El acumulador es UNO y cruza las dos fases: su conversion de salida es del PIPELINE.
-        ' â›” TAMBIEN CORRE SIN CAPAS NI SWAPS: el seed ya dejo el diffuse en AccumSpace, asi que saltearlo cuando
+        ' ⛔ TAMBIEN CORRE SIN CAPAS NI SWAPS: el seed ya dejo el diffuse en AccumSpace, asi que saltearlo cuando
         ' no hay contribuciones sacaria el canal en el espacio equivocado. El CPU tampoco lo condiciona.
         ' Con el default (AccumSpace == OutputSpace en los 3 canales) es un no-op exacto: el guard de
         ' ConvertChannelIfNeeded ve mismo tamano y mismo espacio y no dibuja nada.
@@ -2735,10 +2716,10 @@ Public NotInheritable Class FaceTintTextureCache
         If missKeys.Count > 0 Then
             ' srgb=False: texturas del compositor crudas; el decode lo hace el shader por convención (ss).
             Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(missKeys.Count - 1) {})
-            ' NO se le tocan los parametros de sampleo a lo que sale del loader (antes se forzaba aca mip 0 y
-            ' ClampToEdge). El shader lee TODO por texelFetch con coordenada entera y clamp explicito (ver
-            ' fetchAt), asi que filtro, wrap, mip y anisotropia de la textura son irrelevantes para el compose
-            ' — y estas entradas viven en un cache compartido, donde pisarlas viajaba a otros consumidores.
+            ' NO se le tocan los parametros de sampleo a lo que sale del loader (nada de forzar mip 0 ni
+            ' ClampToEdge): el shader lee TODO por texelFetch con coordenada entera y clamp explicito (ver
+            ' fetchAt), asi que filtro, wrap, mip y anisotropia son irrelevantes para el compose — y estas
+            ' entradas viven en un cache COMPARTIDO, donde pisarlas viaja a otros consumidores.
             If loaded IsNot Nothing Then
                 For i As Integer = 0 To missKeys.Count - 1
                     Dim k = missKeys(i)

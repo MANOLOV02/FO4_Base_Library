@@ -260,8 +260,8 @@ Public Module LmHairColorLutLoader
     ''' <para>Una raza sin HNAM (vanilla <c>HumanChildRace</c>) devuelve "" y la rama de paleta de la ceja
     ''' no hace nada — que es exactamente lo que hace el motor (<c>test eax,eax; je</c> sobre el string).</para>
     '''
-    ''' <para>Sólo FO4 en la práctica: el consumidor exige <c>CLFM.HasRemappingIndex</c>, que
-    ''' El índice de paleta sólo existe en Fallout 4. En Skyrim el color de pelo es siempre RGB.</para></summary>
+    ''' <para>Sólo FO4 en la práctica: el consumidor exige <c>CLFM.HasRemappingIndex</c>, y el índice de paleta
+    ''' sólo existe en Fallout 4. En Skyrim el color de pelo es siempre RGB.</para></summary>
     ''' <para>A propósito NO copia la preferencia-por-existencia de
     ''' <c>NpcMaterialResolver.ResolveRaceHairLookupTexture</c> (que entre HNAM y HLTX elige el que esté
     ''' instalado). Acá manda el motor: lee <c>race+0x6C0</c> = HNAM y nada más. Si el HNAM de una raza
@@ -317,11 +317,11 @@ Public Module LmHairColorLutLoader
         End Get
     End Property
 
-    ''' <summary>Forma canónica de un Data\ para poder compararlo. Comparar el TEXTO CRUDO no sirve, y el
-    ''' CLI ya lo aprendió por las malas (su <c>SamePath</c>): <c>--data F:/x/Data</c> —como lo tipea un
-    ''' script— y el <c>DataPath</c> del config (<c>F:\x\Data</c>) son LA MISMA carpeta y difieren como
-    ''' string. Sin canonicalizar, cada cruce entre el camino de la malla (que resuelve por Config_App) y el
-    ''' del bake (que recibe el --data) daba "distinto" y forzaba un rescan completo del registro —
+    ''' <summary>Forma canónica de un Data\ para poder compararlo. Comparar el TEXTO CRUDO no sirve (ver
+    ''' también el <c>SamePath</c> del CLI): <c>--data F:/x/Data</c> —como lo tipea un script— y el
+    ''' <c>DataPath</c> del config (<c>F:\x\Data</c>) son LA MISMA carpeta y difieren como string. Sin
+    ''' canonicalizar, cada cruce entre el camino de la malla (que resuelve por Config_App) y el del bake (que
+    ''' recibe el --data) da "distinto" y fuerza un rescan completo del registro —
     ''' <c>BuildRaceEditorIdIndex</c> recorre TODOS los RACE del load order— por NPC.</summary>
     Private Function CanonicalDataPath(dataPath As String) As String
         If String.IsNullOrWhiteSpace(dataPath) Then Return ""
@@ -374,8 +374,8 @@ Public Module LmHairColorLutLoader
             Try
                 ' SOLO FO4. LooksMenu/f4ee no existe en Skyrim: SSE usa RaceMenu (skee64), que no tiene
                 ' registro de LUTs — el color de pelo ahí es un RGB absoluto. Y un CLFM de Skyrim NO lleva
-                ' El índice de paleta ya viene gateado por juego, así que en Skyrim
-                ' todo este camino queda inerte igual. El gate explícito evita depender de esa inercia.
+                ' índice de paleta, así que en Skyrim todo este camino queda inerte igual; el gate explícito
+                ' evita depender de esa inercia.
                 If Config_App.Current Is Nothing OrElse Config_App.Current.Game <> Config_App.Game_Enum.Fallout4 Then
                     Logger.LogLazy(Function() "[LM-HAIRLUT] juego != FO4: el registro de LUTs de LooksMenu no aplica (SSE usa RaceMenu con RGB absoluto).")
                 Else
@@ -445,11 +445,10 @@ Public Module LmHairColorLutLoader
         Return True
     End Function
 
-    ''' <summary>race EditorID → FormID, para el <c>GetRaceByName</c> de f4ee (:1292). Se arma una vez por
-    ''' escaneo; el universo de RACE es chico.</summary>
-    ''' <summary>Set de EditorIDs de RACE — sólo PRESENCIA, que es todo lo que el <c>GetRaceByName</c> de
-    ''' f4ee necesita. Case-insensitive, como su <c>F4EEFixedString</c> (<c>_stricmp</c>). No parsea los
-    ''' records: alcanza con el EditorID del header, así que no cuesta nada aunque haya cientos de razas.</summary>
+    ''' <summary>Set de EditorIDs de RACE — sólo PRESENCIA, que es todo lo que el <c>GetRaceByName</c> de f4ee
+    ''' (:1292) necesita; el valor del diccionario NO se usa. Case-insensitive, como su <c>F4EEFixedString</c>
+    ''' (<c>_stricmp</c>). No parsea los records: alcanza con el EditorID del header, así que armarlo una vez
+    ''' por escaneo no cuesta nada aunque haya cientos de razas.</summary>
     Private Function BuildRaceEditorIdIndex(pluginManager As PluginManager) As Dictionary(Of String, Boolean())
         Dim idx As New Dictionary(Of String, Boolean())(StringComparer.OrdinalIgnoreCase)
         Try
@@ -467,7 +466,7 @@ Public Module LmHairColorLutLoader
     ''' <summary>Hex al estilo <c>sscanf_s(s, "%X", &amp;v)</c>, que es lo que usa f4ee (CharGenInterface.cpp:1243):
     ''' saltea espacios, acepta el prefijo <c>0x</c>, y PARA en el primer carácter no hexadecimal en vez de
     ''' fallar. <c>UInteger.TryParse(NumberStyles.HexNumber)</c> rechaza las tres cosas, así que un
-    ''' <c>"Form": "0x801"</c> —que en el juego registra— se nos caía en silencio.</summary>
+    ''' <c>"Form": "0x801"</c> —que en el juego registra— se cae en silencio.</summary>
     Friend Function TryParseSscanfHex(s As String, ByRef value As UInteger) As Boolean
         value = 0UI
         If s Is Nothing Then Return False

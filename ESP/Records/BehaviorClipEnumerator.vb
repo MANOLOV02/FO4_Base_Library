@@ -125,14 +125,14 @@ Public NotInheritable Class BehaviorClipEnumerator
             Next
         Next
 
-        ' ── 100% DATA-DRIVEN (decisión usuario 2026-07-09): la lista = WALK (clip-generators del behavior graph) +
-        ' IDLE records (patrón GNAM, FO4). Se ELIMINARON las 2 pasadas heurísticas por-nombre que existían acá:
-        '   (1) "variant-by-name": agregaba todo .hkx con el MISMO nombre que un clip-generator bajo otra carpeta SAPT.
+        ' ── 100% DATA-DRIVEN (decisión del usuario): la lista = WALK (clip-generators del behavior graph) +
+        ' IDLE records (patrón GNAM, FO4). ⛔ NO agregar pasadas heurísticas por-nombre. Las dos que tientan:
+        '   (1) "variant-by-name": agregar todo .hkx con el MISMO nombre que un clip-generator bajo otra carpeta SAPT.
         '       Medido = over-inclusion (archivos de OTROS actores: _1stPerson\, DynamicAnims\ [=DATG runtime],
         '       Supermutant\, PowerArmor\Furniture\). No sale de ningún record ni del behavior graph.
         '   (2) "opción-B alt_/to_": los arma el DynamicAnimationTaggingGenerator en RUNTIME → NO existen en los datos
         '       (sin lista estática, ni el CK las enumera).
-        ' Ninguna de las dos es data-driven → fuera. El WALK es la resolución exacta del engine (clip-gen → archivo vía
+        ' Ninguna de las dos es data-driven. El WALK es la resolución exacta del engine (clip-gen → archivo vía
         ' SAPT) y se conserva ÍNTEGRO. La cobertura IDLE de arriba SÍ es data-driven (patrón del record IDLE.GNAM,
         ' expansión $(Subgraph) = mecanismo del engine). SSE no llega acá con idles: sus IDLE son event-driven por el
         ' behavior graph (DNAM=behavior, ENAM=evento) → ya están en el WALK (medido cover=0 en las 161 razas).

@@ -196,31 +196,25 @@ Public NotInheritable Class RaceMenuJslot
     ''' script barrería una capa distinta de la que el archivo declara (lo gatea <c>check_sweep_ceiling.py</c>).</para>
     ''' <para>La key existe para que RaceMenu, XPMSE y nosotros podamos tener un valor sobre el MISMO hueso sin
     ''' pisarnos, y para que <c>RemoveNodeTransform*</c> saque SÓLO la nuestra — que es lo único que nos deja
-    ''' deshacer lo que escribimos.
-    ''' <para>Hubo una versión con una función <c>ClaimNode()</c> en el <c>.psc</c> que borraba las capas ajenas
-    ''' de los huesos autorados, para que nuestro valor fuera el total sin sumarse a nadie. Se revirtió: confundía
-    ''' las capas de un PRESET (el desglose por slider de un autor, que vive en un archivo y nunca llega solo a un
-    ''' NPC) con las de un ACTOR en runtime (de mods distintos). Sobre un NPC real las únicas ajenas son
-    ''' <c>internal</c> del motor —donde componer ES correcto: el NPC con tacos tiene que levantarse— y los nodos de
-    ''' arma de XPMSE, que vuelven al próximo cambio de arma.</para>
+    ''' deshacer lo que escribimos.</para>
+    ''' <para>⛔ NO agregar al <c>.psc</c> un "reclamo" del nodo que borre las capas ajenas de los huesos
+    ''' autorados: eso confunde las capas de un PRESET (el desglose por slider de un autor, que vive en un
+    ''' archivo y nunca llega solo a un NPC) con las de un ACTOR en runtime (de mods distintos). Sobre un NPC
+    ''' real las únicas ajenas son <c>internal</c> del motor —donde componer ES correcto: el NPC con tacos
+    ''' tiene que levantarse— y los nodos de arma de XPMSE, que vuelven al próximo cambio de arma.</para>
     ''' <para>El residuo que eso deja, dicho: nuestro valor es el TOTAL del hueso, así que si el actor ya tiene
-    ''' otro aporte ahí, el motor los compone y el juego muestra más de lo que muestra la app.</para></para>
+    ''' otro aporte ahí, el motor los compone y el juego muestra más de lo que muestra la app.</para>
     ''' <para>SU ALCANCE NO ES "LA CAPA DE TRANSFORMS", y por eso NO se llama AppTransformKey: en el <c>.psc</c>
     ''' la MISMA <c>XformKey()</c> se usa también como key de los BODY MORPHS (<c>SetBodyMorph</c>) y en el barrido
-    ''' de <c>RemovePrevious</c>. Renombrarla o cambiarla "porque es la de transforms" rompería los morphs.</para>
-    ''' <para>NO ESTABA GATEADA, y este docstring afirmaba que sí ("lo chequea check_sweep_ceiling.py"): ese
-    ''' script sólo comparaba CONSTANTES ENTERAS con regex de <c>\d+</c>, y este gemelo es una STRING devuelta por
-    ''' una función. Hoy sí lo gatea, en su sección de gemelos de string.</para></summary>
+    ''' de <c>RemovePrevious</c>. Renombrarla o cambiarla "porque es la de transforms" rompería los morphs.</para></summary>
     Public Const AppOverrideKey As String = "NPCM_Manolov"
 
     ''' <summary>One RaceMenu NiOverride node transform (NiTransformInterface) — the app's model of one BONE,
     ''' not of one contributor: scale (key 30), position (31), rotation (32) and scaleMode (33) over a named node.
-    ''' <para>ESTE DOC ESTABA APILADO SOBRE <see cref="AppOverrideKey"/> (dos <c>summary</c> en el mismo
-    ''' miembro) y además describía el modelo VIEJO: decía que se modela sólo el escalar y que <c>Raw</c>
-    ''' round-trippea "byte-faithfully" las demás keys. Las dos mitades son falsas hoy: el decode COMPONE todas
-    ''' las capas del nodo con la fórmula completa de <c>NiTransform::operator*</c> y el encode reescribe una
-    ''' sola capa nuestra, así que un load→save de un preset multi-capa NO es byte-idéntico A PROPÓSITO — es la
-    ''' colapsada. Ver <see cref="AppOverrideKey"/> y el decode de <c>transforms</c>.</para>
+    ''' <para>⚠️ El decode COMPONE todas las capas del nodo con la fórmula completa de
+    ''' <c>NiTransform::operator*</c> y el encode reescribe UNA sola capa nuestra, así que un load→save de un
+    ''' preset multi-capa NO es byte-idéntico A PROPÓSITO: es la colapsada. Ver <see cref="AppOverrideKey"/> y
+    ''' el decode de <c>transforms</c>.</para>
     ''' Schema: skee64 <c>PresetInterface.cpp:559-593</c>.</summary>
     Public Class JslotNodeTransform
         Public Property NodeName As String
@@ -252,8 +246,8 @@ Public NotInheritable Class RaceMenuJslot
         ''' <summary>skee ScaleMode (kParam_NodeTransformScaleMode = key 33, int @ index 0): 0 multiplicative /
         ''' 1 average / 2 additive / 3 max (skee64 NiTransformInterface.cpp:682-707). Preserved for round-trip;
         ''' default 0. Se ACARREA, no se interpreta.
-        ''' <para>DECÍA ACÁ que "a single app-authored override layer renders identically for any mode". ES
-        ''' FALSO: <c>fScaleValue</c> arranca en <b>1.0</b> (NiTransformInterface.cpp:655), así que con UNA capa de
+        ''' <para>⚠️ El modo IMPORTA aunque haya UNA sola capa: <c>fScaleValue</c> arranca en <b>1.0</b>
+        ''' (NiTransformInterface.cpp:655), así que con una capa de
         ''' escala <i>s</i> el motor rinde <i>s</i> en modo 0, <i>(1+s)/2</i> en el 1, <i>1+s</i> en el 2 y
         ''' <i>max(1,s)</i> en el 3 (:682-706) — sólo coinciden si <i>s</i> = 1. El residuo real es el
         ''' <c>iScaleMode</c> del JUGADOR, que es global, y la key 33 por nodo NO lo arregla porque el motor nunca
@@ -269,25 +263,22 @@ Public NotInheritable Class RaceMenuJslot
         ''' Nothing for a UI-created transform (Save builds a fresh element from the modeled fields).
         ''' <para><b>Public</b>, no <c>Friend</c>: el sidecar vive en otra assembly y tiene que PERSISTIRLO. Es lo
         ''' que hace que sobrevivan al cerrar-y-reabrir las cosas que la app no modela — la key 40 (re-parenteo), la
-        ''' key 33, y cualquier value que RaceMenu agregue mañana. Mientras no se persistía, el
-        ''' <see cref="BuildTransformRaw"/> reconstruía el elemento desde los campos modelados y todo eso
-        ''' desaparecía del <c>.jslot</c> re-exportado.</para></summary>
+        ''' key 33, y cualquier value que RaceMenu agregue mañana. Si no se persiste,
+        ''' <see cref="BuildTransformRaw"/> reconstruye el elemento desde los campos modelados y todo eso
+        ''' desaparece del <c>.jslot</c> re-exportado.</para></summary>
         Public Raw As JsonNode
-        ' ACÁ VIVÍA `RotationFromForeignLayer`. Existía para PARCHEAR el gate de la key 32 en Save, y ese
-        ' gate era el bug: se borró el gate, así que el flag quedó sin razón de ser. Hoy la rotación se reescribe
-        ' siempre que el nodo tenga rotación, igual que la escala y la posición, y el byte-exacto lo garantiza
-        ' `RotationRowMajor` devolviendo los mismos 9 floats cuando hay matriz cruda sin editar.
-        ' Un flag que existe para tapar una condición mal puesta es deuda: hay que arreglar la condición.
+        ' La rotación se reescribe SIEMPRE que el nodo tenga rotación, igual que la escala y la posición: no
+        ' hace falta ningún flag de "vino de otra capa". El byte-exacto lo garantiza `RotationRowMajor`,
+        ' que devuelve los mismos 9 floats cuando hay matriz cruda sin editar.
         ''' <summary>La matriz de rotacion COMPUESTA, cruda (9 floats row-major), tal como se va a re-emitir.
         ''' <para>Existe para NO pasar por axis-angle al escribir: esa vuelta pierde los casos degenerados (180
         ''' grados y reflexiones). El axis-angle del modelo sigue siendo lo que consumen el render y la UI; esto es
         ''' solo para el archivo. Nothing cuando la rotacion la genero una edicion de la UI (ahi el axis-angle ES la
         ''' fuente y hay que reconstruir la matriz).</para>
-        ''' <para>ERA <c>Friend</c>, Y ESO LO VOLVÍA INÚTIL A MEDIAS: el sidecar <c>.bssliders</c> vive en la OTRA
-        ''' assembly, así que no podía persistirlo — y sin persistirlo la matriz se perdía en cuanto el usuario
-        ''' guardaba el NPC y reabría la app, que es justo el caso que este campo existe para cubrir. Un campo que
-        ''' tiene que sobrevivir a la serialización no puede ser <c>Friend</c>. (El clone sí lo copiaba: vive dentro de
-        ''' esta clase, así que copy/paste y el carrier nunca lo perdieron.)</para>
+        ''' <para>Es <c>Public</c> y NO <c>Friend</c> porque el sidecar <c>.bssliders</c> vive en la OTRA
+        ''' assembly y tiene que PERSISTIRLO: sin eso la matriz se pierde en cuanto el usuario guarda el NPC y
+        ''' reabre la app, que es justo el caso que este campo existe para cubrir. Un campo que tiene que
+        ''' sobrevivir a la serialización no puede ser <c>Friend</c>.</para>
         ''' <para>Es un array y se expone directo, como el resto de los campos de esta clase. Quien lo LEA para
         ''' escribirlo a un archivo debe pasar por <see cref="RotationRowMajor"/>, que devuelve una copia y además
         ''' decide crudo-vs-axis-angle; asignarlo directo (el sidecar al leer) es correcto porque el array es
@@ -326,16 +317,16 @@ Public NotInheritable Class RaceMenuJslot
         End Sub
 
         ''' <summary>Deep-clone (detaches Raw JSON). Public para los carriers de otra assembly (LooksmenuPreset,
-        ''' sidecar). Clona el <see cref="Raw"/> también, y eso es parte del arreglo: el sidecar ahora lo
-        ''' persiste, así que el elemento crudo sobrevive un cerrar-y-reabrir en vez de reconstruirse desde los
-        ''' campos modelados perdiendo todo lo no modelado.</summary>
+        ''' sidecar). Clona el <see cref="Raw"/> TAMBIÉN: es lo que hace que el elemento crudo sobreviva un
+        ''' cerrar-y-reabrir en vez de reconstruirse desde los campos modelados perdiendo todo lo no
+        ''' modelado.</summary>
         Public Function Clone() As JslotNodeTransform
             Return New JslotNodeTransform With {
                 .NodeName = NodeName, .Scale = Scale, .HasScale = HasScale,
                 .PosX = PosX, .PosY = PosY, .PosZ = PosZ, .HasPosition = HasPosition,
                 .RotX = RotX, .RotY = RotY, .RotZ = RotZ, .HasRotation = HasRotation, .RotationDirty = RotationDirty,
                 .ScaleMode = ScaleMode, .HasScaleMode = HasScaleMode,
-                .RotMatrixRaw = If(RotMatrixRaw Is Nothing, Nothing, DirectCast(RotMatrixRaw.Clone(), Single())),
+                .RotMatrixRaw = DirectCast(RotMatrixRaw?.Clone(), Single()),
                 .CollapsedLayerNames = If(CollapsedLayerNames Is Nothing, Nothing, New List(Of String)(CollapsedLayerNames)),
                 .Raw = If(Raw Is Nothing, Nothing, JsonNode.Parse(Raw.ToJsonString()))}
         End Function
@@ -381,10 +372,10 @@ Public NotInheritable Class RaceMenuJslot
 
         ''' <summary>Deja el nodo SIN nada que se componga —lo que hace el botón "Reset" del editor— y devuelve True
         ''' si todavía queda algo que valga la pena conservar (o sea, si el elemento NO se debe borrar de la lista).
-        ''' <para>El editor hacía <c>RemoveAll</c> del nodo, y eso se llevaba el elemento COMPLETO: con él, la key
-        ''' 40 (el re-parenteo) y cualquier value ajeno no modelado. Es la misma pérdida que
-        ''' <see cref="StripForeignTrsLayers"/> se arregló para no hacer, entrando por la puerta de la UI: la ley es
-        ''' por COMPONENTE, y "resetear" significa sacar los componentes que se componen, no demoler el nodo.</para>
+        ''' <para>⛔ NO hacer <c>RemoveAll</c> del nodo desde el editor: se lleva el elemento COMPLETO y con él la
+        ''' key 40 (el re-parenteo) y cualquier value ajeno no modelado — la misma pérdida que evita
+        ''' <see cref="StripForeignTrsLayers"/>, entrando por la puerta de la UI. La ley es por COMPONENTE:
+        ''' "resetear" es sacar los componentes que se componen, no demoler el nodo.</para>
         ''' <para>Se limpian también los <see cref="CollapsedLayerNames"/>: si ya no aportamos nada al hueso, no hay
         ''' total nuestro que pueda contarse doble, y neutralizar capas ajenas dejaría de tener justificación.</para></summary>
         Public Function ResetComposingComponents() As Boolean
@@ -448,9 +439,9 @@ Public NotInheritable Class RaceMenuJslot
     End Function
 
     ''' <summary>Build a fresh RaceMenu transform element {firstPerson:false, node,
-    ''' keys:[{name:<see cref="AppOverrideKey"/>, values:[…]}]}. Decía <c>name:RSMTransform</c>: nunca fue eso
-    ''' (el código escribe <c>AppOverrideKey</c> abajo), y describía una capa que el apply-script no reclamaría
-    ''' ni barrería nunca, porque no es la key de <c>XformKey()</c>. from the modeled fields, for a UI/sidecar-created (Raw-less) transform. Emits keys 30
+    ''' keys:[{name:<see cref="AppOverrideKey"/>, values:[…]}]} from the modeled fields, for a UI/sidecar-created
+    ''' (Raw-less) transform. La capa se nombra SIEMPRE con <see cref="AppOverrideKey"/>: es la key que el
+    ''' apply-script reclama y barre (<c>XformKey()</c>); con cualquier otra, nadie la limpia. Emits keys 30
     ''' (scale), 31 (position x/y/z), 32 (rotation 3×3 from the axis-angle) and 33 (scaleMode) for whichever
     ''' components are present. Value layout mirrors skee64's PackValue (NiTransformInterface.cpp:1009-1049).</summary>
     Private Shared Function BuildTransformRaw(nt As JslotNodeTransform) As JsonObject
@@ -557,15 +548,14 @@ Public NotInheritable Class RaceMenuJslot
     ''' <para>El porqué del recorte: los values TRS son los que el motor <b>compone</b>, y nuestro valor ya lleva su
     ''' aporte COMPUESTO. Si quedaran, el próximo import los contaría dos veces y el preset se deformaría un poco más
     ''' en cada vuelta.</para>
-    ''' <para>Y EL PORQUÉ DE QUE SEA POR **VALUE** Y NO POR CAPA — lo cambié a "la capa no es nuestra ⇒ se va
-    ''' entera" y con eso rompí algo que estaba bien. De arrastre se iba la <b>key 40</b> (<c>NodeDestination</c>),
-    ''' que no es un valor de transform sino un <b>re-parenteo</b>: le dice al motor de qué otro hueso tiene que
-    ''' colgar este nodo — es el mecanismo con el que XPMSE te pone la espada en la espalda en vez de la cintura.
-    ''' No se compone, no entra en la multiplicación, no la modelamos y nunca la autoramos. Borrarla era destruir una
-    ''' decisión estructural ajena sin ningún beneficio.
-    ''' <para>La regla, entonces, es por COMPONENTE en todo el subsistema. Con eso la key 40 nunca está en nuestro
-    ''' camino: no se lee, no se escribe, no se neutraliza. Y no tiene "identidad" posible — su neutro sería la
-    ''' cadena vacía, que para el motor <b>es otra orden</b> ("no cuelgues de nadie"), no la ausencia de orden.</para></para></summary>
+    ''' <para>⛔ POR **VALUE**, NUNCA POR CAPA. "La capa no es nuestra ⇒ se va entera" se lleva de arrastre la
+    ''' <b>key 40</b> (<c>NodeDestination</c>), que no es un valor de transform sino un <b>re-parenteo</b>: le dice
+    ''' al motor de qué otro hueso tiene que colgar este nodo — es el mecanismo con el que XPMSE te pone la espada
+    ''' en la espalda en vez de la cintura. No se compone, no entra en la multiplicación, no la modelamos y nunca
+    ''' la autoramos: borrarla destruye una decisión estructural ajena sin ningún beneficio.</para>
+    ''' <para>La regla es por COMPONENTE en todo el subsistema. Con eso la key 40 nunca está en nuestro camino: no
+    ''' se lee, no se escribe, no se neutraliza. Y no tiene "identidad" posible — su neutro sería la cadena vacía,
+    ''' que para el motor <b>es otra orden</b> ("no cuelgues de nadie"), no la ausencia de orden.</para></summary>
     Private Shared Function StripForeignTrsLayers(keys As JsonArray, hasTrs As Boolean) As JsonArray
         Dim outKeys As New JsonArray()
         Dim ours As JsonObject = Nothing
@@ -575,21 +565,13 @@ Public NotInheritable Class RaceMenuJslot
                 ours = TryCast(JsonNode.Parse(ko.ToJsonString()), JsonObject)
                 Continue For
             End If
-            ' SE FILTRA POR **VALUE**, NO POR CAPA. De la capa ajena se sacan sólo los values TRS (30/31/32)
-            ' —los únicos que se COMPONEN y que por lo tanto duplicarían nuestro total— y se conserva todo lo demás.
-            ' La capa se elimina sólo si queda sin values.
-            ' ESTO ESTUVO ROTO: lo cambié a "la capa no es nuestra ⇒ se va entera" y con eso se iba de arrastre
-            ' la **key 40** (NodeDestination), que NO es un valor de transform: es un RE-PARENTEO — le dice al motor
-            ' de qué otro hueso tiene que colgar este nodo (así XPMSE te pone la espada en la espalda en vez de la
-            ' cintura). No se compone, no entra en la multiplicación, no la modelamos y nunca la autoramos.
-            ' Borrarla era destruir una decisión estructural de otro sin ningún beneficio.
-            ' ⇒ La regla es por COMPONENTE. Con eso la key 40 nunca está en nuestro camino: no se lee, no se
-            ' escribe, no se neutraliza.
-            ' Y LA KEY 33 (scaleMode) TAMPOCO SE SACA, por el MISMO argumento que la 40 — la tenía en este filtro
-            ' y era incoherente con la ley que este bloque enuncia tres veces. El motor NUNCA lee el key-33 de un
-            ' nodo (busca (33,-1) y todo se almacena en (33,0) — ver el decode de transforms), así que no se compone
-            ' y no puede duplicar nuestro total: es exactamente la condición por la que la 40 se conserva. Sacarla
-            ' era churn destructiva en el archivo de otro sin ningún beneficio.
+            ' SE FILTRA POR **VALUE**, NO POR CAPA (ver el summary): de la capa ajena se sacan sólo los values TRS
+            ' (30/31/32) —los únicos que se COMPONEN y que por lo tanto duplicarían nuestro total— y se conserva
+            ' todo lo demás. La capa se elimina sólo si queda sin values.
+            ' LA KEY 33 (scaleMode) TAMPOCO SE SACA, por el MISMO argumento que la 40: el motor NUNCA lee el
+            ' key-33 de un nodo (busca (33,-1) y todo se almacena en (33,0) — ver el decode de transforms), así
+            ' que no se compone y no puede duplicar nuestro total. Sacarla es churn destructiva en el archivo de
+            ' otro sin ningún beneficio.
             ' MISMO PREDICADO QUE EL DECODE: una capa que NO se puede neutralizar tampoco se absorbió, así que
             ' pasa ENTERA — con su TRS. Sacarle el TRS sin haberlo absorbido era destruirlo, y absorberlo sin poder
             ' apagarlo era duplicarlo; las dos mitades tienen que decidirse con la misma pregunta.
@@ -635,25 +617,20 @@ Public NotInheritable Class RaceMenuJslot
     ''' <summary>The rotation of <paramref name="nt"/> as the SAME 9 floats this class writes to the
     ''' <c>.jslot</c> under key 32, value index 0..8 — i.e. <c>BSRotationToMatrix33(axis-angle)</c> flattened
     ''' row-major. Returns Nothing when the transform carries no rotation.
-    ''' <para>EL PÁRRAFO DE ABAJO ARRANCABA A MITAD DE UNA ORACIÓN: un empalme mecánico dejó el XML con un
-    ''' <c>&lt;summary&gt;</c> y DOS <c>&lt;/summary&gt;</c>, así que el compilador descartaba la doc entera.</para>
-    ''' <para>Lo que decía, completo: skee escribe estos 9 floats y los vuelve a leer en el mismo orden, así que
-    ''' devolverlos no exige NINGUNA convención de euler — cualquiera sea el "row-major" que use internamente, le
-    ''' estamos dando de vuelta los valores que él produjo. El camino de 3 floats sí dependeria de que el orden
-    ''' heading/attitude/bank de <c>NiMatrix33::SetEulerAngles</c> coincida con el nuestro: una suposición que no
-    ''' hace falta hacer, así que no se hace.</para>
+    ''' <para>Devolver los 9 floats no exige NINGUNA convención de euler: skee los escribe y los vuelve a leer en
+    ''' el mismo orden, así que le estamos dando de vuelta los valores que él produjo. El camino de 3 floats sí
+    ''' dependería de que el orden heading/attitude/bank de <c>NiMatrix33::SetEulerAngles</c> coincida con el
+    ''' nuestro: una suposición que no hace falta hacer, así que no se hace.</para>
     '''
     ''' <para>Exists so the Papyrus apply-script emitter can hand skee64 the exact float sequence skee64
     ''' itself round-trips, instead of re-deriving one. <c>NiOverride.AddNodeTransformRotation</c> accepts
     ''' EITHER 3 euler angles in degrees OR these 9 raw matrix floats, which it copies straight into
-    ''' <c>NiMatrix33::arr[i]</c> (PapyrusNiOverride.cpp:1190-1193) — the same <c>arr[i]</c> it later packs
-    ''' <para>ACÁ HABÍA UN BUG REAL, no un problema de documentación. Esta función SIEMPRE rearmaba la
-    ''' matriz desde el axis-angle, mientras los DOS caminos que escriben el <c>.jslot</c> (el <c>Save</c> y
-    ''' <see cref="BuildTransformRaw"/>) preferían <see cref="JslotNodeTransform.RotMatrixRaw"/>. O sea que el
-    ''' archivo preservaba las rotaciones de 180° y las reflexiones y <b>el ESP las destruía</b> — exactamente la
-    ''' divergencia que <c>RotMatrixRaw</c> existe para evitar, y contra la regla de que el <c>.jslot</c> tiene que
-    ''' aplicar lo mismo que la herramienta. Ahora la elección vive UNA sola vez, acá, y los tres consumidores
-    ''' llaman a esta función. Devuelve una COPIA para que nadie pueda mutar el crudo del modelo.</para></para></summary>
+    ''' <c>NiMatrix33::arr[i]</c> (PapyrusNiOverride.cpp:1190-1193).</para>
+    ''' <para>⛔ ES EL ÚNICO DUEÑO de la elección crudo-vs-axis-angle, y los TRES consumidores (<c>Save</c>,
+    ''' <see cref="BuildTransformRaw"/> y el emisor del ESP) tienen que llamarla. Rearmar la matriz desde el
+    ''' axis-angle en uno solo de ellos destruye las rotaciones de 180° y las reflexiones por ese camino — el
+    ''' <c>.jslot</c> las preservaría y el ESP no, que es justo la divergencia que <c>RotMatrixRaw</c> existe
+    ''' para evitar. Devuelve una COPIA para que nadie pueda mutar el crudo del modelo.</para></summary>
     Public Shared Function RotationRowMajor(nt As JslotNodeTransform) As Single()
         If nt Is Nothing OrElse Not nt.HasRotation Then Return Nothing
         ' La matriz CRUDA cuando la hay (los mismos 9 floats que se leyeron, o su producto exacto). Sólo se
@@ -668,21 +645,10 @@ Public NotInheritable Class RaceMenuJslot
 
     ''' <summary>El ÚLTIMO value que matchee (key, index) DENTRO DE NUESTRA CAPA, o Nothing.
     ''' <paramref name="index"/> &lt; 0 = cualquier índice.
-    ''' <para>ESTE DOC DESCRIBÍA UN DEFECTO ABIERTO QUE YA ESTÁ CERRADO, y se contradecía con el código que
-    ''' tiene tres líneas más abajo. Decía que el decode "colapsa las keys y gana la ÚLTIMA (Z = 0.7)", que con el
-    ''' caso medido "el juego aplica z = 1.0 y la UI muestra 0.7", y que "con UN TRS por nodo no existe una
-    ''' escritura correcta en absoluto". Las tres cosas dejaron de ser verdad:
-    ''' <list type="number">
-    ''' <item>el decode COMPONE todas las capas con la fórmula completa de <c>NiTransform::operator*</c>, así que
-    ''' con el caso medido la UI muestra 1.0 — el mismo número que el juego;</item>
-    ''' <item><see cref="StripForeignTrsLayers"/> saca del archivo los values TRS ajenos —los únicos que se
-    ''' componen— así que nuestro valor ES el efectivo del hueso, sin duplicar el aporte que ya lleva compuesto;</item>
-    ''' <item>y por eso el "último vs primero" ya no significa nada acá: esta función busca sólo dentro de
-    ''' <see cref="OurTransformLayer"/>, donde por construcción hay un solo value por (key, index).</item>
-    ''' </list>
-    ''' Se queda el "último" por robustez ante un archivo que traiga values repetidos en nuestra propia capa (un
-    ''' <c>.jslot</c> escrito a mano, o por otra herramienta que use nuestra key), donde el motor también leería el
-    ''' último. El caso que originó todo esto sigue documentado en <see cref="AppOverrideKey"/>.</para></summary>
+    ''' <para>Busca SÓLO dentro de <see cref="OurTransformLayer"/>, donde por construcción hay un único value por
+    ''' (key, index) — el "último vs primero" no decide nada mientras eso valga. Se queda con el ÚLTIMO por
+    ''' robustez ante un archivo con values repetidos en nuestra propia capa (un <c>.jslot</c> escrito a mano, o
+    ''' por otra herramienta que use nuestra key), que es también el que leería el motor.</para></summary>
     Private Shared Function LastTransformValue(keys As JsonArray, key As Integer, index As Integer) As JsonObject
         Dim ours = OurTransformLayer(keys, create:=False)
         If ours Is Nothing Then Return Nothing
@@ -696,26 +662,22 @@ Public NotInheritable Class RaceMenuJslot
 
     ''' <summary>La capa <see cref="AppOverrideKey"/> dentro de <paramref name="keys"/>, o Nothing (con
     ''' <paramref name="create"/> = True se agrega vacía y se devuelve).
-    ''' <para>ES EL CENTRO DEL ARREGLO. Antes el encode buscaba el value por (key,index) en TODAS las capas y
-    ''' escribía en la que encontrara — o sea, típicamente DENTRO de la capa de otro mod. Ahora todo lo que escribimos
-    ''' vive en NUESTRA capa, que es la misma que el apply-script aplica y borra in-game (<c>XformKey()</c>).
-    ''' <para>Y NO, las capas ajenas no "quedan intactas" — eso decía acá y se contradecía con
-    ''' <see cref="StripForeignTrsLayers"/> doce líneas más abajo, que les BORRA los values TRS y elimina la capa
-    ''' si queda vacía. Lo correcto es: esta función no las TOCA (sólo busca la nuestra); el strip sí, y a
-    ''' propósito.</para>
-    ''' <para>Y LA JUSTIFICACIÓN MÁS FUERTE DEL STRIP NO ESTABA ESCRITA EN NINGÚN LADO: el propio cargador de
-    ''' presets de skee es MÁS destructivo que nosotros. Antes de replayear los <c>transforms</c> de un
-    ''' <c>.jslot</c> llama a <c>Impl_RemoveAllReferenceTransforms(actor)</c>
+    ''' <para>LEY: todo lo que escribimos vive en NUESTRA capa, la misma que el apply-script aplica y borra
+    ''' in-game (<c>XformKey()</c>). Buscar el value por (key,index) en TODAS las capas termina escribiendo
+    ''' DENTRO de la capa de otro mod.</para>
+    ''' <para>Esta función no TOCA las capas ajenas (sólo busca la nuestra); el que sí las modifica es
+    ''' <see cref="StripForeignTrsLayers"/>, que les borra los values TRS y elimina la capa si queda vacía.</para>
+    ''' <para>POR QUÉ EL STRIP ES ACEPTABLE: el propio cargador de presets de skee es MÁS destructivo. Antes de
+    ''' replayear los <c>transforms</c> de un <c>.jslot</c> llama a <c>Impl_RemoveAllReferenceTransforms(actor)</c>
     ''' (<c>PresetInterface.cpp:264</c> — encima FUERA del gate <c>kPresetApplyTransforms</c> — y <c>:1631</c>), que
     ''' es <c>m_data.erase(formID)</c>: borra la entrada ENTERA del actor — los dos géneros, primera y tercera
     ''' persona, todos los nodos, todas las keys, sin salvar ni <c>"internal"</c>
-    ''' (<c>NiTransformInterface.cpp:342-351</c>) — y después repone SÓLO lo que el archivo trae. O sea que cargar
-    ''' un preset en RaceMenu ya era "el archivo es la verdad y lo demás se va".
+    ''' (<c>NiTransformInterface.cpp:342-351</c>) — y después repone SÓLO lo que el archivo trae. Cargar un preset
+    ''' en RaceMenu ya es "el archivo es la verdad y lo demás se va".</para>
     ''' <para>CONSECUENCIA para la regla "el <c>.jslot</c> tiene que aplicar lo mismo que la herramienta": sobre
     ''' un hueso que autoramos coinciden (el archivo trae una sola capa con el efectivo y el cargador la repone tal
     ''' cual). Donde NO coinciden es sobre los huesos que NO autoramos: el <c>.jslot</c> los borra igual, porque el
-    ''' cargador poda el actor entero, y el ESP no los toca. La divergencia va en la dirección contraria a la que se
-    ''' suponía, y no la decide nuestro archivo sino el cargador de skee.</para></para></para></summary>
+    ''' cargador poda el actor entero, y el ESP no los toca.</para></summary>
     Private Shared Function OurTransformLayer(keys As JsonArray, create As Boolean) As JsonObject
         For Each k In keys
             Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
@@ -733,18 +695,15 @@ Public NotInheritable Class RaceMenuJslot
     ''' <summary>Escribe el value de (<paramref name="key"/>, <paramref name="index"/>) DENTRO DE NUESTRA CAPA
     ''' (<see cref="AppOverrideKey"/>): si ya existe ahí, se actualiza; si no, se agrega, creando la capa si el nodo
     ''' todavía no la tenía. Las capas de otros mods NO se leen ni se tocan.
-    ''' <para>ANTES BUSCABA EN TODAS LAS CAPAS, y ahí estaba el defecto de fondo: escribía nuestro valor dentro de
-    ''' la capa ajena que encontrara (medido: <c>RMX_Leg_Calf</c> 0.3 → 0.7). Pasó por dos versiones intermedias —
-    ''' "la primera que matchee" y después "la última", buscando simetría con un decode que también leía todas— y las
-    ''' dos eran variantes del mismo error de premisa: que el nodo tiene UN valor. Tiene una capa POR
-    ''' CONTRIBUYENTE, y la nuestra es <c>NPCM_Manolov</c>, la misma con la que el apply-script aplica y borra
-    ''' (<c>XformKey()</c> en el <c>.psc</c>). Con esto el archivo y el juego dicen lo mismo, y un load→save no puede
-    ''' tocar el dato de otro mod porque nunca lo mira.</para></summary>
-    ''' <param name="writeType">False = escribir SÓLO <c>data</c> y dejar el <c>type</c> que hubiera.
-    ''' HOY NO LO PASA NADIE: los cuatro call sites usan el default True. El doc decía "lo usan las keys 30/33" y
-    ''' eso ya era falso — la key 33 no se escribe en absoluto. Se deja el parámetro porque el caso que describe es
-    ''' real (patchear un value sin tocar su `type`), pero que quede dicho que hoy es un camino sin recorrer. Antes las keys
-    ''' 30/33, que históricamente patcheaban nada más que el dato.</param>
+    ''' <para>⛔ NO buscar el value en TODAS las capas —ni "la primera que matchee" ni "la última"—: escribe
+    ''' nuestro valor DENTRO de la capa ajena que encuentre (medido: <c>RMX_Leg_Calf</c> 0.3 → 0.7). La premisa
+    ''' falsa es que el nodo tiene UN valor: tiene una capa POR CONTRIBUYENTE, y la nuestra es
+    ''' <c>NPCM_Manolov</c>, la misma con la que el apply-script aplica y borra (<c>XformKey()</c> en el
+    ''' <c>.psc</c>). Así el archivo y el juego dicen lo mismo, y un load→save no puede tocar el dato de otro mod
+    ''' porque nunca lo mira.</para></summary>
+    ''' <param name="writeType">False = escribir SÓLO <c>data</c> y dejar el <c>type</c> que hubiera. Los cuatro
+    ''' call sites usan el default True, o sea que hoy es un camino sin recorrer; se conserva porque el caso que
+    ''' describe es real (patchear un value sin tocar su <c>type</c>).</param>
     Private Shared Sub PatchTransformValue(keys As JsonArray, key As Integer, vtype As Integer, index As Integer, data As Object,
                                            Optional writeType As Boolean = True)
         Dim target = LastTransformValue(keys, key, index)
@@ -897,12 +856,11 @@ Public NotInheritable Class RaceMenuJslot
     ''' entradas del mismo <c>NodeName</c>. Re-emitirlos evita perder dato ajeno — misma razón que la key 40: no
     ''' modelar algo no da derecho a borrarlo. Mismo patrón que <c>_otherOverridesRaw</c>.</para></summary>
     Private ReadOnly _firstPersonTransformsRaw As New List(Of JsonNode)
-    ''' <summary>Los <c>skinOverrides</c> con <c>firstPerson: true</c>, verbatim. MISMA PÉRDIDA QUE TENÍAN LOS
-    ''' TRANSFORMS Y SE ME PASÓ: el decode los saltea (no se modelan: son del brazo en primera persona del jugador,
-    ''' que un NPC no usa) pero <c>Save</c> reconstruye el array sólo desde <c>SkinOverrides</c>, así que el elemento
-    ''' desaparecía del archivo. Antes de modelar los skinOverrides se parseaban como uno normal y volvían por su
-    ''' <c>Raw</c>, o sea que es una regresión de este subsistema, no un hueco viejo. 0 de los 41 presets del corpus
-    ''' lo ejercita — por eso no saltó.</summary>
+    ''' <summary>Los <c>skinOverrides</c> con <c>firstPerson: true</c>, verbatim. MISMA LEY QUE
+    ''' <see cref="_firstPersonTransformsRaw"/>: el decode los saltea (son del brazo en primera persona del
+    ''' jugador, que un NPC no usa) y <c>Save</c> reconstruye el array sólo desde <c>SkinOverrides</c>, así que sin
+    ''' guardarlos acá el elemento DESAPARECE del archivo.
+    ''' <para>⚠️ 0 de los 41 presets del corpus lo ejercita: ningún gate cubre este camino.</para></summary>
     Private ReadOnly _firstPersonSkinRaw As New List(Of JsonNode)
 
     ''' <summary>Los elementos <c>firstPerson</c> como JSON, para que el CARRIER los pueda transportar: el "Save
@@ -1034,8 +992,8 @@ Public NotInheritable Class RaceMenuJslot
                 ' Forma LEGACY `{name, value}` (sin `keys`). El motor la lee y la mapea a una key llamada
                 ' "RSMLegacy": `presetData->bodyMorphData[name]["RSMLegacy"] = value`
                 ' (skee64 PresetInterface.cpp:1215-1221), y la lee ADEMÁS de `keys`, no en vez de.
-                ' Antes sólo mirábamos `keys`, así que el Save reconstruía `{name, keys:[]}` y el morph
-                ' DESAPARECÍA. Adoptarla como una key más es exactamente lo que hace el motor, y de paso la
+                ' Mirar sólo `keys` hace que el Save reconstruya `{name, keys:[]}` y el morph DESAPAREZCA.
+                ' Adoptarla como una key más es exactamente lo que hace el motor, y de paso la
                 ' normaliza a la forma moderna sin cambiar lo que rinde (el motor SUMA las keys de un morph).
                 Dim legacyValue = o("value")
                 If legacyValue IsNot Nothing Then
@@ -1075,22 +1033,18 @@ Public NotInheritable Class RaceMenuJslot
                 ' LOS ELEMENTOS firstPerson=True NO SE LEEN NI SE EMITEN. Son el 3D de PRIMERA PERSONA (los
                 ' brazos que ve el jugador desde sus propios ojos): un NPC no tiene ese arbol, y nuestro apply-script
                 ' escribe siempre `AddNodeTransform*(self, false, ...)`. RaceMenu los guarda porque un preset puede
-                ' ser del jugador, y por eso casi todo nodo aparece DOS veces en el archivo.
-                ' Antes se leian los dos y el modelo terminaba con dos entradas del MISMO NodeName: la UI mostraba
-                ' una, `SetNodeScale` (FirstOrDefault por nombre) editaba una, y la otra quedaba con el valor del
-                ' autor — una edicion que se aplicaba a medias sin decirlo.
+                ' ser del jugador, y por eso casi todo nodo aparece DOS veces en el archivo. Leer los dos deja el
+                ' modelo con dos entradas del MISMO NodeName: la UI muestra una, `SetNodeScale` (FirstOrDefault
+                ' por nombre) edita una, y la otra queda con el valor del autor — una edicion aplicada a medias
+                ' sin decirlo.
                 Dim isFirstPerson As Boolean = False
                 Dim fpNode = o("firstPerson")
                 If fpNode IsNot Nothing Then
                     Try : isFirstPerson = fpNode.GetValue(Of Boolean)() : Catch : isFirstPerson = False : End Try
                 End If
-                ' SE SALTEAN AL MODELAR PERO **SÍ SE RE-EMITEN**. Llegué a borrarlos con el argumento de que
-                ' "el archivo es el diseño de un NPC y un NPC no tiene primera persona". Está mal por la misma razón
-                ' que la key 40: no modelarlo no da derecho a destruirlo. La regla es POR COMPONENTE — se toca lo que
-                ' se compone y se deja lo demás como vino.
-                ' No modelarlos arregla el defecto real (el modelo tenía DOS entradas del mismo NodeName: la UI
-                ' mostraba una, una edición escribía una, y la otra quedaba con el valor del autor). Re-emitirlos
-                ' evita perder dato ajeno: no afectan al NPC, pero si alguien carga este preset sobre su propio
+                ' SE SALTEAN AL MODELAR PERO **SÍ SE RE-EMITEN**. ⛔ NO borrarlos porque "un NPC no tiene primera
+                ' persona": es la misma razón que la key 40 — no modelar algo no da derecho a destruirlo, la regla
+                ' es POR COMPONENTE. No afectan al NPC, pero si alguien carga este preset sobre su propio
                 ' personaje en RaceMenu, ahí sí valen.
                 If isFirstPerson Then
                     j._firstPersonTransformsRaw.Add(JsonNode.Parse(o.ToJsonString()))
@@ -1112,11 +1066,9 @@ Public NotInheritable Class RaceMenuJslot
                 Dim accRot = Identity33()
                 Dim accScale As Single = 1.0F
                 Dim anyRot As Boolean = False
-                ' ACÁ HABÍA TRES ACUMULADORES QUE NO SE LEÍAN NUNCA (`layerCount`, `scaleSum`, `scaleMax`), con un
-                ' comentario que los presentaba como "lo que el motor usa según el scaleMode". Intención que el código
-                ' no realizaba, y que no puede realizar: el scaleMode POR NODO es inerte (el motor lo busca en
-                ' (33,-1) y todo se guarda en (33,0)), así que no hay ninguna rama que elegir. Lo que gobierna es el
-                ' `iScaleMode` global del jugador, y para eso no sirve sumar acá.
+                ' ⛔ NO acumular suma/máximo de escalas "para el scaleMode": el scaleMode POR NODO es INERTE (el
+                ' motor lo busca en (33,-1) y todo se guarda en (33,0)), así que no hay ninguna rama que elegir.
+                ' Lo que gobierna es el `iScaleMode` GLOBAL del jugador, y para eso no sirve acumular acá.
                 For Each k In AsArray(o("keys"))
                     Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
                     ' SE REGISTRA EL NOMBRE de toda capa AJENA que aporte TRS: es lo que el apply-script va a
@@ -1129,12 +1081,12 @@ Public NotInheritable Class RaceMenuJslot
                             nt.CollapsedLayerNames.Add(layerName)
                         End If
                     End If
-                    ' NO SE ABSORBE LO QUE NO SE PUEDE NEUTRALIZAR. Un solo predicado gobierna las tres decisiones
-                    ' —qué se compone, qué se saca del archivo y a qué se le escribe identidad— y antes eran DOS con
-                    ' respuestas distintas: el decode componía TODAS las capas y el strip sacaba el TRS de todas las
-                    ' ajenas, pero la lista de neutralización excluye `internal`, `NodeDestination` y los nombres con
-                    ' sufijo de plugin. Resultado: nuestro valor ya incluía su aporte, el archivo perdía la capa
-                    ' original, y el ESP no podía neutralizarla ⇒ el hueso salía AL DOBLE in-game.
+                    ' NO SE ABSORBE LO QUE NO SE PUEDE NEUTRALIZAR. UN SOLO predicado gobierna las tres decisiones
+                    ' —qué se compone, qué se saca del archivo y a qué se le escribe identidad—. Con dos predicados
+                    ' distintos (componer TODAS las capas, pero neutralizar sólo las que no son `internal`,
+                    ' `NodeDestination` ni nombres con sufijo de plugin) nuestro valor incluye el aporte ajeno, el
+                    ' archivo pierde la capa original, el ESP no puede neutralizarla ⇒ el hueso sale AL DOBLE
+                    ' in-game.
                     ' Absorber es un compromiso: "me quedo con tu número Y me hago cargo de apagar el tuyo". Si no
                     ' podemos cumplir la segunda mitad, no tomamos la primera. Estas capas quedan intactas en el
                     ' archivo y aportan por su cuenta, que es lo correcto para el lift de los tacos (`internal`).
@@ -1192,7 +1144,6 @@ Public NotInheritable Class RaceMenuJslot
                     nt.PosZ += (accRot.M31 * lPosX + accRot.M32 * lPosY + accRot.M33 * lPosZ) * accScale
                     If lHasRot Then accRot = Multiply33(accRot, Matrix33From(lRot))
                     accScale *= lScale
-                    ' Acumuladores que el motor usa SOLO segun el scaleMode (fScaleValue arranca en 1.0, :656).
                 Next
                 If anyRot Then
                     ' El axis-angle es lo que consumen el render y la UI.
@@ -1203,16 +1154,15 @@ Public NotInheritable Class RaceMenuJslot
                     ' matriz es simetrica, los tres terminos del eje se anulan y el fallback elige el eje X — o sea
                     ' que cualquier rotacion de 180 sobre otro eje volveria como 180 sobre X. Y una REFLEXION
                     ' (det = -1) pasa el chequeo de ortonormalidad (que mira normas y ortogonalidad, no el
-                    ' determinante) y se convertiria en rotacion propia. Antes eso no importaba porque la rotacion no
-                    ' se reescribia; desde que el strip la saca hay que reescribirla siempre, asi que se reescriben
-                    ' LOS MISMOS 9 FLOATS que se leyeron (y para varias capas, el producto exacto).
+                    ' determinante) y se convertiria en rotacion propia. Como el strip saca la rotacion ajena, hay
+                    ' que reescribirla SIEMPRE, asi que se reescriben LOS MISMOS 9 FLOATS que se leyeron (y para
+                    ' varias capas, el producto exacto).
                     nt.RotMatrixRaw = New Single() {accRot.M11, accRot.M12, accRot.M13,
                                                    accRot.M21, accRot.M22, accRot.M23,
                                                    accRot.M31, accRot.M32, accRot.M33}
                 End If
                 ' LA ESCALA EFECTIVA ES EL PRODUCTO, Y EL `scaleMode` DEL ARCHIVO ES **INERTE**.
-                ' Esto contradice lo que decia acá antes (que el modo del archivo gobernaba y habia que aplicar su
-                ' ley) y el motivo es un BUG DE INDICE EN skee64, verificado en el fuente:
+                ' El motivo es un BUG DE INDICE EN skee64, verificado en el fuente:
                 '   · `OverrideVariant()` inicializa `index(-1)` (OverrideVariant.h:16) y `operator<` compara
                 '     (key, index) sobre un `std::set` (OverrideVariant.h:19, OverrideInterface.h:28).
                 '   · La composicion busca el modo con un OverrideVariant DEFAULT ⇒ busca (33, **-1**)
@@ -1239,14 +1189,13 @@ Public NotInheritable Class RaceMenuJslot
             j._hadSkinOverrides = True
             For Each so In AsArray(root("skinOverrides"))
                 Dim o = TryCast(so, JsonObject) : If o Is Nothing Then Continue For
-                ' LOS DE PRIMERA PERSONA SE SALTEAN, IGUAL QUE EN transforms — y acá faltaba. Este decode no
-                ' miraba `firstPerson` en absoluto, con tres consecuencias, todas del mismo tipo que el bug del nodo
-                ' duplicado que el de transforms ya arregló:
-                '   1) un preset con override de 1ª y de 3ª sobre el MISMO slotMask daba DOS entradas del mismo slot:
-                '      el editor editaba una y la otra se quedaba con el valor del autor;
-                '   2) el sidecar no persiste el flag, así que al reabrir la app el elemento se reconstruía con
-                '      `firstPerson:false` ⇒ un body-paint de PRIMERA persona terminaba aplicado al cuerpo de tercera;
-                '   3) el archivo re-emitía `firstPerson:true` mientras el apply-script escribe siempre `false`
+                ' LOS DE PRIMERA PERSONA SE SALTEAN, IGUAL QUE EN transforms. No mirar `firstPerson` acá tiene
+                ' tres consecuencias:
+                '   1) un preset con override de 1ª y de 3ª sobre el MISMO slotMask da DOS entradas del mismo slot:
+                '      el editor edita una y la otra se queda con el valor del autor;
+                '   2) el sidecar no persiste el flag, así que al reabrir la app el elemento se reconstruye con
+                '      `firstPerson:false` ⇒ un body-paint de PRIMERA persona termina aplicado al cuerpo de tercera;
+                '   3) el archivo re-emite `firstPerson:true` mientras el apply-script escribe siempre `false`
                 '      (`AddSkinOverride*(self, …, false, …)`), o sea archivo ≠ ESP en el mismo array.
                 ' Ningún preset del corpus instalado tiene un skin override de primera persona (0 de 41), así que
                 ' esto está razonado en el código y no medido sobre datos reales.
@@ -1388,7 +1337,7 @@ Public NotInheritable Class RaceMenuJslot
         ' camino. skee lo emite sólo `if (hairColor)` (PresetInterface.cpp:675-677), o sea que un preset legítimo
         ' puede no traerlo. Emitiéndolo SIEMPRE, un preset sin la key salía con `"hairColor": 0`, y al recargarlo
         ' nuestro decode veía la key presente ⇒ `HadHairColor=True` ⇒ `SseHairColorRgb = 0` ⇒ **pelo NEGRO forzado**
-        ' donde antes se caía al CLFM del NPC (RaceMenuPresetMapper: `If(j.HadHairColor, …, Nothing)`).
+        ' en vez de caer al CLFM del NPC (RaceMenuPresetMapper: `If(j.HadHairColor, …, Nothing)`).
         ' `HadHairColor` ya es exactamente el flag que hace falta: el decode lo prende por PRESENCIA (0 es un negro
         ' legítimo) y el mapper lo prende cuando tiene un RGB real (del preset o del CLFM efectivo).
         Dim actor As New JsonObject From {}
@@ -1397,8 +1346,8 @@ Public NotInheritable Class RaceMenuJslot
             actor("headTexture") = HeadTexture
         ElseIf hadHeadTexture Then
             ' `null` NO ES `""`. RaceMenu escribe `"headTexture": null` cuando el preset no overridea el texture
-            ' set, y nosotros lo convertíamos en cadena vacía: otro cambio de bytes gratis (3 presets más medidos).
-            ' Sin dato propio, se devuelve la forma que traía el archivo.
+            ' set; convertirlo en cadena vacía mueve bytes sin ganar nada (medido en 3 presets del corpus). Sin
+            ' dato propio, se devuelve la forma que traía el archivo.
             actor("headTexture") = If(headTextureWasNull, Nothing, JsonValue.Create(""))
         End If
         ' `weight` se emite SIEMPRE, porque el motor lo lee SIN gate: `presetData->weight =
@@ -1406,9 +1355,9 @@ Public NotInheritable Class RaceMenuJslot
         ' aplica incondicionalmente (`npc->weight = presetData->weight`, :174). Su propio escritor la emite
         ' siempre (:672), o sea que un preset SIN la key no es una forma válida del formato: en RaceMenu deja el
         ' peso en 0. Omitirla no "preserva", adelgaza al actor.
-        ' El gate por HadWeight venía de arreglar el caso inverso (inyectar `weight: 0` en un preset que nunca
-        ' la tuvo). Ese arreglo era correcto para un round-trip VERBATIM, que esta app no hace: el único camino de
-        ' guardado es BuildPresetFromState, que siempre setea SseWeight (MainForm.vb:9930-9936, fallback 100.0F).
+        ' ⛔ NO gatearlo por HadWeight: ese gate (no inyectar `weight: 0` en un preset que nunca la tuvo) sirve
+        ' para un round-trip VERBATIM, que esta app no hace — el único camino de guardado es
+        ' `MainForm.BuildPresetFromState`, que siempre setea SseWeight (fallback 100.0F).
         actor("weight") = Weight
         root("actor") = actor
         Dim hpArr As New JsonArray()
@@ -1424,9 +1373,8 @@ Public NotInheritable Class RaceMenuJslot
         '     la forma legacy `{formId, type}` — que es justamente la que :988 sabe resolver por tabla.
         ' ⇒ Omitir la key hace que una entrada que no pudimos resolver round-trippee EXACTAMENTE como la
         ' forma que el motor sabe leer, en vez de una que le hace descartar el head part.
-        ' El ORDEN de las keys se conserva (formId, formIdentifier, type) para que un preset con
-        ' identifier salga byte-idéntico a como salía antes: reordenar movería bytes en TODOS los archivos
-        ' del usuario sin ganar nada.
+        ' El ORDEN de las keys se conserva (formId, formIdentifier, type) para que un preset con identifier
+        ' salga byte-idéntico al original: reordenar mueve bytes en TODOS los archivos del usuario sin ganar nada.
         For Each hp In HeadParts
             Dim hpObj As New JsonObject From {{"formId", hp.FormId}}
             If Not String.IsNullOrEmpty(hp.FormIdentifier) Then hpObj("formIdentifier") = hp.FormIdentifier
@@ -1546,19 +1494,14 @@ Public NotInheritable Class RaceMenuJslot
                 ' las contara DOS VECES — el preset se deformaria un poco mas en cada vuelta.
                 keys = StripForeignTrsLayers(keys, nt.HasScale OrElse nt.HasPosition OrElse nt.HasRotation)
                 raw("keys") = keys
-                ' Scale (key 30): se patchea EL ÚLTIMO key-30 de NUESTRA capa; si no hay ninguno, se agrega en el
-                ' índice 0.
-                ' DECÍA "index-agnostic (skee lee la escala del value sin mirar el índice)" y "el último key-30
-                ' DEL NODO". Las dos son falsas y las contradice el propio archivo: Impl_GetOverrideTransform fija
-                ' `value.index = 0` antes del find (NiTransformInterface.cpp:784), o sea que el índice SÍ importa y
-                ' tiene que ser 0; y LastTransformValue busca sólo dentro de OurTransformLayer, no en el nodo.
-                ' ANTES PATCHEABA **TODOS** los key-30 del nodo, y eso es corrupción cuando el nodo tiene varias
-                ' keys nombradas (cada mod registra la suya): le escribía a todas el único valor del modelo. Mismo
-                ' MECANISMO que el de la position (ver LastTransformValue, ahí sí con el caso medido); en los 41
-                ' presets instalados no hay ningún nodo multi-key con key 30 ni un solo key 33, así que para estas
-                ' dos el defecto está razonado por construcción, no medido.
-                ' Escala: SIEMPRE en el indice 0, que es el unico que el motor lee (:784). Patchear
-                ' "cualquier indice" podia dejar el valor en un (30, k) invisible para el juego.
+                ' Scale (key 30): SIEMPRE en el ÍNDICE 0 y SIEMPRE dentro de NUESTRA capa.
+                '   · El índice NO es agnóstico: `Impl_GetOverrideTransform` fija `value.index = 0` antes del find
+                '     (NiTransformInterface.cpp:784), así que un (30, k≠0) queda invisible para el juego.
+                '   · Patchear TODOS los key-30 del NODO es corrupción cuando hay varias capas nombradas (cada mod
+                '     registra la suya): les escribe a todas el único valor del modelo. Por eso
+                '     `LastTransformValue` busca sólo dentro de `OurTransformLayer`.
+                ' ⚠️ En los 41 presets instalados no hay ningún nodo multi-key con key 30 ni un solo key 33: para
+                ' estas dos, lo de arriba está razonado por construcción, no medido.
                 If nt.HasScale Then PatchTransformValue(keys, 30, 4, 0, CDbl(nt.Scale))
                 ' Position (key 31): per-component index 0/1/2, plain floats.
                 ' "Exact round-trip" vale para el VALOR (el float32 que lee skee es el mismo bit a bit), NO para
@@ -1570,21 +1513,16 @@ Public NotInheritable Class RaceMenuJslot
                     PatchTransformValue(keys, 31, 4, 1, CDbl(nt.PosY))
                     PatchTransformValue(keys, 31, 4, 2, CDbl(nt.PosZ))
                 End If
-                ' Rotation (key 32): se reescribe SIEMPRE que el nodo tenga rotación, igual que la escala y la posición.
-                ' ESTABA GATEADA POR DOS FLAGS (`RotationDirty OrElse RotationFromForeignLayer`) Y ESO ERA UN BUG
-                ' LATENTE QUE SE ACTIVÓ al persistir el `Raw` en el sidecar. Mientras el `Raw` NO se persistía, después
-                ' de cerrar y reabrir la app valía `Nothing` y `BuildTransformRaw` emitía la key 32 siempre, así que el
-                ' gate nunca se notaba. Con el `Raw` vivo se toma este camino con los dos flags en False —no se
-                ' persisten, y no tiene sentido persistirlos— y pasaban dos cosas:
-                '   · una rotación que vino de una capa AJENA: el strip le saca los values 32 y el gate no los
-                '     reescribe ⇒ el nodo sale con la capa vacía y SIN rotación;
-                '   · una rotación EDITADA en la UI: `SetRotationFromUi` borra `RotMatrixRaw`, así que el `Raw`
-                '     persistido conserva la matriz VIEJA y el gate no la patchea ⇒ el .jslot re-emite la vieja
-                '     mientras la UI y el ESP muestran la nueva. O sea `.jslot` ≠ herramienta, que es exactamente la
-                '     ley que este subsistema tiene que cumplir.
-                ' Y quitar el gate NO cuesta el byte-exacto, que era su única razón: `RotationRowMajor` devuelve LOS
-                ' MISMOS 9 floats que se leyeron cuando hay matriz cruda y la UI no la invalidó, así que reescribirla
-                ' es un no-op numérico. El gate compraba con un bug algo que ya estaba garantizado más abajo.
+                ' Rotation (key 32): se reescribe SIEMPRE que el nodo tenga rotación, igual que la escala y la
+                ' posición. ⛔ NO gatearla por flags de "dirty": no se persisten en el sidecar, así que después de
+                ' cerrar y reabrir la app valen False con el `Raw` vivo, y ahí:
+                '   · una rotación que vino de una capa AJENA se pierde — el strip le saca los values 32 y el gate
+                '     no los reescribe ⇒ el nodo sale con la capa vacía y SIN rotación;
+                '   · una rotación EDITADA en la UI queda con la matriz VIEJA — `SetRotationFromUi` borra
+                '     `RotMatrixRaw`, el `Raw` persistido conserva la vieja y el gate no la patchea ⇒ el .jslot
+                '     re-emite la vieja mientras la UI y el ESP muestran la nueva, o sea `.jslot` ≠ herramienta.
+                ' Reescribir siempre NO cuesta el byte-exacto: `RotationRowMajor` devuelve LOS MISMOS 9 floats que
+                ' se leyeron cuando hay matriz cruda y la UI no la invalidó, así que es un no-op numérico.
                 If nt.HasRotation Then
                     ' De la matriz CRUDA cuando la hay (los mismos 9 floats que se leyeron, o su producto exacto):
                     ' asi 180 grados y reflexiones sobreviven. Solo se reconstruye desde el axis-angle cuando la
@@ -1592,11 +1530,9 @@ Public NotInheritable Class RaceMenuJslot
                     Dim r = RotationRowMajor(nt)   ' UN solo dueño de la elección crudo-vs-axis-angle: ver su doc.
                     For i = 0 To 8 : PatchTransformValue(keys, 32, 4, i, CDbl(r(i))) : Next
                 End If
-                ' NO SE ESCRIBE key 33. Decia "se escribe 0 siempre" con el argumento de que el modo del
-                ' archivo re-transformaria nuestra escala. FALSO: el motor NUNCA lee el key-33 de un nodo (busca
-                ' (33,-1) y todo lo almacena en (33,0) — ver el bloque del decode, con las citas). Escribirlo era
-                ' churn inerte en el archivo de otro, justo lo que este mismo archivo arregla en headTexture,
-                ' hairColor y ToGameTexturePath. Lo que gobierna es `g_scaleMode`, global del jugador.
+                ' NO SE ESCRIBE key 33: el motor NUNCA lee el key-33 de un nodo (busca (33,-1) y todo lo almacena
+                ' en (33,0) — ver el bloque del decode, con las citas), así que escribirlo es churn inerte en el
+                ' archivo de otro. Lo que gobierna es `g_scaleMode`, global del jugador.
                 trArr.Add(raw)
             Next
             ' Los elementos de primera persona vuelven tal cual: no se modelan, no se editan, no se pierden.

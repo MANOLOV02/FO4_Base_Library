@@ -12,7 +12,9 @@ Imports System.Windows.Forms
 ''' <item>selección del frame que corresponde mostrar AHORA según un FPS objetivo (loopeado),</item>
 ''' <item>caché de poses por frame (un <see cref="HkxPoseImportSession.BuildPose"/> por frame único).</item>
 ''' </list>
-''' La app lo maneja con su propio timer: cada tick, si <see cref="IsPlaying"/>, lee
+''' Hay DOS formas de manejarlo, y el llamador elige una: (a) su propio timer, o (b)
+''' <see cref="BeginIdlePlayback"/>, el loop sobre Application.Idle de más abajo. Con un timer:
+''' cada tick, si <see cref="IsPlaying"/>, lee
 ''' <see cref="FrameForNow"/>; si cambió respecto del último mostrado, pide
 ''' <see cref="PoseForFrame"/> y aplica esa pose a su <c>SkeletonInstance</c> (capa DeltaTransform)
 ''' + re-render. El frame se elige por reloj real, así que respeta el FPS objetivo sin importar
@@ -116,7 +118,7 @@ Public Class HkxAnimationPlayer
         Dim cached As Poses_class = Nothing
         If _poseCache.TryGetValue(f, cached) Then Return cached
         Dim result = _session.BuildPose(f, _poseName, collectDiagnostics:=False)
-        Dim pose As Poses_class = If(result Is Nothing, Nothing, result.Pose)
+        Dim pose As Poses_class = result?.Pose
         If pose IsNot Nothing Then _poseCache(f) = pose
         Return pose
     End Function
@@ -127,7 +129,7 @@ Public Class HkxAnimationPlayer
 
     ' ─────────────────────────────────────────────────────────────────────────────────────────
     ' Loop de render basado en Application.Idle (best practice WinForms/OpenTK para tiempo real).
-    ' Reemplaza al WinForms Timer durante el play. Renderiza apenas el hilo UI queda libre (sin
+    ' Alternativa al WinForms Timer durante el play: renderiza apenas el hilo UI queda libre (sin
     ' esperar el WM_TIMER de baja prioridad), PERO:
     '   • solo dispara onFrame cuando el frame REALMENTE cambió (paceado por reloj) → no quema GPU,
     '   • duerme 1ms cuando está adelantado → no quema CPU (no spinea al 100%),

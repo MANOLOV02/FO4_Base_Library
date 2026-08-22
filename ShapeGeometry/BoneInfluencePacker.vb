@@ -10,11 +10,11 @@
 ''' (peso descendente, después índice de hueso ascendente) — correcto — pero hacía literalmente el
 ''' <c>CByte(idx And &amp;HFF)</c> que la otra copia declaraba defecto shipeado y removido.</item>
 ''' </list>
-''' <para>El resultado era que la MISMA malla salía distinta según qué app la tocó, y con más de 256
-''' huesos una de las dos bindeaba mal sin avisar. Este módulo es el único sitio donde vive la decisión.</para>
-''' <para>Adoptar el desempate determinista en la librería MUEVE BYTES en las mallas que tengan dos
-''' influencias con peso exactamente igual: antes el orden lo decidía el algoritmo de <c>List.Sort</c>.
-''' Es el cambio deseado — un orden no determinista no se puede medir con un A/A (mismo motivo que
+''' <para>Con la decisión repartida, la MISMA malla sale distinta según qué app la tocó, y con más de 256
+''' huesos una de las dos bindea mal sin avisar. Este módulo es el único sitio donde vive.</para>
+''' <para>⚠️ El desempate determinista MUEVE BYTES en las mallas que tengan dos influencias con peso
+''' exactamente igual, respecto de dejárselo al algoritmo de <c>List.Sort</c>. Es el cambio deseado — un
+''' orden no determinista no se puede medir con un A/A (mismo motivo que
 ''' 21-render-orden-de-dibujo-no-determinista).</para></summary>
 Public Module BoneInfluencePacker
 

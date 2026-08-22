@@ -3,32 +3,30 @@ Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' ESTADO: DEBUG / EN REVISIÓN — NO CERRADO
-' -----------------------------------------------------------------------------
 ' Parseo de estructuras HCL (Havok Cloth): SimClothData, collidables, capsules,
 ' operadores (MoveParticles, Simulate, CopyVertices, etc.), cloth states.
 ' Llamado desde HclClothPackageParser_Class.
 '
-' PENDIENTES CONOCIDOS:
-'  - Todos los offsets de campos determinados empíricamente para FO4 64-bit.
-'    No verificados contra Havok SDK, pero todos confirmados con DumpStructuralAnalysis
-'    en CasualDress.nif.
-'  - hclSimClothData layout verificado (ver HkxObjectGraphParser.vb para offsets):
-'      +0x038: Particles (hkVector4 xyz=pos w=invMass)
-'      +0x048: FixedParticles (uint16 indices)
-'      +0x058: TriangleIndices (uint16 triplets)
-'      +0x068: m_unknown68 (54 elems, tipo desconocido — ReadByteArray con stride 1 probablemente incorrecto)
-'      +0x088: m_unknown88 (uint32 SIN fixups = bone indices para collidables) ← Field88UInt32
-'      +0x098: m_collidableTransforms (5×hkMatrix4=64B embedded) ← Field98Matrices
-'      +0x0A8: m_collidables (GLOBAL fixups → hclCollidable) ← offset CORRECTO
-'      +0x0B8: m_staticConstraintSets (GLOBAL fixups)
-'      +0x0D8: m_simClothPoses (GLOBAL fixups)
-'  - hclSimClothData NO tiene m_name serializado: .Name = String.Empty (+0x030 es el hkArray ptr
-'    de m_collidableTransformIndices, no un string).
-'  - hclCollidable: ShapeObject resuelto vía GLOBAL fixup en +0x88. VERIFICADO.
-'    hclCollidable.m_transform: hkMatrix4 column-major en +0x020 (4×hkVector4). VERIFICADO.
-'  - Operadores de simulación: campos internos parcialmente mapeados.
-'  - Sin soporte para Skyrim SSE (PointerSize=4).
+' Todos los offsets están determinados empíricamente para FO4 64-bit con
+' DumpStructuralAnalysis sobre NIFs reales (CasualDress.nif y los que cite cada función),
+' NO contra el SDK de Havok. Sin soporte para Skyrim (PointerSize=4).
+'
+' hclSimClothData (ver también HkxObjectGraphParser):
+'   +0x038: Particles (hkVector4 xyz=pos, w=invMass)
+'   +0x048: FixedParticles (uint16 indices)
+'   +0x058: TriangleIndices (uint16 triplets)
+'   +0x068: m_unknown68 (54 elems, tipo desconocido — no se lee)
+'   +0x088: m_unknown88 (uint32 SIN fixups = bone indices de los collidables) ← Field88UInt32
+'   +0x098: m_collidableTransforms (5×hkMatrix4=64B embedded) ← Field98Matrices
+'   +0x0A8: m_collidables (GLOBAL fixups → hclCollidable)
+'   +0x0B8: m_staticConstraintSets (GLOBAL fixups)
+'   +0x0D8: m_simClothPoses (GLOBAL fixups)
+' hclSimClothData NO tiene m_name serializado ⇒ .Name = String.Empty (+0x030 es el hkArray ptr
+' de m_collidableTransformIndices, no un string).
+'
+' hclCollidable: ShapeObject por GLOBAL fixup en +0x88; m_transform = hkMatrix4 column-major
+' en +0x020 (4×hkVector4). Los campos internos de los operadores de simulación están sólo
+' parcialmente mapeados.
 ' =============================================================================
 
 Imports System.Collections.Generic
@@ -63,13 +61,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         result.FixedParticleIndices.AddRange(result.Field48UInt16.Select(Function(value) CInt(value)))
         result.Triangles.AddRange(ReadUInt16TriangleArray(result.Field58UInt16))
         result.StaticCollisionMasks.AddRange(result.FieldF8UInt32)
-        ' +0x108: array de stride=1 (byte). Confirmado empíricamente (HKX-011) sobre 276 objetos
-        ' hclSimClothData reales en 259 NIFs de cloth (KSHairdos + Armor/Clothes, Tools/PinchStrideProbe):
+        ' +0x108: array de stride=1 (byte). MEDIDO sobre 276 hclSimClothData reales en 259 NIFs de cloth
+        ' (KSHairdos + Armor/Clothes, Tools/PinchStrideProbe):
         '   - el span físico del dato sólo cabe como 1 byte/elemento (p.ej. Count=113 ocupa span=128 con
         '     padding de alineación 16; un uint32 exigiría >=452 bytes, imposible) — stride 1 ajusta 264/276,
         '     stride 2/4/8 ajustan 1-3/276;
         '   - el 99.8% de los bytes son 0/1 → flags booleanos por partícula.
-        ' => ReadByteArray (stride 1) es el stride correcto; ya no es Guess_.
+        ' El STRIDE está medido; el NOMBRE Havok del miembro no (ver PinchDetectionFlags).
         result.PinchDetectionFlags.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H108)))
         result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj, collidableCache)).Where(Function(detail) Not IsNothing(detail)))
         result.DefaultClothPoseDetails.AddRange(defaultPoseObjects.Select(Function(obj) graph.ParseSimClothPose(obj)).Where(Function(detail) Not IsNothing(detail)))
@@ -423,12 +421,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    ' HKX-008 — collidableCache opcional (keyed por RelativeOffset = identidad canónica del objeto en el
-    ' grafo): cuando se pasa, memoiza para que un mismo hclCollidable, parseado a nivel package Y luego
-    ' referenciado por uno o más sims, NO se re-parsee. HclCollidableDetail_Class es un DTO inmutable-tras-
-    ' parse (verificado: ningún sitio muta un CollidableDetail después de construirlo), así que compartir la
-    ' instancia entre package.Collidables y sim.CollidableDetails da comportamiento idéntico con menos
-    ' parses/allocs. Sin cache (Nothing) el comportamiento es el de antes.
+    ' collidableCache opcional (key = RelativeOffset, identidad canónica del objeto en el grafo): cuando
+    ' se pasa, memoiza para que un mismo hclCollidable, parseado a nivel package Y referenciado por uno o
+    ' más sims, no se re-parsee. Compartir la instancia entre package.Collidables y sim.CollidableDetails
+    ' es equivalente PORQUE HclCollidableDetail_Class es inmutable tras el parse (ningún sitio la muta);
+    ' si eso deja de valer, la caché pasa a ser un aliasing de estado. Con Nothing se parsea cada vez.
     Friend Shared Function ParseCollidable(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
                                            Optional collidableCache As Dictionary(Of Integer, HclCollidableDetail_Class) = Nothing) As HclCollidableDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
@@ -1402,8 +1399,8 @@ Public Class HclSimClothDataDetail_Class
     Public ReadOnly Property DefaultClothPoseDetails As New List(Of HclSimClothPoseGraph_Class)
     Public Property FieldF8UInt32 As List(Of UInteger)
     Public ReadOnly Property StaticCollisionMasks As New List(Of UInteger)
-    ' Guess_/UNCONFIRMED: array +0x108 leído con stride 1 (ReadByteArray). Tipo de elemento real sin
-    ' verificar contra el SDK Havok — NO autoritativo. No consumir como flags reales hasta confirmar.
+    ' Array +0x108, stride 1 MEDIDO (ver ParseSimClothData). Lo que NO está confirmado contra el SDK
+    ' de Havok es la SEMÁNTICA: el nombre sale de que el 99,8% de los bytes valen 0/1.
     Public ReadOnly Property PinchDetectionFlags As New List(Of Byte)
     Public Property Field118Pairs As List(Of HkxUInt32PairGraph_Class)
     Public Property CollidableBindingUniformParameter As Single?

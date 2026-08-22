@@ -55,8 +55,8 @@ Public Module ObjectTemplateResolver
     End Function
     ''' <param name="rngSeed">See ResolveArmoCombinations. Nothing (default) = deterministic.</param>
     ''' <summary>Las combinaciones de un NPC_. Recibe la lista y la raza sueltas, no el NPC: el
-    ''' render las trae de su propio estado y el guardado del record, y armar un NPC_ de mentira
-    ''' para pasarlas era el unico motivo por el que existia esa forma.</summary>
+    ''' render las trae de su propio estado y el guardado del record, asi que pedir un NPC_ obligaria
+    ''' a armar uno de mentira para pasarlas.</summary>
     Public Function ResolveNpcCombinations(combinaciones As IEnumerable(Of Canon.IBloque_Combinations),
                                            attachParentSlots As IEnumerable(Of UInteger),
                                            raceFormID As UInteger,
@@ -402,18 +402,16 @@ Public Module ObjectTemplateResolver
             End If
 
             ' AttachPoint == 0 → this OMOD is a CONTAINER.  Its own Properties and its Includes
-            ' are INDEPENDENT payloads: it may carry either, both, or neither.
-            '
-            ' This used to be an if/else-if chain gated on "has Properties AND has NO Includes",
-            ' so a container carrying BOTH fell through to the recursion branch and its own
-            ' Properties were never added to the unslotted bucket → material/model swaps silently
-            ' discarded with no diagnostic.  Both payloads are now processed unconditionally.
+            ' are INDEPENDENT payloads: it may carry either, both, or neither, and BOTH get processed
+            ' UNCONDITIONALLY.  Do NOT gate them as an if/else-if chain ("has Properties AND has NO
+            ' Includes"): a container carrying BOTH then falls through to the recursion branch and its
+            ' own Properties never reach the unslotted bucket → material/model swaps silently discarded
+            ' with no diagnostic.
             '
             ' MEASURED (vanilla FO4 + all DLC, 3987 unique OMODs): ZERO containers carry both —
-            ' containers are strictly bimodal, 43 properties-only and 68 includes-only.  So this
-            ' was a LATENT defect, not a live one: no vanilla NPC changes as a result of this fix.
-            ' Nothing in the OBTE format forbids the combination, so mod-authored records can hit
-            ' it; that is why it is fixed rather than asserted away.
+            ' containers are strictly bimodal, 43 properties-only and 68 includes-only.  So on vanilla
+            ' data that failure is LATENT; nothing in the OBTE format forbids the combination, so
+            ' mod-authored records can hit it — which is why it is handled and not asserted away.
             Dim hasProps As Boolean = omod.Properties IsNot Nothing AndAlso omod.Properties.Count > 0
             Dim hasIncludes As Boolean = omod.Includes IsNot Nothing AndAlso omod.Includes.Count > 0
 
@@ -489,10 +487,10 @@ Public Module ObjectTemplateResolver
     '''                                        distribucion ni mimetiza nada por instancia.
     '''   <c>rngSeed</c> provisto            â†’ funcion determinista de (semilla, FormID del contenedor, apIdx),
     '''                                        para un caller que QUIERA variacion sin perder reproducibilidad.
-    ''' <para>Reemplaza a Random.Shared.Next, que hacia que el MISMO NPC produjera NIFs distintos en dos
-    ''' corridas e invalidaba en silencio toda comparacion por hash. Medido sobre vanilla + DLC (3987 OMODs):
-    ''' 493 tienen dos o mas includes DontUseAll validos, o sea que era un defecto VIVO, no latente.</para>
-    ''' <para>âš ï¸ DIVERGENCIAS CONOCIDAS contra el motor, deliberadamente NO arregladas aca porque cada una
+    ''' <para>NO usar Random.Shared.Next: hace que el MISMO NPC produzca NIFs distintos en dos corridas e
+    ''' invalida en silencio toda comparacion por hash. Medido sobre vanilla + DLC (3987 OMODs): 493 tienen
+    ''' dos o mas includes DontUseAll validos, o sea que el impacto es REAL, no latente.</para>
+    ''' <para>⚠ï¸ DIVERGENCIAS CONOCIDAS contra el motor, deliberadamente NO arregladas aca porque cada una
     ''' necesita contexto que este resolver no recibe: (1) no se filtra por Minimum Level, que el motor si
     ''' descarta; (2) no se aplica la preferencia por tier, el motor se queda solo con los de tier mas alto y
     ''' sortea dentro de esa ventana, asi que first-wins sobre-selecciona tiers BAJOS; (3) se ignora el bit
@@ -528,9 +526,8 @@ Public Module ObjectTemplateResolver
     End Function
 
     ''' <summary>DATA\Form Type decodificado como 4 caracteres ASCII (NONE si vale cero). La vista
-    ''' generada expone el UInteger crudo; esto reproduce el calculo que antes vivia como propiedad
-    ''' calculada en el parser viejo (OMOD_Data.FormTypeSignature). Compartida con
-    ''' OmodResolutionApplier, que necesita el mismo calculo para filtrar por FormType.</summary>
+    ''' generada expone el UInteger crudo, asi que el calculo vive ACA, compartido con
+    ''' OmodResolutionApplier, que necesita el mismo para filtrar por FormType.</summary>
     Public Function OmodFormTypeSignature(dataFormType As UInteger) As String
         If dataFormType = 0UI Then Return "NONE"
         Dim bytes = BitConverter.GetBytes(dataFormType)

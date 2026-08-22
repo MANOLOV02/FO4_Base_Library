@@ -1,13 +1,19 @@
 ﻿Namespace Canon
 
-    ''' <summary>Base de las vistas de un record.
+    ''' <summary>Base de TODA vista: la de un record y la de un elemento de sus arreglos.
     '''
     ''' <para>Una vista NO copia nada: envuelve el árbol de campos y cada propiedad lo consulta en el
     ''' momento. Eso es lo que evita tener dos representaciones del mismo record —una para leer y
     ''' otra para escribir— que puedan desincronizarse.</para>
     '''
     ''' <para>Las clases concretas están generadas a partir de la declaración del formato: el nombre
-    ''' de cada propiedad es el nombre del campo. Acá viven sólo las operaciones comunes a todas.</para></summary>
+    ''' de cada propiedad es el nombre del campo. Acá viven sólo las operaciones comunes a todas.</para>
+    '''
+    ''' <para>Lo que sale de la CABECERA del record —FormID, banderas— NO vive acá sino en
+    ''' CanonRecordView: un elemento de arreglo no tiene cabecera, y mientras la heredaba, un campo
+    ''' del formato llamado como un miembro de ésta lo TAPABA (el FormID de un elemento de FLST):
+    ''' leído a través del tipo base devolvía el FormID del record entero, un valor plausible y
+    ''' equivocado, sin aviso ninguno.</para></summary>
     Public MustInherit Class CanonView
 
         ''' <summary>El árbol del record. Es el único estado de la vista.</summary>
@@ -24,47 +30,6 @@
             _Node = node
             _Context = ctx
             _Resolver = resolver
-        End Sub
-
-        ''' <summary>Identificador del record.</summary>
-        Public ReadOnly Property FormID As UInteger
-            Get
-                If Context Is Nothing Then Return 0UI
-                Return Context.FormID
-            End Get
-        End Property
-
-        ''' <summary>Banderas de la CABECERA del record.
-        '''
-        ''' <para>No salen del árbol: la cabecera son 24 bytes que van delante de los subrecords y
-        ''' llevan cosas que valen para el record entero — si está borrado, si es una plantilla, si
-        ''' trae datos de escultura. Varios campos que la aplicación usa salen de acá y no de un
-        ''' campo, y por eso hay que poder preguntarlo desde la vista.</para></summary>
-        Public ReadOnly Property RecordFlags As UInteger
-            Get
-                If Context Is Nothing Then Return 0UI
-                Return Context.RecordFlags
-            End Get
-        End Property
-
-        ''' <summary>Un bit con nombre de las banderas de la cabecera.</summary>
-        Public Function BanderaDeCabecera(bitIndex As Integer) As Boolean
-            Return (RecordFlags And (1UI << bitIndex)) <> 0UI
-        End Function
-
-        ''' <summary>Cambia un bit de las banderas de la cabecera.
-        ''' <para>La cabecera no vive en el árbol de campos, pero SÍ es parte del record: decide, entre
-        ''' otras cosas, si una armadura es no-jugable o si un complemento trae datos de escultura.
-        ''' Vive en el contexto, que se lee del record de origen al abrirlo y es lo que el grabado
-        ''' emite, así que editarlo acá es editar lo que se va a guardar.</para></summary>
-        Public Sub PonerBanderaDeCabecera(bitIndex As Integer, valor As Boolean)
-            If Context Is Nothing Then Return
-            Dim mascara = 1UI << bitIndex
-            If valor Then
-                Context.RecordFlags = Context.RecordFlags Or mascara
-            Else
-                Context.RecordFlags = Context.RecordFlags And Not mascara
-            End If
         End Sub
 
         Public ReadOnly Property IsEmpty As Boolean
@@ -94,12 +59,10 @@
 
         Protected Function Bytes(ruta As String) As Byte()
             Dim n = CanonBridge.Find(Node, ruta)
-            Dim b = TryCast(If(n Is Nothing, Nothing, n.Value), Byte())
+            Dim b = TryCast(n?.Value, Byte())
             Return If(b, Array.Empty(Of Byte)())
         End Function
 
-        ''' <summary>Referencia a otro record. El árbol ya viene con las referencias en el espacio
-        ''' del orden de carga, así que leer y escribir usan el mismo valor.</summary>
         ''' <summary>Pone o saca el campo de esa ruta. Con False lo deja AUSENTE; con True se
         ''' asegura de que exista, con su valor por defecto.</summary>
         Protected Sub PonerPresencia(ruta As String, presente As Boolean)
@@ -111,6 +74,8 @@
             End If
         End Sub
 
+        ''' <summary>Referencia a otro record. El árbol ya viene con las referencias en el espacio
+        ''' del orden de carga, así que leer y escribir usan el mismo valor.</summary>
         Protected Function Referencia(ruta As String) As UInteger
             Return CanonBridge.U32(Node, ruta)
         End Function
@@ -264,6 +229,62 @@
             End While
             Return cur
         End Function
+
+    End Class
+
+    ''' <summary>Base de las vistas de un RECORD: lo de CanonView más lo que sale de la cabecera.
+    '''
+    ''' <para>La cabecera son 24 bytes que van delante de los subrecords y llevan cosas que valen
+    ''' para el record entero — el FormID, si está borrado, si es una plantilla, si trae datos de
+    ''' escultura. Un elemento de arreglo no la tiene, y por eso estos miembros no pueden vivir en
+    ''' la base común: cualquier acceso de cabecera sobre una vista de elemento es un error de
+    ''' compilación acá, no un valor equivocado en silencio.</para></summary>
+    Public MustInherit Class CanonRecordView
+        Inherits CanonView
+
+        Protected Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
+            MyBase.New(node, ctx, resolver)
+        End Sub
+
+        ''' <summary>Identificador del record.</summary>
+        Public ReadOnly Property FormID As UInteger
+            Get
+                If Context Is Nothing Then Return 0UI
+                Return Context.FormID
+            End Get
+        End Property
+
+        ''' <summary>Banderas de la CABECERA del record.
+        '''
+        ''' <para>No salen del árbol: llevan cosas que valen para el record entero. Varios campos que
+        ''' la aplicación usa salen de acá y no de un campo, y por eso hay que poder preguntarlo
+        ''' desde la vista.</para></summary>
+        Public ReadOnly Property RecordFlags As UInteger
+            Get
+                If Context Is Nothing Then Return 0UI
+                Return Context.RecordFlags
+            End Get
+        End Property
+
+        ''' <summary>Un bit con nombre de las banderas de la cabecera.</summary>
+        Public Function BanderaDeCabecera(bitIndex As Integer) As Boolean
+            Return (RecordFlags And (1UI << bitIndex)) <> 0UI
+        End Function
+
+        ''' <summary>Cambia un bit de las banderas de la cabecera.
+        ''' <para>La cabecera no vive en el árbol de campos, pero SÍ es parte del record: decide, entre
+        ''' otras cosas, si una armadura es no-jugable o si un complemento trae datos de escultura.
+        ''' Vive en el contexto, que se lee del record de origen al abrirlo y es lo que el grabado
+        ''' emite, así que editarlo acá es editar lo que se va a guardar.</para></summary>
+        Public Sub PonerBanderaDeCabecera(bitIndex As Integer, valor As Boolean)
+            If Context Is Nothing Then Return
+            Dim mascara = 1UI << bitIndex
+            If valor Then
+                Context.RecordFlags = Context.RecordFlags Or mascara
+            Else
+                Context.RecordFlags = Context.RecordFlags And Not mascara
+            End If
+        End Sub
 
     End Class
 

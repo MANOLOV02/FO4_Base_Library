@@ -73,12 +73,11 @@ Public Module FaceTintInputBuilder
         ' slot-12 catalog (non-skin races), or when the NPC already authors a slot-12 layer.
         InjectSyntheticSkinToneLayer(mergedLayers, grupos, hasTextureLighting, textureLightingColorArgb)
         ' La paleta de la CEJA se resuelve ACÁ ADENTRO, desde el RACE que este builder ya tiene, y NO la
-        ' pasa el caller. Antes era un parámetro y había TRES implementaciones de la regla (dos en
-        ' NpcMaterialResolver, una en el CLI), las tres recorriendo la malla de pelo — que es la ley del
-        ' MESH (ProcessHairColor), no la de la cara. El motor saca este LUT del RACE dentro de
-        ' StartFaceCustomizationGenerationForNPC; ver LmHairColorLutLoader.ResolveBrowPaletteTexture, que
-        ' cita el desensamblado. Resolverlo acá hace estructuralmente imposible que render, bake y CLI
-        ' vuelvan a divergir.
+        ' pasa el caller: como parámetro, cada caller termina con su propia implementación de la regla y
+        ' todas recorren la malla de pelo — que es la ley del MESH (ProcessHairColor), no la de la cara.
+        ' El motor saca este LUT del RACE dentro de StartFaceCustomizationGenerationForNPC; ver
+        ' LmHairColorLutLoader.ResolveBrowPaletteTexture, que cita el desensamblado. Resolverlo acá hace
+        ' estructuralmente imposible que render, bake y CLI diverjan.
         LmHairColorLutLoader.EnsureLoaded(pluginManager, If(dataPath, Config_App.Current?.DataPath))
         Dim hairLutPath As String = LmHairColorLutLoader.ResolveBrowPaletteTexture(race, hairColorFormID)
 
@@ -107,13 +106,11 @@ Public Module FaceTintInputBuilder
 
         ' ¿Ya hay un slot-12 en la lista MERGED (autorado por el NPC O inyectado como RACE-default por
         ' MergeTintLayersWithRaceDefaults, que corre ANTES de esto en Build)? -> NO inyectar el sintetico
-        ' QNAM, o se DUPLICA el skin-tone (doble SoftLight). Bug Alan Binet 2026-06-06: el race-default del
-        ' merge (tplIdx del TemplateColor) + el sintetico QNAM (tplIdx=-1) componian DOS veces el slot-12 ->
-        ' cara mal; al materializar en Face Edit la slot-12 pasaba a autorada -> el merge no inyectaba el
-        ' default Y este check (antes sobre npcData.FaceTintLayers) saltaba -> una sola -> se veia bien. Ahora
-        ' chequea mergedLayers (que YA incluye el race-default) -> consistente con o sin materializar. Los
-        ' labios (slot 13) nunca tuvieron este doble path, por eso si aplicaban heredados. Ver
-        ' [[50-facetint-leyes-y-compositor]].
+        ' QNAM, o se DUPLICA el skin-tone (doble SoftLight).
+        ' EL CHEQUEO VA SOBRE mergedLayers, NO sobre npcData.FaceTintLayers: mirando solo las AUTORADAS, el
+        ' race-default del merge (tplIdx del TemplateColor) y el sintetico QNAM (tplIdx=-1) componen los DOS,
+        ' y el sintoma se esconde apenas la capa se materializa en Face Edit (ahi pasa a autorada, el merge
+        ' no inyecta el default y queda una sola). Ver [[50-facetint-leyes-y-compositor]].
         Dim skinIndices As New HashSet(Of UShort)(skinOpts.Select(Function(o) o.Index))
         If mergedLayers.Any(Function(m) skinIndices.Contains(m.Index)) Then Return
 
@@ -137,7 +134,7 @@ Public Module FaceTintInputBuilder
     End Sub
 
     ''' <summary>Merge an NPC's authored FaceTintLayers with the race-authored defaults.
-    ''' PER-OPTION rule (CK-faithful, derivado 2026-06-06 vs CK + scan de TTED denormales): por cada
+    ''' PER-OPTION rule (CK-faithful, derivada vs CK + scan de TTED denormales): por cada
     ''' Option de tint de la RACE que el NPC NO autora (no hay TEND con ese Index), si la Option trae un
     ''' TTED ('Default') se inyecta una capa default virtual. El campo TTED es un float pero CK lo
     ''' SOBRECARGA segun el tipo de Option (error de diseno: un int index guardado en un campo float
@@ -150,9 +147,9 @@ Public Module FaceTintInputBuilder
     '''     LipsMalePale @ Alpha 0.52 -> labios palidos; el lipstick female tiene TTED=7 -> un rojo @ 0.3.
     '''   - TextureSet/Mask (sin TemplateColors): TTED = float intensidad (solo lo llevan las Cejas, =1.0 ->
     '''     ON a Value 100). Sin color.
-    ''' PER-OPCION (no per-grupo): autorar una opcion de un grupo ya NO suprime los defaults de las otras
-    ''' opciones (ese era el bug que dropeaba el lip color de Mitch cuando autoraba otra opcion de
-    ''' 'Manchitas'). Los grupos On/Off (Cejas) quedan correctos porque CK escribe la opcion default
+    ''' PER-OPCION (no per-grupo): autorar una opcion de un grupo NO suprime los defaults de las otras
+    ''' opciones — per-grupo dropea el lip color de Mitch cuando autora otra opcion de 'Manchitas'.
+    ''' Los grupos On/Off (Cejas) quedan correctos porque CK escribe la opcion default
     ''' explicitamente con Value 0 en el record del NPC cuando se elige una no-default. Los virtuales con
     ''' Value=0 entran a la lista y se gatean downstream (y dejan al editor mostrar filas "default OFF").
     ''' Las capas del NPC se preservan verbatim. </summary>
@@ -342,7 +339,7 @@ Public Module FaceTintInputBuilder
             If maskLoad.Bytes Is Nothing Then Continue For
 
             ' BASELINE del grupo (preset idx0 = piel "neutral/no-envejecida" sobre la que el engine compone el morph
-            ' de ESTA región). Verificado parseando HumanRace + Mitch (Tools/morphgroup_dump.py, 2026-06-06): los 7
+            ' de ESTA región). Verificado parseando HumanRace + Mitch (Tools/morphgroup_dump.py): los 7
             ' grupos male-head tienen idx0 = SkinHeadYoungMale; CK compone cada región con morph ACTIVO = lerp(idx0,
             ' preset, msdv) (medido byte: nariz lerp(Young,Old,.25)=37.9=CK; labios lerp(Young,Hero,.55)=21.5=CK).
             ' BASELINE para TODA región del NPC facegen — NO se gatea por key de morph. El bake `_t` del usuario
@@ -399,10 +396,10 @@ Public Module FaceTintInputBuilder
                 If p.TextureFormID = 0UI Then Continue For
                 Dim msdvVal As Single = 0F
                 If Not morfos.TryGetValue(p.Index, msdvVal) Then Continue For
-                ' Gate de msdv<=0.001 REMOVIDO (a pedido): se incluye el swap aunque el msdv sea bajo o 0
-                ' (Intensity baja -> running con cov chica; 0 = no-op). build_3 compone todo msdv>0; el
-                ' gate viejo se comia valores fraccionarios bajos. (El TryGetValue de arriba sigue: si el
-                ' NPC no tiene ese morph, no hay swap.)
+                ' SIN gate por magnitud del msdv: se incluye el swap aunque sea bajo o 0 (Intensity baja ->
+                ' running con cov chica; 0 = no-op). build_3 compone todo msdv>0, y un gate <=0.001 se come
+                ' los valores fraccionarios bajos. (El TryGetValue de arriba sigue: si el NPC no tiene ese
+                ' morph, no hay swap.)
 
                 Dim txstRec = pluginManager.GetRecord(p.TextureFormID)
                 If txstRec Is Nothing OrElse txstRec.Header.Signature <> "TXST" Then Continue For
@@ -443,8 +440,8 @@ Public Module FaceTintInputBuilder
         Next
 
         ' Orden de swaps = Config_App.Setting_FaceTintSort.SwapRules (multi-clave asc/desc). Default = vacio
-        ' -> tiebreak estable por orden de build = FORWARD (grupo-por-grupo, preset-por-preset) = el orden
-        ' previo validado 2026-06-04 (forward 98-99% byte-identico vs reversed 65%; las mascaras se solapan).
+        ' -> tiebreak estable por orden de build = FORWARD (grupo-por-grupo, preset-por-preset), medido
+        ' contra CK: forward 98-99% byte-identico vs reversed 65% (las mascaras se solapan).
         Dim swapCfg = Config_App.Current?.Setting_FaceTintSort
         Dim swapRules = If(swapCfg IsNot Nothing, swapCfg.SwapRules, Nothing)
         Dim sidx = Enumerable.Range(0, entries.Count).ToList()
@@ -477,7 +474,7 @@ Public Module FaceTintInputBuilder
         ' tint-options en el orden en que estan ALMACENADAS en el RACE (grupo por grupo, opcion por opcion) y la
         ' PRIMERA listada queda ENCIMA (over-running: la de MAYOR posicion fisica se pinta PRIMERO=fondo, la de
         ' MENOR ULTIMO=encima). UNA sola clave = physIndexByOption (posicion fisica global de la opcion).
-        ' 2026-06-03 DERIVADO + VALIDADO (Tools/FaceTintDerive, vs bakes de CK de Alana 0x0005E564):
+        ' DERIVADO + VALIDADO (Tools/FaceTintDerive, vs bakes de CK de Alana 0x0005E564):
         '   - PHYS-desc full-face 3.222 (mejor que group+teti 3.558 y que group+entry+slot+teti 3.543).
         '   - Matchea 10/10 los tops AISLADOS de CK del batch de composicion (OrderBatch.esp batch80), INCLUIDO
         '     el maquillaje (Lapiz de ojos 2 > Lapiz de ojos 6, etc.) y g1 (Cara emborronada ENCIMA de Resplandor
@@ -509,8 +506,8 @@ Public Module FaceTintInputBuilder
             Next
         End If
         ' Orden de composicion = Config_App.Setting_FaceTintSort.TintRules (multi-clave asc/desc) +
-        ' SkinTonePlacement. Default config = [PhysIndex desc] (+ tiebreak NpcListOrder asc) = el orden previo
-        ' EXACTO. Over-running: 1ro de la lista = fondo (compone primero); ultimo = encima.
+        ' SkinTonePlacement. Default config = [Group_Index desc, Option_Index desc] (+ tiebreak NpcListOrder
+        ' asc) = el orden fisico. Over-running: 1ro de la lista = fondo (compone primero); ultimo = encima.
         Dim orderedLayers = OrderMergedLayers(mergedLayers, tintGroups, pluginManager,
                                               groupIndexByOption, optionInGroupByOption, categoryIndexByOption)
 
@@ -523,10 +520,10 @@ Public Module FaceTintInputBuilder
             Dim takesSkinTone As Boolean = (opt.Flags And &H4US) <> 0US
 
             Dim opacity As Single = CSng(tl.Value) / 100.0F
-            ' Gate de zero-opacity REMOVIDO (a pedido): se incluyen TODAS las capas sin filtrar por
-            ' intensidad. Una capa con op=0 se compone como no-op (cov=g22_encode(mask)*0=0 -> acc sin
-            ' cambio), = build_3 que compone toda capa con intensity>0. Los gates de option/textura/
-            ' discriminador faltantes siguen abajo (esos SI saltan capas que no se pueden componer).
+            ' SIN gate de zero-opacity: entran TODAS las capas sin filtrar por intensidad. Una capa con op=0
+            ' se compone como no-op (cov=g22_encode(mask)*0=0 -> acc sin cambio), = build_3, que compone toda
+            ' capa con intensity>0. Los gates de option/textura/discriminador faltantes siguen abajo (esos SI
+            ' saltan capas que no se pueden componer).
 
             Dim ttet0Snap = If(opt.Textures.Count > 0, opt.Textures(0), "")
             Dim ttet1Snap = If(opt.Textures.Count > 1, opt.Textures(1), "")
@@ -577,14 +574,13 @@ Public Module FaceTintInputBuilder
                 layerInput.G = resolved.Color.G
                 layerInput.B = resolved.Color.B
                 layerInput.BlendOp = CInt(resolved.BlendOp)
-                ' OpacityScale (tplCol.Alpha del match) NO se aplica al opacity. Verificado
-                ' empíricamente con analyzer 2026-05-28 (B01_idx11 Barra de labios): al multiplicar
-                ' op por Alpha=0.5 el residual byte saltó de 0.39 a 8.46 → el engine NO multiplica
-                ' TEND.Value por tplCol.Alpha. OpacityScale del resolver se preserva como info
+                ' OpacityScale (tplCol.Alpha del match) NO se aplica al opacity. MEDIDO (B01_idx11 Barra de
+                ' labios): al multiplicar op por Alpha=0.5 el residual byte salta de 0.39 a 8.46 → el engine
+                ' NO multiplica TEND.Value por tplCol.Alpha. OpacityScale del resolver se preserva como info
                 ' contextual del match pero no afecta el cómputo.
                 ' NO gatear tampoco cuando la template matcheada es la 'None' (CLFM 0x001ABFD5, Alpha=0):
-                ' hipótesis "template None ⇒ capa apagada" PROBADA Y REFUTADA (2026-07-16, NPC 00007CFD +
-                ' correlación de máscaras vs CK): CK SÍ compone las capas autoradas con tpl→'None' (el
+                ' hipótesis "template None ⇒ capa apagada" PROBADA Y REFUTADA (correlación de máscaras vs
+                ' CK): CK SÍ compone las capas autoradas con tpl→'None' (el
                 ' maquillaje de su _d cae 96,5% dentro de FacePaint4, más EyeLiner05/EyeShadowLower1/Dirt1,
                 ' todas tpl 'None' Alpha=0, TEND value 79-100). Gatearlas alejó el bake de CK (mean 1,32→5,03).
                 ' El residual real vs CK es de BORDE/intensidad del paint (~1.1k px >36 en ese NPC), otra cosa.
@@ -617,9 +613,9 @@ Public Module FaceTintInputBuilder
 
             ' Slot Brows (23) override: regardless of the layer's authored RGB or
             ' TemplateColorIndex, the colour is sourced from the NPC's hair (HCLF). Applies to
-            ' BOTH layer kinds (vanilla brow opts are TextureSet per RecordParsers.vb:1030 with
-            ' T=3 C=0; PaletteMask is supported for completeness when modders author tint-style
-            ' brow layers).
+            ' BOTH layer kinds (vanilla brow opts are TextureSet — T=3 C=0, see the TTET parse in
+            ' RecordParsers.vb; PaletteMask is supported for completeness when modders author
+            ' tint-style brow layers).
             '   HCLF.HasColor (RGB CLFM):
             '     - PaletteMask: override layerInput.R/G/B; existing shader path already uses uColor.
             '     - TextureSet : override layerInput.R/G/B AND set ForceUniformColor so the
@@ -873,7 +869,8 @@ Public Module FaceTintInputBuilder
     ''' <summary>Orden de composicion de los tints segun Config_App.Setting_FaceTintSort.TintRules
     ''' (multi-clave asc/desc), tiebreak estable = orden de la lista del NPC (NpcListOrder asc). Luego
     ''' aplica SkinTonePlacement (slot 12 al frente=FirstOfAll / al final=LastOfAll). Devuelve la lista en
-    ''' orden de composicion (1ro=fondo, over-running). Default de config (PhysIndex desc) = orden previo.</summary>
+    ''' orden de composicion (1ro=fondo, over-running). Default de config = Group_Index desc + Option_Index
+    ''' desc (el orden fisico del record del RACE).</summary>
     Private Function OrderMergedLayers(mergedLayers As List(Of MergedTintLayer),
                                        tintGroups As List(Of GrupoDeTinteEfectivo), pluginManager As PluginManager,
                                        groupIndexByOption As Dictionary(Of UShort, Integer),
@@ -883,7 +880,7 @@ Public Module FaceTintInputBuilder
         Dim rules = If(sortCfg IsNot Nothing, sortCfg.TintRules, Nothing)
         Dim placement = If(sortCfg IsNot Nothing, sortCfg.SkinTonePlacement, CInt(FaceTintSkinTonePlacement.Positional))
 
-        Const BIG As Double = 1.0E+15  ' opciones ausentes del template -> al fondo (= Integer.MaxValue previo)
+        Const BIG As Double = 1.0E+15  ' opciones ausentes del template -> al fondo
         Dim n = mergedLayers.Count
         Dim keys(n - 1)() As Double
         Dim isSkin(n - 1) As Boolean
@@ -993,7 +990,7 @@ Public Module FaceTintInputBuilder
     Private Function BuildSyntheticEyebrowLut(tintBytesCache As Dictionary(Of String, Byte())) As (Enabled As Boolean, Bytes As Byte(), Key As String)
         ' FO4-only: la LUT de cejas es parte del compositor FaceTint de FO4 (SSE tiene su propio path).
         ' Gate por juego cuando el config está cargado; si Current es Nothing (contexto raro) no se puede
-        ' saber el juego → se preserva el comportamiento previo (no gatear). Los CLIs FO4 setean Game=Fallout4.
+        ' saber el juego → no se gatea. Los CLIs FO4 setean Game=Fallout4.
         If Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game <> Config_App.Game_Enum.Fallout4 Then Return (False, Nothing, Nothing)
         ' Persisted toggle (default True if no config loaded): debe estar prendido Y el archivo presente.
         If Not If(Config_App.Current?.Setting_ApplyEyebrowsFixedColor, True) Then Return (False, Nothing, Nothing)

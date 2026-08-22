@@ -28,8 +28,8 @@ Public Class RaceCompatibilityCatalog
     Private Shared ReadOnly SlotNames As String() =
         {"Argonian", "Breton", "DarkElf", "HighElf", "Imperial", "Khajiit", "Nord", "Orc", "Redguard", "WoodElf"}
 
-    ' Predicates, verbatim from GenericRaceController.psc (isHuman:272, isBreton:291, isNord:300, isImperial:309,
-    ' isOrc:318, isElf:327, isArgonian:340, isKhajiit:349). Note isHuman is FALSE for the beasts, the elves AND the
+    ' Predicates, verbatim from GenericRaceController.psc (isHuman/isBreton/isNord/isImperial/isOrc/isElf/
+    ' isArgonian/isKhajiit). Note isHuman is FALSE for the beasts, the elves AND the
     ' orc — and note that the script adds every NON-human (elves and orc included) to RacesBeast in
     ' updateStandardRaces. That is what the script does; we replicate it, quirks and all.
     Private Shared Function IsHuman(i As Integer) As Boolean
@@ -109,7 +109,7 @@ Public Class RaceCompatibilityCatalog
                 ' Property name → FormID, on the GenericRaceController instance: these are the VANILLA lists the
                 ' script mutates (HeadPartsNord, HeadPartsHuman, RacesElf, PlayableRaceList, …).
                 '
-                ' Self-repair, verbatim from internalProxyRaces (GenericRaceController.psc:139-145, comment:
+                ' Self-repair, verbatim from internalProxyRaces (GenericRaceController.psc, comment:
                 ' "since these we're added later, let's try to repair the damage, if needed"): the two BEAST-vampire
                 ' properties were added to GenericRaceController in a LATER version of RaceCompatibility, so a race
                 ' mod authored against the older one has a QUST whose VMAD does not bind them — they come in as None.
@@ -167,7 +167,7 @@ Public Class RaceCompatibilityCatalog
         Return pv.FormID
     End Function
 
-    ''' <summary>internalProxyRaces (GenericRaceController.psc:110-181): for each slot, for each race in the mod's
+    ''' <summary>internalProxyRaces (GenericRaceController.psc): for each slot, for each race in the mod's
     ''' list, insert it into the vanilla lists. The vampire race is taken from the PARALLEL list AT THE SAME INDEX
     ''' — that pairing is the script's, not ours.</summary>
     Private Sub ApplyProxyRaces(pm As PluginManager, raceList As UInteger(), vampList As UInteger(),
@@ -194,7 +194,7 @@ Public Class RaceCompatibilityCatalog
         Next
     End Sub
 
-    ''' <summary>updateStandardRaces (GenericRaceController.psc:189-228), rule for rule.</summary>
+    ''' <summary>updateStandardRaces (GenericRaceController.psc), rule for rule.</summary>
     Private Sub UpdateStandardRaces(element As Integer, race As UInteger, target As Func(Of String, UInteger))
         Dim slot = SlotNames(element)
         ' Self listing: its own slot's list, and its own slot's "…andVampire" list.
@@ -227,7 +227,7 @@ Public Class RaceCompatibilityCatalog
         End If
     End Sub
 
-    ''' <summary>updateVampireRaces (GenericRaceController.psc:230-266), rule for rule.</summary>
+    ''' <summary>updateVampireRaces (GenericRaceController.psc), rule for rule.</summary>
     Private Sub UpdateVampireRaces(element As Integer, race As UInteger, target As Func(Of String, UInteger))
         Dim slot = SlotNames(element)
         Add(target($"HeadParts{slot}andVampire"), race)   ' hpVampList = HeadPartsVampireList[element]

@@ -46,7 +46,7 @@ Public Structure PreviewShadowSettings
     ''' que es justo lo que se le pide a un centinela (ver memoria 10-stack-json-structure-defaults).</summary>
     Public Property MapSize As Integer
     ''' <summary>16 bits de profundidad en vez de 24 ⇒ **la MITAD de VRAM** en los dos arrays. Default
-    ''' **False** (24 bits).
+    ''' **True** (16 bits) — ver <see cref="Defaults"/>.
     '''
     ''' <para>POR QUE ES DEFENDIBLE Y ESTA MEDIDO: la cuantizacion no la fija la precision del formato
     ''' sino el RANGO. Este ortho abarca ~161 u, asi que 16 bits dan 161/65536 = <b>0,0025 u</b> de escalon
@@ -59,13 +59,14 @@ Public Structure PreviewShadowSettings
     ''' <para>Y lo que compra no es "menos memoria" sino poder gastarla en RESOLUCION, que es lo unico
     ''' que se ve en el borde: 16 bits a 4096 (texel 0,0374 u) contra 24 a 2048 (texel 0,0748 u) cuesta el
     ''' doble y se ve el doble de fino; 16 a 4096 se ve igual que 24 a 4096 por la MITAD.</para>
-    ''' <para>DEFAULT 24 A PROPOSITO, aunque 16 sea lo tecnicamente indicado para este ortho: asi el
-    ''' render por default queda BIT A BIT identico al anterior y el check `ab-default` del arnes puede
-    ''' seguir exigiendo 0 px, que es el instrumento mas fuerte del paquete. Quien quiera la mitad de VRAM
-    ''' la tilda.</para>
-    ''' <para>Structure: un config guardado ANTES de que existiera este campo lo deserializa en False —
-    ''' que es JUSTO el default deseado. Coincidencia afortunada, no diseno: si algun dia el default pasara
-    ''' a True, haria falta un centinela o renombrar la clave (ver Config_App.Setting_ShadowMaps_*).</para></summary>
+    ''' <para>⛔ EL DEFAULT DECIDE QUE PUEDE EXIGIR `ab-default`. Con 24 bits el check puede pedir 0 px
+    ''' contra el baseline; con 16 no, porque el render deja de ser bit a bit identico (los 244 px de
+    ''' arriba). Por eso el check acepta esto como divergencia DECLARADA y afirma algo mas fuerte que un
+    ''' conteo: delta maximo &lt;= 1 Y conteo acotado. Un umbral que solo mirara el conteo dejaria pasar
+    ''' 244 px con delta 200.</para>
+    ''' <para>⚠️ Structure SIN CENTINELA: un config guardado antes de que existiera este campo lo
+    ''' deserializa en False, o sea en el valor CONTRARIO al default. No hay forma de distinguir "el
+    ''' usuario eligio 24 bits" de "la clave no estaba" (ver Config_App.Setting_ShadowMaps_*).</para></summary>
     Public Property Depth16 As Boolean
 
     ''' <summary>Tope del radio de PCF. No es configurable: acota el costo del kernel en el fragment.</summary>
@@ -101,24 +102,16 @@ Public Structure PreviewShadowSettings
 
     ''' <summary>Copia con los valores acotados al rango que el render sabe ejecutar. Lo llama el render
     ''' en vez de confiar en el config: un MapSize absurdo cargado a mano no puede tirar la app.
-    ''' <para>ACOTA CAMPO POR CAMPO Y NO REEMPLAZA LA ESTRUCTURA. Antes, con <c>MapSize &lt;= 0</c>
-    ''' devolvia <c>Defaults()</c> ENTERO, y eso es otra cosa: <c>Defaults()</c> trae
-    ''' <c>Enabled = True</c>, asi que una estructura armada como
+    ''' <para>⛔ ACOTA CAMPO POR CAMPO Y NO REEMPLAZA LA ESTRUCTURA. Devolver <c>Defaults()</c> entero
+    ''' cuando un campo viene mal es otra cosa: <c>Defaults()</c> trae <c>Enabled = True</c>, asi que
     ''' <c>New PreviewShadowSettings With {.Enabled = False}</c> —que deja MapSize en 0 por ser el default
-    ''' del tipo— salia del sanitizado CON LAS SOMBRAS PRENDIDAS. Un brazo de A/B construido asi se dibuja
-    ''' con la feature que dice apagar, y el veredicto sale al reves sin que nada avise. Hoy ningun caller
-    ''' lo hace, pero la trampa estaba armada y el doc decia "acotados", que no era lo que pasaba.</para>
-    ''' <para>EL CAMBIO AFECTA A LOS CINCO CAMPOS, no solo a Enabled y MapSize. Una estructura armada a
-    ''' mano como <c>New PreviewShadowSettings With {.Enabled = True}</c> antes salia con los defaults de
-    ''' TODO; ahora sale con <c>Intensity = 0</c> (o sea sombra invisible, porque Clamp(0,0,1) = 0) y con
-    ''' los dos bias en 0. Hoy no hay caller que construya asi —todos parten de Defaults()— pero un brazo
-    ''' de A/B futuro hecho de esa forma se dibujaria SIN sombra creyendo tenerla, que es el gemelo exacto
-    ''' de la trampa que este mismo doc dice haber cerrado.</para>
+    ''' del TIPO— saldria del sanitizado CON LAS SOMBRAS PRENDIDAS, y un brazo de A/B construido asi se
+    ''' dibujaria con la feature que dice apagar.</para>
     ''' <para>Y hay un consumidor que NO sanitiza: <c>Render.vb</c> lee <c>ActiveShadows().Enabled</c>
     ''' crudo para decidir si recalcula bounds en Play, mientras el pase de sombra lee
-    ''' <c>.Sanitized().Enabled</c>. Con la version vieja los dos discrepaban justo en ese caso y el pase
-    ''' corria con bounds congelados. Acotando en vez de reemplazar, <c>Enabled</c> ya no puede cambiar de
-    ''' valor al sanitizar y los dos coinciden por construccion.</para></summary>
+    ''' <c>.Sanitized().Enabled</c>. Acotando en vez de reemplazar, <c>Enabled</c> no puede cambiar de valor
+    ''' al sanitizar y los dos coinciden por construccion; si algun dia esta funcion vuelve a tocarlo, esos
+    ''' dos se separan y el pase corre con bounds congelados.</para></summary>
     Public Function Sanitized() As PreviewShadowSettings
         Dim s = Me
         ' MapSize 0 es el default del TIPO (una estructura recien construida), no una eleccion del usuario:
@@ -157,10 +150,10 @@ Friend Module ShadowMapMath
 
     ''' <summary>Cuanto MAS GRANDE que su huella se dibuja el quad receptor. El margen existe para que
     ''' el desvanecido del borde tenga donde ocurrir SIN comerse la sombra.
-    ''' <para>Fue 1,25 y bajo a 1,05. El fade es INERTE por construccion —la sombra nunca entra en la banda,
-    ''' porque la huella es exactamente 1/margen del quad— asi que el margen no compra nitidez: compra
-    ''' seguro. A 1,25 ese seguro costaba 1,25^2 = 56 % mas de fragmentos del quad, cada uno pagando el PCF
-    ''' completo. A 1,05 cuesta 10 % y sigue habiendo banda.</para></summary>
+    ''' <para>El fade es INERTE por construccion —la sombra nunca entra en la banda, porque la huella es
+    ''' exactamente 1/margen del quad— asi que el margen no compra nitidez: compra seguro, y se paga al
+    ''' cuadrado en fragmentos del quad, cada uno con el PCF completo. A 1,05 cuesta 10 % y sigue habiendo
+    ''' banda; a 1,25 costaria 56 %.</para></summary>
     Friend Const GroundQuadMargin As Single = 1.05F
 
     ''' <summary>Donde arranca el desvanecido, en coordenadas locales del quad ([-1..1] por eje).
@@ -240,16 +233,13 @@ Friend Module ShadowMapMath
     ''' LA ROTACION, asi que el ortho no cambia de tamano cuando la luz gira. Eso importa en TRES gestos:
     ''' arrastrar un slider del rig, cada frame de una animacion (el AABB se mueve solo), y —desde que
     ''' <c>Setting_LightsFollowCamera</c> es el default— <b>ORBITAR</b>, que rota las cuatro luces. En los
-    ''' tres, un extent que se re-ajusta hace que el borde de la sombra "hierva".
-    ''' Este parrafo decia "desde que las luces son fijas al mundo el usuario ya no las mueve al
-    ''' orbitar". Era cierto cuando se escribio y dejo de serlo con el default nuevo, sin que nada lo
-    ''' avisara: un comentario que describe una configuracion que cambio miente igual que un codigo mal.</para>
-    ''' <para>Esto vale para el mapa AJUSTADO. El mapa ANCHO del receptor de suelo NO es invariante a la
+    ''' tres, un extent que se re-ajusta hace que el borde de la sombra "hierva".</para>
+    ''' <para>⚠️ Esto vale para el mapa AJUSTADO. El mapa ANCHO del receptor de suelo NO es invariante a la
     ''' rotacion: su AABB sale de proyectar la escena sobre el plano a lo largo de la luz
     ''' (<see cref="ExpandForGroundShadow"/>), asi que mover la key le cambia el radio y con el la grilla
-    ''' del snap. Y ORBITAR MUEVE LA KEY: con el default de luces-siguen-camara este caso pasa en
-    ''' cada frame de un arrastre de camara, no solo al tocar un slider. Ver el analisis cuantificado en
-    ''' <see cref="GroundMapSize"/>, que tambien tenia esta omision.</para>
+    ''' del snap. Y ORBITAR MUEVE LA KEY: con el default de luces-siguen-camara eso pasa en cada frame de un
+    ''' arrastre de camara, no solo al tocar un slider. Ver el analisis cuantificado en
+    ''' <see cref="GroundMapSize"/>.</para>
     '''
     ''' <para>Y el centro se SNAPEA a multiplos de texel en espacio de luz por la misma razon: sin eso
     ''' el borde de la sombra parpadea un texel para adelante y para atras en cada frame.</para></summary>
@@ -314,6 +304,17 @@ Friend Module ShadowMapMath
         Return r
     End Function
 
+    ''' <summary>Seno de la elevacion minima de la key para que el receptor de suelo tenga sentido. La UI
+    ''' la lee de aca: es la MISMA cantidad que decide el render, no una copia redondeada.</summary>
+    Friend Const SenoDeElevacionMinima As Single = 0.2F
+
+    ''' <summary>Esa misma elevacion, en grados, para mostrarla. Se calcula, no se transcribe.</summary>
+    Friend ReadOnly Property ElevacionMinimaGrados As Single
+        Get
+            Return CSng(Math.Asin(SenoDeElevacionMinima) * 180.0 / Math.PI)
+        End Get
+    End Property
+
     ''' <summary>Agranda el AABB para que quepa TAMBIEN la sombra proyectada sobre el plano del suelo.
     '''
     ''' <para>SIN ESTO EL RECEPTOR DE SUELO SALE CORTADO, y el sintoma no apunta al encuadre: la sombra
@@ -328,17 +329,6 @@ Friend Module ShadowMapMath
     ''' <para>Devuelve el AABB sin tocar si la luz esta en el horizonte o por debajo (<c>L.Z</c> chico o
     ''' negativo): ahi la sombra se va al infinito y no hay encuadre finito que la contenga. El receptor
     ''' de suelo se apaga solo en ese caso, via <paramref name="valid"/>.</para></summary>
-    ''' <summary>Seno de la elevacion minima de la key para que el receptor de suelo tenga sentido. La UI
-    ''' la lee de aca: es la MISMA cantidad que decide el render, no una copia redondeada.</summary>
-    Friend Const SenoDeElevacionMinima As Single = 0.2F
-
-    ''' <summary>Esa misma elevacion, en grados, para mostrarla. Se calcula, no se transcribe.</summary>
-    Friend ReadOnly Property ElevacionMinimaGrados As Single
-        Get
-            Return CSng(Math.Asin(SenoDeElevacionMinima) * 180.0 / Math.PI)
-        End Get
-    End Property
-
     Friend Sub ExpandForGroundShadow(ByRef sceneMin As Vector3, ByRef sceneMax As Vector3,
                                      lightDir As Vector3, groundZ As Single, ByRef valid As Boolean)
         valid = False
@@ -348,11 +338,11 @@ Friend Module ShadowMapMath
         Dim L = Vector3.Normalize(lightDir)
         ' Elevacion minima: por debajo de este corte la sombra se estira tanto que el mapa pierde toda la
         ' resolucion util. Es un corte de calidad, no de correccion.
-        ' LA CONSTANTE SE EXPONE (SenoDeElevacionMinima) porque el DIALOGO la necesita para deshabilitar
-        ' la casilla y para decir el numero en el texto. La tenia copiada como "11.54F  ' asin(0.2)", que es
-        ' 11,5370 redondeado PARA ARRIBA: quedaba una banda muerta en [11,5370 , 11,54) donde el motor si
-        ' dibuja y la casilla estaba gris, y el texto —formateado a un decimal— mostraba "11,5", un valor
-        ' con el que la propia casilla se deshabilita. Un literal duplicado y redondeado a mano.
+        ' ⛔ LA CONSTANTE SE EXPONE (SenoDeElevacionMinima) porque el DIALOGO la necesita para deshabilitar
+        ' la casilla y para decir el numero. NO transcribirla en grados: copiada como "11.54F ' asin(0.2)"
+        ' —11,5370 redondeado PARA ARRIBA— deja una banda muerta en [11,5370 , 11,54) donde el motor SI
+        ' dibuja y la casilla esta gris, y el texto a un decimal muestra "11,5", con el que la casilla se
+        ' deshabilita sola. Por eso los grados se CALCULAN (ver ElevacionMinimaGrados).
         If L.Z < SenoDeElevacionMinima Then Exit Sub
 
         Dim mn = sceneMin, mx = sceneMax
@@ -391,44 +381,22 @@ Friend Module ShadowMapMath
     ''' deja pasar <c>MapSize = 256</c>, y un <c>Math.Clamp(x, 512, 256)</c> tira ArgumentException en el
     ''' camino de dibujo, cada frame; (2) el producto tiene que caber en un Integer, y una shape
     ''' degenerada da un radio de personaje de 1e-4 contra uno proyectado de cientos de unidades.</para>
-    ''' <para>SIN HISTERESIS, Y ES UNA DECISION. Tuvo una: conservaba el tamano vigente mientras
-    ''' estuviera adentro de un factor 2 del pedido, para que un ratio parado cerca del punto medio entre
-    ''' dos potencias de dos no hiciera que <c>Ensure</c> destruyera y recreara la textura y el FBO en cada
-    ''' frame de animacion. El precio era inaceptable: el resultado pasaba a depender de la HISTORIA. La
-    ''' misma escena con la misma config se dibujaba con dos nitideces de sombra de suelo distintas segun de
-    ''' que preset se viniera —cambiar de Studio a Portrait conservaba 2048 para siempre, porque nada libera
-    ''' el target al cambiar de luces— y eso invalida cualquier A/B de pixeles sobre el receptor. Un frame
-    ''' tiene que ser funcion de (escena, config) y nada mas. Ademas duplicaba de hecho la relacion de
-    ''' texeles que el Const de abajo documenta.
-    ''' <para>RIESGO RESIDUAL, ABIERTO Y CUANTIFICADO. Sin banda muerta, el recrear-por-frame vuelve a
-    ''' ser posible: con <c>MapSize = 2048</c> las salidas son {512, 1024, 2048} y las fronteras caen en
-    ''' ratio 1,7688 y 3,5364, asi que un ratio parado ahi cruza con una variacion relativa del 0,03 %. Cada
-    ''' cruce es <c>Release()</c> + <c>TexImage2D</c> + <c>CheckFramebufferStatus</c>, o sea dos puntos de
-    ''' sincronizacion con el driver en el camino de dibujo. Se ve como un tiron. Los gestos que lo
-    ''' disparan: una animacion en loop cuyo ratio ronde una frontera, arrastrar el slider de elevacion de
-    ''' la key parado sobre una, y —EL QUE FALTABA EN ESTE ANALISIS— <b>ORBITAR</b>.
-    ''' <para>ORBITAR ES HOY EL GESTO QUE MAS MUEVE EL RATIO, y este doc lo omitia porque se escribio
-    ''' cuando las luces eran fijas al mundo. Con <c>Setting_LightsFollowCamera</c> —que ES EL DEFAULT— la
-    ''' direccion de la key la rota la camara, asi que <c>ExpandForGroundShadow</c> proyecta con un
-    ''' <c>L.Z</c> que cambia en CADA FRAME del arrastre. Barriendo L.Z de 0,87 a 0,21 sobre un cuerpo de
-    ''' 180 u la huella pasa de ~104 a ~850 u y el ratio recorre ~1 a ~4,5: cruza LAS DOS fronteras
-    ''' (1,7688 y 3,5364) en un solo gesto, o sea varios Release + TexImage2D por arrastre. Y al pasar
-    ''' L.Z por debajo de 0,2 el receptor se apaga solo y suelta el FBO, con lo que la sombra de suelo
-    ''' aparece y desaparece mientras se orbita. La mitigacion que este doc invocaba —"el ratio es mucho
-    ''' mas estable que los radios porque salen del mismo AABB"— NO aplica a este caso: aca el numerador
-    ''' lo mueve la camara y el denominador no.</para>
-    ''' <para>TODO EL PARRAFO ANTERIOR DESCRIBE UN PROBLEMA QUE YA NO EXISTE, y se conserva porque
-    ''' explica POR QUE la solucion es la que es. La mitigacion que este doc anotaba como pendiente —
-    ''' "reservar siempre la textura del maximo y dibujar adentro con un viewport del tamano logico: misma
-    ''' rasterizacion, misma imagen, sin recrear nada, al precio de VRAM constante y de escalar las UV" —
-    ''' <b>ESTA IMPLEMENTADA</b>. Vive en <see cref="UvScaleDeCapa"/>, doce lineas mas abajo, y en el bloque
-    ''' del mapa ancho de <c>PreviewModel.RenderShadowPass</c>.</para>
-    ''' <para>Esta funcion sigue devolviendo lo mismo que siempre y con la misma firma: lo que cambio es que
-    ''' su resultado ya no dimensiona la TEXTURA sino el VIEWPORT con el que se dibuja adentro de una textura
-    ''' de tamano fijo. O sea que la resolucion —lo unico que este numero decide— es identica a la de antes,
-    ''' y las recreaciones por cruzar una frontera de potencia de dos son cero. Sigue SIN HISTERESIS, que era
-    ''' la unica alternativa considerada y la que costaba determinismo.</para>
-    ''' </para></summary>
+    ''' <para>ESTE NUMERO DIMENSIONA EL VIEWPORT, NO LA TEXTURA. La textura se reserva siempre al maximo y
+    ''' la capa se dibuja adentro con un viewport de este tamano (ver <see cref="UvScaleDeCapa"/> y el bloque
+    ''' del mapa ancho de <c>PreviewModel.RenderShadowPass</c>): misma rasterizacion, mismo texel, y cero
+    ''' recreaciones de textura al cruzar una frontera de potencia de dos.</para>
+    ''' <para>⛔ SIN HISTERESIS, Y ES UNA DECISION. Conservar el tamano vigente mientras este dentro de un
+    ''' factor 2 del pedido hace que el resultado dependa de la HISTORIA: la misma escena con la misma config
+    ''' se dibuja con dos nitideces distintas segun de que preset se venga (nada libera el target al cambiar
+    ''' de luces), y eso invalida cualquier A/B de pixeles sobre el receptor. Un frame tiene que ser funcion
+    ''' de (escena, config) y nada mas.</para>
+    ''' <para>POR QUE HIZO FALTA RESOLVERLO ASI, cuantificado: las fronteras de salida con
+    ''' <c>MapSize = 2048</c> caen en ratio 1,7688 y 3,5364. Con <c>Setting_LightsFollowCamera</c> —que ES EL
+    ''' DEFAULT— ORBITAR rota la key, asi que <c>L.Z</c> cambia en CADA FRAME del arrastre: barriendo L.Z de
+    ''' 0,87 a 0,21 sobre un cuerpo de 180 u la huella va de ~104 a ~850 u y el ratio recorre ~1 a ~4,5,
+    ''' cruzando LAS DOS fronteras en un solo gesto. Con tamano de textura adaptativo eso era un
+    ''' <c>Release()</c> + <c>TexImage3D</c> + <c>CheckFramebufferStatus</c> por cruce, o sea dos
+    ''' sincronizaciones con el driver por frame en el camino de dibujo.</para></summary>
     Friend Function GroundMapSize(charRadius As Single, groundRadius As Single, mapSize As Integer) As Integer
         If mapSize <= 0 Then Return 0
         Dim minimo As Integer = Math.Min(512, mapSize)
@@ -475,10 +443,10 @@ Friend Module ShadowMapMath
                                        ByRef center As Vector3, ByRef half As Vector2)
         center = New Vector3((fpMin.X + fpMax.X) * 0.5F, (fpMin.Y + fpMax.Y) * 0.5F, groundZ)
         half = New Vector2((fpMax.X - fpMin.X) * 0.5F, (fpMax.Y - fpMin.Y) * 0.5F) * GroundQuadMargin
-        ' PISO POSITIVO EN LOS DOS EJES. Una escena plana en un eje (una sola shape degenerada, o un
-        ' plano) da semi-extension 0: el quad no dibujaba nada, pero recien DESPUES de que el pase de
-        ' profundidad ancho ya habia corrido y de dejar el programa del suelo bindeado. Y el gate dividia
-        ' por esa semi-extension, con lo cual su comparacion daba NaN y NaN > 0.8 es False: verde.
+        ' PISO POSITIVO EN LOS DOS EJES. Una escena plana en un eje (una sola shape degenerada, o un plano)
+        ' da semi-extension 0, y entonces el quad no dibuja nada — pero recien DESPUES de que el pase de
+        ' profundidad ancho ya corrio y de dejar el programa del suelo bindeado. ⛔ Y el gate NO lo ve: divide
+        ' por esa semi-extension, la comparacion da NaN, y NaN > 0.8 es False ⇒ verde.
         half.X = Math.Max(half.X, 0.0001F)
         half.Y = Math.Max(half.Y, 0.0001F)
     End Sub
@@ -569,24 +537,11 @@ Friend Class ShadowMapTarget
     ''' Un ATLAS 2x2 en una sola textura 2D estaba descartado por correctitud: el kernel de PCF cruza
     ''' el borde del tile y lee la profundidad del vecino.</para></summary>
     ''' <param name="media">16 bits de profundidad en vez de 24 (que el driver guarda en 32) ⇒ **la MITAD de
-    ''' VRAM**. Hoy lo usan LOS DOS arrays; el parametro existe para poder volver atras uno solo.
-    '''
-    ''' <para>POR QUE ALCANZAN 16 BITS, medido y no supuesto: la cuantizacion no la fija la precision del
-    ''' formato sino el RANGO. Este ortho abarca ~161 u, asi que 16 bits dan 161/65536 = <b>0,0025 u</b> de
-    ''' escalon contra un TEXEL de <b>0,0748 u</b> a 2048 — 30 veces mas fino que la huella del texel, y
-    ''' todavia 15 veces mas fino a 4096. Lo que arruina un mapa de 16 bits en un juego es la NO LINEALIDAD
-    ''' del depth en proyeccion PERSPECTIVA; un ortho no la tiene.</para>
-    '''
-    ''' <para>Y LO QUE COMPRA NO ES "MENOS MEMORIA": ES PODER GASTARLA EN RESOLUCION. Lo que se ve en el
-    ''' borde de la sombra es el TEXEL, no los bits de profundidad — asi que a igual presupuesto conviene
-    ''' 16 bits a 4096 (texel 0,0374 u, 32 MB por luz) antes que 24 bits a 2048 (texel 0,0748 u, 16 MB), y
-    ''' 16 a 4096 se ve igual que 24 a 4096 por la MITAD.</para>
-    '''
-    ''' <para>Medido: en el mapa del SUELO no movio un solo pixel (`ground-penumbra` da el mismo numero con
-    ''' 24 y con 16). En el del PERSONAJE mueve <b>244 px de 648.000 (0,038 %) con delta exactamente 1</b>
-    ''' — el bit menos significativo del encode, en la banda de PCF. `ab-default` lo acepta como divergencia
-    ''' DECLARADA y a cambio afirma algo mas fuerte que "0 px": que el delta maximo sea &lt;= 1 y el conteo
-    ''' quede acotado. Un umbral que solo mirara el conteo dejaria pasar 244 px con delta 200.</para></param>
+    ''' VRAM**. La justificacion medida vive en <see cref="PreviewShadowSettings.Depth16"/>, que es de donde
+    ''' sale el valor.
+    ''' <para>Hoy lo pasan LOS DOS arrays con el mismo valor; el parametro existe para poder volver atras uno
+    ''' solo. ⚠️ Separarlos hace que el mapa del personaje y el del suelo cuanticen distinto, y el borde donde
+    ''' se tocan es justo la banda de PCF.</para></param>
     Friend Function Ensure(size As Integer, layers As Integer, Optional media As Boolean = False) As Boolean
         If size <= 0 OrElse layers <= 0 Then Return False
         If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers Then Return True
@@ -595,10 +550,9 @@ Friend Class ShadowMapTarget
         ' CheckFramebufferStatus + DeleteTexture + una linea de log, decenas de veces por segundo mientras
         ' el usuario arrastra la camara. Se ve como un cuelgue, y el log dice "FBO incompleto", que no
         ' apunta a la causa real (no entra en VRAM).
-        ' El camino existia antes y era teorico: una capa a 2048 son 16 MB. Lo abrio ESTE cambio, porque la
-        ' reserva paso a ser lado^2 x 4 x CAPAS x DOS ARRAYS — con MapSize 8192 (que Sanitized permite, y al
-        ' que se llega escribiendo 6000 a mano en el config: RoundToPowerOfTwo(6000) = 8192) y las cuatro
-        ' luces casteando son 2 GB.
+        ' Y NO ES TEORICO: la reserva es lado^2 x 4 x CAPAS x DOS ARRAYS, asi que con MapSize 8192 —que
+        ' Sanitized permite, y al que se llega escribiendo 6000 a mano en el config, porque
+        ' RoundToPowerOfTwo(6000) = 8192— y las cuatro luces casteando son 2 GB.
         ' El centinela se limpia solo en cuanto cambia el pedido, asi que bajar la calidad o destildar una
         ' luz vuelve a intentar en el frame siguiente.
         ' PERO SOBREVIVE A UN CICLO DE APAGAR/PRENDER con los MISMOS (lado, capas): `Release()` no lo
@@ -747,12 +701,12 @@ Friend Class GroundShadowQuad
     ''' <param name="half">Semi-extensiones en X e Y, en unidades de mundo.</param>
     ''' <summary>Dibuja el receptor. <paramref name="half"/> son las semi-extensiones EN X e Y por
     ''' separado, no un radio.
-    ''' <para>ANTES ERA UN ESCALAR, Y RECORTABA LA CABEZA. Se le pasaba <c>LightFit.Radius</c>, que
-    ''' es la media diagonal de la esfera envolvente 3D — o sea que la ALTURA de la escena entraba en el
-    ''' tamano de un quad que vive en el plano XY. Con el preset Studio (key a 25,88 grados) un cuerpo de
-    ''' 180 u proyecta una sombra de ~430 u: la punta caia a 0,90 del radio, el desvanecido arrancaba en
-    ''' 0,72 y la sombra de la CABEZA se dibujaba al ~28 %, apagandose antes de terminar. Justo el
-    ''' sintoma que ExpandForGroundShadow dice haber arreglado, reintroducido dos capas mas abajo.</para>
+    ''' <para>⛔ NO PASAR UN ESCALAR, Y MENOS <c>LightFit.Radius</c>: es la media diagonal de la esfera
+    ''' envolvente 3D, o sea que mete la ALTURA de la escena en el tamano de un quad que vive en el plano XY,
+    ''' y RECORTA LA CABEZA. Con el preset Studio (key a 25,88 grados) un cuerpo de 180 u proyecta una sombra
+    ''' de ~430 u: la punta cae a 0,90 del radio, el desvanecido arranca en 0,72 y la sombra de la CABEZA se
+    ''' dibuja al ~28 %, apagandose antes de terminar — el mismo sintoma que ExpandForGroundShadow existe
+    ''' para evitar, reintroducido dos capas mas abajo.</para>
     ''' <para>La huella es MUY anisotropa (~430 x 100 en ese mismo caso): un solo numero no puede
     ''' describirla sin sobrar en un eje y faltar en el otro.</para></summary>
     Friend Sub Render(shader As Shader_Base_Class, viewProj As Matrix4, center As Vector3, half As Vector2)

@@ -29,7 +29,7 @@ Public Class TriMorphEntry
     ''' :405/:425/:447): <c>if (m_maxIndex &lt; vertexCount)</c> aplica el morph ENTERO, y si no lo
     ''' DESCARTA ENTERO con un <c>_ERROR</c> — no aplica nada parcial.
     '''
-    ''' â›” NO se puede derivar de <see cref="Offsets"/>: el lector de skee64 hace
+    ''' ⛔ NO se puede derivar de <see cref="Offsets"/>: el lector de skee64 hace
     ''' <c>m_vertexDeltas.push_back</c> de TODA entrada leida y actualiza <c>m_maxIndex</c> antes de
     ''' mirar magnitudes (:938-939), mientras que <see cref="TriFileParser"/> descarta los deltas
     ''' EXACTAMENTE cero porque sumar 0 es inerte. Inerte para APLICAR, no para el gate: si las
@@ -37,7 +37,7 @@ Public Class TriMorphEntry
     ''' debajo del de skee64 y el gate abriria donde el motor cierra. Por eso se captura al parsear.
     '''
     ''' El getter cae al maximo de <see cref="Offsets"/> cuando la entrada NO vino de un archivo
-    ''' (la arma en memoria el ESCRITOR — WM TriFiles.vb:458). No es un modo alternativo: es la
+    ''' (la arma en memoria el ESCRITOR — WM TriFiles.vb). No es un modo alternativo: es la
     ''' misma pregunta respondida con el unico dato disponible en ese caso.
     ''' </summary>
     Public Property MaxVertexIndex As Integer
@@ -518,11 +518,10 @@ Public Module TriFileWriter
         If tri Is Nothing OrElse String.IsNullOrWhiteSpace(fileName) Then Return False
 
         Try
-            ' Una SOLA implementación del formato, en WriteTriToBytes: tener el header y las dos
-            ' WriteSection duplicados acá hacía que los tests validaran una copia distinta de la que
-            ' corre en el build. Se serializa a memoria y recién ahí se toca el disco, así que un
-            ' throw de los límites del formato ya no deja un .tri truncado (FileMode.Create trunca
-            ' antes de escribir).
+            ' Una SOLA implementación del formato, en BuildTriBytes: duplicar acá el header y las dos
+            ' WriteSection deja a los tests validando una copia distinta de la que corre en el build.
+            ' Se serializa a memoria y recién ahí se toca el disco, así que un throw de los límites del
+            ' formato no deja un .tri truncado (FileMode.Create trunca antes de escribir).
             Dim payload = BuildTriBytes(tri)
             File.WriteAllBytes(fileName, payload)
         Catch ex As Exception
@@ -570,8 +569,8 @@ Public Module TriFileWriter
         ' garantizado por contrato.
         ' El orden coincide TAMBIEN con bytes altos, y no por casualidad: std::char_traits<char>::compare
         ' esta especificado como memcmp, o sea compara como unsigned char, y el round-trip Latin1 manda
-        ' 0x80..0xFF a U+0080..U+00FF, que StringComparer.Ordinal rankea en el mismo orden.
-        ' (Aca decia que MSVC comparaba con char SIGNED y que por eso quedaba un residuo; es falso.)
+        ' 0x80..0xFF a U+0080..U+00FF, que StringComparer.Ordinal rankea en el mismo orden. (MSVC NO
+        ' compara con char signed aca: no hay residuo por bytes altos.)
         Dim shapeNames = tri.ShapeMorphs.Keys.
             Where(Function(sn) tri.GetMorphsForShape(sn).Any(Function(m) m.MorphType = sectionType)).
             OrderBy(Function(sn) sn, StringComparer.Ordinal).

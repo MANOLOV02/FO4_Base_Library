@@ -21,26 +21,25 @@ Public Module PluginConstants
     Public Const SUBRECORD_HEADER_SIZE As Integer = 6
 
     ' Signatures for NPC rendering (original subset - for backward compatibility).
-    ' BPTD added 2026-04-19: RACE.GNAM references BPTD for bone→part-type mapping, consumed
+    ' BPTD: RACE.GNAM references BPTD for bone→part-type mapping, consumed
     ' by NPC_Manager to resolve MRSV regions. Without BPTD, PluginManager.GetRecord(BPTDFormID)
     ' returns Nothing and downstream FMRS/body-weight pipelines cannot reach the data.
-    ' KYWD added 2026-05-10 (robot AttachPoint mounting): OMOD.AttachPoint is a FormID to a KYWD
-    ' whose EditorID matches BSConnectPoint::Parents.Name in the actor's skeleton NIF (verified
-    ' with dump v2 — 513 OMOD chunks NPC_-target with AttachPoint, ALL resolved as "not loaded"
-    ' before this fix because KYWD records were never indexed). With KYWD in the filter the
-    ' OMOD-AttachPoint→socket-name lookup works, enabling robot chunk mounting.
-    ' ACHR added 2026-06-27: placed-actor references live nested inside CELL/WRLD sub-groups (never as a
-    ' top-level group), and are consumed by PluginManager.GetPlacedNPCFormIDs. Adding ACHR to the filter
-    ' lets the now-uniform record-level filter (PluginReader.ReadRecord) KEEP ACHR while skip-seeking the
+    ' KYWD (robot AttachPoint mounting): OMOD.AttachPoint is a FormID to a KYWD
+    ' whose EditorID matches BSConnectPoint::Parents.Name in the actor's skeleton NIF. Measured with
+    ' dump v2: 513 OMOD chunks NPC_-target with AttachPoint, and without KYWD indexed ALL of them
+    ' resolve as "not loaded", so the AttachPoint→socket-name lookup dies and robot chunks never mount.
+    ' ACHR: placed-actor references live nested inside CELL/WRLD sub-groups (never as a
+    ' top-level group), and are consumed by PluginManager.GetPlacedNPCFormIDs. ACHR in the filter
+    ' lets the uniform record-level filter (PluginReader.ReadRecord) KEEP ACHR while skip-seeking the
     ' unused cell children (REFR/NAVM/LAND/PGRE/PHZD). Inocuo at top level: ACHR is never a top-level group.
-    ' 2026-07-03: added the ARMO/ARMA authoring-editor FormID target signatures so the editors'
+    ' ARMO/ARMA authoring-editor FormID target signatures, so the editors'
     ' FormIdPicker lists populate and DisplayFor resolves names. Without these the pickers for
     ' EITM/PTRN/ETYP/YNAM/ZNAM/BAMT/INRD (ARMO) and ONAM/SNDD footstep (ARMA) + the DAMA Damage-Type
-    ' entries came up EMPTY and their FormIDs showed only hex (records were never indexed). All are
+    ' entries come up EMPTY and their FormIDs show only hex (the records are never indexed). All are
     ' small record types → negligible load cost:
     '   ENCH(EITM), TRNS(PTRN), EQUP(ETYP), SNDR(YNAM/ZNAM), MATT(BAMT), INNR(INRD),
     '   ARTO(ONAM), FSTS(SNDD footstep), DMGT(DAMA damage-type array entries).
-    ' NPC editor pickers (2nd batch): FACT (Factions), VTYP (Voice VTCK), CLAS (Class CNAM),
+    ' NPC editor pickers: FACT (Factions), VTYP (Voice VTCK), CLAS (Class CNAM),
     ' CSTY (Combat Style ZNAM) are small; the inventory item types (WEAP/ALCH/AMMO/MISC/BOOK/KEYM/
     ' NOTE/INGR) are the only non-negligible additions — needed for the NPC editor's Inventory tab
     ' picker. Trim these if load time regresses on very large load orders.
@@ -90,7 +89,7 @@ End Module
 ''' <para>La clave es el u32 que forman esos mismos 4 bytes, o sea exactamente lo que ya está en el
 ''' archivo: no hay que decodificar nada para buscarlo.</para>
 '''
-''' <para>⛔ Al no encontrarla se construye con <see cref="Encoding.ASCII"/>, igual que antes y sin
+''' <para>⛔ Al no encontrarla se construye con <see cref="Encoding.ASCII"/> y sin
 ''' excepción: ese decodificador mapea todo byte mayor que 127 a <c>?</c>, y esa es justamente la
 ''' forma que después se compara contra los conjuntos de firmas. Armarla de otra manera haría que un
 ''' archivo con una firma corrupta dejara de colapsar y pasara a coincidir con otra cosa.</para>

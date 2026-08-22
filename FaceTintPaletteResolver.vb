@@ -18,8 +18,8 @@ Public Module FaceTintPaletteResolver
 
     ''' <summary>Filtro de clase activo/off: una capa ACTIVA (op&gt;0) usa entradas Alpha&gt;0 ("encendida");
     ''' SOLO op==0 usa Alpha=0 ("apagado/default"). Si la clase queda vacia, devuelve el pool completo
-    ''' (no romper). Es el discriminante robusto del 2026-06-03 (dirt rojo custom op&gt;0 -&gt; Alpha&gt;0 -&gt;
-    ''' Replace, NO la off-entry SoftLight transparente).</summary>
+    ''' (no romper). Es el discriminante robusto: el dirt rojo custom (op&gt;0) cae en Alpha&gt;0 -&gt; Replace, y
+    ''' NO en la off-entry SoftLight transparente.</summary>
     Private Function FilterByOpacityClass(candidates As IEnumerable(Of ColorDeTinteEfectivo), npcOpacity As Single) As List(Of ColorDeTinteEfectivo)
         Dim pool As New List(Of ColorDeTinteEfectivo)
         If candidates Is Nothing Then Return pool
@@ -50,8 +50,8 @@ Public Module FaceTintPaletteResolver
     ''' <summary>DESEMPATE UNIFICADO (reusable). Elige UN TemplateColor de <paramref name="candidates"/>
     ''' dado opt + opacidad de la capa:
     '''   1. Filtra a la clase activo/off (op&gt;0 -&gt; Alpha&gt;0; op=0 -&gt; Alpha=0; vacio -&gt; todos).
-    '''   2. Si el TTED-default cae en esa clase -&gt; ese (el preset default de la opcion; regla usuario
-    '''      2026-06-06). Asi se respeta el blend intencional del default SIN tomar la off-entry para una
+    '''   2. Si el TTED-default cae en esa clase -&gt; ese (el preset default de la opcion; regla del
+    '''      usuario). Asi se respeta el blend intencional del default SIN tomar la off-entry para una
     '''      capa activa (el dirt rojo de Alana: TTED apunta a la off-entry SoftLight, pero al estar activa
     '''      queda fuera del filtro -&gt; gana la activa Replace).
     '''   3. Si no -&gt; Alpha mas cercano a op, luego TemplateIndex menor.
@@ -82,11 +82,11 @@ Public Module FaceTintPaletteResolver
 
     ''' <summary>BlendOp para un color CUSTOM sin match por color (Step 3). Desempate UNIFICADO
     ''' (<see cref="PickTemplateColor"/>) sobre TODOS los TemplateColors de la opcion: clase activo/off ->
-    ''' TTED-default-si-cae-en-la-clase -> Alpha mas cercano / TemplateIndex menor. Reemplaza la "moda"
-    ''' estadistica previa por el MISMO desempate del Step 2. Para una capa ACTIVA el filtro activo/off
+    ''' TTED-default-si-cae-en-la-clase -> Alpha mas cercano / TemplateIndex menor. Es el MISMO desempate del
+    ''' Step 2, NO una "moda" estadistica sobre los presets. Para una capa ACTIVA el filtro activo/off
     ''' descarta la off-entry (Alpha=0), asi que el dirt rojo custom de Alana (cuyo TTED apunta a la
-    ''' off-entry SoftLight) cae en la activa = Replace, no en SoftLight transparente (regresion 2026-06-03
-    ''' evitada). Safety net: SkinTone + 0 -> 3. Convenio: 0=Replace 1=Multiply 2=Overlay 3=SoftLight
+    ''' off-entry SoftLight) cae en la activa = Replace, no en SoftLight transparente.
+    ''' Safety net: SkinTone + 0 -> 3. Convenio: 0=Replace 1=Multiply 2=Overlay 3=SoftLight
     ''' 4=HardLight.</summary>
     Public Function ResolveFallbackBlendOp(opt As OpcionDeTinteEfectiva, npcOpacity As Single) As UInteger
         If opt Is Nothing Then Return 0UI
@@ -117,7 +117,7 @@ Public Module FaceTintPaletteResolver
         Dim targetG As Integer = layerColor.G
         Dim targetB As Integer = layerColor.B
         ' Recolectar TODOS los presets que comparten el color exacto, y romper el empate con el tie-break
-        ' COMPARTIDO (Alpha vs opacity) — el mismo que usa la moda-empate del fallback.
+        ' COMPARTIDO (Alpha vs opacity) — el mismo que usa el fallback del Step 3.
         Dim matches As New List(Of ColorDeTinteEfectivo)
         For Each tplCol In opt.TemplateColors
             If tplCol.ColorFormID = 0UI Then Continue For

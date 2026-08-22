@@ -18,10 +18,8 @@ Public Class DictionaryPicker_Control
 
     Sub New()
 
-        ' Esta llamada es exigida por el diseñador.
         InitializeComponent()
 
-        ' Agregue cualquier inicialización después de la llamada a InitializeComponent().
         Select Case Config_App.Current.Game
             Case Config_App.Game_Enum.Skyrim
                 RootStr = "(Skyrim SE data)"
@@ -82,13 +80,10 @@ Public Class DictionaryPicker_Control
         End Get
     End Property
 
-    ' Preseleccionar archivo si existe en la lista filtrada.
     Public Sub Preselect(initialKey As String)
-        ' No robamos el foco al abrir el diálogo (setFocus:=False)
         initialKey = initialKey.Correct_Path_Separator
         _pendingSelectKey = initialKey
         If Not String.IsNullOrEmpty(initialKey) Then
-            ' No robamos foco al abrir; se re-aplica en Shown
             SelectFileByKey(initialKey, setFocus:=False)
         End If
     End Sub
@@ -97,11 +92,9 @@ Public Class DictionaryPicker_Control
 
         Dim norm = fullKey
 
-        ' Buscar key coincidente dentro de las _allKeys (ya normalizadas y filtradas)
         If IsNothing(_allKeysSet) OrElse _allKeysSet.Contains(norm) = False Then Return False
         Dim match = norm
 
-        ' Ir al directorio y poblar
         Dim dirPath = GetDirectoryPath(match)
         Dim node = FindOrExpandNodeByPath(dirPath)
         If node Is Nothing Then Return False
@@ -116,7 +109,6 @@ Public Class DictionaryPicker_Control
             _suspendPopulate = False
         End Try
 
-        ' Seleccionar en la lista
         For Each it As ListViewItem In lvFiles.Items
             Dim k = TryCast(it.Tag, String)
             If k IsNot Nothing AndAlso k.Equals(match, StringComparison.OrdinalIgnoreCase) Then
@@ -183,7 +175,6 @@ Public Class DictionaryPicker_Control
         ' --- Precondiciones del TreeView ---
         If tvDirs Is Nothing Then Return Nothing
         If tvDirs.Nodes Is Nothing OrElse tvDirs.Nodes.Count = 0 Then
-            ' Si no hay nodos, no hay nada que encontrar/expandir
             Return Nothing
         End If
 
@@ -196,13 +187,11 @@ Public Class DictionaryPicker_Control
         Loop
         p = p.TrimStart("\"c).TrimEnd("\"c)
 
-        ' Si no hay ruta, devolvé la raíz existente (TopNode o el primer nodo)
         Dim node As TreeNode = tvDirs.Nodes(0)
         If String.IsNullOrEmpty(p) Then
             Return node
         End If
 
-        ' Segmentar por directorios e ir bajando
         Dim segments = p.Split(separator, StringSplitOptions.RemoveEmptyEntries)
 
         For Each seg In segments
@@ -217,7 +206,6 @@ Public Class DictionaryPicker_Control
             Next
 
             If found Is Nothing Then
-                ' Segmento no encontrado en el árbol actual
                 Return Nothing
             End If
 
@@ -310,14 +298,12 @@ Public Class DictionaryPicker_Control
         End If
         btnOk.Enabled = (lvFiles.SelectedItems.Count = 1)
         If lvFiles.SelectedItems.Count = 1 Then
-            ' Mostrar key completa del archivo seleccionado
             Dim sel = TryCast(lvFiles.SelectedItems(0).Tag, String)
             If sel IsNot Nothing Then
                 txtPath.Text = sel
             End If
             RaiseEvent SelectionChanged(sel)
         Else
-            ' Sin selección: mostrar carpeta actual
             Dim currentPath As String = GetFullPathOfNode(tvDirs.SelectedNode)
             txtPath.Text = If(String.IsNullOrEmpty(currentPath), RootStr, currentPath)
             RaiseEvent SelectionChanged("")

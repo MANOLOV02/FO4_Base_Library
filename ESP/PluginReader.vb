@@ -12,17 +12,17 @@ Public Class PluginReader
     Public Property IsESM As Boolean
     Public Property IsESL As Boolean
     Public Property IsLocalized As Boolean
-    ''' <summary>HEDR Next Object ID — the FormID object counter the engine/CK dispenses from
-    ''' when adding new self records to this plugin. Captured from TES4.HEDR, 3rd field.
-    ''' Preserve-on-resave semantics: <see cref="SaveNpcEspWriter"/>
-    ''' must seed its own dispense pointer with <c>max(disk, computed)</c> to avoid re-issuing
-    ''' an ID that CK already consumed between saves.</summary>
     ''' <summary>Campo Version del HEDR, crudo (float Version + u32
     ''' NumRecords + u32 NextObjectID). Decide, junto con el juego y la cantidad de masters, si el archivo
     ''' puede direccionar object ids por debajo de 0x800. 0 si el HEDR no se pudo leer, que es lo mismo que
     ''' "version vieja" y por lo tanto NO permite el rango — el default seguro.</summary>
     Public Property HeaderVersion As Single = 0.0F
 
+    ''' <summary>HEDR Next Object ID — the FormID object counter the engine/CK dispenses from
+    ''' when adding new self records to this plugin. Captured from TES4.HEDR, 3rd field.
+    ''' Preserve-on-resave semantics: <see cref="SaveNpcEspWriter"/>
+    ''' must seed its own dispense pointer with <c>max(disk, computed)</c> to avoid re-issuing
+    ''' an ID that CK already consumed between saves.</summary>
     Public Property NextObjectId As UInteger
     ''' <summary>
     ''' Per-file translatable encoding captured from TES4.SNAM &lt;cp:XXXX&gt; at load time.
@@ -67,8 +67,8 @@ Public Class PluginReader
         ' que un buffer grande convierte cada salto en una lectura desperdiciada: con 1 MB se leen
         ' 318 MB de un master de 331, contra 203 MB con 4 KB — 114 MB de mas por archivo. Y un
         ' buffer de 1 MB va al monton de objetos grandes, uno por plugin, en paralelo.
-        ' Medido sobre el orden de carga real (mediana de 3 rondas, fase de carga de plugins):
-        '     4 KB (defecto) ... el del "antes"      64 KB ... 1532 ms      1 MB ... 1590 ms
+        ' Medido sobre el orden de carga real (mediana de 3 corridas, fase de carga de plugins):
+        '     64 KB ... 1532 ms      1 MB ... 1590 ms
         ' 64 KB gana, no toca el monton de objetos grandes, y lee ~70 MB menos por master.
         Using fs As New FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
                                    BufferSize:=64 * 1024, options:=FileOptions.SequentialScan)
@@ -158,9 +158,9 @@ Public Class PluginReader
             If subrecord.Signature <> "HEDR" Then Continue For
             If subrecord.Data IsNot Nothing AndAlso subrecord.Data.Length >= 12 Then
                 ' La VERSION no es decorativa: el motor la compara contra 1.709 (SSE) / 1.0 (FO4)
-                ' para decidir si este archivo puede usar object ids POR DEBAJO de 0x800. Antes se
-                ' descartaba y el lector no podia aplicar esa rama. Se guarda cruda; la ley vive en
-                ' PluginManager.AllowsHardcodedRange.
+                ' para decidir si este archivo puede usar object ids POR DEBAJO de 0x800. Se guarda
+                ' cruda; la ley vive en PluginManager.AllowsHardcodedRange. Descartarla deja al lector
+                ' sin poder aplicar esa rama.
                 HeaderVersion = BitConverter.ToSingle(subrecord.Data, 0)
                 NextObjectId = BitConverter.ToUInt32(subrecord.Data, 8)
             End If

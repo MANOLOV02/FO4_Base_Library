@@ -11,13 +11,12 @@ Imports FO4_Base_Library.Canon.CanonInterpretacion
 ' record / subrecord layouts, struct field offsets and types, FormID positions,
 ' MAST cleanup semantics, and ESP/ESM/ESL flag conventions.
 '
-' 2026-08-21: esta lista nombraba tambien ActorRecords.vb, AudioRecords.vb,
-' WorldRecords.vb, ItemRecords.vb "etc.". Esos ocho archivos SE BORRARON: eran
-' 5.337 lineas con 122 tipos y 104 funciones, y ninguno tenia un solo llamador
-' en el arbol. De los 97 Parse<SIG> que declaraban entre todos, el unico vivo
-' es ParseNPC, que esta en ESTE archivo. El resto del formato lo lee y lo
-' escribe ahora el motor de layout de ESP/Canon/, generado de las
-' declaraciones de xEdit.
+' El UNICO Parse<SIG> escrito a mano que queda vivo es ParseNPC, en ESTE archivo.
+' ⛔ NO agregar mas: el resto del formato lo lee y lo escribe el motor de layout
+' de ESP/Canon/, generado de las declaraciones de xEdit. Una familia de parsers
+' a mano en paralelo al motor ya existio (ActorRecords.vb, AudioRecords.vb,
+' WorldRecords.vb, ItemRecords.vb y cuatro mas) y termino en 5.337 lineas con
+' 97 Parse<SIG> sin un solo llamador en el arbol.
 ' ============================================================================
 
 Public Enum NPC_TemplateCategory As Integer
@@ -66,9 +65,9 @@ End Class
 '''
 ''' <para>El objeto NO copia el record: LO ES. <see cref="Record"/> es el arbol de campos que se
 ''' leyo del plugin, y cada campo se lee y se escribe por su propiedad generada
-''' (<c>npc.Record.Race</c>, <c>npc.Record.HeadParts</c>, ...). Antes esta clase repetia ~141
-''' campos del record y habia dos mapas escritos a mano para ir y volver; los campos que ningun
-''' mapa copiaba -172 nodos entre los dos esquemas- se perdian al guardar sin que nada avisara.</para>
+''' (<c>npc.Record.Race</c>, <c>npc.Record.HeadParts</c>, ...). ⛔ NO volver a repetir aca los ~141
+''' campos del record con dos mapas escritos a mano para ir y volver: los campos que ningun mapa
+''' copia -172 nodos entre los dos esquemas- se pierden al guardar sin que nada avise.</para>
 '''
 ''' <para>Lo unico que queda aca es el estado que el archivo no tiene: de que juego y de que plugin
 ''' salio, y los datos del sidecar de RaceMenu (.jslot/.bssliders) que viajan pegados al NPC para
@@ -450,12 +449,11 @@ Public Module RecordParsers
     End Function
 
     ''' <summary>Gate de juego GLOBAL de estos parsers (el juego de la sesión, <c>Config_App.Current.Game</c>).
-    ''' Unifica los 11 chequeos que estaban inline con tres redacciones distintas.
+    ''' Es el ÚNICO lugar donde se hace ese chequeo: ⛔ no repetirlo inline.
     ''' <para>El <c>IsNot Nothing</c> es CINTURÓN, no el arreglo de un crash: <c>Config_App.Current</c> se
-    ''' inicializa en su propia declaración (<c>Config_Class.vb:422</c>) y su único otro asignador escribe
-    ''' dentro de un <c>If cfg IsNot Nothing</c>, así que hoy no puede ser Nothing — 2 de los 11 sitios lo
-    ''' chequeaban y los otros 9 no, sin que ninguno pudiera fallar. Unificar es quitar repetición, no
-    ''' tapar un NullReferenceException.</para>
+    ''' inicializa en su propia declaración (<c>Config_Class.Current</c>) y su único otro asignador escribe
+    ''' dentro de un <c>If cfg IsNot Nothing</c>, así que hoy no puede ser Nothing. Está para quitar
+    ''' repetición, no para tapar un NullReferenceException.</para>
     ''' <para>Justamente porque el caso nulo NO ocurre, no se lo usa para elegir rama: los gates de
     ''' <c>MO2S/MO3S/MO4S/MO5S</c> preguntan <see cref="IsFallout4"/> (positivo) y no <c>Not IsSkyrim()</c>.
     ''' Con la forma negativa, un hipotético <c>Current</c> nulo caería en la rama FO4 y ahí esos
@@ -478,10 +476,10 @@ Public Module RecordParsers
     ''' una segunda implementación: la política de "sin PluginManager el FormID vuelve crudo" vive en UN
     ''' solo lugar (ParserHelpers), igual que la LEY de conversión vive en un solo lugar
     ''' (PluginManager.ResolveReferencedFormID → ResolveFormID → MakeGlobalFormID).
-    ''' <para>Antes esto era una COPIA con el cuerpo repetido. Los otros 14 archivos de Records\ no ven
-    ''' la versión Private de este Module, así que la copia había nacido por accesibilidad; el costo era
-    ''' que la política de nulos quedaba escrita dos veces y sólo divergía el día que alguien tocara una.
-    ''' Se conserva el NOMBRE para no mover 127 call sites (churn sin beneficio), pero ya no hay dos leyes.</para></summary>
+    ''' <para>⛔ NO reponerle un cuerpo propio: los demás archivos de <c>Records\</c> no ven la versión
+    ''' <c>Private</c> de este Module, y esa falta de accesibilidad es justo lo que tienta a copiarlo —con
+    ''' el resultado de que la política de nulos queda escrita dos veces y sólo diverge el día que alguien
+    ''' toque una. El NOMBRE se conserva para no mover 127 call sites (churn sin beneficio).</para></summary>
     Private Function ResolveFormIDReference(rec As PluginRecord, rawFormID As UInteger, pluginManager As PluginManager) As UInteger
         Return ParserHelpers.ResolveFIDRaw(rec, rawFormID, pluginManager)
     End Function

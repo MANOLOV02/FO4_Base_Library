@@ -128,8 +128,8 @@ Public Module BSConnectPointReader
     ''' transforms para mounting (e.g. NPC_Manager.PrepareSkeleton mount-map builder).
     '''
     ''' Implementación: delega a OpenTK Matrix4.CreateFromQuaternion para usar exactamente
-    ''' la misma convención row-vector-matrix que el resto del render pipeline
-    ''' (SkeletonClothOverlayHelper.vb:209-219, HclCollisionPoseHelper.vb:114-122). Toma el
+    ''' la misma convención row-vector-matrix que el resto del render pipeline (ver
+    ''' SkeletonClothOverlayHelper y HclCollisionPoseHelper, que arman su rotación igual). Toma el
     ''' 3×3 superior-izquierdo. Esto es paridad-runtime con el resto del codebase y evita
     ''' tener que decidir si la fórmula manual quat→matrix es column- o row-vector
     ''' (ambigüedad que en el caso BSConnectPoint manual produjo rotaciones espejadas).

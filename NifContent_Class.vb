@@ -66,7 +66,7 @@ Public Class Nifcontent_Class_Manolo
         Next
     End Sub
     ''' <summary><paramref name="headPartsOnly"/>=True hace que OptimizeFor convierta los shapes a
-    ''' BSDynamicTriShape en vez de BSTriShape (ver NifFile.cs:1990) — es lo que el CK hace con los head
+    ''' BSDynamicTriShape en vez de BSTriShape (ver <c>NifFile.OptimizeFor</c>) — es lo que el CK hace con los head
     ''' parts de FaceGeom. Solo aplica en la conversión LE→SSE (OptimizeFor no-op si ya es SSE).</summary>
     Public Function Optimize(Game As Config_App.Game_Enum, Optional headPartsOnly As Boolean = False) As NifFileOptimizeResult
         Dim opt As NifFileOptimizeOptions
@@ -142,11 +142,11 @@ Public Class Nifcontent_Class_Manolo
     End Sub
     ''' <summary>
     ''' Prende el bit 0 (hidden) de NiAVObject.flags, que es lo que hace BodySlide con
-    ''' <c>shape-&gt;flags |= 1</c> (BodySlideApp.cpp:3619) para una shape que quedaria totalmente
-    ''' zapeada pero debe conservarse en el archivo.
+    ''' <c>shape-&gt;flags |= 1</c> (BodySlideApp.cpp / <c>BuildBodies</c>) para una shape que quedaria
+    ''' totalmente zapeada pero debe conservarse en el archivo.
     '''
     ''' NiAVObject serializa flags como uint32 con StreamVersion &gt; 26 y como uint16 en adelante
-    ''' hacia atras (NiMain.NiAVObject.g.cs:139-149). FO4 (130) y SSE (100) caen siempre en el
+    ''' hacia atras (NiflySharp, <c>NiAVObject.Sync</c>). FO4 (130) y SSE (100) caen siempre en el
     ''' uint32; se escriben los dos para que el campo quede coherente sea cual sea el que se
     ''' serialice, ya que el no usado no se emite.
     ''' </summary>
@@ -157,11 +157,6 @@ Public Class Nifcontent_Class_Manolo
         avo.Flags_us = CUShort(avo.Flags_us Or 1US)
     End Sub
 
-    ''' <summary>Hermano simétrico de <see cref="SetShapeHidden"/>: APAGA el bit 0 (hidden).
-    ''' Único par escritor del bit, para que no haya un <c>Or 1</c> suelto en ningún lado.
-    ''' <para><c>And Not</c>, NUNCA asignar un literal: el valor normal lleva otros bits REALES —
-    ''' <c>0x8000E</c> (NoAnimSyncS), <c>SaveExtGeom</c>, <c>MeshLOD_FO4</c>, <c>NoDecals</c>…
-    ''' Pisar el campo entero borraría flags que nadie pidió tocar.</para></summary>
     ''' <summary>Quita el shader de la shape y borra su CLAUSURA huérfana. Es la operación "Make helper"
     ''' del editor de WM, pero vive ACÁ porque es cirugía sobre el grafo de bloques del NIF, no UI —
     ''' y porque así un probe puede ejercitar el CÓDIGO REAL en vez de una copia.
@@ -235,6 +230,11 @@ Public Class Nifcontent_Class_Manolo
         Return borrados
     End Function
 
+    ''' <summary>Hermano simétrico de <see cref="SetShapeHidden"/>: APAGA el bit 0 (hidden).
+    ''' Único par escritor del bit, para que no haya un <c>Or 1</c> suelto en ningún lado.
+    ''' <para><c>And Not</c>, NUNCA asignar un literal: el valor normal lleva otros bits REALES —
+    ''' <c>0x8000E</c> (NoAnimSyncS), <c>SaveExtGeom</c>, <c>MeshLOD_FO4</c>, <c>NoDecals</c>…
+    ''' Pisar el campo entero borraría flags que nadie pidió tocar.</para></summary>
     Public Sub ClearShapeHidden(shape As INiShape)
         Dim avo = TryCast(shape, NiAVObject)
         If avo Is Nothing Then Exit Sub
@@ -325,7 +325,6 @@ Public Class Nifcontent_Class_Manolo
                 Throw New Exception
         End Select
 
-        ' Lógica común (antes duplicada en cada Case)
         Dim fullpath = FO4UnifiedMaterial_Class.CorrectMaterialPath(shadName)
         fullpath = fullpath.StripPrefix(prefix)
 
@@ -466,8 +465,8 @@ Public Class Nifcontent_Class_Manolo
     End Function
 
     ''' <summary>
-    ''' Shapes del NIF, o vacio si todavia no se cargo ninguno. NiflySharp.GetShapes hace
-    ''' `Blocks.OfType(...)` sin guard (NifFile.cs:1055) y tira ArgumentNullException con un
+    ''' Shapes del NIF, o vacio si todavia no se cargo ninguno. <c>NifFile.GetShapes</c> hace
+    ''' `Blocks.OfType(...)` sin guard y tira ArgumentNullException con un
     ''' Nifcontent recien construido — justo el estado de un sliderset antes de Load_and_Check_Shapedata.
     ''' Los callers lo usan como "dame las shapes que haya" (p. ej. el guard
     ''' `Not IsNothing(NIFContent.NifShapes)` de EnsureShapeDataLookupCacheCore, que al evaluar la
@@ -750,9 +749,8 @@ Public Class Nifcontent_Class_Manolo
     End Function
 
     Public Function CloneShape_Original(srcShape As INiShape, destShapeName As String, srcNif As Nifcontent_Class_Manolo) As INiShape
-        ' BSDynamicTriShape clone path validated 2026-06-15 via TestNifFile_Skinned_Dynamic_SE
-        ' roundtrip (dynamic _vertices stay in sync with vertData via CalcDynamicData; skin
-        ' consistent after the SSE NiSkinData rebuild fix).  Earlier Debugger.Break guard removed.
+        ' El camino de clone de BSDynamicTriShape lo cubre el roundtrip TestNifFile_Skinned_Dynamic_SE:
+        ' los _vertices dinámicos quedan en sync con vertData vía CalcDynamicData.
         Dim destShape = Me.CloneShape(srcShape, destShapeName, srcNif)
 
         ' Preservar el ExtraDataList de la shape (REGLA GENERAL, no solo ECED). NiflySharp.CloneShape
@@ -781,13 +779,13 @@ Public Class Nifcontent_Class_Manolo
             End If
         End If
 
-        ' Cross-file clone: NiflySharp.NifFile.CloneShape parents the cloned shape to destRoot
-        ' (NifFile.cs:758-762), losing intermediate NiNodes between srcShape and srcRoot. Para
+        ' Cross-file clone: NiflySharp.NifFile.CloneShape parents the cloned shape to destRoot,
+        ' losing intermediate NiNodes between srcShape and srcRoot. Para
         ' shapes UNSKINNED la posición global se compone como shape.T/R/S × parent_chain — si
         ' había NiNodes intermedios con transform no-identidad, después del clone esa contribución
         ' desaparece y el shape aparece desplazado.
         '
-        ' Fix (Opción C): bakear SOLO los NiNodes intermedios entre srcShape y srcRoot. NO se
+        ' Se bakean SOLO los NiNodes intermedios entre srcShape y srcRoot. NO se
         ' bakea el srcRoot porque su transform suele representar contexto del NIF (heel offset,
         ' floor offset, body-height) que es accidental al fichero source y no se debe arrastrar
         ' al destino. Si srcShape cuelga directo de srcRoot (NIF flat), no se hace nada — el
@@ -799,16 +797,17 @@ Public Class Nifcontent_Class_Manolo
         ' donde M_srcShape × M_intermediates = GetGlobalTransform(srcShape) × srcRoot^-1.
         '
         ' Skinned: NO se bakea. La posición de un skinned viene SOLO del bone palette y el
-        ' skin data (xformSkinToBone embebido en BSSkin_BoneData / NiSkinData). SkinningHelper.vb:151
-        ' y :968 usan Matrix4d.Identity — ignoran shape.T/R/S Y todo el parent chain. Paridad OS
-        ' Anim.cpp:717-728 (GetTransformShapeToGlobal para skinned = inv(xformGlobalToSkin), sin
-        ' recorrer parent chain). NiflySharp re-mapea los bone refs por nombre cross-file
-        ' (NifFile.cs:788-821), así que la palette llega coherente al destino. Si un skinned
+        ' skin data (xformSkinToBone embebido en BSSkin_BoneData / NiSkinData). SkinningHelper
+        ' (ExtractSkinnedGeometry y RecomputeGPUBoneMatrices) arranca su GlobalTransform en
+        ' Matrix4d.Identity — ignoran shape.T/R/S Y todo el parent chain. Paridad OS
+        ' Anim.cpp / GetTransformShapeToGlobal (para skinned = inv(xformGlobalToSkin), sin
+        ' recorrer parent chain). NiflySharp re-mapea los bone refs por nombre cross-file en
+        ' NifFile.CloneShape, así que la palette llega coherente al destino. Si un skinned
         ' post-merge aparece mal posicionado, el problema es xformGlobalToSkin del source vs el
         ' esqueleto destino, no parent chain.
         '
-        ' Same-file (srcNif == Me): NiflySharp parentea al mismo padre que srcShape (NifFile.cs:752),
-        ' la posición se preserva sin baking.
+        ' Same-file (srcNif == Me): NiflySharp parentea al mismo padre que srcShape, la posición se
+        ' preserva sin baking.
         If destShape IsNot Nothing AndAlso Not destShape.IsSkinned AndAlso Not Object.ReferenceEquals(srcNif, Me) Then
             Dim srcParent = TryCast(srcNif.GetParentNode(srcShape), NiNode)
             Dim srcRoot = srcNif.GetRootNode()
@@ -833,11 +832,10 @@ Public Class Nifcontent_Class_Manolo
                 Dim newLocal As New Transform_Class(newLocalMat)
                 destShape.Translation = newLocal.Translation
 
-                ' ⛔ Antes esto era `destShape.Rotation = newLocal.Rotation` + `.Scale = newLocal.Scale`,
-                ' y perdia la escala per-eje ENTERA y en silencio. El motivo: New(Matrix4d) NORMALIZA
-                ' las columnas —saca la escala de la 3x3 y la pone en ScaleVector— y deja Scale = 1.0F
-                ' EXACTO cuando el resultado no es uniforme. Escribir sólo Rotation y Scale guardaba
-                ' la matriz sin su escala, más un 1.
+                ' ⛔ NUNCA escribir `destShape.Rotation = newLocal.Rotation` + `.Scale = newLocal.Scale`:
+                ' pierde la escala per-eje ENTERA y en silencio. New(Matrix4d) NORMALIZA las columnas
+                ' —saca la escala de la 3x3 y la pone en ScaleVector— y deja Scale = 1.0F EXACTO cuando
+                ' el resultado no es uniforme, o sea que ese par guarda la matriz sin su escala más un 1.
                 '
                 ' La pérdida NO la impone el formato: `destShape.Rotation` es una MATRIZ 3x3, y la
                 ' parte lineal de un transform es R·diag(e), que entra entera ahí. Los NIF del corpus
@@ -848,7 +846,7 @@ Public Class Nifcontent_Class_Manolo
                 '
                 ' Para el caso uniforme —el único que aparece en FO4 y SSE: medido, 0 de 181.964
                 ' NiNode con escala no uniforme, los 14 que hay son ruido de un esqueleto de Oblivion—
-                ' ScaleVector es (1,1,1) exacto y esto es BIT-IDÉNTICO a lo anterior.
+                ' ScaleVector es (1,1,1) exacto y esto es BIT-IDÉNTICO a escribir Rotation/Scale a secas.
                 Dim svLocal = newLocal.ScaleVector
                 Dim rLocal = newLocal.Rotation
                 destShape.Rotation = New Matrix33 With {
@@ -860,10 +858,9 @@ Public Class Nifcontent_Class_Manolo
             End If
         End If
 
-        ' Acá vivía un workaround manual del aliasing de NiSkinData.BoneList[].VertexWeights, escrito
-        ' cuando el DeepCopy de NiflySharp cortaba en los structs. YA NO HACE FALTA: el fork lo
-        ' resuelve en el código generado, y mantener la copia a mano sólo duplicaba trabajo y sugería
-        ' un bug inexistente. Verificado en el generador —
+        ' NO hace falta copiar a mano las listas de skin: el fork de NiflySharp las re-aloja en el
+        ' código generado, así que un shape clonado NO comparte NiSkinData.BoneList[].VertexWeights ni
+        ' particiones con el NIF fuente. Verificado en el generador —
         '   NiSkinData copy-ctor:      _boneList.ConvertAll(e => e.DeepClone())
         '   BoneData.DeepClone:        VertexWeights = new List<BoneVertData>(this.VertexWeights)
         '   NiSkinPartition copy-ctor: _partitions.ConvertAll(e => e.DeepClone())
@@ -1099,12 +1096,6 @@ Public Class Nifcontent_Class_Manolo
     End Sub
 
     ''' <summary>
-    ''' Remaps vertex indices in the shape's skin partition TrianglesCopy using oldToNew.
-    ''' Triangles whose vertices are absent from the map are dropped.
-    ''' Call before UpdateSkinPartitions whenever vertex compaction changes indices
-    ''' (e.g. zap removal or shape splitting).
-    ''' </summary>
-    ''' <summary>
     ''' Reindexa <c>NiSkinData.BoneList[].VertexWeights</c> al espacio de vértices posterior a una
     ''' compactación, descartando los pesos de los vértices que se cayeron.
     '''
@@ -1152,6 +1143,12 @@ Public Class Nifcontent_Class_Manolo
         skinData.BoneList = newBoneList
     End Sub
 
+    ''' <summary>
+    ''' Remaps vertex indices in the shape's skin partition TrianglesCopy using oldToNew.
+    ''' Triangles whose vertices are absent from the map are dropped.
+    ''' Call before UpdateSkinPartitions whenever vertex compaction changes indices
+    ''' (e.g. zap removal or shape splitting).
+    ''' </summary>
     Public Sub RemapSkinPartitionTriangles(shape As INiShape, oldToNew As IReadOnlyDictionary(Of Integer, Integer))
         ' El caller obtiene el shape con `geom.Geometry?.BackingShape`, que puede dar Nothing para una
         ' SkinnedGeometry que no viene de un NIF. Sin este guard reventaba con NRE en vez de ser no-op,

@@ -8,11 +8,11 @@ Imports SysNumerics = System.Numerics
 ''' BSDynamicTriShape, BSSegmentedTriShape, BSMeshLODTriShape). Los vertices y triangulos viven inline en el
 ''' bloque (BSVertexData en FO4, BSVertexDataSSE en SSE) y la particion de skin la regenera NiflySharp al
 ''' guardar: este adaptador no la toca.
-''' <para>â›” TANGENTE Y BITANGENTE VAN CRUZADAS respecto de como las nombra el formato: la tangente del
+''' <para>⛔ TANGENTE Y BITANGENTE VAN CRUZADAS respecto de como las nombra el formato: la tangente del
 ''' renderer es la "Bitangent" del NIF y viceversa. Este adaptador ENCAPSULA el swap - los getters devuelven
 ''' del lado renderer y los setters rutean al campo opuesto -, asi que los callers nunca lo ven. No
 ''' "corregirlo" desde afuera.</para>
-''' <para>âš ï¸ En FO4 half-precision la bitangente hay que leerla directo del vertex data y no por el getter de
+''' <para>⚠ï¸ En FO4 half-precision la bitangente hay que leerla directo del vertex data y no por el getter de
 ''' NiflySharp, que ahi tiene un decode mismatch. SSE y FO4 full-precision usan el getter normal.</para></summary>
 Public Class BSTriShapeGeometry
     Implements IShapeGeometry
@@ -517,7 +517,7 @@ Public Class BSTriShapeGeometry
 
     ''' <summary>
     ''' Semantic representation of a BSSubIndexTriShape sub-segment that survives
-    ''' triangle-list mutations.  Mirrors nifly's NifSubSegmentInfo (Geometry.hpp:392).
+    ''' triangle-list mutations.  Mirrors nifly's NifSubSegmentInfo (Geometry.hpp).
     ''' </summary>
     Public Class NifSubSegmentInfo
         ''' <summary>
@@ -533,7 +533,7 @@ Public Class BSTriShapeGeometry
 
     ''' <summary>
     ''' Semantic representation of a BSSubIndexTriShape parent segment.  Mirrors nifly's
-    ''' NifSegmentInfo (Geometry.hpp:404).
+    ''' NifSegmentInfo (Geometry.hpp).
     ''' </summary>
     Public Class NifSegmentInfo
         Public Property PartID As Integer = 0
@@ -542,7 +542,7 @@ Public Class BSTriShapeGeometry
 
     ''' <summary>
     ''' Semantic representation of an entire BSSubIndexTriShape segmentation.  Mirrors
-    ''' nifly's NifSegmentationInfo (Geometry.hpp:416).  The intent: extract segmentation
+    ''' nifly's NifSegmentationInfo (Geometry.hpp).  The intent: extract segmentation
     ''' as semantic data with stable per-triangle partID assignments, mutate triangles
     ''' arbitrarily (split/merge/zap), then re-apply the segmentation by passing the new
     ''' triParts mapping.  Identical contract to nifly so cross-app behavior matches.
@@ -657,12 +657,12 @@ Public Class BSTriShapeGeometry
                     arrayIndex += 1
 
                     ' Pull metadata from PerSegmentData at arrayIndex.  BS-OS
-                    ' Geometry.cpp:1399-1402 reads at arrayIndex (post-increment); we
+                    ' Geometry.cpp reads at arrayIndex (post-increment); we
                     ' replicate exactly.  If PerSegmentData is malformed (size inconsistent
                     ' with parent+child layout) the next line throws on bounds — corrupt
                     ' input must surface, not be hidden.
                     Dim rec = sd.PerSegmentData(arrayIndex)
-                    ' BS-OS clamps userSlotID < 30 to 0 on read (Geometry.cpp:1400).
+                    ' BS-OS clamps userSlotID < 30 to 0 on read (Geometry.cpp).
                     ' Replicate the same clamp so round-trips preserve canonical values.
                     subInfo.UserSlotID = If(rec.UserIndex < 30UI, 0UI, rec.UserIndex)
                     subInfo.Material = rec.BoneID
@@ -878,7 +878,7 @@ Public Class BSTriShapeGeometry
         End If
 
         ' Renumber partition IDs so they're monotonically increasing in inf order
-        ' (Geometry.cpp:1413-1426).
+        ' (Geometry.cpp).
         Dim newPartID As Integer = 0
         Dim oldToNewPartIDs As New List(Of Integer)()
         For Each seg In inf.Segs
@@ -899,7 +899,7 @@ Public Class BSTriShapeGeometry
             End If
         Next
 
-        ' Sort triangle indices by partition ID (stable) — Geometry.cpp:1433-1442.
+        ' Sort triangle indices by partition ID (stable) — Geometry.cpp.
         Dim triInds As Integer() = New Integer(numTris - 1) {}
         For i = 0 To numTris - 1 : triInds(i) = i : Next
         Array.Sort(triInds, Function(a, b) triParts(a).CompareTo(triParts(b)))
@@ -913,7 +913,7 @@ Public Class BSTriShapeGeometry
         subIndex.SetTriangles(nifVersion, newTris)
 
         ' Find first triangle of each partition: partTriInds[p] = index of first triangle
-        ' of partition p (Geometry.cpp:1452-1458).
+        ' of partition p (Geometry.cpp).
         Dim partTriInds As Integer() = New Integer(newPartID) {}
         Dim nextPartID As Integer = 0
         For i = 0 To numTris - 1
@@ -928,7 +928,7 @@ Public Class BSTriShapeGeometry
         Loop
 
         ' Build segments + PerSegmentData + arrayIndices in canonical interleaved order
-        ' (Geometry.cpp:1460-1506).
+        ' (Geometry.cpp).
         Dim newSegments As New List(Of BSGeometrySegmentData)()
         Dim newPerSegmentData As New List(Of BSGeometryPerSegmentSharedData)()
         Dim arrayIndices As New List(Of UInteger)()
@@ -951,7 +951,7 @@ Public Class BSTriShapeGeometry
             }
             partID += 1
 
-            ' Parent dataRecord — Geometry.cpp:1476-1479: userSlotID = segmentIndex,
+            ' Parent dataRecord — Geometry.cpp: userSlotID = segmentIndex,
             ' material = 0xFFFFFFFF (default), no extraData.
             newPerSegmentData.Add(New BSGeometryPerSegmentSharedData() With {
                 .UserIndex = segmentIndex,
@@ -974,7 +974,7 @@ Public Class BSTriShapeGeometry
                 })
                 partID += 1
 
-                ' Sub dataRecord — Geometry.cpp:1492-1501: userSlotID gets renumbered to
+                ' Sub dataRecord — Geometry.cpp: userSlotID gets renumbered to
                 ' subSegmentNumber if the original was < 30 (canonical body-part slot
                 ' range), otherwise preserved as-is.
                 Dim subUserSlot As UInteger
@@ -1000,7 +1000,7 @@ Public Class BSTriShapeGeometry
         Next
 
         ' Atomic write-back via NiflySharp's public SegmentData property
-        ' (BSSubIndexTriShape.cs:10).  No reflection needed — the property's setter writes
+        ' (BSSubIndexTriShape.cs).  No reflection needed — the property's setter writes
         ' the struct value directly into _segmentData.
         Dim sd As BSGeometrySegmentSharedData = subIndex.SegmentData
         sd.NumSegments = CUInt(newSegments.Count)
@@ -1283,7 +1283,7 @@ Public Class BSTriShapeGeometry
         RebuildNiSkinData(skinning)
     End Sub
 
-    ''' <summary>â›” SYNC: las DOS codificaciones de skin de un BSTriShape de SSE tienen que quedar identicas. Un
+    ''' <summary>⛔ SYNC: las DOS codificaciones de skin de un BSTriShape de SSE tienen que quedar identicas. Un
     ''' BSTriShape de SSE lleva a la vez un skin INLINE y un <c>NiSkinData</c>; el render usa el inline, pero al
     ''' guardar NiflySharp reconstruye la <c>NiSkinPartition</c> desde el NiSkinData. Si solo se reescribe el
     ''' inline, el NiSkinData queda STALE (con indices de vertice previos a la compactacion), la particion lo
@@ -1299,11 +1299,11 @@ Public Class BSTriShapeGeometry
         Dim skinData = _nif.GetBlock(skinInst.Data)
         If skinData Is Nothing OrElse skinData.BoneList Is Nothing Then Return
 
-        ' OS-faithful: SetShapeBoneWeights (NifFile.cpp:2866 — sole writer of the flag)
+        ' OS-faithful: SetShapeBoneWeights (NifFile.cpp — sole writer of the flag)
         ' unconditionally sets skinData->hasVertWeights=true when it authors per-bone weights
-        ' for an SSE edit (Anim.cpp:635-636, !isFO branch).  An SSE NiSkinData that loaded with
+        ' for an SSE edit (Anim.cpp, !isFO branch).  An SSE NiSkinData that loaded with
         ' HasVertexWeights=false (weights only in the partition) is normalized false→true by the
-        ' edit-save.  Match it here: without the flag, NiSkinData.BeforeSync (NiSkinData.cs:18-21)
+        ' edit-save.  Match it here: without the flag, NiSkinData.BeforeSync (NiSkinData.cs)
         ' forces NumVertices=0 and discards the weight arrays we populate below → weightless on
         ' disk.  Reached only for SSE (FO4 BSSkin_Instance returned early above).
         skinData.HasVertexWeights = True
@@ -1331,10 +1331,12 @@ Public Class BSTriShapeGeometry
         numBones = skinData.BoneList.Count
         skinData.NumBones = CUInt(numBones)
 
-        ' Re-init each bone's VertexWeights list with a fresh List(Of BoneVertData)().
-        ' BoneData is a struct and DeepCopyHelper historically left clones aliasing the
-        ' source list; re-initialising (rather than .Clear()) is the safe workaround used
-        ' across the codebase (NiTriShapeGeometry note + MergeShapesHelper step 5b).
+        ' Re-init each bone's VertexWeights list with a fresh List(Of BoneVertData)() rather than
+        ' .Clear()-ing it in place.  BoneData is a struct, so a clone whose VertexWeights still
+        ' aliases the source list would have .Clear() reach into the ORIGINAL shape.
+        ' NOTE: NiTriShapeGeometry.RebuildNiSkinData does the opposite (.Clear()), on the grounds
+        ' that NiflySharp's DeepCopyHelper IsValueTypeSelfContained guard now deep-copies struct
+        ' reference fields.  The two encoders disagree; whichever is right, they should match.
         For b = 0 To numBones - 1
             Dim bd = skinData.BoneList(b)
             bd.VertexWeights = New List(Of BoneVertData)()
@@ -1356,9 +1358,9 @@ Public Class BSTriShapeGeometry
                 ' como Continue For para que siga siendolo: bIdx < 0 es imposible porque BoneIndices es Byte(),
                 ' y bIdx >= numBones tambien, porque el scan del principio del metodo recorre el MISMO espacio
                 ' de indices con los MISMOS guards y hace crecer BoneList mas alla de maxBoneIdx.
-                ' Antes hacia Continue For, que -si alguna de esas invariantes se rompiera aguas arriba- soltaria
-                ' el peso en silencio y renderizaria el vertice en su offset de bind pose. Los dos encoders
-                ' comparten una politica: fallar, nunca degradar en silencio.
+                ' Con Continue For, si alguna de esas invariantes se rompiera aguas arriba, el peso se soltaria
+                ' en silencio y el vertice renderizaria en su offset de bind pose. Los dos encoders comparten
+                ' una politica: fallar, nunca degradar en silencio.
                 If bIdx < 0 OrElse bIdx >= numBones Then
                     Throw New InvalidOperationException(
                         $"RebuildNiSkinData: vertex {i} slot {j} references bone palette index {bIdx} " &

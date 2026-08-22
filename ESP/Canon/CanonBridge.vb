@@ -38,7 +38,7 @@
         ''' <summary>Árbol de campos del record, o Nothing si el juego no declara ese tipo de record.
         ''' <para>Los avisos de cobertura quedan en el contexto: quien quiera saber si la lectura
         ''' explicó todos los bytes puede mirarlos, pero un campo que falta nunca hace fallar la
-        ''' lectura — devuelve el valor por defecto de la vista, igual que antes.</para></summary>
+        ''' lectura — devuelve el valor por defecto de la vista.</para></summary>
         Public Function Tree(rec As PluginRecord, plugins As PluginManager, ByRef ctx As WbContext) As WbNode
             If rec Is Nothing OrElse rec.Header.Signature Is Nothing Then Return Nothing
             Dim game = SessionGame()
@@ -77,9 +77,8 @@
         ''' decia el archivo; ver <see cref="WbFormIdWalker.NormalizarDesdeArchivo"/>.</para>
         '''
         ''' <para>El plugin de origen se resuelve UNA vez y el lock de lectura se toma UNA vez, para
-        ''' todo el record. Antes cada referencia hacia lo mismo por su cuenta: tomar el lock, buscar
-        ''' el plugin por NOMBRE y recien ahi traducir. El arbol de los NPC de un orden de carga real
-        ''' tiene 203 mil referencias.</para>
+        ''' todo el record. ⛔ NO tomar el lock ni buscar el plugin por NOMBRE por REFERENCIA: el arbol
+        ''' de los NPC de un orden de carga real tiene 203 mil referencias.</para>
         '''
         ''' <para>La LEY no se re-escribe: se llama a <c>PluginManager.ResolveReferenciaNoLock</c>,
         ''' que es la misma que usa el camino con lock. Un mapa "indice de master -> byte alto"
@@ -95,8 +94,7 @@
                 Function()
                     ' El plugin se resuelve por nombre UNA vez; la LEY de la traduccion es la del
                     ' gestor y no se re-escribe aca. Un plugin no indexado deja la referencia cruda,
-                    ' que es lo que hacia antes, incluida la ANOTACION en el nodo — que es lo que
-                    ' hace reversible la vuelta.
+                    ' incluida la ANOTACION en el nodo — que es lo que hace reversible la vuelta.
                     Dim duenio = plugins.GetPluginByNameNoLock(origen)
                     WbFormIdWalker.NormalizarDesdeArchivo(
                         raiz, Function(local As UInteger) plugins.ResolveReferenciaNoLock(duenio, local))

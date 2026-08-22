@@ -47,8 +47,8 @@ Public Interface IShapeGeometry
     ''' True si el bloque guarda la normal CUANTIZADA A BYTE (3 sbyte por vertice) en vez de en float.
     '''
     ''' No es un detalle de serializacion: <c>BSTriShape::CalcTangentSpace</c> llama
-    ''' <c>UpdateRawNormals()</c> en su primera linea (nifly Geometry.cpp:975), y esa funcion
-    ''' RE-DECODIFICA las normales desde esos bytes (Geometry.cpp:642), pisando la copia de plena
+    ''' <c>UpdateRawNormals()</c> en su primera linea (nifly Geometry.cpp), y esa funcion
+    ''' RE-DECODIFICA las normales desde esos bytes (Geometry.cpp), pisando la copia de plena
     ''' precision. O sea que el canonico ortogonaliza la base tangente contra la normal cuantizada, y
     ''' medio paso de cuantizacion son 0,45 grados. En el PRIMARIO eso es un sesgo chico; en el
     ''' SECUNDARIO de un shell de UV espejado —donde el residuo del Gram-Schmidt es mas chico que ese
@@ -58,7 +58,7 @@ Public Interface IShapeGeometry
 
     ''' <summary>
     ''' True si el bloque guarda las UV en HALF (16 bits). <c>BSTriShape</c> lo hace SIEMPRE, en los
-    ''' dos juegos y sin condicional de precision (nifly Geometry.cpp:535).
+    ''' dos juegos y sin condicional de precision (nifly Geometry.cpp).
     ''' Importa porque <c>CalcTangentSpace</c> deriva s1/s2/t1/t2 de <c>vertData[i].uv</c>, o sea
     ''' de las UV ya redondeadas. El paso de half en [0,1] es ~5e-4: contra float es enorme, y en una
     ''' costura de UV espejado —donde los aportes de los dos lados casi se cancelan— es lo unico que
@@ -141,11 +141,11 @@ Public Interface IShapeGeometry
     '''     Triangles are bucketed by their old-tier source (via provenance) and rewritten
     '''     in [LOD0][LOD1][LOD2] order; LOD sizes reflect the new bucket counts.  Triangles
     '''     with cross-shape or synthetic sources fall into LOD2 (the "always visible" tier).
-    '''     Previously collapsed everything to LOD2 (BS-OS Geometry.cpp:1522 canonical
+    '''     Previously collapsed everything to LOD2 (BS-OS Geometry.cpp canonical
     '''     behaviour); the new approach keeps the LOD optimization across split/merge/zap.
     '''   - BSSubIndexTriShape / BSSegmentedTriShape Segments and SubSegmentDatas:
     '''     full redistribution preserving per-segment metadata (ParentArrayIndex,
-    '''     SegmentSharedData, SubSegmentDatas).  Algorithm follows BS-OS Geometry.cpp:1248
+    '''     SegmentSharedData, SubSegmentDatas).  Algorithm follows BS-OS Geometry.cpp
     '''     notifyVerticesDelete: count survivors per old-segment range, realign cumulative
     '''     StartIndex.
     ''' When <paramref name="provenance"/> is Nothing this overload behaves identically to

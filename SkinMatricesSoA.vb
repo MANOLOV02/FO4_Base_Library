@@ -8,8 +8,7 @@ Imports OpenTK.Mathematics
 ''' COPIAR a arrays planos antes de operar (VB no tiene Span ni MemoryMarshal), y esa copia cuesta MAS que
 ''' lo que el ancho de vector ahorra. Guardandolos en SoA desde el vamos, la copia desaparece.</para>
 '''
-''' <para>MEDIDO antes de escribir esto (<c>ShadowGate --soa --heavy</c>, 3 corridas, 11 mallas /
-''' 37.321 vertices):
+''' <para>MEDIDO (<c>ShadowGate --soa --heavy</c>, 3 corridas, 11 mallas / 37.321 vertices):
 ''' <list type="bullet">
 ''' <item>D — el camino de produccion AoS→AoS: <b>0,85 ms</b></item>
 ''' <item>A — el staging AoS→SoA que este cambio ELIMINA: 0,92 ms</item>
@@ -19,13 +18,11 @@ Imports OpenTK.Mathematics
 ''' O sea el techo es 0,48 contra 0,85 = <b>~40 % mas rapido</b>, y lo que perdia era el envoltorio, no el
 ''' kernel. La medicion incluso SUBESTIMA a SoA (ver la nota de sesgo en SoaBench).</para>
 '''
-''' <para>POR QUE ES UNA CLASE CON INDEXADOR Y NO 12 ARRAYS SUELTOS. Hay 78 call sites de
-''' <c>PerVertexSkinMatrix</c> repartidos en 11 archivos —incluidos el bake, el exportador de NIF y tres
-''' herramientas— y casi todos siguen el mismo patron: <c>Dim mats = geo.PerVertexSkinMatrix</c> y despues
-''' <c>mats(i)</c>. Exponiendo un <c>Default Property</c> que reconstruye la <c>Matrix4</c>, TODOS esos
-''' siguen compilando y funcionando sin tocarse, y el kernel —el unico que necesita velocidad— lee
-''' <see cref="Secciones"/> directo. Cambiar 78 sitios a mano para ganar lo mismo habria sido un riesgo
-''' enorme a cambio de nada.</para>
+''' <para>POR QUE ES UNA CLASE CON INDEXADOR Y NO 12 ARRAYS SUELTOS. <c>PerVertexSkinMatrix</c> tiene
+''' decenas de call sites repartidos por la libreria, el bake, el exportador de NIF y las herramientas, y
+''' casi todos siguen el mismo patron: <c>Dim mats = geo.PerVertexSkinMatrix</c> y despues <c>mats(i)</c>.
+''' Con un <c>Default Property</c> que reconstruye la <c>Matrix4</c>, TODOS siguen compilando y funcionando
+''' sin tocarse, y el kernel —el unico que necesita velocidad— lee <see cref="Secciones"/> directo.</para>
 '''
 ''' <para>EL PRECIO: cada <c>mats(i)</c> reconstruye una Matrix4 (12 lecturas dispersas). Lo pagan el
 ''' world-cache, el bake y el exportador, que ya gastan MUCHO mas por vertice (una inversa 3x3, varias
@@ -85,11 +82,9 @@ Public NotInheritable Class SkinMatricesSoA
     ''' vertice para terminar guardando los mismos 12 Single.</para>
     ''' <para>BIT A BIT IDENTICO: es el mismo <c>CSng</c> sobre los mismos Double. Lo unico que cambia es
     ''' cuantas veces se copia el struct por el camino.</para>
-    ''' <para>EL <c>AggressiveInlining</c> DE ACA NO APORTO NADA — medido. Con y sin el atributo, el
-    ''' blend completo da 5,07/5,08/5,08 contra 5,11/5,13 ms: 0,04 ms de diferencia, o sea ruido. Se deja
-    ''' porque no molesta y porque este comentario es mas util que el atributo: el JIT ya inlineaba estos
-    ''' cuerpos, y el envoltorio que queda NO es la llamada a estos metodos. Quien busque los ~2,4 ms que
-    ''' faltan tiene que mirar el batching, no esto.</para></summary>
+    ''' <para>EL <c>AggressiveInlining</c> DE ACA NO APORTA NADA — medido: con y sin el atributo el blend
+    ''' completo da 5,07/5,08/5,08 contra 5,11/5,13 ms, o sea ruido. El JIT ya inlinea estos cuerpos. Quien
+    ''' busque los ~2,4 ms que faltan tiene que mirar el batching, no esto.</para></summary>
     <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
     Public Sub EstablecerDesde(i As Integer, m As Matrix4d)
         Secciones(0)(i) = CSng(m.M11) : Secciones(1)(i) = CSng(m.M12) : Secciones(2)(i) = CSng(m.M13)
@@ -126,9 +121,9 @@ Public NotInheritable Class SkinMatricesSoA
 
     ''' <summary>Posicion transformada por la matriz del vertice <paramref name="i"/>, SIN construir
     ''' ninguna matriz.
-    ''' <para>REEMPLAZA A <c>Vector3d.TransformPosition(v, AMatrix4d(mats(i)))</c>, que hacia DOS
-    ''' pasadas: el indexador reconstruia una <c>Matrix4</c> de 64 B desde las 12 secciones y despues se
-    ''' ensanchaba a <c>Matrix4d</c> de 128 B — dos structs para usar 12 floats.</para>
+    ''' <para>Existe para no pasar por <c>Vector3d.TransformPosition(v, AMatrix4d(mats(i)))</c>, que arma
+    ''' DOS structs para usar 12 floats: el indexador reconstruye una <c>Matrix4</c> de 64 B desde las
+    ''' secciones y despues se ensancha a <c>Matrix4d</c> de 128 B.</para>
     ''' <para>BIT A BIT IDENTICO: <c>TransformPosition</c> acumula en Double y <c>Single → Double</c> es
     ''' exacto, asi que el producto da el mismo bit. Mismo orden de acumulacion, ademas.</para>
     ''' <para>Existe como metodo publico —y no exponiendo <c>Secciones</c>— porque el exportador de NIF

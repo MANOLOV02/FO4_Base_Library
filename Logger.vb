@@ -11,8 +11,8 @@ Imports System.Threading
 '''     flushea por batch (o cuando expira el flush interval), no por línea.
 '''   • <see cref="LogLazy"/> evalúa la lambda solo si <see cref="Enabled"/>=True,
 '''     evitando interpolación de strings cuando off.
-''' Reemplaza el diseño anterior (SyncLock + AutoFlush + WriteThrough por línea):
-''' los call sites en hot paths ya no serializan ni esperan I/O.
+''' Los call sites en hot paths no serializan ni esperan I/O: no volver a un SyncLock con
+''' AutoFlush/WriteThrough por línea.
 ''' </summary>
 Public NotInheritable Class Logger
     ''' <summary>EN RELEASE ESTO NO SE PUEDE PRENDER. El setter DESCARTA cualquier <c>True</c> en un build
@@ -70,11 +70,9 @@ Public NotInheritable Class Logger
     ''' <summary>
     ''' Inicializa el logger con la ruta de archivo. Idempotente. Si <see cref="Enabled"/>
     ''' está en False, no hace nada (call al Log() también será no-op).
-    ''' <para>EL CASO QUE ESTE DOC NO CONTEMPLABA: <c>Enabled = True</c> SIN <c>Initialize</c>. Ahí
-    ''' no hay writer ni hilo que drene, y hasta que se agregó la guarda de <c>EnqueueInternal</c> cada
-    ''' <c>Log</c>/<c>LogLazy</c> encolaba para siempre. Prender <c>Enabled</c> sin inicializar no es
-    ''' "no-op": los mensajes se DESCARTAN, que es lo correcto, pero conviene saberlo antes de buscar
-    ''' un log que no existe.</para>
+    ''' <para>OJO con <c>Enabled = True</c> SIN <c>Initialize</c>: no hay writer ni hilo que drene, y
+    ''' <c>EnqueueInternal</c> DESCARTA los mensajes (es lo correcto — ver la nota de ahí). Conviene
+    ''' saberlo antes de buscar un log que no existe.</para>
     ''' </summary>
     Public Shared Sub Initialize(filePath As String)
         If Enabled = False Then Exit Sub
@@ -126,13 +124,12 @@ Public NotInheritable Class Logger
     End Sub
 
     Private Shared Sub EnqueueInternal(message As String)
-        ' SIN WRITER NO SE ENCOLA. `Enabled = True` sin `Initialize()` previo es un estado alcanzable
-        ' —el CLI de FaceTint prende `Enabled` en --buildfacegen y --vertexbatch y NUNCA llama a
-        ' `Initialize`— y en ese estado esta cola NO LA DRENA NADIE: los ~700 call sites de la lib y del
-        ' NPC Manager encolan un string con timestamp cada uno, algunos por hueso por malla, durante todo
-        ' el barrido. Es una fuga que crece con el corpus y que ademas distorsiona los tiempos JUSTO en la
-        ' herramienta con la que se mide. `_signal Is Nothing` es exactamente la condicion de "no hay hilo
-        ' escritor", asi que alcanza con mirarla.
+        ' SIN WRITER NO SE ENCOLA. `Enabled = True` sin `Initialize()` previo es un estado alcanzable —el
+        ' CLI de FaceTint prende `Enabled` en --buildfacegen y --vertexbatch y NUNCA llama a `Initialize`—
+        ' y en ese estado la cola NO LA DRENA NADIE: los ~700 call sites de la lib y del NPC Manager
+        ' encolarian un string con timestamp cada uno, algunos por hueso por malla, durante todo el
+        ' barrido; una fuga que crece con el corpus y que distorsiona los tiempos JUSTO en la herramienta
+        ' con la que se mide. `_signal Is Nothing` es exactamente la condicion de "no hay hilo escritor".
         If _signal Is Nothing Then Exit Sub
         Dim timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fffZ")
         _queue.Enqueue($"[{timestamp}] {message}")

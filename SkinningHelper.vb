@@ -186,22 +186,6 @@ Public Class SkinningHelper
         Return pal
     End Function
 
-    ''' <summary>
-    ''' Mezcla las matrices de los huesos que influyen al vértice que arranca en
-    ''' <paramref name="baseIdx"/>, leyendo <paramref name="wpv"/> slots de los arrays PLANOS de
-    ''' índices y pesos. Sin slice por vértice: corre una vez por vértice por Extract/Bake.
-    '''
-    ''' <para>Existía un segundo overload que recibía los arrays de UN solo vértice (sin
-    ''' <paramref name="baseIdx"/> ni <paramref name="wpv"/>) y repetía esta misma ley entera.
-    ''' <b>No lo llamaba nadie</b> — era <c>Private</c> y sin un solo call site en los tres repos —,
-    ''' así que era una copia muerta de la fórmula del contrato SYNC esperando desincronizarse en
-    ''' silencio la próxima vez que alguien tocara sólo una de las dos. Se eliminó.</para>
-    ''' </summary>
-    ''' <para><b>Public a propósito, y es lo que hace que el contrato SYNC de arriba sea CIERTO.</b>
-    ''' El bake de FaceGen tenía DOS copias más de esta misma ley escritas a mano
-    ''' (<c>SkinBakeMath</c> y <c>FaceGenBuildPipeline.BlendMtot</c>), así que el gate
-    ''' <c>skin-blend</c> —que dice "el bake usa esta misma ley"— probaba una función que el bake no
-    ''' llamaba. Ahora la llaman: una ley, un lugar, y el gate cubre lo que dice cubrir.</para>
     ''' <summary>El blend dejando el resultado EN EL SCRATCH (16 Single), sin construir una
     ''' <c>Matrix4d</c>. Devuelve el scratch, o <c>Nothing</c> si el caso cae en una rama de
     ''' excepcion que devuelve una matriz de la paleta tal cual (sin peso, pesos nulos, wpv 0).
@@ -264,8 +248,14 @@ Public Class SkinningHelper
         Return sc
     End Function
 
-    ''' <summary>El blend de un vertice, devolviendo la matriz. La usan el BAKE, el exportador y el
-    ''' gate; el render va por <see cref="BlendEnScratch"/>, que evita construir la Matrix4d.
+    ''' <summary>El blend de un vertice, devolviendo la matriz. Mezcla las matrices de los huesos que influyen
+    ''' al vertice que arranca en <paramref name="baseIdx"/>, leyendo <paramref name="wpv"/> slots de los
+    ''' arrays PLANOS de indices y pesos (sin slice por vertice). La usan el BAKE, el exportador y el gate; el
+    ''' render va por <see cref="BlendEnScratch"/>, que evita construir la Matrix4d.
+    ''' <para><b>Public a proposito: es lo que hace CIERTO el contrato SYNC de arriba.</b>
+    ''' <c>SkinBakeMath</c> y <c>FaceGenBuildPipeline.BlendMtot</c> llaman ACA en vez de transcribir la
+    ''' formula, asi que el gate <c>skin-blend</c> cubre la ley que el bake realmente corre. Una copia a mano
+    ''' de esta ley deja al gate probando una funcion que el bake no llama.</para>
     ''' <para>LAS GUARDAS ESTAN UNA SOLA VEZ. Este metodo delega en <c>BlendEnScratch</c> y solo
     ''' agrega el armado de la <c>Matrix4d</c> y las ramas de excepcion. Tenerlas duplicadas seria
     ''' peor que una diferencia de redondeo: render y bake podrian discrepar en QUE peso se descarta
@@ -308,8 +298,8 @@ Public Class SkinningHelper
         Dim sumW As Double = 0
         For j = 0 To available - 1
             Dim wS = CSng(boneWeights(baseIdx + j))
-            ' sumW acumula TODOS los pesos, tambien los de indice fuera de rango: es la ley historica
-            ' y mover eso cambiaria el divisor.
+            ' sumW acumula TODOS los pesos, tambien los de indice fuera de rango: sacar los descartados
+            ' cambia el DIVISOR, y con el la salida del bake.
             sumW += CDbl(wS)
             Dim idx = boneIndices(baseIdx + j)
             If idx >= 0 AndAlso idx < precomputed.Length Then
@@ -364,21 +354,16 @@ Public Class SkinningHelper
     ''' Suma <c>Σ pares(indice, peso)</c> sobre la paleta y devuelve la matriz, opcionalmente escalada
     ''' por <paramref name="postScale"/> (el <c>1/sumW</c> de la normalizacion).
     '''
-    ''' <para>Es el UNICO punto donde se elige camino. Con paleta plana y SIMD acelerado va por
-    ''' <see cref="FastGeom.BlendInto"/>; si no, por el mismo <c>result += precomputed(idx) * w</c>
-    ''' de siempre. Los dos recorren los pares en el MISMO orden ⇒ el resultado es bit-identico, y eso
-    ''' es lo que verifica <c>SkinningSimdSelfTest</c> sobre la funcion real, no sobre una maqueta.</para>
+    ''' <para>UN SOLO ORIGEN DE DATOS: la paleta PLANA en Single. Es el UNICO punto donde se elige camino, y
+    ''' lo elige <c>BlendIntoS</c> adentro —vectorial o escalar, este ultimo forzable con
+    ''' <c>FastGeom.ForzarEscalarS</c>—: los dos leen exactamente lo mismo y recorren los pares en el MISMO
+    ''' orden ⇒ el resultado es bit-identico, y eso es lo que verifica <c>SkinningSimdSelfTest</c> sobre la
+    ''' funcion real, no sobre una maqueta.</para>
+    ''' <para>El fallback a <c>precomputed</c> —acumular <c>precomputed(idx) * w</c> en <c>Matrix4d</c>, o sea
+    ''' en Double y desde OTRO array— queda SOLO para las llamadas que no construyen paleta plana, y es lo que
+    ''' dice ser: un camino de compatibilidad que NO es bit-comparable con el principal. Usarlo como
+    ''' "referencia escalar" compara dos LEYES, no dos implementaciones de una.</para>
     ''' </summary>
-    ''' <summary>UN SOLO ORIGEN DE DATOS: la paleta PLANA en Single. `BlendIntoS` elige adentro entre
-    ''' vectorial y escalar, y los dos leen exactamente lo mismo — por eso pueden compararse bit a bit.
-    ''' <para>Antes habia un segundo camino que acumulaba `precomputed(idx) * w` en `Matrix4d`, o sea en
-    ''' Double y desde OTRO array. El self-test lo usaba como "referencia escalar" pasando
-    ''' `flatPal:=Nothing`, pero eso comparaba dos LEYES distintas, no dos implementaciones de una. Con la
-    ''' paleta en Single ese contraste dejo de tener sentido y el escalar se fuerza con
-    ''' <c>FastGeom.ForzarEscalarS</c>.</para>
-    ''' <para>El fallback a `precomputed` queda SOLO para cuando no hay paleta plana (llamadas que no la
-    ''' construyen), y se declara como lo que es: un camino de compatibilidad que NO es bit-comparable con
-    ''' el principal.</para></summary>
     Private Shared Function AccumulateBlend(precomputed() As Matrix4d, flatPal As Single(), sc As BlendScratch, nUsed As Integer,
                                             Optional postScale As Single = 1.0F) As Matrix4d
         If flatPal IsNot Nothing Then
@@ -456,12 +441,11 @@ Public Class SkinningHelper
             Next
             Dim baseIdx As Integer = CInt(NextB() Mod 3UL) * wpv
 
-            ' LOS DOS LADOS USAN LA PALETA PLANA. Antes el lado "escalar" se forzaba pasando
-            ' `flatPal:=Nothing`, y eso caia en un camino que acumulaba `precomputed(idx) * w` en Matrix4d,
-            ' o sea en DOUBLE y desde otro array: comparaba dos LEYES, no dos implementaciones. Mientras la
-            ' ley fue Double en los dos lados eso paso desapercibido; al migrar la paleta a Single el gate
-            ' salto con `escalar=0,14812919066753238 vectorial=0,1481291949748993` — que es exactamente la
-            ' diferencia Double/Single y NO un bug del vectorial. El toggle compara lo que hay que comparar.
+            ' LOS DOS LADOS USAN LA PALETA PLANA. Forzar el lado "escalar" con `flatPal:=Nothing` cae en el
+            ' camino que acumula `precomputed(idx) * w` en Matrix4d —en DOUBLE y desde otro array— y compara
+            ' dos LEYES, no dos implementaciones: sale `escalar=0,14812919066753238`
+            ' `vectorial=0,1481291949748993`, que es exactamente la diferencia Double/Single y NO un bug del
+            ' vectorial. El toggle `ForzarEscalarS` compara lo que hay que comparar.
             Dim mVec = BlendBoneMatrices(wgt, idx, baseIdx, wpv, precomputed, flatPal)
             Dim mEsc As Matrix4d
             ' Se restaura el valor PREVIO, no un False fijo: si un arnes dejo el toggle encendido para
@@ -503,14 +487,11 @@ Public Class SkinningHelper
         End If
 
         ' LA RAMA DEL GATE DEL MOTOR. `EngineSkinWeightNormalization.Enabled` es False por default, asi que
-        ' TryComputeWeights sale temprano y todo lo de arriba ejercita SOLO la rama normal — pero el refactor
-        ' de BlendBoneMatrices toco LAS DOS.
-        ' ANTES ESTE BLOQUE PRENDIA LA GLOBAL Y LA RESTAURABA EN Finally, y eso corria en el proceso del
-        ' USUARIO justo antes de un bake (2026-08-08). Un test no muta estado global de produccion en caliente
-        ' en una app que se distribuye: si algo tira entre el Set y el Finally, o si otro hilo lee la propiedad
-        ' en esa ventana, el bake sale con una ley que el usuario no eligio.
-        ' Ahora: se corre SOLO si el usuario YA la tiene prendida — que es exactamente cuando esa rama le
-        ' importa a SU bake— y NO se toca nada. El caso FORZADO (prenderla para cubrir la rama con el default
+        ' TryComputeWeights sale temprano y todo lo de arriba ejercita SOLO la rama normal.
+        ' SE CORRE SOLO SI EL USUARIO YA LA TIENE PRENDIDA —que es cuando esa rama le importa a SU bake— y NO
+        ' se toca la global: un test no muta estado de produccion en caliente en una app que se distribuye. Si
+        ' algo tira entre el Set y el Finally, o si otro hilo lee la propiedad en esa ventana, el bake sale con
+        ' una ley que el usuario no eligio. El caso FORZADO (prenderla para cubrir la rama con el default
         ' apagado) es un gate de BUILD y vive en Tools/ParityGate, que si puede mutar lo que quiera.
         If EngineSkinWeightNormalization.Enabled Then
             For iter As Integer = 0 To 499
@@ -755,11 +736,10 @@ Public Class SkinningHelper
                 Dim skinWpv = If(shapeSkin.WeightsPerVertex > 0, shapeSkin.WeightsPerVertex, 4)
                 Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso shapeSkin.VertexCount = vertexCount)
 
-                ' MISMOS PATRONES QUE EL BLEND, Y ESTABAN TODOS ACA TAMBIEN. Este bucle NO corre por
-                ' frame —corre al re-extraer geometria: cambiar un morph, un preset, un outfit— pero es lo
-                ' que el usuario siente como "tarda en responder". MEDIDO sobre el Serena Battle Suit:
-                ' 116-120 ms por re-extraccion antes de tocarlo.
-                ' Los cuatro patrones, ya probados en FillPerVertexSkinMatrix:
+                ' LOS MISMOS CUATRO PATRONES QUE EL BLEND. Este bucle NO corre por frame —corre al re-extraer
+                ' geometria: cambiar un morph, un preset, un outfit— pero es lo que el usuario siente como
+                ' "tarda en responder": sin tratarlos son 116-120 ms por re-extraccion sobre el Serena Battle
+                ' Suit. Los cuatro, ya probados en FillPerVertexSkinMatrix:
                 '   1. delegate por vertice -> se llama desde un bucle por RANGOS
                 '   2. `Dim ckWg(3) As Single` adentro = alocacion en heap POR VERTICE -> al scratch por hilo
                 '   3. `TryComputeWeights` sin corto-circuito de `Enabled` (que es False por default)
@@ -1044,8 +1024,8 @@ Public Class SkinningHelper
     End Function
 
     ''' <summary>Matrix4 -> Matrix4d. Para los consumidores que siguen haciendo su cuenta en Double
-    ''' (world-cache, exportador): ensanchar en un registro no cuesta memoria, y asi el unico cambio de
-    ''' esta tanda es la precision guardada, no la de las cuentas.</summary>
+    ''' (world-cache, exportador): ensanchar en un registro no cuesta memoria, y asi lo unico que cambia es
+    ''' la precision GUARDADA, no la de las cuentas.</summary>
     Public Shared Function AMatrix4d(m As Matrix4) As Matrix4d
         Return New Matrix4d(m.M11, m.M12, m.M13, m.M14,
                             m.M21, m.M22, m.M23, m.M24,
@@ -1056,10 +1036,10 @@ Public Class SkinningHelper
     ''' <summary>ESTA SOBRECARGA NO TIENE UN SOLO CONSUMIDOR DE PRODUCCION. Existe para el ARNES, que
     ''' la usa como opinion INDEPENDIENTE —el <c>Inverted().Transposed()</c> de OpenTK, otro algoritmo—
     ''' contra la ley por cofactores de <see cref="FastSkin"/>. Es el lado (a) del check [cofactores].
-    ''' <para>El doc anterior decia que "la usan el exportador de NIF y el world-cache". Es FALSO y se
-    ''' verifico call site por call site: los dos ensanchan a <c>Matrix4d</c> antes de llamar
-    ''' (<c>SceneNifExporter.vb:528</c> y <c>Create_Normal_Matrix</c>), o sea que resuelven a la OTRA
-    ''' sobrecarga. Desde que el render se mudo a FastSkin, esta no corre en ninguna app.</para>
+    ''' <para>NO la usan el exportador de NIF ni el world-cache, aunque lo parezca: los dos ensanchan a
+    ''' <c>Matrix4d</c> antes de llamar (<c>SceneNifExporter</c> y <c>Create_Normal_Matrix</c>), o sea que
+    ''' resuelven a la OTRA sobrecarga. Desde que el render se mudo a FastSkin, esta no corre en ninguna
+    ''' app.</para>
     ''' <para>Por eso es <c>Friend</c> y no <c>Public</c>: llega al arnes por <c>InternalsVisibleTo</c> y la
     ''' superficie de API que se distribuye no crece con una funcion que nadie de afuera usa.</para>
     ''' </summary>
@@ -1067,11 +1047,10 @@ Public Class SkinningHelper
         Dim L As New OpenTK.Mathematics.Matrix3(Origen.M11, Origen.M12, Origen.M13,
                                                 Origen.M21, Origen.M22, Origen.M23,
                                                 Origen.M31, Origen.M32, Origen.M33)
-        ' EL PREDICADO SALE DE `FastSkin.EsDegenerada`, NO DE UN LITERAL NI DE UNA COPIA. Estaba
-        ' escrito a mano aca y en la otra sobrecarga, o sea la misma decision en tres lugares sin nada que
-        ' los ate: mover uno separaba en silencio la decision de DEGENERACION del render de la del bake y
-        ' el exportador, y esa decision no es un error de redondeo — es normal identidad contra normal
-        ' transformada.
+        ' EL PREDICADO SALE DE `FastSkin.EsDegenerada`, NO DE UN LITERAL NI DE UNA COPIA. Escrito a mano acá
+        ' y en la otra sobrecarga serian tres copias de la misma decision sin nada que las ate, y mover una
+        ' separa en silencio la DEGENERACION del render de la del bake y el exportador — que no es un error de
+        ' redondeo: es normal identidad contra normal transformada.
         ' Ademas es RELATIVO a la escala de la matriz: un corte absoluto sobre un determinante en Single
         ' no distingue "matriz chica" de "matriz singular". Ver el doc de FastSkin.EpsDetRel.
         If FastSkin.EsDegenerada(FastSkin.DetPorPrimeraFila(L.M11, L.M12, L.M13, L.M21, L.M22, L.M23, L.M31, L.M32, L.M33),
@@ -1127,35 +1106,11 @@ Public Class SkinningHelper
                             inv.M31, inv.M32, inv.M33)
     End Function
 
-    ''' <summary>Direccion x la parte 3x3 de la matriz, TAL CUAL. No invierte, no transpone, no
-    ''' normaliza: aplica lo que se le da.
-    ''' <para>EXISTE PORQUE <c>Vector3d.TransformNormal</c> INVIERTE LA MATRIZ POR DENTRO.
-    ''' OpenTK define <c>TransformNormal(v, M) = v · (M⁻¹)ᵀ</c>: espera la matriz ORIGINAL y hace la
-    ''' inversa-transpuesta el solo. Todos los call sites de este archivo le pasaban
-    ''' <c>NormalsMat = (A⁻¹)ᵀ</c> — la matriz de normales YA calculada— con lo cual el resultado era
-    ''' <c>v · (((A⁻¹)ᵀ)⁻¹)ᵀ = v · A</c>: <b>la matriz CRUDA aplicada a la normal</b>,
-    ''' que es exactamente lo que la inversa-transpuesta existe para evitar. Y al reves con la tangente:
-    ''' <c>TransformNormal(T, totalSkinMat)</c> daba <c>T · A⁻ᵀ</c>, o sea la ley de la NORMAL aplicada
-    ''' a una direccion de la SUPERFICIE. Los comentarios de al lado declaraban la intencion correcta
-    ''' y el codigo hacia lo contrario, en los cuatro sitios.</para>
-    ''' <para>Magnitud MEDIDA contra OpenTK 4.9.3: con rotacion pura el error es <b>0,000 grados</b>
-    ''' (una rotacion es ortogonal, <c>A⁻ᵀ = A</c>) y con SHEAR —el blend de dos rotaciones distintas,
-    ''' o sea todo vertice con 2+ influencias: codo, rodilla, hombro— es de <b>36,44 grados</b>. Por eso
-    ''' sobrevivio tanto: N, T y B quedan sheareados IGUAL entre si, la base TBN sigue coherente, y el
-    ''' resultado es un sesgo suave de iluminacion en vez de un artefacto duro.</para>
-    ''' <para>EL ARREGLO NO ES INTERCAMBIAR LOS ARGUMENTOS. Pasarle <c>NormalsMat</c> a la tangente
-    ''' daria el resultado correcto, pero haria que OpenTK INVIERTA UNA 4x4 POR VERTICE sobre una
-    ''' matriz que ya es una inversa — trabajo tirado y precision perdida. Se aplica cada matriz
-    ''' directamente: la normal con <c>NormalsMat</c>, la tangente y la bitangente con la matriz total.
-    ''' Ademas se ahorra una inversion 4x4 por vertice y por canal.</para>
-    ''' <para>ESTO MUEVE BYTES HORNEADOS Y EXPORTADOS, en toda malla con vertices de 2+ influencias.
-    ''' Se hizo con autorizacion expresa del usuario el 2026-08-11.</para></summary>
     ''' <summary>LA LEY DEL BAKE SOBRE UN VERTICE, escrita UNA sola vez.
-    ''' <para>EXISTE PORQUE ESTABA CUATRO VECES Y ESO LA VOLVIA INCUBRIBLE. La decision que
-    ''' importa no es como se calcula la matriz de normales —eso ya lo cubre el gate [cofactores]—
-    ''' sino QUE MATRIZ RECIBE CADA CANAL, y esa decision vivia repetida en cuatro call sites. Un gate
-    ''' que ejercitara la primitiva daba verde con las matrices cruzadas: verificado, cruzarlas en los
-    ''' tres bloques del bake dejaba ParityGate en 21/21.</para>
+    ''' <para>ESTA PRIMITIVA EXISTE PARA QUE LA LEY NO SE REPITA POR CALL SITE. La decision que importa no es
+    ''' como se calcula la matriz de normales —eso ya lo cubre el gate [cofactores]— sino QUE MATRIZ RECIBE
+    ''' CADA CANAL, y ningun gate que ejercite la primitiva la ve: con las matrices CRUZADAS en los tres
+    ''' bloques del bake, ParityGate sigue dando 21/21.</para>
     ''' <para>LA LEY: la POSICION y las direcciones SOBRE la superficie (T y B) van con la matriz
     ''' total; la NORMAL va con la inversa-transpuesta. Es la misma que corre el render
     ''' (<see cref="FastSkin"/> y los dos vertex shaders), y esa igualdad ES la regla RENDER==BAKE.</para>
@@ -1169,12 +1124,6 @@ Public Class SkinningHelper
         b = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(PorMatriz3x3(RecalcTBN.ADbl(b), total)))
     End Sub
 
-    ''' <summary>Public y no Friend: el exportador de NIF vive en FO4_NPC_Manager, que es otro assembly.</summary>
-    ''' <summary>El PREDICADO de degeneracion del kernel, expuesto para que el arnes no lo transcriba.
-    ''' <para>Antes esto exponia una CONSTANTE (<c>EpsDetKernel As Single</c>) y el arnes escribia el
-    ''' <c>Math.Abs(det) &lt; eps</c> por su cuenta. Eso alcanzaba mientras el corte era un numero, pero
-    ''' ahora la decision depende TAMBIEN de la escala de la matriz: exportar el umbral y dejar que el
-    ''' llamador arme la comparacion volveria a partir la decision en dos. Ver FastSkin.EsDegenerada.</para></summary>
     ''' <summary>El eps RELATIVO del kernel, para que el camino vectorial del arnes pueda armar su
     ''' mascara. Un llamador que use esto tiene que transcribir el predicado COMPLETO —cuadrados
     ''' contra la cota de Hadamard—, no comparar el determinante pelado contra este numero.</summary>
@@ -1184,6 +1133,9 @@ Public Class SkinningHelper
         End Get
     End Property
 
+    ''' <summary>El PREDICADO de degeneracion del kernel, expuesto para que el arnes no lo transcriba.
+    ''' <para>Se exporta el PREDICADO y no el umbral: la decision depende tambien de la ESCALA de la matriz,
+    ''' asi que dejar que el llamador arme la comparacion la parte en dos. Ver FastSkin.EsDegenerada.</para></summary>
     Friend Shared Function EsDegeneradaDelKernel(det As Single,
                                                  m11 As Single, m12 As Single, m13 As Single,
                                                  m21 As Single, m22 As Single, m23 As Single,
@@ -1191,6 +1143,26 @@ Public Class SkinningHelper
         Return FastSkin.EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33)
     End Function
 
+    ''' <summary>Direccion x la parte 3x3 de la matriz, TAL CUAL. No invierte, no transpone, no normaliza:
+    ''' aplica lo que se le da. Public y no Friend: el exportador de NIF vive en FO4_NPC_Manager, otro assembly.
+    ''' <para>EXISTE PORQUE <c>Vector3d.TransformNormal</c> INVIERTE LA MATRIZ POR DENTRO. OpenTK define
+    ''' <c>TransformNormal(v, M) = v · (M⁻¹)ᵀ</c>: espera la matriz ORIGINAL y hace la inversa-transpuesta el
+    ''' solo. Pasarle <c>NormalsMat = (A⁻¹)ᵀ</c> —la matriz de normales YA calculada— da
+    ''' <c>v · (((A⁻¹)ᵀ)⁻¹)ᵀ = v · A</c>: <b>la matriz CRUDA aplicada a la normal</b>, que es exactamente lo
+    ''' que la inversa-transpuesta existe para evitar. Y al reves con la tangente:
+    ''' <c>TransformNormal(T, totalSkinMat)</c> da <c>T · A⁻ᵀ</c>, la ley de la NORMAL aplicada a una
+    ''' direccion de la SUPERFICIE.</para>
+    ''' <para>Magnitud MEDIDA contra OpenTK 4.9.3: con rotacion pura el error es <b>0,000 grados</b> (una
+    ''' rotacion es ortogonal, <c>A⁻ᵀ = A</c>) y con SHEAR —el blend de dos rotaciones distintas, o sea todo
+    ''' vertice con 2+ influencias: codo, rodilla, hombro— es de <b>36,44 grados</b>. Cuesta verlo porque N, T
+    ''' y B quedan sheareados IGUAL entre si: la base TBN sigue coherente y el sintoma es un sesgo suave de
+    ''' iluminacion, no un artefacto duro.</para>
+    ''' <para>Y EL ARREGLO NO ES INTERCAMBIAR LOS ARGUMENTOS: pasarle <c>NormalsMat</c> a la tangente daria el
+    ''' resultado correcto, pero haria que OpenTK INVIERTA UNA 4x4 POR VERTICE sobre una matriz que ya es una
+    ''' inversa — trabajo tirado y precision perdida. Se aplica cada matriz directamente: la normal con
+    ''' <c>NormalsMat</c>, la tangente y la bitangente con la matriz total.</para>
+    ''' <para>⚠️ ESTA LEY MUEVE BYTES HORNEADOS Y EXPORTADOS en toda malla con vertices de 2+
+    ''' influencias.</para></summary>
     Public Shared Function PorMatriz3x3(v As Vector3d, m As Matrix4d) As Vector3d
         Return New Vector3d(v.X * m.M11 + v.Y * m.M21 + v.Z * m.M31,
                             v.X * m.M12 + v.Y * m.M22 + v.Z * m.M32,
@@ -1207,13 +1179,6 @@ Public Class SkinningHelper
         nm4.M31 = nm3.M31 : nm4.M32 = nm3.M32 : nm4.M33 = nm3.M33
         Return nm4
     End Function
-    ''' <summary>
-    ''' Bake current pose into geometry: vertices/normals/tangents/bitangents are transformed
-    ''' by the per-bone skin matrices stored in <paramref name="geom"/>. If the underlying
-    ''' SkeletonInstance has no DeltaTransforms, matsBind == matsPose and the bake collapses
-    ''' to identity (no-op outcome, callers paid the parallel-loop cost). Callers that want
-    ''' "bake skipped when no pose" must check upstream and avoid invoking this method.
-    ''' </summary>
     ''' <summary>
     ''' Tupla (indices de hueso, pesos) de un vertice. Es la ENTRADA completa del calculo de las
     ''' matrices de skin: dos vertices con la misma firma dan exactamente las mismas matrices.
@@ -1262,6 +1227,13 @@ Public Class SkinningHelper
         End Sub
     End Structure
 
+    ''' <summary>
+    ''' Bake current pose into geometry: vertices/normals/tangents/bitangents are transformed
+    ''' by the per-bone skin matrices stored in <paramref name="geom"/>. If the underlying
+    ''' SkeletonInstance has no DeltaTransforms, matsBind == matsPose and the bake collapses
+    ''' to identity (no-op outcome, callers paid the parallel-loop cost). Callers that want
+    ''' "bake skipped when no pose" must check upstream and avoid invoking this method.
+    ''' </summary>
     Public Shared Sub BakeFromMemoryUsingOriginal(Shape As IRenderableShape, ByRef geom As SkinnedGeometry, inverse As Boolean, ApplyMorph As Boolean, RemoveZaps As Boolean, singleBoneSkinning As Boolean,
                                                    Optional geometryModifier As IGeometryModifier = Nothing)
         ' 2) Matrices calculadas en ExtractSkinnedGeometry
@@ -1343,40 +1315,32 @@ Public Class SkinningHelper
                                     BakearVertice(worldV(i), worldN(i), worldT(i), worldB(i), listo.Total, listo.Normales)
                                     ' `Continue For`, NUNCA `Return`. Esto vive dentro de un
                                     ' Sub(rango) de Parallel.ForEach sobre Partitioner.Create(0, n):
-                                    ' un `Return` sale del SUB y abandona el RANGO ENTERO. Medido
-                                    ' 2026-08-04: con `Return` se bakeaban 50 de 20.000 vertices, y
-                                    ' cuantos dependia del scheduler ⇒ el build no era reproducible
-                                    ' (A/A 61 de 821 archivos; con este arreglo, 0 en 6 pares).
-                                    ' El gate que citaba esta linea (`tritest\Memo.cs`, M1/M2/M3) NO
-                                    ' EXISTE en el arbol: buscado en todo el disco el 2026-08-06, ni la
-                                    ' carpeta ni el archivo. Lo que sí detecta esta regresión hoy es el
-                                    ' A/A —construir dos veces y comparar los bytes—, porque el defecto
-                                    ' dependía del scheduler: con `Return` daba 61 de 821 archivos
-                                    ' distintos entre dos corridas, y con el arreglo da 0.
+                                    ' un `Return` sale del SUB y abandona el RANGO ENTERO: se bakean ~50
+                                    ' de 20.000 vertices, y cuantos depende del scheduler ⇒ el build deja
+                                    ' de ser reproducible. El gate que lo detecta es el A/A —construir dos
+                                    ' veces y comparar los bytes—: con `Return`, 61 de 821 archivos
+                                    ' distintos entre dos corridas; sin el, 0 en 6 pares.
                                     Continue For
                                 End If
                                 memoOk = True
                             End If
 
                             If hasSkin Then
-                                ' ACÁ HABÍA LA QUINTA COPIA DE LA LEY, Y ADEMÁS DIVERGÍA DEL CONTRATO.
-                                ' El encabezado de este archivo declara `skinMatrix = Σ(bones·weight) / sumW` y
-                                ' avisa que los sitios gemelos hay que moverlos JUNTOS. Esta copia hacía
-                                ' `Σ(bones·(weight/sumW))`: divide POR SLOT antes de multiplicar, en vez de
-                                ' acumular crudo y escalar UNA vez al final. Es lo mismo en aritmética exacta y
-                                ' NO en punto flotante — N divisiones y N redondeos de producto contra un solo
-                                ' recíproco y un solo escalado.
-                                ' Donde `sumW = 1,0` exacto (malla con pesos normalizados, el caso normal) las dos
-                                ' formas coinciden bit a bit: `w/1.0 = w` y `*(1.0/1.0) = *1.0`. Sólo se separan
-                                ' donde Σw ≠ 1.
-                                ' Se unifica hacia BlendBoneMatrices, que es la forma DECLARADA, y de paso las dos
-                                ' mezclas pasan por el blend vectorial.
+                                ' LAS DOS MEZCLAS VAN POR `BlendBoneMatrices`, NUNCA escritas a mano acá: la
+                                ' forma DECLARADA en el encabezado de este archivo es
+                                ' `skinMatrix = Σ(bones·weight) / sumW`. Escribirla como
+                                ' `Σ(bones·(weight/sumW))` —dividir POR SLOT antes de multiplicar en vez de
+                                ' acumular crudo y escalar UNA vez al final— es lo mismo en aritmética exacta y
+                                ' NO en punto flotante: N divisiones y N redondeos de producto contra un solo
+                                ' recíproco y un solo escalado. Con `sumW = 1,0` exacto (malla normalizada, el
+                                ' caso normal) las dos coinciden bit a bit, así que la divergencia sólo asoma
+                                ' donde Σw ≠ 1: es de las que pasan un gate y se ven en el bake.
                                 '
                                 ' Dos llamadas, una por paleta. `TryComputeWeights` se evalúa dos veces: es puro
                                 ' (lee pesos, escribe el buffer de salida) y sus 3 contadores Interlocked no los
                                 ' consume nadie, así que repetirlo no cambia ningún resultado.
                                 ' `matsPose` y `matsBind` se dimensionan los dos con `bones.Count - 1`, así que el
-                                ' bound del índice —que la copia vieja tomaba siempre de `matsBind`— es el mismo.
+                                ' bound del índice es el mismo para las dos.
                                 Dim baseIdx = i * skinWpv
                                 MposeBlend = BlendBoneMatrices(skinFlatWgt, skinFlatIdx, baseIdx, skinWpv, matsPose, flatPalPose)
                                 MbindBlend = BlendBoneMatrices(skinFlatWgt, skinFlatIdx, baseIdx, skinWpv, matsBind, flatPalBind)
@@ -1750,23 +1714,6 @@ Public Class SkinningHelper
         geo.PerVertexMatrixValid = True
     End Sub
 
-    ''' <summary>
-    ''' Llena <paramref name="mats"/> con la matriz de skin de cada vértice, mezclando
-    ''' <paramref name="palette"/> con los pesos de <paramref name="skinning"/>.
-    '''
-    ''' <para>ÚNICO CUERPO. Lo llaman la pasada 2 de <see cref="RecomputeGPUBoneMatrices"/> (eager)
-    ''' y <see cref="EnsurePerVertexSkinMatrix"/> (perezoso). Estaban duplicados y <b>ya habían
-    ''' divergido en DOS ejes distintos</b>: la paleta (arreglado con <see cref="BuildPosePalette"/>)
-    ''' y este relleno.</para>
-    '''
-    ''' <para>La divergencia de acá era la más grave de las dos y NO era de signos de cero: con
-    ''' <c>hasSkin = False</c> el eager llenaba cada vértice con <c>palette(0)</c>, y el perezoso
-    ''' <b>no tocaba nada</b> y marcaba <c>PerVertexMatrixValid = True</c> igual. O sea que dejaba las
-    ''' matrices del extract anterior —de otra pose— y las daba por buenas: tras un play en GPU sobre
-    ''' una shape sin datos de skin per-vértice, el world-cache, los bounds, el picking y el export
-    ''' leían matrices viejas. Se detectó al factorizar, no antes: mirando los dos cuerpos por
-    ''' separado la rama faltante no salta.</para>
-    ''' </summary>
     ''' <summary>SOLO PARA MEDIR: el mismo cuerpo que FillPerVertexSkinMatrix pero recibiendo los
     ''' atributos sueltos, para que el arnes pueda cronometrarlo sin montar una ShapeSkinningData.</summary>
     Friend Shared Sub FillParaMedir(mats As SkinMatricesSoA, idx As Byte(), wgt As System.Half(),
@@ -1776,6 +1723,18 @@ Public Class SkinningHelper
         FillPerVertexSkinMatrix(mats, sk, palette)
     End Sub
 
+    ''' <summary>
+    ''' Llena <paramref name="mats"/> con la matriz de skin de cada vértice, mezclando
+    ''' <paramref name="palette"/> con los pesos de <paramref name="skinning"/>.
+    '''
+    ''' <para>ÚNICO CUERPO, y tiene que seguir siéndolo: lo llaman la pasada 2 de
+    ''' <see cref="RecomputeGPUBoneMatrices"/> (eager) y <see cref="EnsurePerVertexSkinMatrix"/> (perezoso).
+    ''' Dos cuerpos divergen en la rama que NO se mira: con <c>hasSkin = False</c> hay que llenar cada vértice
+    ''' con <c>palette(0)</c>: no tocar nada y marcar <c>PerVertexMatrixValid = True</c> igual deja las
+    ''' matrices del extract anterior —de otra pose— dadas por buenas, y tras un play en GPU sobre una shape
+    ''' sin datos de skin per-vértice el world-cache, los bounds, el picking y el export leen matrices
+    ''' rancias.</para>
+    ''' </summary>
     Friend Shared Sub FillPerVertexSkinMatrix(mats As SkinMatricesSoA, skinning As ShapeSkinningData, palette() As Matrix4d)
         If mats Is Nothing OrElse palette Is Nothing Then Return
         Dim vc = mats.Length
@@ -1787,41 +1746,34 @@ Public Class SkinningHelper
         Dim sinSkin = If(palette.Length > 0, palette(0), Matrix4d.Identity)
         ' Paleta plana para el blend vectorial: una vez por shape, no por vértice. Ver FastGeom.
         Dim flatPalette = FastGeom.BuildFlatPaletteS(palette)
-        ' SE RECORRE POR RANGOS, NO POR INDICE. Aca habia `Parallel.For(0, vc, body)` con `body` como
-        ' `Action(Of Integer)`: una INVOCACION DE DELEGATE POR VERTICE — 130.500 llamadas indirectas por
-        ' frame sobre el Serena Battle Suit, y cada una impide el inline de todo lo de adentro. Este mismo
-        ' repo ya habia sacado ese patron de `UpdateSkinBuffers_GL` (Partitioner + For interno,
-        ' byte-identico) y aca habia quedado.
+        ' SE RECORRE POR RANGOS, NO POR INDICE: `Parallel.For(0, vc, body)` con `body` como
+        ' `Action(Of Integer)` es una INVOCACION DE DELEGATE POR VERTICE —130.500 llamadas indirectas por
+        ' frame sobre el Serena Battle Suit— y cada una impide el inline de todo lo de adentro. Mismo patron
+        ' que `UpdateSkinBuffers_GL`: Partitioner + For interno, byte-identico.
         ' Y el resultado se escribe DIRECTO a las 12 secciones con `EstablecerDesde`, sin pasar por
-        ' Matrix4d → AMatrix4 → Matrix4 → indexador: eran dos copias de struct (128 B y 64 B) por vertice
-        ' para terminar guardando los mismos 12 Single. Bit a bit identico — es el mismo CSng sobre el
-        ' mismo Double.
+        ' Matrix4d → AMatrix4 → Matrix4 → indexador: ese camino son dos copias de struct (128 B y 64 B) por
+        ' vertice para terminar guardando los mismos 12 Single.
         Dim cuerpo As Action(Of Tuple(Of Integer, Integer)) =
             Sub(rango)
                 If hasSkin Then
                     ' CAMINO FUSIONADO. `BlendEnScratch` deja los 16 Single ya blendeados en el scratch
-                    ' y de ahi se copian los 12 utiles a las secciones. El camino largo construia una
-                    ' `Matrix4d` de 128 B con `LoadMatrixS` para que `EstablecerDesde` la desarmara con 12
-                    ' `CSng` — un ida y vuelta por vertice sobre datos que ya estaban en el formato final.
-                    ' MEDIDO antes de escribir esto (blend-bench, Serena Battle Suit, 130.180 vertices):
-                    ' el blend completo costaba 8,95 ms de los cuales el trabajo REAL —blend 1,63 +
-                    ' escritura 1,26— era 2,89. Los otros 6,06 ms (68 %) eran esta clase de envoltorio.
+                    ' y de ahi se copian los 12 utiles a las secciones. Construir una `Matrix4d` de 128 B con
+                    ' `LoadMatrixS` para que `EstablecerDesde` la desarme con 12 `CSng` es un ida y vuelta por
+                    ' vertice sobre datos que ya estan en el formato final.
+                    ' MEDIDO (blend-bench, Serena Battle Suit, 130.180 vertices): el blend completo costaba
+                    ' 8,95 ms de los cuales el trabajo REAL —blend 1,63 + escritura 1,26— era 2,89; los otros
+                    ' 6,06 ms (68 %) eran envoltorio de esta clase.
                     ' El scratch se toma UNA vez por RANGO. `GetBlendScratch` es un acceso ThreadStatic
                     ' con una guarda de tamano, y hacerlo por vertice son 130.500 lookups por frame para
                     ' devolver siempre el mismo objeto: el rango entero corre en un solo hilo.
                     Dim scR = GetBlendScratch(Math.Max(wpv, EngineSkinWeightNormalization.Slots))
-                    ' SIN MEMO POR VERTICE PREVIO — se implemento, se MIDIO y se saco.
-                    ' La idea: si la tupla (indices, pesos) es identica a la del vertice anterior el blend
-                    ' da lo mismo y alcanza con copiar 12 floats. El corpus la respaldaba: 14,0 % de los
-                    ' vertices del Serena Battle Suit repiten la tupla del vecino (18.205 de 130.180).
-                    ' MEDIDO igual, 5 corridas del bench comparando el bucle con y sin memo:
-                    '   -0,08 · +0,21 · +0,07 · +0,03 · -0,20  ⇒ promedio +0,03 ms
-                    ' O sea NEUTRO, con tendencia a costar: las 8 comparaciones que se pagan en el 100 % de
-                    ' los vertices se comen el ahorro del 14 %. Se saco porque codigo que no paga es
-                    ' complejidad gratis — y ademas obligaba a apagar el memo en las ramas de excepcion,
-                    ' que era una fuente de error silencioso.
-                    ' Un memo por FIRMA (hash) es peor todavia: ahorraria 33 % pero paga hash + lookup
-                    ' en el 100 %, ~3,9 ms contra 1,75 de ahorro.
+                    ' SIN MEMO POR VERTICE PREVIO: MEDIDO y NEUTRO, con tendencia a costar. Reusar el blend
+                    ' cuando la tupla (indices, pesos) repite la del vertice anterior toca al 14,0 % de los
+                    ' vertices del Serena Battle Suit (18.205 de 130.180), pero las 8 comparaciones se pagan
+                    ' en el 100 %: 5 corridas del bench dan -0,08 · +0,21 · +0,07 · +0,03 · -0,20 ⇒ +0,03 ms
+                    ' de promedio. Ademas obliga a apagar el memo en las ramas de excepcion, que es una fuente
+                    ' de error silencioso. Un memo por FIRMA (hash) es peor todavia: ahorraria 33 % pero paga
+                    ' hash + lookup en el 100 %, ~3,9 ms contra 1,75 de ahorro.
                     For i = rango.Item1 To rango.Item2 - 1
                         Dim b = i * wpv
                         Dim sc = BlendEnScratch(flatWgt, flatIdx, b, wpv, palette, flatPalette, scR)
@@ -2319,7 +2271,7 @@ Public Class RecalcTBN
         ' Derivadas UV precomputadas por triángulo (dependen SOLO de UV)
         ' EN SINGLE, como el canonico: `CalcTangentSpace` (nifly Geometry.cpp:999-1026) calcula
         ' s1/s2/t1/t2 en float a partir de UVs float. Las UVs de WM YA son Single (Uvs_Weight), asi
-        ' que hacer la resta en Double no aportaba informacion: solo la retenia mas tiempo.
+        ' que hacer la resta en Double no aporta informacion: solo la retiene mas tiempo.
         Public Tri_du1 As Single()
         Public Tri_dv1 As Single()
         Public Tri_du2 As Single()
@@ -2329,10 +2281,10 @@ Public Class RecalcTBN
         '''
         ''' El unico consumidor del determinante en todo el repo es <c>ComputeFaceTB</c>, y lo usa
         ''' EXCLUSIVAMENTE para <c>r = If(det &gt;= 0, +1, -1)</c> — la magnitud no se lee nunca. Guardarlo
-        ''' como Double costaba 8 bytes por triangulo (~16 B por vertice en una malla cerrada) para
+        ''' como Double cuesta 8 bytes por triangulo (~16 B por vertice en una malla cerrada) para
         ''' transportar un bit. El determinante se calcula en SINGLE, igual que el canonico
-        ''' (<c>float r = s1*t2 - s2*t1</c>, Geometry.cpp:1011), asi que el signo es el mismo por
-        ''' construccion. Este comentario decia "se sigue calculando en Double": era falso.
+        ''' (<c>float r = s1*t2 - s2*t1</c>, nifly Geometry.cpp), asi que el signo es el mismo por
+        ''' construccion.
         '''
         ''' La forma es <c>Not (det &gt;= 0.0)</c>, NO <c>det &lt; 0.0</c>. Con un determinante NaN
         ''' —UVs corruptas en el NIF de un mod— <c>NaN &gt;= 0</c> es False (r = -1) pero
@@ -2384,17 +2336,17 @@ Public Class RecalcTBN
     ' -------------------------------
     ' HAY UNA SOLA LEY de ponderado, la de BodySlide: la normal de cara se acumula SIN normalizar
     ' (pesa por area) y la base tangente se normaliza por triangulo y se acumula sin peso. El
-    ' `NormalWeightMode` configurable (area / angulo / area x angulo) se fue el 2026-08-03: dejaba el
-    ' marco tangente rotado respecto del canonico, que es el marco contra el que se autoran los
-    ' normal maps del ecosistema. Una clave `WeightMode` en un config.json viejo se ignora.
+    ' NO reintroducir un `NormalWeightMode` configurable (area / angulo / area x angulo): deja el marco
+    ' tangente rotado respecto del canonico, que es el marco contra el que se autoran los normal maps del
+    ' ecosistema. Una clave `WeightMode` en un config.json viejo se ignora.
     Public Structure TBNOptions
         ''' <summary>
         ''' Umbral de TRIÁNGULO DEGENERADO, en LONGITUD y en unidades del modelo: se descarta el aporte
         ''' de una cara cuya dirección tangente mide menos que esto. Default 0 = el canónico.
         ''' Es una longitud, no una longitud al cuadrado. El predicado compara contra
         ''' <c>LengthSquared</c> —para no pagar una raíz por triángulo— así que quien lo consume lo
-        ''' eleva al cuadrado UNA vez (<see cref="ComputeFaceTB"/>). Pasándolo crudo, el umbral efectivo
-        ''' era <c>sqrt(eps)</c> y la opción filtraba mil veces más de lo que el usuario pedía.
+        ''' eleva al cuadrado UNA vez (<see cref="ComputeFaceTB"/>). Pasarlo crudo deja el umbral efectivo en
+        ''' <c>sqrt(eps)</c> y la opción filtra mil veces más de lo que el usuario pidió.
         ''' </summary>
         Public Property EpsilonPos As Double
         Public Property NormalizeOutputs As Boolean             ' normalizar N/T/B al final
@@ -2429,10 +2381,9 @@ Public Class RecalcTBN
         '''
         ''' Sin esto, cada duplicado de una costura acumula sólo las caras que referencian SU índice —
         ''' medio vecindario — así que dos vértices en el MISMO punto de la superficie quedan con
-        ''' normales distintas y el juego dibuja una línea de iluminación. MEDIDO el 2026-08-04 sobre
-        ''' `CBBE Body`: en los 2.444 vértices de costura, 6,52° de media contra BodySlide y hasta 54°;
-        ''' en los 20.264 sin costura, 0,02°. Y `LaceBra`, que no tiene ninguna costura, daba 0,01° —
-        ''' o sea que el error estaba TODO acá.
+        ''' normales distintas y el juego dibuja una línea de iluminación. MEDIDO sobre `CBBE Body`: en los
+        ''' 2.444 vértices de costura, 6,52° de media contra BodySlide y hasta 54°; en los 20.264 sin costura,
+        ''' 0,02°. `LaceBra`, que no tiene ninguna costura, da 0,01° — o sea que el error está TODO acá.
         '''
         ''' No confundir con <see cref="EnableWelding"/>: aquél elige un MAESTRO y le copia su
         ''' normal a todo el grupo, lo que borra las aristas duras. Éste deja que cada miembro conserve
@@ -2615,7 +2566,7 @@ Public Class RecalcTBN
             ' consumidor tenía que redescubrir comparando los 3 índices del triángulo contra el
             ' vértice — 3 loads y 3 comparaciones por entrada que ahora no existen. Y un vértice
             ' repetido en un triángulo degenerado queda como DOS entradas, que es exactamente el
-            ' doble aporte que antes se contaba a mano.
+            ' doble aporte que corresponde.
             v2tData(cursor(i0)) = t * 4 : cursor(i0) += 1
             v2tData(cursor(i1)) = t * 4 + 1 : cursor(i1) += 1
             v2tData(cursor(i2)) = t * 4 + 2 : cursor(i2) += 1
@@ -2664,11 +2615,11 @@ Public Class RecalcTBN
     ''' la referencia del array de índices, el conteo de vértices y la precisión de UV con la que se
     ''' calcularon las derivadas.
     '''
-    ''' Antes la única condición era <c>Indices Is Nothing</c>, o sea que la coherencia dependía
-    ''' enteramente de que todos los llamadores se acordaran de invalidar a mano. Para las UVs esa
-    ''' disciplina existe y está documentada (<c>CachedTBN = Nothing</c> al mover UVs); para un cambio
-    ''' de topología o de conteo de vértices no había ninguna, y el modo de fallar es silencioso y
-    ''' feo: adjacencia y derivadas de OTRA malla, o un <c>IndexOutOfRange</c> a mitad de un build.
+    ''' Con <c>Indices Is Nothing</c> como única condición, la coherencia dependería enteramente de que todos
+    ''' los llamadores se acuerden de invalidar a mano. Para las UVs esa disciplina existe y está documentada
+    ''' (<c>CachedTBN = Nothing</c> al mover UVs); para un cambio de topología o de conteo de vértices no hay
+    ''' ninguna, y el modo de fallar es silencioso y feo: adyacencia y derivadas de OTRA malla, o un
+    ''' <c>IndexOutOfRange</c> a mitad de un build.
     ''' Verificar la firma no reemplaza a la invalidación explícita —no ve un cambio de VALOR de las
     ''' UVs, que conserva la firma— sino que le pone piso a lo que un olvido puede romper.
     ''' </summary>
@@ -3043,10 +2994,10 @@ Public Class RecalcTBN
         Dim idxTri = geo.CachedTBN.Indices
         Dim triCount As Integer = geo.CachedTBN.TriCount
         ' `EpsilonPos` es una LONGITUD y el predicado del degenerado compara contra `LengthSquared`
-        ' —sin raiz, que corre por triangulo—, asi que el cuadrado se hace UNA vez aca. Antes se pasaba
-        ' la longitud cruda contra el cuadrado: el umbral efectivo era `sqrt(eps)`. Con el default 0 da
-        ' lo mismo (0² = 0 y el predicado es `> 0` en los dos casos), asi que la salida por defecto no
-        ' se mueve un byte; para cualquier otro valor recien ahora el numero significa lo que dice.
+        ' —sin raiz, que corre por triangulo—, asi que el cuadrado se hace UNA vez aca. Pasar la longitud
+        ' cruda contra el cuadrado deja el umbral efectivo en `sqrt(eps)`: con el default 0 no se nota
+        ' (0² = 0 y el predicado es `> 0` en los dos casos), y para cualquier otro valor el numero deja de
+        ' significar lo que dice.
         ' SANEADO antes de elevar al cuadrado, y no es defensa decorativa: el cuadrado convierte
         ' entradas invalidas en un umbral que DESCARTA TODO en silencio, y la salida no seria un error
         ' sino una malla con la base tangente inventada por la rama degenerada en cada vertice.
@@ -3608,9 +3559,8 @@ Public Class RecalcTBN
         masterOf = New Integer(n - 1) {}
         membersOf = New Dictionary(Of Integer, List(Of Integer))(n)
         ' `weldPosEpsOrig` es una DISTANCIA en unidades de modelo, que es lo que declaran los
-        ' llamadores y lo que dice el control de la UI. Antes se consumia como fraccion de la escala de
-        ' la malla (k * L), asi que el epsilon efectivo cambiaba con el tamano del mesh y no era el que
-        ' el usuario pedia.
+        ' llamadores y lo que dice el control de la UI. NO consumirlo como fraccion de la escala de la malla
+        ' (k * L): el epsilon efectivo cambiaria con el tamano del mesh y dejaria de ser el que el usuario pide.
         ' Techo del epsilon. FUENTE: CreationKit.exe 0x142677EF0 usa el MISMO predicado que ClosePos
         ' (comparacion POR COMPONENTE, L-infinito) con tolerancia 1e-5 — constante @0x2FC4848 =
         ' 0x3727C5AC (float 1.0e-5). Pedir mas que eso sobre-suelda respecto del CK.
@@ -3624,31 +3574,26 @@ Public Class RecalcTBN
             Exit Sub
         End If
 
-        ' SE AGRUPA SOBRE EL ORDEN POR X, el mismo que mantiene el agrupado de costura entre
-        ' llamadas. Antes esto armaba una GRILLA HASH propia —cuantizar cada vertice a una celda,
-        ' meterlo en un diccionario y barrer las celdas vecinas— y el costo era brutal:
+        ' SE AGRUPA SOBRE EL ORDEN POR X, el mismo que mantiene el agrupado de costura entre llamadas.
+        ' NO volver a una GRILLA HASH propia —cuantizar cada vertice a una celda, meterlo en un diccionario y
+        ' barrer las celdas vecinas—: la grilla se reconstruye ENTERA en cada recalculo, y el barrido son 27
+        ' consultas al diccionario por vertice agrupando por posicion, y 243 agrupando por posicion Y UV.
         '
         '   MEDIDO (`Tools\TbnPerfProbe`, modo `weldarrastre`), arrastre de UN vertice:
         '     malla de  9.409 vertices: 0,27 ms sin welding vs 25,6 ms con welding = 96x
         '     malla de 22.201 vertices: 0,55 ms sin welding vs 33,6 ms con welding = 61x
         '
-        ' O sea que mover un vertice pagaba como si se hubieran movido los 22.201, en cada tick de un
-        ' arrastre, y un cuadro a 60 fps dura 16,6 ms: UNA shape con welding puesto se comia dos
-        ' cuadros. La causa no era el barrido de vecinas en si sino que la grilla se reconstruye ENTERA
-        ' en cada recalculo; y encima el barrido son 27 consultas al diccionario por vertice agrupando
-        ' por posicion, y 243 agrupando por posicion Y UV.
+        ' O sea que mover un vertice paga como si se hubieran movido los 22.201, en cada tick de un arrastre:
+        ' con un cuadro de 16,6 ms a 60 fps, UNA shape con welding puesto se come dos cuadros.
         '
-        ' El orden por X ya esta calculado y ya se mantiene incremental (ver `OrdenPorX`), y el
-        ' predicado de posicion del weld es del mismo tipo que el del canonico —L-infinito contra un
-        ' epsilon— asi que el mismo barrido hacia adelante con corte por X sirve, con OTRO epsilon.
-        ' Resultado: sin diccionario, sin hashing, sin cuantizar, y sin una segunda ley de agrupado.
+        ' El orden por X ya esta calculado y ya se mantiene incremental (ver `OrdenPorX`), y el predicado de
+        ' posicion del weld es del mismo tipo que el del canonico —L-infinito contra un epsilon— asi que el
+        ' mismo barrido hacia adelante con corte por X sirve, con OTRO epsilon: sin diccionario, sin hashing,
+        ' sin cuantizar, y sin una segunda ley de agrupado.
         '
-        ' ESTO CAMBIA LA AGRUPACION respecto de la version de grilla, y por lo tanto la salida
-        ' cuando `EnableWelding` esta puesto. Es inevitable: el resultado de la version vieja era "el
-        ' primer candidato que aparece recorriendo los vertices en orden de indice", o sea que dependia
-        ' del orden de recorrido. Acá el grupo queda definido como "todos los que coinciden con el
-        ' PRIMERO en orden de X", que es la misma forma que usa `ConstruyeGruposDeCostura` y la misma
-        ' del `SortingMatcher` canonico. Es una definicion mas firme, no sólo mas rapida.
+        ' EL GRUPO ES "todos los que coinciden con el PRIMERO en orden de X" —la misma forma que usa
+        ' `ConstruyeGruposDeCostura` y la del `SortingMatcher` canonico—, NO "el primer candidato que aparece
+        ' recorriendo los vertices en orden de indice", que depende del orden de recorrido.
         Dim orden() As Integer = Nothing
         Dim clave() As Double = Nothing
         OrdenPorX(geo.Vertices, n, cache, True, orden, clave)
@@ -3676,12 +3621,6 @@ Public Class RecalcTBN
         Next
     End Sub
 
-    ' Aca vivian `BuscaCompanero` y la Structure `WeldKey` (clave cuantizada + barrido de 27 o 243
-    ' celdas vecinas + `QuantizeToLong` + `IEquatable`). Se fueron enteros al pasar el agrupado al
-    ' orden por X: sin grilla no hay celdas que barrer, y el bug de "dos vertices a menos de epsilon
-    ' caen a los dos lados de un borde de celda" desaparece POR CONSTRUCCION en vez de taparse con un
-    ' barrido de vecinas. Un barrido de vecinas es siempre la señal de que la estructura de indexado
-    ' no es la que corresponde al predicado.
     ' Comparación fina por componente (posición)
     Private Shared Function ClosePos(a As Vector3d, b As Vector3d, eps As Double) As Boolean
         Return Math.Abs(a.X - b.X) <= eps AndAlso Math.Abs(a.Y - b.Y) <= eps AndAlso Math.Abs(a.Z - b.Z) <= eps
@@ -3753,9 +3692,8 @@ Public Class RecalcTBN
     ''' que un NaN o un vector nulo lleguen al NIF. Apagarlos no rompe: deja pasar exactamente lo
     ''' que calculo el canonico.
     ''' </summary>
-    ''' <remarks>NO recibe <c>EpsilonPos</c> a proposito. Lo recibia y no lo usaba —parametro muerto
-    ''' que sugeria que aca habia un umbral configurable cuando el criterio es el CERO EXACTO del
-    ''' canonico, que es otra cosa. Ver la nota de <see cref="BaseDeUnVertice"/>.</remarks>
+    ''' <remarks>NO recibe <c>EpsilonPos</c> a proposito: el criterio de acá es el CERO EXACTO del canonico,
+    ''' no un umbral configurable. Ver la nota de <see cref="BaseDeUnVertice"/>.</remarks>
     Private Shared Sub BaseTangenteDeVertice(N As Vector3, accU As Vector3, accV As Vector3,
                                              quiral As Single, opts As TBNOptions,
                                              ByRef T As Vector3, ByRef B As Vector3)
@@ -3763,7 +3701,7 @@ Public Class RecalcTBN
         ' NO la ortogonaliza, asi que su `rawTangents` puede no ser perpendicular a la normal. Es el
         ' UNICO punto donde hace falta la garantia de `NormalizeOutputs`; en el camino normal el
         ' Gram-Schmidt de abajo ya deja la base ortonormal y re-proyectarla solo la perturba.
-        ' MEDIDO en el CBBE de FO4: re-proyectar siempre empeoraba la tangente de 0,41 a 0,44 y la
+        ' MEDIDO en el CBBE de FO4: re-proyectar siempre empeora la tangente de 0,41 a 0,44 y la
         ' bitangente de 0,98 a 1,17 contra BodySlide.
         If EsCeroExacto(accU) OrElse EsCeroExacto(accV) Then
             ParDegenerado(N, T, B)
@@ -3869,22 +3807,21 @@ Public Class RecalcTBN
         Return v / l
     End Function
 
-    ''' <summary>Cero EXACTO en las tres componentes, que es el <c>IsZero()</c> del canonico sin
-    ''' epsilon. Un umbral aca cambiaria cuantos vertices caen en el fallback degenerado.</summary>
     ''' <summary>
     ''' El par degenerado del canonico, TAL CUAL: <c>rawTangents = (N.y, N.z, N.x)</c> y
-    ''' <c>rawBitangents = N x rawTangents</c> (nifly Geometry.cpp:1036-1040).
-    ''' Sin proyectar, sin normalizar y sin inventar nada — con la normal en CERO devuelve el par
-    ''' NULO, que es exactamente lo que escribe el BodySlide real. Antes hacia las tres cosas por su
-    ''' cuenta y ademas el llamador volvia a ortonormalizar encima: dos leyes para lo mismo y una
-    ''' invencion que ninguna opcion podia apagar. Lo que sigue —dejar la base ortonormal, y que no
-    ''' salga un marco nulo— lo deciden <c>NormalizeOutputs</c> y <c>RepairNaNs</c> en el llamador.
+    ''' <c>rawBitangents = N x rawTangents</c> (nifly, Geometry.cpp).
+    ''' Sin proyectar, sin normalizar y sin inventar nada: con la normal en CERO devuelve el par NULO, que es
+    ''' exactamente lo que escribe el BodySlide real. Hacer acá cualquiera de esas tres cosas duplica la ley,
+    ''' porque el llamador ya ortonormaliza encima — dejar la base ortonormal y que no salga un marco nulo lo
+    ''' deciden <c>NormalizeOutputs</c> y <c>RepairNaNs</c>, allá.
     ''' </summary>
     Private Shared Sub ParDegenerado(N As Vector3, ByRef T As Vector3, ByRef B As Vector3)
         B = New Vector3(N.Y, N.Z, N.X)
         T = Vector3.Cross(N, B)
     End Sub
 
+    ''' <summary>Cero EXACTO en las tres componentes, que es el <c>IsZero()</c> del canonico sin
+    ''' epsilon. Un umbral aca cambiaria cuantos vertices caen en el fallback degenerado.</summary>
     Private Shared Function EsCeroExacto(v As Vector3) As Boolean
         Return v.X = 0.0F AndAlso v.Y = 0.0F AndAlso v.Z = 0.0F
     End Function
@@ -3892,14 +3829,14 @@ Public Class RecalcTBN
     ''' <summary>
     ''' Precisión de la mantisa de IEEE-754 binary32: 2^-23. Es una propiedad del TIPO, no una
     ''' constante ajustada — <c>Single.Epsilon</c> NO sirve acá, que es el subnormal más chico.
+    ''' <para>Se DERIVA, no se transcribe: el literal `1.1920929E-07F` obliga a confiar en que alguien lo
+    ''' copió bien.</para>
     ''' </summary>
-    ''' DERIVADO, no transcrito: 2^-23 es la precision de la mantisa de IEEE-754 binary32. Estaba
-    ''' escrito como el literal `1.1920929E-07F`, que obliga a confiar en que alguien lo copio bien.
     Private Shared ReadOnly EpsilonDeMantisaSingle As Single = 1.0F / (1UL << 23)
 
-    ''' Precalculado. Estaba como `Math.Sqrt(...)` DENTRO de dos funciones que corren POR VERTICE:
-    ''' una raiz en Double mas la conversion, dos veces por vertice, sobre decenas de millones. Es una
-    ''' constante del TIPO — no depende de la malla ni del vertice — asi que se calcula una sola vez.
+    ''' <summary>Precalculado, no <c>Math.Sqrt(...)</c> dentro de las dos funciones que corren POR VERTICE:
+    ''' serian una raiz en Double mas la conversion, dos veces por vertice, sobre decenas de millones. Es una
+    ''' constante del TIPO — no depende de la malla ni del vertice.</summary>
     Private Shared ReadOnly RaizDeEpsilonSingle As Single = CSng(Math.Sqrt(1.0F / (1UL << 23)))
 
     ''' <summary>
@@ -4020,17 +3957,6 @@ Public Class RecalcTBN
         Return Double.IsNaN(v.X) OrElse Double.IsNaN(v.Y) OrElse Double.IsNaN(v.Z)
     End Function
 
-    ''' <summary>
-    ''' La normal tal como la VE el canonico al calcular la base tangente: ida y vuelta por los 3
-    ''' bytes del NIF. <c>CalcTangentSpace</c> llama <c>UpdateRawNormals()</c> antes de acumular
-    ''' (nifly Geometry.cpp:975 y :642), asi que ortogonaliza contra esto y no contra la normal de
-    ''' plena precision.
-    '''
-    ''' El resultado NO es unitario y NO hay que normalizarlo: el canonico lo usa asi, crudo, en
-    ''' <c>N.dot(...)</c> y en <c>N * dot</c>. Normalizarlo lo alejaria de nuevo.
-    ''' La codificacion es la de <c>SetNormals</c> (Geometry.cpp:858): <c>round((x+1)/2*255)</c>
-    ''' a byte, y la vuelta es <c>b/255*2-1</c>. El redondeo es a entero mas cercano.
-    ''' </summary>
     ''' <summary>La normal contra la que ortogonalizar: cuantizada si el bloque destino guarda la
     ''' normal en bytes, tal cual si la guarda en float.</summary>
     Friend Shared Function NormalParaTBN(v As Vector3, cuantiza As Boolean) As Vector3
@@ -4062,6 +3988,16 @@ Public Class RecalcTBN
         Return If(uvHalf, AHalf(c), c)
     End Function
 
+    ''' <summary>
+    ''' La normal tal como la VE el canonico al calcular la base tangente: ida y vuelta por los 3 bytes del
+    ''' NIF. <c>CalcTangentSpace</c> de nifly llama <c>UpdateRawNormals()</c> antes de acumular, asi que
+    ''' ortogonaliza contra esto y no contra la normal de plena precision.
+    '''
+    ''' El resultado NO es unitario y NO hay que normalizarlo: el canonico lo usa asi, crudo, en
+    ''' <c>N.dot(...)</c> y en <c>N * dot</c>. Normalizarlo lo aleja de nuevo.
+    ''' La codificacion es la de <c>SetNormals</c>: <c>round((x+1)/2*255)</c> a byte, y la vuelta es
+    ''' <c>b/255*2-1</c>. El redondeo es a entero mas cercano.
+    ''' </summary>
     Friend Shared Function NormalComoLaVeElCanonico(v As Vector3) As Vector3
         Return New Vector3(ByteIdaYVuelta(v.X), ByteIdaYVuelta(v.Y), ByteIdaYVuelta(v.Z))
     End Function

@@ -80,7 +80,7 @@ Public Module SseOverlayCompositor
 
     ''' <summary>Mapea un blend-mode de skee al par (blendOp, softLightModel) del dispatch COMPARTIDO CPU/GL.
     ''' FUENTE ÚNICA: la usan <see cref="ApplyOverlays"/> (CPU) y el path GPU (uniform uBlendOp del compositor),
-    ''' así los dos no pueden desincronizarse (antes el mapeo vivía inline en el CPU y el GPU no tenía ninguno).
+    ''' así los dos no pueden desincronizarse.
     ''' softLightModel = 3 (Pegtop) SIEMPRE: es el que usa RaceMenu.
     ''' Grayscale(20) y ColorMode(21) son NO SEPARABLES (necesitan los 3 canales del DESTINO juntos: luminancia y
     ''' HSV). El shader los implementa en <c>blendDispatch</c> (blendGrayscale/blendColorMode); el CPU los resuelve en
@@ -111,26 +111,22 @@ Public Module SseOverlayCompositor
         ' El loop de CAPAS queda SERIAL (el composite no es conmutativo: cada capa lee el acumulado de la
         ' anterior). El loop de PÍXELES dentro de cada capa es paralelo por rangos: cada píxel lee/escribe sólo
         ' sus propios índices ⇒ bit-idéntico al serial. El fold SSE corre a la resolución nativa del complexion
-        ' (4096² con COtR), donde esto era parte de los segundos por fold.
+        ' (4096² con COtR), donde el serial cuesta segundos por fold.
         For Each ovIter In overlays
             Dim ov = ovIter   ' copia local para el lambda (el iterador muta)
             ' El mapeo modo→(blendOp, softLight) es constante por capa: se resuelve UNA vez, no por píxel.
             Dim m = BlendOpFromSseMode(ov.BlendMode)
-            ' Color de capa: invariante del loop. Se iza a Single una vez por capa (antes se releia
-            ' del Double() en cada pixel).
+            ' Color de capa: invariante del loop. Se iza a Single una vez por capa, no por pixel.
             Dim c0 = CSng(ov.Color(0)), c1 = CSng(ov.Color(1)), c2 = CSng(ov.Color(2)), c3 = CSng(ov.Color(3))
             Dim isNormal = (ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode)
             Dim isGray = (ov.BlendMode = SseBlendMode.Grayscale)
-            ' ColorMode (HSV) YA NO se queda escalar. Estuvo excluido por "ramoso", que era comodidad y no
-            ' una barrera: las reducciones ENTRE canales son la misma horizontal que ya usaban Grayscale y el
-            ' blend de normales, los tres If de la tinta son selects, y el Mod 6 resulta EXACTO por el rango
-            ' de sus argumentos. Ver ColorModeBlockV.
+            ' ColorMode (HSV) TAMBIEN va vectorizado: lo ramoso de HSV se resuelve con la misma reduccion
+            ' horizontal de Grayscale, selects, y un Mod 6 que es EXACTO por el rango. Ver ColorModeBlockV.
             Dim isColor = (ov.BlendMode = SseBlendMode.ColorMode)
-            ' LA CONVENCION DE LA ETAPA `Overlay`, resuelta POR CAPA (el blendOp es de la capa) y FUERA del
-            ' loop de pixeles. Es lo que hace que el bucket Overlay de CharGen Options IMPACTE: hasta acá este
-            ' composite no leía la convención y el bucket era un control muerto. `isTextureSet` sigue el mismo
-            ' criterio que el builder GPU (BuildSkeeGpuLayers): las capas Mask (type 1) son PaletteMask, el
-            ' resto TextureSet — así el resolver elige el MISMO SrcSpace en los dos caminos.
+            ' LA CONVENCION DE LA ETAPA `Overlay` (bucket Overlay de CharGen Options), resuelta POR CAPA (el
+            ' blendOp es de la capa) y FUERA del loop de pixeles. `isTextureSet` sigue el mismo criterio que el
+            ' builder GPU (BuildSkeeGpuLayers): las capas Mask (type 1) son PaletteMask, el resto TextureSet —
+            ' así el resolver elige el MISMO SrcSpace en los dos caminos.
             ' El espacio del ACUMULADOR sale de AccumSpaceForChannel con la capacidad del espejo CPU de ESTE
             ' camino, que es la MISMA que declara el GPU en sus ApplyFaceTintPipeline ⇒ no pueden discrepar.
             Dim ovConv = FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.Overlay,
@@ -182,15 +178,13 @@ Public Module SseOverlayCompositor
             If la <= 0.0F Then Return
 
             Dim ar = acc(px * 4), ag = acc(px * 4 + 1), ab = acc(px * 4 + 2)
-            ' CONVERSIONES DE ESPACIO DE LA ETAPA OVERLAY (bucket `Overlay` de CharGen Options).
-            ' Antes este composite corría SIN NINGUNA conversión, así que el bucket Overlay era un control
-            ' que no movía un byte — y coincidía con el GPU sólo porque la ley SSE es all-Linear y las
-            ' conversiones del compositor compartido quedaban en no-op. Era una COINCIDENCIA de los defaults,
-            ' no una propiedad del diseño.
-            ' Las expresiones NO se reescribieron como un ComposeOne genérico: `mix(a,l,la)` y
-            ' `l*la + a*(1−la)` son iguales en álgebra y DISTINTAS en redondeo. Se ENVUELVEN las de siempre,
-            ' así que con ss=ws=cs=asp cada Cvt devuelve su entrada y la cuenta colapsa LITERALMENTE a la
-            ' previa ⇒ byte-inerte hasta que el usuario mueva el bucket.
+            ' CONVERSIONES DE ESPACIO DE LA ETAPA OVERLAY (bucket `Overlay` de CharGen Options). Con la ley SSE
+            ' all-Linear quedan en no-op, pero tienen que ESTAR: sin ellas el bucket no mueve un byte y la
+            ' coincidencia con el GPU es un accidente de los defaults, no una propiedad del diseño.
+            ' Las expresiones NO se reescriben como un ComposeOne genérico: `mix(a,l,la)` y
+            ' `l*la + a*(1−la)` son iguales en álgebra y DISTINTAS en redondeo. Se ENVUELVEN tal cual, así que
+            ' con ss=ws=cs=asp cada Cvt devuelve su entrada y la cuenta colapsa LITERALMENTE a la de siempre
+            ' ⇒ byte-inerte hasta que el usuario mueva el bucket.
             Dim ac_r = Cvt(ar, asp, cs), ac_g = Cvt(ag, asp, cs), ac_b = Cvt(ab, asp, cs)
             If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
                 ' normal.fx: over con el color de capa. No hay función de blend ⇒ no hay working space que
@@ -270,7 +264,7 @@ Public Module SseOverlayCompositor
             Else
                 lv = Vector.Multiply(t, colV) : la = Vector.Multiply(FastPow.VBroadcastChannelV(t, 3, shTmp), c3V)
             End If
-            ' early-out de bloque: restituye el `If la <= 0 Then Continue For` del escalar (ver la trampa 1)
+            ' early-out de bloque: restituye el `If la <= 0 Then Continue For` del escalar
             If Vector.LessThanOrEqualAll(Of Single)(la, zero) Then
                 e += lanes
                 Continue While
@@ -444,7 +438,7 @@ Public Module SseOverlayCompositor
             Dim tr = CSng(If(ov.HasTint, ov.TintR, 1.0))
             Dim tg = CSng(If(ov.HasTint, ov.TintG, 1.0))
             Dim tb = CSng(If(ov.HasTint, ov.TintB, 1.0))
-            ' COBERTURA = ALPHA del diffuse (FIEL AL ENGINE). VERIFICADO (Shader_Class.vb:1851-1859, sse_facegen_skin
+            ' COBERTURA = ALPHA del diffuse (FIEL AL ENGINE). VERIFICADO (Shader_Class.vb, rama sse_facegen_skin;
             ' RE): en SSE el BSLightingShader —el shader del overlay decal (SkinTint/FaceGen)— NO tiene greyscale-to-
             ' color/alpha (eso vive SOLO en el BSEffectShader). El diffuse se usa normal: RGB=color, alpha=cobertura
             ' (color.a *= baseMap.a). type 0 de skee: color = tex.rgb × tint.
@@ -457,9 +451,9 @@ Public Module SseOverlayCompositor
     End Function
 
 
-    ''' <summary>Alpha-over de skee sobre el acumulador (prologo escalar / cuerpo vectorial / cola).
-    ''' Extraida del lambda para que <see cref="OverlayVectorSelfTest"/> pueda contrastarla contra
-    ''' <see cref="SkeeMaskOne"/>; el codigo es el mismo.</summary>
+    ''' <summary>Alpha-over de skee sobre el acumulador (prologo escalar / cuerpo vectorial / cola). Vive
+    ''' fuera del lambda para que <see cref="OverlayVectorSelfTest"/> pueda contrastarla contra
+    ''' <see cref="SkeeMaskOne"/>.</summary>
     Private Sub SkeeMaskApply(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
                               opa As Single, npix As Integer)
         System.Threading.Tasks.Parallel.ForEach(
@@ -509,8 +503,8 @@ Public Module SseOverlayCompositor
 
 
     ''' <summary>Blend de normales MSN sobre el acumulador (prologo / cuerpo vectorial / cola, todo por
-    ''' PIXEL ENTERO). Extraida del lambda para que <see cref="OverlayVectorSelfTest"/> la pueda contrastar
-    ''' contra <see cref="MsnBlendPixel"/>; el codigo es el mismo.</summary>
+    ''' PIXEL ENTERO). Vive fuera del lambda para que <see cref="OverlayVectorSelfTest"/> la pueda contrastar
+    ''' contra <see cref="MsnBlendPixel"/>.</summary>
     Private Sub MsnBlendApply(msnAcc As Single(), ovNorm As Single(), ovDiff As Single(),
                               opa As Single, npix As Integer)
         System.Threading.Tasks.Parallel.ForEach(
@@ -738,7 +732,7 @@ Public Module SseOverlayCompositor
                                                      Optional decodeNormal As Func(Of String, Integer, Integer, Single()) = Nothing) As Boolean
         If msnAcc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
         ' El normal se lee con el decode VECTORIAL (reconstruye el eje Z de una fuente BC5/2-canales). Si el caller
-        ' no lo pasa se cae al de color = comportamiento previo exacto, así que ningún call site queda roto.
+        ' no lo pasa se cae al decode de color.
         Dim decodeN = If(decodeNormal, decode)
         Dim npix = w * h
         Dim any = False
@@ -760,9 +754,9 @@ Public Module SseOverlayCompositor
             ' COBERTURA = ALPHA DEL DIFFUSE DEL OVERLAY × opacidad, y NADA MÁS. Es la ley del MOTOR: el overlay
             ' es una geometría clonada que se dibuja encima, y lo que la recorta es el alpha de su SLOT 0
             ' (OverlayInterface::InstallOverlay) — el normal vive en el slot 1 y no recorta nada.
-            ' ACÁ HABÍA UN FALLBACK AL ALPHA DEL PROPIO NORMAL, roto por partida doble: (1) no es lo que hace el
-            ' motor, y (2) toda fuente sin alpha real —BC5 y BC1, o sea la mayoría de los normales— decodifica con
-            ' A=1 CONSTANTE ⇒ cobertura plena en TODA la cara: el "tatuaje" se comía la cabeza entera.
+            ' NUNCA caer al alpha del PROPIO normal: (1) no es lo que hace el motor, y (2) toda fuente sin alpha
+            ' real —BC5 y BC1, o sea la mayoría de los normales— decodifica con A=1 CONSTANTE ⇒ cobertura plena
+            ' en TODA la cara: el "tatuaje" se come la cabeza entera.
             ' Un overlay SIN diffuse no tiene de dónde sacar cobertura y por eso se saltea — que es también lo que
             ' pasa in-game: sin diffuse propio el slot 0 del decal queda con la textura por defecto de skee (la de
             ' `sDefaultTexture`, en blanco), así que el overlay no se ve. MISMO predicado que
@@ -789,10 +783,9 @@ Public Module SseOverlayCompositor
     ''' saltea <c>opacity &lt;= 0</c>) — ver la nota de <see cref="HasBakeableFaceOverlays"/>.
     '''
     ''' <para>Y EL DIFFUSE TAMBIÉN, por la MISMA razón: es de su alpha que sale la COBERTURA del normal, así que
-    ''' un overlay solo-normal no aporta nada y hacer que el gate dijera "sí" dejaba al compose sin hacer NADA — el
-    ''' patrón que este archivo ya documenta dos veces como caro (en el bake hace entrar al camino plegado para
-    ''' salir sin componer). Es además lo que hace el motor: sin diffuse propio el slot 0 del decal queda con la
-    ''' textura por defecto de skee y el overlay no se ve in-game.</para></summary>
+    ''' un overlay solo-normal no aporta nada y un gate que dijera "sí" dejaría al compose sin hacer NADA (el bake
+    ''' entra al camino plegado y sale sin componer). Es además lo que hace el motor: sin diffuse propio el slot 0
+    ''' del decal queda con la textura por defecto de skee y el overlay no se ve in-game.</para></summary>
     Public Function HasFaceOverlayNormals(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
@@ -813,9 +806,8 @@ Public Module SseOverlayCompositor
     ''' and non-folded variants, the live render, and the Papyrus apply-script emitter — must agree on this one
     ''' predicate, or an overlay ends up composited twice or not at all.
     '''
-    ''' <para>It exists because they did NOT agree: <c>BuildFaceOverlayGpuLayers</c> filtered on "has a diffuse"
-    ''' and forgot the node check entirely, so the GPU bake path composited BODY tattoos into the FACE texture
-    ''' while the CPU path did not.</para></summary>
+    ''' <para>Counter-example that makes it worth a shared predicate: filtering on "has a diffuse" WITHOUT the
+    ''' node check composites BODY tattoos into the FACE texture.</para></summary>
     Public Function IsFaceOverlay(ov As RaceMenuJslot.JslotOverlayNode) As Boolean
         Return ov IsNot Nothing AndAlso IsFaceOverlayNodeName(ov.NodeName)
     End Function
@@ -836,15 +828,15 @@ Public Module SseOverlayCompositor
     ''' plantilla (<c>*_magicoverlay.nif</c> vs <c>*_overlay.nif</c>, OverlayInterface.h:23-46).
     '''
     ''' <para>QUÉ CAMBIA DE VERDAD ENTRE LOS DOS POOLS — MEDIDO sobre los 8 NIF de <c>RaceMenu.bsa</c>
-    ''' (parseo de bloques, 2026-08-10), no razonado: los dos son <c>NiNode → NiTriShape +
+    ''' (parseo de bloques), no razonado: los dos son <c>NiNode → NiTriShape +
     ''' BSLightingShaderProperty + BSShaderTextureSet + NiAlphaProperty</c> con el MISMO <c>default.dds</c>; el magic
     ''' agrega <c>BSEffectShaderPropertyFloatController + NiFloatInterpolator + NiFloatData</c>, y los campos del
     ''' controller son: <c>typeOfControlledVariable = 5</c> (=<b>Alpha</b>), <c>target</c> = el
     ''' <c>BSLightingShaderProperty</c>, <c>flags = 0x4A</c> = <b>ACTIVE + CYCLE_REVERSE</b>, <c>frequency = 8</c>,
     ''' <c>startTime = 0</c>, <c>stopTime = 10</c>, y 2 keys LINEALES <c>(t=0, v=0) → (t=10, v=1)</c>.
-    ''' <para>⇒ La OPACIDAD del pool magic la maneja el motor: <b>pulsa 0↔1</b> mientras el controller corre. No
-    ''' "arranca apagada" (eso era una inferencia sobre la primera key) y nuestro <c>KEY_ALPHA</c> autorado lo pisa el
-    ''' controller mientras anima.</para>
+    ''' <para>⇒ La OPACIDAD del pool magic la maneja el motor: <b>pulsa 0↔1</b> mientras el controller corre. NO
+    ''' "arranca apagada" (leer eso de la primera key es una inferencia falsa), y nuestro <c>KEY_ALPHA</c> autorado
+    ''' lo pisa el controller mientras anima.</para>
     ''' Y la GEOMETRÍA no sale del NIF en ninguno de los dos: <c>InstallOverlay</c> descarta la shape del archivo
     ''' y crea una BSTriShape nueva copiando <c>vertexDesc</c>, los vértices dinámicos, <c>m_localTransform</c> y
     ''' <c>m_spSkinInstance</c> DE LA PIEL del actor (OverlayInterface.cpp:137-186); del NIF sólo sobreviven el
@@ -903,33 +895,30 @@ Public Module SseOverlayCompositor
     ''' <para>Ordenar por <see cref="ParseOvlIndex"/> a secas —que saltea la <c>S</c>— empataba
     ''' <c>[SOvl0]</c> con <c>[Ovl0]</c> y podía dejar el spell DEBAJO de <c>[Ovl1]</c>. Con el offset, el pool
     ''' magic siempre queda arriba, que es lo que hace el motor.</para>
-    ''' <para>EL OFFSET NO PUEDE SER "UN NÚMERO QUE ALCANCE". Era 1000, justificado con "skee clampea todo
-    ''' contador a 0x7F", y eso confunde lo que el MOTOR instancia con lo que el DATO puede traer: el decoder del
-    ''' <c>.jslot</c> acepta <c>\[S?Ovl\d+\]</c> sin techo (y el barrido del apply-script existe justamente porque un
-    ''' preset importado puede traer un <c>[SOvl40]</c>), así que un <c>Body [Ovl2000]</c> ordenaba ARRIBA de un
-    ''' <c>Body [SOvl0]</c> — rompiendo el único invariante que esta función existe para sostener. Y sumarle 1000 a un
-    ''' índice cercano a <c>Integer.MaxValue</c> DESBORDA: VB chequea overflow por default, así que era una excepción
-    ''' dentro del <c>OrderBy</c> del render, en un Task en background.
-    ''' <para>Solución: el índice se SATURA en un rango acotado y el pool aporta un offset que ese rango no puede
-    ''' alcanzar. Así el pool domina SIEMPRE, el orden dentro del pool se preserva para cualquier índice
+    ''' <para>EL OFFSET NO PUEDE SER "UN NÚMERO QUE ALCANCE" (p.ej. 1000 porque "skee clampea todo contador a
+    ''' 0x7F"): eso confunde lo que el MOTOR instancia con lo que el DATO puede traer — el decoder del
+    ''' <c>.jslot</c> acepta <c>\[S?Ovl\d+\]</c> SIN TECHO (un preset importado puede traer un <c>[SOvl40]</c>), así
+    ''' que un <c>Body [Ovl2000]</c> ordenaría ARRIBA de un <c>Body [SOvl0]</c>. Y sumar el offset a un índice
+    ''' cercano a <c>Integer.MaxValue</c> DESBORDA: VB chequea overflow por default ⇒ excepción dentro del
+    ''' <c>OrderBy</c> del render, en un Task en background.
+    ''' <para>Por eso el índice se SATURA en un rango acotado y el pool aporta un offset que ese rango no puede
+    ''' alcanzar: el pool domina SIEMPRE, el orden dentro del pool se preserva para cualquier índice
     ''' representable, y no hay suma que pueda desbordar.</para></para></summary>
     Public Function CompositeOrderKey(nodeName As String) As Integer
         Dim idx = ParseOvlIndex(nodeName)
         ' El índice literal 2147483647 ES el centinela, o sea indistinguible de "sin índice" ya desde
         ' ParseOvlIndex. Inalcanzable con dato real (skee clampea a 127) y sin consecuencia (los dos ordenan
         ' último y el OrderBy es estable), pero queda dicho: el dominio no está perfectamente separado.
-        If idx = Integer.MaxValue Then Return Integer.MaxValue   ' sin índice = al final, como antes
+        If idx = Integer.MaxValue Then Return Integer.MaxValue   ' sin índice = al final
         Dim bounded = Math.Max(0, Math.Min(idx, PoolOrderOffset - 1))
         Return If(IsSpellOverlayNodeName(nodeName), PoolOrderOffset, 0) + bounded
     End Function
 
     ''' <summary>Offset del pool magic en <see cref="CompositeOrderKey"/>: <c>Integer.MaxValue \ 2</c>.
-    ''' <para>ERA <c>1 &lt;&lt; 30</c>, (este comentario decia que eso es <c>MaxValue + 1</c> y es FALSO: es <c>MaxValue \ 2 + 1</c> — la
-    ''' conclusion de abajo era correcta, la cuenta escrita no), y ese +1 hacía que el extremo del pool magic
-    ''' (<c>offset + offset-1</c>) diera EXACTAMENTE <c>Integer.MaxValue</c> — el centinela de "sin índice, al
-    ''' final". Efecto observable nulo (los dos ordenan último y OrderBy es estable), pero es una colisión de
-    ''' dominios: el valor que significa "no tiene índice" pasaba a ser también un índice válido. Con MaxValue
-    ''' el tope del magic queda en MaxValue-2 y el centinela vuelve a ser inalcanzable.</para></summary>
+    ''' <para>NO usar <c>1 &lt;&lt; 30</c> (= <c>MaxValue \ 2 + 1</c>): ese +1 hace que el extremo del pool magic
+    ''' (<c>offset + offset-1</c>) dé EXACTAMENTE <c>Integer.MaxValue</c>, que es el centinela de "sin índice, al
+    ''' final" ⇒ colisión de dominios (el valor que significa "no tiene índice" pasa a ser un índice válido). Con
+    ''' <c>MaxValue \ 2</c> el tope del magic queda en MaxValue-2 y el centinela es inalcanzable.</para></summary>
     Private ReadOnly PoolOrderOffset As Integer = Integer.MaxValue \ 2
 
     ''' <summary>The FACE overlays the FOLD owns — node filter only, no texture requirement.
@@ -947,12 +936,12 @@ Public Module SseOverlayCompositor
     ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture AND
     ''' non-zero opacity — i.e. whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything.
     '''
-    ''' <para>LA OPACIDAD ENTRA EN EL GATE. Antes el gate sólo exigía <c>DiffusePath</c> mientras el compose
-    ''' además saltea <c>opacity &lt;= 0</c>: un overlay con opacidad 0 hacía que el gate dijera SÍ y el compose
-    ''' no hiciera NADA. Eso no era inerte — el bake entraba al camino plegado, salía por el return de
-    ''' <c>WriteSseFaceDiffuseWithOverlays</c> sin componer, y de paso se saltaba el borrado de los artefactos
-    ''' del fold anterior. Las dos condiciones que el gate NO puede replicar sin tocar disco (que la textura
-    ''' exista y decodifique) quedan como error REPORTADO, no como salida silenciosa.</para></summary>
+    ''' <para>LA OPACIDAD ENTRA EN EL GATE porque entra en el compose (que saltea <c>opacity &lt;= 0</c>). Un gate
+    ''' que sólo exigiera <c>DiffusePath</c> diría SÍ para un overlay con opacidad 0 y el compose no haría NADA —
+    ''' y eso NO es inerte: el bake entra al camino plegado, sale por el return de
+    ''' <c>WriteSseFaceDiffuseWithOverlays</c> sin componer, y de paso se saltea el borrado de los artefactos del
+    ''' fold anterior. Las dos condiciones que el gate NO puede replicar sin tocar disco (que la textura exista y
+    ''' decodifique) quedan como error REPORTADO, no como salida silenciosa.</para></summary>
     Public Function HasBakeableFaceOverlays(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
@@ -963,13 +952,11 @@ Public Module SseOverlayCompositor
 
     ''' <summary>The gate EVERY bake path must use: is there ANY face overlay the bake can fold — diffuse o
     ''' normal?
-    ''' <para>ESTA NOTA DECÍA que un overlay solo-normal era legal porque el compose usaba "el alpha del propio
-    ''' normal como cobertura". Ese fallback SE ELIMINÓ: no es la ley del motor (la cobertura sale del slot 0 del
-    ''' decal, nunca del normal) y encima estaba roto — una fuente de 2 canales decodifica con A=1 constante, así
-    ''' que cubría la cara ENTERA. Hoy los dos términos exigen diffuse, con lo cual esta función es equivalente a
-    ''' <see cref="HasBakeableFaceOverlays"/>; se conserva como el nombre que expresa la intención en los call
-    ''' sites del bake y del render, y para que el día que aparezca una fuente de cobertura legítima para el
-    ''' normal el cambio sea de UNA línea acá.</para></summary>
+    ''' <para>Un overlay solo-normal NO es plegable: la cobertura sale del alpha del diffuse (slot 0 del decal),
+    ''' nunca del propio normal — una fuente de 2 canales decodifica con A=1 constante y cubriría la cara ENTERA.
+    ''' Como los dos términos exigen diffuse, esto es HOY equivalente a <see cref="HasBakeableFaceOverlays"/>; se
+    ''' conserva como el nombre que expresa la intención en los call sites del bake y del render, y para que el
+    ''' día que aparezca una fuente de cobertura legítima para el normal el cambio sea de UNA línea acá.</para></summary>
     Public Function HasAnyFoldableFaceOverlay(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         Return HasBakeableFaceOverlays(overlays) OrElse HasFaceOverlayNormals(overlays)
     End Function
@@ -991,11 +978,11 @@ Public Module SseOverlayCompositor
     ''' (RGBA de almacenamiento [0,1], w*h*4) or Nothing for a type-2 solid layer.</summary>
     ''' <param name="hasColor">False = la capa NO declara color (p.ej. un MASKC ausente en el NIF). NO es lo
     ''' mismo que "el color vale 0xFFFFFFFF": ese valor ES <see cref="SkeePresetHair"/>, el sentinel de skee para
-    ''' "usar el color de pelo del NPC". Usarlo como default de "sin dato" hacía que una capa sin MASKC entrara por
-    ''' la resolución de presets; y como los dos callers pasan <c>hairRgb = Nothing</c>, caía al decode literal del
-    ''' 0xFFFFFFFF ⇒ BLANCO opaco pintado con la cobertura de la máscara. Con hasColor=False se saltea la
-    ''' resolución de sentinels y se usa blanco DIRECTO — el mismo valor de antes (no hay fuente RE para otro),
-    ''' pero por la rama correcta y sin poder confundirse con un preset.</param>
+    ''' "usar el color de pelo del NPC". Usarlo como default de "sin dato" mete una capa sin MASKC en la resolución
+    ''' de presets; y como los dos callers pasan <c>hairRgb = Nothing</c>, cae al decode literal del 0xFFFFFFFF ⇒
+    ''' BLANCO opaco pintado con la cobertura de la máscara. Con hasColor=False se saltea la resolución de
+    ''' sentinels y se usa blanco DIRECTO (no hay fuente RE para otro valor), sin poder confundirse con un
+    ''' preset.</param>
     Public Function BuildSkeeMaskLayer(colorArgbOrPreset As UInteger, opacity As Double, texRgba As Single(),
                                        layerType As Integer, blend As SseBlendMode,
                                        skinRgb As Double(), hairRgb As Double(),
@@ -1024,14 +1011,11 @@ Public Module SseOverlayCompositor
     ''' <summary>Índice del nodo <c>[Ovl{n}]</c> / <c>[SOvl{n}]</c> (n entero) o Integer.MaxValue si no matchea
     ''' (los sin índice van al final). Es el ÍNDICE DENTRO DE SU POOL; el orden total entre pools lo da
     ''' <see cref="CompositeOrderKey"/>.
-    ''' <para>ESTO ESTABA ROTO PARA EL POOL MAGIC, y el comentario afirmaba lo contrario ("salta '[Ovl' o
-    ''' '[SOvl'"). El buscado era el literal <c>"[Ovl"</c>, que NO es substring de <c>"[SOvl0]"</c> —entre el
-    ''' corchete y la <c>O</c> hay una <c>S</c>— así que TODO nodo <c>[SOvl{n}]</c> caía en el
-    ''' <c>open &lt; 0</c> y devolvía MaxValue. Consecuencias medidas por el gate: el índice del pool magic era
-    ''' siempre −1/MaxValue, con lo cual (a) el orden dentro del pool magic era arbitrario, (b) buscar el primer
-    ''' slot libre daba 0 siempre —dos overlays magic autorados en el MISMO nodo, uno pisando al otro— y (c) el
-    ''' Up/Down no podía reordenarlos. El "salta hasta el primer dígito" de abajo era correcto y nunca se
-    ''' ejecutaba para el caso que decía cubrir.</para></summary>
+    ''' <para>EL TAG SE BUSCA CON <see cref="FindOvlTagStart"/>, que prueba los DOS literales: <c>"[Ovl"</c> NO es
+    ''' substring de <c>"[SOvl0]"</c> —entre el corchete y la <c>O</c> hay una <c>S</c>—, así que buscar sólo
+    ''' <c>"[Ovl"</c> devuelve MaxValue para TODO nodo del pool magic. Consecuencias: (a) el orden dentro del pool
+    ''' magic queda arbitrario, (b) buscar el primer slot libre da 0 siempre ⇒ dos overlays magic autorados en el
+    ''' MISMO nodo, uno pisando al otro, y (c) el Up/Down no los puede reordenar.</para></summary>
     Public Function ParseOvlIndex(nodeName As String) As Integer
         If String.IsNullOrEmpty(nodeName) Then Return Integer.MaxValue
         Dim open = FindOvlTagStart(nodeName)

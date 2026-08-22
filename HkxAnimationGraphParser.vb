@@ -705,7 +705,7 @@ Public Partial Class HkxObjectGraph_Class
         Dim a = CUInt(raw And &HFFFUL)
         Dim b = CUInt((raw >> 12) And &HFFFUL)
         Dim c = CUInt((raw >> 24) And &HFFFUL)
-        ' Bias is the 11-bit mask (1<<11)-1 = 2047, per HavokLib hka_spline_decompressor.cpp:67/76
+        ' Bias is the 11-bit mask (1<<11)-1 = 2047, per HavokLib hka_spline_decompressor.cpp
         ' (constexpr uint64 mask = (1 << 11) - 1; ... IVector4A16(tmpVal) - mask).
         Dim x = (CSng(a) - 2047.0F) * Fractal
         Dim y = (CSng(b) - 2047.0F) * Fractal

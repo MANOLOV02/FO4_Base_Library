@@ -158,10 +158,10 @@ Public Class ReadOnlyPropertyDescriptor
         End Get
     End Property
 
-    ' Reset BLOQUEADO, igual que Set. Antes CanResetValue/ResetValue delegaban en el inner, asi que el
-    ' comando `Reset` del PropertyGrid seguia siendo una via de ESCRITURA sobre un campo presentado como
-    ' no editable: bastaba con resetear la fila para pisar el valor autorado con el default (p.ej.
-    ' ResetSpecularColor lo lleva a blanco). Un campo read-only tiene que serlo por las dos vias.
+    ' Reset BLOQUEADO, igual que Set. Delegar CanResetValue/ResetValue en el inner deja el comando `Reset`
+    ' del PropertyGrid como via de ESCRITURA sobre un campo presentado como no editable: resetear la fila
+    ' pisa el valor autorado con el default (p.ej. ResetSpecularColor lo lleva a blanco). Un campo read-only
+    ' tiene que serlo por las dos vias.
     Public Overrides Function CanResetValue(component As Object) As Boolean
         Return False
     End Function
@@ -252,10 +252,9 @@ Public Class FO4UnifiedMaterial_Class
     ''' campo que el .bgem no tiene. La única salida era destildar la casilla.</para></summary>
     ''' <para>ES UNA FUNCION Y NO UNA PROPIEDAD, Y ESO NO ES ESTILO. <see cref="GetDifferences"/>
     ''' compara TODA propiedad publica de instancia sin indexar, por reflexion. Declarada como propiedad,
-    ''' esta se comparaba A SI MISMA: devuelve un <c>String()</c> nuevo en cada llamada, dos arrays
-    ''' distintos nunca son iguales, y el resultado era que TODO material difiere de TODO material — o sea
-    ''' el mismo bloqueo que venia a arreglar, ahora para los dos tipos. Lo destapo el gate
-    ''' <c>castshadows-editor</c>, que fallo con el fix ya aplicado.
+    ''' esta se compararia A SI MISMA: devuelve un <c>String()</c> nuevo en cada llamada, dos arrays
+    ''' distintos nunca son iguales, y entonces TODO material difiere de TODO material. Lo detecta el gate
+    ''' <c>castshadows-editor</c>.
     ''' <para>REGLA GENERAL PARA ESTA CLASE: agregar una propiedad publica la mete automaticamente en
     ''' la comparacion de materiales. Si lo que se agrega no es un dato del material, tiene que ser una
     ''' Function, un campo, o entrar en la lista de exclusion.</para></para>
@@ -343,8 +342,8 @@ Public Class FO4UnifiedMaterial_Class
         ' BGSM, así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el ×2.
         copy.TintColorScale = TintColorScale
         ' Decisión de escritura del alpha-test: vive en el wrapper (NO en el BGSM), así que el loop de
-        ' reflexión de arriba no lo alcanza. Sin esto un clon perdería el bit F4SPF2 Alpha_Test y el veto
-        ' Es un HECHO del record, no una orden. Ver NpcDiffuseAlphaTest.
+        ' reflexión de arriba no lo alcanza. Sin esto un clon perdería el bit F4SPF2 Alpha_Test y el veto de
+        ' creación de la NiAlphaProperty. Ver NpcDiffuseAlphaTest.
         copy.NpcDiffuseAlphaTest = NpcDiffuseAlphaTest
         copy.VetoAlphaPropertyCreation = VetoAlphaPropertyCreation
         Return copy
@@ -361,8 +360,8 @@ Public Class FO4UnifiedMaterial_Class
     Private _EnvmapMaskPath As String = ""
     Private Shared ReadOnly GrayscaleTextureWidthCache As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
 
-    ' Requisito C: MaskWrites pasa a ser visible en el grid pero deshabilitado en v2 (gate v>=6,
-    ' no persistible en FO4 v2; lo aplica FieldGates). Antes era Browsable(False).
+    ' Requisito C: MaskWrites es visible en el grid pero deshabilitado en v2 (gate v>=6, no persistible en
+    ' FO4 v2; lo aplica FieldGates).
     <Category("Rendering")>
     Public Property MaskWrites As MaskWriteFlags
         Get
@@ -440,21 +439,20 @@ Public Class FO4UnifiedMaterial_Class
     ''' Sin esto, un material venido de un `.bgsm` suelto escribiría 1.0 como glossiness.</summary>
     Private _NifGlossinessFromShader As Boolean = False
 
-    ''' <summary>La conversión Glossiness↔Smoothness NO es reversible y ACUMULA.
+    ''' <summary>La conversión Glossiness↔Smoothness NO es reversible, pero NO acumula.
     ''' `SseGlossinessToSmoothness` (log2) y `SmoothnessToSseGlossiness` (pow) pasan por un Single de
     ''' 24 bits de mantisa, y el exponente necesita más: MEDIDO sobre 3014 valores de glossiness reales,
     ''' 2322 no vuelven al valor original — p.ej. **30.0 → 29,999996185302734** (`00 00 f0 41` →
     ''' `fe ff ef 41`), y **80.0 → 80,00000762939453**: el error va para los DOS lados, no siempre baja.
-    ''' NO acumula: MEDIDO, el segundo guardado ya no mueve el valor (30 → 29,999996 → 29,999996 → …).
-    ''' Es una cuantización de UNA sola vez, no una deriva que empeora con el uso. (Una versión previa de
-    ''' este comentario decía que acumulaba y que siempre bajaba: las dos mitades eran falsas.)
+    ''' MEDIDO también que el segundo guardado ya no mueve el valor (30 → 29,999996 → 29,999996 → …): es una
+    ''' cuantización de UNA sola vez, no una deriva que empeora con el uso.
     ''' <para>El arreglo NO es redondear: medido, hacen falta 9 decimales para volver exacto, y un Single
     ''' no los sostiene (~7 dígitos). El arreglo es **no reconvertir lo que el usuario no tocó**: si
     ''' `Smoothness` no divergió del snapshot de carga, se reescribe el glossiness CRUDO del NIF.
     ''' Alcance: sólo el round-trip NIF SSE → material en memoria → NIF SSE. Un `.bgsm` en disco guarda
     ''' `Smoothness` nativo y nunca pasa por esta conversión.</para>
-    ''' <para>NO cambiar `BGSM.Smoothness` a Double para arreglar esto: el campo vive en MaterialLib
-    ''' (`BGSM.cs:132`) y el formato binario lo persiste como Single (`:376`/`:545`) — ensancharlo obliga
+    ''' <para>NO cambiar `BGSM.Smoothness` a Double para arreglar esto: el campo vive en MaterialLib y su
+    ''' formato binario lo persiste como Single (ver `BGSM.Deserialize`/`Serialize`) — ensancharlo obliga
     ''' a tocar la librería de materiales y no compra nada que esto no dé ya.</para></summary>
     ''' <remarks>NO usar el seguimiento de cambios (`_cleanSnapshot`/`IsDirty`) para esto: eso
     ''' responde "¿divergió del estado de carga?", que depende de que el snapshot exista y de por qué
@@ -1038,32 +1036,30 @@ Public Class FO4UnifiedMaterial_Class
     ''' decision externa, la lib deriva del material como siempre (es el default, ningun consumidor cambia de
     ''' comportamiento); <c>False</c> = VETO, si el shape fuente no traia NiAlphaProperty no se le ESTRENA uno
     ''' -el round-trip no se toca- y el bit queda limpio; <c>True</c> = se escribe el bit y se permite fabricar.</para>
-    ''' <para>âš ï¸ NO implementado a proposito: forzar la fabricacion cuando el material NO tiene alpha. El CK si
+    ''' <para>⚠ï¸ NO implementado a proposito: forzar la fabricacion cuando el material NO tiene alpha. El CK si
     ''' lo haria, pero no existe ni un caso (el unico consumidor que pone True es el bake FO4 y su unico NPC con
     ''' el flag tiene material CON alpha).</para>
     ''' <para>Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.</para></summary>
-    ''' <para>REEMPLAZA a `AlphaTestWriteDecision As Boolean?` (2026-08-08). Aquel mezclaba DOS cosas en
-    ''' un tri-estado: este HECHO del record, y un VETO sobre la creacion del NiAlphaProperty. El veto tenia
-    ''' tres defectos: (1) se asignaba DENTRO de la rama del MNAM de ApplyTextureSetOverrides y se evaporaba
-    ''' cuando el TXST no traia MNAM -- medido: 1.757 NPC en FO4, y SIEMPRE en SSE (el TXST de Skyrim no
-    ''' tiene MNAM); (2) frenaba la creacion pero NO el borrado, siendo la misma decision en espejo; (3) al
-    ''' vivir en el material tenia que hilarse por una funcion de TEXTURAS.</para>
-    ''' <para>El veto se ELIMINO, no se reemplazo. MEDIDO sobre el 100% de los head parts de los dos juegos:
-    ''' dejar que el material gobierne las DOS direcciones coincide con el motor (ApplyMaterialToGeometry
-    ''' 0x142169BB0: aloca si el material pide alpha, desprende si no). Efecto total: SSE 0 shapes, FO4 1
-    ''' shape (AikeaHeadband, que hoy queda SIN el bloque que el motor SI le pone).</para>
-    ''' <para>Queda como HECHO del record del NPC (flag ACBS Diffuse Alpha Test 0x01000000), con un unico
+    ''' <para>⛔ NO volver a mezclarlo con el VETO de creacion del NiAlphaProperty en un solo tri-estado, ni
+    ''' hacerlo viajar por el camino de TEXTURAS: asignado dentro de la rama del MNAM de
+    ''' ApplyTextureSetOverrides se EVAPORA cuando el TXST no trae MNAM (medido: 1.757 NPC en FO4, y SIEMPRE
+    ''' en SSE, cuyo TXST no tiene MNAM). El veto vive en <see cref="VetoAlphaPropertyCreation"/>.</para>
+    ''' <para>MEDIDO sobre el 100% de los head parts de los dos juegos: dejar que el MATERIAL gobierne las DOS
+    ''' direcciones coincide con el motor (ApplyMaterialToGeometry 0x142169BB0: aloca si el material pide
+    ''' alpha, desprende si no). Diferencia total contra el CK: SSE 0 shapes, FO4 1 shape (AikeaHeadband, que
+    ''' queda SIN el bloque que el motor SI le pone).</para>
+    ''' <para>Esto es un HECHO del record del NPC (flag ACBS Diffuse Alpha Test 0x01000000), con un unico
     ''' consumidor: el bit F4SPF2 Alpha_Test. Ese bit NO es funcion del material y la lib no puede derivarlo.</para>
     <Browsable(False)>
     Public Property NpcDiffuseAlphaTest As Boolean
 
     ''' <summary><b>Intención del CONSUMIDOR sobre la EXISTENCIA del NiAlphaProperty.</b> True = no estrenar
     ''' un bloque que el shape fuente no traía (el round-trip de los que sí lo traían no se toca).
-    ''' <para>Separado de <see cref="NpcDiffuseAlphaTest"/> desde 2026-08-08: antes los dos viajaban en un
-    ''' único <c>Boolean?</c> donde `Nothing` significaba a la vez "sin opinión" y "comportamiento histórico",
-    ''' y eso hacía imposible expresar el veto sin arrastrar el hecho del record (y viceversa).</para>
-    ''' <para>Default False = fabrica, que es lo que hacía `Nothing` ⇒ ningún consumidor cambia de
-    ''' comportamiento salvo el que lo prenda explícitamente.</para></summary>
+    ''' <para>Separado de <see cref="NpcDiffuseAlphaTest"/> a propósito: en un único <c>Boolean?</c>, `Nothing`
+    ''' significa a la vez "sin opinión" y "comportamiento por defecto", y no se puede expresar el veto sin
+    ''' arrastrar el hecho del record (ni al revés).</para>
+    ''' <para>Default False = fabrica ⇒ sólo cambia de comportamiento el consumidor que lo prenda
+    ''' explícitamente.</para></summary>
     <Browsable(False)>
     Public Property VetoAlphaPropertyCreation As Boolean
 
@@ -1569,7 +1565,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' P3: no side-effect. The binary only persists EmittanceColor when EmitEnabled is set
-                    ' (BGSM.cs:576-579), and the grid disables this field when EmitEnabled=False, so the
+                    ' (BGSM.Serialize), and the grid disables this field when EmitEnabled=False, so the
                     ' setter must not silently force EmitEnabled on a color change.
                     CType(Underlying_Material, BGSM).EmittanceColor = ColorToMaterialRgb(value)
                 Case GetType(BGEM)
@@ -1829,7 +1825,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' esta acotado a 1.0. La convencion SSE de pelo dobla el color del CLFM y el CK hace ese x2 EN FLOAT, asi
     ''' que doblar en espacio byte clampeaba y perdia el exceso. Este factor sube el x2 al dominio float y
     ''' elimina el clamp estructural.</para>
-    ''' <para>âš ï¸ HairTintColor y SkinTintColor comparten el MISMO storage BGSM, asi que el factor aplica a los
+    ''' <para>⚠ï¸ HairTintColor y SkinTintColor comparten el MISMO storage BGSM, asi que el factor aplica a los
     ''' dos por igual, que es exactamente lo que hacia el x2 en bytes. Quien lo setea debe hacerlo
     ''' explicitamente (tambien a 1.0F) para no arrastrar estado si el material se reutiliza.</para></summary>
     <Browsable(False)>
@@ -2504,10 +2500,10 @@ Public Class FO4UnifiedMaterial_Class
     ''' son BGSM.
     ''' <para>EXISTE PORQUE EL CAMPO NO ESTA EN EL FORMATO BGEM. `Cast Shadows` es un campo del
     ''' archivo .bgsm; el .bgem no lo tiene. Pero el BIT SI ESTA EN EL NIF, para cualquier
-    ''' BSShaderProperty — y antes se descartaba: el getter hacia
-    ''' <c>TryCast(Underlying_Material, BGSM)?.CastShadows</c> con fallback a <c>False</c>, o sea que
-    ''' TODO material de effect shader reportaba False sin mirar el NIF. Consecuencia: ninguna shape con
-    ''' BSEffectShaderProperty proyectaba sombra jamas, aunque el bit estuviera prendido.</para>
+    ''' BSShaderProperty, y hay que leerlo de ahi: un getter que haga
+    ''' <c>TryCast(Underlying_Material, BGSM)?.CastShadows</c> con fallback a <c>False</c> reporta False para
+    ''' TODO material de effect shader sin mirar el NIF ⇒ ninguna shape con BSEffectShaderProperty proyecta
+    ''' sombra jamas, aunque el bit este prendido.</para>
     ''' <para>La regla que se respeta es la del proyecto: <b>en FO4 el material PISA al NIF</b> — pero
     ''' solo para los campos que el material TIENE. Si el formato no lo tiene, manda el NIF.</para>
     ''' </summary>
@@ -2516,8 +2512,8 @@ Public Class FO4UnifiedMaterial_Class
     ''' <summary>Proyecta sombra. En BGSM sale del campo del material; en BGEM (que no tiene ese campo)
     ''' sale del bit <c>Cast_Shadows</c> de SF1 del NIF, que es game-aware — SK y FO4 comparten el
     ''' <c>1 &lt;&lt; 9</c>, ver <see cref="CastShadowsFlagValue"/>.
-    ''' <para>YA NO ES <c>&lt;BGSMOnly&gt;</c>: el property grid la ocultaba para BGEM, asi que el
-    ''' usuario no podia ni verla ni corregirla, y ademas leia False siempre. Ahora aplica a los dos.</para>
+    ''' <para>⛔ NO marcarla <c>&lt;BGSMOnly&gt;</c>: el property grid la ocultaria para BGEM, donde el usuario
+    ''' no podria ni verla ni corregirla. Aplica a los DOS tipos.</para>
     ''' </summary>
     <Category("Rendering")>
     <DefaultValue(False)>
@@ -3022,15 +3018,13 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    ' Helpers DeriveShaderTypeFromBgsm / ApplyShaderTypeToBgsm ELIMINADOS (2026-06): tipo y flags
-    ' desacoplados. El tipo se lee/escribe fiel del shader (Create/Save) y los flags se editan
-    ' independientes en el grid; no se deriva el tipo desde los flags ni viceversa.
+    ' TIPO Y FLAGS ESTAN DESACOPLADOS: el tipo se lee/escribe fiel del shader (Create/Save) y los flags se
+    ' editan independientes en el grid. NO derivar el tipo desde los flags ni al reves.
 
     ' P1 — Versiones. El probe (25.082 materiales reales) solo observó v1/v2; vanilla = v2.
     ' Crear material (FO4 y contenedor Skyrim opción (b)) ⇒ siempre v2. El roundtrip preserva
-    ' la versión leída (v1 parsea idéntico a v2 en MaterialLib). FO76 (v>2) está fuera de alcance,
-    ' por eso se eliminaron MaterialVersionSSE=20 / MaterialVersionFO76=21 y el escalado especulativo
-    ' ResolveBgemVersionForShader (v10-22), que no tenían respaldo en datos reales.
+    ' la versión leída (v1 parsea idéntico a v2 en MaterialLib). FO76 (v>2) está FUERA DE ALCANCE: no
+    ' agregar constantes de versión ni escalados por versión sin respaldo en datos reales.
     Private Const MaterialVersionFO4 As UInteger = 2UI
 
     Public Shared Function DefaultMaterialVersionForNif(Nif As Nifcontent_Class_Manolo) As UInteger
@@ -3069,7 +3063,7 @@ Public Class FO4UnifiedMaterial_Class
 
         ' --- BaseMaterialFile-level version gates ---
         g(NameOf(DepthBias)) = Gate(FieldApplies.Both, bgsmMin:=10UI, bgemMin:=10UI)         ' v>=10
-        ' MaskWrites: v>=6. Hoy <Browsable(False)>; se expone visible-disabled en v2 (requisito C).
+        ' MaskWrites: v>=6. Visible pero deshabilitado en v2 (requisito C).
         g(NameOf(MaskWrites)) = Gate(FieldApplies.Both, bgsmMin:=6UI, bgemMin:=6UI)
 
         ' --- Texturas BGSM con gate de versión (v>2 ⇒ no persistible en FO4 v2) ---
@@ -3162,7 +3156,7 @@ Public Class FO4UnifiedMaterial_Class
         ' (barrido sobre la poblacion COMPLETA de los 974 PS que consumen BGSM). El unico multiplicador de 3
         ' componentes del specular en el forward es el color de LUZ; confirmado in-game.
         ' En SKYRIM si se usa, y por eso el gate es POR JUEGO en vez de un Browsable(False).
-        ' âš ï¸ Alcance honesto: en SSE esta medido sobre una MUESTRA de PS, no sobre la poblacion completa - alcanza
+        ' ⚠ï¸ Alcance honesto: en SSE esta medido sobre una MUESTRA de PS, no sobre la poblacion completa - alcanza
         ' para afirmar que hay camino, no para cuantificar en cuantas tecnicas.
         g(NameOf(SpecularColor)) = Gate(FieldApplies.BGSM,
                                         enabledWhen:=Function(m) Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
@@ -3208,7 +3202,7 @@ Public Class FO4UnifiedMaterial_Class
         Return AlphaBlendModeType.Unknown
     End Function
 
-    ' P4 — Flags shader SIEMPRE game-aware. HasFlagSF1/SF2 y SetFlagSF1/SF2 (ShaderHelper.cs:198-298)
+    ' P4 — Flags shader SIEMPRE game-aware. HasFlagSF1/SF2 y SetFlagSF1/SF2 (NiflySharp, ShaderHelper)
     ' YA hacen el branch por shad.Type, pero castean el valor que se les pasa al enum del juego en uso;
     ' pasar un Fallout4ShaderPropertyFlags* incondicional escribe/lee el BIT correcto solo si SK comparte
     ' esa posición de bit. Estos helpers devuelven, para el shader dado, el valor del flag correcto por
@@ -3231,9 +3225,9 @@ Public Class FO4UnifiedMaterial_Class
     ''' pierde 8 campos vs el del original — `CastShadows`, `ZBufferWrite`, `ZBufferTest`,
     ''' `SpecularEnabled`, `ModelSpaceNormals`, `SubsurfaceLighting`, **`Facegen`** y el `_sk` de
     ''' `LightingTexture`. Con este backfill: 8 → 0.</para>
-    ''' <para>La escalera es COPIA TEXTUAL de la que ya tenían los dos `Save_To_Shader` (:3432-3441 y
-    ''' :3643-3651) y es byte-idéntica a la de `BSLightingShaderProperty.cs:293-315`. La asimetría era
-    ''' que el ESCRITOR se protegía y el LECTOR no. NO reemplazar por el juego de `Config_App`: el eje
+    ''' <para>La escalera es la MISMA que aplican los dos <c>Save_To_Shader</c> de esta clase, y es
+    ''' byte-idéntica a la de <c>BSLightingShaderProperty.BeforeSync</c> (NiflySharp). El LECTOR tiene que
+    ''' protegerse igual que el ESCRITOR. NO reemplazar por el juego de `Config_App`: el eje
     ''' es el vocabulario de flags del BLOQUE, y un NIF puede traer bloques de shader distintos.</para>
     ''' <para>No-op para todo shader leído de disco (`BeforeSync` ya le puso el `Type`): medido en
     ''' stream 83 → SK, 100 → SK, 130 → FO4.</para></summary>
@@ -3381,8 +3375,8 @@ Public Class FO4UnifiedMaterial_Class
         If needAlphaProperty Then
             Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
-                ' VETO DE FABRICACIÓN — NO BORRARLO. Se intentó el 2026-08-08 y el A/B del corpus lo
-                ' refutó en una sola corrida: DLCCoast.esm/00004639 (DiMA) pasó de 26 a 27 bloques porque su
+                ' VETO DE FABRICACIÓN — NO BORRARLO. El A/B del corpus lo refuta en una sola corrida:
+                ' DLCCoast.esm/00004639 (DiMA) pasa de 26 a 27 bloques porque su
                 ' shape 'SynthHeadGen2' recibió un NiAlphaProperty. Es EL caso contra el que se midió la ley
                 ' del bake — "DiMA no debe recibir NiAlphaProperty" (paridad CK). Fue el ÚNICO NIF que se
                 ' movió de los 2.877 de FO4 (SSE: 0 de 4.460), o sea que el veto tiene exactamente un
@@ -3504,8 +3498,8 @@ Public Class FO4UnifiedMaterial_Class
         mat.AlphaBlendMode = AlphaBlendModeType.None
         Underlying_Material = mat
         ' Guard: a null shader (NIF without a BSLightingShaderProperty) must not NRE here.
-        ' ShaderType_SK_FO4 is the unified accessor — same backing field as ShaderType
-        ' (NiObjectNET.g.cs:22), used consistently with Save_To_Shader (vb:2616).
+        ' ShaderType_SK_FO4 is the unified accessor — same backing field as ShaderType in NiObjectNET,
+        ' used consistently with Save_To_Shader.
         If Not IsNothing(shad) Then
             _NifShaderType = shad.ShaderType_SK_FO4
             _skinTintAlpha = shad.SkinTintAlpha
@@ -3522,7 +3516,7 @@ Public Class FO4UnifiedMaterial_Class
         ' SkinTint/Hair/Tree/Glowmap/EnvMapping leídos arriba, incluido .Hair desde el flag F4 y
         ' .Tree desde HasTreeAnim). La llamada con semántica de asignación PISABA esos flags
         ' cuando el tipo no era el correspondiente (humanhair01 perdía bHair; 118.996 tree shapes
-        ' perdían bTree) — probe typeflags 2026-06-11.
+        ' perdían bTree) — medido con el probe `typeflags`.
         ClearDirty()
     End Sub
 
@@ -3609,8 +3603,8 @@ Public Class FO4UnifiedMaterial_Class
             mat = New BGEM
         End If
         ' EL BIT Cast_Shadows NO PUEDE IR EN EL `With`: el BGEM no tiene ese campo. Va al respaldo del
-        ' wrapper, que es de donde lo lee la propiedad cuando el material no es BGSM. Antes no se leia y
-        ' toda shape con effect shader quedaba en False — ninguna proyectaba sombra.
+        ' wrapper, que es de donde lo lee la propiedad cuando el material no es BGSM. Sin leerlo acá, toda
+        ' shape con effect shader queda en False y ninguna proyecta sombra.
         _castShadowsDelNif = shad IsNot Nothing AndAlso ShaderHelper.HasFlagSF1(shad, CastShadowsFlagValue(shad))
         mat.Version = DefaultMaterialVersionForNif(Nif)
         mat.AlphaTest = False
@@ -3675,9 +3669,9 @@ Public Class FO4UnifiedMaterial_Class
 
         ShaderHelper.SetFlagSF2(shad, WeaponBloodFlagValue(shad), Mat.BloodEnabled)
         ShaderHelper.SetFlagSF1(shad, SoftEffectFlagValue(shad), Mat.SoftEnabled)
-        ' EL BIT SE ESCRIBE, y antes no se tocaba. No lo borraba —lo dejaba como venia— pero eso hacia
-        ' que la propiedad fuera de SOLO LECTURA en la practica para BGEM: editarla en el grid no llegaba
-        ' al archivo. Con esto el round-trip cierra: lo que se lee es lo que se escribe.
+        ' EL BIT SE ESCRIBE SIEMPRE. Dejarlo "como venia" no borra nada, pero vuelve la propiedad de SOLO
+        ' LECTURA en la practica para BGEM: editarla en el grid no llega al archivo. Escribirlo cierra el
+        ' round-trip — lo que se lee es lo que se escribe.
         ShaderHelper.SetFlagSF1(shad, CastShadowsFlagValue(shad), Me.CastShadows)
         ShaderHelper.SetFlagSF1(shad, DecalFlagValue(shad), Mat.Decal)
         ShaderHelper.SetFlagSF2(shad, NoFadeFlagValue(shad), Mat.DecalNoFade)
@@ -3763,9 +3757,9 @@ Public Class FO4UnifiedMaterial_Class
                                bgsm.WetnessControlSpecMinvar, bgsm.WetnessControlEnvMapScale,
                                bgsm.WetnessControlFresnelPower, bgsm.WetnessControlMetalness}
         ' Cache válido solo si TODAS las entradas de ResolveEffectiveWetness coinciden con las
-        ' cacheadas: wetness cruda + RootMaterialPath + Facegen + SkinTint. (Medido 2026-06-21:
-        ' keyear solo por la cruda dejaba el Resolved* stale y producía falso "material modificado"
-        ' en WM Revisa_Material — live cacheado 0.8 vs recomputado 0.6 con entradas idénticas.)
+        ' cacheadas: wetness cruda + RootMaterialPath + Facegen + SkinTint. MEDIDO: keyear sólo por la
+        ' cruda deja el Resolved* stale y produce un falso "material modificado" en WM Revisa_Material
+        ' (live cacheado 0.8 vs recomputado 0.6 con entradas idénticas).
         If Not _resolvedWetnessValid _
            OrElse Not SameRawWetness(raw, _resolvedWetnessRaw) _
            OrElse Not String.Equals(If(bgsm.RootMaterialPath, ""), If(_resolvedWetnessRootPath, ""), StringComparison.OrdinalIgnoreCase) _
@@ -3806,8 +3800,8 @@ Public Class FO4UnifiedMaterial_Class
                 ' los genéricos desde defaultTemplate_wet (0.8...). Las shapes de cabeza ghoul embeben el
                 ' shader con RootMaterialName='' (matPath='') → caen acá; CK las bakea 0.6 (SkinTemplate),
                 ' no 0.8. Las cabezas humanas referencian su .bgsm externo (root=SkinTemplate explícito) y
-                ' nunca llegan a este fallback. Verificado: GhoulMatProbe + log SHAPEMAT-FINAL (root='')
-                ' 2026-06-13. SkinTemplate_Wet a su vez encadena a defaultTemplate_wet para lo que no cubra.
+                ' nunca llegan a este fallback. Verificado con GhoulMatProbe + el log SHAPEMAT-FINAL
+                ' (root=''). SkinTemplate_Wet a su vez encadena a defaultTemplate_wet para lo que no cubra.
                 If defaultApplied Then Exit While
                 rootPath = If(bgsm.Facegen OrElse bgsm.SkinTint, SkinWetTemplate, DefaultWetTemplate)
                 defaultApplied = True
@@ -3852,15 +3846,13 @@ Public Class FO4UnifiedMaterial_Class
     ''' <para>MISMO problema que la Glossiness (ver NifGlossinessStillMatchesSmoothness). El viaje
     ''' Color3(float) → bytes (NifColor3ToMaterialRgb) → Color3 (MaterialRgbToNifColor3) es LOSSY:
     ''' cuantiza a la grilla de 1/255 por canal (0,37 → 0,36862746). NO acumula — MEDIDO: el segundo
-    ''' guardado ya no mueve el valor. Es pérdida de UNA sola vez. (Una versión previa de este comentario
-    ''' decía que acumulaba: era falso.) Antes de alinear el eje del material esto no se notaba en Oldrim
-    ''' porque ahí `SkinTint` salía False y el bloque no disparaba nunca; al corregir la lectura empezó a
-    ''' disparar. Guard: si el Color3 que YA tiene el shader proyecta exactamente a los bytes del material,
+    ''' guardado ya no mueve el valor. Es pérdida de UNA sola vez.
+    ''' Guard: si el Color3 que YA tiene el shader proyecta exactamente a los bytes del material,
     ''' nadie lo tocó ⇒ no se reescribe y el valor original sobrevive bit a bit. Sólo se toma el atajo con
     ''' TintColorScale neutro: con escala ≠ 1 lectura y escritura no son inversas y la comparación no valdría.</para>
     ''' <para>El guard NO puede suprimir un valor derivado: `SkinTintColor` y `HairTintColor` del material
     ''' son EL MISMO campo del BGSM (ver el getter de SkinTintColor), así que cuando el resolver escribe el
-    ''' tono de piel del actor (NpcMaterialResolver ~:1521) el valor DIFIERE del que trae el shader y el guard
+    ''' tono de piel del actor (ver <c>NpcMaterialResolver</c>) el valor DIFIERE del que trae el shader y el guard
     ''' no salta. Sólo saltea cuando escribir sería un no-op salvo por la cuantización. Y por eso el
     ''' HairTintColor de Save_To_Shader se escribe SIEMPRE y no lleva guard: ése es un valor DERIVADO del CLFM
     ''' del NPC (2 × CLFM, paridad con el CK — verificado byte-exacto: NPC 0x00016F04 → CLFM
@@ -3900,9 +3892,8 @@ Public Class FO4UnifiedMaterial_Class
         shad.EmissiveColor = MaterialRgbToNifColor4(Mat.EmittanceColor, 0.0F)
         shad.EmissiveMultiple = Mat.EmittanceMult
         shad.Alpha = Mat.Alpha
-        ' Sin downgrade EnvironmentMap→Default cuando falta la textura: refutado por vanilla
-        ' (50.303 shapes EnvironmentMap sin textura conservan el tipo — probe invariantes
-        ' 2026-06-11; el origen del downgrade no estaba documentado). La invariante confirmada
+        ' Sin downgrade EnvironmentMap→Default cuando falta la textura: lo refuta vanilla (50.303 shapes
+        ' EnvironmentMap sin textura conservan el tipo — probe `invariantes`). La invariante confirmada
         ' que SÍ se conserva: EnvironmentMapScale = 1.0 cuando env mapping está OFF (882k shapes).
         Dim effectiveShaderType = shaderType
         Dim effectiveEnvMapping = Mat.EnvironmentMapping
@@ -3924,12 +3915,12 @@ Public Class FO4UnifiedMaterial_Class
         ' Rolloff del soft-lighting al campo correcto por juego (simetrico con la lectura en ExtractFromNif):
         ' SSE lo guarda en Lighting Effect 1 y FO4 en SubsurfaceRolloff. Escribir siempre a SubsurfaceRolloff
         ' dejaba el valor en un campo que el motor SSE ignora, rompiendo el round-trip.
-        ' â›” LA COMPUERTA POR EL FLAG ES SOLO DE FO4. En Skyrim el valor vive en el NIF y el CK lo copia
+        ' ⛔ LA COMPUERTA POR EL FLAG ES SOLO DE FO4. En Skyrim el valor vive en el NIF y el CK lo copia
         ' VERBATIM, sin mirar el flag Soft_Lighting: medido sobre el FaceGeom vanilla del BSA, fuente y CK traen
         ' el bit APAGADO y aun asi LightingEffect1 = 0,3; con la compuerta puesta nuestro bake escribia 0 y
         ' destruia el campo en 14.616 shapes / 3.141 NPCs (97,7 % del corpus SSE).
         ' Por que no puede haber regresion: con el flag apagado el motor no consume LightingEffect1, asi que el
-        ' valor es INERTE; y con el flag encendido la compuerta vieja ya dejaba pasar el mismo valor.
+        ' valor es INERTE; y con el flag encendido, gatear o no gatear deja pasar el mismo valor.
         ' FO4 no se toca: alli la compuerta replica una del motor, verificada por RE en los dos binarios.
         If IsSkShader(shad) Then
             shad.Softlight = Mat.SubsurfaceLightingRolloff
@@ -3938,7 +3929,7 @@ Public Class FO4UnifiedMaterial_Class
         End If
         shad.ModelSpace = Mat.ModelSpaceNormals
         shad.ShaderType_SK_FO4 = effectiveShaderType
-        ' Convenciones tipo→flag de Skyrim (sweep SSE 2026-06-11, ~99-100% en 73.128 shapes
+        ' Convenciones tipo→flag de Skyrim (sweep SSE: ~99-100% en 73.128 shapes
         ' vanilla): sin su flag el engine SK no aplica el comportamiento del tipo (un SkinTint
         ' sin FaceGen_RGB_Tint no tintea). Assert-on solamente — nunca se apaga nada. Miembros
         ' verificados en Bitflags.SkyrimShaderPropertyFlags{1,2}.g.cs. Path FO4 intocado.
@@ -3965,8 +3956,8 @@ Public Class FO4UnifiedMaterial_Class
         ' El skin-tone tiene UN solo escritor, compartido con el export a NIF: WriteSkinTintToShader.
         WriteSkinTintToShader(shad)
         shad.HasBacklight = Mat.BackLighting
-        ' GATE SOLO EN SKYRIM. La nota anterior decia que el CK gatea el power por el flag al hornear, simetrico
-        ' con el rolloff. Es FALSO y esta medido en los DOS binarios: en la transferencia BGSM -> material hay
+        ' GATE SOLO EN SKYRIM. ⛔ En FO4 el CK **no** gatea el power por el flag (no es simetrico con el
+        ' rolloff): MEDIDO en los DOS binarios — en la transferencia BGSM -> material hay
         ' EXACTAMENTE DOS compuertas booleanas y ninguna es el backlight (una gatea fSubsurfaceLightingRolloff y
         ' la otra bWetnessControl_ScreenSpaceReflections). fBackLightPower y fRimPower se copian con un mov
         ' pelado, sin consultar bBackLighting.
@@ -4046,8 +4037,8 @@ Public Class FO4UnifiedMaterial_Class
             End If
             ' F4SPF2 Alpha_Test: NO espejar acá Mat.AlphaTest. Está MEDIDO que este bit NO es función del
             ' material — hay ~11.000 shapes con NiAlphaProperty y SIN el bit, y en todo el juego + DLC el CK
-            ' lo pone en UNA sola shape. Espejarlo incondicionalmente lo puso en 3465 shapes donde el CK no
-            ' lo pone (regresión revertida).
+            ' lo pone en UNA sola shape. Espejarlo incondicionalmente lo pone en 3465 shapes donde el CK no
+            ' lo pone.
             ' El árbitro real es el flag de record ACBS\Diffuse Alpha Test, pero eso NO se decide acá: la lib
             ' sólo TRANSPORTA el HECHO del record vía NpcDiffuseAlphaTest. False (el default) = bit limpio,
             ' que es el comportamiento de todo consumidor que no sea el bake de FO4.
@@ -4118,10 +4109,10 @@ Public Class FO4UnifiedMaterial_Class
     Private Const textset_FlowTexture As Integer = 5
     Private Const textset_LightingTexture As Integer = 6
     Private Const textset_SmoothSpecTextureAs As Integer = 7
-    ''' <summary>El parámetro se llamaba `isSSE` y ese nombre indujo el bug: lo que decide NO es
+    ''' <summary>⛔ El parámetro NO es `isSSE`, y el nombre importa: lo que decide NO es
     ''' "¿el archivo es SSE?" sino "¿este shader habla el vocabulario de SKYRIM?" — verdadero para
     ''' Oldrim (stream 83) Y para SSE (stream 100). El llamador (único) pasa `IsSkShader(shad)`.
-    ''' Con el eje viejo, una malla de Oldrim se ruteaba con slots de Fallout 4: el `_sk` caía en
+    ''' Con el eje equivocado, una malla de Oldrim se rutea con slots de Fallout 4: el `_sk` cae en
     ''' GlowTexture, el detail en GreyscaleTexture y el slot 6 (facetint) no se leía nunca. MEDIDO
     ''' con `Tools\SkFlagAxisProbe`. Ver [[31-sse-nif-le-stream83-eje-equivocado]].</summary>
     Private Shared Sub ReadBgsmTexturesFromTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSkyrim As Boolean, ByRef envmapMaskPath As String)

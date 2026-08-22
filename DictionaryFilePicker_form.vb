@@ -2,10 +2,7 @@
 Partial Public Class DictionaryFilePicker_Form
 
     Sub New()
-        ' Esta llamada es exigida por el diseñador.
         InitializeComponent()
-        'ThemeManager.SetTheme(Config_App.Current.theme, Me)
-        ' Agregue cualquier inicialización después de la llamada a InitializeComponent().
     End Sub
     Public Sub New(keys As List(Of String), rootPrefix As String, allowedExts As HashSet(Of String), initialkey As String)
         InitializeComponent()

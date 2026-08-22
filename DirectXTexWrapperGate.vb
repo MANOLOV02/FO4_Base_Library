@@ -5,13 +5,12 @@ Imports System.Text
 ''' <summary>Chequea que el <c>DirectXTexWrapper.dll</c> que hay al lado del exe es el que ESTA libreria
 ''' espera, y devuelve un diagnostico legible en vez de dejar que el desajuste salga como silencio.
 '''
-''' <para>POR QUE EXISTE. Hasta 1.5.2 la lib descubria <c>ConvertSubresources</c> por REFLEXION; 1.5.3 pasó
-''' a llamadas tipadas y consume ademas <c>DdsMetadata.ArraySize</c>, la sobrecarga
-''' <c>LoadTextures(..., onlyMipLevel)</c> y <c>ConvertSubresourcesToDds</c>. Un wrapper viejo al lado de una
-''' lib nueva ya no degrada: es <c>MissingMethodException</c> / <c>TypeLoadException</c>. Y el desajuste de
-''' PLATAFORMA es peor porque es MUDO — esta medido y escrito en el .vbproj del CLI: un wrapper x86 en un
-''' proceso x64 tira <c>BadImageFormatException</c> adentro del lector de BA2 y CADA textura DX10 devuelve
-''' 0 bytes, sin un cartel.</para>
+''' <para>POR QUE EXISTE. La lib consume el wrapper con llamadas TIPADAS (<c>ConvertSubresourcesToDds</c>,
+''' <c>DdsMetadata.ArraySize</c>, la sobrecarga <c>LoadTextures(..., onlyMipLevel)</c>), asi que un wrapper
+''' viejo al lado de una lib nueva no degrada: es <c>MissingMethodException</c> / <c>TypeLoadException</c>.
+''' Y el desajuste de PLATAFORMA es peor porque es MUDO —esta medido y anotado en el .vbproj del CLI—: un
+''' wrapper x86 en un proceso x64 tira <c>BadImageFormatException</c> adentro del lector de BA2 y CADA
+''' textura DX10 devuelve 0 bytes, sin un cartel.</para>
 '''
 ''' <para>NO ES UN GATE DE ARRANQUE DE LA GUI, Y ES A PROPOSITO. Con el wrapper roto, NPC Manager sigue
 ''' sirviendo para navegar el arbol y editar ESP, y el preview muestra el problema a la vista; abortar ahi
@@ -31,11 +30,10 @@ Public Module DirectXTexWrapperGate
     Private ReadOnly _candado As New Object()
 
     ''' <summary>Cadena vacia si el wrapper es el esperado; si no, el diagnostico para el usuario.
-    ''' <para>SE MEMOIZA TAMBIEN EL FALLO. Antes solo el exito, "por si el fallo era transitorio" — y eso
-    ''' era tolerable con el gate en tres entry points, pero ahora vive en el chokepoint del bake: un barrido
-    ''' de miles de NPC con el wrapper roto correria la sonda entera (4 llamadas nativas) una vez POR NPC y
-    ''' serializada bajo este mismo SyncLock. Y los modos de falla reales —bitness equivocado, metodo que no
-    ''' existe, DLL en cuarentena— no son transitorios.</para></summary>
+    ''' <para>SE MEMOIZA TAMBIEN EL FALLO, no solo el exito: este gate vive en el chokepoint del bake, asi
+    ''' que reintentar correria la sonda entera (4 llamadas nativas) una vez POR NPC y serializada bajo este
+    ''' mismo SyncLock. Los modos de falla reales —bitness equivocado, metodo que no existe, DLL en
+    ''' cuarentena— no son transitorios.</para></summary>
     Public Function Verificar() As String
         SyncLock _candado
             If _veredicto IsNot Nothing Then Return _veredicto
@@ -66,7 +64,7 @@ Public Module DirectXTexWrapperGate
     ''' aserto que se agregue tiene que cumplir la misma vara.</para></summary>
     <MethodImpl(MethodImplOptions.NoInlining)>
     Private Sub Sonda()
-        ' 1. ConvertSubresourcesToDds (el camino de un solo buffer que estrenó 1.5.3), via el helper.
+        ' 1. ConvertSubresourcesToDds (el camino de un solo buffer), via el helper.
         Dim px As Byte() = {255, 255, 255, 255}
         Dim dds = DirectXTextureConversionHelper.Bgra32BytesToDdsBytes(
             1, 1, px, DirectXTextureConversionHelper.DxgiFormatB8G8R8A8Unorm, generateMipMaps:=False)
@@ -83,7 +81,7 @@ Public Module DirectXTexWrapperGate
             Throw New InvalidOperationException($"DdsMetadata.ArraySize={md.ArraySize} para una Texture2D suelta (esperado 1).")
         End If
 
-        ' 3. La sobrecarga LoadTextures(..., onlyMipLevel), que no existia antes de 1.5.3.
+        ' 3. La sobrecarga LoadTextures(..., onlyMipLevel), que un wrapper viejo no tiene.
         Dim cargadas = DirectXTexWrapperCLI.Loader.LoadTextures(New Byte()() {dds}, False, False, 0)
         If cargadas Is Nothing OrElse cargadas.Count <> 1 OrElse cargadas(0) Is Nothing OrElse Not cargadas(0).Loaded Then
             Throw New InvalidOperationException("LoadTextures(onlyMipLevel:=0) no cargo un DDS 1x1 B8G8R8A8.")

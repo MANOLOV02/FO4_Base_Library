@@ -109,10 +109,10 @@ Friend NotInheritable Class VmadPropertyReader
                                       game As Config_App.Game_Enum) As PropValue
         Select Case ptype
             Case 0 ' Null — 0 bytes.
-                ' Antes caía en el `Case Else` y LANZABA, y su `Catch` descarta ese script Y TODOS LOS QUE
-                ' SIGUEN — en un QUST eso puede costar el binding de GenericRaceController y dejar a una raza
-                ' custom sin head parts vanilla. El tipo 0 (Null) es LEGAL en los DOS juegos y ocupa
-                ' cero bytes.
+                ' El tipo 0 (Null) es LEGAL en los DOS juegos y ocupa cero bytes. ⛔ NO dejarlo caer al
+                ' `Case Else`, que LANZA: el `Catch` del caller descarta ese script Y TODOS LOS QUE SIGUEN
+                ' — en un QUST eso puede costar el binding de GenericRaceController y dejar a una raza
+                ' custom sin head parts vanilla.
                 Return New PropValue With {.Kind = PropKind.Unsupported}
             Case 1 ' Object union — 8 bytes. v1: FormID first. v2 (objFormat <> 1): FormID LAST.
                 Dim localFid As UInteger = If(objFormat = 1, BitConverter.ToUInt32(d, p), BitConverter.ToUInt32(d, p + 4))

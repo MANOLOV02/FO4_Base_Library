@@ -2,10 +2,10 @@
 ''' Gate ÚNICO de dibujo del pipeline de render para las "helper shapes"
 ''' (ver <see cref="IRenderableShape.IsHelperShape"/> para la ley y las fuentes canónicas).
 '''
-''' <para>Copia la mecánica del canónico: BodySlide expone la casilla "Show Helper Shapes"
-''' (<c>PreviewPanel.cpp:83-85</c>) y apaga la visibilidad en vivo
-''' (<c>if (m-&gt;bHelperShape &amp;&amp; !showHelperShapes) SetMeshVisibility(false)</c>, <c>:519/:550</c>),
-''' sin recargar la escena. Su default es DESTILDADO. OutfitStudio —el editor— no lo consulta y
+''' <para>Copia la mecánica del canónico: BodySlide expone la casilla "Show Helper Shapes" y apaga la
+''' visibilidad en vivo, sin recargar la escena
+''' (<c>PreviewPanel.cpp</c>, <c>OnShowHelperShapes</c> →
+''' <c>if (m-&gt;bHelperShape &amp;&amp; !showHelperShapes) SetMeshVisibility(false)</c>). Su default es DESTILDADO. OutfitStudio —el editor— no lo consulta y
 ''' muestra todo: la misma asimetría que acá hay entre NPC Manager (visor) y Wardrobe Manager (editor).</para>
 '''
 ''' <para><b>Esto decide qué se DIBUJA, nunca qué se CONSERVA.</b> Ningún camino de escritura

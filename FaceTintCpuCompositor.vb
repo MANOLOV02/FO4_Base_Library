@@ -40,11 +40,10 @@ Public Module FaceTintCpuCompositor
     Public Const AccumSpaceCapability As FaceTintConvention.FaceTintCpuMirrorCapability =
         FaceTintConvention.FaceTintCpuMirrorCapability.FourSpaceAccumulator
 
-    ' SACADO (2026-07-30): el contador de resampleo por canal (NoteSamplerBinding / SamplerStatsLine).
-    ' Era diagnostico puro y corria POR CAPA con un SyncLock dentro del camino caliente del compose.
-    ' Ya cumplio su funcion: REFUTO la hipotesis de que el bilineal explicara la divergencia CPU/GPU
-    ' (`_msn` = 0/320 bindings resampleados y aun asi 148 px de cola). El dato quedo en memoria
-    ' (40-bake-estado-cerrado); el codigo no tiene por que pagarlo en cada bake.
+    ' NO reponer un contador de resampleo por canal (NoteSamplerBinding / SamplerStatsLine): es diagnostico
+    ' puro, corre POR CAPA con un SyncLock dentro del camino caliente del compose, y su pregunta ya esta
+    ' contestada — el bilineal NO explica la divergencia CPU/GPU (`_msn` = 0/320 bindings resampleados y aun
+    ' asi 148 px de cola). Ver la memoria 40-bake-estado-cerrado.
 
     ' ---- Conversiones de espacio (transcripcion 1:1 del shader; ws: 0=linear 1=srgb 2=g22) ----
     ' AggressiveInlining: estos helpers se invocan millones de veces por capa desde los loops per-pixel y el
@@ -235,11 +234,10 @@ Public Module FaceTintCpuCompositor
                 ' [0,1] y con base 2 devolveria 1. El espejo vectorial hace exactamente estas dos llamadas.
                 Return FastPow.PowVar1(MathF.Max(d, 0.000001F), FastPow.Exp2_1(2.0F * (0.5F - s)))
             Case 3 ' pegtop == la forma del MOTOR (decision 4)
-                ' UNA SOLA EXPRESION: `d² + 2ds(1−d)`, la que el fold de SSE tomo del desensamblado del
-                ' motor. Aca decia `(1−2s)d² + 2sd`, que es la MISMA identidad algebraica desarrollada — pero
-                ' NO el mismo redondeo: enumerando los 65.536 pares de 8 bits difieren en 21.538 (32,86 %),
-                ' peor 2 ULP, y el peor delta de BYTE es 1. O sea que no eran intercambiables y una de las dos
-                ' tenia que ganar. Gana la del motor, que es la que tiene respaldo de RE.
+                ' UNA SOLA EXPRESION: `d² + 2ds(1−d)`, la que el fold de SSE tomo del desensamblado del motor.
+                ' NO cambiarla por `(1−2s)d² + 2sd`: es la MISMA identidad algebraica desarrollada pero NO el
+                ' mismo redondeo — enumerando los 65.536 pares de 8 bits difieren en 21.538 (32,86 %), peor
+                ' 2 ULP y peor delta de BYTE 1. Gana la del motor, que es la que tiene respaldo de RE.
                 Return d * d + 2.0F * d * s * (1.0F - d)
             Case Else ' 0 = W3C SVG
                 Dim g As Single = If(d >= 0.25F, MathF.Sqrt(d), ((16.0F * d - 12.0F) * d + 4.0F) * d)
@@ -376,9 +374,9 @@ Public Module FaceTintCpuCompositor
         End Select
     End Function
 
-    ' EL GATE `softlight-inv` YA NO VIVE ACA (Tools/ParityGate, LawGates.SoftLightInverseGate,
-    ' 2026-08-08). Verifica Inv(Fwd(d,s),s) ≈ d con tolerancia de 1 byte para los cuatro modelos. Sin él una
-    ' inversa mal derivada NO se ve: sale una cara levemente distinta, no un fallo.
+    ' EL GATE `softlight-inv` vive en Tools/ParityGate (LawGates.SoftLightInverseGate): verifica
+    ' Inv(Fwd(d,s),s) ≈ d con tolerancia de 1 byte para los cuatro modelos. Sin él una inversa mal derivada NO
+    ' se ve: sale una cara levemente distinta, no un fallo.
 
     ' ---- Modos separables estandar adicionales (5..19). Transcripcion 1:1 del shader. ----
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
@@ -638,13 +636,12 @@ Public Module FaceTintCpuCompositor
     ' =====================================================================================================
     ' LA LEY DEL DESEMPAQUETADO, ESCRITA UNA VEZ.
     ' =====================================================================================================
-    ' Estaba transcripta DOS veces —`DecodeDds` (salida RGBA, paralela) y `FaceTintCompositor.
-    ' WritePristineTga` (salida BGRA, SERIAL)— con la misma tabla de formatos copiada y el mismo
-    ' `Select Case` POR PIXEL adentro del loop. Son la misma ley con la salida en otro orden de canales.
+    ' La consumen `DecodeDds` (salida RGBA, paralela) y `FaceTintCompositor.WritePristineTga` (salida BGRA,
+    ' SERIAL): son la MISMA ley con la salida en otro orden de canales, y no puede haber dos tablas de formatos.
     '
-    ' Lo que cambia respecto de las dos copias, sin mover un byte:
-    '   1. La rama sale del loop. Antes se evaluaba `Select Case canales` 16,7 millones de veces para una
-    '      cara de 4096²; ahora una sola vez, y cada caso tiene su loop plano.
+    ' Tres decisiones de forma, ninguna cambia un byte:
+    '   1. La rama sale del loop. Con el `Select Case canales` adentro se evalua 16,7 millones de veces para
+    '      una cara de 4096²; acá se evalua una sola vez y cada caso tiene su loop plano.
     '   2. El caso 4 canales sin swap es una COPIA: `Buffer.BlockCopy` en vez de cuatro asignaciones por
     '      pixel. Es el caso comun (BC1/BC2/BC3/BC7 descomprimen a R8G8B8A8_UNORM = 28).
     '   3. El caso 4 canales CON swap se vectoriza con `Vector(Of Byte)` y `Vector.Shuffle`.
@@ -822,10 +819,9 @@ Public Module FaceTintCpuCompositor
             ' Sólo para el caso simple. Con cubemap/array `Levels` mezcla mips y caras, y el índice que
             ' devuelve la ley no es un nivel de mip: ahí se conserva el camino de siempre, entero, para no
             ' cambiar lo que ese caso hace hoy.
-            ' LA GUARDA MIRA `ArraySize`, NO `Faces`. `Faces` lo deriva el wrapper como `IsCubemap ? 6 : 1`,
-            ' así que para un Texture2DArray vale 1 y `Not IsCubemap AndAlso Faces <= 1` daba VERDADERO: la
-            ' condición decía "sin cubemap/array" y no excluía un solo array. Ese caso entraba igual al camino
-            ' nuevo, que no es lo que este comentario promete.
+            ' LA GUARDA MIRA `ArraySize`, NO `Faces`. `Faces` lo deriva el wrapper como `IsCubemap ? 6 : 1`, así
+            ' que para un Texture2DArray vale 1 y `Not IsCubemap AndAlso Faces <= 1` da VERDADERO: esa condición
+            ' dice "sin cubemap/array" pero NO excluye un array, y lo deja entrar al atajo.
             Dim nivelPedido As Integer = -1
             Dim md = DirectXTexWrapperCLI.Loader.GetDdsMetadata(ddsBytes)
             ' UN Texture2DArray DEVOLVIA UNA SLICE CREYENDO QUE ERA UN MIP. La guarda de abajo es la del
@@ -949,7 +945,7 @@ Public Module FaceTintCpuCompositor
     ''' <para>Existe para que el RENDER honre la resolucion de CharGen Options igual que el bake: el bake
     ''' resamplea el buffer ya convertido a BGRA, el render trabaja en float de punta a punta y no debe
     ''' cuantizar en el medio - la perdida de 8 bits y de BCn es del ARCHIVO, no del COMPOSE.</para>
-    ''' <para>âš ï¸ Se resamplea en el espacio en que este el buffer (para el fold SSE: sRGB, ANTES del paso a
+    ''' <para>⚠ï¸ Se resamplea en el espacio en que este el buffer (para el fold SSE: sRGB, ANTES del paso a
     ''' lineal). Bilinear en sRGB no es bilinear en lineal, asi que el punto de la cadena donde se llama es
     ''' parte del contrato. Con sw==dw y sh==dh devuelve el MISMO array (no-op bit-inerte).</para></summary>
     Public Function ResampleRgbaFloat(src As Single(), sw As Integer, sh As Integer, dw As Integer, dh As Integer) As Single()
@@ -995,9 +991,9 @@ Public Module FaceTintCpuCompositor
         Return outp
     End Function
 
-    ' EL GATE `resample-hoist` YA NO VIVE ACA (Tools/ParityGate, LawGates.ResampleHoistGate,
-    ' 2026-08-08). Fija el IZADO CONCRETO que consume el compose: orden de canales, índice plano(i)↔píxel i
-    ' y chMask. El corpus NO lo cubre: vanilla trae las máscaras ya al tamaño del acumulador.
+    ' EL GATE `resample-hoist` vive en Tools/ParityGate (LawGates.ResampleHoistGate): fija el IZADO CONCRETO
+    ' que consume el compose — orden de canales, índice plano(i)↔píxel i y chMask. El corpus NO lo cubre:
+    ' vanilla trae las máscaras ya al tamaño del acumulador.
 
     ''' <summary>IZA EL RESAMPLE fuera del loop de píxeles: materializa <paramref name="t"/> a
     ''' <paramref name="w"/>×<paramref name="h"/> en unidad [0,1] sobre PLANOS SoA (un array por canal).
@@ -1149,20 +1145,16 @@ Public Module FaceTintCpuCompositor
     ''' ENTORNO. Estaba INLINE en <c>BakeAllRunner</c> y ahora vive acá porque hay MAS DE UN cache que
     ''' obedece el mismo techo (el batch de acá y los de <c>SseFaceTintComposer</c>): con la derivacion
     ''' duplicada, los numeros se habrian separado en silencio.
-    ''' <para>Contrato (idéntico al que ya tenía el runner, sin cambiar un valor):
-    ''' env ausente ⇒ 25 % de la memoria disponible acotado a [512 MB, 4 GB]; env = "0" (o no numérica)
-    ''' ⇒ SIN techo (comportamiento histórico, sirve de baseline); env > 0 ⇒ ese valor en MB
-    ''' (reproducible entre máquinas, para comparar corridas).</para>
-    ''' <para>Los tres números viven ACA Y SOLO ACA. No re-derivarlos en ningún call site.</para></summary>
+    ''' <para>Contrato: env ausente ⇒ SIN techo; env = "0" o no numérica ⇒ SIN techo; env &gt; 0 ⇒ ese valor en
+    ''' MB (reproducible entre máquinas, para comparar corridas).</para>
+    ''' <para>El contrato vive ACÁ Y SOLO ACÁ. No re-derivarlo en ningún call site.</para></summary>
     Public Function ResolveDecodeCacheBudgetFromEnvironment() As (Bytes As Long, Reason As String)
         Dim raw = If(Environment.GetEnvironmentVariable("FGBAKE_DECODE_CACHE_MB"), "").Trim()
-        ' SIN TECHO POR DEFAULT — es OPT-IN. Antes el default derivaba "25 % de la memoria disponible,
-        ' acotado a [512 MB, 4 GB]", y esos tres números son ARBITRARIOS: nadie midió que 25 % sea el punto
-        ' correcto ni que 4 GB tenga sentido en un equipo de 128 GB. Un techo inventado que fuerza re-decodes
-        ' es peor que no tener techo, porque el costo es invisible (se paga en tiempo, no en un error).
-        ' Quien quiera acotarlo lo pide explícitamente y elige el número para SU máquina.
-        ' (El comentario viejo del runner decía "OPT-IN y APAGADO por default" mientras el código hacía lo
-        '  contrario; ahora el código dice la verdad.)
+        ' SIN TECHO POR DEFAULT — el techo es OPT-IN. NO derivar uno ("25 % de la memoria disponible, acotado a
+        ' [512 MB, 4 GB]"): esos tres números son ARBITRARIOS, nadie midió que 25 % sea el punto correcto ni que
+        ' 4 GB tenga sentido en un equipo de 128 GB. Un techo inventado que fuerza re-decodes es peor que no
+        ' tener techo, porque el costo es invisible: se paga en tiempo, no en un error. Quien quiera acotarlo lo
+        ' pide explícitamente y elige el número para SU máquina.
         If raw = "" Then Return (0L, "Decode cache: NO ceiling (default) — set FGBAKE_DECODE_CACHE_MB=<MB> to cap it")
         Dim mb As Integer = -1
         If Not Integer.TryParse(raw, mb) Then mb = -1
@@ -1234,13 +1226,12 @@ Public Module FaceTintCpuCompositor
                 Threading.Interlocked.Read(_batchUnitBytes), Threading.Volatile.Read(_unitRejected))
     End Function
 
-    ' EL GATE `cache-keys` YA NO VIVE ACA (Tools/ParityGate, LawGates.CacheKeyAxesGate, 2026-08-08).
-    ' Además de no depender de la máquina, MUTABA `DownsizeFromMip0` — una propiedad global de producción—
-    ' en el proceso del usuario justo antes de un bake. Eso solo ya lo echaba del binario.
+    ' EL GATE `cache-keys` vive en Tools/ParityGate (LawGates.CacheKeyAxesGate) y no acá: no depende de la
+    ' máquina, y MUTA `DownsizeFromMip0` —una propiedad global de producción—, cosa que un gate no puede hacer
+    ' en el proceso del usuario justo antes de un bake.
 
-    ' EL GATE `bilinear` YA NO VIVE ACA (Tools/ParityGate, LawGates.BilinearLawGate, 2026-08-08).
-    ' Su propio docstring decía "es aritmética escalar, corre en toda máquina": justamente por eso no tenía
-    ' nada que hacer en el binario. Cazó la cuarta transcripción del bilineal, corrida medio texel.
+    ' EL GATE `bilinear` vive en Tools/ParityGate (LawGates.BilinearLawGate) y no acá: es aritmética escalar,
+    ' o sea que da lo mismo en toda máquina. Es el que caza una transcripción del bilineal corrida medio texel.
 
     ''' <summary>MEDICIÓN (no gate) de la FORMA del soft-light: enumera el dominio ENTERO de 8 bits —los
     ''' 65.536 pares (d,s) con d,s ∈ {0/255…255/255}— y reporta en cuántos difiere la expresión del FOLD de la
@@ -1304,20 +1295,18 @@ Public Module FaceTintCpuCompositor
                $"| FUERA de [0,1]: {If(edgeDiff.Count = 0, "coinciden", String.Join(" ; ", edgeDiff))}"
     End Function
 
-    ' EL GATE `qnam-face` YA NO VIVE ACA (Tools/ParityGate, LawGates.QnamMatchesFaceGate, 2026-08-08).
-    ' Y ARRASTRA UN DEFECTO CONOCIDO: su primera comparación es VACUA (`face` y `body` se calculaban
-    ' con la MISMA expresión literal), o sea un verde de mentira. Se migró tal cual, anotado, para no
-    ' mezclar el traslado con un arreglo de lógica.
+    ' ⛔ EL GATE `qnam-face` (Tools/ParityGate, LawGates.QnamMatchesFaceGate) ARRASTRA UN DEFECTO CONOCIDO: su
+    ' primera comparación es VACUA —`face` y `body` se calculan con la MISMA expresión literal—, o sea que ese
+    ' tramo da un verde de mentira.
 
     ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones). Arranca los DOS niveles.
     ''' EL TECHO SE RESUELVE ACÁ, donde el lote SE ABRE, y no en cada llamador.
-    ''' <para>Estaba sólo en <c>BakeAllRunner</c>, que es UNO de los cuatro sitios que abren el lote: el
-    ''' batch de la GUI (<c>MainForm.BuildCharGen</c>) y los dos del CLI de FaceTint lo abrían sin tocarlo.
-    ''' Como el default es "sin techo", eso no se notaba… salvo para el usuario que exporta
-    ''' <c>FGBAKE_DECODE_CACHE_MB</c> justamente para sobrevivir un barrido con poca RAM: en la GUI —que es
-    ''' por donde pasa casi todo el mundo— su variable no la leía nadie.</para>
-    ''' <para>Resolverlo en el punto de apertura hace imposible que un entry point nuevo se lo olvide.
-    ''' Devuelve el motivo para que el llamador lo pueda loguear.</para></summary>
+    ''' <para>Resolverlo en cada llamador es como se pierde: son CUATRO los sitios que abren el lote
+    ''' (<c>BakeAllRunner</c>, el batch de la GUI <c>MainForm.BuildCharGen</c> y los dos del CLI de FaceTint), y
+    ''' como el default es "sin techo" el olvido no se nota… salvo para el usuario que exporta
+    ''' <c>FGBAKE_DECODE_CACHE_MB</c> justamente para sobrevivir un barrido con poca RAM. Resolverlo en el punto
+    ''' de apertura hace imposible que un entry point nuevo se lo olvide. Devuelve el motivo para que el
+    ''' llamador lo pueda loguear.</para></summary>
     Public Function BeginBatchDecodeCacheConMotivo() As String
         Dim presupuesto = ResolveDecodeCacheBudgetFromEnvironment()
         BatchDecodeCacheBudgetBytes = presupuesto.Bytes
@@ -1325,10 +1314,9 @@ Public Module FaceTintCpuCompositor
         Return presupuesto.Reason
     End Function
 
-    ''' <summary>PRIVATE A PROPOSITO. Abre el lote SIN resolver el techo: es media operacion, y mientras
-    ''' fue publica la frase "hace imposible que un entry point nuevo se lo olvide" era falsa — la puerta sin
-    ''' techo seguia abierta al lado de la que si lo pone. El unico que puede llamarla es
-    ''' <see cref="BeginBatchDecodeCacheConMotivo"/>, que fija el presupuesto primero.</summary>
+    ''' <summary>PRIVATE A PROPOSITO. Abre el lote SIN resolver el techo, o sea que es media operacion:
+    ''' hacerla publica deja una puerta sin techo al lado de la que si lo pone, y la garantia de
+    ''' <see cref="BeginBatchDecodeCacheConMotivo"/> deja de valer. Ese es el unico que puede llamarla.</summary>
     Private Sub BeginBatchDecodeCache()
         BatchDecodeCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
         BatchUnitCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
@@ -1364,10 +1352,10 @@ Public Module FaceTintCpuCompositor
         If String.IsNullOrEmpty(texKey) OrElse w <= 0 OrElse h <= 0 Then Return Nothing
         ' La clave es la IDENTIDAD COMPLETA del valor: path + tamaño destino + variante + política de mip.
         Dim ckey = $"{texKey}|{w}x{h}|{If(asNormalMap, "nrm", "col")}|{MipPolicyTag()}"
-        ' LA PROPIEDAD GLOBAL SE LEE UNA SOLA VEZ. Antes se capturaba `cache` acá y MAS ABAJO se volvia a
-        ' leer `BatchUnitCache` para decidir si aplicaba el presupuesto. Entre las dos lecturas, un
-        ' EndBatchDecodeCache de otro hilo (el render corre en el hilo UI durante el await del bake) la pone
-        ' en Nothing ⇒ el ReferenceEquals daba False ⇒ la entrada se cacheaba SALTEANDOSE EL TECHO.
+        ' LA PROPIEDAD GLOBAL SE LEE UNA SOLA VEZ. Volver a leer `BatchUnitCache` mas abajo para decidir si
+        ' aplica el presupuesto abre una ventana: entre las dos lecturas un EndBatchDecodeCache de otro hilo (el
+        ' render corre en el hilo UI durante el await del bake) la pone en Nothing ⇒ el ReferenceEquals da False
+        ' ⇒ la entrada se cachea SALTEANDOSE EL TECHO.
         Dim batch = BatchUnitCache
         Dim cache = If(batch, _sessionUnitCache)
         Dim isBatch As Boolean = (batch IsNot Nothing)
@@ -1654,10 +1642,10 @@ Public Module FaceTintCpuCompositor
         ' ALPHA del _d: passthrough del alpha del base SOLO si la cabeza usa Diffuse Alpha Test (flag ACBS
         ' 0x01000000); si no, opaco. El CK aplana el alpha del _d salvo cuando el material de la cabeza lo
         ' testea; el passthrough incondicional le inventaba alpha a DiMA. Inerte para N/S. Ver 40-bake-leyes-fo4.
-        ' SIN VERIFICAR DEL TODO — REVISITAR CON DATOS: la evidencia es corpus 2 (Valentine y DiMA) y se
-        ' midio "dejo de inventar alpha", no el canal A contra el CK. Ademas la decision se tomo cuando el _d
-        ' componia SIEMPRE a nativo: ahora `res` puede no ser Inherit, y un alpha que existe para ser TESTEADO
-        ' (umbral duro) no sobrevive el resample igual que el color. Ver 40-bake-leyes-fo4 §8 (como cerrarlo).
+        ' ⚠️ SIN VERIFICAR DEL TODO: la evidencia es corpus 2 (Valentine y DiMA) y lo que se midio fue "deja de
+        ' inventar alpha", NO el canal A contra el CK. Y el _d no siempre compone a nativo —`res` puede no ser
+        ' Inherit—: un alpha que existe para ser TESTEADO (umbral duro) no sobrevive el resample igual que el
+        ' color. Ver la memoria 40-bake-leyes-fo4 §8 (como cerrarlo).
         ' EL SEED DE ESTE WRAPPER ES SIEMPRE LA TEXTURA, y no `FaceTintConvention.SeedModeValue`, A
         ' PROPOSITO: esta funcion NO es de FO4 — la usa tambien el compose del head diffuse de SSE (render con
         ' CPU-skinning y su espejo del bake). Con SSE activo el bucket dice `Constant`, asi que leer el modo
@@ -1710,8 +1698,8 @@ Public Module FaceTintCpuCompositor
         ' Acumuladores en Single (storage): el math por-píxel abajo corre en Double y se guarda con CSng.
         Dim accR(n - 1) As Single, accG(n - 1) As Single, accB(n - 1) As Single
         ' Acumulador ALPHA: PASSTHROUGH del seed, nunca compuesto (ver FaceTintAlphaPolicy). Se decide ACA,
-        ' antes de reservar nada: antes se reservaba el array y se sampleaba el canal 3 por pixel en los tres
-        ' canales pasara lo que pasara (67 MB a 4096^2).
+        ' antes de reservar nada: reservarlo siempre son 67 MB a 4096² mas el sampleo del canal 3 por pixel en
+        ' los tres canales, pasara lo que pasara.
         Dim keepBaseAlpha As Boolean = (alphaPolicy = FaceTintAlphaPolicy.Passthrough)
         Dim accA As Single() = Nothing
         If keepBaseAlpha Then ReDim accA(n - 1)
@@ -1845,9 +1833,9 @@ Public Module FaceTintCpuCompositor
             End Sub)
         End If
 
-        ' --- Region swaps UNIFICADOS = tint-replace (2026-06-01): cada swap es un replace mas -> lerp desde el
-        '     RUNNING acc, cov = srgb_encode(mask)*msdv, en LINEAR (D decode/encode sRGB / N-S raw). MISMA regla
-        '     que los tints; SIN closed-form ni SEED aparte. Mejora N ~1 byte vs el closed-form viejo, neutral D/S.
+        ' --- Region swaps UNIFICADOS = tint-replace: cada swap es un replace mas -> lerp desde el RUNNING acc,
+        '     cov = srgb_encode(mask)*msdv, en LINEAR (D decode/encode sRGB / N-S raw). MISMA regla que los
+        '     tints; SIN closed-form ni SEED aparte (el closed-form da ~1 byte peor en N, neutral en D/S).
         If swaps IsNot Nothing Then
             For Each sw In swaps
                 If sw Is Nothing Then Continue For
@@ -1866,13 +1854,13 @@ Public Module FaceTintCpuCompositor
                 ' byte-idéntico al closed-form previo (cov=srgbenc(mask), D lerp linear-desde-srgb, N/S raw).
                 Dim cv = FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.RegionSwap, channel, isTextureSet:=False, blendOp:=0)
                 Dim sws = CInt(cv.WorkingSpace), scs = CInt(cv.CompositeSpace), sss = CInt(cv.SrcSpace), sos = CInt(cv.OutputSpace)
-                ' â›” `sos` (Swap.OutputSpace) ES UN ARGUMENTO MUERTO ACA, a proposito: ComposeOne solo lo usa
+                ' ⛔ `sos` (Swap.OutputSpace) ES UN ARGUMENTO MUERTO ACA, a proposito: ComposeOne solo lo usa
                 ' para derivar asp, y como abajo se pasa accSpace explicito, no se lee en ninguna rama. Se
                 ' sigue pasando por simetria con los otros call sites.
-                ' CAMBIO DE COMPORTAMIENTO DECLARADO: antes el acumulador del swap se trataba como si viviera
-                ' en sos y el de los tints en el del CANAL - dos etiquetas para EL MISMO buffer. Ahora manda el
-                ' canal. Con los defaults de fabrica de los dos juegos es byte-identico, pero no si el usuario
-                ' separa esos combos en CharGen Options. El GL hace lo mismo (guard gemelo alla).
+                ' MANDA EL BUCKET DEL CANAL, tambien para el swap: tratar el acumulador del swap como si
+                ' viviera en `sos` y el de los tints en el del CANAL son dos etiquetas para EL MISMO buffer. Con
+                ' los defaults de fabrica de los dos juegos da byte-identico, pero no si el usuario separa esos
+                ' combos en CharGen Options. El GL hace lo mismo (guard gemelo alla).
                 ' La advertencia va por FaceTintConvention (latcheada y always-on) y NO por Logger, que esta
                 ' APAGADO en release: un aviso por ahi no existiria justo para el usuario que necesita verlo.
                 If channel = FaceTintChannel.Diffuse AndAlso sos <> accSp Then
@@ -2028,7 +2016,7 @@ Public Module FaceTintCpuCompositor
                 ' FUENTE DE LA CAPA, UNA SOLA para los dos juegos: los BYTES del DDS. El compositor los
                 ' decodifica (nivel 1, cacheado, con preferencia de mip al tamaño del acumulador) y, si el
                 ' decode no cae justo en w×h, muestrea bilineal POR PIXEL mas abajo. No hay un segundo
-                ' origen "ya resampleado": lo hubo y se borro (ver la nota en FaceTintLayerInput).
+                ' origen "ya resampleado" — ver la nota en FaceTintLayerInput.
                 Dim chanBytes = layer.GetChannelBytes(channel)
                 If chanBytes Is Nothing OrElse chanBytes.Length = 0 Then Continue For
                 Dim layerTex = CachedDecode(cache, layer.GetChannelCacheKey(channel), chanBytes, w, h)
@@ -2120,14 +2108,13 @@ Public Module FaceTintCpuCompositor
                 '     compose y sigue afuera. Ademas es engine-exact (no se toca).
                 '   - preToneSkin      -> muestrea la mascara del skintone y corre 3 ComposeOne mas por pixel;
                 '     es un camino raro (flagged-after-skintone) y no vale duplicarlo.
-                ' YA NO EXCLUYE la directness de la capa ni la de la diffMask: el resample se IZA a planos
-                ' SoA (ver ResampleToUnitPlanes) y el cuerpo vectorial cubre tambien ese caso, con los MISMOS
-                ' 4 taps por pixel que hacia el muestreo escalar — no se agrega ni un tap.
-                ' Aca decia que ese gather era "LA barrera real" porque Vector(Of T) no lo tiene y
-                ' Avx2.GatherVector256 es x86-only ⇒ "dos leyes segun la CPU". ERA FALSO y no hay que
-                ' reponerlo: un gather es MOVIMIENTO DE DATOS —carga los mismos bytes que N loads escalares y
-                ' no puede mover un bit—; lo que la regla de una sola ley prohibe es cambiar la ARITMETICA
-                ' (p.ej. que FMA fusione y redondee distinto). Ver memoria 61-perf-simd-trampas.
+                ' NO EXCLUYE la directness de la capa ni la de la diffMask: el resample se IZA a planos SoA (ver
+                ' ResampleToUnitPlanes) y el cuerpo vectorial cubre tambien ese caso, con los MISMOS 4 taps por
+                ' pixel que hace el muestreo escalar — no se agrega ni un tap.
+                ' Y el gather NO es una barrera de "una sola ley", aunque Vector(Of T) no lo tenga y
+                ' Avx2.GatherVector256 sea x86-only: un gather es MOVIMIENTO DE DATOS —carga los mismos bytes que
+                ' N loads escalares y no puede mover un bit—. Lo que esa regla prohibe es cambiar la ARITMETICA
+                ' (p.ej. que FMA fusione y redondee distinto). Ver la memoria 61-perf-simd-trampas.
                 Dim diffMaskDirect As Boolean = (diffMaskTex IsNot Nothing AndAlso diffMaskTex.Width = w AndAlso diffMaskTex.Height = h)
                 Dim diffMaskPx As Byte() = If(diffMaskDirect, diffMaskTex.Rgba8, Nothing)
                 ' IZADO: la capa usa los CUATRO canales; la diffMask SOLO el alpha.
@@ -2622,8 +2609,8 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>¿Esta combinacion de (framework, blend, softlight) tiene espejo vectorial? Lo que NO esta
     ''' cae al camino escalar de siempre — que da el MISMO resultado, sólo que sin acelerar.
-    ''' <para>Cubre lo que la data real usa: el scan de 2026-06-20 dio 4008/4008 TemplateColors de las 110
-    ''' RACE de Fallout4.esm+DLCs en bop 0 ó 3, CERO Multiply/Overlay/HardLight; y la ley de SSE es Replace.
+    ''' <para>Cubre lo que la data real usa: el scan dio 4008/4008 TemplateColors de las 110 RACE de
+    ''' Fallout4.esm+DLCs en bop 0 ó 3, CERO Multiply/Overlay/HardLight; y la ley de SSE es Replace.
     ''' Una RACE modeada con bop 1/2/4 no se acelera, pero sale idéntica.</para></summary>
     Friend Function VecComposeSupported(fw As Integer, bop As Integer, sl As Integer) As Boolean
         If Not FastPow.AcceleratedV Then Return False
@@ -3712,9 +3699,9 @@ Public Module FaceTintCpuCompositor
             Dim texTimesColor = (flags And 8) <> 0
             Dim hasDiffMask = (flags And 16) <> 0
 
-            ' EJE NUEVO: el canal de la mascara de paleta (0=R 1=G 2=B 3=A). Antes el escalar y el vector
-            ' tenian el VERDE cableado, asi que coincidian trivialmente y el test no probaba nada de esto.
-            ' Se barren los CUATRO, no solo el default, porque SSE usa el rojo.
+            ' El canal de la mascara de paleta (0=R 1=G 2=B 3=A) SE BARRE ENTERO, no solo el default: SSE usa el
+            ' rojo, y con el VERDE cableado de los dos lados el escalar y el vector coinciden trivialmente — el
+            ' test pasa sin probar nada de este eje.
             For palMaskCh = 0 To 3
             For blkI = 0 To npx \ lanes - 1
                 Dim at = blkI * lanes

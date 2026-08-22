@@ -1,12 +1,11 @@
 ﻿Imports System.IO
 Imports BSA_BA2_Library_DLL.BethesdaArchive.Core
 
-''' <summary>CÓMO SE ARMA UNA ENTRADA DE TEXTURA PARA UN ARCHIVE, ESCRITO UNA VEZ.
-''' <para>Estas tres funciones estaban DUPLICADAS byte a byte entre
-''' <c>Wardrobe_Manager.WM_PackUnpack</c> y <c>FO4_NPC_Manager.NpcFaceGenPacker</c> — idénticas hasta en
-''' el texto del <c>ArgumentOutOfRangeException</c>. Dos apps empaquetando el MISMO formato con dos copias
-''' de la misma decisión: el día que una cambie el preset de compresión, el orden de los campos o el
-''' manejo del SSE, la otra sigue como estaba y los archives dejan de ser comparables sin que nada avise.</para>
+''' <summary>CÓMO SE ARMA UNA ENTRADA DE ARCHIVE, ESCRITO UNA VEZ. Única copia: la consumen
+''' <c>Wardrobe_Manager.WM_PackUnpack</c> y <c>FO4_NPC_Manager.NpcFaceGenPacker</c>.
+''' <para>NO volver a copiarlas en cada app: el día que una toque el preset de compresión, el orden de los
+''' campos o el manejo del SSE, la otra sigue como estaba y los archives dejan de ser comparables sin que
+''' nada avise.</para>
 ''' <para>Vive acá y no en <c>Ba2_Bsa_Library</c> porque esa librería NO conoce <c>Config_App</c> (sólo
 ''' referencia el wrapper de DirectXTex): el mapeo juego↔<c>GameKind</c> necesita las dos mitades, y ésta
 ''' es la única que las tiene.</para></summary>
@@ -23,15 +22,13 @@ Public Module ArchiveEntryFactory
     ''' <para>SSE/BSA guarda el DDS entero (header incluido) como bytes opacos; FO4/BA2 DX10 parsea el
     ''' header, separa el payload y comprime sólo eso. El CRC32 es sobre lo que cada formato considera el
     ''' contenido lógico: el archivo completo en BSA, el payload sin header en DX10.</para>
-    ''' <para><c>version:=8UI</c> queda cableado, igual que en las dos copias que reemplaza. Hoy es
-    ''' inocuo porque <c>CompressForBa2Dx10</c> sólo mira ese parámetro en la rama v3+LZ4, pero es una
-    ''' constante que NO acompaña a la versión de BA2 que elige el usuario. Se conserva tal cual para no
-    ''' mover bytes en esta unificación; corregirlo es un cambio aparte y medible.</para></summary>
+    ''' <para>TRAMPA: <c>version:=8UI</c> está cableado y NO acompaña a la versión de BA2 que elige el
+    ''' usuario. Hoy es inocuo porque <c>CompressForBa2Dx10</c> sólo mira ese parámetro en la rama v3+LZ4;
+    ''' cambiarlo mueve bytes, así que va como cambio aparte y medido.</para></summary>
     ''' <param name="sourcePath">De dónde se LEEN los bytes.</param>
     ''' <param name="entryPath">Qué ruta lleva la entrada DENTRO del archive. Es un parámetro aparte
     ''' porque no siempre coinciden: el packer de FaceGen hornea a un temporal y lo archiva bajo la ruta
-    ''' canónica del juego. La copia de Wardrobe Manager sólo tenía UN path y por eso no podía expresarlo;
-    ''' al unificar se toma la firma más general y WM pasa el mismo valor en los dos.</param>
+    ''' canónica del juego. Wardrobe Manager pasa el mismo valor en los dos.</param>
     ''' <param name="game">Juego explícito en vez de <c>Config_App.Current.Game</c>: el packer corre en
     ''' hilos del pool durante un bake y el global puede cambiar bajo sus pies.</param>
     Public Function MakeTextureEntry(dataDir As String, sourcePath As String, entryPath As String,
@@ -90,11 +87,7 @@ Public Module ArchiveEntryFactory
     End Function
 
     ''' <summary>Lo mismo que <see cref="MakeTextureEntry"/> pero para materiales (.bgsm/.bgem) y cualquier
-    ''' otro archivo que NO sea textura: no hay metadata DX10, va entero por el camino GNRL/BSA.
-    ''' <para>Estaba duplicada byte a byte entre las dos apps, con la MISMA divergencia de firma que la
-    ''' de textura (WM tenía un solo path y leía el juego del global; el packer de FaceGen separaba
-    ''' `sourcePath` de `entryPath` y lo recibía por parámetro). Mover sólo la de textura habría dejado la
-    ''' mitad del trabajo hecho y la otra mitad divergiendo igual que antes.</para></summary>
+    ''' otro archivo que NO sea textura: no hay metadata DX10, va entero por el camino GNRL/BSA.</summary>
     Public Function MakeMaterialEntry(dataDir As String, sourcePath As String, entryPath As String,
                                       game As Config_App.Game_Enum) As VirtualEntry
         Dim relUnderData = Path.GetRelativePath(dataDir, entryPath).Correct_Path_Separator

@@ -11,9 +11,9 @@
     ''' <para><b>Textos.</b> Un archivo puede guardar los textos en tablas externas y dejar en el
     ''' record sólo un identificador. Resolverlo depende del archivo y del idioma.</para>
     '''
-    ''' <para>Antes cada campo hacía su propia llamada: más de trescientas repeticiones de estas dos
-    ''' reglas repartidas por los parsers. Acá se aplican una vez, en la propiedad que devuelve el
-    ''' campo, y por eso no pueden quedar sitios que se las olviden.</para></summary>
+    ''' <para>⛔ NO aplicar estas dos reglas campo por campo: son más de trescientas repeticiones
+    ''' repartidas por los parsers, y el sitio que se las olvida no avisa. Acá se aplican una vez, en
+    ''' la propiedad que devuelve el campo.</para></summary>
     Public NotInheritable Class CanonResolver
 
         Private ReadOnly _rec As PluginRecord
@@ -30,10 +30,8 @@
             End Get
         End Property
 
-        ' Acá había un GlobalId(raw) que traducía una referencia al orden de carga. Se borró: no lo
-        ' llamaba NADIE, y era una TERCERA copia de la ley que ahora vive en
-        ' PluginManager.ResolveReferenciaNoLock. Una copia muerta de una ley es peor que una viva:
-        ' el próximo lector la toma por buena y la usa, o la "arregla" en un solo lado.
+        ' ⛔ NO reponer acá un GlobalId(raw) que traduzca una referencia al orden de carga: sería una
+        ' TERCERA copia de la ley que vive en PluginManager.ResolveReferenciaNoLock.
         ' El árbol ya viene con las referencias traducidas (CanonBridge.NormalizarReferencias), así
         ' que una vista NO tiene que traducir nada al leer un campo.
 
@@ -42,8 +40,8 @@
         ''' tablas externas, o el identificador numérico cuando sí las usa. El identificador cero
         ''' significa "sin texto", no un error.</para>
         ''' <para>De qué tabla sale el texto NO está en el identificador: lo decide el par (record,
-        ''' subrecord), y se saca del propio nodo. Pasarle siempre la tabla general hacía que toda
-        ''' descripción volviera vacía, porque las descripciones viven en otra.</para></summary>
+        ''' subrecord), y se saca del propio nodo. Pasarle siempre la tabla general hace que toda
+        ''' descripción vuelva vacía, porque las descripciones viven en otra.</para></summary>
         Public Function Text(node As WbNode,
                              Optional kind As LocalizedStringTableKind? = Nothing) As String
             If node Is Nothing OrElse node.Value Is Nothing Then Return ""

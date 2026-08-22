@@ -3,23 +3,19 @@ Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' ESTADO: DEBUG / EN REVISIÓN — NO CERRADO
-' -----------------------------------------------------------------------------
-' HkxObjectGraph_Class: infraestructura de parsing del grafo de objetos HKX.
-' Usada activamente por SkeletonClothOverlayHelper (bone injection) y por
-' HclClothPackageParser (built but not connected al render todavía).
+' HkxObjectGraph_Class: infraestructura de parsing del grafo de objetos HKX (objetos por
+' virtual-fixup, lectura de campos, hkArray, resolución de punteros local/global).
+' La usan SkeletonClothOverlayHelper, HkxPoseImportHelper, los Hkx*/Hcl*GraphParser y
+' HclClothPackageParser.
 '
-' PENDIENTES CONOCIDOS:
-'  - Los layouts HCL específicos siguen verificados empíricamente para FO4 64-bit.
-'    El soporte genérico 32/64-bit de este archivo cubre hkArray, root container,
-'    skeleton y animation/binding; no implica soporte completo de cloth Skyrim.
-'  - ParseSimClothData (línea ~272): sin callers externos. Exploración supersedida
-'    por HclStructuredGraphParser_Class. Pendiente eliminar.
-'  - GetLocalFixupsInRange / GetGlobalFixupsInRange: LINQ scan lineal O(n)
-'    sobre todas las fixups en cada llamada. No indexado por rango. Bajo impacto
-'    en práctica pero revisar si escala.
-'  - Offsets de campos (hklClothData, hkaSkeleton, hkRootLevelContainer):
-'    determinados empíricamente para FO4 64-bit. No verificados contra SDK Havok.
+' ALCANCE: el soporte genérico 32/64-bit cubre hkArray, root container, skeleton y
+' animation/binding. Los offsets de campo HCL (hclClothData, hclSimClothData, shapes)
+' están verificados empíricamente sobre FO4 64-bit y NO contra el SDK de Havok ⇒ no
+' implica soporte de cloth de Skyrim.
+'
+' ParseSimClothData de esta clase quedó supersedida por
+' HclStructuredGraphParser_Class.ParseSimClothData; su único llamador vivo es
+' Tools/HkxParserTool.
 ' =============================================================================
 
 Imports System.IO
@@ -42,10 +38,10 @@ Public Partial Class HkxObjectGraph_Class
     Private ReadOnly _objectsByOffset As New Dictionary(Of Integer, HkxVirtualObjectGraph_Class)
     Private ReadOnly _objectsByClassName As New Dictionary(Of String, List(Of HkxVirtualObjectGraph_Class))(StringComparer.OrdinalIgnoreCase)
 
-    ' Contents-section fixups sorted ascending by SourceRelativeOffset (ties keep original
-    ' enumeration order), with parallel entry arrays. Built once in BuildIndices so the range
-    ' queries can binary-search instead of re-filtering + re-sorting the full fixup list per call
-    ' (HKX-006). Returns the exact same filter + ordering as the previous LINQ implementation.
+    ' Fixups de la contents-section ordenados por SourceRelativeOffset ascendente (los empates
+    ' conservan el orden de enumeración original), en arrays paralelos. Se arman una vez en
+    ' BuildIndices para que GetLocal/GlobalFixupsInRange hagan búsqueda binaria en vez de
+    ' filtrar + ordenar la lista completa en cada llamada.
     Private _localFixupSourcesSorted As Integer() = Array.Empty(Of Integer)()
     Private _localFixupsSorted As HkxLocalFixupEntry_Class() = Array.Empty(Of HkxLocalFixupEntry_Class)()
     Private _globalFixupSourcesSorted As Integer() = Array.Empty(Of Integer)()
@@ -127,10 +123,9 @@ Public Partial Class HkxObjectGraph_Class
         Next
     End Sub
 
-    ' Build the sorted contents-section fixup index used by GetLocalFixupsInRange /
-    ' GetGlobalFixupsInRange. Filter = same contents-section predicate as the old LINQ;
-    ' order = ascending SourceRelativeOffset, ties broken by original enumeration index so
-    ' the result is identical to LINQ's stable OrderBy.
+    ' Índice ordenado que consumen GetLocalFixupsInRange / GetGlobalFixupsInRange. El desempate
+    ' por índice de enumeración original es OBLIGATORIO: sin él el orden dentro de un rango deja
+    ' de ser estable y los parsers que leen "el primer fixup del rango" cambian de resultado.
     Private Sub BuildSortedFixupIndices()
         Dim localList = Packfile.LocalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).ToList()
         Dim localIndices = Enumerable.Range(0, localList.Count).ToArray()
@@ -560,9 +555,9 @@ Public Partial Class HkxObjectGraph_Class
         Dim referenceFloatsOffset = referencePoseOffset + ArrayHeaderSizeValue
         Dim floatSlotsOffset = referenceFloatsOffset + ArrayHeaderSizeValue
         Dim localFramesOffset = floatSlotsOffset + ArrayHeaderSizeValue
-        ' partitions SOLO existe en hk2014 (Fallout 4). En Skyrim leerlo caía pasado el fin del objeto
-        ' (OOB → particiones basura, inofensivo porque WM no las usa). Gateado por formato, igual que el
-        ' blendHint del binding. -1 = ausente.
+        ' partitions SOLO existe en hk2014 (Fallout 4); en Skyrim leerlo cae pasado el fin del objeto
+        ' (OOB → particiones basura). Gateado por formato, igual que el blendHint del binding.
+        ' -1 = ausente.
         Dim hasPartitions = (Packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64)
         Dim partitionsOffset = If(hasPartitions, localFramesOffset + ArrayHeaderSizeValue, -1)
 
@@ -703,9 +698,9 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     ' -------------------------------------------------------------------------
-    ' REVISIÓN: offsets determinados empíricamente via DumpStructuralAnalysis.
-    ' Stubs iniciales leen solo el nombre (+0x10, igual que hkaSkeleton/hclClothData).
-    ' Campos escalares y arrays: pendiente verificar offsets con el dump.
+    ' De acá en adelante: offsets HCL determinados empíricamente con
+    ' DumpStructuralAnalysis sobre NIFs reales de FO4 64-bit, NO contra el SDK de Havok.
+    ' Cada función documenta el archivo con el que se verificó su layout.
     ' -------------------------------------------------------------------------
 
     Public Function ParseSimClothData(source As HkxVirtualObjectGraph_Class) As HclSimClothDataGraph_Class
@@ -1200,7 +1195,8 @@ Public Class HclSimClothDataGraph_Class
     Public ReadOnly Property SimClothPoses As New List(Of HkxVirtualObjectGraph_Class)
     ' +0x0B8: obj refs to constraint sets (Standard/Stretch/Bend/LocalRange/Volume).
     Public ReadOnly Property StaticConstraintSets As New List(Of HkxVirtualObjectGraph_Class)
-    ' +0x088: obj refs to hclCollidable — the actual cloth collidables (capsules etc.).
+    ' +0x0A8: obj refs to hclCollidable — the actual cloth collidables (capsules etc.).
+    ' (+0x088 is m_unknown88, a uint32 array with no fixups — do not read collidables from there.)
     Public ReadOnly Property Collidables As New List(Of HkxVirtualObjectGraph_Class)
 End Class
 

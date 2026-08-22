@@ -885,7 +885,7 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, in bool isKey
 	//     mul     r7.yzw, r7.yyzw, r8.xxxx
 	//     mad     r6.xzw, cb2[1].xxyz, r7.yyzw, r6.xxzw   ; ACUMULADOR DE LUZ += lightColor * eso
 	// cb1[7].x ya estaba identificado como SubsurfaceRolloff (L146 lo usa para el wrap del sss), y
-	// cb1[7].y es el BackLightPower del material -> uniform backlightPower (Render.vb:3558, vale 0
+	// cb1[7].y es el BackLightPower del material -> uniform backlightPower (lo setea Render.vb, vale 0
 	// cuando el material no tiene backlight, por eso NO hace falta gate por bBacklight: replica el
 	// incondicional del motor y queda inerte solo).
 	// Va al acumulador de DIFUSO igual que el motor, o sea que el composite lo vuelve a multiplicar por
@@ -1008,8 +1008,8 @@ void main(void)
 			// El sampleo del normal map se SACO de adentro de `if (bLightEnabled)`. Motivo: el bloque
 			// del cubemap del EFFECT shader (BGEM, mas abajo) NO esta anidado bajo bLightEnabled y sin
 			// embargo lee normalMap.a y `normal`. Hoy eso no explota por un solo motivo: el uniform esta
-			// CABLEADO a True en el unico call-site que existe (Render.vb:3343 `SetBool(bLightEnabled,
-			// True)`; no hay otro seteo en todo el arbol). Era una trampa latente, no un bug vivo.
+			// CABLEADO a True en el unico call-site que existe (Render.vb, `SetBool(bLightEnabled, True)`;
+			// no hay otro seteo en todo el arbol). Es una trampa latente, no un bug vivo.
 			// Sacar el sampleo de aca es IDENTICO en comportamiento mientras el uniform sea True, y
 			// elimina la mitad de la trampa sin reestructurar nada.
 			// LO QUE QUEDA: `normal` se sigue calculando solo dentro de bLightEnabled (init vec3(0.0)).
@@ -3768,13 +3768,11 @@ Public MustInherit Class Shader_Base_Class
     ''' <c>"nombre[" &amp; i &amp; "]"</c> por elemento— aloca strings en el camino de dibujo, que es
     ''' justo lo que este archivo evita en todos lados. GLSL garantiza locations consecutivas para los
     ''' elementos de un array de uniforms, asi que una sola llamada con count=N es correcta.</para>
-    ''' <para>El caller pasa un array REUTILIZADO de floats; no se aloca nada aca.</para></summary>
-    ''' <summary>EL NOMBRE LLEGA YA CON EL <c>[0]</c>, y no es un detalle de gusto. La version anterior
-    ''' recibia <c>"matShadowViewProj"</c> y hacia <c>name &amp; "[0]"</c> adentro — o sea alocaba una String
-    ''' POR LLAMADA, en el camino de dibujo, mientras su propio doc decia que existia para NO alocar. Eran 8
-    ''' por frame: poco, pero el comentario afirmaba cero y esa clase de mentira es la que hace que alguien
-    ''' mas adelante confie en algo que no pasa. Pasando el literal completo desde el caller, la String es
-    ''' una constante internada y no se aloca nada.</summary>
+    ''' <para>El caller pasa un array REUTILIZADO de floats; no se aloca nada aca.</para>
+    ''' <para>⛔ EL NOMBRE LLEGA YA CON EL <c>[0]</c>. Recibir <c>"matShadowViewProj"</c> y hacer
+    ''' <c>name &amp; "[0]"</c> adentro aloca una String POR LLAMADA en el camino de dibujo, que es
+    ''' exactamente lo que este metodo existe para evitar. Con el literal completo desde el caller, la
+    ''' String es una constante internada.</para></summary>
     Public Sub SetMatrix4Array(nombreElemento0 As String, valores As Single(), count As Integer)
         If count <= 0 Then Exit Sub
         Dim loc As Integer = GetUniformLocationCached(nombreElemento0)

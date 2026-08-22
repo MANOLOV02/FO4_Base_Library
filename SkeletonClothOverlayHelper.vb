@@ -13,8 +13,8 @@ Imports OpenTK.Mathematics
 ' Parsea el hkaSkeleton del BSClothExtraData e inyecta los huesos de física
 ' que no existen en el esqueleto del juego como HierarchiBone_class temporales.
 '
-' LocalReferencePoseToTransform: usa OpenTK Matrix4 → Transform_Class(Matrix4).
-' Es la implementación CORRECTA y consistente con el resto del render.
+' La conversión reference-pose → Transform_Class va por HkxTransformConventionHelper.ToTransform:
+' fuente ÚNICA, con la misma convención que el resto del render.
 '
 ' AUTORÍA = BSClothExtraData: el hkaSkeleton de BSClothExtraData ES la rebanada de autoría
 ' embebida en el NIF (cloth-bones + ancla + bind + jerarquía). Leerlo y colgar los bones (esto)
@@ -26,9 +26,9 @@ Imports OpenTK.Mathematics
 ' en el clone / leer del NIF source — NO recalcular desde el skin. Ver [[25-cloth-inyeccion-de-huesos]].
 '
 ' PENDIENTES CONOCIDOS:
-'  - LocalReferencePoseToTransform y ResolveUniformScale están duplicadas aquí
-'    y en HclCollisionPoseHelper.vb. Candidatas a extraer a módulo compartido
-'    cuando se decida conectar HclCollisionPoseHelper al render.
+'  - HclCollisionPoseHelper todavía tiene copias PRIVADAS de LocalReferencePoseToTransform y
+'    ResolveUniformScale; este helper ya usa la compartida (HkxTransformConventionHelper).
+'    Unificarlas cuando se decida conectar HclCollisionPoseHelper al render.
 '  - NormalizeBoneName usa ToUpperInvariant(). Consistente con el resto de
 '    bone lookups (OrdinalIgnoreCase). Revisar si hay casos edge con nombres
 '    de huesos que usen caracteres no-ASCII.

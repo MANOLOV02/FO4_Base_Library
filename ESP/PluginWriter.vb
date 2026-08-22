@@ -16,8 +16,8 @@ Public Module PluginWriter
     ' These are spec constants of the binary format, not game data.
     Friend Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131 (FO4)
     ' 44 = Skyrim SPECIAL EDITION, NOT 43 (that is Skyrim LE). Skyrim SE, Skyrim VR, and Enderal SE
-    ' all stamp 44 on every newly-created SSE record. Was 0x2B (43),
-    ' which mislabeled app-authored SSE records + the TES4 header as Skyrim LE.
+    ' all stamp 44 on every newly-created SSE record. Writing 0x2B (43) here mislabels every
+    ' app-authored SSE record and the TES4 header as Skyrim LE.
     Friend Const TES4_RECORD_VERSION_SSE As UShort = &H2CUS   ' 44
 
     ' HEDR subrecord version (float).
@@ -38,10 +38,10 @@ Public Module PluginWriter
     ''' recuperación y el agotamiento de object ids.
     ''' NO cambia de dónde arranca un guardado normal: eso sale del contador del HEDR, que esta app siembra
     ''' en 0x800 igual que el CK, así que los FormID de un guardado corriente no se mueven.</para></summary>
-    ''' <para>Ya NO reimplementa la regla: reenvía a <c>PluginManager.AllowsHardcodedRange</c>, la única
-    ''' implementación, pasándole la versión de HEDR que ESTE escritor emite. La copia local ignoraba las dos
-    ''' precondiciones de VR del canónico (FO4 VR no está en la lista; Skyrim VR exige VRESL), o sea que en un
-    ''' rig de VR el escritor y el lector habrían usado pisos distintos para el mismo archivo.</para>
+    ''' <para>⛔ NO reimplementar la regla acá: esto reenvía a <c>PluginManager.AllowsHardcodedRange</c>, la
+    ''' única implementación, pasándole la versión de HEDR que ESTE escritor emite. Una copia local se come
+    ''' las dos precondiciones de VR del canónico (FO4 VR no está en la lista; Skyrim VR exige VRESL), y en
+    ''' un rig de VR el escritor y el lector terminan con pisos distintos para el mismo archivo.</para>
     Friend Function AllowsHardcodedRange(game As Config_App.Game_Enum, masterCount As Integer) As Boolean
         Dim version As Single = If(game = Config_App.Game_Enum.Skyrim, HEDR_VERSION_SSE, HEDR_VERSION_FO4)
         Return PluginManager.AllowsHardcodedRange(version, masterCount, Config_App.Current.DataPath)
@@ -96,9 +96,8 @@ Public Module PluginWriter
 
                 ' --- MAST (master plugin name, ZSTRING) ---
                 ' Misma ley que SaveNpcEspWriter: General (cpNormal, lo que lee PluginReader) y rehusar si el
-                ' nombre no sobrevive. Hoy acá siempre es el master del juego (ASCII), pero la ley va en UN lugar
-                ' — que este archivo advirtiera del '?' silencioso para el CNAM nueve líneas arriba y lo cometiera
-                ' acá es exactamente el modo en que una ley duplicada diverge.
+                ' nombre no sobrevive. Hoy acá siempre es el master del juego (ASCII), pero la ley va en UN
+                ' lugar — el encoder central, nunca un Encoding.ASCII local que sustituye por '?' en silencio.
                 Dim masterBytes = PluginEncodingSettings.EncodeMasterFileName(masterName)
                 WriteSubrecordHeader(bw, "MAST", masterBytes.Length + 1)
                 bw.Write(masterBytes)

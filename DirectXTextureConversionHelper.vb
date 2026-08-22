@@ -147,8 +147,8 @@ Public Module DirectXTextureConversionHelper
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "The output DXGI format is not valid.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
 
-        ' Sigue siendo el ÚNICO entry point que fuerza el paralelismo del códec, igual que antes: los
-        ' otros dos respetan lo que pida el caller. Lo que cambió es la justificación, no el alcance.
+        ' ÚNICO entry point que fuerza el paralelismo del códec; los otros dos respetan lo que pida el
+        ' caller. Ver ResolveCompressFlags.
         compressFlags = ResolveCompressFlags(compressFlags)
 
         Dim request As New DxTextureConversionRequest With {
@@ -165,13 +165,10 @@ Public Module DirectXTextureConversionHelper
             .AlphaThreshold = alphaThreshold
         }
 
-        ' SIN Clone. El wrapper sólo LEE este buffer: lo fija con pin_ptr y lo copia al ScratchImage
-        ' dentro de la misma llamada SÍNCRONA, antes de devolver. El clon no protegía de nada — para que
-        ' hiciera falta, otro hilo tendría que estar mutando el mismo array mientras esta llamada corre, y
-        ' en ese escenario el clon tampoco salva (copiaría un estado intermedio). Lo que sí costaba: 64 MB
-        ' por encode de 4096², medidos como 320 MB de asignación administrada por llamada contra 85 MB
-        ' del camino sin clon ni concatenación.
-        ' ⇒ CONTRATO: el llamador no puede mutar `bgraPixels` mientras esta función no haya vuelto.
+        ' SIN Clone, a propósito: el wrapper sólo LEE este buffer (lo fija con pin_ptr y lo copia al
+        ' ScratchImage dentro de la misma llamada SÍNCRONA). Clonarlo cuesta 64 MB por encode de 4096² y
+        ' no protege de nada: si otro hilo estuviera mutando el array, el clon copiaría igual un estado
+        ' intermedio. ⇒ CONTRATO: el llamador no puede mutar `bgraPixels` hasta que esta función vuelva.
         request.Subresources.Add(New DxTextureSubresourceBuffer(
             data:=bgraPixels,
             width:=width,
@@ -353,46 +350,33 @@ Public Module DirectXTextureConversionHelper
 
         Return ConvertToDdsBytes(request)
     End Function
-    ''' <summary>TEX_COMPRESS_PARALLEL (0x10000000) va SIEMPRE. Los bytes son idénticos al serial —el
-    ''' compress BCn es por bloque independiente— así que el único eje es el tiempo.
-    ''' <para>La justificación que estaba escrita acá ("BC3 90 ms→4 ms") era FALSA, y el modo de falla
-    ''' vale más que el número: salía de <c>RunFmtTest</c>, que cronometra el brazo SERIE en la PRIMERA
-    ''' llamada del proceso. Medía el arranque en frío (carga del wrapper C++/CLI, factoría WIC, JIT),
-    ''' no el códec. Con calentamiento no reproduce ni de lejos.</para>
-    ''' <para>Lo que sí mide <c>Tools/TexCodecPerfProbe</c> (12 hilos lógicos, mismo buffer, bytes
-    ''' verificados idénticos en los dos brazos):</para>
-    ''' <list type="table">
-    ''' <item><term>BC1/BC3/BC5 1024²</term><description><b>0,96–1,05×</b> — no gana nada, y el CPU/wall
-    ''' sube de 0,98 a 11,2.</description></item>
-    ''' <item><term>BC1/BC3/BC5 2048²</term><description><b>1,14–1,21×</b> — acá sí gana.</description></item>
-    ''' <item><term>BC7 1024²</term><description>serie <b>220,9 s</b> / paralelo <b>39,0 s</b> ⇒ <b>5,66×</b>.
-    ''' BC7 es el único códec compute-bound; los baratos están limitados por ancho de banda de memoria, y
-    ''' por eso no escalan con los núcleos.</description></item>
-    ''' <item><term>lote de 24×1024² con DOP=12 (la forma del bake)</term><description><b>0,98–1,09×</b> —
-    ''' o sea NINGUNA diferencia. Con el fan-out por NPC la máquina ya está saturada y el paralelismo
-    ''' interno no suma ni resta.</description></item>
-    ''' </list>
-    ''' <para>⇒ Se probó derivarlo por formato (prenderlo sólo en BC7) y la medición lo REFUTÓ: no mejora
-    ''' el lote y hace perder 1,14–1,21× en una textura grande sola, que es el caso interactivo. Queda
-    ''' incondicional, que es lo que la medición sostiene.</para>
-    ''' <para>NO hay perilla de entorno para apagarlo. La hubo por dos horas y la sacó la revisión de
-    ''' arquitectura, con razón: el valor no se DERIVA de nada, así que una env var no "fija" un valor
-    ''' derivado —que es la única variante que <c>00-reglas-app-distribuida</c> habilita— sino que agrega
-    ''' un SEGUNDO comportamiento, y su único valor útil era exactamente el de antes. Eso es
-    ''' <c>00-reglas-nunca-modo-legacy-para-no-romper</c>. Para medir el eje está
-    ''' <c>Tools/TexCodecPerfProbe</c>, que le pasa los flags exactos al wrapper sin tocar el entorno.</para></summary>
+    ''' <summary>TEX_COMPRESS_PARALLEL (0x10000000) va SIEMPRE e INCONDICIONAL. Los bytes son idénticos
+    ''' al serial —el compress BCn es por bloque independiente— así que el único eje es el tiempo.
+    ''' <para>Medido con <c>Tools/TexCodecPerfProbe</c> (12 hilos lógicos, mismo buffer, bytes verificados
+    ''' idénticos en los dos brazos): BC1/BC3/BC5 1024² <b>0,96–1,05×</b>; los mismos a 2048²
+    ''' <b>1,14–1,21×</b>; BC7 1024² <b>5,66×</b> (220,9 s → 39,0 s, el único códec compute-bound: los
+    ''' baratos están limitados por ancho de banda); lote de 24×1024² con DOP=12 —la forma del bake—
+    ''' <b>0,98–1,09×</b>, o sea nada, porque el fan-out por NPC ya satura la máquina.</para>
+    ''' <para>⇒ Derivarlo por formato (prenderlo sólo en BC7) está REFUTADO por esa medición: no mejora el
+    ''' lote y pierde 1,14–1,21× en una textura grande sola, que es el caso interactivo.</para>
+    ''' <para>⛔ NO agregar una perilla de entorno: el valor no se DERIVA de nada, así que una env var no
+    ''' fijaría un derivado —lo único que habilita <c>00-reglas-app-distribuida</c>— sino que agregaría un
+    ''' SEGUNDO comportamiento (<c>00-reglas-nunca-modo-legacy-para-no-romper</c>). Para medir el eje está
+    ''' <c>Tools/TexCodecPerfProbe</c>, que le pasa los flags exactos al wrapper.</para>
+    ''' <para>⚠️ Al medir, NO usar <c>RunFmtTest</c>: cronometra el brazo SERIE en la PRIMERA llamada del
+    ''' proceso, así que mide el arranque en frío (carga del wrapper C++/CLI, factoría WIC, JIT) y no el
+    ''' códec — de ahí salía el "BC3 90 ms→4 ms" que no reproduce con calentamiento.</para></summary>
     Private Function ResolveCompressFlags(compressFlags As Integer) As Integer
         Const TEX_COMPRESS_PARALLEL As Integer = &H10000000
         Return compressFlags Or TEX_COMPRESS_PARALLEL
     End Function
 
     ''' <summary>Convierte y devuelve el DDS COMPLETO en UN solo array, por el camino de un solo buffer
-    ''' del wrapper.
-    ''' <para>El camino anterior (convertir a subrecursos → <c>ConcatenateSubresources</c> → copia final)
-    ''' materializaba el payload TRES veces en memoria administrada, todas en LOH para una textura de
-    ''' cara. Medido con 4096² BGRA8: <b>320 MB</b> asignados por encode (con el Clone de la entrada)
-    ''' contra <b>~85 MB</b> por este camino. Los bytes de salida son los mismos para ArraySize = 1, que
-    ''' es todo lo que la app produce; ver la nota de orden del payload en el wrapper.</para></summary>
+    ''' del wrapper. Materializa el payload UNA vez.
+    ''' <para>⛔ NO reemplazarlo por subrecursos → <c>ConcatenateSubresources</c> → copia final: eso
+    ''' materializa el payload TRES veces, todas en LOH para una textura de cara. Medido con 4096² BGRA8:
+    ''' <b>320 MB</b> asignados por encode contra <b>~85 MB</b> por este camino. Los bytes de salida son
+    ''' los mismos para ArraySize = 1, que es todo lo que la app produce.</para></summary>
     Private Function ConvertToDdsBytes(request As DxTextureConversionRequest) As Byte()
         ValidateRequest(request)
         Dim ddsBytes = Loader.ConvertSubresourcesToDds(ToNativeRequest(request))
@@ -630,12 +614,11 @@ Public Module DirectXTextureConversionHelper
 
     ''' <summary>Concatena los subrecursos en el ORDEN DEL FORMATO DDS: array-major y después mip
     ''' (para cada cara, toda su cadena de mips; después la cara siguiente).
-    ''' <para>Antes concatenaba en el orden en que venían, que es el orden en que el wrapper los
-    ''' EMITE — mip-major. Los dos coinciden con <c>ArraySize = 1</c>, que es todo lo que la app produce,
-    ''' y por eso nadie lo vio; con un cubemap el archivo salía con las caras entrelazadas. Medido con la
-    ''' fixture <c>huecos</c> del probe (cubemap 32² × 6 caras × 2 mips, cara i marcada con R = 10 + i·40):
-    ''' el orden viejo devolvía <c>10;50;90;130;210;50</c> en las posiciones de las caras, el correcto
-    ''' devuelve <c>10;50;90;130;170;210</c>.</para>
+    ''' <para>⛔ NO concatenar en el orden en que vienen (que es el orden en que el wrapper los EMITE,
+    ''' mip-major): coincide con array-major sólo si <c>ArraySize = 1</c>, y con un cubemap el archivo sale
+    ''' con las caras entrelazadas. Medido con la fixture <c>huecos</c> del probe (cubemap 32² × 6 caras ×
+    ''' 2 mips, cara i marcada con R = 10 + i·40): mip-major da <c>10;50;90;130;210;50</c> en las
+    ''' posiciones de las caras; array-major da <c>10;50;90;130;170;210</c>.</para>
     ''' <para>Hace falta ARRAY-major porque es lo que escribe <c>DirectX::SaveToDDSMemory</c>
     ''' (<c>for item { for level }</c>) y lo que espera cualquier lector de DDS. El reordenamiento usa el
     ''' <c>MipLevel</c>/<c>ArrayIndex</c> que cada subrecurso ya trae; si vienen sin marcar (índices
@@ -694,14 +677,12 @@ Public Module DirectXTextureConversionHelper
         Return CInt(total)
     End Function
 
-    ''' <summary>Mapea el resultado del wrapper a los tipos de este módulo.
-    ''' <para>Antes esto se hacía por REFLEXIÓN: se buscaba el tipo por nombre, se creaba con
-    ''' <c>Activator</c>, se seteaba miembro por miembro con <c>SetValue</c> y se invocaba el método con
-    ''' <c>MethodInfo.Invoke</c> — todo en CADA llamada, incluido el barrido de <c>GetMethods</c>. El
-    ''' módulo ya hacía <c>Imports DirectXTexWrapperCLI</c> y usaba <c>Loader</c> tipado dos líneas más
-    ''' arriba, así que la ABI era conocida en compilación. En tiempo no se medía (queda bajo el piso de
-    ''' ruido del A/A hasta 4096²); lo que se saca es el modo de falla: un renombre en el wrapper pasaba
-    ''' el compilador y explotaba en runtime como <c>MissingMemberException</c> en el medio de un bake.</para></summary>
+    ''' <summary>Mapea el resultado del wrapper a los tipos de este módulo, TIPADO.
+    ''' <para>⛔ No volver a hacerlo por reflexión (<c>Activator</c> + <c>SetValue</c> +
+    ''' <c>MethodInfo.Invoke</c>): el costo no era el problema (queda bajo el ruido del A/A hasta 4096²),
+    ''' el modo de falla sí — un renombre en el wrapper pasa el compilador y explota en runtime como
+    ''' <c>MissingMemberException</c> en el medio de un bake. La ABI se conoce en compilación
+    ''' (<c>Imports DirectXTexWrapperCLI</c>).</para></summary>
     Private Function FromNativeResult(nativeResult As TextureConversionResult) As DxTextureConversionResult
         If nativeResult Is Nothing Then
             Throw New InvalidOperationException("The wrapper returned a null result.")

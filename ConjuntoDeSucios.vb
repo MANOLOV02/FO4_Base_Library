@@ -1,12 +1,11 @@
 Imports System.Collections.Generic
 
-''' <summary>El conjunto de vertices sucios de una <c>SkinnedGeometry</c>. Reemplaza al
-''' <c>HashSet(Of Integer)</c> que habia en <c>dirtyVertexIndices</c> / <c>dirtyMaskIndices</c> y se
-''' comporta igual para todo lo que los ~30 lectores hacen con el: sabe representar "estan sucios TODOS"
-''' sin materializar nada.
+''' <summary>El conjunto de vertices sucios de una <c>SkinnedGeometry</c> (<c>dirtyVertexIndices</c> y
+''' <c>dirtyMaskIndices</c> de <c>SkinningHelper</c>). CONTRATO: se comporta como un
+''' <c>HashSet(Of Integer)</c> para todo lo que los ~30 lectores hacen con el, y ademas sabe representar
+''' "estan sucios TODOS" sin materializar nada.
 '''
-''' <para>LAS DIFERENCIAS CONTRA <c>HashSet</c>, ENUMERADAS. Decir "se comporta EXACTAMENTE igual" y
-''' dejar que el lector descubra las excepciones es peor que no decir nada:</para>
+''' <para>LAS DIFERENCIAS CONTRA <c>HashSet</c>, ENUMERADAS:</para>
 ''' <list type="number">
 ''' <item>Representa "todos" en O(1) — la razon de existir.</item>
 ''' <item>Mutar el conjunto MIENTRAS se lo enumera se detecta, pero con TRES limites declarados: (a) al
@@ -15,8 +14,6 @@ Imports System.Collections.Generic
 ''' —un <c>MarcarTodos</c> sobre un disperso VACIO, que saltea el <c>Clear</c>— pasa desapercibida. Ver la
 ''' nota de <c>MoveNext</c>: el chequeo por vuelta cuesta mas que todo lo que esta clase ahorra.</item>
 ''' </list>
-''' <para>Y una que era diferencia y se cerro: <see cref="Add"/> con un indice fuera de <c>[0, n)</c> ya
-''' no se pierde en silencio.</para>
 '''
 ''' <para>POR QUE EXISTE. En modo CPU-skinning el camino de pose hacia esto POR FRAME y POR MALLA:</para>
 ''' <code>dirtyVertexIndices = New HashSet(Of Integer)(Enumerable.Range(0, nVertices))</code>
@@ -31,8 +28,8 @@ Imports System.Collections.Generic
 ''' MorphingHelper, Editor_Form y tres arneses). Un flag paralelo obliga a que los 30 se acuerden de
 ''' consultarlo, y el que se olvide no falla: ve <c>.Count = 0</c> y silenciosamente no hace nada —el
 ''' peor modo de falla posible, porque el sintoma es "no se actualizo la malla" a mil lineas de
-''' distancia. Con un tipo que responde <c>Count</c>, <c>Contains</c> y <c>For Each</c> igual que
-''' antes, NINGUN lector cambia y no hay nada que olvidarse.</para>
+''' distancia. Con un tipo que responde <c>Count</c>, <c>Contains</c> y <c>For Each</c> igual que un
+''' <c>HashSet</c>, NINGUN lector cambia y no hay nada que olvidarse.</para>
 '''
 ''' <para>POR QUE EL ORDEN DE ENUMERACION IMPORTA, Y POR QUE ESTE ES BIT-IDENTICO.
 ''' <c>RecalculateNormalsTangentsBitangents</c> hace <c>For Each vi In geo.dirtyVertexIndices</c> y con
@@ -110,12 +107,11 @@ Public NotInheritable Class ConjuntoDeSucios
 
     ''' <summary>Devuelve True si el indice no estaba, igual que <c>HashSet.Add</c>.
     '''
-    ''' <para>EL INDICE FUERA DE <c>[0, n)</c> NO SE PIERDE. La version anterior hacia
-    ''' <c>If _todos Then Return False</c> a secas, y eso miente para todo indice que el modo "todos" NO
-    ''' cubre: <c>Todos(100).Add(150)</c> devolvia False, <c>Contains(150)</c> devolvia False y la
-    ''' enumeracion rendia 0..99 — mientras que el <c>HashSet</c> que esta clase reemplaza habria devuelto
-    ''' True y rendido el 150. O sea PERDIDA SILENCIOSA de un vertice sucio, que aguas abajo es "esa parte
-    ''' de la malla no se actualizo" a mil lineas de distancia.</para>
+    ''' <para>EL INDICE FUERA DE <c>[0, n)</c> NO SE PIERDE: hay que MATERIALIZAR. Un
+    ''' <c>If _todos Then Return False</c> a secas miente para todo indice que el modo "todos" NO cubre
+    ''' —<c>Todos(100).Add(150)</c> daria False, <c>Contains(150)</c> False y la enumeracion 0..99, cuando
+    ''' un <c>HashSet</c> devuelve True y rinde el 150—, o sea PERDIDA SILENCIOSA de un vertice sucio, que
+    ''' aguas abajo es "esa parte de la malla no se actualizo" a mil lineas de distancia.</para>
     ''' <para>Hoy ningun llamador lo dispara (todos pasan indices &lt; <c>Vertices.Length</c> y los de
     ''' MorphEngine estan guardados por <c>&lt; count</c>), pero el contrato de la clase es "se comporta
     ''' EXACTAMENTE igual", y una excepcion no sirve: esto corre en el camino de dibujo de una app que se
@@ -206,10 +202,10 @@ Public NotInheritable Class ConjuntoDeSucios
 
         ''' <summary>EL CHEQUEO DE MUTACION VA AL FINAL, NO EN CADA VUELTA, Y ES A PROPOSITO.
         ''' <para>El modo disperso delega en <c>HashSet.Enumerator</c>, que ya tira
-        ''' <c>InvalidOperationException</c> si el conjunto cambia. El modo "todos" no tenia NADA: mutar
-        ''' durante la enumeracion quedaba INVISIBLE y el bucle seguia rindiendo la secuencia vieja. O sea
-        ''' que el mismo error de programacion fallaba fuerte o fallaba mudo segun cuantos vertices hubiera
-        ''' ensuciado el gesto del usuario — el peor reparto posible.</para>
+        ''' <c>InvalidOperationException</c> si el conjunto cambia. Sin este chequeo el modo "todos" se traga
+        ''' la mutacion: el bucle sigue rindiendo la secuencia vieja, o sea que el MISMO error de programacion
+        ''' falla fuerte o falla mudo segun cuantos vertices haya ensuciado el gesto del usuario — el peor
+        ''' reparto posible.</para>
         ''' <para>POR QUE NO EN CADA <c>MoveNext</c>. Esta clase existe para sacar 1,16 ms por frame; el
         ''' modo "todos" es su camino caliente y corre 130.500 vueltas por malla, 26 mallas por frame. Un
         ''' <c>_duenio._version</c> por vuelta son 3,4 millones de lecturas del heap que el JIT NO puede

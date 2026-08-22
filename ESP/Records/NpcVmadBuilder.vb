@@ -359,11 +359,10 @@ Public Module NpcVmadBuilder
     ''' Every other NPC keeps its number and stays quiet. A global constant would instead force every NPC in the
     ''' plugin to re-apply on any edit.</para></summary>
     ''' <param name="logicRevision">Revisión de la LÓGICA del script (no del payload). Se mezcla igual que
-    ''' un campo más, así que cambiarla cambia el hash de TODOS los NPC de una. Existe porque el sello sólo
-    ''' cubría el payload: si arreglábamos el .pex (p.ej. que RemovePrevious barra también los nodos Face),
-    ''' los actores cuyo payload no había cambiado seguían viendo el MISMO número, el guard de OnLoad
-    ''' cortaba en la primera línea y el arreglo no llegaba a ejecutarse NUNCA. Nothing/"" ⇒ no se mezcla
-    ''' (hash idéntico al de antes de existir este parámetro).</param>
+    ''' un campo más, así que cambiarla cambia el hash de TODOS los NPC de una. Existe porque el sello por
+    ''' sí solo cubre el PAYLOAD: al arreglar el .pex (p.ej. que RemovePrevious barra también los nodos
+    ''' Face), los actores cuyo payload no cambió ven el MISMO número, el guard de OnLoad corta en la
+    ''' primera línea y el arreglo no se ejecuta NUNCA. Nothing/"" ⇒ no se mezcla.</param>
     Public Function StablePayloadHash(script As VmadScriptSpec, excludeProperty As String,
                                       Optional logicRevision As String = Nothing) As Integer
         ' FNV-1a depends on the 32-bit multiply WRAPPING AROUND. VB.NET has integer overflow checks on by
