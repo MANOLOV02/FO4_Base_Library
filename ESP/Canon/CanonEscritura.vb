@@ -26,10 +26,31 @@
         ''' referencia con la codificación exacta que traía la fuente cuando esa codificación y la
         ''' que devuelve la traducción significan lo mismo en el archivo destino. Ver
         ''' <see cref="WbFormIdWalker.ReindexarADestino"/>.</para></summary>
+        ''' <param name="destinoLocalizado">Si el archivo que se está escribiendo declara el flag
+        ''' 0x80 (tablas de idioma externas). Se pide SIEMPRE, igual que
+        ''' <paramref name="indicePropioDelDestino"/>, y <c>Nothing</c> quiere decir "el destino es
+        ''' como la fuente" —que es lo correcto para un round-trip, donde se reescribe un archivo como
+        ''' el que se leyó—. ⛔ Es un parámetro y no un valor fijo porque los dos casos existen y son
+        ''' opuestos: el guardado de la aplicación escribe un plugin SIN tablas, y el arnés de
+        ''' round-trip reescribe masters QUE LAS TIENEN. Suponer cualquiera de los dos rompe al
+        ''' otro.</param>
+        ''' <param name="hallazgos">Si se pasa, ahí queda lo que el emisor encuentre —hoy, los textos
+        ''' localizados que no se pudieron resolver—. Es la ÚNICA vía: el contexto de escritura ya no
+        ''' comparte la lista del de lectura.</param>
         Public Function Cuerpo(vista As CanonView, alDestino As Func(Of UInteger, UInteger),
-                               indicePropioDelDestino As Integer) As Byte()
-            If vista Is Nothing Then Return Array.Empty(Of Byte)()
-            Return Cuerpo(vista.Node, vista.Context, alDestino, indicePropioDelDestino)
+                               indicePropioDelDestino As Integer,
+                               destinoLocalizado As Boolean?,
+                               Optional hallazgos As List(Of WbFinding) = Nothing) As Byte()
+            ' El contexto se pide ANTES de usarlo: sin él no hay con qué emitir, y reventar acá con una
+            ' NRE en vez de devolver vacío sería un cambio de conducta que nadie pidió.
+            If vista Is Nothing OrElse vista.Node Is Nothing OrElse vista.Context Is Nothing Then
+                Return Array.Empty(Of Byte)()
+            End If
+            Dim resolver = vista.Resolver
+            Dim resolverTexto As Func(Of WbNode, String) = Nothing
+            If resolver IsNot Nothing Then resolverTexto = Function(n) resolver.Text(n)
+            Dim ctx = vista.Context.ParaEscritura(destinoLocalizado, resolverTexto, hallazgos)
+            Return Cuerpo(vista.Node, ctx, alDestino, indicePropioDelDestino)
         End Function
 
         ''' <summary>Igual que el anterior, sobre el árbol y su contexto sueltos. Es el que necesita

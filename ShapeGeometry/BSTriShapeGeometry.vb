@@ -1326,21 +1326,28 @@ Public Class BSTriShapeGeometry
             If bIdx > maxBoneIdx Then maxBoneIdx = bIdx
         Next
         Do While skinData.BoneList.Count <= maxBoneIdx
-            skinData.BoneList.Add(New BoneData())
+            ' CON su lista: un `New BoneData()` la trae en Nothing, y el rebuild de abajo limpia EN EL
+            ' LUGAR. Sin esto, el primer hueso agregado revienta con NRE en el `.Clear()`.
+            skinData.BoneList.Add(New BoneData() With {.VertexWeights = New List(Of BoneVertData)()})
         Loop
         numBones = skinData.BoneList.Count
         skinData.NumBones = CUInt(numBones)
 
-        ' Re-init each bone's VertexWeights list with a fresh List(Of BoneVertData)() rather than
-        ' .Clear()-ing it in place.  BoneData is a struct, so a clone whose VertexWeights still
-        ' aliases the source list would have .Clear() reach into the ORIGINAL shape.
-        ' NOTE: NiTriShapeGeometry.RebuildNiSkinData does the opposite (.Clear()), on the grounds
-        ' that NiflySharp's DeepCopyHelper IsValueTypeSelfContained guard now deep-copies struct
-        ' reference fields.  The two encoders disagree; whichever is right, they should match.
+        ' Limpia la lista de cada hueso EN EL LUGAR, igual que NiTriShapeGeometry.RebuildNiSkinData.
+        ' Los dos encoders hacian lo contrario y el comentario de aca lo decia: "whichever is right,
+        ' they should match". Unificados el 2026-08-22.
+        '
+        ' Por que `.Clear()` es seguro con `BoneData` siendo un STRUCT: el clon de un bloque de
+        ' NiflySharp no copia la referencia, ALOCA UNA LISTA NUEVA
+        ' (`BoneData.DeepClone()`: `copy.VertexWeights = new List<BoneVertData>(this.VertexWeights)`),
+        ' asi que limpiar la de un shape clonado no toca la del original.
+        ' ⛔ Los dos comentarios justificaban esto citando `DeepCopyHelper.IsValueTypeSelfContained`,
+        ' que NO EXISTE: upstream borro ese archivo cuando reemplazo el deep-copy por reflexion por
+        ' logica de clonado GENERADA (commit `f1f3404` del fork). La conclusion seguia siendo cierta,
+        ' pero apoyada en un simbolo muerto — que es como una premisa se vuelve falsa sin que nadie
+        ' se entere. La razon de arriba es la que se puede verificar hoy.
         For b = 0 To numBones - 1
-            Dim bd = skinData.BoneList(b)
-            bd.VertexWeights = New List(Of BoneVertData)()
-            skinData.BoneList(b) = bd
+            skinData.BoneList(b).VertexWeights.Clear()
         Next
 
         ' Pivot per-vertex 4-slot influences → per-bone (vertex, weight) entries.  Skip

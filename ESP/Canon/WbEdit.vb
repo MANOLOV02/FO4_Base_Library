@@ -75,11 +75,50 @@
         ''' <para>Si el nodo es el envoltorio de un subrecord con una sola hoja adentro, el valor va en
         ''' la hoja. Un nodo con estructura debajo no es una hoja y no se toca.</para></summary>
         Public Function PonerValor(n As WbNode, valor As Object) As Boolean
-            If n Is Nothing Then Return False
-            If n.Children.Count = 1 AndAlso n.Children(0).Children.Count = 0 Then n = n.Children(0)
-            If n.Children.Count > 0 Then Return False
-            n.Value = valor
+            Dim hoja = HojaEditable(n)
+            If hoja Is Nothing Then Return False
+            hoja.Value = valor
+            QuitarBytesSinDescribir(hoja)
             Return True
+        End Function
+
+        ''' <summary>Saca del subrecord de esta hoja los nodos de <c>Bytes sin describir</c>, si la hoja
+        ''' es de TEXTO.
+        '''
+        ''' <para>Esos bytes existen para no perder lo que la declaración no supo explicar en la FUENTE.
+        ''' Cuando el texto que los dejó se reescribe, ya no describen nada y se le pegan de cola al
+        ''' valor nuevo: un <c>FULL</c> roto de 4 bytes se relee como 1 char + 2 sobrantes, y corregir el
+        ''' nombre daba <c>oso[NUL]</c> + <c>[NUL][NUL]</c>.</para>
+        '''
+        ''' <para>⛔ Sólo para hojas de texto, y a propósito. Un sobrante lo deja un campo de LARGO
+        ''' VARIABLE que no llenó el subrecord —o sea, un texto—, así que ligarlo a la edición de un
+        ''' entero o de una referencia sería tirar bytes de un campo que el usuario no tocó. Vale para
+        ''' los TRES textos y no sólo para el traducible: el <c>EDID</c> de un subrecord mal teselado
+        ''' tenía exactamente el mismo problema.</para></summary>
+        Private Sub QuitarBytesSinDescribir(hoja As WbNode)
+            If Not (TypeOf hoja.Def Is WbStringDef OrElse TypeOf hoja.Def Is WbLStringDef OrElse
+                    TypeOf hoja.Def Is WbLenStringDef) Then Return
+            Dim sr = hoja
+            While sr IsNot Nothing AndAlso String.IsNullOrEmpty(sr.Signature)
+                sr = sr.Parent
+            End While
+            If sr Is Nothing Then Return
+            For i = sr.Children.Count - 1 To 0 Step -1
+                If String.Equals(sr.Children(i).Name, WbSubrecordDef.BytesSinDescribir, StringComparison.Ordinal) Then
+                    sr.QuitarHijoEn(i)
+                End If
+            Next
+        End Sub
+
+        ''' <summary>La hoja que <see cref="PonerValor"/> escribiría, o Nothing si ese nodo no es
+        ''' escribible. Existe para que quien necesite tocar algo MÁS del nodo escrito —su estado de
+        ''' localización, por ejemplo— apunte exactamente a la misma hoja: si el descenso estuviera
+        ''' escrito dos veces, un día una copia bajaría y la otra no.</summary>
+        Public Function HojaEditable(n As WbNode) As WbNode
+            If n Is Nothing Then Return Nothing
+            If n.Children.Count = 1 AndAlso n.Children(0).Children.Count = 0 Then n = n.Children(0)
+            If n.Children.Count > 0 Then Return Nothing
+            Return n
         End Function
 
         ''' <summary>Busca un subrecord por firma en TODO el árbol, no sólo entre los hijos

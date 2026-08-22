@@ -403,12 +403,22 @@ Public Module SaveNpcEspWriter
         ''' "promote" the in-memory drafts to real records — remapping any overlay/draft reference that
         ''' still points at the provisional and dropping the now-persisted drafts (no duplicate on reuse).</summary>
         Public DraftFormIdMap As New Dictionary(Of UInteger, UInteger)
+
+        ''' <summary>Lo que el escritor encontró y el usuario tiene que ver: hoy, los textos
+        ''' localizados que no se pudieron resolver contra las tablas de idioma y salieron VACÍOS.
+        ''' <para>Existe porque un hallazgo que no llega a la pantalla es lo mismo que no tenerlo: el
+        ''' archivo saldría bien formado y con un NPC sin nombre, sin que nadie se entere.</para></summary>
+        Public Advertencias As New List(Of String)
     End Class
 
     ''' <summary>Los buffers que produce UN recorrido completo del walk de emision, agrupados por GRUP.
     ''' Existe porque ese walk se corre DOS veces: una para DESCUBRIR que masters hacen falta y otra para
     ''' escribir los bytes definitivos. Ver el Paso 1 de <see cref="SaveOverridePlugin"/>.</summary>
     Private NotInheritable Class EmittedBuffers
+        ''' <summary>Avisos del emisor de ESTA pasada. Van acá y no en una variable de módulo porque el
+        ''' walk se corre DOS veces y sólo la segunda produce los bytes definitivos: los de la pasada
+        ''' de descubrimiento se tiran junto con sus buffers, sin dejar duplicados.</summary>
+        Public ReadOnly Advertencias As New List(Of String)
         Public ReadOnly Records As New List(Of Byte())
         Public ReadOnly Otft As New List(Of Byte())
         Public ReadOnly Lvli As New List(Of Byte())
@@ -486,48 +496,48 @@ Public Module SaveNpcEspWriter
             Function(rm As SaveNpcEspWriter.FormIdRemapper, selfIdx As Integer) As EmittedBuffers
                 Dim b As New EmittedBuffers
                 For Each entry In entries
-                    b.Records.Add(SerializeNpcRecord(entry, rm, game, selfIdx))
+                    b.Records.Add(SerializeNpcRecord(entry, rm, game, selfIdx, b.Advertencias))
                 Next
                 For Each existing In existingRecords
-                    b.Records.Add(SerializeExistingRecord(existing, existingMasters, pluginManager, rm, game, selfIdx))
+                    b.Records.Add(SerializeExistingRecord(existing, existingMasters, pluginManager, rm, game, selfIdx, b.Advertencias))
                 Next
                 ' NEW NPC_ records (clones with self-index FormIDs). Emitted into the same NPC_ GRUP as the
                 ' overrides — the CK and the engine consume NPC_ records uniformly regardless of
                 ' override-vs-new.
                 For Each ce In npcCreateEntries
-                    b.Records.Add(SerializeNpcCreateRecord(ce, rm, game, selfIdx))
+                    b.Records.Add(SerializeNpcCreateRecord(ce, rm, game, selfIdx, b.Advertencias))
                 Next
 
                 ' OTFT outfit records (Edit Outfit "Create" tab). Each emits as a top-level record: NEW ones
                 ' carry a self-index FormID (via draftRemap inside the remapper); OVERRIDE ones keep their real
                 ' FormID. INAM items are remapped against the new MAST list.
                 For Each oe In outfitEntries
-                    b.Otft.Add(SerializeOtftRecord(oe, rm, game, selfIdx))
+                    b.Otft.Add(SerializeOtftRecord(oe, rm, game, selfIdx, b.Advertencias))
                 Next
 
                 ' LVLI leveled lists (Edit Outfit "New LVL…"). Each emits as a self-index top-level record; LVLO
                 ' references are remapped (draft → self via draftRemap; real ARMO/LVLI → master remap).
                 For Each le In leveledEntries
-                    Dim buf = SerializeLvliRecord(le, rm, game, selfIdx)
+                    Dim buf = SerializeLvliRecord(le, rm, game, selfIdx, b.Advertencias)
                     If le.IsNpcList Then b.Lvln.Add(buf) Else b.Lvli.Add(buf)
                 Next
 
                 ' MSWP / ARMA / ARMO records (NEW-only). Each emits a self-index top-level record; every FormID it
                 ' references is remapped (draft → self via draftRemap; real → master remap).
                 For Each mw In mswpEntries
-                    b.Mswp.Add(SerializeMswpRecord(mw, rm, game, selfIdx))
+                    b.Mswp.Add(SerializeMswpRecord(mw, rm, game, selfIdx, b.Advertencias))
                 Next
                 For Each ae In armaEntries
-                    b.Arma.Add(SerializeArmaRecord(ae, rm, game, selfIdx))
+                    b.Arma.Add(SerializeArmaRecord(ae, rm, game, selfIdx, b.Advertencias))
                 Next
                 For Each ao In armoEntries
-                    b.Armo.Add(SerializeArmoRecord(ao, rm, game, selfIdx))
+                    b.Armo.Add(SerializeArmoRecord(ao, rm, game, selfIdx, b.Advertencias))
                 Next
 
                 ' CLFM colour records (SSE hair tint materialized from a RaceMenu preset). NEW ones take a self-index
                 ' FormID via draftRemap; OVERRIDE ones (authored by a prior save of this plugin) keep their real FormID.
                 For Each ce In clfmEntries
-                    b.Clfm.Add(SerializeClfmRecord(ce, rm, game, selfIdx))
+                    b.Clfm.Add(SerializeClfmRecord(ce, rm, game, selfIdx, b.Advertencias))
                 Next
                 Return b
             End Function
@@ -952,6 +962,7 @@ Public Module SaveNpcEspWriter
         ' para que el Paso 5 y todo lo de aguas abajo no se entere de que la emision se movio.
         ' ====================================================================
         Dim emitted As EmittedBuffers = emitAll(remapper, selfMasterIdx)
+        result.Advertencias.AddRange(emitted.Advertencias)
         Dim recordBuffers As List(Of Byte()) = emitted.Records
         Dim otftBuffers As List(Of Byte()) = emitted.Otft
         Dim lvliBuffers As List(Of Byte()) = emitted.Lvli
@@ -1059,7 +1070,7 @@ Public Module SaveNpcEspWriter
     ''' <summary>Sobrescritura de un NPC_: el cuerpo es el arbol del record, tal cual quedo despues
     ''' de las ediciones. Igual que los demas records migrados.</summary>
     Private Function SerializeNpcRecord(entry As NpcOverrideEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
-                                        game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
+                                        game As Config_App.Game_Enum, selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         If entry.Npc Is Nothing OrElse entry.Npc.Record Is Nothing Then
             Throw New InvalidOperationException(
                 "NpcOverrideEntry sin record: el cuerpo de un NPC_ ES su arbol. Sin el no hay nada que grabar.")
@@ -1067,7 +1078,7 @@ Public Module SaveNpcEspWriter
         Dim vista = TryCast(entry.Npc.Record, Canon.CanonView)
         If vista Is Nothing Then Return Array.Empty(Of Byte)()
         Return SerializarRecord(vista, entry.Npc.FormID, remapper, game,
-                                entry.OriginalHeader.VCS1, entry.OriginalHeader.VCS2, selfIdxDestino)
+                                entry.OriginalHeader.VCS1, entry.OriginalHeader.VCS2, selfIdxDestino, avisos)
     End Function
 
     ''' <summary>Cuerpo de un NPC_ sobrescrito, sin la cabecera. Es EXACTAMENTE lo que emite el
@@ -1076,13 +1087,19 @@ Public Module SaveNpcEspWriter
     ''' con el que el archivo de salida nombra a sus propios records. -1 = no se sabe.</param>
     Public Function CuerpoDeNpcSobrescrito(npc As NPC_Data,
                                            remapper As SaveNpcEspWriter.FormIdRemapper,
-                                           selfIdxDestino As Integer) As Byte()
+                                           selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         If npc Is Nothing Then Return Array.Empty(Of Byte)()
         Dim vista = TryCast(npc.Record, Canon.CanonView)
         If vista Is Nothing Then Return Array.Empty(Of Byte)()
         Dim traducir As Func(Of UInteger, UInteger) = Nothing
         If remapper IsNot Nothing Then traducir = Function(x) remapper(x)
-        Return Canon.CanonEscritura.Cuerpo(vista, traducir, selfIdxDestino)
+        ' ⛔ El parametro `avisos` estaba DECLARADO y sin cablear: un arnes que pasara su lista se
+        ' llevaba cero hallazgos y concluia que no hubo ninguno, con el nombre saliendo VACIO. Y es
+        ' justo la funcion que existe para que los arneses midan ESTE camino y no una replica.
+        Dim hallazgos As New List(Of Canon.WbFinding)
+        Dim cuerpo = Canon.CanonEscritura.Cuerpo(vista, traducir, selfIdxDestino, SALIDA_LOCALIZADA, hallazgos)
+        VolcarAvisos(hallazgos, If(vista.Context Is Nothing, 0UI, vista.Context.FormID), avisos)
+        Return cuerpo
     End Function
 
     ''' <summary>Serialize a NEW NPC_ record (clone with self-index FormID). Mirrors
@@ -1090,7 +1107,7 @@ Public Module SaveNpcEspWriter
     ''' (no COMPRESSED, no special flags), VCS1=0, Version=record-version of the target game, VCS2=0.
     ''' FormID is the entry's provisional sentinel which the remapper rewrites to the real self-index.</summary>
     Private Function SerializeNpcCreateRecord(entry As NpcCreateEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
-                                              game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
+                                              game As Config_App.Game_Enum, selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Dim origen = entry.NpcData?.Record
         If origen Is Nothing Then
             ' Sin record del que clonar: arranca con los campos que el formato marca como obligatorios.
@@ -1100,8 +1117,21 @@ Public Module SaveNpcEspWriter
         End If
         Dim vista = TryCast(origen, Canon.CanonView)
         If vista Is Nothing Then Return Array.Empty(Of Byte)()
-        Return SerializarRecord(vista, entry.ProvisionalFormID, remapper, game, 0UI, CUShort(0), selfIdxDestino)
+        Return SerializarRecord(vista, entry.ProvisionalFormID, remapper, game, 0UI, CUShort(0), selfIdxDestino, avisos)
     End Function
+
+    ''' <summary>Pasa a texto los hallazgos del emisor que el usuario tiene que ver.
+    ''' <para>Existe para que las DOS puertas de emision —<see cref="SerializarRecord"/> y
+    ''' <see cref="CuerpoDeNpcSobrescrito"/>— hagan lo mismo. Con el volcado escrito adentro de una
+    ''' sola, la otra declaraba el parametro y no lo usaba: fallo MUDO.</para></summary>
+    Private Sub VolcarAvisos(hallazgos As List(Of Canon.WbFinding), formID As UInteger, avisos As List(Of String))
+        If avisos Is Nothing OrElse hallazgos Is Nothing Then Return
+        For Each f In hallazgos
+            If f.Kind = Canon.WbFindingKind.TextoLocalizadoSinResolver Then
+                avisos.Add($"{f.RecordSignature} {formID:X8} - {f.Path}: {f.Message}")
+            End If
+        Next
+    End Sub
 
     ''' <summary>El juego de la sesion, en la forma que entiende la declaracion del formato.</summary>
     Private Function JuegoCanonico(game As Config_App.Game_Enum) As Canon.WbGame
@@ -1114,7 +1144,7 @@ Public Module SaveNpcEspWriter
                                              pluginManager As PluginManager,
                                              remapper As SaveNpcEspWriter.FormIdRemapper,
                                              game As Config_App.Game_Enum,
-                                             selfIdxDestino As Integer) As Byte()
+                                             selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         ' Los NPC_ se re-emiten desde su arbol para que la MAST quede limpia. Los demas tipos de
         ' record (raros en un plugin generado por la aplicacion) no tienen camino: ver el throw.
         If rec.Header.Signature = "NPC_" Then
@@ -1133,7 +1163,7 @@ Public Module SaveNpcEspWriter
                 .SourcePluginName = rec.SourcePluginName,
                 .OriginalHeader = rec.Header
             }
-            Return SerializeNpcRecord(entry, remapper, game, selfIdxDestino)
+            Return SerializeNpcRecord(entry, remapper, game, selfIdxDestino, avisos)
         End If
 
         ' Fallback path explicitly NOT supported. NPC_Manager auto-generated plugins should
@@ -1151,9 +1181,9 @@ Public Module SaveNpcEspWriter
     ''' ARMO/LVLI FormIDs). The record FormID is remapped (NEW → self-index via draftRemap; OVERRIDE →
     ''' master remap). INAM is omitted when there are no items.</summary>
     Private Function SerializeOtftRecord(entry As OtftRecordEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
-                                         game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
+                                         game As Config_App.Game_Enum, selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
-                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino)
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
     ''' <summary>Serializa un record CLFM (Color): header de 24 bytes + cuerpo EDID + [FULL] + CNAM + FNAM.
@@ -1172,9 +1202,9 @@ Public Module SaveNpcEspWriter
     ''' El FormID del record es el self-index real del draft (NEW, via draftRemap) o el global existente
     ''' (OVERRIDE, master-remapeado). El CLFM no lleva FormID en el cuerpo.</summary>
     Private Function SerializeClfmRecord(entry As ClfmRecordEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
-                                         game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
+                                         game As Config_App.Game_Enum, selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
-                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino)
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
     ''' <summary>Serialize one LVLI (leveled item) or LVLN (leveled NPC, <see cref="LvliRecordEntry.IsNpcList"/>)
@@ -1182,9 +1212,9 @@ Public Module SaveNpcEspWriter
     ''' son FO4-only, el generic model es LVLN-only- salen de la declaración del formato para el (record, juego)
     ''' de <see cref="LvliRecordEntry.Record"/>, no de esta función.</summary>
     Private Function SerializeLvliRecord(entry As LvliRecordEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
-                                         game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
+                                         game As Config_App.Game_Enum, selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
-                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino)
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
     ' ------------------------------------------------------------------------
@@ -1214,9 +1244,9 @@ Public Module SaveNpcEspWriter
     ''' (COMPRESSED stripped) and source Version are preserved while the body is fully re-emitted from the
     ''' entry — MSWP has no body FormIDs and a simple substitution list, so no subrecord merge is needed.</summary>
     Private Function SerializeMswpRecord(entry As MswpRecordEntry, remapper As SaveNpcEspWriter.FormIdRemapper,
-                                         game As Config_App.Game_Enum, selfIdxDestino As Integer) As Byte()
+                                         game As Config_App.Game_Enum, selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
-                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino)
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
     ''' <summary>Serialize one ARMA (Armor Addon). Public para que el arnes de paridad round-trip
@@ -1226,9 +1256,9 @@ Public Module SaveNpcEspWriter
     Public Function SerializeArmaRecord(entry As ArmaRecordEntry,
                                         remapper As SaveNpcEspWriter.FormIdRemapper,
                                         game As Config_App.Game_Enum,
-                                        selfIdxDestino As Integer) As Byte()
+                                        selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
-                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino)
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
     ''' <summary>Serialize one ARMO (Armor). Misma nota que <see cref="SerializeArmaRecord"/> sobre
@@ -1236,9 +1266,9 @@ Public Module SaveNpcEspWriter
     Public Function SerializeArmoRecord(entry As ArmoRecordEntry,
                                         remapper As SaveNpcEspWriter.FormIdRemapper,
                                         game As Config_App.Game_Enum,
-                                        selfIdxDestino As Integer) As Byte()
+                                        selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
-                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino)
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
     ''' <summary>Wrap a record body in the 24-byte record header (Signature, DataSize, Flags, FormID,
@@ -1293,6 +1323,12 @@ Public Module SaveNpcEspWriter
             Return ms.ToArray()
         End Using
     End Function
+
+    ''' <summary>El plugin que genera la aplicación <b>nunca</b> declara el flag 0x80 (tablas de
+    ''' idioma externas): <see cref="BuildTes4Header"/> sólo emite ESM y ESL. De acá lo toma el emisor
+    ''' de records para saber con qué forma escribir un texto localizable — si algún día la salida
+    ''' pasara a ser localizada, las dos cosas se mueven juntas desde este único lugar.</summary>
+    Public Const SALIDA_LOCALIZADA As Boolean = False
 
     Private Function BuildTes4Header(game As Config_App.Game_Enum,
                                      markAsMaster As Boolean,
@@ -1428,14 +1464,16 @@ Public Module SaveNpcEspWriter
                                      game As Config_App.Game_Enum,
                                      vcs1 As UInteger,
                                      vcs2 As UShort,
-                                     selfIdxDestino As Integer) As Byte()
+                                     selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         If vista Is Nothing OrElse vista.Node Is Nothing Then Return Array.Empty(Of Byte)()
         If vista.Context Is Nothing Then Return Array.Empty(Of Byte)()
 
         Dim traducir As Func(Of UInteger, UInteger) = Nothing
         If remapper IsNot Nothing Then traducir = Function(x) remapper(x)
 
-        Dim cuerpo = Canon.CanonEscritura.Cuerpo(vista, traducir, selfIdxDestino)
+        Dim hallazgos As New List(Of Canon.WbFinding)
+        Dim cuerpo = Canon.CanonEscritura.Cuerpo(vista, traducir, selfIdxDestino, SALIDA_LOCALIZADA, hallazgos)
+        VolcarAvisos(hallazgos, vista.Context.FormID, avisos)
         Dim idDestino = If(remapper Is Nothing, formID, remapper(formID))
         ' Las banderas salen del CONTEXTO del record y de ningun otro lado: ahi las dejo la lectura
         ' del original y ahi las cambia el editor, asi que lo que se graba es exactamente lo que se

@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Linq
@@ -20,7 +20,7 @@ Public NotInheritable Class HkxTransformConventionHelper
     Public Shared Function ToTransform(translation As HkxVector4Graph_Class,
                                        rotationSource As HkxQuaternionGraph_Class,
                                        scaleSource As HkxVector4Graph_Class) As Transform_Class
-        Dim scale = ResolveUniformScale(scaleSource)
+        Dim scale = ResolveScaleVector(scaleSource)
         Dim tx = If(translation Is Nothing, 0.0F, translation.X)
         Dim ty = If(translation Is Nothing, 0.0F, translation.Y)
         Dim tz = If(translation Is Nothing, 0.0F, translation.Z)
@@ -34,7 +34,7 @@ Public NotInheritable Class HkxTransformConventionHelper
                                        scaleX As Single,
                                        scaleY As Single,
                                        scaleZ As Single) As Transform_Class
-        Dim scale = ResolveUniformScale(scaleX, scaleY, scaleZ)
+        Dim scale = ResolveScaleVector(scaleX, scaleY, scaleZ)
         Return ToTransform(translationX, translationY, translationZ, rotationSource, scale)
     End Function
 
@@ -42,7 +42,7 @@ Public NotInheritable Class HkxTransformConventionHelper
                                         translationY As Single,
                                         translationZ As Single,
                                         rotationSource As HkxQuaternionGraph_Class,
-                                        scale As Single) As Transform_Class
+                                        scale As Vector3) As Transform_Class
         Dim rotation As Quaternion
 
         If rotationSource Is Nothing Then
@@ -56,43 +56,36 @@ Public NotInheritable Class HkxTransformConventionHelper
             End If
         End If
 
+        ' ESCALA PER-EJE, no promediada. `Transform_Class` la descompone en (Scale, ScaleVector) con
+        ' su unica ley de uniformidad, asi que un clip uniforme sigue cayendo en la rama uniforme
+        ' EXACTA (ScaleVector = (1,1,1)) y no cambia un bit; el per-eje ahora sobrevive.
         Dim transformMatrix =
-            Matrix4.CreateScale(scale) *
+            Matrix4.CreateScale(scale.X, scale.Y, scale.Z) *
             Matrix4.CreateFromQuaternion(rotation) *
             Matrix4.CreateTranslation(translationX, translationY, translationZ)
 
         Return New Transform_Class(transformMatrix)
     End Function
 
-    Public Shared Function ResolveUniformScale(scale As HkxVector4Graph_Class) As Single
-        If scale Is Nothing Then Return 1.0F
-
-        Dim values = {scale.X, scale.Y, scale.Z}.
-            Where(Function(value) Single.IsFinite(value) AndAlso Math.Abs(value) > 0.000001F).
-            ToArray()
-
-        If values.Length = 0 Then Return 1.0F
-        Return CSng(values.Average())
+    ''' <summary>Escala del HKX como VECTOR, sin promediar. Un componente no finito o practicamente
+    ''' cero no se descarta (eso mezclaba ejes): se repone en 1.0, que es el neutro de ESE eje.
+    ''' <para>MEDIDO 2026-08-22 sobre 242 esqueletos y 744 animaciones de los BA2 de FO4: 39 de 5085
+    ''' huesos de refPose y 452 de 711.885 escalas de frame son per-eje. Es poco y chico (peor caso
+    ''' 2,6 %, con pinta de ruido de cuantizacion del spline), pero el promedio lo borraba EN SILENCIO
+    ''' y no habia forma de saberlo aguas abajo.</para></summary>
+    Public Shared Function ResolveScaleVector(scale As HkxVector4Graph_Class) As Vector3
+        If scale Is Nothing Then Return Vector3.One
+        Return ResolveScaleVector(scale.X, scale.Y, scale.Z)
     End Function
 
-    Public Shared Function ResolveUniformScale(x As Single, y As Single, z As Single) As Single
-        Dim sum As Single = 0.0F
-        Dim count = 0
-
-        If Single.IsFinite(x) AndAlso Math.Abs(x) > 0.000001F Then
-            sum += x
-            count += 1
-        End If
-        If Single.IsFinite(y) AndAlso Math.Abs(y) > 0.000001F Then
-            sum += y
-            count += 1
-        End If
-        If Single.IsFinite(z) AndAlso Math.Abs(z) > 0.000001F Then
-            sum += z
-            count += 1
-        End If
-
-        If count = 0 Then Return 1.0F
-        Return sum / count
+    ''' <summary>Idem, por componentes.</summary>
+    Public Shared Function ResolveScaleVector(x As Single, y As Single, z As Single) As Vector3
+        Return New Vector3(EjeValido(x), EjeValido(y), EjeValido(z))
     End Function
+
+    Private Shared Function EjeValido(v As Single) As Single
+        If Not Single.IsFinite(v) OrElse Math.Abs(v) <= 0.000001F Then Return 1.0F
+        Return v
+    End Function
+
 End Class

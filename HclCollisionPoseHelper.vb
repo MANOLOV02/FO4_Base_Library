@@ -7,8 +7,11 @@ Option Explicit On
 '
 ' SIN LLAMADORES: la clase es Friend y nada dentro de la librería la usa. Nunca se
 ' ejercitó contra un caso real, así que sus supuestos siguen sin gate:
-'  - LocalReferencePoseToTransform y ResolveUniformScale están duplicadas en
-'    SkeletonClothOverlayHelper (implementaciones idénticas, OpenTK Matrix4).
+'  - LocalReferencePoseToTransform está duplicada en SkeletonClothOverlayHelper.
+'  - ⛔ ResolveUniformScale (privada, acá abajo) PROMEDIA X/Y/Z: es la convención VIEJA. El resto de
+'    la librería ya pasó a per-eje (HkxTransformConventionHelper.ResolveScaleVector) y la sobrecarga
+'    compartida se borró por falta de llamadores. Acá no rompe nada porque la clase no tiene
+'    llamadores; si algún día se la conecta, esto se cambia ANTES de conectarla.
 '  - BuildReferenceSkeletonTransforms asume parentIndices en orden topológico (el padre
 '    con índice menor que el hijo). Vale en Havok, pero no se valida.
 '  - ToMatrix4Local no valida que Values tenga 16 elementos.

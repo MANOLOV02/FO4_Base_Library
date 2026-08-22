@@ -323,6 +323,11 @@ Public Class SkeletonInstance
                 Skeleton.Load_Manolo(data)
                 Return BuildSkeletonStructure()
             Catch ex As Exception
+                ' Mismo motivo que el Catch de LoadFromConfig: devolver False deja a la app renderizando
+                ' SIN esqueleto, y sin log el sintoma aparece lejisimos de la causa.
+                Dim exL = ex
+                Logger.LogLazy(Function() $"[SKEL] LoadFromBytes FALLO y deja el render SIN esqueleto: " &
+                                          $"{exL.GetType().Name}: {exL.Message}")
                 Skeleton = Nothing
                 InjectedBones.Clear()
                 Return False
@@ -363,6 +368,13 @@ Public Class SkeletonInstance
                 End If
                 Return built
             Catch ex As Exception
+                ' El fallo TIENE que dejar rastro. Este Catch deja `Skeleton = Nothing` y devuelve False,
+                ' o sea que la app sigue y RENDERIZA SIN ESQUELETO. Sin log, el sintoma (malla en bind,
+                ' o sin skinning) aparece a mil lineas de la causa y no hay nada que grepear. El otro
+                ' llamador del merge (MainForm, [PREP-SKEL]) ya logueaba; este no.
+                Dim exL = ex
+                Logger.LogLazy(Function() $"[SKEL-HKX] LoadFromConfig FALLO y deja el render SIN esqueleto: " &
+                                          $"{exL.GetType().Name}: {exL.Message}")
                 Skeleton = Nothing
                 InjectedBones.Clear()
                 Return False
@@ -550,7 +562,9 @@ Public Class SkeletonInstance
                 sk = cands.FirstOrDefault(Function(s) SkeletonDictionary.ContainsKey(HkxRootBoneName(s)))
                 If sk Is Nothing Then sk = cands.FirstOrDefault(Function(s) String.IsNullOrEmpty(s.Name) OrElse
                                                                    s.Name.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) < 0)
-            Catch
+            Catch ex As Exception
+                ' Devolver 0 en silencio hacia que un HKX ilegible se viera igual que uno sin huesos.
+                Logger.LogLazy(Function() $"[SKEL-HKX] no pude leer el esqueleto del HKX: {ex.GetType().Name}: {ex.Message}")
                 Return 0
             End Try
             If sk Is Nothing OrElse sk.Bones.Count = 0 Then Return 0
@@ -569,6 +583,19 @@ Public Class SkeletonInstance
 
             Dim changed As Integer = 0
 
+            ' ⛔ TRANSACCIONAL. Las dos pasadas MUTAN el esqueleto vivo, y un throw en el medio dejaba un
+            ' esqueleto MEDIO MERGEADO: Pass A ya habia pisado `OriginalLocaLTransform` de los huesos
+            ' visitados, y Pass B ya habia colgado bones nuevos. Peor que no mergear, porque el llamador
+            ' de MainForm loguea 'fallback NIF' y SIGUE usando ese esqueleto a medias.
+            ' Se registra lo justo para deshacer: el valor previo de cada hueso tocado, y cada hueso
+            ' agregado con su padre. Listas paralelas y no tuplas, para que el rollback se lea de un vistazo.
+            Dim tocados As New List(Of HierarchiBone_class)
+            Dim previos As New List(Of Transform_Class)
+            Dim agregados As New List(Of HierarchiBone_class)
+            Dim agregadosPadre As New List(Of HierarchiBone_class)
+            Dim agregadosNombre As New List(Of String)
+            Try
+
             ' Pass A — compartidos: override el world al del HKX, recorriendo la estructura NIF parent-first
             ' (así el world del parent ya está finalizado cuando computo el local del hijo).
             Dim stack As New Stack(Of HierarchiBone_class)(SkeletonStructure)
@@ -577,6 +604,8 @@ Public Class SkeletonInstance
                 Dim hw As Transform_Class = Nothing
                 If b.BoneName IsNot Nothing AndAlso hByName.TryGetValue(b.BoneName, hw) Then
                     Dim pw = If(b.Parent IsNot Nothing, b.Parent.OriginalGetGlobalTransform, New Transform_Class())
+                    tocados.Add(b)
+                    previos.Add(b.OriginalLocaLTransform)
                     b.OriginalLocaLTransform = pw.Inverse().ComposeTransforms(hw)
                     changed += 1
                 End If
@@ -600,10 +629,33 @@ Public Class SkeletonInstance
                 }
                 If parentBone IsNot Nothing Then parentBone.Childrens.Add(nbone) Else SkeletonStructure.Add(nbone)
                 SkeletonDictionary(nm) = nbone
+                agregados.Add(nbone)
+                agregadosPadre.Add(parentBone)
+                agregadosNombre.Add(nm)
                 changed += 1
             Next
 
             Return changed
+
+            Catch ex As Exception
+                ' ROLLBACK: se deshace en orden inverso y se deja el esqueleto EXACTAMENTE como estaba.
+                For i = agregados.Count - 1 To 0 Step -1
+                    If agregadosPadre(i) IsNot Nothing Then
+                        agregadosPadre(i).Childrens.Remove(agregados(i))
+                    Else
+                        SkeletonStructure.Remove(agregados(i))
+                    End If
+                    SkeletonDictionary.Remove(agregadosNombre(i))
+                Next
+                For i = tocados.Count - 1 To 0 Step -1
+                    tocados(i).OriginalLocaLTransform = previos(i)
+                Next
+                Dim exL = ex, nA = tocados.Count, nB2 = agregados.Count
+                Logger.LogLazy(Function() $"[SKEL-HKX] MergeHkxSkeleton FALLO y se REVIRTIO " &
+                                          $"({nA} hueso(s) repuestos, {nB2} agregado(s) quitados): " &
+                                          $"{exL.GetType().Name}: {exL.Message}")
+                Return 0
+            End Try
         End SyncLock
     End Function
 
@@ -633,6 +685,13 @@ Public Class SkeletonInstance
                     SkeletonClothOverlayHelper_Class.InjectMissingBonesIntoLiveSkeleton(shape, Me)
                 Next
             Catch ex As Exception
+                ' `Debugger.Break()` es un instrumento de DEBUG: en Release no existe, asi que este fallo
+                ' era MUDO justo en la build que se distribuye. El rollback (ClearInjectedBones) ya estaba;
+                ' lo que faltaba era decir que ocurrio -- si no, la ropa aparece sin sus huesos y no hay
+                ' nada que buscar en el log.
+                Dim exL = ex
+                Logger.LogLazy(Function() $"[SKEL-CLOTH] InjectMissingBonesIntoLiveSkeleton FALLO; se revierten " &
+                                          $"los huesos inyectados: {exL.GetType().Name}: {exL.Message}")
 #If DEBUG Then
                 Debugger.Break()
 #End If

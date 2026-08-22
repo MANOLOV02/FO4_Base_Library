@@ -63,6 +63,47 @@ Namespace Canon
         ''' CREAR un record, nunca al leer uno existente.</summary>
         Public MustOverride Function CreateDefault(ctx As WbContext) As WbNode
 
+        ''' <summary>¿El crudo preservado de una hoja de texto sigue describiendo su valor ACTUAL?
+        '''
+        ''' <para><see cref="WbNode.RawOverride"/> existe para un solo caso: el texto de la fuente no
+        ''' vuelve a los mismos bytes al re-codificarlo, así que se guarda la forma exacta que traía.
+        ''' Vale mientras nadie TOQUE el valor. Si alguien lo editó, el crudo describe el texto VIEJO
+        ''' y emitirlo tira la edición a la basura <b>sin un solo aviso</b> — era el mecanismo por el
+        ''' que un nombre corregido a mano volvía a salir roto en cada guardado.</para>
+        '''
+        ''' <para>La pregunta se contesta con una FUNCIÓN PURA DEL ESTADO —decodificar el crudo y
+        ''' compararlo con el valor— y no con una marca de "sucio". Es la misma ley que ya rige para
+        ''' la glossiness de SSE: una marca depende de que exista y de por qué camino se editó, y
+        ''' falla muda cuando alguien escribe el valor sin pasar por el setter previsto.</para>
+        '''
+        ''' <para>⛔ La comparación NO puede depender del codepage AMBIENTE. El guardado lo cambia:
+        ''' <c>SaveEsp_Form</c> envuelve la escritura en un <c>PushTranslatableOverride</c>, así que la
+        ''' codificación vigente al EMITIR puede no ser la que hubo al PARSEAR. Decodificando con la de
+        ''' ahora, el crudo de un campo que NADIE tocó deja de coincidir y se re-codifica: bytes
+        ''' cambiados en un campo que el usuario no editó, que es justo lo contrario de para qué existe
+        ''' el crudo. Por eso se acepta cualquiera de las decodificaciones plausibles —la del archivo de
+        ''' origen y la vigente—: un valor EDITADO no coincide con ninguna, y uno intacto coincide con la
+        ''' que lo produjo.</para>
+        ''' <para>Costo: uno o dos decodes por hoja QUE TENGA CRUDO. Son 218 hojas en Fallout 4 y 448 en
+        ''' Skyrim sobre 1,87 millones de nodos.</para></summary>
+        Protected Shared Function CrudoVigente(raw As Byte(), valorActual As String,
+                                               decodificar As Func(Of Byte(), String),
+                                               Optional decodificarAlterno As Func(Of Byte(), String) = Nothing) As Boolean
+            If raw Is Nothing Then Return False
+            Dim esperado = If(valorActual, "")
+            If String.Equals(decodificar(raw), esperado, StringComparison.Ordinal) Then Return True
+            If decodificarAlterno Is Nothing Then Return False
+            Return String.Equals(decodificarAlterno(raw), esperado, StringComparison.Ordinal)
+        End Function
+
+        ''' <summary>Decodifica con la codificación que DECLARA el archivo de origen, o Nothing si no
+        ''' declara ninguna. Es el segundo intento de <see cref="CrudoVigente"/>.</summary>
+        Protected Shared Function DecodeDelOrigen(ctx As WbContext) As Func(Of Byte(), String)
+            If ctx Is Nothing OrElse ctx.TranslatableEncoding Is Nothing Then Return Nothing
+            Dim enc = ctx.TranslatableEncoding
+            Return Function(b) enc.GetString(b, 0, b.Length)
+        End Function
+
         Protected Function NewNode() As WbNode
             Return New WbNode(Me)
         End Function
@@ -406,7 +447,11 @@ Namespace Canon
         End Function
 
         Public Overrides Sub Emit(node As WbNode, bw As BinaryWriter, ctx As WbContext)
-            Dim body As Byte() = If(node.RawOverride, Encode(CStr(node.Value), ctx))
+            Dim texto = CStr(node.Value)
+            Dim body As Byte() = If(CrudoVigente(node.RawOverride, texto,
+                                                 Function(b) Decode(b, 0, b.Length, ctx),
+                                                 If(Translatable, DecodeDelOrigen(ctx), Nothing)),
+                                    node.RawOverride, Encode(texto, ctx))
             If FixedLength > 0 Then
                 Dim buf(FixedLength - 1) As Byte
                 Buffer.BlockCopy(body, 0, buf, 0, Math.Min(body.Length, FixedLength))
@@ -483,17 +528,107 @@ Namespace Canon
             Return n
         End Function
 
+        ''' <summary>Emite el campo con la forma que pide el archivo DESTINO, que no tiene por qué
+        ''' ser la del archivo de origen.
+        ''' <list type="bullet">
+        ''' <item>id → destino con tablas: se escribe el id. Es el round-trip byte-exacto.</item>
+        ''' <item><b>id → destino SIN tablas: se resuelve el id y se escribe la zstring.</b> Es el
+        ''' caso que faltaba: escribir los 4 bytes del id en un archivo que declara texto deja un
+        ''' nombre que todo lector —el juego, xEdit y la propia aplicación— lee como basura.</item>
+        ''' <item>texto → destino sin tablas: se escribe el texto.</item>
+        ''' <item>texto → destino con tablas: TIRA. Habría que dar de alta la cadena en la tabla del
+        ''' archivo y emitir su id; la aplicación no escribe archivos localizados, así que ese camino
+        ''' no existe y no se inventa.</item>
+        ''' </list></summary>
         Public Overrides Sub Emit(node As WbNode, bw As BinaryWriter, ctx As WbContext)
-            If ctx.Localized Then
+            Dim esId = EsIdDeTabla(node, ctx)
+
+            ' Comparar o medir no es grabar: no hay archivo destino, así que cada campo sale con la
+            ' forma que el nodo tiene guardada. Ver WbContext.Comparando.
+            If ctx.Comparando Then
+                If esId Then
+                    bw.Write(CUInt(Convert.ToInt64(node.Value) And &HFFFFFFFFL))
+                Else
+                    bw.Write(PluginEncodingSettings.EncodeTranslatable(CStr(node.Value)))
+                    bw.Write(CByte(0))
+                End If
+                Return
+            End If
+
+            Dim destinoLocalizado = If(ctx.DestinoLocalizado.HasValue, ctx.DestinoLocalizado.Value, ctx.Localized)
+            If destinoLocalizado Then
+                If Not esId Then
+                    Throw New InvalidOperationException(
+                        $"{ctx.RecordSignature}\{Name}: el destino usa tablas de idioma y el campo tiene TEXTO. " &
+                        "Escribirlo pide dar de alta la cadena en la tabla del archivo y emitir su identificador; " &
+                        "ese camino no está implementado porque la aplicación no genera archivos localizados.")
+                End If
                 bw.Write(CUInt(Convert.ToInt64(node.Value) And &HFFFFFFFFL))
                 Return
             End If
-            Dim body As Byte() = If(node.RawOverride, PluginEncodingSettings.EncodeTranslatable(CStr(node.Value)))
+
+            If esId Then
+                ' El destino no tiene tablas: acá el campo ES una zstring, y el terminador va SIEMPRE
+                ' (el nodo viene de 4 bytes sin terminador, así que su TerminatorCount es cero).
+                bw.Write(PluginEncodingSettings.EncodeTranslatable(TextoDelId(node, ctx)))
+                bw.Write(CByte(0))
+                Return
+            End If
+
+            Dim literal = CStr(node.Value)
+            Dim body As Byte() = If(CrudoVigente(node.RawOverride, literal,
+                                                 Function(b) PluginEncodingSettings.DecodeTranslatable(b, 0, b.Length),
+                                                 DecodeDelOrigen(ctx)),
+                                    node.RawOverride, PluginEncodingSettings.EncodeTranslatable(literal))
             bw.Write(body)
             For i = 1 To node.TerminatorCount
                 bw.Write(CByte(0))
             Next
         End Sub
+
+        ''' <summary>Si el VALOR de la hoja es un identificador de tabla.
+        '''
+        ''' <para>⛔ El estado del nodo se consulta, no se REPITE. Al leer no se estampa nada: un campo
+        ''' recién parseado dice exactamente lo que dice su archivo, y eso ya está en el contexto. Es la
+        ''' regla de xEdit —<c>TwbLStringDef</c> deja el elemento en <c>tbUnknown</c> y cae a
+        ''' <c>_File.IsLocalized</c>; sólo <c>FromStringNative</c> marca, o sea sólo al ASIGNAR—. El
+        ''' estado existe para registrar la EXCEPCIÓN: "este campo ya no es lo que su archivo declara".</para>
+        '''
+        ''' <para>Estampar en el parseo daba el mismo resultado y costaba memoria de verdad: el valor
+        ''' estampado nunca es el default, así que forzaba el objeto de extras —que existe justamente para
+        ''' que lo paguen sólo los nodos que se apartan del default— en TODA hoja localizable de TODO
+        ''' record. Ver el bloque de <c>WbNodeExtras</c>.</para>
+        '''
+        ''' <para>Es <b>Public</b> porque la tienen que contestar igual el emisor y los arneses. Con dos
+        ''' implementaciones, el gate y el escritor podrían discrepar y el gate no serviría para nada.</para></summary>
+        Public Shared Function EsIdDeTabla(node As WbNode, ctx As WbContext) As Boolean
+            Select Case node.ValorLocalizado
+                Case WbLocalizacion.IdDeTabla : Return True
+                Case WbLocalizacion.Texto : Return False
+                Case Else : Return ctx.Localized
+            End Select
+        End Function
+
+        ''' <summary>Texto de un identificador, para materializarlo en un destino sin tablas.
+        ''' <para>El identificador CERO significa "sin texto" y no es un fallo. Cualquier otro que no
+        ''' se pueda resolver deja el campo VACÍO y queda REPORTADO: el archivo sale bien formado y el
+        ''' hallazgo dice qué NPC se quedó sin nombre.</para></summary>
+        Private Function TextoDelId(node As WbNode, ctx As WbContext) As String
+            Dim id As UInteger = 0UI
+            Try
+                id = CUInt(Convert.ToInt64(node.Value) And &HFFFFFFFFL)
+            Catch
+            End Try
+            If id = 0UI Then Return ""
+            Dim texto As String = Nothing
+            If ctx.ResolverTextoLocalizado IsNot Nothing Then texto = ctx.ResolverTextoLocalizado(node)
+            If String.IsNullOrEmpty(texto) Then
+                ctx.Report(WbFindingKind.TextoLocalizadoSinResolver, node.Path,
+                           $"identificador 0x{id:X8} sin resolver contra las tablas de idioma: el campo sale VACÍO")
+                Return ""
+            End If
+            Return texto
+        End Function
 
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
@@ -662,7 +797,10 @@ Namespace Canon
         End Function
 
         Public Overrides Sub Emit(node As WbNode, bw As BinaryWriter, ctx As WbContext)
-            Dim body As Byte() = If(node.RawOverride, Encode(CStr(node.Value)))
+            Dim texto = CStr(node.Value)
+            Dim body As Byte() = If(CrudoVigente(node.RawOverride, texto, Function(b) Decode(b),
+                                                 If(Encoding = WbTextEncoding.Translatable, DecodeDelOrigen(ctx), Nothing)),
+                                    node.RawOverride, Encode(texto))
             Select Case PrefixWidth
                 Case 4 : bw.Write(CUInt(body.Length))
                 Case 2 : bw.Write(CUShort(body.Length))

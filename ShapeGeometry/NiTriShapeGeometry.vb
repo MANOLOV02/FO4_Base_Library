@@ -562,12 +562,16 @@ Public Class NiTriShapeGeometry
         Next
 
         ' ─── Rebuild ───
-        ' Clear each bone's VertexWeights list in place. This used to require a fresh
-        ' `New List(Of BoneVertData)()` because DeepCopyHelper short-circuited on value
-        ' types (leaving clone's BoneData.VertexWeights aliased to source). NiflySharp
-        ' fix in Helpers/DeepCopyHelper.cs (IsValueTypeSelfContained guard) now deep-
-        ' copies struct reference fields, so `.Clear()` is safe — we only affect this
-        ' shape's list.
+        ' Limpia la lista de cada hueso EN EL LUGAR. Es seguro con `BoneData` siendo un STRUCT
+        ' porque el clon de un bloque de NiflySharp no copia la referencia: ALOCA UNA LISTA NUEVA
+        ' (`BoneData.DeepClone()`: `copy.VertexWeights = new List<BoneVertData>(this.VertexWeights)`),
+        ' asi que limpiar la de un shape clonado no toca la del original.
+        ' ⛔ Este comentario decia que la garantia venia del "guard IsValueTypeSelfContained de
+        ' Helpers/DeepCopyHelper.cs". Ese archivo NO EXISTE: upstream lo borro al reemplazar el
+        ' deep-copy por reflexion por logica de clonado GENERADA (commit `f1f3404` del fork). La
+        ' conclusion seguia siendo cierta, pero apoyada en un simbolo muerto.
+        ' `BSTriShapeGeometry.RebuildNiSkinData` hace lo MISMO desde el 2026-08-22: los dos encoders
+        ' hacian lo contrario y el comentario de alla pedia que coincidieran.
         For b = 0 To numBones - 1
             skinData.BoneList(b).VertexWeights.Clear()
         Next

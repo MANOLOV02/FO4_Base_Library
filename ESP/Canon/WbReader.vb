@@ -138,6 +138,14 @@ Namespace Canon
         Public Shared Function CreateNew(def As WbRecordDef, ctx As WbContext) As WbNode
             ctx.RecordSignature = def.Signature
             Dim root As New WbNode(New WbRootDef(def.Signature))
+            ' ⛔ SOLO los miembros marcados Required, SIN regla del miembro 0. Es literalmente lo que
+            ' hace xEdit al crear un main record:
+            '     for i := 0 to Pred(mrDef.MemberCount) do if mrDef.Members[i].Required then Assign(i, nil, False)
+            ' El predicado con `CurrentDefPos = 0` que trae `AddRequiredElements` es de los STRUCTS
+            ' (TwbSubRecordStruct), no de los main records; copiarlo aca hacia emitir EDID en los 120
+            ' records de TES5 que lo declaran SIN AsRequired, o sea divergir de xEdit en todos ellos.
+            ' El sintoma que me hizo agregarlo -un ARMO nuevo sin EDID- es la conducta CORRECTA: xEdit
+            ' hace lo mismo, y el EditorID lo pone la app al crear (ArmoEditor_Form.vb:222 y :342).
             For Each m In def.Members
                 If m.Required Then root.AddChild(m.CreateRequired(ctx))
             Next

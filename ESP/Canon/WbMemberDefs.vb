@@ -342,6 +342,11 @@ Namespace Canon
             Next
         End Sub
 
+        ''' <summary>Miembros de un struct NUEVO: solo los marcados Required.
+        ''' <para>⛔ Aca hubo una regla "el miembro 0 se crea siempre", copiada del predicado de
+        ''' <c>AddRequiredElements</c>. Estaba mal aplicada y se saco: el sintoma que la motivo -un ARMO
+        ''' nuevo sin EDID- es la conducta de xEdit, no un defecto. Con ella, los 120 records de TES5 que
+        ''' declaran EDID sin <c>AsRequired</c> lo emitian igual.</para></summary>
         Public Overrides Function CreateRequired(ctx As WbContext) As WbNode
             Dim n As New WbNode(Me)
             For Each m In Members

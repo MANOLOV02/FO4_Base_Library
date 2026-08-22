@@ -407,23 +407,33 @@ Public Class Config_App
     ' Nadie las lee directo: Render y LightRigForm van por ActiveShadows()/SetActiveShadows().
     ' Se invalidan RENOMBRANDO, igual que el rig (ver el bloque de Setting_LightRig_*): sin la clave, la
     ' propiedad se queda con el `Defaults()` completo, así que en LoadConfig no hay centinela ni reparación.
+    '
+    ' ⛔ RENOMBRADAS A `...16_...` EL 2026-08-22, y por qué importa: cuando se agregó `Depth16` NO se
+    ' renombró, y esta es una Structure. Un `config.json` guardado antes de que ese campo existiera trae
+    ' la clave con el campo ausente, así que el deserializador lo deja en el default del CLR —False, o
+    ' sea 24 bits— que es el valor CONTRARIO al de `Defaults()`. Resultado medido: los usuarios que ya
+    ' tenían config quedaban en 24 bits y los nuevos en 16, sin que nada lo dijera y sin forma de
+    ' distinguir "eligió 24" de "la clave no estaba" (lo admite el doc de `PreviewShadowSettings.Depth16`).
+    ' Con el nombre nuevo la clave vieja no matchea, la propiedad se queda con `Defaults()` COMPLETO y
+    ' todos arrancan igual. Precio aceptado, el mismo de `RepararOpcionesTBN`: se pierden los ajustes de
+    ' sombra que el usuario hubiera tocado. AL AGREGAR UN CAMPO ACÁ: renombrar, o repetís este defecto.
     ' El clamp de PreviewShadowSettings.Sanitized() NO se va: eso defiende el camino de dibujo de un
     ' config editado a mano, que es otro problema.
-    Public Property Setting_ShadowMaps_FO4 As PreviewShadowSettings = PreviewShadowSettings.Defaults()
-    Public Property Setting_ShadowMaps_SSE As PreviewShadowSettings = PreviewShadowSettings.Defaults()
+    Public Property Setting_ShadowMaps16_FO4 As PreviewShadowSettings = PreviewShadowSettings.Defaults()
+    Public Property Setting_ShadowMaps16_SSE As PreviewShadowSettings = PreviewShadowSettings.Defaults()
 
     ''' <summary>Los ajustes de sombra del juego activo. Value-type: devuelve una COPIA (para escribir,
     ''' <see cref="SetActiveShadows"/>).</summary>
     Public Function ActiveShadows() As PreviewShadowSettings
-        Return If(Game = Game_Enum.Skyrim, Setting_ShadowMaps_SSE, Setting_ShadowMaps_FO4)
+        Return If(Game = Game_Enum.Skyrim, Setting_ShadowMaps16_SSE, Setting_ShadowMaps16_FO4)
     End Function
 
     ''' <summary>Escribe los ajustes de sombra en el slot del juego activo.</summary>
     Public Sub SetActiveShadows(s As PreviewShadowSettings)
         If Game = Game_Enum.Skyrim Then
-            Setting_ShadowMaps_SSE = s
+            Setting_ShadowMaps16_SSE = s
         Else
-            Setting_ShadowMaps_FO4 = s
+            Setting_ShadowMaps16_FO4 = s
         End If
     End Sub
 

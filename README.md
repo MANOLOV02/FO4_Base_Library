@@ -7,6 +7,21 @@ The full text is in `LICENSE`. Credits are in `LICENSE_CREDITS.txt`, and the
 per-component copyright lines, licence texts and source-code offer are in
 `THIRD-PARTY-NOTICES.md` and the `licenses/` folder.
 
+## API stability — there is none, on purpose
+
+**This assembly does not promise a stable public API to third parties.** It is an internal component of
+the NPC Manager / Wardrobe Manager package: `Public` here means "reachable from the sibling projects in
+this solution", not "supported contract". Types, members and whole namespaces are renamed, merged and
+deleted whenever the engine-faithful model underneath changes, without a deprecation cycle.
+
+This is a deliberate decision (2026-08-22), taken after an external audit flagged the removal of
+`RecordDispatcher`, `NpcSubrecordWriter`, `NpcVmadScanner` and the `*Record` classes — about 244 public
+declarations — as an API break. It is a break, and it is fine: the only consumers are in this repository
+and they were migrated in the same commit. Keeping a compatibility facade over the canonical engine would
+mean maintaining two surfaces for the same law, which is exactly what this codebase avoids.
+
+If you link against this DLL from outside the package, pin a commit. Do not expect the next one to build.
+
 ## Requires the following libraries/packages
 
  - ManoloV02: BSA/BA2 Library - Licensed under the GPL-3.0 License (https://github.com/MANOLOV02/BSA_BA2_Library_DLL)

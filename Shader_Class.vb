@@ -1012,13 +1012,11 @@ void main(void)
 			// no hay otro seteo en todo el arbol). Es una trampa latente, no un bug vivo.
 			// Sacar el sampleo de aca es IDENTICO en comportamiento mientras el uniform sea True, y
 			// elimina la mitad de la trampa sin reestructurar nada.
-			// LO QUE QUEDA: `normal` se sigue calculando solo dentro de bLightEnabled (init vec3(0.0)).
-			// O sea `bLightEnabled = False` NO es un estado soportado para el camino BGEM: su falloff y
-			// su cubemap dependen de valores derivados de la iluminacion. Si alguna vez se agrega un
-			// call-site que lo ponga en False, hay que subir tambien el calculo de `normal`.
-			// (En Fragment_SSE esto NO pasa: alli el bloque del cubemap SI esta anidado bajo
-			// bLightEnabled, asi que las condiciones para llegar al multiply son exactamente las del
-			// sampleo. Verificado contando profundidad de llaves, no por indentacion.)
+			// LA OTRA MITAD -- el calculo de `normal` -- tambien se subio: vive mas abajo, en la nota que
+			// arranca con: LA NORMAL SE CALCULA ACA. Con las dos afuera, `bLightEnabled = False` SI es un
+			// estado soportado en este fragment.
+			// `Fragment_SSE` lleva EL MISMO arreglo, con las dos mitades subidas y medido igual (10/10
+			// frames byte-identicos). Los dos juegos quedan con la misma ley; si alguien toca uno, el otro.
 			if (bNormalMap)
 			{
 				normalMap = texture(texNormal, uv);
@@ -1045,53 +1043,97 @@ void main(void)
 			}
 		}
 
+
+		// LA NORMAL SE CALCULA ACA, FUERA DE `bLightEnabled`, y no adentro como estaba.
+		// Motivo: el bloque del EFFECT shader (BGEM) de mas abajo NO esta anidado bajo
+		// bLightEnabled: es su HERMANO, los dos cuelgan de `if (!bWireframe)`. Y sin embargo lee
+		// `normal` (su falloff NdotV y el reflect() del cubemap) y `normalMap.a`. Con el calculo adentro,
+		// `bLightEnabled = False` dejaba a `normal` en su valor inicial vec3(0.0) y el camino
+		// BGEM leia basura. No explotaba por un solo motivo: el uniform esta cableado a True en
+		// el unico call-site que existe. Era una trampa esperando a que alguien agregue otro.
+		//
+		// POR QUE ES IDENTICO mientras el uniform sea True: ninguna sentencia que quedo en el medio
+		// LEE `normal`, `normalMap` ni `geoNormal`, y nada de lo que se movio lee `albedo`. La
+		// formulacion importa: -no hay nada en el medio- seria FALSO -- el recolor de grises escribe
+		// `albedo`, y la cola de este bloque (`if (bModelSpace) geoNormal = normal;` y el flip de doble
+		// cara) ahora pasa por encima de el. Vale porque son disjuntos, no porque no haya nada.
+		// MEDIDO, no argumentado: ShadowGate frame a frame contra HEAD, 10/10 frames byte-identicos, con
+		// control positivo (una linea de mas en este mismo bloque SI mueve pixeles) y control de
+		// determinismo entre dos procesos.
+		//
+		// El recolor de escala de grises se QUEDA adentro de bLightEnabled: toca `albedo`, no la
+		// normal, asi que subirlo seria un cambio de conducta que nadie pidio.
+		//
+		// `Fragment_SSE` tenia la MISMA trampa y se arreglo igual, en el mismo lote. Alli tambien
+		// `if (bLightEnabled)` abre y CIERRA antes de `if (bIsEffectShader)` -- son hermanos --, y el
+		// effect leia `normal` en DOS sitios que no cuelgan de bLightEnabled: el
+		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap (el
+		// tercero, el mix con outDiffuse, si esta bajo un bLightEnabled interno). Verificado contando
+		// profundidad de llaves, no por indentacion. Si se toca uno de los dos fragments, tocar el otro.
+		
+		// Arranca neutra (en shapes MSN mv_tbn es degenerada -> se usa la matriz objeto->vista)
+		if (bModelSpace)
+			normal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
+		else
+			normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
+
+		// GEOMETRIC normal, kept before the normal map perturbs `normal`. Used ONLY for the shadow
+		// normal-offset. Passing the normal-mapped one there was a defect: the offset is meant to push
+		// the sample point OFF THE SURFACE by about a texel, and a strong normal map (cloth, leather,
+		// hair) tilts it 30-45 degrees, which turns a big part of that push into a LATERAL slide along
+		// the surface and shrinks what is left along the real normal. The visible result is acne on the
+		// terminator whose speckle pattern follows the TEXTURE detail -- it moves when the UVs or the
+		// map change, not when the geometry does -- plus micro-leaks where the perturbed normal leans
+		// toward the light. Shading still uses the perturbed `normal`; only the offset changes.
+		vec3 geoNormal = normal;
+
+		if (bShowTexture && bNormalMap)
+		{
+			if (bModelSpace)
+			{
+				// Model Space Normals: the normal map stores an OBJECT-space normal (all 3 channels,
+				// no z-reconstruction), transformed by the object->view normal matrix (v_msnMatrix,
+				// built in the VS). FO4 engine convention (prepass VS rec2215 -> PS rec2698): the VS
+				// passes the object->view matrix rows in v1/v2/v3 and the PS reorders the sampled
+				// (R,G,B)=(X,Z,Y) -> .rbg before the transform (same NIF object-space convention as SSE).
+				normal = normalize(v_msnMatrix * (normalMap.rbg * 2.0 - 1.0));
+			}
+			else
+			{
+				normal = (normalMap.rgb * 2.0 - 1.0);
+
+				// Calculate missing blue channel
+				normal.b = sqrt(1.0 - dot(normal.rg, normal.rg));
+
+				// Tangent space map
+				normal = normalize(mv_tbn * normal);
+			}
+		}
+
+		// !! EN MODEL-SPACE NORMALS, `geoNormal` NO SIRVE: la semilla de arriba es el eje +Z del
+		// OBJETO llevado a vista (v_msnMatrix * (0,0,1)), o sea una direccion CONSTANTE por shape,
+		// no la normal del fragmento. Usarla para el normal-offset empujaba toda la malla en la
+		// misma direccion y en la mitad opuesta el offset apuntaba HACIA ADENTRO de la superficie:
+		// acne solido. En MSN la normal del mapa ES la normal de la geometria (el mapa guarda la
+		// normal de objeto, no una perturbacion tangente), asi que es la correcta para el offset.
+		if (bModelSpace)
+			geoNormal = normal;
+
+		// Double-sided: flip normal for back faces
+		if (bDoubleSided && !gl_FrontFacing)
+		{
+			normal = -normal;
+			geoNormal = -geoNormal;
+		}
+
 		if (bLightEnabled)
 		{
 			// Lighting with or without textures
 			outDiffuse = vec3(0.0);
 			outSpecular = vec3(0.0);
 
-			// Start off neutral (for MSN shapes mv_tbn is degenerate -> use the object->view matrix)
-			if (bModelSpace)
-				normal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
-			else
-				normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
-
-			// GEOMETRIC normal, kept before the normal map perturbs `normal`. Used ONLY for the shadow
-			// normal-offset. Passing the normal-mapped one there was a defect: the offset is meant to push
-			// the sample point OFF THE SURFACE by about a texel, and a strong normal map (cloth, leather,
-			// hair) tilts it 30-45 degrees, which turns a big part of that push into a LATERAL slide along
-			// the surface and shrinks what is left along the real normal. The visible result is acne on the
-			// terminator whose speckle pattern follows the TEXTURE detail -- it moves when the UVs or the
-			// map change, not when the geometry does -- plus micro-leaks where the perturbed normal leans
-			// toward the light. Shading still uses the perturbed `normal`; only the offset changes.
-			vec3 geoNormal = normal;
-
 			if (bShowTexture)
 			{
-				if (bNormalMap)
-				{
-					if (bModelSpace)
-					{
-						// Model Space Normals: the normal map stores an OBJECT-space normal (all 3 channels,
-						// no z-reconstruction), transformed by the object->view normal matrix (v_msnMatrix,
-						// built in the VS). FO4 engine convention (prepass VS rec2215 -> PS rec2698): the VS
-						// passes the object->view matrix rows in v1/v2/v3 and the PS reorders the sampled
-						// (R,G,B)=(X,Z,Y) -> .rbg before the transform (same NIF object-space convention as SSE).
-						normal = normalize(v_msnMatrix * (normalMap.rbg * 2.0 - 1.0));
-					}
-					else
-					{
-						normal = (normalMap.rgb * 2.0 - 1.0);
-
-						// Calculate missing blue channel
-						normal.b = sqrt(1.0 - dot(normal.rg, normal.rg));
-
-						// Tangent space map
-						normal = normalize(mv_tbn * normal);
-					}
-				}
-
 				if (bGreyscaleColor && !bIsEffectShader)
 				{
                     // FO4 grayscale-to-palette RECOLOR, reconstructed EXACT from the GAME deferred
@@ -1118,23 +1160,6 @@ void main(void)
 					diffuseComposed = albedo;
 				}
 			}
-
-			// !! EN MODEL-SPACE NORMALS, `geoNormal` NO SIRVE: la semilla de arriba es el eje +Z del
-			// OBJETO llevado a vista (v_msnMatrix * (0,0,1)), o sea una direccion CONSTANTE por shape,
-			// no la normal del fragmento. Usarla para el normal-offset empujaba toda la malla en la
-			// misma direccion y en la mitad opuesta el offset apuntaba HACIA ADENTRO de la superficie:
-			// acne solido. En MSN la normal del mapa ES la normal de la geometria (el mapa guarda la
-			// normal de objeto, no una perturbacion tangente), asi que es la correcta para el offset.
-			if (bModelSpace)
-				geoNormal = normal;
-
-			// Double-sided: flip normal for back faces
-			if (bDoubleSided && !gl_FrontFacing)
-			{
-				normal = -normal;
-				geoNormal = -geoNormal;
-			}
-
 			// Engine skin tint = the DEFERRED path the body actually renders through
 			// (opaque -> prepass). Verified at the byte: SetupMaterial SkinTint (0x142233168) writes
 			// pow(skinTone.rgb,2.2) to the prepass tint cbuffer .xyz and material+0xCC (raw) to .w; the
@@ -2430,13 +2455,17 @@ void main(void)
 			// Diffuse texture without lighting
 			color.rgb = albedo;
 
+			// El sampleo del normal map va FUERA de `bLightEnabled`, igual que en Fragment_FO4: el bloque
+			// del EFFECT shader (bIsEffectShader) es HERMANO de bLightEnabled, no esta anidado bajo el, y
+			// lee `normalMap`. Con el sampleo adentro, un bLightEnabled=False dejaba normalMap en su valor
+			// inicial y el camino BGEM leia basura.
+			if (bNormalMap)
+			{
+				normalMap = texture(texNormal, uv);
+			}
+
 			if (bLightEnabled)
 			{
-				if (bNormalMap)
-				{
-					normalMap = texture(texNormal, uv);
-				}
-
 				if (bSpecular)
 				{
 					// OJO: ELIMINADA la rama `if (bBacklight)` que forzaba specFactor = normalMap.a.
@@ -2492,51 +2521,80 @@ void main(void)
 			}
 		}
 
+		// LA NORMAL SE CALCULA ACA, FUERA DE `bLightEnabled`, y no adentro como estaba. Es el MISMO
+		// arreglo que ya lleva Fragment_FO4, por el mismo motivo y con la misma prueba.
+		// Motivo: `if (bIsEffectShader)` NO esta anidado bajo bLightEnabled -- es su HERMANO, los dos
+		// cuelgan de `if (!bWireframe)`; bLightEnabled ABRE y CIERRA antes de que el effect empiece.
+		// Y el effect lee `normal` en DOS sitios que no cuelgan de bLightEnabled: el
+		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap (el
+		// tercero, el mix con outDiffuse, si esta bajo un bLightEnabled interno). Con la semilla adentro,
+		// `bLightEnabled = False` dejaba `normal` en vec3(0.0): el falloff salia constante en toda la
+		// malla y el cubemap se sampleaba a lo largo del rayo de camara en vez de la reflexion.
+		// No explotaba porque `SetBool(bLightEnabled, True)` es el UNICO call-site del arbol.
+		//
+		// POR QUE ES IDENTICO mientras el uniform sea True: ninguna sentencia que quedo en el medio LEE
+		// `normal`, `normalMap` ni `geoNormal`, y nada de lo que se movio lee `albedo`. Lo que salta por
+		// encima es el bloque FACEGEN (softlight + detail), que escribe `albedo` y no toca la normal.
+		// MEDIDO, no argumentado: ShadowGate frame a frame, con control positivo y de determinismo.
+		// Start off neutral (for MSN shapes, mv_tbn is degenerate so use v_msnMatrix)
+		if (bModelSpace)
+		{
+			normal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
+		}
+		else
+		{
+			normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
+		}
+
+		// GEOMETRIC normal, captured before the normal map perturbs `normal`. Used ONLY for the
+		// shadow normal-offset -- shading keeps using the perturbed one. Same reason as in the FO4
+		// fragment: offsetting along a normal-mapped direction turns part of the push into a lateral
+		// slide along the surface and leaves acne that follows the TEXTURE detail.
+		vec3 geoNormal = normal;
+
+		if (bShowTexture && bNormalMap)
+		{
+			if (bModelSpace)
+			{
+				// Model Space Normal Map (SSE _msn)
+				// Bethesda SSE stores normals as (X, Z, Y) - swizzle .rbg to get (X, Y, Z)
+				// matching NIF object-space where Y=forward, Z=up
+				normal = normalize(normalMap.rbg * 2.0 - 1.0);
+				// Transform from NIF local/object space to view space
+				// v_msnMatrix = mv_normalMatrix * skinNormalMat (per-vertex, from vertex shader)
+				normal = normalize(v_msnMatrix * normal);
+			}
+			else
+			{
+				normal = (normalMap.rgb * 2.0 - 1.0);
+
+
+				// Tangent space map
+				normal = normalize(mv_tbn * normal);
+			}
+		}
+
+		// !! EN MODEL-SPACE NORMALS, `geoNormal` NO SIRVE: la semilla de arriba es el eje +Z del
+		// OBJETO llevado a vista (v_msnMatrix * (0,0,1)), o sea una direccion CONSTANTE por shape,
+		// no la normal del fragmento. Usarla para el normal-offset empujaba toda la malla en la
+		// misma direccion y en la mitad opuesta el offset apuntaba HACIA ADENTRO de la superficie:
+		// acne solido. En MSN la normal del mapa ES la normal de la geometria (el mapa guarda la
+		// normal de objeto, no una perturbacion tangente), asi que es la correcta para el offset.
+		if (bModelSpace)
+			geoNormal = normal;
+
+		// Double-sided: flip normal for back faces
+		if (bDoubleSided && !gl_FrontFacing)
+		{
+			normal = -normal;
+			geoNormal = -geoNormal;
+		}
+
 		if (bLightEnabled)
 		{
 			// Lighting with or without textures
 			outDiffuse = vec3(0.0);
 			outSpecular = vec3(0.0);
-
-			// Start off neutral (for MSN shapes, mv_tbn is degenerate so use v_msnMatrix)
-			if (bModelSpace)
-			{
-				normal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
-			}
-			else
-			{
-				normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
-			}
-
-			// GEOMETRIC normal, captured before the normal map perturbs `normal`. Used ONLY for the
-			// shadow normal-offset -- shading keeps using the perturbed one. Same reason as in the FO4
-			// fragment: offsetting along a normal-mapped direction turns part of the push into a lateral
-			// slide along the surface and leaves acne that follows the TEXTURE detail.
-			vec3 geoNormal = normal;
-
-			if (bShowTexture)
-			{
-				if (bNormalMap)
-				{
-					if (bModelSpace)
-					{
-						// Model Space Normal Map (SSE _msn)
-						// Bethesda SSE stores normals as (X, Z, Y) - swizzle .rbg to get (X, Y, Z)
-						// matching NIF object-space where Y=forward, Z=up
-						normal = normalize(normalMap.rbg * 2.0 - 1.0);
-						// Transform from NIF local/object space to view space
-						// v_msnMatrix = mv_normalMatrix * skinNormalMat (per-vertex, from vertex shader)
-						normal = normalize(v_msnMatrix * normal);
-					}
-					else
-					{
-						normal = (normalMap.rgb * 2.0 - 1.0);
-
-
-						// Tangent space map
-						normal = normalize(mv_tbn * normal);
-					}
-				}
 
 				// GREYSCALE-TO-PALETTE: SSE-only divergence from FO4. The Skyrim BSLightingShader
 				// pixel shader has NO greyscale path: VanillaGetLightingShaderDefines (0x14151C2D0)
@@ -2547,7 +2605,7 @@ void main(void)
 				// that carries the SLSF1 greyscale flag is rendered WITHOUT recolor by the engine -> no-op
 				// here. (FO4 differs: its lighting shader rec2389/rec2963 DO recolor; see Fragment_FO4.)
 				// The material flag is preserved for round-trip; only the lit render ignores it.
-			}
+
 
 			// SSE FACEGEN albedo -- LEY DEL ENGINE (DXBC + SkyrimSE.exe 1.6.1170 unpacked, byte a byte):
 			//   albedo = softlight(diffuse, TINT) * ((DETAIL + vec3(1/255,0,1/255)) * 255/64)
@@ -2599,21 +2657,6 @@ void main(void)
 				albedo = albedo * (1.0 - ov.a) + ov.rgb;
 			}
 
-			// !! EN MODEL-SPACE NORMALS, `geoNormal` NO SIRVE: la semilla de arriba es el eje +Z del
-			// OBJETO llevado a vista (v_msnMatrix * (0,0,1)), o sea una direccion CONSTANTE por shape,
-			// no la normal del fragmento. Usarla para el normal-offset empujaba toda la malla en la
-			// misma direccion y en la mitad opuesta el offset apuntaba HACIA ADENTRO de la superficie:
-			// acne solido. En MSN la normal del mapa ES la normal de la geometria (el mapa guarda la
-			// normal de objeto, no una perturbacion tangente), asi que es la correcta para el offset.
-			if (bModelSpace)
-				geoNormal = normal;
-
-			// Double-sided: flip normal for back faces
-			if (bDoubleSided && !gl_FrontFacing)
-			{
-				normal = -normal;
-				geoNormal = -geoNormal;
-			}
 
 			// SHADOW. Same law and same placement as the FO4 fragment (see the SHADOWS uniform block):
 			// the SSE DEFSHADOW path multiplies the DIRECTIONAL by the mask and adds the ambient after,

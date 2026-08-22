@@ -502,8 +502,19 @@ Public Class PreviewControl
         ' 4×4 blanco puro
         defaultWhiteTex = CreateColorTexture(4, 4, 255, 255, 255, 255)
 
-        ' 4×4 normal map por defecto: (0.5,0.5,1) ? (128,128,255)
-        defaultNormalTex = CreateColorTexture(4, 4, 128, 128, 128, 128)
+        ' 4×4 normal map por defecto: el neutro de espacio tangente (0.5,0.5,1) → (128,128,255).
+        ' El alpha va en 255 porque los DOS consumidores de normalMap.a caen a 1.0 cuando no hay normal
+        ' map: 255 es ese mismo neutro. Se cita por CODIGO y no por numero de linea, que se corre solo:
+        ' en Shader_Class.vb, `bNormalMap ? normalMap.a : 1.0` aparece EXACTAMENTE dos veces, y esas dos
+        ' son los consumidores. Hay una tercera lectura de `normalMap.a`, pero cuelga de un
+        ' `else if (bNormalMap)`, o sea que tampoco se alcanza con esta textura bindeada.
+        ' MEDIDO: hoy ningún shader llega a leer esta textura. Se bindea sólo cuando normalTextureId=0, y
+        ' `bNormalMap` sale de la MISMA condición (SetBool("bNormalMap", normalTextureId <> 0), más abajo),
+        ' así que todo sampleo de texNormal queda del lado falso del guard. Antes decía (128,128,128,128),
+        ' que contradecía a este mismo comentario; corregirlo dio 0 píxeles de diferencia en ShadowGate
+        ' (10/10 frames byte-idénticos), como tenía que dar. Se corrige igual: el día que alguien saque un
+        ' guard, el valor que hay acá es el que se lee, y un (128,128,128) decodifica a (0,0,-1).
+        defaultNormalTex = CreateColorTexture(4, 4, 128, 128, 255, 255)
 
         ' default FaceGen detail = BSShader_DefFacegenDetail del motor (byte-exact, ver campo).
         ' Uniforme 64 = 0.251 (NO 0.5/identidad, NO la Bayer 0.1235 de BSShader_DitheringNoise).

@@ -490,12 +490,24 @@ Public Module ObjectTemplateResolver
     ''' <para>NO usar Random.Shared.Next: hace que el MISMO NPC produzca NIFs distintos en dos corridas e
     ''' invalida en silencio toda comparacion por hash. Medido sobre vanilla + DLC (3987 OMODs): 493 tienen
     ''' dos o mas includes DontUseAll validos, o sea que el impacto es REAL, no latente.</para>
-    ''' <para>⚠ï¸ DIVERGENCIAS CONOCIDAS contra el motor, deliberadamente NO arregladas aca porque cada una
-    ''' necesita contexto que este resolver no recibe: (1) no se filtra por Minimum Level, que el motor si
-    ''' descarta; (2) no se aplica la preferencia por tier, el motor se queda solo con los de tier mas alto y
-    ''' sortea dentro de esa ventana, asi que first-wins sobre-selecciona tiers BAJOS; (3) se ignora el bit
-    ''' "don't use all" del propio record OMOD, que es una segunda compuerta independiente, asi que algun
-    ''' contenedor que el motor trata como pick-one aca se expande como use-all.</para>
+    ''' <para>DIVERGENCIAS contra el motor. Revisadas una por una el 2026-08-22 - antes estaban las tres
+    ''' juntas como "deuda" y NO son la misma cosa:</para>
+    ''' <para><b>(1) No se filtra por Minimum Level - DELIBERADO, con su consecuencia declarada.</b>
+    ''' Decision del usuario y su razon: este resolver alimenta el PREVIEW, y ahi el NPC <b>no tiene
+    ''' nivel</b>, asi que no hay contra que comparar. El dato SI existe (`OBTS.Level Min`/`Level Max`, y
+    ''' `Minimum Level` por include del propio OMOD) y en el juego SI excluye: la consecuencia es que en el
+    ''' preview <b>no se excluye NADA por nivel</b> y podemos mostrar un mod que el motor descartaria para
+    ''' ese actor. Es una divergencia ACEPTADA, no un olvido. Medido en el corpus de FO4: 203 OBTS declaran
+    ''' Level Min/Max distinto de cero, todos con el mismo par (0, 100).</para>
+    ''' <para><b>(2) No se aplica la preferencia por TIER - SIGUE ABIERTA.</b> El motor se queda solo con
+    ''' los de tier mas alto y sortea dentro de esa ventana; nuestro first-wins sobre-selecciona tiers
+    ''' BAJOS, o sea que puede mostrar OTRA armadura. Medido: <b>549</b> OBTS del corpus declaran
+    ''' `Alt Levels Per Tier` distinto de cero (2,3,7,8,14,25,28,29) y <b>1039</b> declaran
+    ''' `Min Level For Ranks`, asi que el corpus SI ejercita tiers. Falta confirmar contra el motor que la
+    ''' regla sea "quedarse con el tier mas alto": es RE SEMANTICO y NO depende de la version del exe.</para>
+    ''' <para><b>(3) "Se ignora el bit don't use all del propio OMOD" - la nota quedo VIEJA.</b> Se lee: la
+    ''' recursion de contenedores pasa el `IncludeDonTUseAll` de cada include del OMOD a
+    ''' `CollectOmodCandidate`. Verificado leyendo `RecurseContainerIncludes`.</para>
     ''' <para>El mixer de abajo va escrito a mano y no por GetHashCode, que no garantiza estabilidad entre
     ''' procesos ni plataformas. Es XOR/shift puro (xorshift64) SIN multiplicacion a proposito: el proyecto no
     ''' desactiva el chequeo de overflow, asi que el multiply con wrap-around de un mixer tipo FNV/SplitMix

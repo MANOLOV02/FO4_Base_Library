@@ -112,7 +112,7 @@ Public Class Transform_Class
     ''' escala es chica (el error relativo de proyectar es |δ|/s). Y no hace falta: los tres
     ''' descompositores emiten <c>(1,1,1)</c> exacto en su rama uniforme, así que la igualdad exacta
     ''' rutea idéntico — medido en 1.637 nodos de cinco esqueletos, 0 discrepancias.</remarks>
-    Friend Shared Function EsUniformeExacta(e As Numerics.Vector3) As Boolean
+    Public Shared Function EsUniformeExacta(e As Numerics.Vector3) As Boolean
         Return e.Y = e.X AndAlso e.Z = e.X
     End Function
 
@@ -450,82 +450,98 @@ Public Class Transform_Class
 
         Return m
     End Function
+    ''' <summary>Matriz de rotacion -> vector de rotacion (eje x angulo), por CUATERNION con el metodo de
+    ''' SHEPPERD. Sin umbrales: la rama se elige por el mayor de {traza, M11, M22, M33}, y eso garantiza
+    ''' que el divisor nunca es chico, para CUALQUIER angulo incluidos 0 y pi.
+    '''
+    ''' <para>⛔ POR QUE SE CAMBIO (2026-08-22). La version anterior sacaba el eje de
+    ''' <c>(M32-M23, M13-M31, M21-M12) / (2 sin0)</c>, que se indetermina cuando sin0 -> 0, y entraba a una
+    ''' rama especial solo si <c>|sin0| &lt; 1e-4 AndAlso |M-M^T|/2 &lt;= 1e-6 AndAlso cos0 &lt; 0</c>. MEDIDO
+    ''' con <c>Tools\RotResidueProbe</c> sobre 4.913 matrices: <b>68 fallaban</b> el round-trip, y las 68
+    ''' tenían angulo &gt; 179 grados con <c>|sin0|</c> entre 2,4e-4 y 1e-2 — o sea JUSTO afuera del umbral.
+    ''' Tomaban la formula general, el eje salía de dividir por un numero chico, y el error llegaba a
+    ''' <b>2,0</b>: el eje invertido entero. La causa no era la rama de 180 (esa estaba bien): era que el
+    ''' umbral no la dejaba entrar.</para>
+    ''' <para>⛔ Y HAY UN SEGUNDO MODO DE FALLA, en el extremo CHICO, que es el que MAS pesa en el camino
+    ''' de poses. No lo causaba ningun umbral: <c>angle = Acos(clamp((tr-1)/2))</c> con M en Single hace que
+    ''' para angulos chicos <c>tr</c> redondee a >= 3.0, <c>cos0</c> clampee a 1.0 y <c>Acos</c> devuelva
+    ''' <b>0 EXACTO</b>; despues <c>u/len*angle</c> multiplica por cero y el vector entero se anula. O sea que
+    ''' la rotacion se DESTRUIA, y el borde no era declarado sino de 1-2 ULP de la diagonal: el mismo angulo
+    ''' acertaba o fallaba segun como redondeara la matriz.</para>
+    ''' <para>MEDIDO (A/B sobre 500 animaciones humanas vanilla de FO4, <c>Tools\EscalaPerEjeMedicion</c>):
+    ''' <b>116</b> huesos comunes tenian el viejo en (0,0,0) exacto y el nuevo distinto de cero, y <b>0</b> al
+    ''' reves — firma inconfundible de destruccion de dato, no de ruido. Otros <b>64</b> huesos ni siquiera
+    ''' entraban a la pose (<c>PoseTransformData.Isidentity</c> compara EXACTO), y 36 de esos 64 llevan
+    ''' rotacion real >= 1e-4 rad, hasta <b>4,54e-4 rad = 0,026 grados</b>. De las 100 filas que se mueven mas
+    ''' de 0,001 grados, <b>93 son este colapso</b> y solo 7 son el caso de 180 grados de arriba.</para>
+    ''' <para>⛔ POR ESO NO SE LE PONE UN EPSILON QUE SNAPEE A CERO. Seria volver a meter el defecto con una
+    ''' constante magica: para tragarse esos 64 hace falta e >= 4,54e-4 rad, y a ese e se estan borrando
+    ''' 0,026 grados REALES, en una funcion COMPARTIDA con el bake y con el .jslot. Ademas
+    ''' <c>BSRotationToMatrix33</c> no tiene snap, asi que el round-trip dejaria de cerrar por construccion.
+    ''' El gate que cubre esta banda es <c>JslotTrsProbe</c> [15], que mide error RELATIVO de ANGULO: el de
+    ''' ELEMENTO no sirve, porque un colapso a cero con 0=4,5e-4 da error 8,1e-5 y PASA las tolerancias.</para>
+    ''' <para>Retocar los umbrales corre la ventana pero no la elimina — siempre queda un borde. Shepperd la
+    ''' BORRA, y de paso saca las tres constantes magicas del codigo.</para>
+    ''' <para>⛔ La descomposicion polar de arriba se CONSERVA y no es opcional: si M trae shear, la traza y
+    ''' los terminos de abajo asumen rotacion pura y dan basura. Shepperd no arregla eso — arregla el
+    ''' condicionamiento, no la entrada.</para>
+    ''' <para>Convencion de signo IDENTICA a la anterior (x de <c>M32-M23</c>, y de <c>M13-M31</c>, z de
+    ''' <c>M21-M12</c>) y angulo en [0, pi], que es lo que devolvia <c>Acos</c>. Se niega el cuaternion si
+    ''' <c>w &lt; 0</c>: q y -q son la MISMA rotacion, y con w >= 0 el angulo cae en [0, pi] por
+    ''' construccion.</para></summary>
     Public Shared Function Matrix33ToBSRotation(ByVal M As Matrix33) As Numerics.Vector3
-        ' Igual que Matrix33ToEulerXYZ: si M tiene shear (no ortonormal) la fórmula axis-angle de abajo da
-        ' basura, porque la traza y (M − Mᵀ) asumen rotación pura. Polar-descomponer primero.
+        ' Igual que Matrix33ToEulerXYZ: si M tiene shear (no ortonormal) las formulas de abajo dan basura,
+        ' porque asumen rotacion pura. Polar-descomponer primero.
         If Not IsRotationOrthonormal(M, OrtoEpsExtractores) Then M = PolarRotation(M)
 
-        ' 1) θ = acos((tr(M) – 1)/2)
-        Dim tr As Double = M.M11 + M.M22 + M.M33
-        Dim cosA As Double = (tr - 1.0) / 2.0
-        If cosA > 1.0 Then
-            cosA = 1.0
-        ElseIf cosA < -1.0 Then
-            cosA = -1.0
-        End If
+        Dim m11 As Double = M.M11, m12 As Double = M.M12, m13 As Double = M.M13
+        Dim m21 As Double = M.M21, m22 As Double = M.M22, m23 As Double = M.M23
+        Dim m31 As Double = M.M31, m32 As Double = M.M32, m33 As Double = M.M33
+        Dim tr As Double = m11 + m22 + m33
 
-        Dim angle As Double = Math.Acos(cosA)
-
-        ' 2) Si θ muy cercano a 0 o π, usar aproximaciones
-        Dim sinA As Double = Math.Sin(angle)
-        Dim ux, uy, uz As Double
-
-        If Math.Abs(sinA) < 0.0001 Then
-            ' Límite: (Mij - Mji)/(2 sin θ) * θ  ≈ (Mij - Mji)/(2) * sign(θ)
-            ' Para θ≈0: sign(θ)=+1, para θ≈π: sin θ≈0 pero θ≈π => capturamos eje bien
-            Dim half As Double = 0.5
-            ' Para θ ≈ π, (tr-1)/2≈-1 => aquí manejaríamos ejes de rotación de 180°, 
-            ' que corresponden a cualquier eje ortogonal al signo de (M - Mᵀ).
-            ux = (M.M32 - M.M23) * half
-            uy = (M.M13 - M.M31) * half
-            uz = (M.M21 - M.M12) * half
-            ' Ajustar longitud a θ (que puede ser π)
-            Dim len As Double = Math.Sqrt(ux * ux + uy * uy + uz * uz)
-            If len > 0.000001 Then
-                ux = ux / len * angle
-                uy = uy / len * angle
-                uz = uz / len * angle
-            ElseIf cosA < 0.0 Then
-                ' θ ≈ π. ⛔ El eje NO es indefinido acá: para una rotación de 180° es el autovector de
-                ' autovalor +1 y está perfectamente determinado (sólo el SIGNO es ambiguo, y n y −n describen
-                ' la misma rotación). Lo que se anula a θ=π es (M − Mᵀ), o sea la fórmula de arriba — no el
-                ' eje. Devolver un eje fijo (1,0,0) acá hace que tipear 180 en el slider de rotación Z gire
-                ' el hueso sobre X, y como el .jslot y el ESP re-emiten la matriz CRUDA, el preview muestra
-                ' un eje y el juego otro.
-                '
-                ' Para una rotación de 180°: M + I = 2·n·nᵀ, así que TODA columna de (M + I) es paralela a n. Se
-                ' toma la de mayor norma por estabilidad numérica (las otras pueden ser ~0 si n tiene componentes
-                ' nulas). Después se normaliza y se escala por θ.
-                Dim cx = New Double() {M.M11 + 1.0, M.M21, M.M31}
-                Dim cy = New Double() {M.M12, M.M22 + 1.0, M.M32}
-                Dim cz = New Double() {M.M13, M.M23, M.M33 + 1.0}
-                Dim nx = cx(0) * cx(0) + cx(1) * cx(1) + cx(2) * cx(2)
-                Dim ny = cy(0) * cy(0) + cy(1) * cy(1) + cy(2) * cy(2)
-                Dim nz = cz(0) * cz(0) + cz(1) * cz(1) + cz(2) * cz(2)
-                Dim best = cx : Dim bestN = nx
-                If ny > bestN Then best = cy : bestN = ny
-                If nz > bestN Then best = cz : bestN = nz
-                If bestN > 0.000000001 Then
-                    Dim inv = angle / Math.Sqrt(bestN)
-                    ux = best(0) * inv : uy = best(1) * inv : uz = best(2) * inv
-                Else
-                    ' M + I ≈ 0 no puede pasar con una rotación real (implicaría M = −I, det = −1): si se llega
-                    ' acá el input no era una rotación. Se devuelve el eje X en vez de inventar uno.
-                    ux = angle : uy = 0 : uz = 0
-                End If
-            Else
-                ' θ ≈ 0: la rotación es la identidad ⇒ el vector sale ≈ 0 y el eje da igual.
-                ux = angle : uy = 0 : uz = 0
-            End If
+        Dim qw, qx, qy, qz As Double
+        ' SHEPPERD: se elige la rama cuyo termino bajo la raiz es el MAYOR de los cuatro. Ese termino vale
+        ' al menos 1 (los cuatro suman 4 para una rotacion), asi que el divisor nunca baja de 2 y no hay
+        ' division mal condicionada en ninguna rama. Ese es el punto entero del metodo.
+        If tr > m11 AndAlso tr > m22 AndAlso tr > m33 Then
+            Dim s As Double = Math.Sqrt(1.0 + tr) * 2.0        ' s = 4w
+            qw = 0.25 * s
+            qx = (m32 - m23) / s
+            qy = (m13 - m31) / s
+            qz = (m21 - m12) / s
+        ElseIf m11 > m22 AndAlso m11 > m33 Then
+            Dim s As Double = Math.Sqrt(1.0 + m11 - m22 - m33) * 2.0   ' s = 4x
+            qw = (m32 - m23) / s
+            qx = 0.25 * s
+            qy = (m12 + m21) / s
+            qz = (m13 + m31) / s
+        ElseIf m22 > m33 Then
+            Dim s As Double = Math.Sqrt(1.0 + m22 - m11 - m33) * 2.0   ' s = 4y
+            qw = (m13 - m31) / s
+            qx = (m12 + m21) / s
+            qy = 0.25 * s
+            qz = (m23 + m32) / s
         Else
-            ' Rama normal
-            Dim inv2sin As Double = 1.0 / (2.0 * sinA)
-            ux = (M.M32 - M.M23) * inv2sin * angle
-            uy = (M.M13 - M.M31) * inv2sin * angle
-            uz = (M.M21 - M.M12) * inv2sin * angle
+            Dim s As Double = Math.Sqrt(1.0 + m33 - m11 - m22) * 2.0   ' s = 4z
+            qw = (m21 - m12) / s
+            qx = (m13 + m31) / s
+            qy = (m23 + m32) / s
+            qz = 0.25 * s
         End If
 
-        Return New Numerics.Vector3(CSng(ux), CSng(uy), CSng(uz))
+        ' q y -q describen la MISMA rotacion. Con w >= 0 el angulo de abajo cae en [0, pi], que es el rango
+        ' que devolvia el Acos anterior — asi el contrato de salida no cambia.
+        If qw < 0.0 Then
+            qw = -qw : qx = -qx : qy = -qy : qz = -qz
+        End If
+
+        ' angulo = 2*atan2(|v|, w). Se usa atan2 y NO acos(w)*2 a proposito: acos pierde precision cuando
+        ' w -> 1 (angulo chico), que es justamente el caso mas comun.
+        Dim vlen As Double = Math.Sqrt(qx * qx + qy * qy + qz * qz)
+        If vlen <= 0.0 Then Return New Numerics.Vector3(0.0F, 0.0F, 0.0F)   ' identidad: eje irrelevante
+        Dim angle As Double = 2.0 * Math.Atan2(vlen, qw)
+        Dim k As Double = angle / vlen
+        Return New Numerics.Vector3(CSng(qx * k), CSng(qy * k), CSng(qz * k))
     End Function
     Public Function ComposeTransforms(b As Transform_Class) As Transform_Class
         ' T_x(v) = R_x · diag(EffectiveScale_x) · v + t_x, y a.Compose(b) ≡ "aplicar b primero, después a"
@@ -567,6 +583,16 @@ Public Class Transform_Class
         ' Descomposición: extraer column lengths y normalizar. Si uniform → todo a Scale escalar
         ' (ScaleVector=(1,1,1), R ortonormal, Scale = a.Scale·b.Scale). Si non-uniform → ScaleVector
         ' con el per-axis y Scale = 1.
+        ' ⛔ LA ESCALA SE MIDE DE LA MATRIZ, NO SE DERIVA DE LOS OPERANDOS. Intente el atajo
+        ' algebraico -- si los dos operandos tienen escala uniforme exacta, (s_b·R_b)(s_a·R_a) =
+        ' s_a·s_b·(R_b·R_a) y el factor sale exacto -- para matar el ruido de raiz cuadrada que mete
+        ' huesos inertes en las poses (medido: 44,5 % de las composiciones S⁻¹∘S dan Scale = 0,9999999).
+        ' ⛔ ESTA MAL Y ESTA MEDIDO: la igualdad vale solo si `Rotation` es ORTONORMAL, y esta clase
+        ' admite SHEAR a proposito. Con shear las longitudes de columna NO valen s_a·s_b y el atajo
+        ' inventa la escala. GateBake acotado, 60 NPC de FO4: el atajo movio 35 de 164 archivos con
+        ' 4.361 bytes distintos (124 por archivo) y un delta absoluto de 768.715 -- contra UN byte por
+        ' archivo del cambio de Shepperd. No es ruido: es geometria rota.
+        ' El ruido de escala en las poses sigue ABIERTO y hay que atacarlo donde no cueste esto.
         Dim col0Len = CSng(Math.Sqrt(rFull.M11 * rFull.M11 + rFull.M21 * rFull.M21 + rFull.M31 * rFull.M31))
         Dim col1Len = CSng(Math.Sqrt(rFull.M12 * rFull.M12 + rFull.M22 * rFull.M22 + rFull.M32 * rFull.M32))
         Dim col2Len = CSng(Math.Sqrt(rFull.M13 * rFull.M13 + rFull.M23 * rFull.M23 + rFull.M33 * rFull.M33))

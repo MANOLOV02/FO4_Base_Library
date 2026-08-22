@@ -26,9 +26,12 @@ Imports OpenTK.Mathematics
 ' en el clone / leer del NIF source — NO recalcular desde el skin. Ver [[25-cloth-inyeccion-de-huesos]].
 '
 ' PENDIENTES CONOCIDOS:
-'  - HclCollisionPoseHelper todavía tiene copias PRIVADAS de LocalReferencePoseToTransform y
-'    ResolveUniformScale; este helper ya usa la compartida (HkxTransformConventionHelper).
-'    Unificarlas cuando se decida conectar HclCollisionPoseHelper al render.
+'  - HclCollisionPoseHelper todavía tiene copias PRIVADAS de LocalReferencePoseToTransform y de un
+'    ResolveUniformScale que PROMEDIA X/Y/Z. La compartida ya no existe: se borró al pasar la
+'    convención a per-eje (ResolveScaleVector), porque quedó sin llamadores. El promedio que queda
+'    en HclCollisionPoseHelper NO es camino vivo -- esa clase entera está sin llamadores -- pero es
+'    la conducta VIEJA, así que el día que se la conecte al render hay que pasarla a per-eje ANTES,
+'    no después: conectada, promediar la escala es una pérdida silenciosa.
 '  - NormalizeBoneName usa ToUpperInvariant(). Consistente con el resto de
 '    bone lookups (OrdinalIgnoreCase). Revisar si hay casos edge con nombres
 '    de huesos que usen caracteres no-ASCII.

@@ -223,7 +223,6 @@ Public NotInheritable Class HkxPoseImportSession
 
         Dim tracks = ResolveTracks(animation, hkxSkeleton, skeletonSource)
         BindLiveSkeletonTracks(tracks, hkxSkeleton, liveSkeleton)
-        AnalyzeTrackContent(animation, tracks)
         Dim diagnostics As New HkxPoseImportDiagnostics With {
             .AnimationDisplayPath = If(animationDisplayPath, ""),
             .SkeletonDisplayPath = If(skeletonDisplayPath, ""),
@@ -263,6 +262,8 @@ Public NotInheritable Class HkxPoseImportSession
         Logger.LogLazy(Function() $"[HKX-POSE] BuildPose start pose='{pose.Name}' frame={usedFrame}/{_animation.NumFrames - 1} tracks={_tracks.Count} skeletonSource={_baseDiagnostics.SkeletonSource} diagnostics={collectDiagnostics}")
 
         Dim skippedInvalidBindings = 0
+        Dim skippedNoContent = 0
+        Dim droppedIdentity = 0
         Dim skippedMissingLiveBones = 0
         ' ── ADITIVOS: los tracks son DELTAS cerca de identidad, van DIRECTO a la capa Δ (componentes
         ' sin dato = identidad — ver BuildFrameLocalTransform). Aditividad declarada por (a) blendHint
@@ -294,7 +295,16 @@ Public NotInheritable Class HkxPoseImportSession
 
             ' Track sin NINGÚN componente con contenido (ver AnalyzeTrackContent) = el clip no
             ' opina sobre este hueso ⇒ queda en su local estructural S (mount incluido).
-            If Not additive AndAlso Not resolved.HasContent Then Continue For
+            ' El track no opina EN ESTE FRAME (mismo criterio que BuildFrameLocalTransform: la
+            ' declaracion del bloque al que pertenece el frame, no la del bloque 0).
+            Dim opinaAqui = hkxTransform.TranslationXAnimated OrElse hkxTransform.TranslationYAnimated OrElse
+                            hkxTransform.TranslationZAnimated OrElse hkxTransform.ScaleXAnimated OrElse
+                            hkxTransform.ScaleYAnimated OrElse hkxTransform.ScaleZAnimated OrElse
+                            (hkxTransform.RotationAnimated AndAlso hkxTransform.Rotation IsNot Nothing)
+            If Not additive AndAlso Not opinaAqui Then
+                skippedNoContent += 1
+                Continue For
+            End If
 
 
             ' [NO-ANIM-SYNC — REGLA UNIVERSAL, = pose-writer del motor 0x1413995D0] Se aplica SIEMPRE, por-componente,
@@ -325,7 +335,11 @@ Public NotInheritable Class HkxPoseImportSession
             If collectDiagnostics Then TrackDeltaDiagnostics(delta, diagnostics)
 
             Dim poseData = ToPoseTransformData(delta)
-            If poseData.Isidentity = False Then pose.Transforms(resolved.BoneName) = poseData
+            If poseData.Isidentity = False Then
+                pose.Transforms(resolved.BoneName) = poseData
+            Else
+                droppedIdentity += 1
+            End If
         Next
 
         If collectDiagnostics Then
@@ -334,9 +348,9 @@ Public NotInheritable Class HkxPoseImportSession
             diagnostics.SkippedInvalidBindings = skippedInvalidBindings
             If diagnostics.MaxDeltaTranslation > 300.0F Then diagnostics.Warning = $"Large translation delta detected ({diagnostics.MaxDeltaTranslation:0.###}). Check skeleton/animation match."
 
-            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' usedFrame={usedFrame} imported={diagnostics.ImportedBones} missingLive={diagnostics.SkippedMissingLiveBones} invalid={diagnostics.SkippedInvalidBindings} refT={diagnostics.TranslationComponentsFromReferencePose} refR={diagnostics.RotationComponentsFromReferencePose} refS={diagnostics.ScaleComponentsFromReferencePose} maxDeltaT={diagnostics.MaxDeltaTranslation:0.###} maxDeltaR={diagnostics.MaxDeltaRotationDegrees:0.###} warning='{diagnostics.Warning}'")
+            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' usedFrame={usedFrame} imported={diagnostics.ImportedBones} missingLive={diagnostics.SkippedMissingLiveBones} invalid={diagnostics.SkippedInvalidBindings} noContent={skippedNoContent} identity={droppedIdentity} refT={diagnostics.TranslationComponentsFromReferencePose} refR={diagnostics.RotationComponentsFromReferencePose} refS={diagnostics.ScaleComponentsFromReferencePose} maxDeltaT={diagnostics.MaxDeltaTranslation:0.###} maxDeltaR={diagnostics.MaxDeltaRotationDegrees:0.###} warning='{diagnostics.Warning}'")
         Else
-            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' usedFrame={usedFrame} imported={pose.Transforms.Count} missingLive={skippedMissingLiveBones} invalid={skippedInvalidBindings}")
+            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' usedFrame={usedFrame} imported={pose.Transforms.Count} missingLive={skippedMissingLiveBones} invalid={skippedInvalidBindings} noContent={skippedNoContent} identity={droppedIdentity} tracks={_tracks.Count}")
         End If
 
         Dim result = New HkxPoseImportHelper.ImportResult With {
@@ -387,15 +401,19 @@ Public NotInheritable Class HkxPoseImportSession
                 ' to refPose too. (Shared with the WM-format path via BuildUnboundFrameLocal.)
                 Dim tr = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
 
-                ' Sólo Scale. tr sale de BuildUnboundFrameLocal, que arma su escala con
-                ' HkxTransformConventionHelper.ResolveUniformScale — o sea que el per-eje del clip
-                ' HKX ya se PROMEDIÓ ahí y nunca llega hasta acá. Ver el remarks de
-                ' ToPoseTransformData: la misma línea en el otro camino NO tiene esa garantía.
+                ' Escala COMPLETA: uniforme + per-eje. `BuildUnboundFrameLocal` ya NO promedia (usa
+                ' `ResolveScaleVector`), así que el per-eje del clip llega hasta acá y hay que copiarlo
+                ' o se pierde. Este triple Yaw/Pitch/Roll es EULER —lo decodifica la rama ScreenArcher
+                ' de `Transform_Class.New(pd, Source)`—, a diferencia del de `ToPoseTransformData`, que
+                ' es eje·ángulo. Ver su remarks: NO se pueden unificar.
                 Dim nuevo As New PoseTransformData With {
                     .X = tr.Translation.X,
                     .Y = tr.Translation.Y,
                     .Z = tr.Translation.Z,
-                    .Scale = tr.Scale
+                    .Scale = tr.Scale,
+                    .ScaleX = tr.ScaleVector.X,
+                    .ScaleY = tr.ScaleVector.Y,
+                    .ScaleZ = tr.ScaleVector.Z
                 }
                 Dim degs = Transform_Class.Matrix33ToEulerXYZ(tr.Rotation)
                 nuevo.Yaw = degs.X
@@ -473,79 +491,6 @@ Public NotInheritable Class HkxPoseImportSession
         Return result
     End Function
 
-    ''' <summary>Clasifica cada COMPONENTE de cada track por TIPO DE DATO, escaneando el clip entero
-    ''' una vez (clasificación medida del archivo, sin decisiones en runtime).
-    ''' <para>SIN OPINIÓN = identity-typed O constante(±ε quantización) e IGUAL al refPose en TODO el
-    ''' clip ⇒ conserva el local estructural S. Probado: los sockets de brazo del Handy (P-ArmsTypeA1
-    ''' publicado en Ring+2.91; rig refPose 2.91 abajo; tracks constantes==refPose — honrarlos despega
-    ''' los brazos del anillo) y los EyeArm (constantes==refPose; su config vive en el mount).</para>
-    ''' <para>CON CONTENIDO = VARÍA en el tiempo (¡los clips crippled ANIMAN C-Head a (9.35,9.51) — la
-    ''' pose del robot derrumbado!) o constante≠refPose (el despliegue del Assaultron: C-Head −3.92 ==
-    ''' P-Head publicado). NO congelar sockets por nombre: el dato crippled lo refuta.</para></summary>
-    Private Shared Sub AnalyzeTrackContent(animation As HkaSplineCompressedAnimationGraph_Class,
-                                           tracks As List(Of ResolvedTrack))
-        Const EPS_CONST_T As Single = 0.02F   ' constancia traslación (ruido de quantización spline)
-        Const EPS_REF_T As Single = 0.08F     ' igualdad a refPose (traslación)
-        Const EPS_CONST_S As Single = 0.002F
-        Const EPS_REF_S As Single = 0.01F
-        Const EPS_ROT_DOT As Single = 0.9997F ' |dot| de quats ≈ igual (≈1.4°, quats comprimidos)
-
-        If animation Is Nothing OrElse tracks Is Nothing Then Return
-        Dim nF = Math.Max(1, animation.NumFrames)
-
-        For Each resolved In tracks
-            If resolved Is Nothing OrElse resolved.LiveBone Is Nothing Then Continue For
-            Dim ht0 = animation.GetTransform(0, resolved.TrackIndex)
-            If ht0 Is Nothing Then Continue For
-            Dim refp = resolved.ReferencePose
-
-            For axis = 0 To 2
-                Dim tAnim = (axis = 0 AndAlso ht0.TranslationXAnimated) OrElse (axis = 1 AndAlso ht0.TranslationYAnimated) OrElse (axis = 2 AndAlso ht0.TranslationZAnimated)
-                Dim sAnim = (axis = 0 AndAlso ht0.ScaleXAnimated) OrElse (axis = 1 AndAlso ht0.ScaleYAnimated) OrElse (axis = 2 AndAlso ht0.ScaleZAnimated)
-                Dim tContent = False, sContent = False
-                If tAnim OrElse sAnim Then
-                    Dim t0 = GetVectorAxis(ht0.Translation, axis, 0.0F), tMin = t0, tMax = t0
-                    Dim s0 = GetVectorAxis(ht0.Scale, axis, 1.0F), sMin = s0, sMax = s0
-                    For f = 1 To nF - 1
-                        Dim htf = animation.GetTransform(f, resolved.TrackIndex)
-                        If htf Is Nothing Then Continue For
-                        If tAnim Then
-                            Dim v = GetVectorAxis(htf.Translation, axis, 0.0F)
-                            tMin = Math.Min(tMin, v) : tMax = Math.Max(tMax, v)
-                        End If
-                        If sAnim Then
-                            Dim v = GetVectorAxis(htf.Scale, axis, 1.0F)
-                            sMin = Math.Min(sMin, v) : sMax = Math.Max(sMax, v)
-                        End If
-                    Next
-                    If tAnim Then tContent = (tMax - tMin) > EPS_CONST_T OrElse refp Is Nothing OrElse Math.Abs(t0 - GetVectorAxis(refp.Translation, axis, 0.0F)) > EPS_REF_T
-                    If sAnim Then sContent = (sMax - sMin) > EPS_CONST_S OrElse refp Is Nothing OrElse Math.Abs(s0 - GetVectorAxis(refp.Scale, axis, 1.0F)) > EPS_REF_S
-                End If
-                Select Case axis
-                    Case 0 : resolved.ContentTX = tContent : resolved.ContentSX = sContent
-                    Case 1 : resolved.ContentTY = tContent : resolved.ContentSY = sContent
-                    Case 2 : resolved.ContentTZ = tContent : resolved.ContentSZ = sContent
-                End Select
-            Next
-
-            If ht0.RotationAnimated AndAlso ht0.Rotation IsNot Nothing Then
-                Dim varies = False
-                For f = 1 To nF - 1
-                    Dim htf = animation.GetTransform(f, resolved.TrackIndex)
-                    If htf Is Nothing OrElse htf.Rotation Is Nothing Then Continue For
-                    If Math.Abs(QuatDot(ht0.Rotation, htf.Rotation)) < EPS_ROT_DOT Then varies = True : Exit For
-                Next
-                Dim refEq = refp IsNot Nothing AndAlso refp.Rotation IsNot Nothing AndAlso
-                            Math.Abs(QuatDot(ht0.Rotation, refp.Rotation)) >= EPS_ROT_DOT
-                resolved.ContentR = varies OrElse Not refEq
-            End If
-
-            resolved.HasContent = resolved.ContentTX OrElse resolved.ContentTY OrElse resolved.ContentTZ OrElse
-                                  resolved.ContentR OrElse
-                                  resolved.ContentSX OrElse resolved.ContentSY OrElse resolved.ContentSZ
-        Next
-    End Sub
-
     ''' <summary>[NO-ANIM-SYNC] Local que produce el motor para un hueso con flag No Anim Sync: ROTACIÓN del clip
     ''' (siempre) + traslación/escala de <paramref name="structural"/> (S) para las componentes flagueadas
     ''' (mask bit0=X, 1=Y, 2=Z, 3=S), o del clip para las no flagueadas. = pose-writer 0x1413995D0 (mantiene
@@ -560,14 +505,6 @@ Public NotInheritable Class HkxPoseImportSession
             .ScaleVector = scaleSrc.ScaleVector,
             .Translation = New Vector3(If(fx, st.X, ct.X), If(fy, st.Y, ct.Y), If(fz, st.Z, ct.Z))
         }
-    End Function
-
-    ''' <summary>Producto punto de quats normalizados (|dot|≈1 ⇒ misma rotación).</summary>
-    Private Shared Function QuatDot(a As HkxQuaternionGraph_Class, b As HkxQuaternionGraph_Class) As Single
-        Dim la = CSng(Math.Sqrt(CDbl(a.X) * a.X + CDbl(a.Y) * a.Y + CDbl(a.Z) * a.Z + CDbl(a.W) * a.W))
-        Dim lb = CSng(Math.Sqrt(CDbl(b.X) * b.X + CDbl(b.Y) * b.Y + CDbl(b.Z) * b.Z + CDbl(b.W) * b.W))
-        If la <= 0.000001F OrElse lb <= 0.000001F Then Return 1.0F
-        Return (a.X * b.X + a.Y * b.Y + a.Z * b.Z + a.W * b.W) / (la * lb)
     End Function
 
     ''' <summary>Local del frame del clip.
@@ -592,30 +529,57 @@ Public NotInheritable Class HkxPoseImportSession
             Return HkxTransformConventionHelper.ToTransform(txA, tyA, tzA, rA, sxA, syA, szA)
         End If
 
+        ' ⛔ LOS FLAGS SALEN DE ESTE FRAME, no de una clasificacion hecha una vez sobre el frame 0.
+        ' La mascara Identity/StaticValue/SplineValue es POR BLOQUE: el parser la reescribe en cada
+        ' bloque, asi que la del bloque 0 NO es la del frame que se esta posando. Medido en FO4 vanilla:
+        ' 16 de 744 animaciones son multi-bloque y 10 tracks cambian de mascara entre bloques. En SSE es
+        ' mucho peor -- maxFPB = 32, o sea que casi todo clip de mas de 32 frames es multi-bloque.
+        ' Ademas era la MISMA pregunta contestada de dos formas dentro de esta funcion: la rama aditiva
+        ' de arriba y `BuildUnboundFrameLocal` ya leian `hkxTransform.*Animated`. Ahora las tres coinciden.
         Dim s = resolved.StructuralLocal
-        Dim tx = If(resolved.ContentTX, GetVectorAxis(hkxTransform.Translation, 0, 0.0F), s.Translation.X)
-        Dim ty = If(resolved.ContentTY, GetVectorAxis(hkxTransform.Translation, 1, 0.0F), s.Translation.Y)
-        Dim tz = If(resolved.ContentTZ, GetVectorAxis(hkxTransform.Translation, 2, 0.0F), s.Translation.Z)
-        Dim sx = If(resolved.ContentSX, GetVectorAxis(hkxTransform.Scale, 0, 1.0F), s.Scale)
-        Dim sy = If(resolved.ContentSY, GetVectorAxis(hkxTransform.Scale, 1, 1.0F), s.Scale)
-        Dim sz = If(resolved.ContentSZ, GetVectorAxis(hkxTransform.Scale, 2, 1.0F), s.Scale)
+        Dim cTX = hkxTransform.TranslationXAnimated
+        Dim cTY = hkxTransform.TranslationYAnimated
+        Dim cTZ = hkxTransform.TranslationZAnimated
+        Dim cSX = hkxTransform.ScaleXAnimated
+        Dim cSY = hkxTransform.ScaleYAnimated
+        Dim cSZ = hkxTransform.ScaleZAnimated
+        Dim cR = hkxTransform.RotationAnimated AndAlso hkxTransform.Rotation IsNot Nothing
+        Dim tx = If(cTX, GetVectorAxis(hkxTransform.Translation, 0, 0.0F), s.Translation.X)
+        Dim ty = If(cTY, GetVectorAxis(hkxTransform.Translation, 1, 0.0F), s.Translation.Y)
+        Dim tz = If(cTZ, GetVectorAxis(hkxTransform.Translation, 2, 0.0F), s.Translation.Z)
+        ' ⛔ `EffectiveScale`, NO `s.Scale`. Es la ley que la propia clase documenta: la escala real es
+        ' `Scale · ScaleVector`, y desde que el HKX conserva el per-eje un local no uniforme lleva
+        ' `Scale = 1` con todo el peso en `ScaleVector` ⇒ leer `s.Scale` devolvia 1.0 y el delta salia
+        ' con el hueso achicado contra su bind (medido: 2,5 % en Z con un refPose per-eje).
+        ' ⛔ Y NO `EscalaComoEscalar`: eso devuelve UN escalar (eff.X) y aca los tres fallbacks son
+        ' INDEPENDIENTES, uno por eje — ponerle eff.X a los tres reintroduce el aplastamiento de ejes
+        ' que este trabajo vino a sacar, con otro disfraz. Esa funcion es para destinos de un solo float.
+        Dim se = s.EffectiveScale        ' una sola vez: esto corre por track y por frame durante el play
+        Dim sx = If(cSX, GetVectorAxis(hkxTransform.Scale, 0, 1.0F), se.X)
+        Dim sy = If(cSY, GetVectorAxis(hkxTransform.Scale, 1, 1.0F), se.Y)
+        Dim sz = If(cSZ, GetVectorAxis(hkxTransform.Scale, 2, 1.0F), se.Z)
 
         If diagnostics IsNot Nothing Then
-            If Not resolved.ContentTX Then diagnostics.TranslationComponentsFromReferencePose += 1
-            If Not resolved.ContentTY Then diagnostics.TranslationComponentsFromReferencePose += 1
-            If Not resolved.ContentTZ Then diagnostics.TranslationComponentsFromReferencePose += 1
-            If Not resolved.ContentR Then diagnostics.RotationComponentsFromReferencePose += 1
-            If Not (resolved.ContentSX AndAlso resolved.ContentSY AndAlso resolved.ContentSZ) Then diagnostics.ScaleComponentsFromReferencePose += 1
+            If Not cTX Then diagnostics.TranslationComponentsFromReferencePose += 1
+            If Not cTY Then diagnostics.TranslationComponentsFromReferencePose += 1
+            If Not cTZ Then diagnostics.TranslationComponentsFromReferencePose += 1
+            If Not cR Then diagnostics.RotationComponentsFromReferencePose += 1
+            If Not (cSX AndAlso cSY AndAlso cSZ) Then diagnostics.ScaleComponentsFromReferencePose += 1
         End If
 
-        If resolved.ContentR Then
+        If cR Then
             Return HkxTransformConventionHelper.ToTransform(tx, ty, tz, hkxTransform.Rotation, sx, sy, sz)
         End If
         ' Rotación sin opinión ← rotación estructural del hueso vivo.
+        ' La escala va PER-EJE en `ScaleVector`, no promediada: es el mismo dato que el otro brazo del
+        ' If (ToTransform) conserva, y si acá se promediara, la pose saldría distinta según si el clip
+        ' anima la rotación o no — una divergencia invisible entre dos caminos del mismo Return.
+        Dim sv = HkxTransformConventionHelper.ResolveScaleVector(sx, sy, sz)
         Return New Transform_Class With {
             .Translation = New Vector3(tx, ty, tz),
             .Rotation = s.Rotation,
-            .Scale = HkxTransformConventionHelper.ResolveUniformScale(sx, sy, sz)
+            .Scale = 1.0F,
+            .ScaleVector = New System.Numerics.Vector3(sv.X, sv.Y, sv.Z)
         }
     End Function
 
@@ -735,19 +699,23 @@ Public NotInheritable Class HkxPoseImportSession
         If Single.IsFinite(degrees) AndAlso degrees > diagnostics.MaxDeltaRotationDegrees Then diagnostics.MaxDeltaRotationDegrees = degrees
     End Sub
 
-    ''' <remarks>⛔ Copia sólo <c>Scale</c> aunque <c>PoseTransformData</c> tenga <c>ScaleX/Y/Z</c>.
-    ''' Copiar además <c>ScaleVector</c> es un no-op sólo porque los dos llamadores pasan un delta con
-    ''' escala ≈1 y el epsilon ABSOLUTO de uniformidad (1e-6) lo clasifica uniforme ⇒
-    ''' <c>ComposeTransforms</c> emite <c>ScaleVector=(1,1,1)</c>.
-    ''' <para>⚠️ Deja de valer en cuanto un delta traiga escala per-eje de verdad — p.ej. con un mount
-    ''' no uniforme, porque <c>BuildNoAnimSyncLocal</c> copia <c>ScaleVector</c> del local estructural.
-    ''' Ahí <c>ComposeTransforms</c> pone <c>Scale = 1.0F</c> y esta línea escribe 1, tirando la escala
-    ''' entera y en silencio.</para>
-    ''' <para>Arreglarlo NO son tres asignaciones: <c>ScaleX/Y/Z</c> son <c>JsonIgnore</c> (ni el export
-    ''' SAM ni <c>SaveImportedHkxPoseXml</c> ni <c>Poses_class.Clone</c> los guardan ⇒ previsualizar y
-    ''' guardar darían poses distintas) y <c>PoseTransformData.Isidentity</c> los mira ⇒ cambiaría QUÉ
-    ''' HUESOS entran a la pose. Aparte el clip HKX ya perdió su per-eje en
-    ''' <c>ResolveUniformScale</c>, que PROMEDIA los tres ejes.</para></remarks>
+    ''' <remarks>⛔⛔ EL TRIPLE <c>Yaw/Pitch/Roll</c> DE ESTA SALIDA ES EJE·ÁNGULO, no Euler. Quien
+    ''' decide cómo se decodifica es <c>Poses_class.Source</c>, en
+    ''' <c>Transform_Class.New(PoseTransformData, Pose_Source_Enum)</c>: la rama WardrobeManager usa
+    ''' <c>BSRotationToMatrix33</c> y la ScreenArcher usa <c>EulerXYZToMatrix33</c>. Por eso esta función
+    ''' y <c>BuildUnboundBoneSamData</c> NO se pueden unificar aunque llenen los mismos campos: la de
+    ''' allá produce Euler porque su pose sale con <c>Source = ScreenArcher</c>.
+    ''' <para>⛔ Copiaba sólo <c>Scale</c>, y eso era una BOMBA: mientras el HKX venía promediado, un
+    ''' delta siempre salía uniforme y la línea funcionaba de casualidad. Al conservar el HKX su escala
+    ''' per-eje, <c>ComposeTransforms</c> pasa a emitir <c>Scale = 1</c> con todo en <c>ScaleVector</c>
+    ''' ⇒ esta función escribía 1 y tiraba la escala ENTERA. Peor: un hueso cuyo único cambio fuera la
+    ''' escala quedaba <c>Isidentity = True</c> y NI SIQUIERA ENTRABA a la pose. El remarks viejo ya lo
+    ''' predecía y daba tres razones para no arreglarlo — las tres CAÍDAS: <c>Clone</c> ahora copia el
+    ''' per-eje, el XML ahora lo escribe, y el clip ya no se promedia.</para>
+    ''' <para>⚠️ CONSECUENCIA DECLARADA: al copiarlo, huesos que antes se descartaban por
+    ''' <c>Isidentity</c> ahora ENTRAN a la pose, y <c>SaveImportedHkxPoseXml</c> escribe más
+    ''' <c>&lt;Bone&gt;</c>. El dato es legítimo (es la escala real del clip) y BodySlide ignora los
+    ''' atributos que no conoce, pero cambia cuántos huesos trae una pose.</para></remarks>
     Private Shared Function ToPoseTransformData(source As Transform_Class) As PoseTransformData
         Dim rot = Transform_Class.Matrix33ToBSRotation(source.Rotation)
         Return New PoseTransformData With {
@@ -757,7 +725,10 @@ Public NotInheritable Class HkxPoseImportSession
             .Yaw = rot.X,
             .Pitch = rot.Y,
             .Roll = rot.Z,
-            .Scale = source.Scale
+            .Scale = source.Scale,
+            .ScaleX = source.ScaleVector.X,
+            .ScaleY = source.ScaleVector.Y,
+            .ScaleZ = source.ScaleVector.Z
         }
     End Function
 

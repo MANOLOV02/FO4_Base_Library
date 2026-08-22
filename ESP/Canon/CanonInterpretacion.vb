@@ -929,13 +929,9 @@ Namespace Canon
                 If md Is Nothing Then Continue For
                 Using ms As New MemoryStream()
                     Using bw As New BinaryWriter(ms)
-                        md.Emit(c, bw, v.Context)
+                        ' Medir el tamaño tampoco es grabar: mismo motivo que en MismoContenido.
+                        md.Emit(c, bw, v.Context.ParaComparar())
                     End Using
-                    ' ToArray() y NO ms.Length: al cerrarse, el BinaryWriter CIERRA el stream que envuelve,
-                    ' y pedirle Length a un MemoryStream cerrado tira ObjectDisposedException. ToArray() es el
-                    ' unico acceso que sigue valiendo despues del cierre, y por eso lo usa el resto del emisor
-                    ' (WbMemberDefs.Emit, WbWriter.EmitBody). Medir ANTES del End Using tampoco vale: el flush
-                    ' del writer al cerrarse es lo que garantiza que esten TODOS los bytes.
                     total += Math.Max(0, ms.ToArray().Length - 6)
                 End Using
             Next
@@ -1006,8 +1002,13 @@ Namespace Canon
             Dim va = TryCast(a, CanonView), vb = TryCast(b, CanonView)
             If va Is Nothing OrElse vb Is Nothing Then Return va Is vb
             If va.Node Is Nothing OrElse vb.Node Is Nothing Then Return va.Node Is vb.Node
-            Dim x = WbWriter.EmitBody(va.Node, va.Context)
-            Dim y = WbWriter.EmitBody(vb.Node, vb.Context)
+            ' Se compara con el contexto de COMPARACIÓN y no con el de lectura: acá no hay archivo
+            ' destino, así que cada campo sale como el nodo lo guarda. Con el de lectura, un record de
+            ' un master localizado en el que alguien ya editó un texto hacía TIRAR al emisor —"el
+            ' destino usa tablas y el campo tiene TEXTO"—, y eso pasó a ser posible en cuanto editar un
+            ' texto traducible dejó de rechazarse. Ver WbContext.Comparando.
+            Dim x = WbWriter.EmitBody(va.Node, va.Context.ParaComparar())
+            Dim y = WbWriter.EmitBody(vb.Node, vb.Context.ParaComparar())
             If x.Length <> y.Length Then Return False
             For i = 0 To x.Length - 1
                 If x(i) <> y(i) Then Return False

@@ -176,6 +176,14 @@ lector. Están reportados con su firma y su campo, no tapados.
 
 ## 7. Estado de integración
 
-El motor está compilado dentro de la biblioteca, pero **no lo llama nadie todavía**: el lector y el
-escritor actuales siguen siendo los que corren. La sustitución tiene sus propios pasos y cada uno
-cambia los bytes que la aplicación escribe, así que se hace por separado y con su verificación.
+⛔ **Esta sección decía, hasta el 2026-08-22, que el motor "no lo llama nadie todavía" y que el lector
+y el escritor viejos seguían corriendo. Era FALSO**, y así llegó a manos de un auditor externo, que lo
+listó como hallazgo. Un documento de estado que no se mueve con el código induce a error a quien viene
+a revisar — que es exactamente para quien está escrito.
+
+**El motor ES el camino en producción.** Lo consumen `RecordParsers`, NPC Manager y
+`SaveNpcEspWriter.SerializarRecord`; los parsers y emisores manuales que describía el párrafo viejo
+están **borrados** (`RecordDispatcher`, `NpcSubrecordWriter`, `NpcVmadScanner` y las clases `*Record`).
+
+Lo que sigue fuera del motor, a propósito: la cabecera `TES4` y la organización física de los `GRUP`,
+que `SaveNpcEspWriter` escribe con código explícito.

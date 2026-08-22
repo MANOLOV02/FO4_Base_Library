@@ -189,12 +189,35 @@
             Escribir(ruta, nuevo)
         End Sub
 
-        ''' <summary>Escribe un texto traducible. Si el archivo usa tablas externas el campo guarda
-        ''' un identificador, no el texto, y cambiarlo requiere darlo de alta en esa tabla: por eso
-        ''' acá se rechaza en vez de escribir algo que el juego no podría mostrar.</summary>
+        ''' <summary>Escribe un texto traducible.
+        '''
+        ''' <para>El campo pasa a tener TEXTO, aunque el archivo de origen guardara un identificador
+        ''' de tabla: es la misma ley que aplica xEdit al asignarle un valor a un campo localizable
+        ''' (<c>TwbLStringDef.FromStringNative</c> escribe la cadena y marca el elemento como no
+        ''' localizado). Quién termina escribiendo qué lo decide el archivo DESTINO, en el emisor.</para>
+        '''
+        ''' <para>⛔ Antes esto <b>rechazaba en silencio</b> cuando la fuente era un master localizado
+        ''' —y el setter generado descarta el booleano—, así que renombrar un NPC de Skyrim.esm o del
+        ''' Creation Club no hacía absolutamente nada y la aplicación no decía ni una palabra.</para>
+        '''
+        ''' <para>Los <c>Bytes sin describir</c> del subrecord se van con la edición — eso lo hace
+        ''' <see cref="WbEdit.PonerValor"/>, que es por donde pasan TODOS los textos y no sólo éste: el
+        ''' mismo defecto lo tenía un <c>EDID</c> de un subrecord mal teselado.</para></summary>
         Protected Function EscribirTextoTraducible(ruta As String, valor As String) As Boolean
-            If Context IsNot Nothing AndAlso Context.Localized Then Return False
-            Return Escribir(ruta, valor)
+            If Node Is Nothing Then Return False
+            Dim n = Node.ByFieldPath(ruta)
+            If n Is Nothing Then n = Asegurar(ruta)
+            Dim hoja = WbEdit.HojaEditable(n)
+            If hoja Is Nothing Then Return False
+            If Not WbEdit.PonerValor(hoja, valor) Then Return False
+            hoja.ValorLocalizado = WbLocalizacion.Texto
+            ' El campo pasa a ser una zstring, así que necesita SU CERO. Un nodo que venía de un
+            ' identificador de tabla no tiene contador de terminadores —esos son 4 bytes pelados, sin
+            ' cero— y uno leído de un archivo sin tablas puede tener cero si el texto llegaba justo
+            ' hasta el final del subrecord. En los dos casos, escribir texto nuevo sin cerrarlo deja
+            ' el campo sin terminador. Lo cazó el gate: el nombre salía de 16 bytes en vez de 17.
+            If hoja.TerminatorCount < 1 Then hoja.TerminatorCount = 1
+            Return True
         End Function
 
         '==========================================================================================

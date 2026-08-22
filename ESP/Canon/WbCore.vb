@@ -63,6 +63,24 @@ Namespace Canon
         u24 = 9
     End Enum
 
+    ''' <summary>Qué hay en el VALOR de una hoja de texto localizable: el identificador de la tabla
+    ''' de idioma, o el texto literal.
+    ''' <para>Es la réplica del <c>aElement.Localized</c> de xEdit (<c>TwbLStringDef</c>): un
+    ''' tri-estado POR ELEMENTO, no una propiedad del archivo. Hace falta porque el archivo FUENTE y
+    ''' el archivo DESTINO pueden no coincidir, y entonces preguntarle al archivo no alcanza: el
+    ''' mismo campo puede traer un id (leído de un master localizado) y tener que salir como texto (a
+    ''' un plugin que no declara tablas).</para>
+    ''' <para><see cref="Desconocido"/> no es un caso a completar: es lo que vale para todo árbol que
+    ''' no pasó por acá, y hace que el emisor se comporte EXACTAMENTE como antes de que este estado
+    ''' existiera — la localización la decide entonces el archivo fuente.</para></summary>
+    Public Enum WbLocalizacion
+        Desconocido = 0
+        ''' <summary>El valor es texto literal.</summary>
+        Texto = 1
+        ''' <summary>El valor es un identificador de la tabla de idioma.</summary>
+        IdDeTabla = 2
+    End Enum
+
     ''' <summary>Contexto de parseo/emisión. <see cref="FormVersion"/> es la Form Version del HEADER
     ''' del record y es la entrada de los deciders de versión: si la versión del record llega al
     ''' mínimo que pide un campo se elige la rama que lo incluye, y si no, una rama de CERO bytes.
@@ -74,6 +92,47 @@ Namespace Canon
         ''' <summary>Flag 0x80 del TES4 del archivo FUENTE. Con localización un lstring es un id u32;
         ''' sin ella es una zstring inline.</summary>
         Public Property Localized As Boolean
+
+        ''' <summary>Flag 0x80 del TES4 del archivo DESTINO. <b>Nothing = el destino es como la
+        ''' fuente</b>, que es lo que valía antes de que esto existiera.
+        ''' <para>⛔ La localización de un campo la decide el archivo DONDE SE ESCRIBE, no aquel de
+        ''' donde se leyó. Es la ley del canónico: el <c>TwbLStringDef</c> de xEdit pregunta por
+        ''' <c>aElement._File.IsLocalized</c> —el archivo del elemento— y al asignarle un valor a un
+        ''' campo de un archivo sin tablas escribe la zstring y marca el elemento como no localizado
+        ''' (<c>wbInterface.pas</c>, <c>FromStringNative</c>).</para>
+        ''' <para>Decidirlo por la FUENTE fue un defecto real y medido: un NPC_ de un master
+        ''' localizado salía a un plugin propio —que nunca lleva el flag 0x80— con los 4 bytes del
+        ''' identificador donde el archivo declara que hay texto, y cualquier lector los leía como una
+        ''' zstring de basura.</para></summary>
+        Public Property DestinoLocalizado As Boolean?
+
+        ''' <summary>Resuelve el texto de una hoja localizable contra las tablas de idioma. Sólo hace
+        ''' falta al EMITIR hacia un destino sin tablas: ahí el identificador no se puede escribir y
+        ''' hay que materializar el texto.
+        ''' <para>Es un delegado por la misma razón que <see cref="ResolveSignature"/>: la resolución
+        ''' vive en <c>CanonResolver</c>, que conoce el archivo de origen y de qué tabla sale el
+        ''' campo. Duplicar esa ley acá serían dos copias de la misma pregunta.</para></summary>
+        Public Property ResolverTextoLocalizado As Func(Of WbNode, String)
+
+        ''' <summary>Esto NO es un grabado: es una comparación o una medición de tamaño, y cada campo
+        ''' se emite <b>tal como lo guarda el nodo</b> — el identificador como identificador y el texto
+        ''' como texto.
+        ''' <para>Hace falta porque las dos preguntas son distintas. Grabar pregunta "¿qué forma pide el
+        ''' archivo destino?", y hay una celda imposible —texto hacia un archivo con tablas— que TIENE
+        ''' que tirar. Comparar pregunta "¿los dos árboles dicen lo mismo?", y ahí no hay archivo: la
+        ''' respuesta sale del contenido.</para>
+        ''' <para>⛔ Las dos salidas fáciles son peores: comparar como "destino con tablas" vuelve a
+        ''' tirar en cuanto alguien editó un texto, y comparar como "destino sin tablas" sin resolvedor
+        ''' manda todo identificador a la cadena vacía y hace que <b>dos records con nombres distintos
+        ''' den IGUALES</b> — corrupción muda en la función cuyo trabajo es decir si algo cambió.</para>
+        ''' <para>Un identificador y el literal al que resuelve dan DISTINTO, y está bien: son dos
+        ''' estados distintos del record y se van a grabar distinto.</para></summary>
+        Public ReadOnly Property Comparando As Boolean
+            Get
+                Return _comparando
+            End Get
+        End Property
+        Private _comparando As Boolean
         ''' <summary>Encoding traducible del archivo fuente (TES4.SNAM &lt;cp:XXXX&gt;). Nothing =
         ''' usar el global de <c>PluginEncodingSettings</c>.</summary>
         Public Property TranslatableEncoding As Encoding
@@ -115,7 +174,12 @@ Namespace Canon
         ''' <summary>Hallazgos del parseo del record en curso. El motor NUNCA absorbe una
         ''' inconsistencia en silencio: todo lo que no tesela, no está declarado o no round-trippea
         ''' entra acá y sale en el reporte.</summary>
-        Public ReadOnly Property Findings As New List(Of WbFinding)
+        Public ReadOnly Property Findings As List(Of WbFinding)
+            Get
+                Return _findings
+            End Get
+        End Property
+        Private ReadOnly _findings As List(Of WbFinding)
 
         Public Sub Report(kind As WbFindingKind, path As String, message As String)
             Findings.Add(New WbFinding(kind, RecordSignature, path, message))
@@ -134,6 +198,55 @@ Namespace Canon
 
         Public Sub New(game As WbGame)
             _Game = game
+            _findings = New List(Of WbFinding)()
+        End Sub
+
+        ''' <summary>El mismo contexto, pero contestando la pregunta del ESCRITOR: hacia qué archivo
+        ''' se emite y con qué se resuelven los textos localizados.
+        '''
+        ''' <para>Es un objeto aparte y no dos campos que se prenden y se apagan sobre el de lectura,
+        ''' porque una vista se puede seguir leyendo y editando después de guardar: dejarle encima el
+        ''' estado del guardado es la clase de residuo que después contesta mal una lectura.</para>
+        '''
+        ''' <para>⛔ Los hallazgos NO se comparten con el contexto de lectura. Se compartían, y estaba
+        ''' mal por tres motivos que valen los tres: el emisor corre DOS veces por guardado (la pasada de
+        ''' descubrimiento y la de verdad), así que la lista del record crecía el doble en cada guardado y
+        ''' no la limpiaba nadie; el guardado corre en otro hilo y <c>List(Of T).Add</c> no es
+        ''' thread-safe sobre un objeto que comparten la lista de NPC, el render y el bake; y el
+        ''' invariante que los consumidores creen —"Findings es lo que encontró el PARSEO"— dejaba de
+        ''' valer. Quien quiera lo del escritor pasa <paramref name="hallazgos"/> y se lo lleva.</para></summary>
+        ''' <param name="hallazgos">Dónde deja el emisor lo que encuentre. Nothing = una lista propia que
+        ''' se descarta con el contexto.</param>
+        Public Function ParaEscritura(destinoLocalizado As Boolean?,
+                                      resolverTexto As Func(Of WbNode, String),
+                                      Optional hallazgos As List(Of WbFinding) = Nothing) As WbContext
+            Dim w As New WbContext(Game, If(hallazgos, New List(Of WbFinding)())) With {
+                .FormVersion = FormVersion,
+                .Localized = Localized,
+                .TranslatableEncoding = TranslatableEncoding,
+                .RecordSignature = RecordSignature,
+                .FormID = FormID,
+                .RecordFlags = RecordFlags,
+                .EditorId = EditorId,
+                .AllowPendingSubrecords = AllowPendingSubrecords,
+                .ResolveSignature = ResolveSignature,
+                .DestinoLocalizado = destinoLocalizado,
+                .ResolverTextoLocalizado = resolverTexto
+            }
+            Return w
+        End Function
+
+        ''' <summary>El mismo contexto, para COMPARAR o MEDIR: sin archivo destino y sin resolvedor.
+        ''' Ver <see cref="Comparando"/>.</summary>
+        Public Function ParaComparar() As WbContext
+            Dim c = ParaEscritura(Nothing, Nothing)
+            c._comparando = True
+            Return c
+        End Function
+
+        Private Sub New(game As WbGame, hallazgos As List(Of WbFinding))
+            _Game = game
+            _findings = hallazgos
         End Sub
     End Class
 
@@ -151,6 +264,9 @@ Namespace Canon
         EncodingFallback = 4
         ''' <summary>La declaración no pudo parsear los bytes (excepción de layout).</summary>
         LayoutError = 5
+        ''' <summary>Al emitir hacia un destino sin tablas de idioma, un identificador distinto de
+        ''' cero no se pudo resolver a texto. El campo sale VACÍO.</summary>
+        TextoLocalizadoSinResolver = 6
     End Enum
 
     ''' <summary>Un hallazgo, con la RUTA POR NOMBRE del campo — nunca "el byte 47 difiere".</summary>
@@ -358,6 +474,20 @@ Namespace Canon
                 ExtrasMutables.TerminatorCount = value
             End Set
         End Property
+        ''' <summary>Qué hay en <see cref="Value"/> cuando la hoja es un texto localizable: el
+        ''' identificador de la tabla de idioma o el texto literal. Ver <see cref="WbLocalizacion"/>.
+        ''' <para><c>Desconocido</c> es el default y significa "preguntale al archivo fuente", que es
+        ''' exactamente lo que se hacía antes de que este estado existiera.</para></summary>
+        Public Property ValorLocalizado As WbLocalizacion
+            Get
+                If _extras Is Nothing Then Return VACIO.ValorLocalizado
+                Return _extras.ValorLocalizado
+            End Get
+            Set(value As WbLocalizacion)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ValorLocalizado) Then Return
+                ExtrasMutables.ValorLocalizado = value
+            End Set
+        End Property
         ''' <summary>Rama elegida por una unión (índice en Members). -1 si no es unión.</summary>
         Public Property UnionBranch As Integer
             Get
@@ -507,6 +637,7 @@ Namespace Canon
         ''' nada si le asignan el default a un nodo que todavia no tiene extras: es la asignacion que hace
         ''' el inicializador de <see cref="Clonar"/> para todos los campos que el original no uso.</para></summary>
         Private NotInheritable Class WbNodeExtras
+            Public ValorLocalizado As WbLocalizacion
             Public TerminatorCount As Integer
             Public UnionBranch As Integer = -1
             Public RawOverride As Byte()
@@ -615,6 +746,7 @@ Namespace Canon
                 .SourceLength = SourceLength,
                 .DataLength = DataLength,
                 .TerminatorCount = TerminatorCount,
+                .ValorLocalizado = ValorLocalizado,
                 .UnionBranch = UnionBranch,
                 .OverrideName = OverrideName,
                 .ParsedFormVersion = ParsedFormVersion,

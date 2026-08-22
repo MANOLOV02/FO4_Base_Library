@@ -319,12 +319,6 @@ Public Module FaceTintInputBuilder
         Dim entries As New List(Of (Sw As FaceRegionSwapInput, Keys As Double()))
         Const BIGSWAP As Double = 1.0E+15
 
-        ' GATE del baseline idx0 — EN EL CÓDIGO (no setting), DEFAULT OFF. Es la regla INFERIDA "Presets(0) del
-        ' grupo de morph = la piel neutral" (validada empíricamente vs CK en Mitch `_t`/extracción BA2, NO
-        ' confirmada contra fuente autoritativa: es la opción 0 por POSICIÓN, sin flag de record). OFF -> los
-        ' region swaps componen sobre el seed (FTST/TNAM/DFTM) SIN baseline (comportamiento previo). Poner True
-        ' para reproducir la cara young-based de CK.
-        Const EnableMorphBaseline As Boolean = False
 
         Dim gPhys As Integer = -1
         For Each g In morphGroups
@@ -338,57 +332,12 @@ Public Module FaceTintInputBuilder
             Dim maskLoad = LoadTintLayerBytesAndKey(maskOpt.Textures(0), tintBytesCache)
             If maskLoad.Bytes Is Nothing Then Continue For
 
-            ' BASELINE del grupo (preset idx0 = piel "neutral/no-envejecida" sobre la que el engine compone el morph
-            ' de ESTA región). Verificado parseando HumanRace + Mitch (Tools/morphgroup_dump.py): los 7
-            ' grupos male-head tienen idx0 = SkinHeadYoungMale; CK compone cada región con morph ACTIVO = lerp(idx0,
-            ' preset, msdv) (medido byte: nariz lerp(Young,Old,.25)=37.9=CK; labios lerp(Young,Hero,.55)=21.5=CK).
-            ' BASELINE para TODA región del NPC facegen — NO se gatea por key de morph. El bake `_t` del usuario
-            ' (Mitch con la nariz SACADA = no-op / sin morph) da YOUNG=idx0 en la nariz (R 40.5 ≈ young 42.8; NO
-            ' TNAM/Hero 25) -> una región NO-morpheada IGUAL recibe el baseline idx0; NO hay fallback per-región a
-            ' HDPT.TNAM. La función ya sólo corre para NPCs con facegen-morphs (guard MorphValues.Count>0 arriba) -> un
-            ' NPC sin morphs no entra acá y queda en HDPT.TNAM globalmente. idx0=young confirmado + FTST=Mayor refutado
-            ' por extracción del BA2 (Tools/ba2_extract_mayor.py: Mayor_s=45.4, va para el lado contrario; el lerp con
-            ' young cierra a Δ1.0 vs CK). Baseline a cobertura plena (Intensity=1) ANTES del preset (swaps over-running
-            ' secuenciales -> acc=baseline, luego lerp(baseline, preset, msdv)). Record-driven (Presets(0).TextureFormID,
-            ' NO hardcodea young) + D/N/S. Aplica a bake (CPU) y render (GL): misma lista de swaps.
-            ' GATEADO por EnableMorphBaseline (const en código arriba, DEFAULT OFF).
-            If EnableMorphBaseline AndAlso g.Presets IsNot Nothing AndAlso g.Presets.Count > 0 Then
-                Dim baseP = g.Presets(0)
-                If baseP IsNot Nothing AndAlso baseP.TextureFormID <> 0UI Then
-                    Dim baseTxstRec = pluginManager.GetRecord(baseP.TextureFormID)
-                    If baseTxstRec IsNot Nothing AndAlso baseTxstRec.Header.Signature = "TXST" Then
-                        Dim baseTxst = Canon.CanonRecords.Txst(baseTxstRec, pluginManager)
-                        If baseTxst IsNot Nothing Then
-                            Dim bD = LoadTintLayerBytesAndKey(baseTxst.Ranura(0), tintBytesCache)
-                            Dim bN = LoadTintLayerBytesAndKey(baseTxst.Ranura(1), tintBytesCache)
-                            Dim bS = LoadTintLayerBytesAndKey(baseTxst.Ranura(7), tintBytesCache)
-                            If bD.Bytes IsNot Nothing OrElse bN.Bytes IsNot Nothing OrElse bS.Bytes IsNot Nothing Then
-                                Dim swBase As New FaceRegionSwapInput With {
-                                    .RegionMaskDdsBytes = maskLoad.Bytes,
-                                    .RegionMaskCacheKey = maskLoad.Key,
-                                    .SwapDiffuseDdsBytes = bD.Bytes,
-                                    .SwapDiffuseCacheKey = If(bD.Bytes IsNot Nothing, bD.Key, Nothing),
-                                    .SwapNormalDdsBytes = bN.Bytes,
-                                    .SwapNormalCacheKey = If(bN.Bytes IsNot Nothing, bN.Key, Nothing),
-                                    .SwapSpecularDdsBytes = bS.Bytes,
-                                    .SwapSpecularCacheKey = If(bS.Bytes IsNot Nothing, bS.Key, Nothing),
-                                    .Intensity = 1.0F,
-                                    .DebugName = $"{g.Name}/BASELINE(idx0)"
-                                }
-                                Logger.LogLazy(Function() $"[REGIONSWAP-BUILD] '{g.Name}/BASELINE(idx0)' intensity=1.000 txst=0x{baseP.TextureFormID:X8}")
-                                Dim keysB(5) As Double
-                                keysB(CInt(FaceTintSwapSortKey.Group_Index)) = CDbl(gPhys)
-                                keysB(CInt(FaceTintSwapSortKey.Preset_Index)) = -1.0R   ' baseline ANTES de todo preset seleccionado del grupo
-                                keysB(CInt(FaceTintSwapSortKey.Morph_Index)) = CDbl(baseP.Index)
-                                keysB(CInt(FaceTintSwapSortKey.Slot)) = CDbl(CInt(slot))
-                                keysB(CInt(FaceTintSwapSortKey.Intensity)) = 1.0R
-                                keysB(CInt(FaceTintSwapSortKey.Npc_Lits_Order)) = -1.0R
-                                entries.Add((swBase, keysB))
-                            End If
-                        End If
-                    End If
-                End If
-            End If
+            ' ⛔ Acá vivía el BASELINE idx0 de cada grupo de morph, apagado por una `Const ... = False`:
+            ' una rama que no corría nunca, con ~30 líneas de ley medida adentro. La ley —`Presets(0)` es
+            ' la piel neutral y el CK compone `lerp(idx0, preset, msdv)`, con los números contra el CK y
+            ' la refutación de `FTST = Mayor`— quedó guardada entera en la memoria del proyecto
+            ' (`50-facetint-baseline-idx0-ley-medida-rama-retirada`). El código se retiró el 2026-08-22:
+            ' facetints está CERRADO y una perilla que nadie puede mover no es una opción, es lastre.
 
             Dim pPhys As Integer = -1
             For Each p In g.Presets
