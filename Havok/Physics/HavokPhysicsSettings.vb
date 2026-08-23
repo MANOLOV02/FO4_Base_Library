@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 ' =================================================================================================
@@ -98,6 +98,11 @@ Namespace Havok.Physics
 
         ''' <summary>La correa `hclLocalRangeConstraintSet`. Sin ella la tela sobre-cae (medido).</summary>
         Public Shared Property EnableLocalRange As Boolean = True
+
+        ''' <summary>`hclBendStiffnessConstraintSet` — la rigidez de flexion, el cuarto constraint
+        ''' set del motor. Prendido: es parte de la ley, no un extra. La perilla existe para poder
+        ''' hacer el A/B y atribuir un cambio de forma a ESTE solver y no a otro.</summary>
+        Public Shared Property EnableBend As Boolean = True
 
         ''' <summary>Deja el estado de simulación limpio (todas las prendas vuelven a sembrar).</summary>
         Public Shared Sub ResetAll()

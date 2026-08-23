@@ -678,7 +678,8 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         Dim rawLinks = ReadRawStructArray(graph, r.Links, 32)
         Dim result As New HclBendStiffnessConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = r.Name
+            .Name = r.Name,
+            .UseRestPoseConfig = r.UseRestPoseConfig
         }
         result.LinkDetails.AddRange(ParseBendConstraints(rawLinks))
         Return result
@@ -2000,6 +2001,11 @@ End Class
 Public Class HclBendStiffnessConstraintSetDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
+    ''' <summary>`useRestPoseConfig` (+0x30). ⛔ NO es cosmetico: el motor lo lee en
+    ''' <c>hclBendStiffnessConstraintSet::solve</c> (0x1419F9A62) y con el ELIGE ENTRE DOS LEYES
+    ''' DISTINTAS — 0x1419F9B50 (lineal, sin restCurvature) contra 0x1419F9CF0 (angulo diedro con
+    ''' normales). Sin este campo el simulador no puede saber cual le toca.</summary>
+    Public Property UseRestPoseConfig As Boolean
     Public ReadOnly Property LinkDetails As New List(Of HclBendConstraintGraph_Class)
     Public Property ResolvedTopologyCount As Integer
     Public Property ResolvedRestGeometryCount As Integer

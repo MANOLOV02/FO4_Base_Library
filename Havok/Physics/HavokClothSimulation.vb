@@ -80,6 +80,7 @@ Namespace Havok.Physics
         Public HasLastRoot As Boolean = False
         Public Links As New List(Of DistanceLink)
         Public LocalRange As New List(Of LocalRangeConstraint)
+        Public Bend As New List(Of BendLink)
         Public Capsules As New List(Of CapsuleCollider)
         ''' <summary>gatherMap(particleIdx) = VertexIndex del ObjectSpaceSkin.</summary>
         Public GatherMap As UShort()
@@ -95,6 +96,27 @@ Namespace Havok.Physics
         Public B As Integer
         Public Rest As Single
         Public Stiffness As Single
+    End Structure
+
+    ''' <summary>Un link de <c>hclBendStiffnessConstraintSet</c>: cuatro particulas con sus pesos.
+    ''' <para>⛔ NO lleva <c>restCurvature</c> a proposito: el solver del motor NO LO LEE en la rama
+    ''' que usa el corpus (ver <see cref="HavokClothSimulation.SolveBend"/>).</para></summary>
+    Friend Structure BendLink
+        Public A As Integer
+        Public B As Integer
+        Public C As Integer
+        Public D As Integer
+        Public WA As Single
+        Public WB As Single
+        Public WC As Single
+        Public WD As Single
+        ''' <summary>`bendStiffness` del archivo. En el corpus viene NEGATIVO, y tiene que serlo: el
+        ''' paso es `P += S·w·invMass·v`, asi que con S &lt; 0 el empuje va CONTRA la curvatura.</summary>
+        Public Stiffness As Single
+        ''' <summary>`restCurvature`. Solo lo usa la rama de rest-pose; en la otra el motor NO LO LEE.</summary>
+        Public RestCurvature As Single
+        ''' <summary>Que ley le toca a ESTE link. Viene del `useRestPoseConfig` de su set.</summary>
+        Public UseRestPose As Boolean
     End Structure
 
     Friend Structure LocalRangeConstraint
@@ -436,6 +458,7 @@ Namespace Havok.Physics
         Private Shared Sub BuildConstraints(st As ClothSimState, sim As HclSimClothDataDetail_Class, particleCount As Integer)
             st.Links.Clear()
             st.LocalRange.Clear()
+            st.Bend.Clear()
             For Each detail In sim.ConstraintDetails
                 Dim dist = TryCast(detail, HclStandardLinkConstraintSetDetail_Class)
                 If dist IsNot Nothing Then
@@ -447,6 +470,32 @@ Namespace Havok.Physics
                     AddLinks(st, stretch.LinkDetails, particleCount)
                     Continue For
                 End If
+                Dim bend = TryCast(detail, HclBendStiffnessConstraintSetDetail_Class)
+                If bend IsNot Nothing Then
+                    ' ⛔ EL FLAG SE PROPAGA AL LINK. `useRestPoseConfig` elige entre DOS LEYES del
+                    ' motor, no entre dos parametros: ver `SolveBend`. Las dos estan implementadas, pero
+                    ' cual le toca a cada link lo decide el archivo, no una constante nuestra.
+                    If Logger.Enabled Then
+                        Dim nb = If(bend.LinkDetails Is Nothing, 0, bend.LinkDetails.Count)
+                        Dim urp = bend.UseRestPoseConfig
+                        Logger.LogLazy(Function() $"[CLOTH-BEND] set con {nb} links, useRestPoseConfig={urp} ⇒ ley {If(urp, "rest-pose (0x1419F9CF0)", "lineal (0x1419F9B50)")}")
+                    End If
+                    For Each bl In bend.LinkDetails
+                        Dim ia = CInt(bl.ParticleA), ib = CInt(bl.ParticleB)
+                        Dim ic = CInt(bl.ParticleC), id_ = CInt(bl.ParticleD)
+                        If ia < 0 OrElse ib < 0 OrElse ic < 0 OrElse id_ < 0 Then Continue For
+                        If ia >= particleCount OrElse ib >= particleCount OrElse
+                           ic >= particleCount OrElse id_ >= particleCount Then Continue For
+                        st.Bend.Add(New BendLink With {
+                            .A = ia, .B = ib, .C = ic, .D = id_,
+                            .WA = bl.WeightA, .WB = bl.WeightB, .WC = bl.WeightC, .WD = bl.WeightD,
+                            .Stiffness = bl.BendStiffness,
+                            .RestCurvature = bl.RestCurvature,
+                            .UseRestPose = bend.UseRestPoseConfig})
+                    Next
+                    Continue For
+                End If
+
                 Dim lr = TryCast(detail, HclLocalRangeConstraintSetDetail_Class)
                 If lr IsNot Nothing Then
                     For Each c In lr.ConstraintDetails
@@ -585,6 +634,7 @@ Namespace Havok.Physics
                 ' (4) solve: N iteraciones × (constraints, después colisión)
                 For it = 0 To st.SolveIterations - 1
                     SolveDistanceLinks(st)
+                    If HavokPhysicsSettings.EnableBend Then SolveBend(st)
                     If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned)
                     If HavokPhysicsSettings.EnableCollision Then SolveCapsules(st)
                 Next
@@ -612,6 +662,110 @@ Namespace Havok.Physics
                 Dim corr = d * (diff * l.Stiffness)
                 st.Positions(l.A) = pa + (corr * (wa / wsum))
                 st.Positions(l.B) = pb - (corr * (wb / wsum))
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `hclBendStiffnessConstraintSet` — la rigidez de flexión. Es el CUARTO constraint set del
+        ''' motor, y el único que faltaba: el corpus de Fallout declara 1.170 objetos, tantos como
+        ''' links estándar, y sin él una mecha de pelo no tiene nada que le impida enroscarse.
+        '''
+        ''' <para>⛔ LA LEY NO ESTÁ INFERIDA: sale de desensamblar el motor.
+        ''' <c>hclBendStiffnessConstraintSet::solve</c> vive en <c>0x1419F9A62</c> (se lo ubica por la
+        ''' cadena del temporizador <c>"TtSolve Bend Stiffness"</c> en <c>0x142717A68</c>), lee
+        ''' <c>useRestPoseConfig</c> de <c>[this+0x30]</c> y despacha a dos implementaciones:
+        ''' <c>0x1419F9B50</c> (flag apagado, la que se replica acá) y <c>0x1419F9CF0</c> (flag
+        ''' prendido, con ángulo diedro y normales — NO implementada, ver la ingesta).</para>
+        '''
+        ''' <para>El cuerpo de <c>0x1419F9B50</c>, literal: avanza el puntero de links de <b>32 bytes</b>
+        ''' por vuelta y lee <c>wA..wD</c> de <c>+0x00..+0x0C</c>, <c>bendStiffness</c> de <c>+0x10</c> y
+        ''' las cuatro <c>uint16</c> de <c>+0x18..+0x1E</c>. Después:</para>
+        ''' <code>
+        '''     v = wA·P[A] + wB·P[B] + wC·P[C] + wD·P[D]      ' un solo v, calculado ANTES de escribir
+        '''     S = bendStiffness × k                          ' k = el factor por-set del motor
+        '''     P[i] += S · wᵢ · invMassᵢ · v                   ' para i en {A, B, C, D}
+        ''' </code>
+        '''
+        ''' <para>⛔⛔ <c>restCurvature</c> (<c>+0x14</c>) <b>NO SE LEE</b> en esa rama. Eso no es un
+        ''' detalle: se probaron ocho hipótesis sobre qué cantidad geométrica reproducía ese campo
+        ''' contra 272.533 links reales del corpus y NINGUNA pasaba del 1,3 % de aciertos. La razón no
+        ''' era que faltara la fórmula linda: era que <b>el corpus usa la OTRA rama</b> — las dos
+        ''' prendas vanilla de prueba traen <c>useRestPoseConfig = True</c> (189 y 834 links). Ahí sí
+        ''' se lee, y la ley está abajo. Es la diferencia entre leer el binario y adivinar.</para>
+        '''
+        ''' <para>La rama de rest-pose (<c>0x1419F9CF0</c>) tiene la MISMA forma; lo único que cambia es
+        ''' que a <c>v</c> se le suma un offset construido con la geometría de la bisagra:</para>
+        ''' <code>
+        '''     a = A−C ; b = B−C ; d = D−C
+        '''     n1 = d × a ; n2 = b × d          ' las normales de los dos triángulos que comparten C-D
+        '''     ŝ = normalize(n̂1 + n̂2)
+        '''     w = v + restCurvature · (|n1|·|n2| / |d|²) · ŝ
+        ''' </code>
+        ''' <para>Con <c>restCurvature = 0</c> colapsa exactamente en la rama lineal, que es la
+        ''' comprobación de que las dos leyes son la misma familia.</para>
+        '''
+        ''' <para>Es lineal y sin normalizar: <c>v</c> es el vector de curvatura discreta y el paso es
+        ''' un descenso de gradiente sobre <c>½|v|²</c>. Por eso <c>bendStiffness</c> viene NEGATIVO en
+        ''' el archivo — con <c>S &lt; 0</c> el empuje va contra la curvatura. Si alguien "arregla" el
+        ''' signo, la tela EXPLOTA en vez de aplanarse.</para>
+        '''
+        ''' <para>⚠️ El <c>v</c> se calcula UNA vez y las cuatro escrituras usan ESE valor (Jacobi
+        ''' dentro del link, no Gauss-Seidel). El motor hace exactamente eso: computa <c>xmm11</c> y
+        ''' recién después escribe las cuatro posiciones.</para>
+        ''' </summary>
+        Private Shared Sub SolveBend(st As ClothSimState)
+            Dim P = st.Positions
+            Dim inv = st.InvMass
+            For Each b In st.Bend
+                ' `v` es el vector de curvatura discreta, y es COMUN a las dos ramas.
+                Dim w = P(b.A) * b.WA + P(b.B) * b.WB + P(b.C) * b.WC + P(b.D) * b.WD
+
+                If b.UseRestPose Then
+                    ' --- rama 0x1419F9CF0: la curvatura de reposo entra como un OFFSET de `v` ---
+                    ' El motor arma las normales de los dos triangulos que comparten la arista C-D:
+                    '     a = A−C   b = B−C   d = D−C
+                    '     n1 = d × a          n2 = b × d
+                    ' (el orden sale del patron `shufps 0xC9`, que produce el cross NEGADO; ver la
+                    ' derivacion en el doc de RE). Despues:
+                    '     ŝ      = normalize(n̂1 + n̂2)          ' la bisectriz de las dos normales
+                    '     factor = |n1|·|n2| / |d|²
+                    '     w      = v + restCurvature · factor · ŝ
+                    Dim pa = P(b.A), pb = P(b.B), pc = P(b.C), pd = P(b.D)
+                    Dim ea = pa - pc
+                    Dim eb = pb - pc
+                    Dim ed = pd - pc
+                    Dim n1 = Vector3.Cross(ed, ea)
+                    Dim n2 = Vector3.Cross(eb, ed)
+                    Dim l1 = n1.Length()
+                    Dim l2 = n2.Length()
+                    ' El motor calcula 1/|n| con `rsqrtps` y lo ANULA si |n|² <= 0 (`cmpleps`+`andnps`),
+                    ' asi que una normal degenerada aporta el vector cero en vez de un infinito.
+                    Dim u1 = If(l1 > 0.0F, n1 / l1, Vector3.Zero)
+                    Dim u2 = If(l2 > 0.0F, n2 / l2, Vector3.Zero)
+                    Dim suma = u1 + u2
+                    Dim ls = suma.Length()
+                    Dim bisec = If(ls > 0.0F, suma / ls, Vector3.Zero)   ' misma guarda, sobre |ŝ|²
+                    Dim d2 = ed.LengthSquared()
+                    ' ⚠️ El motor hace `rcpps` + UN paso de Newton (la constante 2.0 de 0x142629500) y
+                    ' NO guarda el caso |d|² = 0: ahi produce infinito. Aca se guarda, porque una arista
+                    ' degenerada de un solo triangulo envenenaria con NaN la prenda entera y el resto
+                    ' del simulador no lo podria distinguir de una explosion real de la fisica.
+                    If d2 > 0.0F Then
+                        ' La constante que multiplica al factor es 1.0 (leida de 0x142929850), o sea
+                        ' que no hay escala escondida: el factor es exactamente |n1|·|n2|/|d|².
+                        w += bisec * (b.RestCurvature * (l1 * l2 / d2))
+                    End If
+                End If
+
+                ' `k` (el factor por-set de `StiffnessFactor`, 0x1418C6420) vale 1.0 salvo en el modo
+                ' adaptativo, que este simulador no implementa: se omite el producto por 1.
+                ' ⚠️ Las cuatro escrituras usan el MISMO `w`, calculado antes de tocar ninguna posicion
+                ' (Jacobi dentro del link). El motor hace exactamente eso.
+                Dim s = b.Stiffness
+                P(b.A) += w * (s * b.WA * inv(b.A))
+                P(b.B) += w * (s * b.WB * inv(b.B))
+                P(b.C) += w * (s * b.WC * inv(b.C))
+                P(b.D) += w * (s * b.WD * inv(b.D))
             Next
         End Sub
 
