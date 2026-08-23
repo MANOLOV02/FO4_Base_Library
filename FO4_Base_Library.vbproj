@@ -4,6 +4,28 @@
     <Configurations>Debug;Release;Publish</Configurations>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Platforms>x86;x64</Platforms>
+    <!-- ⛔ NETSDK1047 INTERMITENTE: "project.assets.json no tiene un destino para net8.0-windows/win-x64".
+         LEY: `obj\project.assets.json` es UN SOLO archivo por proyecto, y `RuntimeIdentifier` (SINGULAR,
+         abajo) esta condicionado por $(Platform) — asi que la RESTAURACION escribe SOLO el target de la
+         plataforma con la que corrio, y la ultima que corre PISA a la anterior. Un build en Debug|x64
+         despues de un restore en AnyCPU muere sin que se toque una linea de codigo.
+         MEDIDO (2026-08-23): `dotnet restore` sin -p:Platform deja `targets: [net8.0-windows]` a secas;
+         con -p:Platform=x64 agrega `net8.0-windows/win-x64`. Mismo archivo, ultimo restore gana.
+         CONTRAEJEMPLO de lo que uno supondria: el $(Platform) que un proyecto se pone en su PROPIO .vbproj
+         no es propiedad GLOBAL, asi que NO baja por el ProjectReference. Medido: restaurar
+         Tools\HavokLayoutGate — y tambien Tools\ParityGate, que tiene el guard `Platform=x64` — deja esta
+         lib en AnyCPU. O sea que cualquiera de los ~113 probes de Tools\ rompe el build de VS.
+         La otra fuente: FO4_NPC_Manager.sln mapea esta lib `Debug|Any CPU` -> `Debug|Any CPU` de verdad
+         (no lo remapea a x64 como hace Wardrobe_Manager.sln). De ahi salieron `obj\Any CPU\` y `bin\Any CPU\`.
+         `RuntimeIdentifiers` (PLURAL) es la declaracion que lee la RESTAURACION: emite los DOS targets
+         siempre, corra con la plataforma que corra, y el build encuentra el suyo.
+         NO elige plataforma ni cambia la salida — eso lo siguen decidiendo `RuntimeIdentifier`/
+         `PlatformTarget` de los grupos condicionales. A/B con el MISMO Restore+Rebuild en los dos lados:
+         PlatformTarget, RuntimeIdentifier, SelfContained y TargetPath identicos en x64 y en x86;
+         `deps.json` byte-identico; bin identico (13 archivos, mismos tamanos) salvo los .pdb, que no son
+         deterministas ni entre dos rebuilds seguidos del MISMO arbol (control corrido: dos Rebuild
+         identicos dan .dll con md5 distinto, asi que el hash del binario NO sirve de instrumento aca). -->
+    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
     <RootNamespace>FO4_Base_Library</RootNamespace>
     <UseWindowsForms>true</UseWindowsForms>
     <MyType>Windows</MyType>

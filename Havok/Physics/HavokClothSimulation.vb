@@ -66,6 +66,12 @@ Namespace Havok.Physics
         Public Previous As Vector3()
         Public InvMass As Single()
         Public Mass As Single()
+        ''' <summary>`particleDatas[i].radius` (+0x08). El motor exige que la particula quede SEPARADA
+        ''' del plano de contacto por SU radio, no pegada a la superficie del colisionable.</summary>
+        Public Radius As Single()
+        ''' <summary>`particleDatas[i].friction` (+0x0C). Escala la componente TANGENCIAL de la
+        ''' velocidad Verlet en el contacto.</summary>
+        Public Friction As Single()
         ''' <summary>Índices (en el espacio de PARTÍCULA) de las partículas fijas.</summary>
         Public Fixed As Integer()
         Public Gravity As Vector3
@@ -82,6 +88,12 @@ Namespace Havok.Physics
         ''' <summary>`hclStretchLinkConstraintSet`. Lista APARTE porque su ley es OTRA, no un
         ''' parametro distinto de la misma: ver <see cref="HavokClothSimulation.SolveStretchLinks"/>.</summary>
         Public Stretch As New List(Of DistanceLink)
+        ''' <summary>`hclBendLinkConstraintSet`: un link de RANGO con dos topes y dos rigideces.</summary>
+        Public BendLinks As New List(Of RangoLink)
+        ''' <summary>`hclCompressibleLinkConstraintSet`: la pareja confinada a [min, max].</summary>
+        Public Compressible As New List(Of RangoLink)
+        ''' <summary>`hclBonePlanesConstraintSet`: un plano pegado a un hueso por particula.</summary>
+        Public BonePlanes As New List(Of BonePlaneConstraint)
         Public LocalRange As New List(Of LocalRangeConstraint)
         Public Bend As New List(Of BendLink)
         ''' <summary>Los constraint sets EN EL ORDEN QUE LOS DECLARA EL ARCHIVO. Ver
@@ -103,6 +115,9 @@ Namespace Havok.Physics
         Stretch
         Bend
         LocalRange
+        BendLink
+        Compressible
+        BonePlane
     End Enum
 
     ''' <summary>
@@ -160,6 +175,38 @@ Namespace Havok.Physics
     ''' la particula con TRES limites — uno radial y dos sobre el eje de la NORMAL de referencia.
     ''' Ver <see cref="HavokClothSimulation.SolveLocalRange"/>.
     ''' </summary>
+    ''' <summary>
+    ''' Un link con DOS topes. Lo comparten `hclBendLinkConstraintSet` y
+    ''' `hclCompressibleLinkConstraintSet`, que tienen la misma forma de dato pero LEYES DISTINTAS
+    ''' — ver los dos solvers.
+    ''' </summary>
+    Friend Structure RangoLink
+        Public A As Integer
+        Public B As Integer
+        ''' <summary>Tope inferior: `bendMinLength` / `compressionLength`.</summary>
+        Public Min As Single
+        ''' <summary>Tope superior: `stretchMaxLength` / `restLength`.</summary>
+        Public Max As Single
+        ''' <summary>Rigidez del tope inferior (`bendStiffness`). En el compresible es la unica.</summary>
+        Public StiffMin As Single
+        ''' <summary>Rigidez del tope superior (`stretchStiffness`).</summary>
+        Public StiffMax As Single
+    End Structure
+
+    ''' <summary>Un `hclBonePlanesConstraintSetBonePlane` (32 bytes) ya resuelto a hueso vivo.</summary>
+    Friend Structure BonePlaneConstraint
+        Public Particle As Integer
+        ''' <summary>Nombre del hueso cuya matriz define el plano. Se resuelve por nombre porque la app
+        ''' no modela el transform-set del motor: lo aproxima con el esqueleto vivo.</summary>
+        Public BoneName As String
+        ''' <summary>`planeEquationBone`: (nx, ny, nz) en el espacio DEL HUESO, y w = la distancia.</summary>
+        Public Nx As Single
+        Public Ny As Single
+        Public Nz As Single
+        Public D As Single
+        Public Stiffness As Single
+    End Structure
+
     Friend Structure LocalRangeConstraint
         Public Particle As Integer
         ''' <summary>Indice de VERTICE de la malla skinneada (NO de particula). Difieren en el 13 % del corpus.</summary>
@@ -305,7 +352,7 @@ Namespace Havok.Physics
                 Dim normalesRef As New Dictionary(Of Integer, Vector3)
                 Dim skinned = BuildSkinnedByVertex(cfg.ObjectSpaceSkin, clothSkel, bindWorld, skeleton, normalesRef)
 
-                EnsureState(st, sim, cfg, particleCount, dt)
+                EnsureState(st, sim, cfg, particleCount, dt, clothSkel)
 
                 ' --- destino de cada partícula en ESTE frame (la piel posada) ---
                 Dim target = BuildTargets(st, sim, cfg, skinned, particleCount)
@@ -336,7 +383,18 @@ Namespace Havok.Physics
                         Next
                     End If
                     Dim resumen = String.Join(",", clases.GroupBy(Function(x) x).Select(Function(g) $"{g.Key}x{g.Count()}"))
-                    Logger.LogLazy(Function() $"[CLOTH-CONSTR] particulas={nPart} links={nLinks} localRange={nRange} fijas={nFixed} capsulas={nCaps} sets=[{resumen}]")
+                    ' ⛔ ANTI-PINCH. El motor, DESPUES de resolver los contactos, recorre
+                    ' `hclSimClothData.antiPinchConstraintSets` (+0xC8, cuenta en +0xD0) y llama al
+                    ' `solve` virtual (+0x48) de cada uno con k = 1.0 — leido de CollideAndSolve
+                    ' (0x141A69730, el bucle de 0x141A699B0 a 0x141A699E5, constante en 0x142929458).
+                    ' Es el unico paso que puede REPARAR lo que la colision rompio: medido, la violacion
+                    ' de links pasa de 0,2 % a 38,7 % en cuanto entran las capsulas.
+                    Dim nap = If(sim.AntiPinchConstraintSets Is Nothing, -1, sim.AntiPinchConstraintSets.Count)
+                    ' Los dos numeros que deciden CUANTAS veces corre el bucle. El motor:
+                    '   por substep: integrar Verlet, luego `numberOfSolveIterations` x (constraints + colision)
+                    ' Con pocas iteraciones la colision rompe los links y nada los vuelve a resolver.
+                    Dim nss = st.SubSteps, nit = st.SolveIterations
+                    Logger.LogLazy(Function() $"[CLOTH-CONSTR] particulas={nPart} links={nLinks} localRange={nRange} fijas={nFixed} capsulas={nCaps} antiPinch={nap} substeps={nss} iteraciones={nit} sets=[{resumen}]")
                 End If
 
                 If Logger.Enabled AndAlso st.Links IsNot Nothing AndAlso st.Links.Count > 0 Then
@@ -391,12 +449,12 @@ Namespace Havok.Physics
                     Next
                     st.Seeded = True
                     If HavokPhysicsSettings.Mode = HavokPhysicsMode.FullSimulation AndAlso Not teleported Then
-                        Settle(st, target, skinned, normalesRef)
+                        Settle(st, target, skinned, normalesRef, skeleton)
                     End If
                 End If
 
                 If HavokPhysicsSettings.Mode = HavokPhysicsMode.FullSimulation Then
-                    Simulate(st, target, skinned, normalesRef, dt)
+                    Simulate(st, target, skinned, normalesRef, skeleton, dt)
                 End If
 
                 If Logger.Enabled AndAlso st.Links IsNot Nothing AndAlso st.Links.Count > 0 Then
@@ -424,7 +482,8 @@ Namespace Havok.Physics
         ' Estado: parámetros authored + topología de constraints (una vez por bloque)
         ' -----------------------------------------------------------------------------------------
         Private Shared Sub EnsureState(st As ClothSimState, sim As HclSimClothDataDetail_Class,
-                                       cfg As HclClothConfigGraph_Class, particleCount As Integer, dt As Single)
+                                       cfg As HclClothConfigGraph_Class, particleCount As Integer, dt As Single,
+                                       clothSkel As Havok.Canon.Objects.HkObj_HkaSkeleton)
             If st.Positions IsNot Nothing AndAlso st.Positions.Length = particleCount Then
                 RecomputeDamping(st, sim, dt)
                 Exit Sub
@@ -437,9 +496,15 @@ Namespace Havok.Physics
             ReDim st.Previous(particleCount - 1)
             ReDim st.InvMass(particleCount - 1)
             ReDim st.Mass(particleCount - 1)
+            ReDim st.Radius(particleCount - 1)
+            ReDim st.Friction(particleCount - 1)
             For i = 0 To particleCount - 1
                 st.Mass(i) = sim.ParticleDatas(i).Mass
                 st.InvMass(i) = sim.ParticleDatas(i).InverseMass
+                st.Radius(i) = sim.ParticleDatas(i).Radius
+                st.Friction(i) = sim.ParticleDatas(i).Friction
+                _radMin = Math.Min(_radMin, st.Radius(i)) : _radMax = Math.Max(_radMax, st.Radius(i))
+                _friMin = Math.Min(_friMin, st.Friction(i)) : _friMax = Math.Max(_friMax, st.Friction(i))
             Next
             st.Fixed = sim.FixedParticleIndices.Where(Function(x) x >= 0 AndAlso x < particleCount).ToArray()
 
@@ -472,6 +537,23 @@ Namespace Havok.Physics
             st.GatherMapHas = Nothing
             If cfg.GatherAllVertices IsNot Nothing AndAlso cfg.GatherAllVertices.GatheredVertexIndices.Count > 0 Then
                 st.GatherMap = cfg.GatherAllVertices.GatheredVertexIndices.ToArray()
+            ElseIf cfg.GatherSomeVertices IsNot Nothing AndAlso cfg.GatherSomeVertices.Pairs IsNot Nothing AndAlso
+                   cfg.GatherSomeVertices.Pairs.Count > 0 Then
+                ' `hclGatherSomeVerticesOperator` — el MISMO puente que el GatherAll, pero con los pares
+                ' explicitos `{uint16 indexInput; uint16 indexOutput;}` (+0x20, stride 4) en vez de un
+                ' array indexado por particula. Su layout lo declara la reflexion y el parser ya lo leia;
+                ' lo unico que faltaba era conectarlo. Es PARCIAL por definicion — "some" —, asi que
+                ' lleva mascara de validez igual que el de MoveParticles.
+                Dim map(particleCount - 1) As UShort
+                Dim has(particleCount - 1) As Boolean
+                For Each pr In cfg.GatherSomeVertices.Pairs
+                    Dim pi = CInt(pr.Target)
+                    If pi < 0 OrElse pi >= particleCount Then Continue For
+                    map(pi) = CUShort(pr.Source)
+                    has(pi) = True
+                Next
+                st.GatherMap = map
+                st.GatherMapHas = has
             ElseIf cfg.MoveParticles IsNot Nothing AndAlso cfg.MoveParticles.Pairs IsNot Nothing Then
                 Dim map(particleCount - 1) As UShort
                 Dim has(particleCount - 1) As Boolean
@@ -485,7 +567,18 @@ Namespace Havok.Physics
                 st.GatherMapHas = has
             End If
 
-            BuildConstraints(st, sim, particleCount)
+            If Logger.Enabled Then
+                ' ⛔ EL DATO, ANTES DE CULPAR A LA LEY. La friccion escala una correccion de velocidad:
+                ' con valores > 1 el paso INVIERTE la velocidad tangencial en vez de frenarla, y eso
+                ' mete energia. Saber el rango real del corpus separa "la ley esta mal transcripta" de
+                ' "la ley esta bien y el dato pide otra cosa".
+                Dim a = _radMin, b = _radMax, cq = _friMin, dq = _friMax
+                Logger.LogLazy(Function() $"[CLOTH-PART] radio=[{a:F4}..{b:F4}] friccion=[{cq:F4}..{dq:F4}]")
+                _radMin = Single.MaxValue : _radMax = Single.MinValue
+                _friMin = Single.MaxValue : _friMax = Single.MinValue
+            End If
+
+            BuildConstraints(st, sim, particleCount, clothSkel)
             RecomputeDamping(st, sim, dt)
         End Sub
 
@@ -505,9 +598,13 @@ Namespace Havok.Physics
             End If
         End Sub
 
-        Private Shared Sub BuildConstraints(st As ClothSimState, sim As HclSimClothDataDetail_Class, particleCount As Integer)
+        Private Shared Sub BuildConstraints(st As ClothSimState, sim As HclSimClothDataDetail_Class, particleCount As Integer,
+                                            clothSkel As Havok.Canon.Objects.HkObj_HkaSkeleton)
             st.Links.Clear()
             st.Stretch.Clear()
+            st.BendLinks.Clear()
+            st.Compressible.Clear()
+            st.BonePlanes.Clear()
             st.LocalRange.Clear()
             st.Bend.Clear()
             st.Blocks.Clear()
@@ -527,6 +624,63 @@ Namespace Havok.Physics
                     Dim ini = st.Stretch.Count
                     AddLinks(st, stretch.LinkDetails, particleCount, st.Stretch)
                     st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.Stretch, .Start = ini, .Count = st.Stretch.Count - ini})
+                    Continue For
+                End If
+                Dim bp = TryCast(detail, HclBonePlanesConstraintSetDetail_Class)
+                If bp IsNot Nothing Then
+                    Dim ini = st.BonePlanes.Count
+                    For Each pl In bp.Constraints
+                        Dim pi = CInt(pl.ParticleIndex)
+                        If pi < 0 OrElse pi >= particleCount Then Continue For
+                        ' ⛔ `transformIndex` indexa el TRANSFORM SET del motor. La app no lo modela, y
+                        ' la unica correspondencia que puede sostener es la del esqueleto de la prenda:
+                        ' se resuelve a NOMBRE de hueso y se comprueba. Si el indice se sale, la
+                        ' constraint se SALTEA y se loguea — antes que aplicar un plano de otro hueso.
+                        Dim ti = CInt(pl.TransformIndex)
+                        Dim nm As String = Nothing
+                        If clothSkel IsNot Nothing AndAlso clothSkel.Bones IsNot Nothing AndAlso
+                           ti >= 0 AndAlso ti < clothSkel.Bones.Count Then
+                            nm = clothSkel.Bones(ti)?.Name
+                        End If
+                        If String.IsNullOrWhiteSpace(nm) Then
+                            If Logger.Enabled Then
+                                Dim tq = ti
+                                Logger.LogLazy(Function() $"[CLOTH-PLANO] transformIndex={tq} fuera del esqueleto de la prenda ⇒ constraint SALTEADA")
+                            End If
+                            Continue For
+                        End If
+                        st.BonePlanes.Add(New BonePlaneConstraint With {
+                            .Particle = pi, .BoneName = nm.Trim(),
+                            .Nx = pl.NormalX, .Ny = pl.NormalY, .Nz = pl.NormalZ, .D = pl.PlaneDistance,
+                            .Stiffness = pl.Stiffness})
+                    Next
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.BonePlane, .Start = ini, .Count = st.BonePlanes.Count - ini})
+                    Continue For
+                End If
+                Dim blk2 = TryCast(detail, HclBendLinkConstraintSetDetail_Class)
+                If blk2 IsNot Nothing Then
+                    Dim ini = st.BendLinks.Count
+                    For Each l In blk2.Links
+                        Dim a = CInt(l.ParticleA), b = CInt(l.ParticleB)
+                        If a < 0 OrElse b < 0 OrElse a >= particleCount OrElse b >= particleCount OrElse a = b Then Continue For
+                        st.BendLinks.Add(New RangoLink With {.A = a, .B = b,
+                                                             .Min = l.BendMinLength, .Max = l.StretchMaxLength,
+                                                             .StiffMin = l.BendStiffness, .StiffMax = l.StretchStiffness})
+                    Next
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.BendLink, .Start = ini, .Count = st.BendLinks.Count - ini})
+                    Continue For
+                End If
+                Dim cl = TryCast(detail, HclCompressibleLinkConstraintSetDetail_Class)
+                If cl IsNot Nothing Then
+                    Dim ini = st.Compressible.Count
+                    For Each l In cl.Links
+                        Dim a = CInt(l.ParticleA), b = CInt(l.ParticleB)
+                        If a < 0 OrElse b < 0 OrElse a >= particleCount OrElse b >= particleCount OrElse a = b Then Continue For
+                        st.Compressible.Add(New RangoLink With {.A = a, .B = b,
+                                                                .Min = l.CompressionLength, .Max = l.RestLength,
+                                                                .StiffMin = l.Stiffness, .StiffMax = l.Stiffness})
+                    Next
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.Compressible, .Start = ini, .Count = st.Compressible.Count - ini})
                     Continue For
                 End If
                 Dim bend = TryCast(detail, HclBendStiffnessConstraintSetDetail_Class)
@@ -810,7 +964,7 @@ Namespace Havok.Physics
         ' El bucle del motor
         ' -----------------------------------------------------------------------------------------
         Private Shared Sub Simulate(st As ClothSimState, target As Vector3(), skinned As Dictionary(Of Integer, Vector3),
-                                    normalesRef As Dictionary(Of Integer, Vector3), dt As Single)
+                                    normalesRef As Dictionary(Of Integer, Vector3), skeleton As SkeletonInstance, dt As Single)
             Dim n = st.Positions.Length
             Dim substeps = st.SubSteps
             Dim dtSub = dt / substeps
@@ -858,6 +1012,12 @@ Namespace Havok.Physics
                                 SolveStretchLinks(st, blk.Start, blk.Count)
                             Case ConstraintKind.Bend
                                 If HavokPhysicsSettings.EnableBend Then SolveBend(st, blk.Start, blk.Count)
+                            Case ConstraintKind.BendLink
+                                SolveBendLinks(st, blk.Start, blk.Count)
+                            Case ConstraintKind.Compressible
+                                SolveCompressibleLinks(st, blk.Start, blk.Count)
+                            Case ConstraintKind.BonePlane
+                                SolveBonePlanes(st, skeleton, blk.Start, blk.Count)
                             Case ConstraintKind.LocalRange
                                 If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned, normalesRef, blk.Start, blk.Count)
                         End Select
@@ -869,10 +1029,10 @@ Namespace Havok.Physics
 
         ''' <summary>Asentamiento inicial: `uNumSimSettleSteps` = 10 pasos con gravedad, sin avanzar el reloj.</summary>
         Private Shared Sub Settle(st As ClothSimState, target As Vector3(), skinned As Dictionary(Of Integer, Vector3),
-                                  normalesRef As Dictionary(Of Integer, Vector3))
+                                  normalesRef As Dictionary(Of Integer, Vector3), skeleton As SkeletonInstance)
             Dim steps = Math.Max(0, HavokPhysicsSettings.SettleSteps)
             For s = 0 To steps - 1
-                Simulate(st, target, skinned, normalesRef, HavokPhysicsSettings.FixedTimeStep)
+                Simulate(st, target, skinned, normalesRef, skeleton, HavokPhysicsSettings.FixedTimeStep)
             Next
         End Sub
 
@@ -908,6 +1068,126 @@ Namespace Havok.Physics
                 Dim len = CSng(Math.Sqrt(d2))
                 Dim dir = d / len
                 Dim c = dir * ((len - l.Rest) * l.Stiffness)
+                P(l.A) += c * inv(l.A)
+                P(l.B) -= c * inv(l.B)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `hclBonePlanesConstraintSet` — un plano pegado a un hueso, por particula. Ley leida de
+        ''' <c>0x1419FCB80</c>, al que se llega por RTTI: el nombre <c>.?AVhclBonePlanesConstraintSet@@</c>
+        ''' da el TypeDescriptor, su referencia da el CompleteObjectLocator, y el puntero al COL esta
+        ''' justo ANTES de la vtable (<c>0x1426FE950</c>), cuyo <c>+0x48</c> es el <c>solve</c>. Hizo
+        ''' falta ese camino porque este set NO tiene cadena de temporizador propia.
+        '''
+        ''' <para>El struct mide <b>32 bytes</b>: <c>vector4 planeEquationBone; uint16 particleIndex,
+        ''' transformIndex; real stiffness</c>. El cuerpo (rama <c>0x1419FCBD0</c>):</para>
+        ''' <code>
+        '''     M = transformSet[transformIndex]                       ' matriz 4x4 del hueso
+        '''     n = plane.x·M.fila0 + plane.y·M.fila1 + plane.z·M.fila2 ' la normal al mundo, SIN traslacion
+        '''     o = M.fila3                                            ' el origen del hueso
+        '''     s = dot(P − o, n) + plane.w                            ' distancia con signo al plano
+        '''     si s &lt; 0:  P += (−s) · stiffness · k · n              ' UNILATERAL
+        ''' </code>
+        ''' <para>El "si s &lt; 0" en el binario no es un salto: es una mascara de signo
+        ''' (<c>psrad xmm3, 0x1F</c>) y un <c>andps</c>/<c>andnps</c>/<c>orps</c> que elige entre la
+        ''' posicion corregida y la original. Sin rama, mismo resultado.</para>
+        ''' <para>⚠️ La app no modela el transform-set del motor: resuelve <c>transformIndex</c> contra
+        ''' el esqueleto de la prenda y usa el hueso vivo. Si el indice no cae ahi, la constraint se
+        ''' saltea y se loguea, en vez de aplicar el plano de OTRO hueso.</para>
+        ''' </summary>
+        Private Shared Sub SolveBonePlanes(st As ClothSimState, skeleton As SkeletonInstance,
+                                           start As Integer, count As Integer)
+            If skeleton Is Nothing Then Exit Sub
+            Dim P = st.Positions
+            For i = start To start + count - 1
+                Dim c = st.BonePlanes(i)
+                If st.InvMass(c.Particle) = 0.0F Then Continue For
+                Dim hueso As HierarchiBone_class = Nothing
+                If Not skeleton.SkeletonDictionary.TryGetValue(c.BoneName, hueso) OrElse hueso Is Nothing Then Continue For
+                Dim g = hueso.GetGlobalTransform
+                If g Is Nothing Then Continue For
+                Dim m = g.ToMatrix4()
+                ' La normal al mundo: SOLO la parte de rotacion, sin la fila de traslacion.
+                Dim n As New Vector3(
+                    c.Nx * m.M11 + c.Ny * m.M21 + c.Nz * m.M31,
+                    c.Nx * m.M12 + c.Ny * m.M22 + c.Nz * m.M32,
+                    c.Nx * m.M13 + c.Ny * m.M23 + c.Nz * m.M33)
+                Dim o As New Vector3(m.M41, m.M42, m.M43)
+                Dim sdist = Vector3.Dot(P(c.Particle) - o, n) + c.D
+                If sdist >= 0.0F Then Continue For
+                P(c.Particle) += n * (-sdist * c.Stiffness)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `hclBendLinkConstraintSet` — un link de RANGO con dos topes y dos rigideces. Ley leida de
+        ''' <c>0x1419F8F70</c> (cadena <c>"TtSolve Bend Links"</c> en <c>0x142717810</c>). El struct
+        ''' mide <b>20 bytes</b>: <c>uint16 particleA, particleB; real bendMinLength, stretchMaxLength,
+        ''' bendStiffness, stretchStiffness</c>.
+        ''' <code>
+        '''     d = P[B] − P[A] ; L = |d|
+        '''     c = ( max(0, L − stretchMaxLength) · stretchStiffness
+        '''         − max(0, bendMinLength − L)   · bendStiffness ) · k · d̂
+        '''     P[A] += invMass[A] · c
+        '''     P[B] −= invMass[B] · c
+        ''' </code>
+        ''' <para>Los dos términos son unilaterales (<c>maxps</c> contra cero) y de SIGNO OPUESTO: uno
+        ''' frena el estirón por arriba de <c>stretchMaxLength</c> y el otro empuja hacia afuera por
+        ''' debajo de <c>bendMinLength</c>. Entre los dos topes no hace nada.</para>
+        ''' </summary>
+        Private Shared Sub SolveBendLinks(st As ClothSimState, start As Integer, count As Integer)
+            Dim P = st.Positions
+            Dim inv = st.InvMass
+            For i = start To start + count - 1
+                Dim l = st.BendLinks(i)
+                Dim d = P(l.B) - P(l.A)
+                Dim d2 = d.LengthSquared()
+                If d2 <= 0.0F Then Continue For
+                Dim len = CSng(Math.Sqrt(d2))
+                Dim dir = d / len
+                Dim estiron = len - l.Max
+                If estiron < 0.0F Then estiron = 0.0F
+                Dim compres = l.Min - len
+                If compres < 0.0F Then compres = 0.0F
+                Dim c = dir * ((estiron * l.StiffMax) - (compres * l.StiffMin))
+                P(l.A) += c * inv(l.A)
+                P(l.B) -= c * inv(l.B)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `hclCompressibleLinkConstraintSet` — la pareja confinada a un INTERVALO. Ley leida de
+        ''' <c>0x1419FE850</c> (cadena <c>"TtSolve Compressible Links"</c> en <c>0x142718270</c>).
+        ''' Struct de <b>16 bytes</b>: <c>uint16 particleA, particleB; real restLength,
+        ''' compressionLength, stiffness</c>.
+        ''' <code>
+        '''     L = |P[B] − P[A]|
+        '''     objetivo = L
+        '''     si L &gt; restLength         ⇒ objetivo = restLength
+        '''     si compressionLength &gt; L  ⇒ objetivo = compressionLength
+        '''     si objetivo = L           ⇒ no hace nada
+        '''     c = (L − objetivo) · stiffness · k · d̂
+        ''' </code>
+        ''' <para>⛔ El orden de las dos comparaciones es el del binario (<c>ucomiss</c> +
+        ''' <c>seta</c> + dos saltos): la de COMPRESION gana si las dos aplican, que solo puede pasar
+        ''' con datos incoherentes (<c>compressionLength &gt; restLength</c>). Se replica en vez de
+        ''' "corregirlo", porque corregirlo seria inventar otra ley.</para>
+        ''' </summary>
+        Private Shared Sub SolveCompressibleLinks(st As ClothSimState, start As Integer, count As Integer)
+            Dim P = st.Positions
+            Dim inv = st.InvMass
+            For i = start To start + count - 1
+                Dim l = st.Compressible(i)
+                Dim d = P(l.B) - P(l.A)
+                Dim d2 = d.LengthSquared()
+                If d2 <= 0.0F Then Continue For
+                Dim len = CSng(Math.Sqrt(d2))
+                Dim objetivo = len
+                If len > l.Max Then objetivo = l.Max
+                If l.Min > len Then objetivo = l.Min
+                If objetivo = len Then Continue For
+                Dim c = (d / len) * ((len - objetivo) * l.StiffMin)
                 P(l.A) += c * inv(l.A)
                 P(l.B) -= c * inv(l.B)
             Next
@@ -1106,25 +1386,65 @@ Namespace Havok.Physics
             Next
         End Sub
 
+        ''' <summary>
+        ''' Colision contra las capsulas. La ley sale de `TtSolve Contacts` (cadena en 0x14270C160,
+        ''' funcion 0x141960214), que resuelve una lista de CONTACTOS de 48 bytes cada uno — punto del
+        ''' plano, normal y el movimiento del colisionable:
+        ''' <code>
+        '''     d = dot(P - contactPos, n) - particleRadius
+        '''     si d &lt; 0:  P += (-d)*n                       ' solo penetrando
+        '''     ' friccion, sobre Pprev:
+        '''     v  = (P - Pprev) - movimientoDelColisionable
+        '''     vt = v - n*dot(n, v)                          ' componente tangencial
+        '''     Pprev += vt * particleFriction
+        ''' </code>
+        '''
+        ''' <para>⛔⛔ EL RADIO DE LA PARTICULA. Esto empujaba la particula hasta la SUPERFICIE de la
+        ''' capsula e ignoraba <c>particleDatas[i].radius</c>. El motor pide
+        ''' <c>dot(P - contacto, n) &gt;= particleRadius</c>: la particula queda SEPARADA de la capsula
+        ''' por su propio radio. Es exactamente el sintoma de «la pierna asoma por el vestido» — la
+        ''' tela quedaba pegada a la capsula de COLISION, y la malla VISIBLE de la pierna sobresale de
+        ''' esa capsula.</para>
+        '''
+        ''' <para>⚠️ DECLARADO: la lista de contactos del motor la arma una fase aparte
+        ''' (<c>TtiterateCollidables</c> → <c>computeContactPlanes</c>/<c>collideConvexes</c>,
+        ''' 0x14195DAB1) que aca NO esta replicada; el contacto se deriva de la capsula en el momento.
+        ''' Esa es la aproximacion que queda, y el termino de movimiento del colisionable no entra.</para>
+        ''' </summary>
         Private Shared Sub SolveCapsules(st As ClothSimState)
             If st.Capsules.Count = 0 Then Exit Sub
             For i = 0 To st.Positions.Length - 1
                 If st.InvMass(i) = 0.0F Then Continue For
                 Dim p = st.Positions(i)
+                Dim pr = st.Radius(i)
                 For Each c In st.Capsules
                     Dim t = 0.0F
                     Dim closest = ClosestPointOnSegment(p, c.A, c.B, t)
-                    ' Radio INTERPOLADO por la posición sobre el eje: la cápsula es un cono truncado,
+                    ' Radio INTERPOLADO por la posicion sobre el eje: la capsula es un cono truncado,
                     ' no un cilindro (602 de 602 tapered del corpus tienen los dos radios distintos).
                     Dim radius = c.Radius + ((c.RadiusB - c.Radius) * t)
+                    ' El plano de contacto es la superficie de la capsula; el motor separa la
+                    ' particula de ESE plano por su propio radio.
+                    Dim objetivo = radius + pr
                     Dim d = p - closest
                     Dim len = d.Length
-                    If len >= radius Then Continue For
+                    If len >= objetivo Then Continue For
+                    Dim n As Vector3
                     If len <= 0.000001F Then
-                        p = closest + New Vector3(0.0F, 0.0F, radius)
+                        n = New Vector3(0.0F, 0.0F, 1.0F)
                     Else
-                        p = closest + (d * (radius / len))
+                        n = d / len
                     End If
+                    Dim nueva = closest + n * objetivo
+                    ' Friccion: la componente TANGENCIAL de la velocidad Verlet se lleva hacia el
+                    ' contacto. Con friction = 0 es no-op, o sea exactamente lo que habia antes.
+                    Dim fr = st.Friction(i)
+                    If fr <> 0.0F Then
+                        Dim v = nueva - st.Previous(i)
+                        Dim vt = v - n * Vector3.Dot(n, v)
+                        st.Previous(i) += vt * fr
+                    End If
+                    p = nueva
                 Next
                 st.Positions(i) = p
             Next
@@ -1160,9 +1480,21 @@ Namespace Havok.Physics
                 boneByCollidable(bnd.Collidable) = bnd.BoneName.Trim()
             Next
 
+            ' ⛔ POR QUE SE CUENTAN LOS DESCARTES. `capsulas=0` puede significar dos cosas opuestas —
+            ' "el archivo no declara colisionables" o "los declara y nosotros no los sabemos leer" — y
+            ' el sintoma en pantalla es el mismo: la pierna atraviesa la falda. Sin este desglose las
+            ' dos hipotesis son indistinguibles.
+            Dim nDecl = If(sim.CollidableDetails Is Nothing, 0, sim.CollidableDetails.Count)
+            Dim sinShape = 0, sinExtremos = 0
             For Each cd In sim.CollidableDetails
-                If cd Is Nothing OrElse cd.ShapeDetail Is Nothing Then Continue For
-                If cd.ShapeDetail.EndpointA Is Nothing OrElse cd.ShapeDetail.EndpointB Is Nothing Then Continue For
+                If cd Is Nothing OrElse cd.ShapeDetail Is Nothing Then
+                    sinShape += 1
+                    Continue For
+                End If
+                If cd.ShapeDetail.EndpointA Is Nothing OrElse cd.ShapeDetail.EndpointB Is Nothing Then
+                    sinExtremos += 1
+                    Continue For
+                End If
                 ' El transform del hclCollidable lleva la cápsula del espacio de su hueso al de la malla.
                 ' ⛔ Sólo es correcto desde que ParseCollidable lee +0x20 y no +0x18: hasta 2026-08-22 la
                 ' matriz salía corrida 8 bytes y la cápsula quedaba en cualquier lado.
@@ -1192,6 +1524,10 @@ Namespace Havok.Physics
                 Dim rB = If(cd.ShapeDetail.AuxiliaryRadius > 0.0F, cd.ShapeDetail.AuxiliaryRadius, rA)
                 st.Capsules.Add(New CapsuleCollider With {.A = a, .B = b, .Radius = rA, .RadiusB = rB})
             Next
+            If Logger.Enabled Then
+                Dim a=nDecl, b=sinShape, c2=sinExtremos, d2=st.Capsules.Count
+                Logger.LogLazy(Function() $"[CLOTH-COLL] colisionables declarados={a} · sin shape={b} · sin extremos={c2} · capsulas construidas={d2}")
+            End If
         End Sub
 
         ' -----------------------------------------------------------------------------------------
@@ -1573,6 +1909,10 @@ Namespace Havok.Physics
             Return result
         End Function
 
+        Private Shared _radMin As Single = Single.MaxValue
+        Private Shared _radMax As Single = Single.MinValue
+        Private Shared _friMin As Single = Single.MaxValue
+        Private Shared _friMax As Single = Single.MinValue
         Private Shared _normMin As Single = Single.MaxValue
         Private Shared _normMax As Single = 0.0F
 

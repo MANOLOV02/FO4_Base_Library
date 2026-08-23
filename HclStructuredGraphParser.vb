@@ -380,8 +380,8 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
                 Dim e = h.DataRelativeOffset + (i * 20)
                 result.Links.Add(New HclBendLink_Class With {
                     .ParticleA = U16(graph, e + 0), .ParticleB = U16(graph, e + 2),
-                    .Value0 = graph.ReadSingle(e + 4), .Value1 = graph.ReadSingle(e + 8),
-                    .Value2 = graph.ReadSingle(e + 12), .Value3 = graph.ReadSingle(e + 16)})
+                    .BendMinLength = graph.ReadSingle(e + 4), .StretchMaxLength = graph.ReadSingle(e + 8),
+                    .BendStiffness = graph.ReadSingle(e + 12), .StretchStiffness = graph.ReadSingle(e + 16)})
             Next
         End If
         Return result
@@ -402,7 +402,8 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
                 Dim e = h.DataRelativeOffset + (i * 16)
                 result.Links.Add(New HclCompressibleLink_Class With {
                     .ParticleA = U16(graph, e + 0), .ParticleB = U16(graph, e + 2),
-                    .Value0 = graph.ReadSingle(e + 4), .Value1 = graph.ReadSingle(e + 8), .Value2 = graph.ReadSingle(e + 12)})
+                    .RestLength = graph.ReadSingle(e + 4), .CompressionLength = graph.ReadSingle(e + 8),
+                    .Stiffness = graph.ReadSingle(e + 12)})
             Next
         End If
         Return result
@@ -424,8 +425,8 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
                 result.Constraints.Add(New HclBonePlaneConstraint_Class With {
                     .NormalX = graph.ReadSingle(e + 0), .NormalY = graph.ReadSingle(e + 4), .NormalZ = graph.ReadSingle(e + 8),
                     .PlaneDistance = graph.ReadSingle(e + 12),
-                    .BoneIndex = U16(graph, e + 16), .Index1 = U16(graph, e + 18),
-                    .Weight = graph.ReadSingle(e + 20), .Value0 = graph.ReadSingle(e + 24), .Value1 = graph.ReadSingle(e + 28)})
+                    .ParticleIndex = U16(graph, e + 16), .TransformIndex = U16(graph, e + 18),
+                    .Stiffness = graph.ReadSingle(e + 20), .Value0 = graph.ReadSingle(e + 24), .Value1 = graph.ReadSingle(e + 28)})
             Next
         End If
         Return result
@@ -1834,13 +1835,19 @@ Public Class HclGatherAllVerticesOperatorDetail_Class
 End Class
 
 ' --- Cloth-menores: detalles TIPADOS (cero bytes crudos), structs verificados por --dump multi-elemento.
+''' <summary>`hclBendLinkConstraintSetLink` — 20 bytes. Los nombres salen de la reflexion; antes
+''' eran `Value0..Value3` y por eso no se podia saber cual era cual sin abrir el binario.</summary>
 Friend Class HclBendLink_Class
     Friend Property ParticleA As Integer
     Friend Property ParticleB As Integer
-    Friend Property Value0 As Single
-    Friend Property Value1 As Single
-    Friend Property Value2 As Single
-    Friend Property Value3 As Single
+    ''' <summary>`bendMinLength` (+0x04): por debajo de esto el link EMPUJA hacia afuera.</summary>
+    Friend Property BendMinLength As Single
+    ''' <summary>`stretchMaxLength` (+0x08): por encima de esto el link FRENA el estiron.</summary>
+    Friend Property StretchMaxLength As Single
+    ''' <summary>`bendStiffness` (+0x0C).</summary>
+    Friend Property BendStiffness As Single
+    ''' <summary>`stretchStiffness` (+0x10).</summary>
+    Friend Property StretchStiffness As Single
 End Class
 Friend Class HclBendLinkConstraintSetDetail_Class
     Friend Property SourceObject As HkxVirtualObjectGraph_Class
@@ -1848,12 +1855,16 @@ Friend Class HclBendLinkConstraintSetDetail_Class
     Friend ReadOnly Property Links As New List(Of HclBendLink_Class)
 End Class
 
+''' <summary>`hclCompressibleLinkConstraintSetLink` — 16 bytes. Nombres de la reflexion.</summary>
 Friend Class HclCompressibleLink_Class
     Friend Property ParticleA As Integer
     Friend Property ParticleB As Integer
-    Friend Property Value0 As Single
-    Friend Property Value1 As Single
-    Friend Property Value2 As Single
+    ''' <summary>`restLength` (+0x04): el tope SUPERIOR.</summary>
+    Friend Property RestLength As Single
+    ''' <summary>`compressionLength` (+0x08): el tope INFERIOR.</summary>
+    Friend Property CompressionLength As Single
+    ''' <summary>`stiffness` (+0x0C).</summary>
+    Friend Property Stiffness As Single
 End Class
 Friend Class HclCompressibleLinkConstraintSetDetail_Class
     Friend Property SourceObject As HkxVirtualObjectGraph_Class
@@ -1861,14 +1872,23 @@ Friend Class HclCompressibleLinkConstraintSetDetail_Class
     Friend ReadOnly Property Links As New List(Of HclCompressibleLink_Class)
 End Class
 
+''' <summary>`hclBonePlanesConstraintSetBonePlane` — 32 bytes. Los nombres salen de la reflexion.
+''' ⛔ Antes se llamaban `BoneIndex`, `Index1` y `Weight`, y los dos primeros estaban CAMBIADOS: el
+''' de +0x10 es la PARTICULA y el de +0x12 es el indice del transform, no un hueso y un "index1".
+''' Con esos nombres nadie podia escribir el solver sin volver a abrir el binario.</summary>
 Friend Class HclBonePlaneConstraint_Class
+    ''' <summary>`planeEquationBone`.xyz — la normal, en el espacio DEL HUESO.</summary>
     Friend Property NormalX As Single
     Friend Property NormalY As Single
     Friend Property NormalZ As Single
+    ''' <summary>`planeEquationBone`.w — la distancia del plano.</summary>
     Friend Property PlaneDistance As Single
-    Friend Property BoneIndex As Integer
-    Friend Property Index1 As Integer
-    Friend Property Weight As Single
+    ''' <summary>`particleIndex` (+0x10).</summary>
+    Friend Property ParticleIndex As Integer
+    ''' <summary>`transformIndex` (+0x12): que matriz del transform-set define el plano.</summary>
+    Friend Property TransformIndex As Integer
+    ''' <summary>`stiffness` (+0x14).</summary>
+    Friend Property Stiffness As Single
     Friend Property Value0 As Single
     Friend Property Value1 As Single
 End Class
