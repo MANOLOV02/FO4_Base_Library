@@ -11,16 +11,23 @@ Option Explicit On
 '   boneToRigidBodyMap + skeleton) — layout AUTORITATIVO de HavokLib
 '   (classgen/hka_ragdoll_instance.py).
 '
-' NIVELES DE CONFIANZA (importante):
-'  - ESTRUCTURAL (sólido, no especulado): skeleton, nombres de body, refs a shapes
-'    y constraints (se siguen los fixups reales del packfile), y hkaRagdollInstance
+' NIVELES DE CONFIANZA — 2026-08-22: se acabaron los `Guess_`.
+'  - ESTRUCTURAL (siempre fue sólido): skeleton, nombres de body, refs a shapes y
+'    constraints (se siguen los fixups reales del packfile), y hkaRagdollInstance
 '    completo (fuente autoritativa HavokLib).
-'  - INFERIDO SIN SDK (prefijo `Guess_`): los hknp*Shape y los atoms internos de los
-'    hkp*ConstraintData NO están en HavokLib ni hay header del SDK Havok disponible.
-'    Los offsets de geometría de cápsula (endpoints) y de los ángulos límite de los
-'    joints (twist/cone/plane/hinge) se mapearon por --dump + invariante (ángulos en
-'    rango sano, consistentes entre instancias). Cualquier campo cuyo SIGNIFICADO se
-'    infirió así lleva el prefijo `Guess_` para que sea inequívoco en la API.
+'  - LAYOUT DE CAMPOS: ya NO se infiere. Sale de `Havok.Canon.HavokLayout`, que se genera
+'    desde la reflexión `hkClass`/`hkClassMember` que el propio ejecutable del juego embebe
+'    (Tools/HavokLayoutGen). Eso nombró todo lo que antes era `Guess_`:
+'       Guess_TwistMinAngle  -> atoms.twistLimit.minAngle
+'       Guess_ConeMaxAngle   -> atoms.coneLimit.maxAngle
+'       Guess_PlaneMin/Max   -> atoms.planesLimit.minAngle/.maxAngle
+'       Guess_HingeMin/Max   -> atoms.angLimit.minAngle/.maxAngle
+'       Guess_EndpointA/B    -> hknpCapsuleShape::a / ::b
+'    ⛔ Y CORRIGIÓ un error real: `Guess_PivotA/B` leían las lanes `w` de las columnas de
+'    ROTACIÓN (padding / residuo SIMD). El pivote es la TRASLACIÓN del hkTransform.
+'    Ver el contraejemplo medido en HkTransformTranslationOffset.
+'  - Lo que sigue SIN resolver se dice, no se fabrica: `hknpShape::convexRadius` está
+'    declarado pero sus valores no se comportan como un radio (ver ParseNpCapsuleShape).
 ' =============================================================================
 
 Imports System.Collections.Generic
@@ -126,70 +133,149 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     ' ---------------------------------------------------------------------------
-    ' GEOMETRÍA / LÍMITES — TODO `Guess_` (inferido por --dump, sin SDK Havok).
-    ' Los offsets de límite están calibrados para FO4 (hk2014); en Skyrim (otra versión
-    ' de Havok, atoms de distinto tamaño) NO aplican y devuelven valores espurios.
+    ' GEOMETRÍA / LÍMITES — offsets desde la TABLA CANÓNICA (Havok.Canon.HavokLayout),
+    ' que sale de la reflexión hkClass del propio .exe. Ya no hay literales acá.
+    '
+    ' GAME-AWARE GRATIS: la tabla se elige por `Packfile.Header.PackfileFormat`, que la
+    ' librería deriva de FileVersion+PointerSize del header (Fallout64 / Skyrim64 / Skyrim32).
+    ' Los layouts DIFIEREN entre juegos — p.ej. `hkpRagdollConstraintData` mide 0x1A0 en FO4 y
+    ' 0x180 en SSE porque los atoms de FO4 llevan 12 bytes de padding que SSE no tiene — así que
+    ' pedirle el offset a la tabla del formato correcto es lo único que da el número correcto.
+    ' Sin tabla (Skyrim32, que es x86 y la tabla describe x64) NO se inventan números: se
+    ' devuelve la parte estructural y `LayoutNote` dice por qué.
     ' ---------------------------------------------------------------------------
 
-    ''' <summary>hknpCapsuleShape. GUESS (sin SDK): los dos vec4 en +0x50/+0x60 (w=0, distintos de los
-    ''' vértices del hull con w=0.5+índice) parecen los endpoints del eje de la cápsula; el spread entre
-    ''' ellos = largo del hueso. El RADIO no se localizó con confianza → no se expone (no se fabrica).</summary>
-    Public Function ParseNpCapsuleShape(source As HkxVirtualObjectGraph_Class) As HknpCapsuleShapeGraph_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hknpCapsuleShape", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim rel = source.RelativeOffset
-        Return New HknpCapsuleShapeGraph_Class With {
-            .SourceObject = source,
-            .Guess_EndpointA = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H50), .Y = ReadSingle(rel + &H54), .Z = ReadSingle(rel + &H58), .W = ReadSingle(rel + &H5C)},
-            .Guess_EndpointB = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H60), .Y = ReadSingle(rel + &H64), .Z = ReadSingle(rel + &H68), .W = ReadSingle(rel + &H6C)}
+    ''' <summary>
+    ''' `hkTransform` = `hkRotation` (3 × hkVector4, las columnas) + `hkVector4 m_translation`.
+    ''' La traslación está en +0x30 del transform. No es una inferencia: es la definición del tipo
+    ''' `transform` que la reflexión declara, y mide 0x40 bytes.
+    ''' ⛔ HISTORIA: hasta 2026-08-22 este parser leía el pivote de las lanes `w` de las tres columnas
+    ''' de ROTACIÓN (+0x3C/+0x4C/+0x5C). Esas lanes son padding. CONTRAEJEMPLO medido en
+    ''' `Meshes\Actors\Alien\CharacterAssets\skeleton.hkx` (BA2 vanilla de FO4): en `transformB` las
+    ''' lanes w valen (-7.4e-08, 6.0e-07, 0) — residuo SIMD — mientras la traslación real en +0xA0
+    ''' vale (-4.5334, 0.24482, ±6.0444), espejada en Z entre el hueso izquierdo y el derecho.
+    ''' </summary>
+    Private Const HkTransformTranslationOffset As Integer = &H30
+
+    ''' <summary>Tabla canónica del formato que este packfile DECLARA. Nothing si no hay (Skyrim32).</summary>
+    Private ReadOnly Property CanonLayout As Havok.Canon.HavokLayout
+        Get
+            Return Havok.Canon.HavokLayout.For(Packfile.Header.PackfileFormat)
+        End Get
+    End Property
+
+    Private Function ReadVec3At(rel As Integer, offset As Integer) As HkxVector4Graph_Class
+        If offset < 0 Then Return Nothing
+        Return New HkxVector4Graph_Class With {
+            .X = ReadSingle(rel + offset),
+            .Y = ReadSingle(rel + offset + 4),
+            .Z = ReadSingle(rel + offset + 8),
+            .W = ReadSingle(rel + offset + 12)
         }
     End Function
 
-    ''' <summary>hkpRagdollConstraintData. GUESS (sin SDK): ángulos límite del joint ragdoll mapeados
-    ''' por offset+invariante (rad, consistentes entre instancias). twist@+0x138/+0x13C, cone-max@+0x15C,
-    ''' plane@+0x178/+0x17C; pivotes (w-column de transformA@+0x30 / transformB@+0x70). Los 3 refs a
-    ''' hkpPositionConstraintMotor SÍ son sólidos (se siguen fixups). La asignación twist/cone/plane es
-    ''' la inferencia más razonable por el rango de valores, pero NO está confirmada contra el SDK.</summary>
+    ''' <summary>Traslación (pivote) de un miembro de tipo `transform`. Nothing si el miembro no existe.</summary>
+    Private Function ReadTransformTranslation(rel As Integer, layout As Havok.Canon.HavokLayout,
+                                              className As String, memberPath As String) As HkxVector4Graph_Class
+        Dim o = layout.Offset(className, memberPath)
+        If o < 0 Then Return Nothing
+        Return ReadVec3At(rel, o + HkTransformTranslationOffset)
+    End Function
+
+    ''' <summary>
+    ''' `hknpCapsuleShape`: `a`@+0x50 y `b`@+0x60 son los extremos del eje — CONFIRMADO por la reflexión
+    ''' (miembros declarados `a` y `b`), ya no es una inferencia.
+    ''' ⛔ `hknpShape::convexRadius`@+0x14 existe pero NO se expone: medido 11,58 en una cápsula cuyos
+    ''' extremos son ±1,9 y 5,89 en otra 8× más larga (b=28,81). La correlación está INVERTIDA (la
+    ''' cápsula más larga tiene el "radio" menor) ⇒ ese campo no es el radio en estas unidades.
+    ''' Exponerlo sería fabricar.
+    ''' </summary>
+    Public Function ParseNpCapsuleShape(source As HkxVirtualObjectGraph_Class) As HknpCapsuleShapeGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hknpCapsuleShape", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim layout = CanonLayout
+        Dim result As New HknpCapsuleShapeGraph_Class With {.SourceObject = source}
+        If layout Is Nothing Then
+            result.LayoutNote = Havok.Canon.HavokLayout.UnsupportedNote(Packfile.Header.PackfileFormat)
+            Return result
+        End If
+        Dim rel = source.RelativeOffset
+        result.LayoutSupported = True
+        result.EndpointA = ReadVec3At(rel, layout.Offset("hknpCapsuleShape", "a"))
+        result.EndpointB = ReadVec3At(rel, layout.Offset("hknpCapsuleShape", "b"))
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' `hkpRagdollConstraintData` — límites del joint. Los cinco ángulos ya NO son `Guess_`: la
+    ''' reflexión los nombra (`atoms.twistLimit.minAngle/.maxAngle`, `atoms.coneLimit.maxAngle`,
+    ''' `atoms.planesLimit.minAngle/.maxAngle`) y los valores cierran sobre datos vanilla de FO4:
+    ''' ∓10° de twist, 35° de cono y −30°/+50° de planos en `Alien\skeleton.hkx`.
+    ''' Los pivotes son la traslación de `atoms.transforms.transformA/B` (ver HkTransformTranslationOffset).
+    ''' Los refs a `hkpPositionConstraintMotor` se siguen por fixup (siempre fueron sólidos).
+    ''' </summary>
     Public Function ParseRagdollConstraint(source As HkxVirtualObjectGraph_Class) As HkpRagdollConstraintGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkpRagdollConstraintData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim rel = source.RelativeOffset
-        Dim result As New HkpRagdollConstraintGraph_Class With {
-            .SourceObject = source,
-            .Guess_TwistMinAngle = ReadSingle(rel + &H138),
-            .Guess_TwistMaxAngle = ReadSingle(rel + &H13C),
-            .Guess_ConeMaxAngle = ReadSingle(rel + &H15C),
-            .Guess_PlaneMinAngle = ReadSingle(rel + &H178),
-            .Guess_PlaneMaxAngle = ReadSingle(rel + &H17C),
-            .Guess_PivotA = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H3C), .Y = ReadSingle(rel + &H4C), .Z = ReadSingle(rel + &H5C), .W = 0},
-            .Guess_PivotB = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H7C), .Y = ReadSingle(rel + &H8C), .Z = ReadSingle(rel + &H9C), .W = 0}
-        }
-        For Each gf In GetGlobalFixupsInRange(rel, source.Size)
-            Dim o = GetObject(gf.TargetRelativeOffset)
-            If Not IsNothing(o) AndAlso o.ClassName.IndexOf("Motor", StringComparison.OrdinalIgnoreCase) >= 0 AndAlso Not result.Motors.Contains(o) Then
-                result.Motors.Add(o)
-            End If
-        Next
+        Dim result As New HkpRagdollConstraintGraph_Class With {.SourceObject = source}
+        Dim layout = CanonLayout
+        If layout Is Nothing Then
+            result.LayoutNote = Havok.Canon.HavokLayout.UnsupportedNote(Packfile.Header.PackfileFormat)
+        Else
+            Const cls = "hkpRagdollConstraintData"
+            result.LayoutSupported = True
+            result.LayoutNote = layout.Tag
+            result.TwistMinAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.twistLimit.minAngle"))
+            result.TwistMaxAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.twistLimit.maxAngle"))
+            result.ConeMaxAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.coneLimit.maxAngle"))
+            result.PlaneMinAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.planesLimit.minAngle"))
+            result.PlaneMaxAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.planesLimit.maxAngle"))
+            result.PivotA = ReadTransformTranslation(rel, layout, cls, "atoms.transforms.transformA")
+            result.PivotB = ReadTransformTranslation(rel, layout, cls, "atoms.transforms.transformB")
+        End If
+        CollectMotors(rel, source.Size, result.Motors)
         Return result
     End Function
 
-    ''' <summary>hkpLimitedHingeConstraintData. GUESS (sin SDK): límite de bisagra min/max @+0xFC/+0x100
-    ''' (rad), mapeado por offset+invariante. Pivote = w-column de transformA@+0x30. Motor por ref (sólido).</summary>
+    ''' <summary>
+    ''' `hkpLimitedHingeConstraintData` — límite de bisagra. `atoms.angLimit.minAngle/.maxAngle` por
+    ''' reflexión; medido en FO4 vanilla: −110° / +1,8°. Pivote = traslación de `atoms.transforms.transformA`.
+    ''' </summary>
     Public Function ParseHingeConstraint(source As HkxVirtualObjectGraph_Class) As HkpLimitedHingeConstraintGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkpLimitedHingeConstraintData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim rel = source.RelativeOffset
-        Dim result As New HkpLimitedHingeConstraintGraph_Class With {
-            .SourceObject = source,
-            .Guess_HingeMinAngle = ReadSingle(rel + &HFC),
-            .Guess_HingeMaxAngle = ReadSingle(rel + &H100),
-            .Guess_PivotA = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H3C), .Y = ReadSingle(rel + &H4C), .Z = ReadSingle(rel + &H5C), .W = 0}
-        }
-        For Each gf In GetGlobalFixupsInRange(rel, source.Size)
-            Dim o = GetObject(gf.TargetRelativeOffset)
-            If Not IsNothing(o) AndAlso o.ClassName.IndexOf("Motor", StringComparison.OrdinalIgnoreCase) >= 0 AndAlso Not result.Motors.Contains(o) Then
-                result.Motors.Add(o)
-            End If
-        Next
+        Dim result As New HkpLimitedHingeConstraintGraph_Class With {.SourceObject = source}
+        Dim layout = CanonLayout
+        If layout Is Nothing Then
+            result.LayoutNote = Havok.Canon.HavokLayout.UnsupportedNote(Packfile.Header.PackfileFormat)
+        Else
+            Const cls = "hkpLimitedHingeConstraintData"
+            result.LayoutSupported = True
+            result.LayoutNote = layout.Tag
+            result.HingeMinAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.angLimit.minAngle"))
+            result.HingeMaxAngle = ReadNullableSingle(rel, layout.Offset(cls, "atoms.angLimit.maxAngle"))
+            result.PivotA = ReadTransformTranslation(rel, layout, cls, "atoms.transforms.transformA")
+        End If
+        CollectMotors(rel, source.Size, result.Motors)
         Return result
     End Function
+
+    ''' <summary>
+    ''' Nothing cuando el miembro no existe en la tabla. Un `Single?` sin valor NO se puede confundir
+    ''' con "el límite vale 0 rad", que es lo que pasaba cuando se devolvía 0.0F.
+    ''' </summary>
+    Private Function ReadNullableSingle(rel As Integer, offset As Integer) As Single?
+        If offset < 0 Then Return Nothing
+        Return ReadSingle(rel + offset)
+    End Function
+
+    Private Sub CollectMotors(rel As Integer, size As Integer, target As List(Of HkxVirtualObjectGraph_Class))
+        For Each gf In GetGlobalFixupsInRange(rel, size)
+            Dim o = GetObject(gf.TargetRelativeOffset)
+            If Not IsNothing(o) AndAlso o.ClassName.IndexOf("Motor", StringComparison.OrdinalIgnoreCase) >= 0 AndAlso Not target.Contains(o) Then
+                target.Add(o)
+            End If
+        Next
+    End Sub
 
 End Class
 
@@ -215,39 +301,51 @@ Public Class HkxRagdollGraph_Class
     Public ReadOnly Property BoneToBodyMap As New List(Of Integer)                     ' solo hkaRagdollInstance (índice de hueso → body)
 End Class
 
-' hknpCapsuleShape — geometría. Endpoints INFERIDOS (Guess_), radio no expuesto.
-Public Class HknpCapsuleShapeGraph_Class
+''' <summary>Común a los resultados que dependen de la tabla canónica de layout.</summary>
+Public MustInherit Class HkxCanonLayoutResult_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Guess_EndpointA As HkxVector4Graph_Class
-    Public Property Guess_EndpointB As HkxVector4Graph_Class
-    ' Largo del eje de la cápsula (derivado de los endpoints inferidos).
-    Public ReadOnly Property Guess_AxisLength As Single
+    ''' <summary>True si había tabla canónica para el formato de este packfile.</summary>
+    Public Property LayoutSupported As Boolean = False
+    ''' <summary>Tag de la tabla usada ("FO4"/"SSE"), o el motivo por el que no hay.</summary>
+    Public Property LayoutNote As String = ""
+End Class
+
+' hknpCapsuleShape — `a`/`b` CONFIRMADOS por la reflexión. El radio NO se expone (ver ParseNpCapsuleShape).
+Public Class HknpCapsuleShapeGraph_Class
+    Inherits HkxCanonLayoutResult_Class
+    Public Property EndpointA As HkxVector4Graph_Class
+    Public Property EndpointB As HkxVector4Graph_Class
+    ''' <summary>Largo del eje. Nothing si no se pudo leer alguno de los extremos.</summary>
+    Public ReadOnly Property AxisLength As Single?
         Get
-            If IsNothing(Guess_EndpointA) OrElse IsNothing(Guess_EndpointB) Then Return 0
-            Dim dx = Guess_EndpointB.X - Guess_EndpointA.X, dy = Guess_EndpointB.Y - Guess_EndpointA.Y, dz = Guess_EndpointB.Z - Guess_EndpointA.Z
+            If IsNothing(EndpointA) OrElse IsNothing(EndpointB) Then Return Nothing
+            Dim dx = EndpointB.X - EndpointA.X, dy = EndpointB.Y - EndpointA.Y, dz = EndpointB.Z - EndpointA.Z
             Return CSng(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)))
         End Get
     End Property
 End Class
 
-' hkpRagdollConstraintData — límites de joint. TODOS los ángulos/pivotes son Guess_ (sin SDK); Motors es sólido.
+' hkpRagdollConstraintData — límites de joint. Ángulos y pivotes por reflexión; Motors por fixup.
+' Los ángulos son Single? a propósito: sin tabla no hay valor, y "sin valor" no se confunde con "0 rad".
 Public Class HkpRagdollConstraintGraph_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Guess_TwistMinAngle As Single   ' rad
-    Public Property Guess_TwistMaxAngle As Single   ' rad
-    Public Property Guess_ConeMaxAngle As Single    ' rad (swing)
-    Public Property Guess_PlaneMinAngle As Single   ' rad
-    Public Property Guess_PlaneMaxAngle As Single   ' rad
-    Public Property Guess_PivotA As HkxVector4Graph_Class
-    Public Property Guess_PivotB As HkxVector4Graph_Class
-    Public ReadOnly Property Motors As New List(Of HkxVirtualObjectGraph_Class) ' hkpPositionConstraintMotor (sólido, por fixup)
+    Inherits HkxCanonLayoutResult_Class
+    Public Property TwistMinAngle As Single?    ' rad — atoms.twistLimit.minAngle
+    Public Property TwistMaxAngle As Single?    ' rad — atoms.twistLimit.maxAngle
+    Public Property ConeMaxAngle As Single?     ' rad — atoms.coneLimit.maxAngle (swing)
+    Public Property PlaneMinAngle As Single?    ' rad — atoms.planesLimit.minAngle
+    Public Property PlaneMaxAngle As Single?    ' rad — atoms.planesLimit.maxAngle
+    ''' <summary>Traslación de atoms.transforms.transformA (frame del constraint en el cuerpo A).</summary>
+    Public Property PivotA As HkxVector4Graph_Class
+    ''' <summary>Traslación de atoms.transforms.transformB (el mismo frame en el cuerpo B).</summary>
+    Public Property PivotB As HkxVector4Graph_Class
+    Public ReadOnly Property Motors As New List(Of HkxVirtualObjectGraph_Class) ' hkpPositionConstraintMotor
 End Class
 
-' hkpLimitedHingeConstraintData — límite de bisagra. Guess_ (sin SDK); Motors sólido.
+' hkpLimitedHingeConstraintData — límite de bisagra.
 Public Class HkpLimitedHingeConstraintGraph_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Guess_HingeMinAngle As Single   ' rad
-    Public Property Guess_HingeMaxAngle As Single   ' rad
-    Public Property Guess_PivotA As HkxVector4Graph_Class
+    Inherits HkxCanonLayoutResult_Class
+    Public Property HingeMinAngle As Single?    ' rad — atoms.angLimit.minAngle
+    Public Property HingeMaxAngle As Single?    ' rad — atoms.angLimit.maxAngle
+    Public Property PivotA As HkxVector4Graph_Class
     Public ReadOnly Property Motors As New List(Of HkxVirtualObjectGraph_Class)
 End Class

@@ -61,6 +61,27 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         Return ParseClothSkeletonFromBlock(cloth)
     End Function
 
+    ''' <summary>
+    ''' El bloque BSClothExtraData que le corresponde a ESTA shape (per-shape vía su ExtraDataList,
+    ''' con fallback al primer bloque plano). Lo necesita la simulación de física, que trabaja por
+    ''' shape y cachea su estado por BLOQUE, no por NIF.
+    ''' </summary>
+    Public Shared Function ResolveClothBlockForShape(shape As IRenderableShape) As BSClothExtraData
+        If IsNothing(shape) OrElse IsNothing(shape.NifContent) Then Return Nothing
+        Dim nifShape = ResolveShapeNifShape(shape)
+        If Not IsNothing(nifShape) Then
+            Dim block = ResolveShapeClothBlock(nifShape, shape.NifContent)
+            If block IsNot Nothing Then Return block
+        End If
+        Return shape.NifContent.Blocks.OfType(Of BSClothExtraData)().FirstOrDefault()
+    End Function
+
+    ''' <summary>Igual que el parse interno, pero accesible: la física reusa el mismo cache por bloque.</summary>
+    Public Shared Function ParseClothSkeletonForBlock(cloth As BSClothExtraData) As HkaSkeletonGraph_Class
+        If cloth Is Nothing Then Return Nothing
+        Return ParseClothSkeletonFromBlock(cloth)
+    End Function
+
     ' Parses a specific BSClothExtraData block and returns the HKX skeleton (cached per block instance).
     Private Shared Function ParseClothSkeletonFromBlock(cloth As BSClothExtraData) As HkaSkeletonGraph_Class
         Dim cached As HkaSkeletonGraph_Class = Nothing

@@ -141,27 +141,27 @@ Public NotInheritable Class HclClothPackageParser_Class
 
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclStandardLinkConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseStandardLinkConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseStandardLinkConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclStretchLinkConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseStretchLinkConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseStretchLinkConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclBendStiffnessConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBendStiffnessConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBendStiffnessConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclLocalRangeConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseLocalRangeConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseLocalRangeConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
 
         ' Constraint sets cloth-menores — decodificados a campos tipados (cero bytes crudos):
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclBonePlanesConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBonePlanesConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBonePlanesConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclBendLinkConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBendLinkConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBendLinkConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclCompressibleLinkConstraintSet").
-                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseCompressibleLinkConstraintSet(graph, obj), Object)))
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseCompressibleLinkConstraintSet(graph, obj), Object)).Where(Function(o) Not IsNothing(o)))
 
         Return result
     End Function

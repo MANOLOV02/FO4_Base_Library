@@ -28,7 +28,40 @@ Public Class HierarchiBone_class
     ''' <para>Cascade: <c>GetGlobalTransform</c> compone parent chain con esta
     ''' <c>LocaLTransform</c>, propagando Mount/Morph/Delta del parent automáticamente.</para>
     ''' </summary>
+    ''' <summary>
+    ''' ⛔ La composición se escribe UNA sola vez: acá se agrega la física a
+    ''' <see cref="LocaLTransformWithoutPhysics"/>, que es la que lista las otras cuatro capas.
+    ''' Tenerlas duplicadas era drift garantizado y silencioso: el render compone con esta propiedad
+    ''' y el delta de física se calcula contra la otra, así que agregar o reordenar una capa en una
+    ''' sola de las dos movería la tela sin que nadie hubiera tocado el módulo de física.
+    ''' </summary>
     Public ReadOnly Property LocaLTransform As Transform_Class
+        Get
+            Dim r As Transform_Class = LocaLTransformWithoutPhysics
+            If PhysicsDeltaTransform IsNot Nothing Then r = r.ComposeTransforms(PhysicsDeltaTransform)
+            Return r
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' QUINTA capa: FÍSICA. Es la MÁS EXTERNA, después de la pose.
+    ''' <para>Por qué acá y no pisando otra capa: la física se recalcula ENTERA cada frame a partir del
+    ''' esqueleto ya posado y ya morfado. Si escribiera en <see cref="DeltaTransform"/> pelearía con
+    ''' <c>ApplyPose</c>; si escribiera en <see cref="MorphDeltaTransform"/> borraría los morphs de
+    ''' apariencia. Como capa propia, apagar la física es poner esto en Nothing y el resultado vuelve a
+    ''' ser EXACTAMENTE el de antes — bit a bit, porque componer con Nothing es no-op.</para>
+    ''' <para>Es un DELTA, no un absoluto: quien la escribe calcula
+    ''' <c>PhysicsDelta = inv(OrigL × Mount × Morph × Delta) × localDeseado</c>, igual que hace el mount.</para>
+    ''' <para>Sólo la escriben los huesos de cloth (Hair_C/L/R_Cloth*, y los que el
+    ''' hclSimpleMeshBoneDeformOperator declare). El resto del esqueleto no se toca.</para>
+    ''' </summary>
+    Public PhysicsDeltaTransform As Transform_Class = Nothing
+
+    ''' <summary>
+    ''' La composición SIN la capa de física: <c>OrigL × Mount × Morph × Delta</c>.
+    ''' Es contra esto que se calcula el delta de física, igual que el mount se calcula contra el bind.
+    ''' </summary>
+    Public ReadOnly Property LocaLTransformWithoutPhysics As Transform_Class
         Get
             Dim r As Transform_Class = OriginalLocaLTransform
             If MountDeltaTransform IsNot Nothing Then r = r.ComposeTransforms(MountDeltaTransform)
@@ -729,20 +762,51 @@ Public Class SkeletonInstance
         InjectedBones.Clear()
     End Sub
 
-    ''' <summary>Teardown total a bind: limpia las TRES capas
+    ''' <summary>Teardown total a bind: limpia las CUATRO capas
     ''' (<c>DeltaTransform</c> pose/animación, <c>MorphDeltaTransform</c> bone-morph,
-    ''' <c>MountDeltaTransform</c> chunk mount). Tras esto, <c>GetGlobalTransform</c> devuelve
-    ''' el bind puro. Lo usan los callers que quieren "render bind regardless of pose"
-    ''' (p.ej. ShapeTypeValidator). Para limpiar una sola capa ver <see cref="ResetPose"/> /
-    ''' <see cref="ResetMorph"/>.</summary>
+    ''' <c>MountDeltaTransform</c> chunk mount, <c>PhysicsDeltaTransform</c> física). Tras esto,
+    ''' <c>GetGlobalTransform</c> devuelve el bind puro. Lo usan los callers que quieren
+    ''' "render bind regardless of pose" (p.ej. ShapeTypeValidator). Para limpiar una sola capa ver
+    ''' <see cref="ResetPose"/> / <see cref="ResetMorph"/> / <see cref="ResetPhysics"/>.
+    ''' <para>⛔ La capa de física TIENE que estar acá: sin ella "teardown total a bind" sería mentira
+    ''' en cuanto la física hubiera corrido una vez, y el bind que devolviera llevaría el último frame
+    ''' simulado encima.</para></summary>
     Public Sub Reset()
         SyncLock _lock
             For Each bon In SkeletonDictionary.Values
                 bon.DeltaTransform = Nothing
                 bon.MorphDeltaTransform = Nothing
                 bon.MountDeltaTransform = Nothing
+                bon.PhysicsDeltaTransform = Nothing
             Next
         End SyncLock
+    End Sub
+
+    ''' <summary>
+    ''' True desde que ALGUIEN escribió la capa de física en esta instancia. Existe para que
+    ''' <see cref="ResetPhysics"/> sea O(1) mientras la física está apagada: el pase de render la llama
+    ''' en CADA frame (tiene que hacerlo, para que apagar el interruptor a mitad de sesión limpie de
+    ''' verdad), y sin esto pagaba un lock + una pasada sobre todos los huesos, por instancia y por
+    ''' frame, en el mismo bucle donde se pelearon 1,16 ms/frame.
+    ''' </summary>
+    Friend Property HasPhysicsLayer As Boolean = False
+
+    ''' <summary>Limpia SOLO la capa de física (<c>PhysicsDeltaTransform</c>). Es lo que hace apagar
+    ''' el interruptor: el render vuelve a ser idéntico al de antes de que existiera la física, porque
+    ''' componer con Nothing es no-op.</summary>
+    Public Sub ResetPhysics()
+        If Not HasPhysicsLayer Then Exit Sub      ' nunca se escribió: no hay nada que limpiar
+        SyncLock _lock
+            For Each bon In SkeletonDictionary.Values
+                bon.PhysicsDeltaTransform = Nothing
+            Next
+            HasPhysicsLayer = False
+        End SyncLock
+    End Sub
+
+    ''' <summary>La escribe el simulador cuando pone la capa en algún hueso. Ver <see cref="HasPhysicsLayer"/>.</summary>
+    Friend Sub MarkPhysicsLayerWritten()
+        HasPhysicsLayer = True
     End Sub
 
     ''' <summary>Limpia SOLO la capa de pose/animación (<c>DeltaTransform</c>). Deja intactas

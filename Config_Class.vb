@@ -157,6 +157,38 @@ Public Class Config_App
     ' BSAFiles, BSAFiles_Clonables, Allowed_To_Clone, and all WM-only settings moved to WM_Config
     Public Property Setting_SingleBoneSkinning As Boolean = False
     Public Property Setting_GPUSkinning As Boolean = True
+
+    ' ==========================================================================================
+    ' FÍSICA HAVOK (cloth de BSClothExtraData). FO4 únicamente: Skyrim no tiene ese sistema.
+    ' ==========================================================================================
+    ''' <summary>⭐ Interruptor de la física de tela. False (default) = el render es idéntico al de
+    ''' antes de que existiera el módulo: la capa `PhysicsDeltaTransform` del hueso queda en Nothing y
+    ''' componer con Nothing es no-op. Se aplica a `Havok.Physics.HavokPhysicsSettings.Enabled`.</summary>
+    Public Property Setting_HavokPhysics As Boolean = False
+    ''' <summary>0 = Off · 1 = DeformOnly (sin integración; no puede explotar) · 2 = FullSimulation.</summary>
+    Public Property Setting_HavokPhysicsMode As Integer = 2
+    ''' <summary>Multiplica la gravedad authored. 1.0 = fiel al archivo.</summary>
+    Public Property Setting_HavokPhysicsGravityScale As Single = 1.0F
+
+    ''' <summary>
+    ''' Vuelca las tres claves de config al módulo estático de física. Idempotente y barata; llamarla
+    ''' cuando se carga o se cambia la config. Vive acá y no en el módulo de física para que la
+    ''' librería de render no dependa del config: el módulo es una perilla, el config es su persistencia.
+    ''' </summary>
+    Public Sub ApplyHavokPhysicsSettings()
+        ' ⛔ EL GATE DE JUEGO VA ACÁ, y en un solo lugar. Sin él la ley "FO4 únicamente" era un
+        ' comentario que nadie aplicaba: `config.json` es COMPARTIDO entre los dos juegos y `Game`
+        ' viene en Skyrim por defecto. Y `IRenderableShape.HasPhysics` de Wardrobe Manager devuelve
+        ' True para sliders de SSE que sólo tienen XML de HDT-SMP (OSP_Clases: "SSE can have
+        ' BSClothExtraData AND/OR sidecar HDT-SMP XML"), así que esas shapes entraban igual al motor
+        ' de cloth de FO4 — pagando el scan de bloques por shape y por frame, y corriendo el solver
+        ' equivocado si el NIF traía un BSClothExtraData portado.
+        ' Havok Cloth es EXCLUSIVO de FO4: SkyrimSE.exe no declara ni una sola clase hcl (medido).
+        Havok.Physics.HavokPhysicsSettings.Enabled = Setting_HavokPhysics AndAlso Game = Game_Enum.Fallout4
+        Havok.Physics.HavokPhysicsSettings.Mode =
+            CType(Math.Max(0, Math.Min(2, Setting_HavokPhysicsMode)), Havok.Physics.HavokPhysicsMode)
+        Havok.Physics.HavokPhysicsSettings.GravityScale = Setting_HavokPhysicsGravityScale
+    End Sub
     ' WM inspection toggle: when True, EnsureZapIndexBuffer bypasses per-segment occlusion so all geometry
     ' draws. Default TRUE = "draw everything" (the neutral renderer default; WM wants it ON, and an existing
     ' WM config without the key deserializes to this default → ON, while a saved True/False is respected).

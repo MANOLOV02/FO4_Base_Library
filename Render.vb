@@ -1059,7 +1059,40 @@ Public Class PreviewControl
             For Each mesh In dirtyMeshes
                 Dim resolved As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
                 resolvedSkels(mesh) = resolved
-                Dim inst As SkeletonInstance = If(resolved, SkeletonInstance.Default)
+            Next
+
+            ' ===================== FÍSICA HAVOK (opt-in, apagada por defecto) =====================
+            ' EL LUGAR es éste y no otro: la app ya aplicó pose + morph + mount (capas Delta/Morph/Mount)
+            ' y la cache de transforms globales TODAVÍA no se construyó. La física lee el esqueleto ya
+            ' posado y escribe la capa PhysicsDeltaTransform, que la cache de abajo tiene que ver.
+            ' Con el interruptor apagado esto limpia la capa y sale: el render queda bit-idéntico.
+            ' Ver FO4_Base_Library/Havok/Physics/HavokClothSimulation.vb.
+            Try
+                ' La config es la PERSISTENCIA de la perilla; el módulo estático es la perilla. Volcarla
+                ' acá (3 asignaciones) hace que cambiar `Setting_HavokPhysics` en config.json tenga efecto
+                ' sin que las apps tengan que acordarse de propagarlo.
+                Config_App.Current?.ApplyHavokPhysicsSettings()
+                Dim physByInstance As New Dictionary(Of SkeletonInstance, List(Of IRenderableShape))
+                For Each mesh In dirtyMeshes
+                    Dim inst As SkeletonInstance = If(resolvedSkels(mesh), SkeletonInstance.Default)
+                    If inst Is Nothing Then Continue For
+                    Dim lst As List(Of IRenderableShape) = Nothing
+                    If Not physByInstance.TryGetValue(inst, lst) Then
+                        lst = New List(Of IRenderableShape)
+                        physByInstance(inst) = lst
+                    End If
+                    lst.Add(mesh.MeshData.Shape)
+                Next
+                For Each kv In physByInstance
+                    Havok.Physics.HavokClothSimulation.StepShapes(kv.Value, kv.Key)
+                Next
+            Catch exPhys As Exception
+                Dim exL = exPhys
+                Logger.LogLazy(Function() $"[HAVOK-PHYS] el paso de física falló y se omite este frame: {exL.GetType().Name}: {exL.Message}")
+            End Try
+
+            For Each mesh In dirtyMeshes
+                Dim inst As SkeletonInstance = If(resolvedSkels(mesh), SkeletonInstance.Default)
                 If inst IsNot Nothing AndAlso Not globalCaches.ContainsKey(inst) Then
                     globalCaches(inst) = inst.BuildGlobalTransformCacheForRenderPass()
                 End If

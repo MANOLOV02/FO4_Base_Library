@@ -704,36 +704,47 @@ Public Partial Class HkxObjectGraph_Class
     ' -------------------------------------------------------------------------
 
     Public Function ParseSimClothData(source As HkxVirtualObjectGraph_Class) As HclSimClothDataGraph_Class
-        ' Layout verificado con DumpStructuralAnalysis en CasualDress.nif (FO4 64-bit, EBCO=1):
-        '   +0x000..+0x00F : hkReferencedObject zeros
-        '   +0x010..+0x017 : 8 bytes zeros (sin m_name — hclSimClothData no tiene nombre)
-        '   +0x018..+0x02F : floats de parámetros de simulación (gravity=-686.7, timestep=1.0, etc.)
-        '   +0x030         : hkArray m_collidableTransformIndices  (count=0 en muestras actuales)
-        '   +0x038         : hkArray m_particles (251×hkVector4: xyz=posición rest, w=invMass)
-        '   +0x048         : hkArray m_fixedParticles (45×uint16: índices de partículas fijas)
-        '   +0x058         : hkArray m_triangleIndices (1290×uint16 = 430 triángulos × 3 verts)
-        '   +0x068         : hkArray m_unknown68 (54 elems, tipo desconocido)
-        '   +0x078         : float (parámetro sim ≈35.0)
-        '   +0x080..+0x087 : zeros
-        '   +0x088         : hkArray m_unknown88 (5×uint32: sin fixups, tipo desconocido)
-        '   +0x098         : hkArray m_collidableTransforms (5×hkMatrix4=64B: 320B embedded)
-        '   +0x0A8         : hkArray m_collidables (5×obj refs → hclCollidable, GLOBAL fixups)
-        '   +0x0B8         : hkArray m_staticConstraintSets (obj refs, 3 elems en CasualDress)
-        '   +0x0D8         : hkArray m_simClothPoses (obj refs a hclSimClothPose)
+        ' ⛔⛔ 2026-08-22 — offsets desde `Havok.Canon.HavokLayout` (reflexión del propio .exe). Antes eran
+        ' literales "verificados con DumpStructuralAnalysis" y DOS estaban mal:
+        '   · `CollidableTransformIndices` leía +0x30 como hkArray de uint16. +0x30 es `name`, un
+        '     STRINGPTR ⇒ el count salía del puntero serializado de `particleDatas` (siempre 0 en
+        '     packfile) y la lista quedaba PERMANENTEMENTE VACÍA. El array real es
+        '     `collidableTransformMap.transformIndices` en +0x88, y es uint32.
+        '   · `Particles` llamaba "xyz=posición rest, w=invMass" a `particleDatas`, que en realidad es
+        '     {mass, invMass, radius, friction}. Se renombra a ParticleDatas y se expone desglosado.
+        ' Esta función es la vista LIGERA (sólo conteos y refs); la de producción es
+        ' HclStructuredGraphParser_Class.ParseSimClothData.
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclSimClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Const cls = "hclSimClothData"
+        Dim layout = Havok.Canon.HavokLayout.For(Packfile.Header.PackfileFormat)
+        If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
+        Dim rel = source.RelativeOffset
 
         Dim result As New HclSimClothDataGraph_Class With {
             .SourceObject = source,
-            .Name = String.Empty,   ' hclSimClothData no tiene m_name serializado
-            .NumParticles = ReadInt32(source.RelativeOffset + &H40)  ' count field del array en +0x038
+            .Name = ResolveLocalString(rel + layout.RequireOffset(cls, "name")),
+            .NumParticles = ReadInt32(rel + layout.RequireOffset(cls, "particleDatas") + PointerSizeValue)
         }
-        result.Particles.AddRange(ReadVector4ArrayFromOffset(source.RelativeOffset + &H38))
-        result.FixedParticles.AddRange(ReadUInt16Array(source.RelativeOffset + &H48))
-        result.CollidableTransformIndices.AddRange(ReadUInt16Array(source.RelativeOffset + &H30))
-        result.TriangleIndices.AddRange(ReadUInt16Array(source.RelativeOffset + &H58))
-        result.Collidables.AddRange(ReadObjectReferenceArray(source.RelativeOffset + &HA8))
-        result.SimClothPoses.AddRange(ReadObjectReferenceArray(source.RelativeOffset + &HD8))
-        result.StaticConstraintSets.AddRange(ReadObjectReferenceArray(source.RelativeOffset + &HB8))
+        result.ParticleDatas.AddRange(ReadVector4ArrayFromOffset(rel + layout.RequireOffset(cls, "particleDatas")))
+        result.FixedParticles.AddRange(ReadUInt16Array(rel + layout.RequireOffset(cls, "fixedParticles")))
+        result.CollidableTransformIndices.AddRange(
+            ReadUInt32ArrayFromOffset(rel + layout.RequireOffset(cls, "collidableTransformMap.transformIndices")))
+        result.TriangleIndices.AddRange(ReadUInt16Array(rel + layout.RequireOffset(cls, "triangleIndices")))
+        result.Collidables.AddRange(ReadObjectReferenceArray(rel + layout.RequireOffset(cls, "perInstanceCollidables")))
+        result.SimClothPoses.AddRange(ReadObjectReferenceArray(rel + layout.RequireOffset(cls, "simClothPoses")))
+        result.StaticConstraintSets.AddRange(ReadObjectReferenceArray(rel + layout.RequireOffset(cls, "staticConstraintSets")))
+        result.Actions.AddRange(ReadObjectReferenceArray(rel + layout.RequireOffset(cls, "actions")))
+        Return result
+    End Function
+
+    ''' <summary>hkArray de uint32 desde el offset del CAMPO (no del dato).</summary>
+    Public Function ReadUInt32ArrayFromOffset(fieldRelativeOffset As Integer) As List(Of UInteger)
+        Dim result As New List(Of UInteger)
+        Dim header = ReadArrayHeader(fieldRelativeOffset)
+        If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
+        For i = 0 To header.Count - 1
+            result.Add(ReadUInt32(header.DataRelativeOffset + (i * 4)))
+        Next
         Return result
     End Function
 
@@ -1177,17 +1188,24 @@ End Class
 
 Public Class HclSimClothDataGraph_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Name As String  ' always empty (hclSimClothData has no m_name)
-    ' count field of the particles array at +0x038; equals Particles.Count after parse.
+    ''' <summary>`name` (+0x30, stringptr). ⛔ El comentario viejo decía "always empty (no m_name)": FALSO.</summary>
+    Public Property Name As String
+    ''' <summary>Cantidad de entradas de `particleDatas` (el campo count del hkArray).</summary>
     Public Property NumParticles As Integer
-    ' +0x038: hkArray of hkVector4 — each = (posX, posY, posZ, inverseMass).
-    ' Rest-pose particle positions used to initialise the cloth simulation.
-    Public ReadOnly Property Particles As New List(Of HkxVector4Graph_Class)
-    ' +0x048: hkArray of uint16 — indices into Particles of immovable (pinned) particles.
+    ''' <summary>
+    ''' `particleDatas` (+0x38): array de `{real mass; real invMass; real radius; real friction}`.
+    ''' ⛔ NO son posiciones. El nombre viejo (`Particles`) y su comentario ("xyz=posición rest,
+    ''' w=invMass") eran incorrectos: X=mass, Y=invMass, Z=radius, W=friction.
+    ''' Las posiciones de reposo viven en `hclSimClothPose`, no acá.
+    ''' </summary>
+    Public ReadOnly Property ParticleDatas As New List(Of HkxVector4Graph_Class)
+    ' +0x048: hkArray of uint16 — indices into ParticleDatas of immovable (pinned) particles.
     Public ReadOnly Property FixedParticles As New List(Of Integer)
-    ' +0x030: hkArray of uint16 — indices into simulation collidable transform array.
-    ' Empty (count=0) in all known FO4 samples.
-    Public ReadOnly Property CollidableTransformIndices As New List(Of Integer)
+    ''' <summary>`collidableTransformMap.transformIndices` (+0x88, uint32).
+    ''' ⛔ Antes se leía de +0x30, que es `name`: la lista quedaba SIEMPRE vacía.</summary>
+    Public ReadOnly Property CollidableTransformIndices As New List(Of UInteger)
+    ''' <summary>`actions` (+0xE8) — hclAction (viento). Antes no se leía.</summary>
+    Public ReadOnly Property Actions As New List(Of HkxVirtualObjectGraph_Class)
     ' +0x058: hkArray of uint16 — triangle vertex indices (triplets: v0,v1,v2,...).
     ' TriangleIndices.Count / 3 = number of triangles in the cloth mesh.
     Public ReadOnly Property TriangleIndices As New List(Of Integer)

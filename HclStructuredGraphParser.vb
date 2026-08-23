@@ -7,26 +7,36 @@ Option Explicit On
 ' operadores (MoveParticles, Simulate, CopyVertices, etc.), cloth states.
 ' Llamado desde HclClothPackageParser_Class.
 '
-' Todos los offsets están determinados empíricamente para FO4 64-bit con
-' DumpStructuralAnalysis sobre NIFs reales (CasualDress.nif y los que cite cada función),
-' NO contra el SDK de Havok. Sin soporte para Skyrim (PointerSize=4).
+' ⛔ 2026-08-22 — LOS OFFSETS YA NO SE ADIVINAN NI SE ESCRIBEN A MANO.
+' Salen de `Havok.Canon.HavokLayout`, generado desde la reflexión hkClass/hkClassMember que el
+' propio ejecutable del juego embebe (Tools/HavokLayoutGen). La tabla se elige por el formato que
+' el packfile DECLARA en su header (Fallout64 / Skyrim64 / Skyrim32) ⇒ game-aware por construcción.
+' Skyrim32 no tiene tabla (la tabla describe x64) y estas funciones devuelven Nothing en vez de
+' inventar números.
 '
-' hclSimClothData (ver también HkxObjectGraphParser):
-'   +0x038: Particles (hkVector4 xyz=pos, w=invMass)
-'   +0x048: FixedParticles (uint16 indices)
-'   +0x058: TriangleIndices (uint16 triplets)
-'   +0x068: m_unknown68 (54 elems, tipo desconocido — no se lee)
-'   +0x088: m_unknown88 (uint32 SIN fixups = bone indices de los collidables) ← Field88UInt32
-'   +0x098: m_collidableTransforms (5×hkMatrix4=64B embedded) ← Field98Matrices
-'   +0x0A8: m_collidables (GLOBAL fixups → hclCollidable)
-'   +0x0B8: m_staticConstraintSets (GLOBAL fixups)
-'   +0x0D8: m_simClothPoses (GLOBAL fixups)
-' hclSimClothData NO tiene m_name serializado ⇒ .Name = String.Empty (+0x030 es el hkArray ptr
-' de m_collidableTransformIndices, no un string).
+' hclSimClothData — layout AUTORITATIVO (size 0x180, ver 11):
+'   +0x010 simulationInfo  {gravity@+0x00, globalDampingPerSecond@+0x10, collisionTolerance@+0x14,
+'                           subSteps@+0x18, pinch/landscape/transferMotion bools @+0x1C..+0x1E}
+'   +0x030 name (stringptr)          ⛔ SÍ existe. El comentario viejo decía que era el hkArray de
+'                                       m_collidableTransformIndices: era FALSO.
+'   +0x038 particleDatas = array de {real mass; real invMass; real radius; real friction} (16 B)
+'                                    ⛔ NO es "xyz=posición, w=invMass": son CUATRO escalares.
+'   +0x048 fixedParticles (uint16)   +0x058 triangleIndices (uint16)
+'   +0x068 triangleFlips (uint8)     ⛔ era "m_unknown68, tipo desconocido"
+'   +0x078 totalMass
+'   +0x080 collidableTransformMap { transformSetIndex@+0x00, transformIndices@+0x08 (uint32),
+'                                   offsets@+0x18 (matrix4) }   ⛔ +0x88 y +0x98 no eran campos
+'                                   sueltos ("m_unknown88" / "m_collidableTransforms"): son ESTOS DOS.
+'   +0x0A8 perInstanceCollidables    +0x0B8 staticConstraintSets   +0x0C8 antiPinchConstraintSets
+'   +0x0D8 simClothPoses             +0x0E8 actions (viento)       +0x0F8 staticCollisionMasks
+'   +0x108 perParticlePinchDetectionEnabledFlags (bool[])  — confirma el stride=1 que se había medido
+'   +0x118 collidablePinchingDatas   +0x130 maxParticleRadius      +0x14C doNormals
+'   +0x134 landscapeCollisionData    +0x150 transferMotionData
 '
-' hclCollidable: ShapeObject por GLOBAL fixup en +0x88; m_transform = hkMatrix4 column-major
-' en +0x020 (4×hkVector4). Los campos internos de los operadores de simulación están sólo
-' parcialmente mapeados.
+' hclCollidable (size 0x90, ver 3): name@+0x10, PADDING +0x18..+0x1F, transform@+0x20 (hkTransform:
+'   3 filas de rotación + traslación en +0x50 con w=1), linearVelocity@+0x60, angularVelocity@+0x70,
+'   pinchDetection{Enabled,Priority,Radius}@+0x80/+0x81/+0x84, shape@+0x88.
+'   ⛔ Este parser leía desde +0x18 y TODO salía corrido 8 bytes. Ver ParseCollidable.
 ' =============================================================================
 
 Imports System.Collections.Generic
@@ -38,37 +48,68 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        Dim collidableObjects = graph.ReadObjectReferenceArray(source.RelativeOffset + &HA8)
-        Dim constraintObjects = graph.ReadObjectReferenceArray(source.RelativeOffset + &HB8)
-        Dim defaultPoseObjects = graph.ReadObjectReferenceArray(source.RelativeOffset + &HD8)
+        Const cls = "hclSimClothData"
+        ' Guard por CLASE: Skyrim32 no tiene tabla, y la tabla de Skyrim64 no declara clases hcl.
+        Dim layout = CanonLayoutOf(graph)
+        If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim Off = Function(path As String) rel + layout.RequireOffset(cls, path)
+
+        Dim collidableObjects = graph.ReadObjectReferenceArray(Off("perInstanceCollidables"))
+        Dim constraintObjects = graph.ReadObjectReferenceArray(Off("staticConstraintSets"))
+        Dim defaultPoseObjects = graph.ReadObjectReferenceArray(Off("simClothPoses"))
+        Dim actionObjects = graph.ReadObjectReferenceArray(Off("actions"))
 
         Dim result As New HclSimClothDataDetail_Class With {
             .SourceObject = source,
-            .Name = String.Empty,  ' hclSimClothData no tiene m_name serializado; +0x030 es hkArray ptr (m_collidableTransformIndices), no string
-            .Field38Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H38)),
-            .Field48UInt16 = ReadUInt16Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H48)),
-            .Field58UInt16 = ReadUInt16Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H58)),
-            .Field88UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H88)),
-            .Field98Matrices = ReadMatrix4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H98)),
+            .Name = graph.ResolveLocalString(Off("name")),
+            .Field38Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(Off("particleDatas"))),
+            .Field48UInt16 = ReadUInt16Array(graph, graph.ReadArrayHeader(Off("fixedParticles"))),
+            .Field58UInt16 = ReadUInt16Array(graph, graph.ReadArrayHeader(Off("triangleIndices"))),
+            .Field88UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(Off("collidableTransformMap.transformIndices"))),
+            .Field98Matrices = ReadMatrix4Array(graph, graph.ReadArrayHeader(Off("collidableTransformMap.offsets"))),
             .Collidables = collidableObjects,
             .ConstraintSets = constraintObjects,
             .DefaultClothPoses = defaultPoseObjects,
-            .FieldF8UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &HF8)),
-            .Field118Pairs = ReadUInt32PairArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H118))
+            .Actions = actionObjects,
+            .FieldF8UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(Off("staticCollisionMasks"))),
+            .Field118Pairs = ReadUInt32PairArray(graph, graph.ReadArrayHeader(Off("collidablePinchingDatas"))),
+            .CollidableTransformSetIndex = graph.ReadInt32(Off("collidableTransformMap.transformSetIndex"))
         }
+
+        ' ---- hclSimClothDataOverridableSimulationInfo (+0x10): los PARÁMETROS DE LA SIMULACIÓN ----
+        ' El motor los usa así (RE de hclSimulateOperator::execute @0x14195C350 y 0x1418C75B0):
+        '   a = (mass·gravity + F)·invMass ;  v = (P-Pprev)·damp ;  P' = P + v + a·dtSub²
+        '   damp = si d>=1 -> 0 ; si d=0 -> 1 ; si no -> (1-d)^dtRef      con d = globalDampingPerSecond
+        '   dtSub = dt / subSteps  (si subSteps=0 el motor cae al subSteps del hclSimulateOperator)
+        result.Gravity = ReadVector4At(graph, Off("simulationInfo.gravity"))
+        result.GlobalDampingPerSecond = graph.ReadSingle(Off("simulationInfo.globalDampingPerSecond"))
+        result.CollisionTolerance = graph.ReadSingle(Off("simulationInfo.collisionTolerance"))
+        result.SubSteps = graph.ReadInt32(Off("simulationInfo.subSteps"))
+        result.PinchDetectionEnabled = graph.ReadByte(Off("simulationInfo.pinchDetectionEnabled")) <> 0
+        result.LandscapeCollisionEnabled = graph.ReadByte(Off("simulationInfo.landscapeCollisionEnabled")) <> 0
+        result.TransferMotionEnabled = graph.ReadByte(Off("simulationInfo.transferMotionEnabled")) <> 0
+        result.TotalMass = graph.ReadSingle(Off("totalMass"))
+        result.MaxParticleRadius = graph.ReadSingle(Off("maxParticleRadius"))
+        result.MaxCollisionPairs = graph.ReadInt32(Off("maxCollisionPairs"))
+        result.DoNormals = graph.ReadByte(Off("doNormals")) <> 0
+        result.NumLandscapeCollidableParticles = graph.ReadInt32(Off("numLandscapeCollidableParticles"))
+        result.LandscapeRadius = graph.ReadSingle(Off("landscapeCollisionData.landscapeRadius"))
+        result.TransferMotionTransformSetIndex = graph.ReadInt32(Off("transferMotionData.transformSetIndex"))
+        result.TransferMotionTransformIndex = graph.ReadInt32(Off("transferMotionData.transformIndex"))
+        result.TransferTranslationMotion = graph.ReadByte(Off("transferMotionData.transferTranslationMotion")) <> 0
+        result.TransferRotationMotion = graph.ReadByte(Off("transferMotionData.transferRotationMotion")) <> 0
 
         result.ParticleDatas.AddRange(ParseSimParticleData(result.Field38Vectors))
         result.FixedParticleIndices.AddRange(result.Field48UInt16.Select(Function(value) CInt(value)))
         result.Triangles.AddRange(ReadUInt16TriangleArray(result.Field58UInt16))
         result.StaticCollisionMasks.AddRange(result.FieldF8UInt32)
-        ' +0x108: array de stride=1 (byte). MEDIDO sobre 276 hclSimClothData reales en 259 NIFs de cloth
-        ' (KSHairdos + Armor/Clothes, Tools/PinchStrideProbe):
-        '   - el span físico del dato sólo cabe como 1 byte/elemento (p.ej. Count=113 ocupa span=128 con
-        '     padding de alineación 16; un uint32 exigiría >=452 bytes, imposible) — stride 1 ajusta 264/276,
-        '     stride 2/4/8 ajustan 1-3/276;
-        '   - el 99.8% de los bytes son 0/1 → flags booleanos por partícula.
-        ' El STRIDE está medido; el NOMBRE Havok del miembro no (ver PinchDetectionFlags).
-        result.PinchDetectionFlags.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H108)))
+        result.TriangleFlips.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(Off("triangleFlips"))))
+        result.AntiPinchConstraintSets = graph.ReadObjectReferenceArray(Off("antiPinchConstraintSets"))
+        ' `perParticlePinchDetectionEnabledFlags` (+0x108, array of bool): el stride=1 que se había MEDIDO
+        ' sobre 276 hclSimClothData (Tools/PinchStrideProbe) queda CONFIRMADO por el tipo declarado.
+        result.PinchDetectionFlags.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(Off("perParticlePinchDetectionEnabledFlags"))))
+        result.ActionDetails.AddRange(actionObjects.Select(Function(obj) ParseActionObject(graph, obj)).Where(Function(d) Not IsNothing(d)))
         result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj, collidableCache)).Where(Function(detail) Not IsNothing(detail)))
         result.DefaultClothPoseDetails.AddRange(defaultPoseObjects.Select(Function(obj) graph.ParseSimClothPose(obj)).Where(Function(detail) Not IsNothing(detail)))
         result.ConstraintDetails.AddRange(constraintObjects.Select(Function(obj) ParseConstraintObject(graph, obj)).Where(Function(detail) Not IsNothing(detail)))
@@ -434,23 +475,100 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         Dim cached As HclCollidableDetail_Class = Nothing
         If collidableCache IsNot Nothing AndAlso collidableCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
 
-        Dim payloadBytes = ReadPayloadBytes(graph, source, &H18)
-        Dim payloadVectors = ReadVector4Block(graph, source.RelativeOffset + &H18, If(IsNothing(payloadBytes), 0, payloadBytes.Length \ 16))
+        ' ⛔⛔ BUG CORREGIDO 2026-08-22 — el payload arrancaba en +0x18 y TODO quedaba corrido 8 bytes.
+        ' Layout REAL de hclCollidable (reflexión hkClass del propio Fallout4.exe, size 0x90 ver 3):
+        '     +0x10 name (stringptr) · +0x18..+0x1F PADDING · +0x20 transform (hkTransform, 0x40)
+        '     +0x60 linearVelocity · +0x70 angularVelocity
+        '     +0x80 pinchDetectionEnabled · +0x81 pinchDetectionPriority · +0x84 pinchDetectionRadius
+        '     +0x88 shape -> hclShape
+        ' CONTRAEJEMPLO medido (FemaleHair04.nif cloth, hclCollidable @0x1210): +0x00..+0x1F son TODO
+        ' CEROS; la rotación arranca en +0x20 y la traslación está en +0x50 con w=1 (-3.983, 113.227);
+        ' +0x60..+0x7F en cero (velocidades) y +0x84 = 0.01 (pinchDetectionRadius). Leyendo desde +0x18
+        ' la fila 0 de la matriz salía en ceros y "LinearVelocity" era media traslación (113.22, 1, 0, 0).
+        ' El parser hermano (HkxObjectGraphParser.ParseCollidable) SIEMPRE leyó +0x20: eran dos leyes
+        ' distintas para la misma clase y ésta era la equivocada.
+        Const cls = "hclCollidable"
+        ' ⛔ El guard es por CLASE, no sólo por "hay tabla". Son dos casos distintos y los dos existen:
+        '   · Skyrim32 no tiene tabla (la tabla describe x64)  → layout Is Nothing
+        '   · Skyrim64 SÍ tiene tabla, pero esa tabla NO declara NINGUNA clase hcl (Havok Cloth es de
+        '     FO4: 0 clases hcl en SkyrimSE.exe, medido) → HasClass devuelve False
+        ' Sin el segundo, `Offset` devolvía -1 y se leía en `rel - 1` antes de que el `RequireOffset`
+        ' de la línea siguiente lanzara. Y `Offset` acá era la ÚNICA lectura de esta función que no
+        ' usaba `RequireOffset`: misma ley, dos formas, y la débil se ejecutaba primero.
+        Dim layout = CanonLayoutOf(graph)
+        If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim transformOffset = layout.RequireOffset(cls, "transform")
+        Dim transformVectors = ReadVector4Block(graph, rel + transformOffset, 4)
+        Dim shapeObject = graph.ResolveGlobalObject(rel + layout.RequireOffset(cls, "shape"))
         Dim result As New HclCollidableDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .ShapeObject = graph.ResolveGlobalObject(source.RelativeOffset + &H88),
-            .ShapeDetail = ParseCapsuleShape(graph, graph.ResolveGlobalObject(source.RelativeOffset + &H88)),
-            .PayloadRelativeOffset = source.RelativeOffset + &H18,
-            .PayloadUInt32 = ReadPayloadUInt32(graph, source, &H18),
-            .PayloadVectors = payloadVectors,
-            .TransformMatrix = CreateMatrix4FromVectorRows(payloadVectors, 0),
-            .LinearVelocity = If(payloadVectors.Count > 4, payloadVectors(4), Nothing),
-            .AngularVelocity = If(payloadVectors.Count > 5, payloadVectors(5), Nothing),
-            .ParameterVector = If(payloadVectors.Count > 6, payloadVectors(6), Nothing)
+            .Name = graph.ResolveLocalString(rel + layout.RequireOffset(cls, "name")),
+            .ShapeObject = shapeObject,
+            .ShapeDetail = ParseCapsuleShape(graph, shapeObject),
+            .PayloadRelativeOffset = rel + transformOffset,
+            .PayloadVectors = transformVectors,
+            .TransformMatrix = CreateMatrix4FromVectorRows(transformVectors, 0),
+            .LinearVelocity = ReadVector4At(graph, rel + layout.RequireOffset(cls, "linearVelocity")),
+            .AngularVelocity = ReadVector4At(graph, rel + layout.RequireOffset(cls, "angularVelocity")),
+            .PinchDetectionEnabled = graph.ReadByte(rel + layout.RequireOffset(cls, "pinchDetectionEnabled")) <> 0,
+            .PinchDetectionPriority = CInt(graph.ReadByte(rel + layout.RequireOffset(cls, "pinchDetectionPriority"))),
+            .PinchDetectionRadius = graph.ReadSingle(rel + layout.RequireOffset(cls, "pinchDetectionRadius"))
         }
+        result.PayloadUInt32 = New List(Of UInteger)
         If collidableCache IsNot Nothing Then collidableCache(source.RelativeOffset) = result
         Return result
+    End Function
+
+    ''' <summary>
+    ''' Dispatcher de `hclAction` (el array `actions` de hclSimClothData / hclClothData).
+    ''' ⛔ NO se cuelga de ParseConstraintObject: las actions NO son constraint sets, viven en otro array
+    ''' (+0xE8 vs +0xB8) y ese dispatcher nunca las vería — sería código muerto que además haría que un
+    ''' censo de viento respondiera "no hay" midiendo en vacío.
+    ''' </summary>
+    Friend Shared Function ParseActionObject(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclActionDetail_Class
+        If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
+        Select Case source.ClassName.ToLowerInvariant()
+            Case "hclsimplewindaction"
+                Return ParseSimpleWindAction(graph, source)
+            Case Else
+                Return New HclGenericActionDetail_Class With {.SourceObject = source, .ClassName = source.ClassName}
+        End Select
+    End Function
+
+    Friend Shared Function ParseSimpleWindAction(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclSimpleWindActionDetail_Class
+        If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
+        If Not source.ClassName.Equals("hclSimpleWindAction", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Const cls = "hclSimpleWindAction"
+        Dim layout = CanonLayoutOf(graph)
+        If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Return New HclSimpleWindActionDetail_Class With {
+            .SourceObject = source,
+            .ClassName = source.ClassName,
+            .WindDirection = ReadVector4At(graph, rel + layout.RequireOffset(cls, "windDirection")),
+            .WindMinSpeed = graph.ReadSingle(rel + layout.RequireOffset(cls, "windMinSpeed")),
+            .WindMaxSpeed = graph.ReadSingle(rel + layout.RequireOffset(cls, "windMaxSpeed")),
+            .WindFrequency = graph.ReadSingle(rel + layout.RequireOffset(cls, "windFrequency")),
+            .MaximumDrag = graph.ReadSingle(rel + layout.RequireOffset(cls, "maximumDrag")),
+            .AirVelocity = ReadVector4At(graph, rel + layout.RequireOffset(cls, "airVelocity")),
+            .CurrentTime = graph.ReadSingle(rel + layout.RequireOffset(cls, "currentTime"))
+        }
+    End Function
+
+    ''' <summary>Tabla canónica del formato que el packfile DECLARA. Nothing = formato sin tabla (Skyrim32).</summary>
+    Friend Shared Function CanonLayoutOf(graph As HkxObjectGraph_Class) As Havok.Canon.HavokLayout
+        If IsNothing(graph) OrElse IsNothing(graph.Packfile) OrElse IsNothing(graph.Packfile.Header) Then Return Nothing
+        Return Havok.Canon.HavokLayout.For(graph.Packfile.Header.PackfileFormat)
+    End Function
+
+    Private Shared Function ReadVector4At(graph As HkxObjectGraph_Class, relativeOffset As Integer) As HkxVector4Graph_Class
+        Return New HkxVector4Graph_Class With {
+            .X = graph.ReadSingle(relativeOffset),
+            .Y = graph.ReadSingle(relativeOffset + 4),
+            .Z = graph.ReadSingle(relativeOffset + 8),
+            .W = graph.ReadSingle(relativeOffset + 12)
+        }
     End Function
     Friend Shared Function ParseStandardLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclStandardLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
@@ -495,10 +613,18 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclLocalRangeConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        Dim rawConstraints = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 16)
+        Const cls = "hclLocalRangeConstraintSet"
+        Dim layout = CanonLayoutOf(graph)
+        If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim rawConstraints = ReadRawStructArray(graph, graph.ReadArrayHeader(rel + layout.RequireOffset(cls, "localConstraints")), 16)
         Dim result As New HclLocalRangeConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
+            .Name = graph.ResolveLocalString(rel + layout.RequireOffset(cls, "name")),
+            .ReferenceMeshBufferIdx = graph.ReadInt32(rel + layout.RequireOffset(cls, "referenceMeshBufferIdx")),
+            .Stiffness = graph.ReadSingle(rel + layout.RequireOffset(cls, "stiffness")),
+            .ShapeType = graph.ReadInt32(rel + layout.RequireOffset(cls, "shapeType")),
+            .ApplyNormalComponent = graph.ReadByte(rel + layout.RequireOffset(cls, "applyNormalComponent")) <> 0
         }
         result.ConstraintDetails.AddRange(ParseLocalRangeConstraints(rawConstraints))
         result.UniformMaximumDistance = ResolveUniformParameter(result.ConstraintDetails.Select(Function(item) item.MaximumDistance))
@@ -1409,6 +1535,71 @@ Public Class HclSimClothDataDetail_Class
     Public Property VolumeConstraintCount As Integer
     Public Property VolumeConstraintField30MatchesBindingParameter As Boolean
     Public Property VolumeConstraintField50MatchesBindingParameter As Boolean
+
+    ' ======================================================================================
+    ' PARÁMETROS DE SIMULACIÓN — hclSimClothDataOverridableSimulationInfo (+0x10) y compañía.
+    ' Antes no se leían. Son los que el motor usa en hclSimulateOperator::execute.
+    ' ======================================================================================
+    ''' <summary>gravity (u/s²). Medido en vanilla: ≈ -686.7 en Z para ropa (1 g a 70 u/m), ≈ -1500 en pelo.</summary>
+    Public Property Gravity As HkxVector4Graph_Class
+    ''' <summary>Fracción de velocidad perdida POR SEGUNDO. El factor por paso es (1-d)^dt.
+    ''' ⛔ El motor tiene dos ramas duras: d&gt;=1 ⇒ factor 0 (sin inercia) y d=0 ⇒ factor 1.</summary>
+    Public Property GlobalDampingPerSecond As Single
+    ''' <summary>Margen de colisión. Lo que antes figuraba como "+0x024 = 13.998, campo sin nombrar".</summary>
+    Public Property CollisionTolerance As Single
+    ''' <summary>Substeps por frame. 0 ⇒ el motor usa el subSteps del hclSimulateOperator.</summary>
+    Public Property SubSteps As Integer
+    Public Property PinchDetectionEnabled As Boolean
+    Public Property LandscapeCollisionEnabled As Boolean
+    Public Property TransferMotionEnabled As Boolean
+    ''' <summary>Masa total. El viento reparte su fuerza por mass_i/totalMass; si es 0 el motor NO aplica viento.</summary>
+    Public Property TotalMass As Single
+    Public Property MaxParticleRadius As Single
+    Public Property MaxCollisionPairs As Integer
+    Public Property DoNormals As Boolean
+    Public Property NumLandscapeCollidableParticles As Integer
+    Public Property LandscapeRadius As Single
+    Public Property CollidableTransformSetIndex As Integer
+    Public Property TransferMotionTransformSetIndex As Integer
+    Public Property TransferMotionTransformIndex As Integer
+    Public Property TransferTranslationMotion As Boolean
+    Public Property TransferRotationMotion As Boolean
+    ''' <summary>`triangleFlips` (+0x68). Antes se documentaba como "m_unknown68, tipo desconocido".</summary>
+    Public ReadOnly Property TriangleFlips As New List(Of Byte)
+    ''' <summary>`actions` (+0xE8) — acciones de la sim (viento). Antes no se leía.</summary>
+    Public Property Actions As List(Of HkxVirtualObjectGraph_Class)
+    Public ReadOnly Property ActionDetails As New List(Of HclActionDetail_Class)
+    ''' <summary>`antiPinchConstraintSets` (+0xC8). Antes no se leía.</summary>
+    Public Property AntiPinchConstraintSets As List(Of HkxVirtualObjectGraph_Class)
+End Class
+
+''' <summary>Base de las hclAction. Hoy la única serializable es hclSimpleWindAction.</summary>
+Public MustInherit Class HclActionDetail_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property ClassName As String = ""
+End Class
+
+''' <summary>
+''' `hclSimpleWindAction` — el VIENTO. Layout por reflexión. El motor lo aplica así
+''' (applyAction @0x1418F8420, compartida con hclBSClothParameterizedWindAction):
+'''     f      = |dot(normal_i, windDirection)|   (0.7 si no hay normales por partícula)
+'''     relAir = airVelocity - (P[i]-Pprev[i])/dt
+'''     F[i]  += relAir * maximumDrag * f * (mass_i / totalMass)
+''' </summary>
+Public Class HclSimpleWindActionDetail_Class
+    Inherits HclActionDetail_Class
+    Public Property WindDirection As HkxVector4Graph_Class   ' +0x10
+    Public Property WindMinSpeed As Single                   ' +0x20
+    Public Property WindMaxSpeed As Single                   ' +0x24
+    Public Property WindFrequency As Single                  ' +0x28
+    Public Property MaximumDrag As Single                    ' +0x2C
+    Public Property AirVelocity As HkxVector4Graph_Class     ' +0x30
+    Public Property CurrentTime As Single                    ' +0x40
+End Class
+
+''' <summary>Acción genérica: la clase existe pero no tiene lector específico todavía.</summary>
+Public Class HclGenericActionDetail_Class
+    Inherits HclActionDetail_Class
 End Class
 
 Public Class HclSimCollidableBinding_Class
@@ -1620,17 +1811,27 @@ Public Class HclGatherSomeVerticesOperatorDetail_Class
     Public ReadOnly Property Pairs As New List(Of HclVertexGatherPair_Class)
 End Class
 
+' hclCollidable — TODOS los campos por reflexión (size 0x90, ver 3). Ver ParseCollidable para el
+' contraejemplo que destapó el corrimiento de 8 bytes que este parser tuvo hasta 2026-08-22.
 Public Class HclCollidableDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
     Public Property ShapeObject As HkxVirtualObjectGraph_Class
     Public Property ShapeDetail As HclCapsuleShapeDetail_Class
+    ''' <summary>Offset del `transform` (+0x20). Se conserva el nombre viejo para no romper llamadores.</summary>
     Public Property PayloadRelativeOffset As Integer
+    ''' <summary>⛔ OBSOLETO: quedaba de leer el objeto como un blob desde +0x18. Siempre vacío.</summary>
     Public Property PayloadUInt32 As List(Of UInteger)
+    ''' <summary>Los 4 hkVector4 del `transform` (3 filas de rotación + traslación).</summary>
     Public Property PayloadVectors As List(Of HkxVector4Graph_Class)
+    ''' <summary>`transform` (+0x20): 3 filas de rotación + traslación en la 4.ª, con w=1.</summary>
     Public Property TransformMatrix As HkxMatrix4Graph_Class
-    Public Property LinearVelocity As HkxVector4Graph_Class
-    Public Property AngularVelocity As HkxVector4Graph_Class
+    Public Property LinearVelocity As HkxVector4Graph_Class      ' +0x60
+    Public Property AngularVelocity As HkxVector4Graph_Class     ' +0x70
+    Public Property PinchDetectionEnabled As Boolean             ' +0x80
+    Public Property PinchDetectionPriority As Integer            ' +0x81 (int8)
+    Public Property PinchDetectionRadius As Single               ' +0x84
+    ''' <summary>⛔ OBSOLETO: era el vector 6 del blob mal alineado. Fuera de hclCollidable no hay tal campo.</summary>
     Public Property ParameterVector As HkxVector4Graph_Class
 End Class
 
@@ -1743,6 +1944,13 @@ Public Class HclLocalRangeConstraintSetDetail_Class
     Public Property DistinctParticleCount As Integer
     Public Property DistinctReferenceVertexCount As Integer
     Public Property ParticleReferenceIdentityCount As Integer
+    ''' <summary>Buffer cuyas posiciones son la REFERENCIA de la correa (el cuerpo skinneado).</summary>
+    Public Property ReferenceMeshBufferIdx As Integer
+    Public Property Stiffness As Single
+    ''' <summary>enum hclLocalRangeConstraintSetShapeType. Es lo que decide si la correa es cono o esfera:
+    ''' hasta ahora "cono" salía de mirar los valores, no de leer este campo.</summary>
+    Public Property ShapeType As Integer
+    Public Property ApplyNormalComponent As Boolean
 End Class
 
 Friend Class HclVolumeConstraintMxDetail_Class
