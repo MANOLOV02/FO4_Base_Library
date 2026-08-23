@@ -293,36 +293,54 @@ Public Class HkxAnimationPlayer
 ''' NaN, asi que el clamp posterior no lo atraparia y CInt(NaN) tira OverflowException — fuera de todo
 ''' Try, al elegir un clip. Por eso los dos crops se chequean explicitamente. Medido: 0 casos en los
 ''' dos juegos (28.954 valores), asi que esto es seguro para MODS, no arreglo de un caso vivo.</para></summary>
+''' <summary>LA ley del crop, en UN solo lugar: dado lo que declara el hkbClipGenerator y lo que trae
+''' el archivo de animacion, decide si el recorte se puede honrar y cual es el rango que queda.
+''' <para>⛔ La usan DOS consumidores y por eso vive suelta: <see cref="SetPlayableRange"/> (que aplica
+''' el rango) y BehaviorClipEnumerator.DetectHkxFlags (que solo quiere el booleano, para que el picker
+''' pueda avisar ANTES de elegir el clip). Calcularla dos veces la haria divergir sin que ningun gate
+''' lo vea: el picker diria "crop ignorado" y el player lo honraria, o al reves.</para>
+''' <para>⛔ La validez se decide en SEGUNDOS, ANTES de dividir. Si se decidiera despues (comparando
+''' lo contra hi) el redondeo podria fabricar un rango de 1 frame donde el clip no tiene ninguno.
+''' Medido: los 38 clips de FO4 cuyo crop deja el rango vacio caen los 38 por esta guarda.</para>
+''' <para>⛔ NaN: `cropStart >= dur - cropEnd` es False para NaN por IEEE-754, y Math.Min/Max PROPAGAN
+''' NaN, asi que el clamp posterior no lo atraparia y CInt(NaN) tira OverflowException. Por eso los dos
+''' crops se chequean explicitamente. Medido: 0 casos en los dos juegos (28.954 valores), o sea que
+''' esto es seguro para MODS, no arreglo de un caso vivo.</para>
+''' <para>`honrable = False` NO quiere decir "hay error": tambien es False cuando el clip simplemente no
+''' pidio crop. Quien quiera avisarle al usuario tiene que mirar ademas si `pidioCrop`.</para></summary>
+    Friend Shared Function RangoDeCrop(count As Integer, frameDuration As Double, duration As Double,
+                                       cropStartSeconds As Single, cropEndSeconds As Single) As (honrable As Boolean, lo As Integer, hi As Integer)
+        If count <= 1 OrElse
+           Not Double.IsFinite(frameDuration) OrElse frameDuration <= 0.0 OrElse
+           Not Double.IsFinite(duration) OrElse duration <= 0.0 OrElse
+           Not Single.IsFinite(cropStartSeconds) OrElse Not Single.IsFinite(cropEndSeconds) OrElse
+           CDbl(cropStartSeconds) >= duration - CDbl(cropEndSeconds) Then
+            Return (False, 0, Math.Max(0, count - 1))
+        End If
+        Dim lo = AFrame(CDbl(cropStartSeconds) / frameDuration, True, count)
+        Dim hi = AFrame((duration - CDbl(cropEndSeconds)) / frameDuration, False, count)
+        ' El redondeo todavia puede dejar hi < lo: eso tampoco se puede honrar.
+        If hi < lo Then Return (False, 0, count - 1)
+        Return (True, lo, hi)
+    End Function
+
     Public Sub SetPlayableRange(cropStartSeconds As Single, cropEndSeconds As Single)
         Dim count = FrameCount
         Dim fd As Double = If(_session Is Nothing, 0.0, CDbl(_session.FrameDuration))
         Dim dur As Double = If(_session Is Nothing, 0.0, CDbl(_session.Duration))
         Dim pidioCrop = (cropStartSeconds <> 0.0F OrElse cropEndSeconds <> 0.0F)
 
-        Dim invalido =
-            count <= 1 OrElse
-            Not Double.IsFinite(fd) OrElse fd <= 0.0 OrElse
-            Not Double.IsFinite(dur) OrElse dur <= 0.0 OrElse
-            Not Single.IsFinite(cropStartSeconds) OrElse Not Single.IsFinite(cropEndSeconds) OrElse
-            CDbl(cropStartSeconds) >= dur - CDbl(cropEndSeconds)
-
-        If invalido Then
+        Dim r = RangoDeCrop(count, fd, dur, cropStartSeconds, cropEndSeconds)
+        If r.honrable Then
+            _firstFrame = r.lo
+            _lastFrame = r.hi
+            PlayableRangeIgnored = False
+        Else
             _firstFrame = 0
             _lastFrame = -1
-            ' ⛔ Solo es "ignorado" si de verdad se pidio algo. La rama de arriba tambien cubre dur <= 0 y
-            ' fd invalido, que no tienen nada que ver con el crop: sin este AndAlso se reportaria "no se pudo
-            ' honrar el crop" sobre un clip que nunca pidio crop.
+            ' ⛔ Solo es "ignorado" si de verdad se pidio algo: `honrable = False` tambien cubre el clip
+            ' que no pidio crop, y avisar ahi seria mentir.
             PlayableRangeIgnored = pidioCrop AndAlso count > 1
-        Else
-            _firstFrame = AFrame(CDbl(cropStartSeconds) / fd, True, count)
-            _lastFrame = AFrame((dur - CDbl(cropEndSeconds)) / fd, False, count)
-            If _lastFrame < _firstFrame Then
-                _firstFrame = 0
-                _lastFrame = -1
-                PlayableRangeIgnored = True
-            Else
-                PlayableRangeIgnored = False
-            End If
         End If
 
         ' ⛔ ULTIMA linea: ClampFrame lee RangoReproducible(), que necesita los dos campos ya asignados.

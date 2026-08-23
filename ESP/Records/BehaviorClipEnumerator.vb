@@ -221,39 +221,70 @@ Public NotInheritable Class BehaviorClipEnumerator
         Next
     End Sub
 
-    ''' <summary>Pasada LAZY: para cada clip carga su archivo de animación resuelto, parsea el primer
-    ''' hkaAnimationBinding y setea IsAdditive = (BlendHint &lt;&gt; 0). Idempotente (salta los que ya tienen
-    ''' AdditiveKnown). Cara (carga 1 archivo por clip) → el caller la corre en background, UNA vez por
-    ''' lista cacheada. loadHkx = el mismo Func(path→bytes) del caller (FilesDictionary BA2+loose).</summary>
-    Public Shared Sub DetectAdditiveFlags(clips As IEnumerable(Of ResolvedAnimationClip), loadHkx As Func(Of String, Byte()))
+    ''' <summary>Datos del clip que SOLO salen de abrir el .hkx: si es aditivo y si su crop se puede
+    ''' honrar. Pasada LAZY — el llamador la corre en segundo plano y la UI lee los flags cuando estan.
+    ''' <para>⛔ Lo que se cachea es del ARCHIVO (blendHint, frames, duracion); lo que se DERIVA es del
+    ''' CLIP. Desde el dedup por variante, N clips comparten un .hkx pero cada uno tiene su crop, asi que
+    ''' `CropIgnorado` NO se puede memoizar por archivo — se recalcula por clip con los datos cacheados.
+    ''' Memoizarlo por archivo le daria a todas las variantes el veredicto de la primera.</para>
+    ''' <para>El memo evita N descompresiones BA2 + N BuildGraph del MISMO archivo: el guard
+    ''' <see cref="ResolvedAnimationClip.HkxFlagsKnown"/> es por OBJETO y no alcanza.</para>
+    ''' <para>Idempotente. Cara igual (1 archivo por archivo distinto) ⇒ el caller la corre en background,
+    ''' UNA vez por lista cacheada. loadHkx = el mismo Func(path→bytes) del caller (BA2 + loose).</para></summary>
+    Public Shared Sub DetectHkxFlags(clips As IEnumerable(Of ResolvedAnimationClip), loadHkx As Func(Of String, Byte()))
         If clips Is Nothing OrElse loadHkx Is Nothing Then Return
-        ' ⛔ Memo POR ARCHIVO: el guard `AdditiveKnown` es por OBJETO, y desde que el dedup separa variantes un
-        ' mismo .hkx aparece N veces, o sea N descompresiones BA2 + N BuildGraph del MISMO archivo. El blendHint
-        ' es del ARCHIVO, no del clip generator.
-        Dim memo As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+        Dim memo As New Dictionary(Of String, DatosDeArchivo)(StringComparer.OrdinalIgnoreCase)
         For Each c In clips
-            If c Is Nothing OrElse c.AdditiveKnown Then Continue For
-            Dim yaSabido As Boolean
-            If memo.TryGetValue(c.AnimationFile, yaSabido) Then
-                c.IsAdditive = yaSabido
-                c.AdditiveKnown = True
-                Continue For
+            If c Is Nothing OrElse c.HkxFlagsKnown Then Continue For
+            Dim d As DatosDeArchivo = Nothing
+            If Not memo.TryGetValue(c.AnimationFile, d) Then
+                d = LeerDatosDeArchivo(loadHkx, c.AnimationFile)
+                memo(c.AnimationFile) = d
             End If
-            Dim bytes = LoadFirstHkxCandidate(loadHkx, c.AnimationFile)
-            If bytes Is Nothing OrElse bytes.Length = 0 Then c.AdditiveKnown = True : memo(c.AnimationFile) = c.IsAdditive : Continue For
-            Try
-                Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(bytes))
-                Dim b = g.GetObjectsByClassName("hkaAnimationBinding").FirstOrDefault()
-                If b IsNot Nothing Then
-                    Dim ab = g.ParseAnimationBinding(b)
-                    If ab IsNot Nothing Then c.IsAdditive = (ab.BlendHint <> 0)
-                End If
-            Catch
-            End Try
-            c.AdditiveKnown = True
-            memo(c.AnimationFile) = c.IsAdditive
+            c.IsAdditive = d.EsAditivo
+            ' ⛔ Se pregunta por el crop de ESTE clip, no del archivo. Y con la MISMA funcion que el player
+            ' usa despues para aplicarlo: si el picker avisara con una ley propia, las dos divergirian.
+            If d.Leido AndAlso (c.CropStartLocalTime <> 0.0F OrElse c.CropEndLocalTime <> 0.0F) Then
+                c.CropIgnorado = Not HkxAnimationPlayer.RangoDeCrop(d.Frames, d.DuracionDeFrame, d.Duracion,
+                                                                    c.CropStartLocalTime, c.CropEndLocalTime).honrable
+            End If
+            c.HkxFlagsKnown = True
         Next
     End Sub
+
+    ''' <summary>Lo que se lee UNA vez por archivo. <c>Leido = False</c> si no se pudo abrir o parsear:
+    ''' ahi no se afirma nada del crop, en vez de asumir que esta bien.</summary>
+    Private Structure DatosDeArchivo
+        Public Leido As Boolean
+        Public EsAditivo As Boolean
+        Public Frames As Integer
+        Public DuracionDeFrame As Double
+        Public Duracion As Double
+    End Structure
+
+    Private Shared Function LeerDatosDeArchivo(loadHkx As Func(Of String, Byte()), animFile As String) As DatosDeArchivo
+        Dim d As New DatosDeArchivo()
+        Dim bytes = LoadFirstHkxCandidate(loadHkx, animFile)
+        If bytes Is Nothing OrElse bytes.Length = 0 Then Return d
+        Try
+            Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(bytes))
+            Dim b = g.GetObjectsByClassName("hkaAnimationBinding").FirstOrDefault()
+            If b IsNot Nothing Then
+                Dim ab = g.ParseAnimationBinding(b)
+                If ab IsNot Nothing Then d.EsAditivo = (ab.BlendHint <> 0)
+            End If
+            ' El grafo YA esta construido: leer frames y duracion no cuesta ni un archivo ni un parseo mas.
+            Dim an = g.ParseAnimations().FirstOrDefault()
+            If an IsNot Nothing Then
+                d.Frames = an.NumFrames
+                d.DuracionDeFrame = CDbl(an.FrameDuration)
+                d.Duracion = CDbl(an.Duration)
+                d.Leido = True
+            End If
+        Catch
+        End Try
+        Return d
+    End Function
 
     ''' <summary>Enumera los clips alcanzables desde un behavior file: sus hkbClipGenerator (resueltos por EXISTENCIA
     ''' sobre las rutas SAPT) Y los behaviors referenciados (hkbBehaviorReferenceGenerator @+0x88), con el MISMO
@@ -655,11 +686,19 @@ Public Class ResolvedAnimationClip
     Public SourceSkeletonPath As String = ""   ' skeleton del actor de ORIGEN de la anim (para interpretarla)
     ''' <summary>Aditivo: el archivo de animación resuelto tiene hkaAnimationBinding.BlendHint &lt;&gt; 0
     ''' (1=ADDITIVE_DEPRECATED, 2=ADDITIVE; ambos = overlay, no pose standalone). Lo puebla
-    ''' DetectAdditiveFlags (lazy, carga el archivo). El selector lo muestra con insignia ⊕.</summary>
+    ''' DetectHkxFlags (lazy, carga el archivo). El selector lo muestra con insignia ⊕.</summary>
     Public IsAdditive As Boolean = False
-    ''' <summary>True hasta que se sabe que NO requiere additive-detection (guard de DetectAdditiveFlags
-    ''' para no recargar archivos). Interno del pipeline lazy.</summary>
-    Public AdditiveKnown As Boolean = False
+    ''' <summary>El crop que declara el hkbClipGenerator NO se puede honrar y el clip se va a reproducir
+    ''' ENTERO. Lo decide <c>HkxAnimationPlayer.RangoDeCrop</c>, la MISMA funcion que despues aplica el
+    ''' rango: si se calculara aparte, el picker podria decir una cosa y el player hacer otra.
+    ''' <para>Solo tiene sentido con <see cref="HkxFlagsKnown"/> = True: hasta que la pasada lazy lea el
+    ''' archivo no se sabe (hace falta la Duration del .hkx, que no esta en el behavior graph).
+    ''' Medido: 38 clips de FO4 con crop que deja el rango vacio.</para></summary>
+    Public CropIgnorado As Boolean = False
+    ''' <summary>True cuando la pasada lazy ya leyo el .hkx y lleno lo que SOLO sale del archivo:
+    ''' <see cref="IsAdditive"/> y <see cref="CropIgnorado"/>. Guard de <c>DetectHkxFlags</c> para no
+    ''' recargar. (Se llamaba AdditiveKnown, cuando el additive era lo unico que la pasada leia.)</summary>
+    Public HkxFlagsKnown As Boolean = False
     ''' <summary>True si el clip SOLO es alcanzable vía subgraphs de 1ª persona (SRAF.Perspective=1):
     ''' cámara/viewmodel (brazos del player), inútil para preview de NPC. Pasa a False en cuanto un
     ''' subgraph 3ª-persona o el root behavior (Perspective=none) lo alcanza. El selector lo oculta por
