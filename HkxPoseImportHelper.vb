@@ -84,6 +84,11 @@ Public NotInheritable Class HkxPoseImportSession
     Private ReadOnly _tracks As List(Of ResolvedTrack)
     Private ReadOnly _baseDiagnostics As HkxPoseImportDiagnostics
     Private ReadOnly _additiveHint As Boolean
+''' <summary>El clip es un overlay aditivo (blendHint 1 o 2, o el hint del caller). Se resuelve UNA vez en
+''' el constructor y lo leen BuildPose, BuildUnboundBoneWmData y BuildUnboundBoneSamData: una ley, un lugar.</summary>
+    Private ReadOnly _esAditivo As Boolean
+''' <summary>blendHint = 2 (ADDITIVE actual). Decide el ORDEN de composicion: S o add, en vez de add o S.</summary>
+    Private ReadOnly _esAditivoActual As Boolean
     Private ReadOnly _previewPoseCache As New Dictionary(Of Integer, HkxPoseImportHelper.ImportResult)
 
     Private Sub New(animation As HkaSplineCompressedAnimationGraph_Class,
@@ -98,6 +103,14 @@ Public NotInheritable Class HkxPoseImportSession
         _tracks = tracks
         _baseDiagnostics = diagnostics
         _additiveHint = additiveHint
+        ' ⛔ ACA, DESPUES de `_animation = animation`. Si este bloque sube arriba de esa linea, `_animation` es
+        ' Nothing, el guard devuelve bh = 0 y `_esAditivo` queda valiendo `additiveHint`, que en Wardrobe Manager
+        ' es SIEMPRE False (HkxPoseImport_Form.vb llama Create sin ese argumento). Resultado: TODO clip bh=1/2 se
+        ' procesaria como NORMAL. Compila, y los 4 gates de poses quedan VERDES; lo que se rompe es el render
+        ' (RudderAndFlaps.hkx: el timon vuela ~423 u). Mismo perfil que el bug de ComposeTransforms.
+        Dim bhCtor = If(_animation IsNot Nothing AndAlso _animation.Binding IsNot Nothing, _animation.Binding.BlendHint, 0)
+        _esAditivo = (bhCtor = 1 OrElse bhCtor = 2) OrElse additiveHint
+        _esAditivoActual = (bhCtor = 2)
     End Sub
 
     Public ReadOnly Property FrameCount As Integer
@@ -115,6 +128,17 @@ Public NotInheritable Class HkxPoseImportSession
     Public ReadOnly Property FrameDuration As Single
         Get
             Return If(_animation Is Nothing, 0.0F, _animation.FrameDuration)
+        End Get
+    End Property
+
+''' <summary>Duracion DECLARADA del clip, en segundos.
+''' <para>⛔ NO es (FrameCount-1) x FrameDuration: son dos Single autorados por SEPARADO y no siempre
+''' coinciden. Medido sobre 15.713 animaciones de FO4: 14.628 cumplen Duration ~ (N-1)*fd y 1.085
+''' cumplen Duration ~ N*fd. El crop del hkbClipGenerator esta definido contra ESTE valor, asi que el
+''' rango reproducible se deriva de aca y no del conteo de frames.</para></summary>
+    Public ReadOnly Property Duration As Single
+        Get
+            Return If(_animation Is Nothing, 0.0F, _animation.Duration)
         End Get
     End Property
 
@@ -283,11 +307,13 @@ Public NotInheritable Class HkxPoseImportSession
         ' pose-header y ABORTA si se mezclan — cadena literal del binario: "Trying to mix deprecated and
         ' current additive animations in blend, this is not supported. Older assets must be re-exported."
         ' (hkbblendergeneratorutils.cpp; gemela en hkblayergeneratorutils.cpp, 0x141a5904d).
-        Dim bh = If(_animation.Binding IsNot Nothing, _animation.Binding.BlendHint, 0)
-        Dim additive = (bh = 1 OrElse bh = 2) OrElse _additiveHint
-        ' ORDEN de composición del aditivo: lo DECLARA el binding; no se infiere en runtime ni se vota.
-        ' Ver la ley, su DOMINIO y su evidencia en el sitio de uso, más abajo.
-        Dim additiveCurrent = (bh = 2)
+        ' ⛔ UNA ley, UN lugar: los dos se resuelven en el constructor y aca solo se leen. Antes se
+        ' recalculaban aca, y BuildUnboundBoneWmData / BuildUnboundBoneSamData NO los calculaban en
+        ' absoluto: por eso las dos emitian con semantica de clip NORMAL sobre clips aditivos.
+        ' ORDEN de composicion del aditivo: lo DECLARA el binding; no se infiere en runtime ni se vota.
+        ' Ver la ley, su DOMINIO y su evidencia en el sitio de uso, mas abajo.
+        Dim additive = _esAditivo
+        Dim additiveCurrent = _esAditivoActual
 
         For Each resolved In _tracks
             Dim hkxTransform = _animation.GetTransform(usedFrame, resolved.TrackIndex)
@@ -477,10 +503,30 @@ Public NotInheritable Class HkxPoseImportSession
                 Dim ht = _animation.GetTransform(usedFrame, resolved.TrackIndex)
                 If ht Is Nothing Then Continue For
 
-                ' Absolute LOCAL transform of the bone at this frame: per component take the HKX frame
-                ' value if animated, else the rig rest (refPose) value. Frame-vector Nothing falls back
-                ' to refPose too. (Shared with the WM-format path via BuildUnboundFrameLocal.)
-                Dim tr = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
+                ' Absolute LOCAL transform of the bone at this frame.
+                ' ⛔ La ley la DECLARA el blendHint, igual que en BuildPose y en BuildUnboundBoneWmData.
+                ' `BuildUnboundFrameLocal` rellena las componentes NO animadas con el refPose — semantica de
+                ' clip NORMAL. Sobre un clip ADITIVO eso mezcla un delta (~0 en traslacion) con absolutos del
+                ' rest: el hueso se va al ORIGEN en los ejes animados y la rotacion pierde R_rest.
+                ' Contraejemplo: RudderAndFlaps.hkx (bh=2), hueso Rudder, abierto desde el picker de Wardrobe
+                ' Manager (que NO filtra carpeta) con "Save SAM" tildado — el JSON salia con el timon en el
+                ' origen. Era un bug VIVO, no un riesgo introducido por este cambio.
+                ' ⛔ Aca se emite el ABSOLUTO, no el delta: esa es la diferencia con la gemela de formato WM,
+                ' y por eso NO se puede copiar su expresion (le falta el inv(s)). Ver el remarks de mas abajo.
+                ' ⛔ BuildNoAnimSyncLocal no se aplica, igual que en la gemela: el filtro de arriba es
+                ' `LiveBone Is Nothing`, o sea que no hay NoAnimSyncMask que leer y seria passthrough.
+                Dim tr As Transform_Class
+                If _esAditivo Then
+                    Dim sRest = RefPoseToStructural(resolved.ReferencePose)
+                    Dim add = BuildFrameLocalAditivo(ht)
+                    If _esAditivoActual Then
+                        tr = sRest.ComposeTransforms(add)          ' bh=2 : S o add
+                    Else
+                        tr = add.ComposeTransforms(sRest)          ' resto: add o S
+                    End If
+                Else
+                    tr = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
+                End If
 
                 ' Escala COMPLETA: uniforme + per-eje. `BuildUnboundFrameLocal` ya NO promedia (usa
                 ' `ResolveScaleVector`), así que el per-eje del clip llega hasta acá y hay que copiarlo
@@ -566,12 +612,28 @@ Public NotInheritable Class HkxPoseImportSession
                 Dim ht = _animation.GetTransform(usedFrame, resolved.TrackIndex)
                 If ht Is Nothing Then Continue For
 
-                Dim frameLocal = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
                 Dim s = RefPoseToStructural(resolved.ReferencePose)   ' structural proxy = HKX rig rest
-                ' ⛔ YA NO es la misma fórmula que el delta vivo de BuildPose: desde el fix del orden
-                ' aditivo, BuildPose ramifica por blendHint (bh=2 ⇒ S∘add) y esta función no. Coincide
-                ' sólo para clips NO aditivos. Ver el <para> del docstring.
-                Dim delta = s.Inverse().ComposeTransforms(frameLocal)
+                ' MISMA ley que BuildPose (el orden lo declara el blendHint), con el round-trip
+                ' inv(S)o(So add) algebraicamente CANCELADO: no es la misma expresion, es la misma ley.
+                ' ⛔ Para bh=2 el delta ES el aditivo, exacto. Componer y descomponer seria un round-trip
+                ' que solo agrega ruido, y PoseTransformData.Isidentity compara SIN epsilon
+                ' (PoseClasses.vb:151), o sea que ese ruido DECIDE si el hueso entra al XML. Medido sobre
+                ' 20.000 S sinteticos con add = identidad: sin round-trip fallan Isidentity 5.015/20.000;
+                ' con round-trip 7.189/20.000 (+43 % de entradas espurias).
+                ' ⛔ BuildNoAnimSyncLocal NO se aplica aca, y esta bien: el filtro de arriba es
+                ' `LiveBone Is Nothing`, o sea que no hay NoAnimSyncMask que leer (se lee de resolved.LiveBone)
+                ' y seria passthrough. Si manana cambia ese filtro, la asimetria vuelve callada.
+                Dim delta As Transform_Class
+                If _esAditivo Then
+                    Dim add = BuildFrameLocalAditivo(ht)
+                    If _esAditivoActual Then
+                        delta = add
+                    Else
+                        delta = s.Inverse().ComposeTransforms(add.ComposeTransforms(s))
+                    End If
+                Else
+                    delta = s.Inverse().ComposeTransforms(BuildUnboundFrameLocal(ht, resolved.ReferencePose))
+                End If
                 Dim poseData = ToPoseTransformData(delta)              ' reuse → Matrix33ToBSRotation
                 If Not poseData.Isidentity AndAlso Not result.ContainsKey(resolved.BoneName) Then result.Add(resolved.BoneName, poseData)
             Catch ex As Exception
@@ -605,20 +667,28 @@ Public NotInheritable Class HkxPoseImportSession
     ''' la base del clip donde el clip tiene contenido — sin doble conteo. Mezclar componentes
     ''' clip/S es válido: la convención HKX→render es trivial (quat xyzw directo).</para>
     ''' <para>ADITIVO: componente sin dato = delta CERO.</para></summary>
+''' <summary>Local del frame para un clip ADITIVO: cada componente SIN dato vale el NEUTRO (0 en
+''' traslacion, identidad en rotacion, 1 en escala), no el rest del rig. Se extrajo de
+''' <see cref="BuildFrameLocalTransform"/> para que las tres funciones que la necesitan usen la MISMA
+''' construccion y no una copia.
+''' <para>⛔ SYNC: Tools\AditivoOrdenGate\Program.vb replica esta funcion (es Private). Si cambia aca,
+''' cambia alla — los SYNC se tocan en los DOS extremos.</para></summary>
+    Private Shared Function BuildFrameLocalAditivo(hkxTransform As HkxAnimationTransformGraph_Class) As Transform_Class
+        Dim txA = If(hkxTransform.TranslationXAnimated, GetVectorAxis(hkxTransform.Translation, 0, 0.0F), 0.0F)
+        Dim tyA = If(hkxTransform.TranslationYAnimated, GetVectorAxis(hkxTransform.Translation, 1, 0.0F), 0.0F)
+        Dim tzA = If(hkxTransform.TranslationZAnimated, GetVectorAxis(hkxTransform.Translation, 2, 0.0F), 0.0F)
+        Dim rA = If(hkxTransform.RotationAnimated, hkxTransform.Rotation, Nothing) ' Nothing → identidad
+        Dim sxA = If(hkxTransform.ScaleXAnimated, GetVectorAxis(hkxTransform.Scale, 0, 1.0F), 1.0F)
+        Dim syA = If(hkxTransform.ScaleYAnimated, GetVectorAxis(hkxTransform.Scale, 1, 1.0F), 1.0F)
+        Dim szA = If(hkxTransform.ScaleZAnimated, GetVectorAxis(hkxTransform.Scale, 2, 1.0F), 1.0F)
+        Return HkxTransformConventionHelper.ToTransform(txA, tyA, tzA, rA, sxA, syA, szA)
+    End Function
+
     Private Shared Function BuildFrameLocalTransform(hkxTransform As HkxAnimationTransformGraph_Class,
                                                      resolved As ResolvedTrack,
                                                      additive As Boolean,
                                                      diagnostics As HkxPoseImportDiagnostics) As Transform_Class
-        If additive Then
-            Dim txA = If(hkxTransform.TranslationXAnimated, GetVectorAxis(hkxTransform.Translation, 0, 0.0F), 0.0F)
-            Dim tyA = If(hkxTransform.TranslationYAnimated, GetVectorAxis(hkxTransform.Translation, 1, 0.0F), 0.0F)
-            Dim tzA = If(hkxTransform.TranslationZAnimated, GetVectorAxis(hkxTransform.Translation, 2, 0.0F), 0.0F)
-            Dim rA = If(hkxTransform.RotationAnimated, hkxTransform.Rotation, Nothing) ' Nothing → identidad
-            Dim sxA = If(hkxTransform.ScaleXAnimated, GetVectorAxis(hkxTransform.Scale, 0, 1.0F), 1.0F)
-            Dim syA = If(hkxTransform.ScaleYAnimated, GetVectorAxis(hkxTransform.Scale, 1, 1.0F), 1.0F)
-            Dim szA = If(hkxTransform.ScaleZAnimated, GetVectorAxis(hkxTransform.Scale, 2, 1.0F), 1.0F)
-            Return HkxTransformConventionHelper.ToTransform(txA, tyA, tzA, rA, sxA, syA, szA)
-        End If
+        If additive Then Return BuildFrameLocalAditivo(hkxTransform)
 
         ' ⛔ LOS FLAGS SALEN DE ESTE FRAME, no de una clasificacion hecha una vez sobre el frame 0.
         ' La mascara Identity/StaticValue/SplineValue es POR BLOQUE: el parser la reescribe en cada

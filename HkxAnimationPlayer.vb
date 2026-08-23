@@ -25,6 +25,23 @@ Public Class HkxAnimationPlayer
     Private ReadOnly _clock As New Stopwatch()
     Private ReadOnly _poseCache As New Dictionary(Of Integer, Poses_class)
     Private _startFrame As Integer = 0
+''' <summary>Primer frame REPRODUCIBLE: el motor no muestra el tramo que recorta
+''' hkbClipGenerator::cropStartAmountLocalTime.</summary>
+    Private _firstFrame As Integer = 0
+''' <summary>Ultimo frame reproducible. ⛔ -1 significa "hasta FrameCount-1", NO "frame -1": los dos
+''' consumidores que crean el player sin llamar nunca a SetPlayableRange (Wardrobe_Manager\
+''' HkxPoseImport_Form.vb y Tools\ClothDrapeViewer\ViewerForm.vb) tienen que comportarse EXACTAMENTE
+''' como antes. Con 0 quedarian congelados en el frame 0.</summary>
+    Private _lastFrame As Integer = -1
+''' <summary>El clip rebota en vez de loopear (hkbClipGenerator mode 3 = PING_PONG). Medido: 1 clip en
+''' 14.477 (tailbehavior.hkx :: 1HM_WalkForward, SSE) — y no es un accidente de autoria: es un barrido
+''' de COLA, que es el caso de uso canonico. Default False = comportamiento de siempre.</summary>
+    Public Property PingPong As Boolean
+''' <summary>True si el crop pedido no se pudo honrar y se esta reproduciendo el clip COMPLETO.
+''' ⛔ Hoy NADIE lo lee: se expone para que la UI lo pueda mostrar, pero la barra de animacion no tiene
+''' donde (sus unicos labels son LabelAnimTitle y LabelAnimMs; el frame lo muestra el propio slider
+''' inline). Agregar el aviso es un control nuevo en el Designer = decision del usuario.</summary>
+    Public Property PlayableRangeIgnored As Boolean
     Private _playing As Boolean = False
     Private _poseName As String = "HKX Pose"
 
@@ -101,13 +118,54 @@ Public Class HkxAnimationPlayer
     ''' <summary>Frame que corresponde mostrar AHORA según el reloj real y <see cref="TargetFps"/>
     ''' (loopeado). Devuelve -1 si no hay animación.</summary>
     Public Function FrameForNow() As Integer
+        ' ⛔ El guard va ANTES de RangoReproducible(): es CONTRATO. ClothDrapeViewer\ViewerForm.vb y
+        ' OnAppIdle leen el -1 como "no hay animacion". Y sin el, count = 0 daria largo = 0 y el modulo
+        ' tiraria DivideByZeroException dentro de un bucle Application.Idle, donde no hay Try que la agarre.
         Dim count = FrameCount
         If count <= 0 Then Return -1
-        Dim fps = If(TargetFps <= 0.0, 1.0, TargetFps)
-        Dim elapsedFrames As Long = CLng(Math.Floor(_clock.Elapsed.TotalSeconds * fps))
-        Dim f As Long = (_startFrame + elapsedFrames) Mod count
-        If f < 0 Then f += count
-        Return CInt(f)
+        Dim r = RangoReproducible()
+        Dim largo As Long = CLng(r.hi) - CLng(r.lo) + 1L
+        ' ⛔ <= 1, no <= 0: con largo = 1 la rama ping-pong haria Mod 0. Y devuelve r.lo, no 0: con crop,
+        ' el unico frame reproducible puede no ser el 0.
+        If largo <= 1 Then Return r.lo
+
+        ' ⛔ El SIGNO del fps se conserva: es lo que reproduce el clip al REVES. Bethesda autora la
+        ' animacion hacia atras apuntando a la de adelante con playbackSpeed -1
+        ' (RifleIdleReadyCoverRightKneelShuffleBackward -> ...ShuffleForward.hkt). Medido: 108 clips.
+        ' Solo se coacciona el 0 y el no-finito, que no definen ninguna velocidad. (El codigo viejo hacia
+        ' `If(TargetFps <= 0.0, 1.0, TargetFps)`, que ademas dejaba pasar el NaN a CLng(Math.Floor(NaN)).)
+        Dim fps = TargetFps
+        If Double.IsNaN(fps) OrElse Double.IsInfinity(fps) OrElse fps = 0.0 Then fps = 1.0
+
+        ' ⛔ La MAGNITUD se floorea y despues se le pone el signo. Hacer Floor sobre el producto con signo
+        ' es ASIMETRICO: con fps < 0, en t -> 0+ ya vale -1, mientras que con fps > 0 vale 0 durante todo el
+        ' primer frame. Eso corre la fase un frame SOLO en reversa (el frame de anclaje no se muestra) y se
+        ' ACUMULA, porque MainForm llama Rebase() en cada cambio del numeric de FPS: 20 clics = 20 frames
+        ' rebobinados con tiempo transcurrido cero.
+        Dim pasos As Long = CLng(Math.Floor(_clock.Elapsed.TotalSeconds * Math.Abs(fps)))
+        Dim elapsedFrames As Long = If(fps < 0.0, -pasos, pasos)
+
+        ' ⛔ El modulo va sobre el OFFSET dentro del rango, no sobre el frame absoluto:
+        ' `lo + ((_startFrame + n) Mod largo)` esta MAL. Contraejemplo con el peor crop real de FO4: 260
+        ' frames a 30 fps, cropStart 6,667 s => lo=200, hi=259, largo=60. En t=0 con _startFrame=200 daria
+        ' 200 + (200 Mod 60) = 220: arranca 20 frames adelante y nunca muestra 200-219.
+        Dim bruto As Long = CLng(_startFrame) - CLng(r.lo) + elapsedFrames
+        Dim off As Long
+        If PingPong Then
+            ' Onda TRIANGULAR: 0,1,...,N-1,N-2,...,1,0,1,... El periodo es 2*(N-1), no 2*N, porque los
+            ' extremos NO se repiten (si no, la cola se quedaria dos frames quieta en cada punta).
+            ' largo >= 2 aca por el guard de arriba => periodo >= 2 => nunca Mod 0.
+            ' ⛔ Bajo ping-pong el SIGNO del fps es inerte: la onda triangular es PAR, asi que invertir el
+            ' tiempo da la misma secuencia desplazada. No es un bug, es la matematica; no lo "arregles".
+            Dim periodo As Long = 2L * (largo - 1L)
+            Dim t As Long = bruto Mod periodo
+            If t < 0 Then t += periodo
+            off = If(t < largo, t, periodo - t)
+        Else
+            off = bruto Mod largo
+            If off < 0 Then off += largo
+        End If
+        Return CInt(CLng(r.lo) + off)
     End Function
 
     ''' <summary>Pose para un frame, cacheada por el player (session + <see cref="PoseName"/> fijos).
@@ -199,11 +257,106 @@ Public Class HkxAnimationPlayer
                                         wRemoveMsg As UInteger) As Boolean
     End Function
 
+''' <summary>Primer frame que el motor reproduce de verdad.</summary>
+    Public ReadOnly Property FirstPlayableFrame As Integer
+        Get
+            Return RangoReproducible().lo
+        End Get
+    End Property
+
+''' <summary>Ultimo frame que el motor reproduce de verdad.</summary>
+    Public ReadOnly Property LastPlayableFrame As Integer
+        Get
+            Return RangoReproducible().hi
+        End Get
+    End Property
+
+''' <summary>Rango de frames que el motor REALMENTE reproduce. Una sola ley, leida por
+''' <see cref="FrameForNow"/>, <see cref="ClampFrame"/> y las dos propiedades de arriba.
+''' <para>⛔ Con FrameCount = 0 devuelve (lo, lo) — un indice que NO EXISTE — porque el `If hi &lt; lo`
+''' de abajo lo colapsa. Por eso los dos llamadores conservan su propio guard de count: no se puede
+''' deducir "no hay frames" del rango que devuelve esta funcion.</para></summary>
+    Private Function RangoReproducible() As (lo As Integer, hi As Integer)
+        Dim count = FrameCount
+        Dim lo = Math.Max(0, _firstFrame)
+        Dim hi = If(_lastFrame < 0, count - 1, Math.Min(_lastFrame, count - 1))
+        If hi < lo Then hi = lo
+        Return (lo, hi)
+    End Function
+
+''' <summary>Acota la reproduccion al tramo que el hkbClipGenerator declara. TODA la aritmetica vive
+''' aca: el llamador pasa SEGUNDOS y no divide nunca.
+''' <para>⛔ La validez se decide en SEGUNDOS, ANTES de dividir. Si se decidiera despues (comparando
+''' primerFrame contra ultimoFrame) el redondeo podria fabricar un rango de 1 frame donde el clip no
+''' tiene ninguno. Medido: los 38 clips de FO4 cuyo crop deja el rango vacio caen los 38 por esta guarda.</para>
+''' <para>⛔ NaN: `cropStart >= dur - cropEnd` es False para NaN por IEEE-754, y Math.Min/Max PROPAGAN
+''' NaN, asi que el clamp posterior no lo atraparia y CInt(NaN) tira OverflowException — fuera de todo
+''' Try, al elegir un clip. Por eso los dos crops se chequean explicitamente. Medido: 0 casos en los
+''' dos juegos (28.954 valores), asi que esto es seguro para MODS, no arreglo de un caso vivo.</para></summary>
+    Public Sub SetPlayableRange(cropStartSeconds As Single, cropEndSeconds As Single)
+        Dim count = FrameCount
+        Dim fd As Double = If(_session Is Nothing, 0.0, CDbl(_session.FrameDuration))
+        Dim dur As Double = If(_session Is Nothing, 0.0, CDbl(_session.Duration))
+        Dim pidioCrop = (cropStartSeconds <> 0.0F OrElse cropEndSeconds <> 0.0F)
+
+        Dim invalido =
+            count <= 1 OrElse
+            Not Double.IsFinite(fd) OrElse fd <= 0.0 OrElse
+            Not Double.IsFinite(dur) OrElse dur <= 0.0 OrElse
+            Not Single.IsFinite(cropStartSeconds) OrElse Not Single.IsFinite(cropEndSeconds) OrElse
+            CDbl(cropStartSeconds) >= dur - CDbl(cropEndSeconds)
+
+        If invalido Then
+            _firstFrame = 0
+            _lastFrame = -1
+            ' ⛔ Solo es "ignorado" si de verdad se pidio algo. La rama de arriba tambien cubre dur <= 0 y
+            ' fd invalido, que no tienen nada que ver con el crop: sin este AndAlso se reportaria "no se pudo
+            ' honrar el crop" sobre un clip que nunca pidio crop.
+            PlayableRangeIgnored = pidioCrop AndAlso count > 1
+        Else
+            _firstFrame = AFrame(CDbl(cropStartSeconds) / fd, True, count)
+            _lastFrame = AFrame((dur - CDbl(cropEndSeconds)) / fd, False, count)
+            If _lastFrame < _firstFrame Then
+                _firstFrame = 0
+                _lastFrame = -1
+                PlayableRangeIgnored = True
+            Else
+                PlayableRangeIgnored = False
+            End If
+        End If
+
+        ' ⛔ ULTIMA linea: ClampFrame lee RangoReproducible(), que necesita los dos campos ya asignados.
+        _startFrame = ClampFrame(_startFrame)
+    End Sub
+
+''' <summary>Segundos a frame. <paramref name="haciaArriba"/> = borde de ARRANQUE (no empezar antes del
+''' crop); False = borde de FINAL.
+''' <para>⛔ El snap existe porque Duration y FrameDuration son dos Single autorados por SEPARADO:
+''' 2.0/0.033333335 = 59,999997, y un floor crudo perderia el ultimo frame de 9.708 de 15.713
+''' animaciones de FO4 (61,8 %) y 3.555 de 5.935 de SSE, incluso sin crop. La separacion es enorme — el
+''' crop real mas chico vale 1,0 frame y el peor ruido medido 3e-6 — asi que TOL = 0,01 no puede
+''' confundir un crop con ruido.</para>
+''' <para>⛔ El clamp va en Double ANTES del CInt: CInt de un Double fuera de rango TIRA
+''' OverflowException, no satura. Y ese clamp absorbe cualquier x negativo (un crop negativo es finito y
+''' pasa la guarda de validez; medido 0 en vanilla, posible con mods), asi que la rama del medio de
+''' Math.Round no decide nada y no hace falta AwayFromZero.</para></summary>
+    Private Shared Function AFrame(x As Double, haciaArriba As Boolean, count As Integer) As Integer
+        Const TOL_FRAME As Double = 0.01
+        If Not Double.IsFinite(x) Then Return If(haciaArriba, 0, count - 1)
+        Dim r = Math.Round(x)
+        Dim v = If(Math.Abs(x - r) <= TOL_FRAME, r, If(haciaArriba, Math.Ceiling(x), Math.Floor(x)))
+        v = Math.Max(0.0, Math.Min(CDbl(count - 1), v))
+        Return CInt(v)
+    End Function
+
     Private Function ClampFrame(frame As Integer) As Integer
+        ' ⛔ El guard de count se conserva: con FrameCount = 0 RangoReproducible() devuelve (lo, lo), y si
+        ' _firstFrame quedo en un valor viejo > 0 eso es un indice INEXISTENTE que PoseForFrame usaria.
         Dim count = FrameCount
         If count <= 0 Then Return 0
-        If frame < 0 Then Return 0
-        If frame >= count Then Return count - 1
+        Dim r = RangoReproducible()
+        If frame < r.lo Then Return r.lo
+        If frame > r.hi Then Return r.hi
         Return frame
     End Function
 End Class

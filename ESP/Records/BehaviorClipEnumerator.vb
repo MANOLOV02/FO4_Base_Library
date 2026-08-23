@@ -95,6 +95,16 @@ Public NotInheritable Class BehaviorClipEnumerator
         ' que incluye los alcanzados por hkbBehaviorReferenceGenerator — no solo DistinctBehaviorFiles).
         Dim coverageList = coverageDirs.ToList()
         Dim walkedBases As New HashSet(Of String)(graphCache.Keys.Select(Function(k) System.IO.Path.GetFileNameWithoutExtension(k)), StringComparer.OrdinalIgnoreCase)
+        ' ⛔ El pase IDLE deduplica por ARCHIVO, NO por variante. Es un pase de COBERTURA: agrega archivos que el
+        ' walk no alcanzó. Si el walk ya lo trajo — con el crop/speed que sea — no hay nada que cubrir.
+        ' Deduplicarlo por la clave compuesta fabricaba una entrada "×1, sin crop" que NINGÚN dato declara: el record
+        ' IDLE declara archivo (GNAM) y evento (ENAM), no parámetros de reproducción, y AddIdleClip los hardcodea.
+        ' Eso es exactamente la over-inclusion que prohíbe la ley 100 % DATA-DRIVEN de más abajo, y además la entrada
+        ' libre (RequiresFemale = False) DESOCULTABA la variante restringida del walk al unificar por archivo.
+        ' Medido: 229 de 2.061 archivos de FO4 tenían al menos una variante no-default ⇒ esa era la cota; ahora es 0.
+        ' ⛔ Se DERIVA de result en vez de mantenerse en paralelo a byClip: así es imposible agregar mañana una vía
+        ' de inserción que actualice uno y se olvide del otro.
+        Dim archivosVistos As New HashSet(Of String)(result.Select(Function(c) c.AnimationFile), StringComparer.OrdinalIgnoreCase)
         For Each ia In rb.IdleAnimations
             ' GATE de raza para TODOS los patrones (token y literal): el IDLE aplica solo si su behavior (DNAM) es uno que
             ' la raza REALMENTE camina. Sin esto, un patrón de path literal (Actors\Character\…\Quest\Cheering\…) matchea
@@ -115,11 +125,11 @@ Public NotInheritable Class BehaviorClipEnumerator
                 Dim cf = CanonHkx(cand)
                 Dim star = cf.IndexOf("*"c)
                 If star < 0 Then
-                    If animSet.Contains(cf) AndAlso Not byClip.ContainsKey(cf) Then AddIdleClip(cf, ia.Category, byClip, result, actorRoot, raceSkel)
+                    If animSet.Contains(cf) AndAlso Not archivosVistos.Contains(cf) Then AddIdleClip(cf, ia.Category, archivosVistos, result, actorRoot, raceSkel)
                 Else
                     Dim pre = cf.Substring(0, star), suf = cf.Substring(star + 1)
                     For Each f In animSet
-                        If f.StartsWith(pre, StringComparison.OrdinalIgnoreCase) AndAlso f.EndsWith(suf, StringComparison.OrdinalIgnoreCase) AndAlso Not byClip.ContainsKey(f) Then AddIdleClip(f, ia.Category, byClip, result, actorRoot, raceSkel)
+                        If f.StartsWith(pre, StringComparison.OrdinalIgnoreCase) AndAlso f.EndsWith(suf, StringComparison.OrdinalIgnoreCase) AndAlso Not archivosVistos.Contains(f) Then AddIdleClip(f, ia.Category, archivosVistos, result, actorRoot, raceSkel)
                     Next
                 End If
             Next
@@ -136,8 +146,80 @@ Public NotInheritable Class BehaviorClipEnumerator
         ' SAPT) y se conserva ÍNTEGRO. La cobertura IDLE de arriba SÍ es data-driven (patrón del record IDLE.GNAM,
         ' expansión $(Subgraph) = mecanismo del engine). SSE no llega acá con idles: sus IDLE son event-driven por el
         ' behavior graph (DNAM=behavior, ENAM=evento) → ya están en el WALK (medido cover=0 en las 161 razas).
+        UnificarPorArchivo(result)
         Return result
     End Function
+
+''' <summary>Dos cosas que son propiedad de la LISTA, no de un clip suelto, y por eso van aca y no en
+''' la etiqueta.
+''' <para>(1) Propaga a todas las variantes del mismo archivo la metadata que el walk acumula POR OBJETO.
+''' `Roles`/`StateAxes`/`SourceBehaviorFiles`/`RequiresFemale`/`Is1stPersonOnly` se acumulan sobre la
+''' entrada que devuelve el TryGetValue, asi que desde que el dedup separa variantes cada una solo
+''' recibiria los subgraphs que la alcanzan. Un archivo alcanzado por un subgraph female-gated con crop A
+''' y por uno neutro con crop B dejaria la variante A con RequiresFemale = True, y el filtro por defecto
+''' del picker (AnimationPicker_Form.vb:158) la ESCONDERIA para un NPC varon. El cambio que existe para
+''' EXPONER variantes no puede esconder una. Estos cinco campos describen como el GRAFO alcanza el
+''' ARCHIVO, no como se reproduce, asi que el archivo es su granularidad correcta.</para>
+''' <para>(2) El sufijo desambiguante. NO se calcula en la etiqueta: AnimClipLabel/LeafLabel son Shared de
+''' UN clip y las dos ven listas DISTINTAS (el combo ve todos, el picker ve el filtrado por genero +
+''' 1a persona + texto), asi que el mismo clip saldria con dos nombres, y el sufijo PARPADEARIA al tipear
+''' en el filtro (Rebuild corre en cada TextChanged).</para></summary>
+    Private Shared Sub UnificarPorArchivo(clips As List(Of ResolvedAnimationClip))
+        If clips Is Nothing Then Return
+        Dim ci = Globalization.CultureInfo.InvariantCulture
+        For Each grupo In clips.Where(Function(c) c IsNot Nothing).GroupBy(Function(c) c.AnimationFile, StringComparer.OrdinalIgnoreCase)
+            Dim lista = grupo.ToList()
+            If lista.Count <= 1 Then Continue For
+
+            ' (1) union de la metadata del ARCHIVO
+            Dim roles = lista.SelectMany(Function(c) c.Roles).Distinct().ToList()
+            Dim ejes = lista.SelectMany(Function(c) c.StateAxes).Distinct().ToList()
+            Dim behs = lista.SelectMany(Function(c) c.SourceBehaviorFiles).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            ' ⛔ All, no Any: el clip requiere genero / 1a persona solo si NINGUNA ruta del grafo lo alcanza sin
+            ' esa restriccion. Con Any, una variante restringida contagiaria a las libres y las escondia del picker.
+            Dim reqF = lista.All(Function(c) c.RequiresFemale)
+            Dim only1 = lista.All(Function(c) c.Is1stPersonOnly)
+            For Each c In lista
+                c.Roles.Clear() : c.Roles.AddRange(roles)
+                c.StateAxes.Clear() : c.StateAxes.AddRange(ejes)
+                c.SourceBehaviorFiles.Clear() : c.SourceBehaviorFiles.AddRange(behs)
+                c.RequiresFemale = reqF
+                c.Is1stPersonOnly = only1
+            Next
+
+            ' (2) sufijo desambiguante
+            Dim vistos As New Dictionary(Of String, Integer)(StringComparer.Ordinal)
+            For Each c In lista
+                Dim partes As New List(Of String)
+                Dim cs = If(Single.IsFinite(c.CropStartLocalTime), c.CropStartLocalTime, 0.0F)
+                Dim ce = If(Single.IsFinite(c.CropEndLocalTime), c.CropEndLocalTime, 0.0F)
+                ' ⛔ <> 0, no > 0: un crop NEGATIVO tambien distingue, y con `> 0` quedaba fuera del sufijo pero
+                ' DENTRO de la clave, o sea dos entradas visualmente identicas. Medido 0 en vanilla; pasa con mods.
+                If cs <> 0.0F OrElse ce <> 0.0F Then partes.Add($"crop {cs.ToString("0.###", ci)}–{ce.ToString("0.###", ci)} s")
+                Dim vel = c.VelocidadReproduccion
+                ' ⛔ El signo se muestra como flecha, no como "x-1": el guion no se lee como "al reves", y en los
+                ' 51 archivos donde el signo es lo UNICO que separa dos variantes la etiqueta TIENE que decirlo.
+                If vel < 0.0F Then
+                    partes.Add(If(Math.Abs(Math.Abs(vel) - 1.0F) > 0.0005F, $"◀ ×{Math.Abs(vel).ToString("0.###", ci)}", "◀ reversa"))
+                ElseIf Math.Abs(vel - 1.0F) > 0.0005F Then
+                    partes.Add($"×{vel.ToString("0.###", ci)}")
+                End If
+                If c.IsPingPong Then partes.Add("↔ rebota")
+                Dim su = If(partes.Count = 0, "", " · " & String.Join(" ", partes))
+                Dim n = 0
+                If vistos.TryGetValue(su, n) Then
+                    vistos(su) = n + 1
+                    ' Empate del sufijo FORMATEADO (x1,0001 vs x1,0002, que el "0.###" iguala). NO se desempata con
+                    ' un ordinal: "GetUp" y "GetUp #2" no le dicen NADA al usuario, que es lo que este sufijo vino
+                    ' a evitar. Se emite el valor crudo.
+                    su = $" · crop {cs.ToString("R", ci)}–{ce.ToString("R", ci)} s ×{vel.ToString("R", ci)}"
+                Else
+                    vistos(su) = 1
+                End If
+                c.VarianteSufijo = su
+            Next
+        Next
+    End Sub
 
     ''' <summary>Pasada LAZY: para cada clip carga su archivo de animación resuelto, parsea el primer
     ''' hkaAnimationBinding y setea IsAdditive = (BlendHint &lt;&gt; 0). Idempotente (salta los que ya tienen
@@ -145,10 +227,20 @@ Public NotInheritable Class BehaviorClipEnumerator
     ''' lista cacheada. loadHkx = el mismo Func(path→bytes) del caller (FilesDictionary BA2+loose).</summary>
     Public Shared Sub DetectAdditiveFlags(clips As IEnumerable(Of ResolvedAnimationClip), loadHkx As Func(Of String, Byte()))
         If clips Is Nothing OrElse loadHkx Is Nothing Then Return
+        ' ⛔ Memo POR ARCHIVO: el guard `AdditiveKnown` es por OBJETO, y desde que el dedup separa variantes un
+        ' mismo .hkx aparece N veces, o sea N descompresiones BA2 + N BuildGraph del MISMO archivo. El blendHint
+        ' es del ARCHIVO, no del clip generator.
+        Dim memo As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         For Each c In clips
             If c Is Nothing OrElse c.AdditiveKnown Then Continue For
+            Dim yaSabido As Boolean
+            If memo.TryGetValue(c.AnimationFile, yaSabido) Then
+                c.IsAdditive = yaSabido
+                c.AdditiveKnown = True
+                Continue For
+            End If
             Dim bytes = LoadFirstHkxCandidate(loadHkx, c.AnimationFile)
-            If bytes Is Nothing OrElse bytes.Length = 0 Then c.AdditiveKnown = True : Continue For
+            If bytes Is Nothing OrElse bytes.Length = 0 Then c.AdditiveKnown = True : memo(c.AnimationFile) = c.IsAdditive : Continue For
             Try
                 Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(bytes))
                 Dim b = g.GetObjectsByClassName("hkaAnimationBinding").FirstOrDefault()
@@ -159,6 +251,7 @@ Public NotInheritable Class BehaviorClipEnumerator
             Catch
             End Try
             c.AdditiveKnown = True
+            memo(c.AnimationFile) = c.IsAdditive
         Next
     End Sub
 
@@ -195,15 +288,23 @@ Public NotInheritable Class BehaviorClipEnumerator
             If IsNothing(cg) OrElse String.IsNullOrWhiteSpace(cg.AnimationName) Then Continue For
             Dim animFile = ResolveClipByExistence(cg.AnimationName, saptFolders, actorRoot, animSet)
             If animFile = "" Then Continue For
+            Dim velEfectiva = VelocidadEfectiva(cg.PlaybackSpeed)
+            Dim esPP = EsPingPong(cg.PlaybackMode)
+            Dim claveClip = ClaveDedup(animFile, cg.CropStartLocalTime, cg.CropEndLocalTime, velEfectiva, esPP)
             Dim clip As ResolvedAnimationClip = Nothing
-            If Not byClip.TryGetValue(animFile, clip) Then
+            If Not byClip.TryGetValue(claveClip, clip) Then
                 clip = New ResolvedAnimationClip With {
                     .AnimationFile = animFile,
                     .ClipName = If(cg.Name, ""),
                     .PlaybackSpeed = cg.PlaybackSpeed,
+                    .CropStartLocalTime = cg.CropStartLocalTime,
+                    .CropEndLocalTime = cg.CropEndLocalTime,
+                    .PlaybackMode = cg.PlaybackMode,
+                    .IsPingPong = esPP,
+                    .VelocidadReproduccion = velEfectiva,
                     .SourceSkeletonPath = SourceSkelForAnim(animFile, actorRoot, raceSkel)
                 }
-                byClip(animFile) = clip
+                byClip(claveClip) = clip
                 result.Add(clip)
             End If
             If Not clip.SourceBehaviorFiles.Contains(behFile, StringComparer.OrdinalIgnoreCase) Then clip.SourceBehaviorFiles.Add(behFile)
@@ -368,6 +469,47 @@ Public NotInheritable Class BehaviorClipEnumerator
     ''' del rigName del character del gender — SSE = skeleton_female.hkx). Los clips REUSADOS de otro actor
     ''' (cross-actor, ej. SuperMutant→death humano) usan el skeleton genérico de SU actor de origen. En FO4 esto es
     ''' no-op (raceSkel resuelve al MISMO archivo que el genérico, un único skeleton por actor sin split de género).</summary>
+    ''' <summary>True si el clip rebota en vez de loopear. ⛔ Se normaliza porque la clave del dedup tiene que
+    ''' separar por lo que el consumidor REALMENTE hace: en la app los modos 0, 1 y 2 se reproducen los tres en
+    ''' loop (decisión del usuario: que un SINGLE_PLAY loopee es deliberado), así que meterlos crudos en la
+    ''' clave partía variantes que suenan igual — medido, 203 entradas idénticas de más en SSE. El 3 sí se
+    ''' reproduce distinto (onda triangular, ver HkxAnimationPlayer.FrameForNow) y por eso sí separa.</summary>
+    Private Shared Function EsPingPong(mode As Integer) As Boolean
+        Return mode = 3
+    End Function
+
+    ''' <summary>Normaliza la velocidad autorada a la que de verdad se reproduce. Ver
+    ''' <see cref="ResolvedAnimationClip.VelocidadReproduccion"/>, que es donde queda guardada.</summary>
+    Private Shared Function VelocidadEfectiva(speed As Single) As Single
+        If Not Single.IsFinite(speed) OrElse speed = 0.0F Then Return 1.0F
+        Return speed
+    End Function
+
+    ''' <summary>Clave de deduplicación de clips. ⛔ NO es sólo el archivo: dos hkbClipGenerator pueden apuntar
+    ''' al MISMO .hkx y reproducirlo distinto. Medido: 161 archivos de FO4 y 796 de SSE tienen clips con
+    ''' crop/speed distintos entre sí; con la clave vieja sobrevivía UNO ARBITRARIO (el primero del walk) y su
+    ''' crop decída por todos — es lo que hacía que RudderLeft/RudderStraight/RudderRight (mismo
+    ''' RudderAndFlaps.hkx, crops 0,0333/0,0333/0) colapsaran en una sola entrada y el timón volara.
+    ''' <para>⛔ Sólo la usa el WALK. El pase IDLE NO deduplica por esta clave sino por ARCHIVO: es un pase de
+    ''' COBERTURA y el record IDLE declara el archivo (GNAM) y el evento (ENAM), NO parámetros de
+    ''' reproducción. Deduplicar el pase IDLE por variante fabricaba una entrada "×1, sin crop" que ningún dato
+    ''' respalda — justo la over-inclusion que prohíbe la ley 100 % DATA-DRIVEN de más arriba.</para>
+    ''' <para>`InvariantCulture` a propósito: `"R"` usa CurrentCulture y acá daría "0,0333" con coma —
+    ''' consistente dentro del proceso, pero rompe cualquier golden comparado entre máquinas. `+ 0.0F`
+    ''' normaliza el −0 (`(-0.0F):R` = "-0" ≠ "0" pero −0,0F = 0,0F ⇒ no deduplicarían). El crop no finito se
+    ''' mapea a 0 porque es lo que el player va a hacer con él; medido 0 casos en vanilla (28.954 valores), es
+    ''' seguro para mods.</para></summary>
+    Private Shared Function ClaveDedup(animFile As String, crop0 As Single, crop1 As Single,
+                                       velocidadEfectiva As Single, esPingPong As Boolean) As String
+        Dim ci = Globalization.CultureInfo.InvariantCulture
+        Dim c0 = If(Single.IsFinite(crop0), crop0, 0.0F) + 0.0F
+        Dim c1 = If(Single.IsFinite(crop1), crop1, 0.0F) + 0.0F
+        Return String.Concat(animFile, "|", c0.ToString("R", ci),
+                             "|", c1.ToString("R", ci),
+                             "|", (velocidadEfectiva + 0.0F).ToString("R", ci),
+                             "|", If(esPingPong, "pp", "lp"))
+    End Function
+
     Private Shared Function SourceSkelForAnim(animFile As String, actorRoot As String, raceSkel As String) As String
         Dim src = ActorRootOfAnim(animFile)
         If Not String.IsNullOrWhiteSpace(raceSkel) AndAlso
@@ -435,7 +577,12 @@ Public NotInheritable Class BehaviorClipEnumerator
         Return p
     End Function
 
-    Private Shared Sub AddIdleClip(animFile As String, category As String, byClip As Dictionary(Of String, ResolvedAnimationClip), result As List(Of ResolvedAnimationClip), actorRoot As String, raceSkel As String)
+    ''' <summary>Agrega una entrada de COBERTURA para un archivo que el walk no alcanzó.
+    ''' <para>⛔ Recibe `archivosVistos` (por ARCHIVO) y no `byClip` (por VARIANTE): después de este pase nadie
+    ''' vuelve a leer byClip — su único lector es el walk, que ya corrió entero — así que escribirlo acá era
+    ''' estado muerto. Y esta entrada NO declara parámetros de reproducción porque el record IDLE no los
+    ''' tiene: los de abajo son defaults, no datos.</para></summary>
+    Private Shared Sub AddIdleClip(animFile As String, category As String, archivosVistos As HashSet(Of String), result As List(Of ResolvedAnimationClip), actorRoot As String, raceSkel As String)
         Dim clip As New ResolvedAnimationClip With {
             .AnimationFile = animFile,
             .ClipName = "",
@@ -446,7 +593,7 @@ Public NotInheritable Class BehaviorClipEnumerator
             .Is1stPersonOnly = (animFile.IndexOf("\_1stPerson\", StringComparison.OrdinalIgnoreCase) >= 0),
             .Category = category
         }
-        byClip(animFile) = clip
+        archivosVistos.Add(animFile)
         result.Add(clip)
     End Sub
 
@@ -469,6 +616,42 @@ Public Class ResolvedAnimationClip
     Public AnimationFile As String = ""        ' path Data-relativo YA RESUELTO por existencia (.hkt→.hkx)
     Public ClipName As String = ""             ' nombre del hkbClipGenerator
     Public PlaybackSpeed As Single = 1.0F
+    ''' <summary>Segundos recortados del ARRANQUE por el hkbClipGenerator (cropStartAmountLocalTime).
+    ''' El motor NO reproduce ese tramo. Medido: 212 de 4.504 clips de FO4 y 95 de 9.973 de SSE tienen
+    ''' crop; peor cropStart 6,667 s (FO4) / 9,644 s (SSE).</summary>
+    Public CropStartLocalTime As Single = 0.0F
+    ''' <summary>Segundos recortados del FINAL (cropEndAmountLocalTime).</summary>
+    Public CropEndLocalTime As Single = 0.0F
+    ''' <summary>hkbClipGenerator::m_mode. Censado sobre 14.477 generators de los dos juegos:
+    ''' 0=SINGLE_PLAY (7.298), 1=LOOPING (6.459), 2=USER_CONTROLLED (719), 3=PING_PONG (<b>1</b>:
+    ''' tailbehavior.hkx :: 1HM_WalkForward, sólo SSE). ⛔ Los NOMBRES del enum salen del SDK de Havok,
+    ''' NO están medidos por RE en este repo: lo medido es que sólo aparecen los valores 0..3.
+    ''' <para>Decisión del usuario: 0/1/2 se reproducen TODOS en loop en la app (que un SINGLE_PLAY
+    ''' loopee es deliberado, no un bug). El 3 sí cambia la reproducción — ver <see cref="EsPingPong"/>.</para></summary>
+    Public PlaybackMode As Integer = 0
+    ''' <summary>Sufijo que DISTINGUE esta variante de las otras del MISMO archivo (" · crop 0,033–0 s",
+    ''' " · ×−1"). Vacío si el archivo tiene una sola variante ⇒ el 100 % de lo que había antes se ve igual.
+    ''' Lo estampa <see cref="EnumerateClips"/> AL FINAL (no al final del walk: el pase IDLE agrega
+    ''' después). Medido: 40 etiquetas ambiguas en 17 archivos de FO4 y 58 en 20 de SSE sin esto.</summary>
+    Public VarianteSufijo As String = ""
+    ''' <summary>El clip rebota (ida y vuelta) en vez de loopear: <see cref="PlaybackMode"/> = 3.
+    ''' <para>⛔ Se guarda DERIVADO en vez de exponer un helper Public: `MainForm` vive en otro ensamblado y
+    ''' `Friend` no cruza (los 8 InternalsVisibleTo de esta lib son todos probes, ninguno es la app), pero el
+    ''' .vbproj declara ocho veces que la superficie de API que se DISTRIBUYE no cambia. Un campo de datos no
+    ''' es superficie nueva; una función Public sí.</para></summary>
+    Public IsPingPong As Boolean = False
+    ''' <summary>Velocidad con la que el clip REALMENTE se reproduce, SIGNO INCLUIDO: 0, NaN y ±Inf valen ×1.
+    ''' <para>⛔ UNA ley, UN lugar. `MainForm.vb` repetía esta normalización a mano y quedaba acoplada a la
+    ''' clave del dedup por convención: el día que una cambiara, el dedup separaba variantes que se reproducen
+    ''' igual (o al revés) y ningún gate lo veía. Ahora las dos leen ESTE campo.</para>
+    ''' <para>El signo NO se puede tirar: Bethesda autora la animación hacia atrás reproduciendo la de adelante
+    ''' en reversa — `RifleIdleReadyCoverRightKneelShuffleBackward` apunta a `...ShuffleForward.hkt` con
+    ''' speed −1. Medido: 108 clips negativos (17 FO4 + 91 SSE) y 51 archivos donde el signo es lo ÚNICO que
+    ''' separa dos variantes.</para>
+    ''' <para>El 0 aparece ENTERO cuando el PackfileFormat no es Fallout64 ni Skyrim64: HkbLayout cae al
+    ''' `Case Else` con ClipPlaybackSpeed = -1 y ReadSingleAt devuelve 0.0F para TODOS los generators de ese
+    ''' archivo (HkxBehaviorGraphParser.vb:272-273, :297). Medido: 34 clips con speed 0 en vanilla.</para></summary>
+    Public VelocidadReproduccion As Single = 1.0F
     Public SourceSkeletonPath As String = ""   ' skeleton del actor de ORIGEN de la anim (para interpretarla)
     ''' <summary>Aditivo: el archivo de animación resuelto tiene hkaAnimationBinding.BlendHint &lt;&gt; 0
     ''' (1=ADDITIVE_DEPRECATED, 2=ADDITIVE; ambos = overlay, no pose standalone). Lo puebla
