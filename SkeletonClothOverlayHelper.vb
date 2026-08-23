@@ -50,12 +50,12 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
     ' por otra instancia), la entrada se evacúa sola por GC. Sin clear manual y sin mantener bloques
     ' vivos (no leak). TryGetValue/AddOrUpdate son thread-safe.
     Private Shared ReadOnly _clothSkeletonCache As _
-        New Runtime.CompilerServices.ConditionalWeakTable(Of BSClothExtraData, HkaSkeletonGraph_Class)
+        New Runtime.CompilerServices.ConditionalWeakTable(Of BSClothExtraData, Havok.Canon.Objects.HkObj_HkaSkeleton)
 
     ' Parses the first BSClothExtraData from a NIF and returns the HKX skeleton (cached per block).
     ' Returns Nothing if the NIF has no cloth data or the skeleton cannot be parsed. Observable result
     ' idéntico al histórico (primer bloque), ahora vía el caché por-bloque. FaceGen bake depende de esta firma.
-    Public Shared Function ParseClothSkeleton(nifContent As Nifcontent_Class_Manolo) As HkaSkeletonGraph_Class
+    Public Shared Function ParseClothSkeleton(nifContent As Nifcontent_Class_Manolo) As Havok.Canon.Objects.HkObj_HkaSkeleton
         Dim cloth = nifContent?.Blocks.OfType(Of BSClothExtraData)().FirstOrDefault()
         If cloth Is Nothing Then Return Nothing
         Return ParseClothSkeletonFromBlock(cloth)
@@ -77,22 +77,22 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
     End Function
 
     ''' <summary>Igual que el parse interno, pero accesible: la física reusa el mismo cache por bloque.</summary>
-    Public Shared Function ParseClothSkeletonForBlock(cloth As BSClothExtraData) As HkaSkeletonGraph_Class
+    Public Shared Function ParseClothSkeletonForBlock(cloth As BSClothExtraData) As Havok.Canon.Objects.HkObj_HkaSkeleton
         If cloth Is Nothing Then Return Nothing
         Return ParseClothSkeletonFromBlock(cloth)
     End Function
 
     ' Parses a specific BSClothExtraData block and returns the HKX skeleton (cached per block instance).
-    Private Shared Function ParseClothSkeletonFromBlock(cloth As BSClothExtraData) As HkaSkeletonGraph_Class
-        Dim cached As HkaSkeletonGraph_Class = Nothing
+    Private Shared Function ParseClothSkeletonFromBlock(cloth As BSClothExtraData) As Havok.Canon.Objects.HkObj_HkaSkeleton
+        Dim cached As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
         If _clothSkeletonCache.TryGetValue(cloth, cached) Then Return cached
 
-        Dim parsed As HkaSkeletonGraph_Class = Nothing
+        Dim parsed As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
         Try
             Dim graph = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(cloth))
             Dim skeletonObject = graph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
             If skeletonObject IsNot Nothing Then
-                Dim skeleton = graph.ParseSkeleton(skeletonObject)
+                Dim skeleton = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(graph, skeletonObject)
                 If skeleton IsNot Nothing AndAlso skeleton.Bones IsNot Nothing AndAlso skeleton.ReferencePose IsNot Nothing AndAlso skeleton.ParentIndices IsNot Nothing Then
                     If skeleton.Bones.Count > 0 AndAlso skeleton.ReferencePose.Count = skeleton.Bones.Count Then
                         parsed = skeleton
@@ -117,7 +117,7 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
     ''' <see cref="SkeletonInstance.SkeletonDictionary"/> / <see cref="SkeletonInstance.InjectedBones"/>.</param>
     Public Shared Sub InjectMissingBonesIntoLiveSkeleton(shape As IRenderableShape,
                                                          targetSkeleton As SkeletonInstance,
-                                                         Optional cachedSkeleton As HkaSkeletonGraph_Class = Nothing)
+                                                         Optional cachedSkeleton As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing)
         If IsNothing(shape) OrElse targetSkeleton Is Nothing OrElse Not targetSkeleton.HasSkeleton Then Exit Sub
         If Not shape.HasPhysics Then Exit Sub
         If IsNothing(shape.NifContent) Then Exit Sub
@@ -128,7 +128,7 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         Dim relatedBones = ResolveShapeBones(shape, nifShape)
         If relatedBones.Count = 0 Then Exit Sub
 
-        Dim skeleton As HkaSkeletonGraph_Class
+        Dim skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton
         If cachedSkeleton IsNot Nothing Then
             skeleton = cachedSkeleton
         Else
@@ -147,7 +147,8 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         Try
             Dim hkxBoneLookup = skeleton.Bones.
                 Where(Function(bone) bone IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(bone.Name)).
-                GroupBy(Function(bone) bone.Name.Trim(), StringComparer.OrdinalIgnoreCase).
+                Select(Function(bone, idx) New With {.Bone = bone, .Index = idx}).
+                GroupBy(Function(x) x.Bone.Name.Trim(), StringComparer.OrdinalIgnoreCase).
                 ToDictionary(Function(group) group.Key,
                              Function(group) group.First().Index,
                              StringComparer.OrdinalIgnoreCase)
@@ -231,7 +232,7 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
     End Function
     ' Public wrapper — creates the visited set on first call
     Private Shared Function EnsureLiveInjectedBone(index As Integer,
-                                                   skeleton As HkaSkeletonGraph_Class,
+                                                   skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
                                                    targetSkeleton As SkeletonInstance,
                                                    shapeName As String,
                                                    Optional requestedName As String = Nothing) As HierarchiBone_class
@@ -240,7 +241,7 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
 
     ' Private recursive overload with visited set to prevent stack overflow on circular HKX parent chains
     Private Shared Function EnsureLiveInjectedBone(index As Integer,
-                                                   skeleton As HkaSkeletonGraph_Class,
+                                                   skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
                                                    targetSkeleton As SkeletonInstance,
                                                    shapeName As String,
                                                    requestedName As String,

@@ -32,14 +32,19 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbCharacterStringData: rig(skeleton)/ragdoll/behavior/nombre del actor + animaciones.</summary>
     Public Function ParseCharacterStringData(source As HkxVirtualObjectGraph_Class) As HkbCharacterStringDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbCharacterStringData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbCharacterStringData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
 
         Dim result As New HkbCharacterStringDataGraph_Class With {
             .SourceObject = source,
-            .CharacterName = ResolveLocalString(rel + &HA0),
-            .RigName = ResolveLocalString(rel + &HA8),
-            .RagdollName = ResolveLocalString(rel + &HB0),
-            .BehaviorFilename = ResolveLocalString(rel + &HB8)
+            .CharacterName = hkr.Name,
+            .RigName = hkr.RigName,
+            .RagdollName = hkr.RagdollName,
+            .BehaviorFilename = hkr.BehaviorFilename
         }
 
         ' Lista de animaciones: por contenido (robusto sin depender del offset exacto del array).
@@ -54,18 +59,33 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbBehaviorGraphStringData: nombres de eventos + variables/attributes del grafo.</summary>
     Public Function ParseBehaviorGraphStringData(source As HkxVirtualObjectGraph_Class) As HkbBehaviorGraphStringDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorGraphStringData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBehaviorGraphStringData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
 
         Dim result As New HkbBehaviorGraphStringDataGraph_Class With {.SourceObject = source}
-        result.EventNames.AddRange(ReadStringPtrArray(rel + &H10))     ' confirmado = eventos
-        result.VariableNames.AddRange(ReadStringPtrArray(rel + &H30))  ' por posición (tentativo)
-        result.AttributeNames.AddRange(ReadStringPtrArray(rel + &H40)) ' por posición (tentativo)
+        ' ⛔ LOS DOS ÚLTIMOS ESTABAN MAL, y el comentario viejo lo admitía: decía "por posición
+        ' (tentativo)". La reflexión lo cierra: `hkbBehaviorGraphStringData` declara
+        '   +0x10 eventNames · +0x20 attributeNames · +0x30 variableNames · +0x40 characterPropertyNames
+        ' O sea que `AttributeNames` estaba leyendo +0x40, que es `characterPropertyNames`, y los
+        ' nombres de atributo (+0x20) no los leía nadie. Adivinar por posición acertó uno de tres.
+        result.EventNames.AddRange(ReadStringPtrArray(hkr.EventNames))
+        result.VariableNames.AddRange(ReadStringPtrArray(hkr.VariableNames))
+        result.AttributeNames.AddRange(ReadStringPtrArray(hkr.AttributeNames))
         Return result
     End Function
 
     ''' <summary>hkbProjectStringData: paths del proyecto (character files, animation/behavior roots).</summary>
     Public Function ParseProjectStringData(source As HkxVirtualObjectGraph_Class) As HkbProjectStringDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbProjectStringData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbProjectStringData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbProjectStringDataGraph_Class With {.SourceObject = source}
         result.Strings.AddRange(ReadAllReferencedStrings(source).Distinct(StringComparer.OrdinalIgnoreCase))
         ' DATA-DRIVEN: los character files salen del MIEMBRO real m_characterFilenames (hkArray<hkStringPtr>), no de
@@ -78,6 +98,16 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     ' Lee un hkArray<hkStringPtr> (cada elemento = puntero a string, stride = PointerSizeValue).
+    ''' <summary>Strings del array, a partir de su CABECERA (lo que devuelve el lector generado).</summary>
+    Private Function ReadStringPtrArray(header As HkxObjectArrayHeader_Class) As List(Of String)
+        Dim result As New List(Of String)
+        If header Is Nothing OrElse header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
+        For i = 0 To header.Count - 1
+            result.Add(ResolveLocalString(header.DataRelativeOffset + (i * PointerSizeValue)))
+        Next
+        Return result
+    End Function
+
     Private Function ReadStringPtrArray(fieldRelativeOffset As Integer) As List(Of String)
         Dim result As New List(Of String)
         Dim header = ReadArrayHeader(fieldRelativeOffset)
@@ -324,6 +354,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' TODOS los offsets salen de <see cref="HkbLayout"/> (medidos por formato); ninguno está hardcodeado acá.</summary>
     Public Function ParseClipGenerator(source As HkxVirtualObjectGraph_Class) As HkbClipGeneratorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbClipGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Return New HkbClipGeneratorGraph_Class With {
@@ -381,6 +416,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbBlenderGenerator: nombre + children (cada uno con su weight y el generador que mezcla).</summary>
     Public Function ParseBlenderGenerator(source As HkxVirtualObjectGraph_Class) As HkbBlenderGeneratorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBlenderGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBlenderGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbBlenderGeneratorGraph_Class With {.SourceObject = source, .Name = ResolveLocalString(source.RelativeOffset + &H38)}
         For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
             Dim tgt = GetObject(gf.TargetRelativeOffset)
@@ -395,6 +435,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbBlenderGeneratorChild: weight (+0x40) + el generador que aporta a la mezcla.</summary>
     Public Function ParseBlenderChild(source As HkxVirtualObjectGraph_Class) As HkbBlenderGeneratorChildGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBlenderGeneratorChild", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBlenderGeneratorChild(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim gen As HkxVirtualObjectGraph_Class = Nothing
         For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
             Dim tgt = GetObject(gf.TargetRelativeOffset)
@@ -405,8 +450,8 @@ Public Partial Class HkxObjectGraph_Class
         Next
         Return New HkbBlenderGeneratorChildGraph_Class With {
             .SourceObject = source,
-            .Weight = ReadSingle(source.RelativeOffset + &H40),
-            .WorldFromModelWeight = ReadSingle(source.RelativeOffset + &H44),
+            .Weight = hkr.Weight,
+            .WorldFromModelWeight = hkr.WorldFromModelWeight,
             .GeneratorSummary = DescribeGenerator(gen)
         }
     End Function
@@ -414,9 +459,14 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbStateMachine: nombre + estados (refs a hkbStateMachineStateInfo).</summary>
     Public Function ParseStateMachine(source As HkxVirtualObjectGraph_Class) As HkbStateMachineGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbStateMachine", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbStateMachine(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbStateMachineGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H38)
+            .Name = hkr.Name
         }
         If HkbLayout.StateMachineStates < 0 Then Return result
         For Each stateObj In ReadObjectReferenceArray(source.RelativeOffset + HkbLayout.StateMachineStates)
@@ -430,10 +480,15 @@ Public Partial Class HkxObjectGraph_Class
     ''' El generador y las transiciones se identifican por la CLASE del objeto referenciado.</summary>
     Public Function ParseStateInfo(source As HkxVirtualObjectGraph_Class) As HkbStateInfoGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbStateMachineStateInfo", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbStateMachineStateInfo(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbStateInfoGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H60),
-            .StateId = ReadInt32(source.RelativeOffset + &H68)
+            .Name = hkr.Name,
+            .StateId = hkr.StateId
         }
         ' Layout hkbStateMachineStateInfo (idéntico en los dos juegos): m_transitions@+0x50,
         ' m_generator@+0x58, m_name@+0x60. Se leen por OFFSET, no por class-scan del rango: el scan
@@ -499,7 +554,12 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseTransitions(source As HkxVirtualObjectGraph_Class) As List(Of HkbTransitionGraph_Class)
         Dim result As New List(Of HkbTransitionGraph_Class)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbStateMachineTransitionInfoArray", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim header = ReadArrayHeader(source.RelativeOffset + &H10)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbStateMachineTransitionInfoArray(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim header = hkr.Transitions
         If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
         ' stride del hkbStateMachineTransitionInfo = 0x48 en LOS DOS formatos (medido por el espaciado de
         ' los global-fixups al hkbBlendingTransitionEffect de cada transición: FO4 0x50→0x98, SSE
@@ -523,7 +583,12 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbClipTriggerArray → triggers {localTime, eventId} (eventos disparados en tiempos del clip).</summary>
     Public Function ParseClipTriggerArray(source As HkxVirtualObjectGraph_Class) As HkbClipTriggerArrayGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbClipTriggerArray", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H10)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbClipTriggerArray(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.Triggers
         Dim result As New HkbClipTriggerArrayGraph_Class With {.SourceObject = source}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
@@ -538,7 +603,12 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseBoneIndexArray(source As HkxVirtualObjectGraph_Class) As List(Of Integer)
         Dim result As New List(Of Integer)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBoneIndexArray", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H30)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBoneIndexArray(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.BoneIndices
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 result.Add(CInt(ReadInt16(h.DataRelativeOffset + (i * 2))))
@@ -551,7 +621,12 @@ Public Partial Class HkxObjectGraph_Class
     ''' declarado en hkbBehaviorGraphData). Array@+0x10.</summary>
     Public Function ParseVariableValueSet(source As HkxVirtualObjectGraph_Class) As HkbVariableValueSetGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbVariableValueSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H10)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbVariableValueSet(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.WordVariableValues
         Dim result As New HkbVariableValueSetGraph_Class With {.SourceObject = source}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
@@ -566,7 +641,12 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseEventPropertyArray(source As HkxVirtualObjectGraph_Class) As List(Of HkbEventProperty_Class)
         Dim result As New List(Of HkbEventProperty_Class)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbStateMachineEventPropertyArray", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H10)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbStateMachineEventPropertyArray(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.Events
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * &H10)
@@ -581,7 +661,12 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseVariableBindingSet(source As HkxVirtualObjectGraph_Class) As List(Of HkbVariableBinding_Class)
         Dim result As New List(Of HkbVariableBinding_Class)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbVariableBindingSet", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H10)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbVariableBindingSet(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.Bindings
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * &H28)
@@ -611,7 +696,12 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseExpressionDataArray(source As HkxVirtualObjectGraph_Class) As List(Of HkbExpressionData_Class)
         Dim result As New List(Of HkbExpressionData_Class)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbExpressionDataArray", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H10)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbExpressionDataArray(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.ExpressionsData
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * &H18)
@@ -627,13 +717,21 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbStringEventPayload → el string del payload (@+0x10).</summary>
     Public Function ParseStringEventPayload(source As HkxVirtualObjectGraph_Class) As String
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbStringEventPayload", StringComparison.OrdinalIgnoreCase) Then Return ""
-        Return ResolveLocalString(source.RelativeOffset + &H10)
+        ' Lector generado: el offset sale de la reflexion de los dos .exe.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbStringEventPayload(Me, source)
+        If Not hkr.IsValid Then Return ""
+        Return hkr.Data
     End Function
 
     ''' <summary>hkbMirroredSkeletonInfo → eje de espejo + mapa de pares de hueso (bonePairMap[i] = hueso espejo de i).
     ''' mirrorAxis@+0x10 (vec4), bonePairMap (int16[])@+0x20.</summary>
     Public Function ParseMirroredSkeletonInfo(source As HkxVirtualObjectGraph_Class) As HkbMirroredSkeletonInfoGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbMirroredSkeletonInfo", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbMirroredSkeletonInfo(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim result As New HkbMirroredSkeletonInfoGraph_Class With {
             .SourceObject = source,
@@ -654,7 +752,12 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseBoneWeightArray(source As HkxVirtualObjectGraph_Class) As List(Of Single)
         Dim result As New List(Of Single)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBoneWeightArray", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H30)
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBoneWeightArray(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+        Dim h = hkr.BoneWeights
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 result.Add(ReadSingle(h.DataRelativeOffset + (i * 4)))
@@ -667,6 +770,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' (raycast 30/100, gains 0.1/0.2/1.0...). Nombres best-effort por orden de miembros (sin reflection).</summary>
     Public Function ParseFootIkDriverInfo(source As HkxVirtualObjectGraph_Class) As HkbFootIkDriverInfoGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbFootIkDriverInfo", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbFootIkDriverInfo(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim legsHeader = ReadArrayHeader(rel + &H10)
         Return New HkbFootIkDriverInfoGraph_Class With {
@@ -687,6 +795,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' elbowSiblingIndex@+0x4E, wristIndex@+0x50, enforceEndPosition@+0x52, enforceEndRotation@+0x53.</summary>
     Public Function ParseHandIkDriverInfo(source As HkxVirtualObjectGraph_Class) As HkbHandIkDriverInfoGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbHandIkDriverInfo", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbHandIkDriverInfo(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim result As New HkbHandIkDriverInfoGraph_Class With {.SourceObject = source}
         Dim handsHeader = ReadArrayHeader(rel + &H10)
@@ -731,6 +844,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' m_toGeneratorStartTimeFraction es el float inmediatamente posterior (mismo orden en ambos).</para></summary>
     Public Function ParseBlendingTransitionEffect(source As HkxVirtualObjectGraph_Class) As HkbBlendingTransitionEffectGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBlendingTransitionEffect", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBlendingTransitionEffect(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim d = HkbLayout.TransitionDuration
         Return New HkbBlendingTransitionEffectGraph_Class With {
@@ -750,6 +868,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' reflexion del binario): la propiedad se llama SequenceName por su CONTENIDO.</para></summary>
     Public Function ParseGamebryoSequenceGenerator(source As HkxVirtualObjectGraph_Class) As HkbGamebryoSequenceGeneratorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BGSGamebryoSequenceGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BGSGamebryoSequenceGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim b = HkbLayout.BehaviorRefName
         Return New HkbGamebryoSequenceGeneratorGraph_Class With {
@@ -772,7 +895,10 @@ Public Partial Class HkxObjectGraph_Class
     ''' "iSyncJumpState!=3" en FO4).</summary>
     Public Function ParseExpressionCondition(source As HkxVirtualObjectGraph_Class) As String
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbExpressionCondition", StringComparison.OrdinalIgnoreCase) Then Return ""
-        Return ResolveLocalString(source.RelativeOffset + &H10)
+        ' Lector generado: el offset sale de la reflexion de los dos .exe.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbExpressionCondition(Me, source)
+        If Not hkr.IsValid Then Return ""
+        Return hkr.Expression
     End Function
 
     ''' <summary>hkbBehaviorGraph: la raiz de un archivo de behavior. Nombre + generador raiz + data.
@@ -780,6 +906,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' el class-scan queda solo para un formato sin layout.</summary>
     Public Function ParseBehaviorGraph(source As HkxVirtualObjectGraph_Class) As HkbBehaviorGraphGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorGraph", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBehaviorGraph(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbBehaviorGraphGraph_Class With {
             .SourceObject = source,
             .Name = ResolveLocalString(source.RelativeOffset + &H38)
@@ -811,6 +942,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' solo para un formato sin layout.</summary>
     Public Function ParseBehaviorGraphData(source As HkxVirtualObjectGraph_Class) As HkbBehaviorGraphDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorGraphData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBehaviorGraphData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbBehaviorGraphDataGraph_Class With {.SourceObject = source}
         If HkbLayout.GraphDataStrings >= 0 Then
             result.StringData = ParseBehaviorGraphStringData(ResolveGlobalObject(source.RelativeOffset + HkbLayout.GraphDataStrings))
@@ -833,9 +969,14 @@ Public Partial Class HkxObjectGraph_Class
     ''' m_behaviorName sale del layout medido (FO4 +0x88 / SSE +0x48).</summary>
     Public Function ParseBehaviorReferenceGenerator(source As HkxVirtualObjectGraph_Class) As HkbBehaviorReferenceGeneratorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorReferenceGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbBehaviorReferenceGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Return New HkbBehaviorReferenceGeneratorGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .Name = hkr.Name,
             .BehaviorName = ResolveGeneratorTargetString(source, HkbLayout.BehaviorRefName)
         }
     End Function
@@ -869,6 +1010,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' MEDIDOS: SSE +0x48/+0x50, FO4 +0x88/+0x90 (1875 y 1747 instancias).</summary>
     Public Function ParseModifierGenerator(source As HkxVirtualObjectGraph_Class) As HkbModifierGeneratorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbModifierGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbModifierGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Return New HkbModifierGeneratorGraph_Class With {
@@ -882,8 +1028,13 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbModifierList: lista ordenada de modifiers. Array MEDIDO: SSE +0x50 / FO4 +0x58.</summary>
     Public Function ParseModifierListTyped(source As HkxVirtualObjectGraph_Class) As HkbModifierListTypedGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbModifierList", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbModifierList(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbModifierListTypedGraph_Class With {
-            .SourceObject = source, .Name = ResolveLocalString(source.RelativeOffset + &H38)}
+            .SourceObject = source, .Name = hkr.Name}
         If HkbLayout.ModifierListArray >= 0 Then
             result.Modifiers.AddRange(ReadObjectReferenceArray(source.RelativeOffset + HkbLayout.ModifierListArray))
         End If
@@ -894,8 +1045,13 @@ Public Partial Class HkxObjectGraph_Class
     ''' Devuelve los generadores EN ORDEN (el indice seleccionado es relativo a este array).</summary>
     Public Function ParseManualSelectorGenerator(source As HkxVirtualObjectGraph_Class) As HkbManualSelectorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbManualSelectorGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbManualSelectorGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbManualSelectorGraph_Class With {
-            .SourceObject = source, .Name = ResolveLocalString(source.RelativeOffset + &H38)}
+            .SourceObject = source, .Name = hkr.Name}
         If HkbLayout.ManualSelectorArray >= 0 Then
             result.Generators.AddRange(ReadObjectReferenceArray(source.RelativeOffset + HkbLayout.ManualSelectorArray))
         End If
@@ -936,6 +1092,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' los flags son BYTES consecutivos desde SSE +0x50 / FO4 +0x58 (valen 0 o 1 — invariante testeada).</summary>
     Public Function ParseIsActiveModifier(source As HkxVirtualObjectGraph_Class) As HkbIsActiveModifierGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSIsActiveModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSIsActiveModifier(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Dim r As New HkbIsActiveModifierGraph_Class With {
@@ -955,6 +1116,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' 0x10 desde SSE +0x58 (2) / FO4 +0x98 (4); el parametro de blend SSE +0x7C / FO4 +0xDC.</summary>
     Public Function ParseCyclicBlendTransitionGenerator(source As HkxVirtualObjectGraph_Class) As HkbCyclicBlendGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSCyclicBlendTransitionGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSCyclicBlendTransitionGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Dim r As New HkbCyclicBlendGraph_Class With {
@@ -975,6 +1141,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' (Ambos nombres CONFIRMADOS en el pool de reflexion del binario.)</summary>
     Public Function ParseBoneSwitchGenerator(source As HkxVirtualObjectGraph_Class) As HkbBoneSwitchGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSBoneSwitchGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSBoneSwitchGenerator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Dim r As New HkbBoneSwitchGraph_Class With {
@@ -990,6 +1161,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' (137/137 SSE y 27/27 FO4 tienen el hkbBoneWeightArray en +0x38).</summary>
     Public Function ParseBoneSwitchBoneData(source As HkxVirtualObjectGraph_Class) As HkbBoneSwitchBoneDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSBoneSwitchGeneratorBoneData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSBoneSwitchGeneratorBoneData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Return New HkbBoneSwitchBoneDataGraph_Class With {
             .SourceObject = source,
@@ -1002,6 +1178,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' MEDIDO en FO4 (121 instancias): m_generator@+0x30, m_weight@+0x48. No aparece en el corpus SSE.</summary>
     Public Function ParseLayer(source As HkxVirtualObjectGraph_Class) As HkbLayerGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbLayer", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbLayer(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Dim r As New HkbLayerGraph_Class With {
@@ -1020,6 +1201,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' Offsets MEDIDOS: eje SSE +0x50/54/58 y FO4 +0x60/64/68 ; twistAngle SSE +0x60 / FO4 +0x70.</summary>
     Public Function ParseTwistModifier(source As HkxVirtualObjectGraph_Class) As HkbTwistModifierGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbTwistModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbTwistModifier(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Return New HkbTwistModifierGraph_Class With {
@@ -1037,6 +1223,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' enable SSE +0x48 / FO4 +0x50 ; eventId SSE +0x50 / FO4 +0x58 ; payload SSE +0x58 / FO4 +0x60.</summary>
     Public Function ParseEventOnDeactivateModifier(source As HkxVirtualObjectGraph_Class) As HkbEventModifierGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSEventOnDeactivateModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSEventOnDeactivateModifier(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Return New HkbEventModifierGraph_Class With {
@@ -1074,9 +1265,14 @@ Public Partial Class HkxObjectGraph_Class
     ''' Los dos hijos se resuelven por CLASE (son las unicas refs a *Modifier del nodo).</summary>
     Public Function ParseModifyOnceModifier(source As HkxVirtualObjectGraph_Class) As HkbModifyOnceGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSModifyOnceModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSModifyOnceModifier(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim r As New HkbModifyOnceGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .Name = hkr.Name,
             .Enable = (HkbLayout.ModEnable >= 0 AndAlso ReadByte(source.RelativeOffset + HkbLayout.ModEnable) <> 0)}
         For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size).OrderBy(Function(x) x.SourceRelativeOffset)
             Dim t = GetObject(gf.TargetRelativeOffset)
@@ -1097,6 +1293,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' por eso se exponen como lista indexada y no con los nombres Havok.</summary>
     Public Function ParseAssignVariablesModifier(source As HkxVirtualObjectGraph_Class) As HkbAssignVariablesGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSAssignVariablesModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSAssignVariablesModifier(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Dim r As New HkbAssignVariablesGraph_Class With {
@@ -1134,6 +1335,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' caen a 34-60%).</para></summary>
     Public Function ParseLookAtModifier(source As HkxVirtualObjectGraph_Class) As HkbLookAtModifierGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSLookAtModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_BSLookAtModifier(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim rel = source.RelativeOffset
         Dim L = HkbLayout
         Dim r As New HkbLookAtModifierGraph_Class With {
@@ -1236,6 +1442,11 @@ Public Partial Class HkxObjectGraph_Class
     ''' <summary>hkbModifierList → la lista de modifiers que agrupa.</summary>
     Public Function ParseModifierList(source As HkxVirtualObjectGraph_Class) As HkbModifierListGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbModifierList", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkbModifierList(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Dim result As New HkbModifierListGraph_Class With {.SourceObject = source, .Name = ReadNodeName(source)}
         For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
             Dim tgt = GetObject(gf.TargetRelativeOffset)

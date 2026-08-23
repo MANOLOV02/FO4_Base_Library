@@ -76,13 +76,13 @@ Friend NotInheritable Class HclCollisionPoseHelper_Class
         Return result
     End Function
 
-    Private Shared Function BuildReferenceSkeletonTransforms(skeleton As HkaSkeletonGraph_Class) As Dictionary(Of String, Transform_Class)
+    Private Shared Function BuildReferenceSkeletonTransforms(skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton) As Dictionary(Of String, Transform_Class)
         Dim result As New Dictionary(Of String, Transform_Class)(StringComparer.OrdinalIgnoreCase)
         If skeleton?.ReferencePose Is Nothing OrElse skeleton.ParentIndices Is Nothing OrElse skeleton.Bones Is Nothing Then Return result
 
         Dim globals As New List(Of Transform_Class)
         For i = 0 To skeleton.ReferencePose.Count - 1
-            Dim localTransform = LocalReferencePoseToTransform(skeleton.ReferencePose(i))
+            Dim localTransform = HkxTransformConventionHelper.ToTransform(skeleton.ReferencePose(i))
             Dim globalTransform = CloneTransformLocal(localTransform)
             Dim parentIndex = If(i < skeleton.ParentIndices.Count, CInt(skeleton.ParentIndices(i)), -1)
             If parentIndex >= 0 AndAlso parentIndex < globals.Count Then

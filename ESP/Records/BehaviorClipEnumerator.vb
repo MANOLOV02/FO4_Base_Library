@@ -233,13 +233,24 @@ Public NotInheritable Class BehaviorClipEnumerator
     ''' UNA vez por lista cacheada. loadHkx = el mismo Func(path→bytes) del caller (BA2 + loose).</para></summary>
     Public Shared Sub DetectHkxFlags(clips As IEnumerable(Of ResolvedAnimationClip), loadHkx As Func(Of String, Byte()))
         If clips Is Nothing OrElse loadHkx Is Nothing Then Return
-        Dim memo As New Dictionary(Of String, DatosDeArchivo)(StringComparer.OrdinalIgnoreCase)
         For Each c In clips
             If c Is Nothing OrElse c.HkxFlagsKnown Then Continue For
+            ' ⛔ EL MEMO ES COMPARTIDO ENTRE RAZAS, no local a esta llamada.
+            '
+            ' `DatosDeArchivo` es funcion PURA del archivo de animacion: mismo archivo, mismos frames,
+            ' misma duracion, mismo blendHint. Pero el memo era `Dim memo As New Dictionary` DENTRO de
+            ' esta funcion, o sea uno por raza — y el preload de fondo enumera TODAS las razas del load
+            ' order. Medido en el log del usuario (Skyrim): 114 razas, 86.331 clips, y las razas que
+            ' comparten behavior declaran la MISMA lista de 1.904 clips. Cada raza volvia a abrir y a
+            ' parsear los mismos archivos: ~217.000 lecturas de unos 6.100 archivos distintos.
+            '
+            ' Con el memo compartido, la primera raza paga y las otras 113 salen del diccionario.
+            ' Acotado: ~6.100 entradas de 5 campos, y muere con el load order (`LimpiarMemoDeArchivos`,
+            ' que llama `InvalidateParseCaches` junto con las demas caches con clave de FormID/ruta).
             Dim d As DatosDeArchivo = Nothing
-            If Not memo.TryGetValue(c.AnimationFile, d) Then
+            If Not _memoArchivos.TryGetValue(c.AnimationFile, d) Then
                 d = LeerDatosDeArchivo(loadHkx, c.AnimationFile)
-                memo(c.AnimationFile) = d
+                _memoArchivos(c.AnimationFile) = d
             End If
             c.IsAdditive = d.EsAditivo
             ' ⛔ Se pregunta por el crop de ESTE clip, no del archivo. Y con la MISMA funcion que el player
@@ -250,6 +261,19 @@ Public NotInheritable Class BehaviorClipEnumerator
             End If
             c.HkxFlagsKnown = True
         Next
+    End Sub
+
+    ''' <summary>Memo COMPARTIDO de <see cref="DatosDeArchivo"/> por archivo de animacion. Ver el
+    ''' porque en <see cref="DetectHkxFlags"/>. Concurrente porque el preload de razas corre en el
+    ''' pool y varias razas pueden pedir el mismo archivo a la vez; el peor caso es leerlo dos veces,
+    ''' nunca devolver algo distinto (el valor es funcion pura del archivo).</summary>
+    Private Shared ReadOnly _memoArchivos As _
+        New System.Collections.Concurrent.ConcurrentDictionary(Of String, DatosDeArchivo)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Suelta el memo de archivos. Va con el resto de las caches con clave de ruta/FormID:
+    ''' un cambio de load order puede hacer que la misma ruta resuelva a OTROS bytes.</summary>
+    Public Shared Sub LimpiarMemoDeArchivos()
+        _memoArchivos.Clear()
     End Sub
 
     ''' <summary>Lo que se lee UNA vez por archivo. <c>Leido = False</c> si no se pudo abrir o parsear:
@@ -273,13 +297,38 @@ Public NotInheritable Class BehaviorClipEnumerator
                 Dim ab = g.ParseAnimationBinding(b)
                 If ab IsNot Nothing Then d.EsAditivo = (ab.BlendHint <> 0)
             End If
-            ' El grafo YA esta construido: leer frames y duracion no cuesta ni un archivo ni un parseo mas.
-            Dim an = g.ParseAnimations().FirstOrDefault()
-            If an IsNot Nothing Then
-                d.Frames = an.NumFrames
-                d.DuracionDeFrame = CDbl(an.FrameDuration)
-                d.Duracion = CDbl(an.Duration)
-                d.Leido = True
+            ' ⛔⛔ TRES ESCALARES SE LEEN COMO TRES ESCALARES. NO se llama a `ParseAnimations`.
+            '
+            ' Aca decia "el grafo YA esta construido: leer frames y duracion no cuesta ni un archivo ni
+            ' un parseo mas". ERA FALSO Y ESTA MEDIDO: `ParseAnimations` no lee campos, DESCOMPRIME EL
+            ' SPLINE — materializa un transform por (frame x track), 6.262 objetos de promedio por
+            ' animacion en Skyrim y 7.313 en Fallout, a 4.039 / 5.491 us por archivo
+            ' (`HkxLoadOrderAudit --hkxperf`). Y esto corre UNA VEZ POR ARCHIVO DE ANIMACION DISTINTO
+            ' de cada raza, desde el preload de fondo que enumera TODAS las razas del load order.
+            '
+            ' Lo que costaba, del log del usuario (Skyrim, una sola seleccion de NPC): ManakinRace sola
+            ' declara 1.904 clips; el preload de razas corria durante los 14,9 s que la UI tardo en
+            ' subir la geometria a GL, y la seleccion entera tardo 28,8 s. En Fallout no se notaba
+            ' porque tiene muchas menos razas con behavior graph y muchos menos clips por raza.
+            '
+            ' Los tres campos son escalares del encabezado del objeto y el lector generado los da
+            ' directo, game-aware, sin tocar el blob: `duration` sale de `hkaAnimation` (+0x14),
+            ' `numFrames` (+0x38) y `frameDuration` (+0x50) de `hkaSplineCompressedAnimation`. Las
+            ' propiedades de array del objeto (`Data`, `BlockOffsets`) son PEREZOSAS: no se tocan aca,
+            ' asi que el blob no se materializa.
+            '
+            ' ⚠ Se mira SOLO `hkaSplineCompressedAnimation`, igual que antes: `ParseAnimations`
+            ' tampoco miraba `hkaLosslessCompressedAnimation`, y para esos archivos `Leido` quedaba en
+            ' False. Se conserva tal cual para no cambiar en silencio que clips reportan crop ignorado.
+            Dim ao = g.GetObjectsByClassName("hkaSplineCompressedAnimation").FirstOrDefault()
+            If ao IsNot Nothing Then
+                Dim an = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Read(g, ao)
+                If an IsNot Nothing Then
+                    d.Frames = an.NumFrames
+                    d.DuracionDeFrame = CDbl(an.FrameDuration)
+                    d.Duracion = CDbl(an.Duration)
+                    d.Leido = True
+                End If
             End If
         Catch
         End Try

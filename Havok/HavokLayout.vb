@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Collections.Concurrent
@@ -225,6 +225,43 @@ Namespace Havok.Canon
             Return result
         End Function
 
+        ''' <summary>
+        ''' Todos los miembros que la clase declara, INCLUYENDO los heredados y con los structs
+        ''' anidados aplanados (ruta con puntos). Es lo que necesita un lector generico para poder
+        ''' recorrer una clase entera sin tener escrita su lista de campos.
+        ''' </summary>
+        Public Function MembersOf(className As String) As IReadOnlyList(Of HavokMember)
+            Dim map = Flat(className)
+            If map Is Nothing Then Return Nothing
+            ' Quien pide MembersOf los lee TODOS (es lo que hace el lector generico), asi que se
+            ' acreditan todos. Si esto no se registrara, el censo de cobertura diria que la clase no
+            ' se lee cuando en realidad se lee entera: el instrumento mediria el METODO en vez del
+            ' resultado.
+            If RecordCoverage Then
+                For Each m In map.Values
+                    RecordRequest(className, m.Name)
+                Next
+            End If
+            Return map.Values.OrderBy(Function(m) m.Offset).ToList()
+        End Function
+
+        ''' <summary>`objectSize` declarado por la reflexion, o 0 si no lo trae (structs embebidos:
+        ''' su tamano se deduce del offset del miembro que les sigue en la clase que los contiene).</summary>
+        Public Function SizeOfClass(className As String) As Integer
+            If String.IsNullOrEmpty(className) Then Return 0
+            Dim c As HavokClass = Nothing
+            If Not _classes.TryGetValue(className, c) OrElse c Is Nothing Then Return 0
+            If c.Size > 0 Then Return c.Size
+            ' Sin objectSize: el tamano minimo es el offset del ultimo miembro mas su propio tamano.
+            Dim ms = MembersOf(className)
+            If ms Is Nothing OrElse ms.Count = 0 Then Return 0
+            Dim last = ms(ms.Count - 1)
+            Dim lastSize = HavokGenericReader.SizeOfType(Me, last.TypeName, last.SubTypeName, last.StructClassName)
+            If lastSize <= 0 Then lastSize = 8
+            Dim n = If(last.CArraySize > 1, last.CArraySize, 1)
+            Return last.Offset + (lastSize * n)
+        End Function
+
         ''' <summary>Offset absoluto del miembro (ruta con puntos), o -1 si la clase o el miembro no existen.</summary>
         Public Function Offset(className As String, memberPath As String) As Integer
             Dim m = Member(className, memberPath)
@@ -234,11 +271,65 @@ Namespace Havok.Canon
         ''' <summary>El miembro, o Nothing.</summary>
         Public Function Member(className As String, memberPath As String) As HavokMember
             If String.IsNullOrEmpty(memberPath) Then Return Nothing
+            If RecordCoverage Then RecordRequest(className, memberPath)
             Dim map = Flat(className)
             Dim result As HavokMember = Nothing
             If map.TryGetValue(memberPath, result) Then Return result
             Return Nothing
         End Function
+
+        ' =======================================================================================
+        '  COBERTURA DE PARSEO — exacta, en runtime
+        '
+        '  ⛔ POR QUE ACA Y NO CON UN SCRIPT QUE MIRE EL CODIGO: intente auditar la cobertura con
+        '  expresiones regulares sobre los .vb y mintio en las dos direcciones. Marcaba clases
+        '  COMPLETAS como vacias (los lambdas `Function(...) ... End Function` cortaban el cuerpo que
+        '  el script creia estar mirando) y no veia los campos leidos por helpers locales. Un
+        '  instrumento que miente sobre que falta es peor que no tener instrumento: da por cerrado
+        '  lo que esta abierto.
+        '
+        '  Aca no hay heuristica: TODO offset sale de `Member()`, asi que registrar la peticion es
+        '  la verdad por construccion. Se prende desde un gate, se parsea un corpus, y lo que la
+        '  reflexion declara y nadie pidio es EXACTAMENTE lo que el parser no lee.
+        ' =======================================================================================
+
+        ''' <summary>Prender ANTES de parsear. Apagado no cuesta nada (una comparacion booleana).</summary>
+        Public Shared Property RecordCoverage As Boolean = False
+
+        Private Shared ReadOnly _requested As New Dictionary(Of String, HashSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
+        Private Shared Sub RecordRequest(className As String, memberPath As String)
+            If String.IsNullOrEmpty(className) Then Exit Sub
+            SyncLock _requested
+                Dim set0 As HashSet(Of String) = Nothing
+                If Not _requested.TryGetValue(className, set0) Then
+                    set0 = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+                    _requested(className) = set0
+                End If
+                set0.Add(memberPath)
+                ' Una ruta anidada `a.b` tambien acredita al padre `a`: el parser lo esta leyendo,
+                ' solo que entrando directo al campo de adentro.
+                Dim dot = memberPath.IndexOf("."c)
+                If dot > 0 Then set0.Add(memberPath.Substring(0, dot))
+            End SyncLock
+        End Sub
+
+        ''' <summary>Lo pedido hasta ahora, por clase. Copia: el llamador no puede mutar el registro.</summary>
+        Public Shared Function CoverageSnapshot() As Dictionary(Of String, HashSet(Of String))
+            SyncLock _requested
+                Dim copy As New Dictionary(Of String, HashSet(Of String))(StringComparer.OrdinalIgnoreCase)
+                For Each kv In _requested
+                    copy(kv.Key) = New HashSet(Of String)(kv.Value, StringComparer.OrdinalIgnoreCase)
+                Next
+                Return copy
+            End SyncLock
+        End Function
+
+        Public Shared Sub ResetCoverage()
+            SyncLock _requested
+                _requested.Clear()
+            End SyncLock
+        End Sub
 
         ''' <summary>Offset del miembro; lanza si no existe. Para sitios donde un fallo debe aflorar.</summary>
         Public Function RequireOffset(className As String, memberPath As String) As Integer
@@ -285,6 +376,17 @@ Namespace Havok.Canon
         ''' Tabla que corresponde al formato QUE EL ARCHIVO DECLARA. Nothing para Skyrim32:
         ''' la tabla describe x64 y un packfile de 32 bits tiene otro layout (ver cabecera).
         ''' </summary>
+        ''' <summary>
+        ''' Tabla canonica del formato que el PACKFILE DECLARA. Es el unico punto donde se decide que
+        ''' juego se esta leyendo, y la decision sale del archivo, no de la config: `Config_App.Game`
+        ''' viene en Skyrim por defecto y usarlo aca haria que un HKX de Fallout se leyera con la tabla
+        ''' equivocada. Nothing = formato sin tabla (Skyrim32).
+        ''' </summary>
+        Public Shared Function ForGraph(graph As HkxObjectGraph_Class) As HavokLayout
+            If graph Is Nothing OrElse graph.Packfile Is Nothing OrElse graph.Packfile.Header Is Nothing Then Return Nothing
+            Return [For](graph.Packfile.Header.PackfileFormat)
+        End Function
+
         Public Shared Function [For](format As HkxPackfileFormat_Enum) As HavokLayout
             Select Case format
                 Case HkxPackfileFormat_Enum.Fallout64 : Return FO4

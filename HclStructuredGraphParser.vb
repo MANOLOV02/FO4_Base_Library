@@ -48,6 +48,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclSimClothData(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Const cls = "hclSimClothData"
         ' Guard por CLASE: Skyrim32 no tiene tabla, y la tabla de Skyrim64 no declara clases hcl.
         Dim layout = CanonLayoutOf(graph)
@@ -120,18 +125,23 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclClothState", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclClothState(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim result As New HclClothStateDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Field18UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H18)),
-            .Field28Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H28)),
-            .Field48Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H48))
+            .Name = r.Name,
+            .Field18UInt32 = ReadUInt32Array(graph, r.Operators),
+            .Field28Vectors = ReadVector4Array(graph, r.UsedBuffers),
+            .Field48Vectors = ReadVector4Array(graph, r.UsedSimCloths)
         }
 
         result.OperatorIndices.AddRange(result.Field18UInt32.Select(Function(value) CInt(value)))
-        result.BufferAccesses.AddRange(ParseStateBufferAccessArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H28)))
-        result.AuxiliaryBufferAccesses.AddRange(ParseStateBufferAccessArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H48)))
-        result.TransformAccessContainers.AddRange(ParseStateTransformAccessContainerArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H38)))
+        result.BufferAccesses.AddRange(ParseStateBufferAccessArray(graph, r.UsedBuffers))
+        result.AuxiliaryBufferAccesses.AddRange(ParseStateBufferAccessArray(graph, r.UsedSimCloths))
+        result.TransformAccessContainers.AddRange(ParseStateTransformAccessContainerArray(graph, r.UsedTransformSets))
         For Each container In result.TransformAccessContainers
             result.TransformSetAccesses.AddRange(container.Accesses)
         Next
@@ -184,7 +194,6 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
             .EntryRelativeOffset = raw.EntryRelativeOffset,
             .NestedAccessHeader = nestedHeader
         }
-        result.HeaderUInt32.AddRange(raw.UInt32Values.Take(4))
 
         For Each nestedRaw In ReadRawStructArray(graph, nestedHeader, 72)
             Dim access = ParseStateTransformSetAccess(graph, nestedRaw)
@@ -238,11 +247,15 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclBufferDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclBufferDefinition(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim payloadUInt32 = ReadPayloadUInt32(graph, source, &H20)
         Return New HclBufferDefinitionDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .PayloadRelativeOffset = source.RelativeOffset + &H20,
+            .Name = r.Name,
             .PayloadUInt32 = payloadUInt32,
             .ParticleCount = If(payloadUInt32.Count > 0, CInt(payloadUInt32(0)), 0),
             .TriangleCount = If(payloadUInt32.Count > 1, CInt(payloadUInt32(1)), 0)
@@ -253,11 +266,15 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclScratchBufferDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclScratchBufferDefinition(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim payloadUInt32 = ReadPayloadUInt32(graph, source, &H20)
         Return New HclScratchBufferDefinitionDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .PayloadRelativeOffset = source.RelativeOffset + &H20,
+            .Name = r.Name,
             .PayloadUInt32 = payloadUInt32,
             .ParticleCount = If(payloadUInt32.Count > 0, CInt(payloadUInt32(0)), 0),
             .TriangleCount = If(payloadUInt32.Count > 1, CInt(payloadUInt32(1)), 0)
@@ -268,11 +285,15 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclMoveParticlesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclMoveParticlesOperator(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Return New HclMoveParticlesOperatorDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 2),
-            .Pairs = ReadVertexParticlePairs(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20))
+            .Name = r.Name,
+            .Pairs = ReadVertexParticlePairs(graph, r.VertexParticlePairs)
         }
     End Function
 
@@ -280,14 +301,18 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimulateOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclSimulateOperator(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim header = ReadUInt32Block(graph, source.RelativeOffset + &H18, 6)
         Return New HclSimulateOperatorDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .HeaderUInt32 = header,
+            .Name = r.Name,
             .SubstepCount = If(header.Count > 3, CInt(header(3)), 0),
             .SolveIterationCount = If(header.Count > 4, CInt(header(4)), 0),
-            .Configs = ReadUInt32ConfigArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H30))
+            .Configs = ReadUInt32ConfigArray(graph, r.ConstraintExecution)
         }
     End Function
 
@@ -295,13 +320,16 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclCopyVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclCopyVerticesOperator(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim payloadBytes = ReadPayloadBytes(graph, source, &H20)
         Dim payloadUInt32 = ReadPayloadUInt32(graph, source, &H20)
         Return New HclCopyVerticesOperatorDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 2),
-            .PayloadRelativeOffset = source.RelativeOffset + &H20,
+            .Name = r.Name,
             .PayloadUInt32 = payloadUInt32,
             .ElementCount = If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0),
             .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes)
@@ -312,13 +340,16 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclGatherAllVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclGatherAllVerticesOperator(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim payloadBytes = ReadPayloadBytes(graph, source, &H20)
         Dim payloadUInt32 = ReadPayloadUInt32(graph, source, &H20)
         Return New HclGatherAllVerticesOperatorDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 2),
-            .PayloadRelativeOffset = source.RelativeOffset + &H20,
+            .Name = r.Name,
             .PayloadUInt32 = payloadUInt32,
             .ElementCount = If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0),
             .GatheredVertexIndices = DecodePackedUInt16List(payloadUInt32.Skip(12), If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0)),
@@ -337,8 +368,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
     ' hclBendLinkConstraintSet — stride 20: {u16 particleA, u16 particleB, 4×float}. (DC Guard)
     Friend Shared Function ParseBendLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBendLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclBendLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
-        Dim result As New HclBendLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclBendLinkConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
+        Dim h = r.Links
+        Dim result As New HclBendLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = r.Name}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * 20)
@@ -354,8 +390,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
     ' hclCompressibleLinkConstraintSet — stride 16: {u16 particleA, u16 particleB, 3×float}. (Institute Lab Coat)
     Friend Shared Function ParseCompressibleLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCompressibleLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclCompressibleLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
-        Dim result As New HclCompressibleLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclCompressibleLinkConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
+        Dim h = r.Links
+        Dim result As New HclCompressibleLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = r.Name}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * 16)
@@ -370,8 +411,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
     ' hclBonePlanesConstraintSet — stride 32: {plane normal(3f)+dist(f), boneIndex(u16), index1(u16), weight(f), 2×f}. (Residents 6Suit)
     Friend Shared Function ParseBonePlanesConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBonePlanesConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclBonePlanesConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
-        Dim result As New HclBonePlanesConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclBonePlanesConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
+        Dim h = r.BonePlanes
+        Dim result As New HclBonePlanesConstraintSetDetail_Class With {.SourceObject = source, .Name = r.Name}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * 32)
@@ -388,8 +434,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
     ' hclGatherSomeVerticesOperator — stride 4: pares {u16 source, u16 target} de remap de vértices. (Institute Lab Coat)
     Friend Shared Function ParseGatherSomeVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclGatherSomeVerticesOperatorDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclGatherSomeVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
-        Dim result As New HclGatherSomeVerticesOperatorDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclGatherSomeVerticesOperator(graph, source)
+        If Not r.IsValid Then Return Nothing
+        Dim h = r.VertexPairs
+        Dim result As New HclGatherSomeVerticesOperatorDetail_Class With {.SourceObject = source, .Name = r.Name}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * 4)
@@ -472,6 +523,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclCollidable", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclCollidable(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         Dim cached As HclCollidableDetail_Class = Nothing
         If collidableCache IsNot Nothing AndAlso collidableCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
 
@@ -506,7 +562,6 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
             .Name = graph.ResolveLocalString(rel + layout.RequireOffset(cls, "name")),
             .ShapeObject = shapeObject,
             .ShapeDetail = ParseCapsuleShape(graph, shapeObject),
-            .PayloadRelativeOffset = rel + transformOffset,
             .PayloadVectors = transformVectors,
             .TransformMatrix = CreateMatrix4FromVectorRows(transformVectors, 0),
             .LinearVelocity = ReadVector4At(graph, rel + layout.RequireOffset(cls, "linearVelocity")),
@@ -539,6 +594,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
     Friend Shared Function ParseSimpleWindAction(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclSimpleWindActionDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimpleWindAction", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclSimpleWindAction(graph, source)
+        If Not r.IsValid Then Return Nothing
         Const cls = "hclSimpleWindAction"
         Dim layout = CanonLayoutOf(graph)
         If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
@@ -558,8 +618,8 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
 
     ''' <summary>Tabla canónica del formato que el packfile DECLARA. Nothing = formato sin tabla (Skyrim32).</summary>
     Friend Shared Function CanonLayoutOf(graph As HkxObjectGraph_Class) As Havok.Canon.HavokLayout
-        If IsNothing(graph) OrElse IsNothing(graph.Packfile) OrElse IsNothing(graph.Packfile.Header) Then Return Nothing
-        Return Havok.Canon.HavokLayout.For(graph.Packfile.Header.PackfileFormat)
+        ' Delega: la ley "que tabla usa este archivo" vive en HavokLayout.ForGraph y en ningun otro lado.
+        Return Havok.Canon.HavokLayout.ForGraph(graph)
     End Function
 
     Private Shared Function ReadVector4At(graph As HkxObjectGraph_Class, relativeOffset As Integer) As HkxVector4Graph_Class
@@ -574,10 +634,15 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclStandardLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        Dim rawLinks = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 12)
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclStandardLinkConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
+
+        Dim rawLinks = ReadRawStructArray(graph, r.Links, 12)
         Dim result As New HclStandardLinkConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
+            .Name = r.Name
         }
         result.LinkDetails.AddRange(ParseDistanceConstraints(rawLinks))
         Return result
@@ -587,10 +652,15 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclStretchLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        Dim rawLinks = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 12)
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclStretchLinkConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
+
+        Dim rawLinks = ReadRawStructArray(graph, r.Links, 12)
         Dim result As New HclStretchLinkConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
+            .Name = r.Name
         }
         result.LinkDetails.AddRange(ParseDistanceConstraints(rawLinks))
         Return result
@@ -600,10 +670,15 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclBendStiffnessConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        Dim rawLinks = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 32)
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclBendStiffnessConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
+
+        Dim rawLinks = ReadRawStructArray(graph, r.Links, 32)
         Dim result As New HclBendStiffnessConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
+            .Name = r.Name
         }
         result.LinkDetails.AddRange(ParseBendConstraints(rawLinks))
         Return result
@@ -612,6 +687,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
     Friend Shared Function ParseLocalRangeConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclLocalRangeConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclLocalRangeConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclLocalRangeConstraintSet(graph, source)
+        If Not r.IsValid Then Return Nothing
 
         Const cls = "hclLocalRangeConstraintSet"
         Dim layout = CanonLayoutOf(graph)
@@ -640,16 +720,21 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclVolumeConstraintMx", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclVolumeConstraintMx(graph, source)
+        If Not r.IsValid Then Return Nothing
+
         ' Raw structs LOCALES (se consumen acá para producir batches/quad-slots tipados; no se guardan en el result).
-        Dim f20raw = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 352)
-        Dim f40raw = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H40), 352)
+        Dim f20raw = ReadRawStructArray(graph, r.FrameBatchDatas, 352)
+        Dim f40raw = ReadRawStructArray(graph, r.ApplyBatchDatas, 352)
         Dim result As New HclVolumeConstraintMxDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Field20VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 22),
-            .Field30VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H30), 2),
-            .Field40VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H40), 22),
-            .Field50VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H50), 2)
+            .Name = r.Name,
+            .Field20VectorBlocks = ReadVectorStructArray(graph, r.FrameBatchDatas, 22),
+            .Field30VectorBlocks = ReadVectorStructArray(graph, r.FrameSingleDatas, 2),
+            .Field40VectorBlocks = ReadVectorStructArray(graph, r.ApplyBatchDatas, 22),
+            .Field50VectorBlocks = ReadVectorStructArray(graph, r.ApplySingleDatas, 2)
         }
 
         result.Field20Batches.AddRange(ParseVolumeConstraintBatches(f20raw, result.Field20VectorBlocks))
@@ -1653,7 +1738,6 @@ End Class
 Public Class HclClothStateTransformAccessContainerDetail_Class
     Public Property EntryIndex As Integer
     Public Property EntryRelativeOffset As Integer
-    Public ReadOnly Property HeaderUInt32 As New List(Of UInteger)
     Public Property NestedAccessHeader As HkxObjectArrayHeader_Class
     Public ReadOnly Property Accesses As New List(Of HclClothStateTransformSetAccessDetail_Class)
 End Class
@@ -1682,7 +1766,6 @@ End Class
 Public Class HclBufferDefinitionDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property PayloadRelativeOffset As Integer
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ParticleCount As Integer
     Public Property TriangleCount As Integer
@@ -1691,7 +1774,6 @@ End Class
 Public Class HclScratchBufferDefinitionDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property PayloadRelativeOffset As Integer
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ParticleCount As Integer
     Public Property TriangleCount As Integer
@@ -1700,7 +1782,6 @@ End Class
 Public Class HclMoveParticlesOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property HeaderUInt32 As List(Of UInteger)
     Public Property Pairs As List(Of HclMoveParticlesVertexParticlePairGraph_Class)
 End Class
 
@@ -1714,7 +1795,6 @@ End Class
 Public Class HclSimulateOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property HeaderUInt32 As List(Of UInteger)
     Public Property SubstepCount As Integer
     Public Property SolveIterationCount As Integer
     Public Property Configs As List(Of HclSimulateOperatorConfigGraph_Class)
@@ -1738,8 +1818,6 @@ End Class
 Public Class HclCopyVerticesOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property HeaderUInt32 As List(Of UInteger)
-    Public Property PayloadRelativeOffset As Integer
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ElementCount As Integer
     Public Property PayloadAsciiTag As String
@@ -1748,8 +1826,6 @@ End Class
 Public Class HclGatherAllVerticesOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property HeaderUInt32 As List(Of UInteger)
-    Public Property PayloadRelativeOffset As Integer
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ElementCount As Integer
     Public Property PayloadAsciiTag As String
@@ -1819,7 +1895,6 @@ Public Class HclCollidableDetail_Class
     Public Property ShapeObject As HkxVirtualObjectGraph_Class
     Public Property ShapeDetail As HclCapsuleShapeDetail_Class
     ''' <summary>Offset del `transform` (+0x20). Se conserva el nombre viejo para no romper llamadores.</summary>
-    Public Property PayloadRelativeOffset As Integer
     ''' <summary>⛔ OBSOLETO: quedaba de leer el objeto como un blob desde +0x18. Siempre vacío.</summary>
     Public Property PayloadUInt32 As List(Of UInteger)
     ''' <summary>Los 4 hkVector4 del `transform` (3 filas de rotación + traslación).</summary>

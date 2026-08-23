@@ -475,19 +475,53 @@ Public Class SkeletonInstance
             Next
         Next
 
+        ' ⛔⛔ LAS RAICES SE JUNTAN PRIMERO Y CADA UNA SE AGREGA UNA SOLA VEZ.
+        '
+        ' `AddBone(Nothing, x)` no agrega un hueso: construye el SUBARBOL ENTERO de x. Llamarlo una vez
+        ' por cada hijo del root construye el esqueleto completo tantas veces como hijos tenga el root.
+        '
+        ' MEDIDO (Tools/ClothPhysicsGate --perf, skeleton.nif vanilla):
+        '     Skyrim   99 nombres unicos / 297 nodos en el arbol / 3 raices   <- el mismo esqueleto x3
+        '     Fallout 305 nombres unicos / 305 nodos en el arbol / 1 raiz
+        '
+        ' Pasa SOLO en Skyrim, y por eso paso desapercibido: el For de abajo compara el tipo EXACTO
+        ' (`GetType(NiNode)`), asi que un `BSFadeNode` no se enumera nunca. En Fallout la raiz es un
+        ' NiNode y entra por la rama `par Is Nothing` una sola vez; en Skyrim la raiz es un BSFadeNode,
+        ' asi que NINGUN nodo tiene `par Is Nothing` y cada hijo directo del fade-node entraba por la
+        ' rama que agrega al PADRE — una reconstruccion completa por hijo.
+        '
+        ' Lo que costaba: `SkeletonDictionary` se queda con la ULTIMA copia, asi que las otras dos son
+        ' huesos huerfanos que nadie puede resolver por nombre — pero SI los recorre todo lo que camina
+        ' `SkeletonStructure`, y eso incluye `BuildGlobalTransformCacheForRenderPass`, que corre POR
+        ' PASADA DE RENDER y compone dos transforms por nodo. En Skyrim eso era 3x el trabajo de
+        ' esqueleto en cada frame, y el factor no es 3 fijo: es la cantidad de hijos directos del
+        ' fade-node, o sea que con un esqueleto modeado (XPMSSE y companiaa) crece.
+        Dim raices As New List(Of NiNode)
+        Dim raicesVistas As New HashSet(Of Integer)
         For Each bon As NiNode In Skeleton.Blocks.Where(Function(pf) pf.GetType Is GetType(NiNode))
             Dim bonIndex As Integer
             Dim par As NiNode = Nothing
             If Skeleton.GetBlockIndex(bon, bonIndex) Then
                 parentMap.TryGetValue(bonIndex, par)
             End If
-            If IsNothing(par) OrElse par.GetType Is GetType(NiflySharp.Blocks.BSFadeNode) Then
-                If IsNothing(par) Then
-                    AddBone(Nothing, bon)
-                Else
-                    AddBone(Nothing, par)
-                End If
+            Dim raiz As NiNode = Nothing
+            If IsNothing(par) Then
+                raiz = bon
+            ElseIf par.GetType Is GetType(NiflySharp.Blocks.BSFadeNode) Then
+                raiz = par
             End If
+            If raiz Is Nothing Then Continue For
+            ' La deduplicacion es por INDICE DE BLOQUE, que es la identidad del nodo dentro del NIF.
+            ' Si el indice no se puede resolver se agrega igual: perder una raiz seria peor que
+            ' construirla dos veces, y es el comportamiento que habia.
+            Dim raizIndex As Integer
+            If Skeleton.GetBlockIndex(raiz, raizIndex) Then
+                If Not raicesVistas.Add(raizIndex) Then Continue For
+            End If
+            raices.Add(raiz)
+        Next
+        For Each raiz In raices
+            AddBone(Nothing, raiz)
         Next
         Return SkeletonDictionary.Count <> 0
     End Function
@@ -584,10 +618,15 @@ Public Class SkeletonInstance
         SyncLock _lock
             If Not HasSkeleton Then Return 0
 
-            Dim sk As HkaSkeletonGraph_Class = Nothing
+            ' ⭐ OBJETO GENERADO. `HkObj_HkaSkeleton` sale de la reflexion de los dos .exe y elige
+            ' la tabla segun lo que el packfile DECLARA, asi que este codigo lee Fallout y Skyrim sin
+            ' una sola rama por juego. Equivalencia con el parser viejo MEDIDA sobre 290 esqueletos de
+            ' FO4 y 382 de SSE, campo por campo (nombre, indices de padre, nombres de hueso, pose de
+            ' referencia): 0 diferencias. Ver `--hkxsweep`.
+            Dim sk As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
             Try
                 Dim sg = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(hkxBytes))
-                Dim cands = sg.GetObjectsByClassName("hkaSkeleton").Select(Function(o) sg.ParseSkeleton(o)).
+                Dim cands = sg.GetObjectsByClassName("hkaSkeleton").Select(Function(o) Havok.Canon.Objects.HkObj_HkaSkeleton.Read(sg, o)).
                                Where(Function(s) s IsNot Nothing AndAlso s.Bones IsNot Nothing AndAlso
                                      s.ParentIndices IsNot Nothing AndAlso s.ReferencePose IsNot Nothing AndAlso
                                      s.ReferencePose.Count >= s.Bones.Count).ToList()
@@ -693,9 +732,9 @@ Public Class SkeletonInstance
     End Function
 
     ''' <summary>Nombre del root (bone con parent &lt; 0) de un hkaSkeleton parseado.</summary>
-    Private Shared Function HkxRootBoneName(s As HkaSkeletonGraph_Class) As String
+    Private Shared Function HkxRootBoneName(s As Havok.Canon.Objects.HkObj_HkaSkeleton) As String
         For i = 0 To s.Bones.Count - 1
-            Dim p = If(i < s.ParentIndices.Count, CInt(s.ParentIndices(i)), -1)
+            Dim p = If(i < s.ParentIndices.Count, s.ParentIndices(i), -1)
             If p < 0 OrElse p >= s.Bones.Count Then Return s.Bones(i).Name
         Next
         Return If(s.Bones.Count > 0, s.Bones(0).Name, "")

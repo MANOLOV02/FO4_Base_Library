@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 ' =============================================================================
@@ -39,7 +39,10 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParsePhysicsSceneData(source As HkxVirtualObjectGraph_Class) As HknpPhysicsSceneDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hknpPhysicsSceneData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim result As New HknpPhysicsSceneDataGraph_Class With {.SourceObject = source}
-        result.SystemDatas.AddRange(ReadObjectReferenceArray(source.RelativeOffset + &H10))
+        ' Lector generado: `systemDatas` sale de la reflexion, no de un +0x10 clavado.
+        Dim r As New Havok.Canon.Typed.Hk_HknpPhysicsSceneData(Me, source)
+        If Not r.IsValid Then Return result
+        result.SystemDatas.AddRange(ReadObjectReferenceArray(r.SystemDatas))
         Return result
     End Function
 

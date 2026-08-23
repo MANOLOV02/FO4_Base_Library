@@ -35,7 +35,7 @@ Public NotInheritable Class HclClothPackageParser_Class
 
         Dim skeletonObject = graph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
         If Not IsNothing(skeletonObject) Then
-            result.Skeleton = graph.ParseSkeleton(skeletonObject)
+            result.Skeleton = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(graph, skeletonObject)
         End If
 
         ' Un único memo de collidables por pasada de Parse, compartido entre el parseo a nivel package
@@ -171,7 +171,7 @@ Public NotInheritable Class HclClothPackageParser_Class
         Return className.Replace(ChrW(0), String.Empty).Trim().ToLowerInvariant()
     End Function
 
-    Private Shared Sub PopulateSkinBoneNames(skin As HclObjectSpaceSkinPNOperatorGraph_Class, skeleton As HkaSkeletonGraph_Class)
+    Private Shared Sub PopulateSkinBoneNames(skin As HclObjectSpaceSkinPNOperatorGraph_Class, skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton)
         If IsNothing(skin) OrElse IsNothing(skeleton?.Bones) Then Return
 
         For Each boneIndex In skin.BoneIndices
@@ -197,7 +197,7 @@ Public NotInheritable Class HclClothPackageParser_Class
 
     Private Shared Sub PopulateSkinSubsetBoneNames(skin As HclObjectSpaceSkinPNOperatorGraph_Class,
                                                    subset As HclObjectSpaceSkinTransformSubsetGraph_Class,
-                                                   skeleton As HkaSkeletonGraph_Class)
+                                                   skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton)
         If IsNothing(skin) OrElse IsNothing(subset) OrElse IsNothing(skeleton?.Bones) Then Return
 
         For Each lane In subset.VertexInfluences
@@ -229,7 +229,7 @@ Public NotInheritable Class HclClothPackageParser_Class
         Next
     End Sub
 
-    Private Shared Sub PopulateResolvedCollidableBindings(config As HclClothConfigGraph_Class, skeleton As HkaSkeletonGraph_Class)
+    Private Shared Sub PopulateResolvedCollidableBindings(config As HclClothConfigGraph_Class, skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton)
         If IsNothing(config) Then Return
 
         For Each sim In config.SimClothDatas
@@ -655,7 +655,7 @@ Public NotInheritable Class HclClothPackageParser_Class
         Next
     End Sub
 
-    Private Shared Sub PopulateStateAccessLinks(config As HclClothConfigGraph_Class, skeleton As HkaSkeletonGraph_Class)
+    Private Shared Sub PopulateStateAccessLinks(config As HclClothConfigGraph_Class, skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton)
         If IsNothing(config) Then Return
 
         Dim bufferNames As New List(Of String)
@@ -718,7 +718,7 @@ End Class
 Public Class HclClothPackageGraph_Class
     Public Property Graph As HkxObjectGraph_Class
     Public Property RootContainer As HkxRootLevelContainerGraph_Class
-    Public Property Skeleton As HkaSkeletonGraph_Class
+    Public Property Skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton
     Public ReadOnly Property ClothConfigs As New List(Of HclClothConfigGraph_Class)
     Public ReadOnly Property Collidables As New List(Of HclCollidableDetail_Class)
     Public ReadOnly Property CapsuleShapes As New List(Of HclCapsuleShapeDetail_Class)

@@ -42,13 +42,13 @@ Public Partial Class HkxObjectGraph_Class
     ' Memoiza esqueletos parseados por RelativeOffset del origen, para que ParseSkeletonMapper no
     ' re-parsee el mismo esqueleto completo una vez por mapper. Es equivalente porque ParseSkeleton
     ' es función pura de su objeto de origen.
-    Private ReadOnly _parsedSkeletonCache As New Dictionary(Of Integer, HkaSkeletonGraph_Class)
+    Private ReadOnly _parsedSkeletonCache As New Dictionary(Of Integer, Havok.Canon.Objects.HkObj_HkaSkeleton)
 
-    Private Function ParseSkeletonMemoized(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class
+    Private Function ParseSkeletonMemoized(source As HkxVirtualObjectGraph_Class) As Havok.Canon.Objects.HkObj_HkaSkeleton
         If IsNothing(source) Then Return Nothing
-        Dim cached As HkaSkeletonGraph_Class = Nothing
+        Dim cached As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
         If _parsedSkeletonCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
-        Dim parsed = ParseSkeleton(source)
+        Dim parsed = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, source)
         _parsedSkeletonCache(source.RelativeOffset) = parsed
         Return parsed
     End Function
@@ -396,7 +396,7 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    Private Shared Function BoneName(bones As List(Of HkaBoneGraph_Class), index As Short) As String
+    Private Shared Function BoneName(bones As List(Of Havok.Canon.Objects.HkObj_HkaBone), index As Short) As String
         If IsNothing(bones) OrElse index < 0 OrElse index >= bones.Count Then Return ""
         Return bones(index).Name
     End Function

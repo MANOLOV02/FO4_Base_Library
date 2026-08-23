@@ -79,7 +79,7 @@ End Class
 
 Public NotInheritable Class HkxPoseImportSession
     Private ReadOnly _animation As HkaSplineCompressedAnimationGraph_Class
-    Private ReadOnly _hkxSkeleton As HkaSkeletonGraph_Class
+    Private ReadOnly _hkxSkeleton As Havok.Canon.Objects.HkObj_HkaSkeleton
     Private ReadOnly _liveSkeleton As SkeletonInstance
     Private ReadOnly _tracks As List(Of ResolvedTrack)
     Private ReadOnly _baseDiagnostics As HkxPoseImportDiagnostics
@@ -92,7 +92,7 @@ Public NotInheritable Class HkxPoseImportSession
     Private ReadOnly _previewPoseCache As New Dictionary(Of Integer, HkxPoseImportHelper.ImportResult)
 
     Private Sub New(animation As HkaSplineCompressedAnimationGraph_Class,
-                    hkxSkeleton As HkaSkeletonGraph_Class,
+                    hkxSkeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
                     liveSkeleton As SkeletonInstance,
                     tracks As List(Of ResolvedTrack),
                     diagnostics As HkxPoseImportDiagnostics,
@@ -165,9 +165,9 @@ Public NotInheritable Class HkxPoseImportSession
     ''' skeletons del juego: 'Ragdoll_NPC COM', 'Ragdoll_COM…', etc.) y hay exactamente 1 que NO es ragdoll
     ''' = el de animación (su nombre varía: 'Root', 'Root [Root]', 'Dogmeat_Root'…). El binding de la
     ''' animación se autoriza contra ese. ⇒ regla EXACTA: el que NO contiene 'Ragdoll' (no por bone-count).</summary>
-    Private Shared Function SelectAnimationSkeleton(graph As HkxObjectGraph_Class) As HkaSkeletonGraph_Class
+    Private Shared Function SelectAnimationSkeleton(graph As HkxObjectGraph_Class) As Havok.Canon.Objects.HkObj_HkaSkeleton
         Dim skels = graph.GetObjectsByClassName("hkaSkeleton").
-                        Select(Function(o) graph.ParseSkeleton(o)).
+                        Select(Function(o) Havok.Canon.Objects.HkObj_HkaSkeleton.Read(graph, o)).
                         Where(Function(s) s IsNot Nothing AndAlso s.Bones IsNot Nothing AndAlso s.Bones.Count > 0).ToList()
         If skels.Count = 0 Then Return Nothing
         Dim nonRagdoll = skels.Where(Function(s) String.IsNullOrEmpty(s.Name) OrElse s.Name.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) < 0).ToList()
@@ -200,7 +200,7 @@ Public NotInheritable Class HkxPoseImportSession
 
         Logger.LogLazy(Function() $"[HKX-POSE] Animation parsed frames={animation.NumFrames} tracks={animation.NumTransformTracks} duration={animation.Duration:0.######} frameDuration={animation.FrameDuration:0.######} bindingTracks={If(animation.Binding?.TransformTrackToBoneIndices?.Count, 0)} trackNames={animation.TrackNames.Count}")
 
-        Dim hkxSkeleton As HkaSkeletonGraph_Class = Nothing
+        Dim hkxSkeleton As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
         Dim skeletonSource = "none"
         Dim embeddedSkeletonAvailable = False
         Dim externalSkeletonAvailable = False
@@ -561,28 +561,32 @@ Public NotInheritable Class HkxPoseImportSession
     ''' Nothing falls back to refPose too; rotation = frame rotation if animated, else refPose.
     ''' Shared by the SAM (absolute) and WM-delta unbound paths so both derive from identical math.</summary>
     Private Shared Function BuildUnboundFrameLocal(ht As HkxAnimationTransformGraph_Class,
-                                                   refp As HkxQsTransformGraph_Class) As Transform_Class
-        Dim tx = If(ht.TranslationXAnimated, GetVectorAxis(ht.Translation, 0, GetVectorAxis(refp.Translation, 0, 0.0F)), GetVectorAxis(refp.Translation, 0, 0.0F))
-        Dim ty = If(ht.TranslationYAnimated, GetVectorAxis(ht.Translation, 1, GetVectorAxis(refp.Translation, 1, 0.0F)), GetVectorAxis(refp.Translation, 1, 0.0F))
-        Dim tz = If(ht.TranslationZAnimated, GetVectorAxis(ht.Translation, 2, GetVectorAxis(refp.Translation, 2, 0.0F)), GetVectorAxis(refp.Translation, 2, 0.0F))
-        Dim sx = If(ht.ScaleXAnimated, GetVectorAxis(ht.Scale, 0, GetVectorAxis(refp.Scale, 0, 1.0F)), GetVectorAxis(refp.Scale, 0, 1.0F))
-        Dim sy = If(ht.ScaleYAnimated, GetVectorAxis(ht.Scale, 1, GetVectorAxis(refp.Scale, 1, 1.0F)), GetVectorAxis(refp.Scale, 1, 1.0F))
-        Dim sz = If(ht.ScaleZAnimated, GetVectorAxis(ht.Scale, 2, GetVectorAxis(refp.Scale, 2, 1.0F)), GetVectorAxis(refp.Scale, 2, 1.0F))
-        Dim rot = If(ht.RotationAnimated AndAlso ht.Rotation IsNot Nothing, ht.Rotation, refp.Rotation)
-        Return HkxTransformConventionHelper.ToTransform(tx, ty, tz, rot, sx, sy, sz)
+                                                   refp As Single()) As Transform_Class
+        ' ⛔ SIN ALLOCAR: corre por hueso y por frame. Los 12 floats del `hkQsTransform` se leen
+        ' por indice (translation @0..3, rotation @4..7, scale @8..11) en vez de materializar el
+        ' objeto intermedio, que era una allocacion por hueso por frame.
+        Dim rp = If(refp IsNot Nothing AndAlso refp.Length >= 12, refp, New Single(11) {})
+        Dim tx = If(ht.TranslationXAnimated, GetVectorAxis(ht.Translation, 0, rp(0)), rp(0))
+        Dim ty = If(ht.TranslationYAnimated, GetVectorAxis(ht.Translation, 1, rp(1)), rp(1))
+        Dim tz = If(ht.TranslationZAnimated, GetVectorAxis(ht.Translation, 2, rp(2)), rp(2))
+        Dim sx = If(ht.ScaleXAnimated, GetVectorAxis(ht.Scale, 0, rp(8)), rp(8))
+        Dim sy = If(ht.ScaleYAnimated, GetVectorAxis(ht.Scale, 1, rp(9)), rp(9))
+        Dim sz = If(ht.ScaleZAnimated, GetVectorAxis(ht.Scale, 2, rp(10)), rp(10))
+        If ht.RotationAnimated AndAlso ht.Rotation IsNot Nothing Then
+            Return HkxTransformConventionHelper.ToTransform(tx, ty, tz, ht.Rotation, sx, sy, sz)
+        End If
+        Return HkxTransformConventionHelper.ToTransformRaw(tx, ty, tz, rp(4), rp(5), rp(6), rp(7), sx, sy, sz)
     End Function
 
     ''' <summary>The HKX rig REST local of a bone (its refPose) as a Transform_Class. Used as the
     ''' structural proxy for unbound bones (there is no live structural local): the WM delta is
     ''' inv(refPoseLocal) × frameLocal, mirroring BuildPose's inv(S) × frameLocal for live bones.</summary>
-    Private Shared Function RefPoseToStructural(refp As HkxQsTransformGraph_Class) As Transform_Class
-        Return HkxTransformConventionHelper.ToTransform(GetVectorAxis(refp.Translation, 0, 0.0F),
-                                                        GetVectorAxis(refp.Translation, 1, 0.0F),
-                                                        GetVectorAxis(refp.Translation, 2, 0.0F),
-                                                        refp.Rotation,
-                                                        GetVectorAxis(refp.Scale, 0, 1.0F),
-                                                        GetVectorAxis(refp.Scale, 1, 1.0F),
-                                                        GetVectorAxis(refp.Scale, 2, 1.0F))
+    ''' <remarks>Toma los 12 floats crudos del `hkQsTransform`, que es lo que entrega el objeto
+    ''' generado. La interpretacion (translation/rotation/scale) la centraliza
+    ''' `HkxTransformConventionHelper`.</remarks>
+    Private Shared Function RefPoseToStructural(refp As Single()) As Transform_Class
+        ' ⛔ SIN ALLOCAR: corre por hueso y por frame. Ver ToTransformRaw.
+        Return HkxTransformConventionHelper.ToTransformFromFloats(refp)
     End Function
 
     ''' <summary>WM-format DELTA transforms for the bones the HKX animation defines but the LIVE NIF
@@ -757,7 +761,7 @@ Public NotInheritable Class HkxPoseImportSession
     End Function
 
     Private Shared Function ResolveTracks(animation As HkaSplineCompressedAnimationGraph_Class,
-                                          hkxSkeleton As HkaSkeletonGraph_Class,
+                                          hkxSkeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
                                           skeletonSource As String) As List(Of ResolvedTrack)
         Dim result As New List(Of ResolvedTrack)
         Dim binding = If(animation.Binding?.TransformTrackToBoneIndices, New List(Of Short)())
@@ -817,7 +821,7 @@ Public NotInheritable Class HkxPoseImportSession
     ''' detectado: Handy Pelvis mount +8.690/+0.269 == EXACTO el local de C-BotLegs del rig
     ''' (socket contado dos veces en el placement).</para></summary>
     Private Shared Sub BindLiveSkeletonTracks(tracks As List(Of ResolvedTrack),
-                                              hkxSkeleton As HkaSkeletonGraph_Class,
+                                              hkxSkeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
                                               liveSkeleton As SkeletonInstance)
         If tracks Is Nothing OrElse liveSkeleton Is Nothing OrElse liveSkeleton.SkeletonDictionary Is Nothing Then Return
 
@@ -840,7 +844,7 @@ Public NotInheritable Class HkxPoseImportSession
         Next
     End Sub
 
-    Private Shared Function IsValidSkeleton(skeleton As HkaSkeletonGraph_Class) As Boolean
+    Private Shared Function IsValidSkeleton(skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton) As Boolean
         Return skeleton IsNot Nothing AndAlso
                skeleton.Bones IsNot Nothing AndAlso
                skeleton.ReferencePose IsNot Nothing AndAlso
@@ -927,7 +931,10 @@ Public NotInheritable Class HkxPoseImportSession
         Public Property StructuralLocal As Transform_Class
         Public Property StructuralLocalInverse As Transform_Class
         ''' <summary>refPose del rig DEL CLIP — referencia de la clasificación por componente.</summary>
-        Public Property ReferencePose As HkxQsTransformGraph_Class
+        ''' <summary>Pose de referencia del hueso: los 12 floats crudos del `hkQsTransform`,
+        ''' que es lo que entrega el objeto generado. La conversion a `Transform_Class` la hace
+        ''' `HkxTransformConventionHelper.ToTransform`.</summary>
+        Public Property ReferencePose As Single()
         ''' <summary>Clasificación por TIPO DE DATO (AnalyzeTrackContent): True = contenido del clip
         ''' (varía, o constante≠refPose); False = sin opinión (identity o constante==refPose) ⇒ S.</summary>
         Public Property ContentTX As Boolean

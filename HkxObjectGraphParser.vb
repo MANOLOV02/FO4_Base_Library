@@ -311,6 +311,22 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
+    ''' <summary>
+    ''' Resuelve un array de punteros a partir de su CABECERA. Es la forma que consume el lector
+    ''' tipado generado: sus propiedades de array devuelven la cabecera, no un offset, justamente
+    ''' para que ningun consumidor tenga que volver a calcular una posicion a mano.
+    ''' </summary>
+    Public Function ReadObjectReferenceArray(header As HkxObjectArrayHeader_Class) As List(Of HkxVirtualObjectGraph_Class)
+        Dim result As New List(Of HkxVirtualObjectGraph_Class)
+        If header Is Nothing OrElse header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
+        Dim stride = PointerSizeValue
+        For i = 0 To header.Count - 1
+            Dim obj = ResolveGlobalObject(header.DataRelativeOffset + (i * stride))
+            If Not IsNothing(obj) Then result.Add(obj)
+        Next
+        Return result
+    End Function
+
     Public Function ReadObjectReferenceArray(fieldRelativeOffset As Integer) As List(Of HkxVirtualObjectGraph_Class)
         Dim result As New List(Of HkxVirtualObjectGraph_Class)
         Dim header = ReadArrayHeader(fieldRelativeOffset)
@@ -417,17 +433,34 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseClothData(source As HkxVirtualObjectGraph_Class) As HclClothDataGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclClothData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
+        ' Offsets contra la reflexion (hclClothData, size 0x80, ver 1):
+        '   +0x10 name  +0x18 simClothDatas  +0x28 bufferDefinitions  +0x38 transformSetDefinitions
+        '   +0x48 operators  +0x58 clothStateDatas  +0x68 actions  +0x78 targetPlatform
+        '
+        ' ⛔ DOS COSAS QUE ESTABAN MAL Y NADIE VEIA:
+        '  1) `+0x68` se estaba guardando en un campo llamado `Collidables`. La clase NO declara
+        '     ningun `collidables`: +0x68 es `actions`. El nombre mentia sobre el contenido, y un
+        '     consumidor que pidiera los colisionables recibia las acciones (viento). Los
+        '     colisionables de verdad viven en `hclSimClothData.perInstanceCollidables`, que es de
+        '     donde los toma la fisica.
+        '  2) `+0x7C` se leia en `UnknownValue7C`. La clase mide 0x80 y su ultimo miembro declarado
+        '     es `targetPlatform` en +0x78 (uint32) ⇒ +0x7C es RELLENO DE COLA. Leer padding y
+        '     guardarlo como si fuera un dato es exactamente como se cementan las suposiciones.
         Dim result As New HclClothDataGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
-            .UnknownValue78 = ReadInt32(source.RelativeOffset + &H78),
-            .UnknownValue7C = ReadInt32(source.RelativeOffset + &H7C),
-            .SimClothDatas = ReadObjectReferenceArray(source.RelativeOffset + &H18),
-            .BufferDefinitions = ReadObjectReferenceArray(source.RelativeOffset + &H28),
-            .TransformSetDefinitions = ReadObjectReferenceArray(source.RelativeOffset + &H38),
-            .Operators = ReadObjectReferenceArray(source.RelativeOffset + &H48),
-            .ClothStates = ReadObjectReferenceArray(source.RelativeOffset + &H58),
-            .Collidables = ReadObjectReferenceArray(source.RelativeOffset + &H68)
+            .Name = hkr.Name,
+            .TargetPlatform = hkr.TargetPlatform,
+            .SimClothDatas = ReadObjectReferenceArray(hkr.SimClothDatas),
+            .BufferDefinitions = ReadObjectReferenceArray(hkr.BufferDefinitions),
+            .TransformSetDefinitions = ReadObjectReferenceArray(hkr.TransformSetDefinitions),
+            .Operators = ReadObjectReferenceArray(hkr.Operators),
+            .ClothStates = ReadObjectReferenceArray(hkr.ClothStateDatas),
+            .Actions = ReadObjectReferenceArray(hkr.Actions)
         }
 
         result.Fields.Add(CreateArrayField(source, &H18, "SimClothDatas"))
@@ -444,9 +477,14 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseClothState(source As HkxVirtualObjectGraph_Class) As HclClothStateGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclClothState", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclClothState(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Dim result As New HclClothStateGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10)
+            .Name = hkr.Name
         }
 
         For Each field In {
@@ -480,9 +518,14 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseSimClothPose(source As HkxVirtualObjectGraph_Class) As HclSimClothPoseGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclSimClothPose", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclSimClothPose(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Dim result As New HclSimClothPoseGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
+            .Name = hkr.Name,
             .PoseField = CreateArrayField(source, &H18, "Pose")
         }
 
@@ -502,11 +545,16 @@ Public Partial Class HkxObjectGraph_Class
         '   +0x088         : hkRefPtr<hclShape> m_shape (GREF)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclCollidable", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclCollidable(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HclCollidableGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
+            .Name = hkr.Name,
             .Transform = ReadTransform(source.RelativeOffset + &H20),
-            .PinchDetectionRadius = ReadSingle(source.RelativeOffset + &H84),
+            .PinchDetectionRadius = hkr.PinchDetectionRadius,
             .ShapeObject = ResolveGlobalObject(source.RelativeOffset + &H88)
         }
     End Function
@@ -543,11 +591,19 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseSkeleton(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkaSkeleton", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        ' hkaSkeleton layout (autoritativo: HavokLib classgen, HavokLib/source/packfile/hka_skeleton.inl LAYOUTS):
-        '   name, parentIndices, bones, transforms(referencePose), referenceFloats, floatSlots, localFrames, [partitions]
-        ' Skyrim (hk2010/2011, HK2010_1..HK2011_3) y FO4 (hk2014, HK2012_1..HK2015) comparten offsets EXACTOS para
-        ' todos esos campos (referenceFloats incluido); la ÚNICA diferencia es que `partitions` se agregó en hk2014:
-        ' Skyrim NO lo tiene (numPartitions=-1, partitions=-1; objeto 16 bytes más corto, 120 vs 136 en 64-bit).
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HkaSkeleton(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
+        ' ⭐ TODO POR EL LECTOR GENERADO. Antes esto derivaba los offsets sumando tamanos de
+        ' cabecera a mano y decidia por formato si `partitions` existia. Era correcto, pero era una
+        ' segunda copia del layout: si Bethesda mueve un campo, la tabla se entera y esta aritmetica
+        ' no. Ahora los dos juegos salen de la reflexion de su propio .exe.
+        '
+        ' ⛔ `partitions` se agrego en hk2014 y Skyrim NO lo tiene: leerlo ahi caia PASADO EL FIN
+        ' del objeto (120 bytes contra 136) y devolvia particiones basura. Eso ya no depende de una
+        ' rama por juego: la tabla de SSE marca el miembro como ausente y `HasPartitions` da False.
         Dim nameFieldOffset = BaseObjectFieldOffset
         Dim parentIndicesOffset = nameFieldOffset + PointerSizeValue
         Dim bonesOffset = parentIndicesOffset + ArrayHeaderSizeValue
@@ -555,9 +611,6 @@ Public Partial Class HkxObjectGraph_Class
         Dim referenceFloatsOffset = referencePoseOffset + ArrayHeaderSizeValue
         Dim floatSlotsOffset = referenceFloatsOffset + ArrayHeaderSizeValue
         Dim localFramesOffset = floatSlotsOffset + ArrayHeaderSizeValue
-        ' partitions SOLO existe en hk2014 (Fallout 4); en Skyrim leerlo cae pasado el fin del objeto
-        ' (OOB → particiones basura). Gateado por formato, igual que el blendHint del binding.
-        ' -1 = ausente.
         Dim hasPartitions = (Packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64)
         Dim partitionsOffset = If(hasPartitions, localFramesOffset + ArrayHeaderSizeValue, -1)
 
@@ -690,6 +743,16 @@ Public Partial Class HkxObjectGraph_Class
         }
     End Function
 
+    ''' <summary>Envuelve una cabecera de array ya resuelta por el lector generado. Toma la
+    ''' CABECERA y no un offset a proposito: si tomara un offset, el llamador tendria que volver a
+    ''' calcularlo y el numero volveria a vivir fuera de la tabla.</summary>
+    Private Function CreateArrayField(header As HkxObjectArrayHeader_Class, fieldName As String) As HkxObjectArrayField_Class
+        Return New HkxObjectArrayField_Class With {
+            .FieldName = fieldName,
+            .Header = header
+        }
+    End Function
+
     Private Function CreateArrayField(source As HkxVirtualObjectGraph_Class, fieldOffset As Integer, fieldName As String) As HkxObjectArrayField_Class
         Return New HkxObjectArrayField_Class With {
             .FieldName = fieldName,
@@ -715,6 +778,11 @@ Public Partial Class HkxObjectGraph_Class
         ' Esta función es la vista LIGERA (sólo conteos y refs); la de producción es
         ' HclStructuredGraphParser_Class.ParseSimClothData.
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclSimClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclSimClothData(Me, source)
+        If Not hkr.IsValid Then Return Nothing
         Const cls = "hclSimClothData"
         Dim layout = Havok.Canon.HavokLayout.For(Packfile.Header.PackfileFormat)
         If layout Is Nothing OrElse Not layout.HasClass(cls) Then Return Nothing
@@ -840,22 +908,27 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseTaperedCapsuleShape(source As HkxVirtualObjectGraph_Class) As HclTaperedCapsuleShapeGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclTaperedCapsuleShape", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclTaperedCapsuleShape(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HclTaperedCapsuleShapeGraph_Class With {
             .SourceObject = source,
             .CentreA = New HkxVector4Graph_Class With {
-                .X = ReadSingle(source.RelativeOffset + &H20),
-                .Y = ReadSingle(source.RelativeOffset + &H24),
-                .Z = ReadSingle(source.RelativeOffset + &H28),
-                .W = ReadSingle(source.RelativeOffset + &H2C)
+                .X = hkr.Small(0),
+                .Y = hkr.Small(1),
+                .Z = hkr.Small(2),
+                .W = hkr.Small(3)
             },
             .CentreB = New HkxVector4Graph_Class With {
-                .X = ReadSingle(source.RelativeOffset + &H30),
-                .Y = ReadSingle(source.RelativeOffset + &H34),
-                .Z = ReadSingle(source.RelativeOffset + &H38),
-                .W = ReadSingle(source.RelativeOffset + &H3C)
+                .X = hkr.Big(0),
+                .Y = hkr.Big(1),
+                .Z = hkr.Big(2),
+                .W = hkr.Big(3)
             },
-            .RadiusA = ReadSingle(source.RelativeOffset + &H90),
-            .RadiusB = ReadSingle(source.RelativeOffset + &H94)
+            .RadiusA = hkr.SmallRadius,
+            .RadiusB = hkr.BigRadius
         }
     End Function
 
@@ -871,21 +944,26 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseCapsuleShape(source As HkxVirtualObjectGraph_Class) As HclCapsuleShapeGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclCapsuleShape", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclCapsuleShape(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HclCapsuleShapeGraph_Class With {
             .SourceObject = source,
             .VertexA = New HkxVector4Graph_Class With {
-                .X = ReadSingle(source.RelativeOffset + &H20),
-                .Y = ReadSingle(source.RelativeOffset + &H24),
-                .Z = ReadSingle(source.RelativeOffset + &H28),
-                .W = ReadSingle(source.RelativeOffset + &H2C)
+                .X = hkr.Start(0),
+                .Y = hkr.Start(1),
+                .Z = hkr.Start(2),
+                .W = hkr.Start(3)
             },
             .VertexB = New HkxVector4Graph_Class With {
-                .X = ReadSingle(source.RelativeOffset + &H30),
-                .Y = ReadSingle(source.RelativeOffset + &H34),
-                .Z = ReadSingle(source.RelativeOffset + &H38),
-                .W = ReadSingle(source.RelativeOffset + &H3C)
+                .X = hkr.End(0),
+                .Y = hkr.End(1),
+                .Z = hkr.End(2),
+                .W = hkr.End(3)
             },
-            .Radius = ReadSingle(source.RelativeOffset + &H50)
+            .Radius = hkr.Radius
         }
     End Function
 
@@ -900,11 +978,16 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseTransformSetDefinitionData(source As HkxVirtualObjectGraph_Class) As HkxTransformSetDefinitionGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclTransformSetDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclTransformSetDefinition(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HkxTransformSetDefinitionGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
-            .NumTransforms = ReadInt32(source.RelativeOffset + &H18),
-            .NumFloatSlots = ReadInt32(source.RelativeOffset + &H1C)
+            .Name = hkr.Name,
+            .NumTransforms = CInt(hkr.NumTransforms),
+            .NumFloatSlots = hkr.Type
         }
     End Function
 
@@ -921,11 +1004,16 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseSimulateOperator(source As HkxVirtualObjectGraph_Class) As HclSimulateOperatorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclSimulateOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclSimulateOperator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HclSimulateOperatorGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
-            .Field24 = ReadInt32(source.RelativeOffset + &H24),
-            .Field28 = ReadInt32(source.RelativeOffset + &H28),
+            .Name = hkr.Name,
+            .Field24 = CInt(hkr.SubSteps),
+            .Field28 = hkr.NumberOfSolveIterations,
             .SubStatesCount = ReadInt32(source.RelativeOffset + &H38)   ' count del array en +0x030
         }
     End Function
@@ -945,12 +1033,17 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseCopyVerticesOperator(source As HkxVirtualObjectGraph_Class) As HclCopyVerticesOperatorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclCopyVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclCopyVerticesOperator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HclCopyVerticesOperatorGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
-            .Field20 = ReadInt32(source.RelativeOffset + &H20),
-            .OutputBufferIndex = ReadInt32(source.RelativeOffset + &H24),
-            .InputBufferIndex = ReadInt32(source.RelativeOffset + &H28)
+            .Name = hkr.Name,
+            .Field20 = CInt(hkr.InputBufferIdx),
+            .OutputBufferIndex = CInt(hkr.OutputBufferIdx),
+            .InputBufferIndex = CInt(hkr.NumberOfVertices)
         }
     End Function
 
@@ -966,11 +1059,16 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseGatherAllVerticesOperator(source As HkxVirtualObjectGraph_Class) As HclGatherAllVerticesOperatorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclGatherAllVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclGatherAllVerticesOperator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Dim result As New HclGatherAllVerticesOperatorGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
-            .OutputBufferIndex = ReadInt32(source.RelativeOffset + &H34),
-            .NumBuffers = ReadInt32(source.RelativeOffset + &H38)
+            .Name = hkr.Name,
+            .OutputBufferIndex = CInt(hkr.OutputBufferIdx),
+            .NumBuffers = If(hkr.GatherNormals, 1, 0)
         }
         result.VertexRemapping.AddRange(ReadUInt16Array(source.RelativeOffset + &H20))
         Return result
@@ -987,9 +1085,14 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseMoveParticlesOperator(source As HkxVirtualObjectGraph_Class) As HclMoveParticlesOperatorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclMoveParticlesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclMoveParticlesOperator(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Dim result As New HclMoveParticlesOperatorGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10)
+            .Name = hkr.Name
         }
         result.ParticleIndices.AddRange(ReadUInt16Array(source.RelativeOffset + &H20))
         Return result
@@ -1033,9 +1136,14 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseVolumeConstraintMx(source As HkxVirtualObjectGraph_Class) As HclVolumeConstraintMxGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hclVolumeConstraintMx", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim hkr As New Havok.Canon.Typed.Hk_HclVolumeConstraintMx(Me, source)
+        If Not hkr.IsValid Then Return Nothing
+
         Return New HclVolumeConstraintMxGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
+            .Name = hkr.Name,
             .Array1Count = ReadInt32(source.RelativeOffset + &H28),   ' count of array at +0x020
             .Array2Count = ReadInt32(source.RelativeOffset + &H38),   ' count of array at +0x030
             .Array3Count = ReadInt32(source.RelativeOffset + &H48),   ' count of array at +0x040
@@ -1080,14 +1188,19 @@ End Class
 Public Class HclClothDataGraph_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property UnknownValue78 As Integer
-    Public Property UnknownValue7C As Integer
+    ''' <summary>`targetPlatform` (+0x78, enum uint32). Se llamaba `UnknownValue78`.</summary>
+    Public Property TargetPlatform As Integer
     Public Property SimClothDatas As List(Of HkxVirtualObjectGraph_Class)
     Public Property BufferDefinitions As List(Of HkxVirtualObjectGraph_Class)
     Public Property TransformSetDefinitions As List(Of HkxVirtualObjectGraph_Class)
     Public Property Operators As List(Of HkxVirtualObjectGraph_Class)
     Public Property ClothStates As List(Of HkxVirtualObjectGraph_Class)
-    Public Property Collidables As List(Of HkxVirtualObjectGraph_Class)  ' +0x068, hkArray<hclCollidable*>
+    ''' <summary>
+    ''' `actions` (+0x68, hkArray&lt;hclAction*&gt;). ⛔ Se llamaba `Collidables` y NO son colisionables:
+    ''' `hclClothData` no declara ningun miembro `collidables`. Los colisionables de verdad estan en
+    ''' `hclSimClothData.perInstanceCollidables`, que es de donde los saca la fisica.
+    ''' </summary>
+    Public Property Actions As List(Of HkxVirtualObjectGraph_Class)
     Public ReadOnly Property Fields As New List(Of HkxObjectArrayField_Class)
 End Class
 

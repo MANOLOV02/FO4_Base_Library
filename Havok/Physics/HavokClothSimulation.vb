@@ -85,6 +85,9 @@ Namespace Havok.Physics
         Public GatherMap As UShort()
         ''' <summary>Cuando el mapa viene de MoveParticles es PARCIAL: dice que entradas son validas.</summary>
         Public GatherMapHas As Boolean()
+        ''' <summary>DIAGNOSTICO: de donde salio el destino de cada particula. True = de la piel
+        ''' skinneada; False = del DefaultClothPose del archivo, que esta en OTRO espacio.</summary>
+        Public TargetFromSkin As Boolean()
     End Class
 
     Friend Structure DistanceLink
@@ -242,6 +245,70 @@ Namespace Havok.Physics
                     RebuildCapsules(st, sim, clothSkel, skeleton)
                 End If
 
+                If Logger.Enabled Then
+                    ' Censo de lo que la simulacion tiene realmente para trabajar. Sin links de
+                    ' distancia las particulas caen libres y las aristas se estiran sin limite: es la
+                    ' diferencia entre "la fisica esta mal calibrada" y "la fisica no tiene constraints".
+                    Dim nLinks = If(st.Links Is Nothing, -1, st.Links.Count)
+                    Dim nRange = If(st.LocalRange Is Nothing, -1, st.LocalRange.Count)
+                    Dim nFixed = If(st.Fixed Is Nothing, -1, st.Fixed.Length)
+                    Dim nCaps = If(st.Capsules Is Nothing, -1, st.Capsules.Count)
+                    Dim nPart = particleCount
+                    ' Que CLASES de constraint trae el archivo. Es la lista de lo que el motor
+                    ' ejecuta; todo lo que no este implementado es tela que nadie sujeta.
+                    Dim clases As New List(Of String)
+                    If sim.ConstraintDetails IsNot Nothing Then
+                        For Each cdet In sim.ConstraintDetails
+                            If cdet Is Nothing Then Continue For
+                            clases.Add(cdet.GetType().Name)
+                        Next
+                    End If
+                    Dim resumen = String.Join(",", clases.GroupBy(Function(x) x).Select(Function(g) $"{g.Key}x{g.Count()}"))
+                    Logger.LogLazy(Function() $"[CLOTH-CONSTR] particulas={nPart} links={nLinks} localRange={nRange} fijas={nFixed} capsulas={nCaps} sets=[{resumen}]")
+                End If
+
+                If Logger.Enabled AndAlso st.Links IsNot Nothing AndAlso st.Links.Count > 0 Then
+                    ' ⭐ CONTROL DEL PARSEO DE LOS LINKS: el `restLength` authored tiene que coincidir con
+                    ' la distancia REAL entre las dos particulas en la pose sembrada. Si no coincide, el
+                    ' solver esta tirando de la tela hacia una longitud inventada y la estira o la
+                    ' encoge por construccion, por bien que este el resto.
+                    Dim peor = 0.0F, peorIdx = -1
+                    Dim suma = 0.0R, n2 = 0
+                    For li = 0 To st.Links.Count - 1
+                        Dim lk = st.Links(li)
+                        If lk.A < 0 OrElse lk.B < 0 OrElse lk.A >= particleCount OrElse lk.B >= particleCount Then Continue For
+                        Dim real = (target(lk.A) - target(lk.B)).Length
+                        If real <= 0.0001F Then Continue For
+                        Dim rel = Math.Abs(lk.Rest - real) / real
+                        suma += rel : n2 += 1
+                        If rel > peor Then peor = rel : peorIdx = li
+                    Next
+                    Dim pe2 = peor, pi2 = peorIdx, med = If(n2 > 0, suma / n2, 0.0R), nn = st.Links.Count
+                    Dim r0 = If(peorIdx >= 0, st.Links(peorIdx).Rest, 0.0F)
+                    Dim d0 = If(peorIdx >= 0, (target(st.Links(peorIdx).A) - target(st.Links(peorIdx).B)).Length, 0.0F)
+                    Logger.LogLazy(Function() $"[CLOTH-REST] links={nn} desvio medio={med:P1} peor={pe2:P1} (link {pi2}: rest={r0:F4} real={d0:F4})")
+                End If
+
+                If Logger.Enabled Then
+                    ' ⛔ La CORREA (`hclLocalRangeConstraintSet`) es lo unico que impide que una particula
+                    ' libre se vaya lejos de su referencia en la piel. Si su vertice de referencia no
+                    ' esta en el diccionario skinneado, el constraint se saltea EN SILENCIO y la
+                    ' particula queda suelta. Contar cuantas resuelven separa "la correa esta floja" de
+                    ' "la correa no existe".
+                    Dim lrOk = 0, lrTot = 0
+                    Dim fijasReales = 0
+                    For Each c In st.LocalRange
+                        lrTot += 1
+                        Dim tmp As Vector3 = Nothing
+                        If skinned.TryGetValue(c.ReferenceVertex, tmp) Then lrOk += 1
+                    Next
+                    For iq = 0 To st.InvMass.Length - 1
+                        If st.InvMass(iq) = 0.0F Then fijasReales += 1
+                    Next
+                    Dim a1 = lrOk, a2 = lrTot, a3 = fijasReales, a4 = skinned.Count
+                    Logger.LogLazy(Function() $"[CLOTH-LR] correa resuelta {a1}/{a2} · particulas con invMass=0: {a3} · vertices skinneados: {a4}")
+                End If
+
                 Dim teleported = DetectTeleport(st, skeleton)
                 If (Not st.Seeded) OrElse teleported OrElse HavokPhysicsSettings.Mode = HavokPhysicsMode.DeformOnly Then
                     ' Sembrar = poner TODO en la piel posada, con velocidad cero.
@@ -258,6 +325,23 @@ Namespace Havok.Physics
 
                 If HavokPhysicsSettings.Mode = HavokPhysicsMode.FullSimulation Then
                     Simulate(st, target, skinned, dt)
+                End If
+
+                If Logger.Enabled AndAlso st.Links IsNot Nothing AndAlso st.Links.Count > 0 Then
+                    ' Violacion de los links DESPUES de simular. Separa dos culpables que se ven igual
+                    ' en pantalla: "la malla de simulacion se estiro" (esto da alto) vs "la malla de
+                    ' simulacion esta bien y lo que esta mal es el frame que le doy al hueso" (esto da
+                    ' bajo y el render igual sale roto).
+                    Dim peor2 = 0.0F
+                    For Each lk In st.Links
+                        If lk.A < 0 OrElse lk.B < 0 OrElse lk.A >= st.Positions.Length OrElse lk.B >= st.Positions.Length Then Continue For
+                        If lk.Rest <= 0.0001F Then Continue For
+                        Dim dd = (st.Positions(lk.A) - st.Positions(lk.B)).Length
+                        Dim rr = Math.Abs(dd - lk.Rest) / lk.Rest
+                        If rr > peor2 Then peor2 = rr
+                    Next
+                    Dim pp2 = peor2
+                    Logger.LogLazy(Function() $"[CLOTH-VIOL] peor violacion de link tras simular: {pp2:P1}")
                 End If
 
                 WriteBackDeform(cfg.SimpleMeshBoneDeform, st, skeleton)
@@ -396,6 +480,9 @@ Namespace Havok.Physics
                                              particleCount As Integer) As Vector3()
             Dim target(particleCount - 1) As Vector3
             Dim pose = sim.DefaultClothPoseDetails.FirstOrDefault()
+            If st.TargetFromSkin Is Nothing OrElse st.TargetFromSkin.Length <> particleCount Then
+                ReDim st.TargetFromSkin(Math.Max(0, particleCount - 1))
+            End If
 
             For i = 0 To particleCount - 1
                 Dim got = False
@@ -408,6 +495,7 @@ Namespace Havok.Physics
                     If skinned.TryGetValue(CInt(st.GatherMap(i)), v) Then
                         target(i) = v
                         got = True
+                        st.TargetFromSkin(i) = True
                     End If
                 End If
                 If Not got AndAlso pose IsNot Nothing AndAlso pose.Pose IsNot Nothing AndAlso i < pose.Pose.Count Then
@@ -416,7 +504,42 @@ Namespace Havok.Physics
                     got = True
                 End If
                 If Not got Then target(i) = st.Positions(i)
+                If Not st.TargetFromSkin(i) Then st.TargetFromSkin(i) = False
             Next
+
+            ' ⛔ CONTROL: en REPOSO el destino skinneado de CADA particula tiene que caer sobre su
+            ' posicion del DefaultClothPose (que es el bind de la malla de simulacion). Una particula
+            ' que se aparta decenas de unidades delata que el puente particula↔vertice la mando al
+            ' vertice equivocado — y con UNA sola alcanza para que el triangulo de un cloth-bone quede
+            ' convertido en una astilla de 100 unidades.
+            If Logger.Enabled Then
+                Dim fuente = If(cfg.GatherAllVertices IsNot Nothing AndAlso cfg.GatherAllVertices.GatheredVertexIndices.Count > 0,
+                                $"GatherAllVertices({cfg.GatherAllVertices.GatheredVertexIndices.Count})",
+                                If(cfg.MoveParticles IsNot Nothing AndAlso cfg.MoveParticles.Pairs IsNot Nothing,
+                                   $"MoveParticles({cfg.MoveParticles.Pairs.Count})", "NINGUNA"))
+                Dim poseN = If(pose Is Nothing OrElse pose.Pose Is Nothing, -1, pose.Pose.Count)
+                Dim nPoses = sim.DefaultClothPoseDetails.Count
+                Logger.LogLazy(Function() $"[CLOTH-MAP] fuente={fuente} posesEnElArchivo={nPoses} pose.Count={poseN}")
+            End If
+            If Logger.Enabled AndAlso pose IsNot Nothing AndAlso pose.Pose IsNot Nothing Then
+                Dim malas As New List(Of String)
+                Dim peor = 0.0F
+                For i = 0 To particleCount - 1
+                    If i >= pose.Pose.Count Then Exit For
+                    Dim pp = pose.Pose(i)
+                    Dim d = (target(i) - New Vector3(CSng(pp.X), CSng(pp.Y), CSng(pp.Z))).Length
+                    If d > peor Then peor = d
+                    If d > 5.0F AndAlso malas.Count < 8 Then
+                        Dim dv = target(i) - New Vector3(CSng(pp.X), CSng(pp.Y), CSng(pp.Z))
+                        malas.Add($"{i}:gm={GatherOf(st, i)} skin=({target(i).X:F1},{target(i).Y:F1},{target(i).Z:F1})" &
+                                  $" pose=({pp.X:F1},{pp.Y:F1},{pp.Z:F1}) d=({dv.X:F1},{dv.Y:F1},{dv.Z:F1})")
+                    End If
+                Next
+                Dim pe = peor
+                Dim ml = malas
+                Dim n = particleCount
+                Logger.LogLazy(Function() $"[CLOTH-TARGET] particulas={n} peor|skin-pose|={pe:F2} fuera(>5u)={ml.Count}: {String.Join(" ", ml)}")
+            End If
             Return target
         End Function
 
@@ -552,7 +675,7 @@ Namespace Havok.Physics
         End Function
 
         Private Shared Sub RebuildCapsules(st As ClothSimState, sim As HclSimClothDataDetail_Class,
-                                           clothSkel As HkaSkeletonGraph_Class, skeleton As SkeletonInstance)
+                                           clothSkel As Havok.Canon.Objects.HkObj_HkaSkeleton, skeleton As SkeletonInstance)
             st.Capsules.Clear()
             ' ⛔ LAS CÁPSULAS TIENEN QUE SEGUIR AL ESQUELETO VIVO. El motor lo hace una vez por frame
             ' ("TtDrive Collidables": copia los colisionables y les fija transform y velocidad desde el
@@ -641,7 +764,30 @@ Namespace Havok.Physics
                                            skeleton As SkeletonInstance)
             If deform Is Nothing OrElse deform.BoneMappings Is Nothing Then Exit Sub
 
-            For Each map In deform.BoneMappings
+            ' ⛔⛔ ORDEN TOPOLOGICO: PADRES ANTES QUE HIJOS.
+            '
+            ' El motor escribe el transform de cada hueso en un TRANSFORM SET plano: cada salida es
+            ' ABSOLUTA y no depende de las otras. Nuestro esqueleto es JERARQUICO, asi que para que el
+            ' mundo del hueso termine siendo el que calculo el operador hay que escribir un LOCAL
+            ' relativo al padre: `desiredLocal = inv(parentWorld) x world`. Y eso solo es correcto si
+            ' `parentWorld` ya es el DEFINITIVO de este frame.
+            '
+            ' `deform.BoneMappings` viene en el orden del archivo (`triangleBonePairs`), que no es
+            ' topologico. Los cloth-bones SI forman cadenas (medido en HouseDress\Dress.nif: 12 cadenas
+            ' A..L de 6 huesos cada una, Bone_Cloth_X_001..006). Con el orden del archivo, un hijo
+            ' procesado antes que su padre lee el `parentWorld` del FRAME ANTERIOR y el error se acumula
+            ' hacia la punta de la cadena.
+            '
+            ' ⛔ POR QUE NO SE VEIA EN REPOSO: sin pose, TODOS los mundos son el bind y todos los deltas
+            ' dan identidad, asi que el orden es irrelevante y el gate estatico pasaba. Aparece solo en
+            ' ANIMACION, que es exactamente donde el usuario lo vio: la pollera se desgarraba con
+            ' DeformOnly, que ni siquiera simula.
+            Dim ordenados = deform.BoneMappings.
+                Select(Function(m) New With {.Map = m, .Depth = DepthOf(skeleton, m?.BoneName)}).
+                OrderBy(Function(x) x.Depth).ToList()
+
+            For Each par In ordenados
+                Dim map = par.Map
                 If map Is Nothing OrElse map.ResolvedTriangle Is Nothing OrElse map.BindMatrix Is Nothing Then Continue For
                 Dim i0 = CInt(map.ResolvedTriangle.Value0), i1 = CInt(map.ResolvedTriangle.Value1), i2 = CInt(map.ResolvedTriangle.Value2)
                 If i0 < 0 OrElse i1 < 0 OrElse i2 < 0 Then Continue For
@@ -718,6 +864,46 @@ Namespace Havok.Physics
                     desiredLocal = parentWorld.Inverse().ComposeTransforms(New Transform_Class(world))
                 End If
 
+                ' ⛔ DIAGNOSTICO (solo Debug, solo con el Logger encendido): cuanto se aparta el frame
+                ' RECONSTRUIDO del bind del hueso. En REPOSO y sin pose tiene que dar ~0 en los dos
+                ' numeros; cualquier otra cosa dice QUE hueso esta mal y CUANTO, que es lo unico que
+                ' distingue "el ancla esta mal" de "las particulas de origen estan mal".
+                If Logger.Enabled Then
+                    Dim bindW = bone.OriginalGetGlobalTransform
+                    If bindW IsNot Nothing Then
+                        Dim bm = bindW.ToMatrix4()
+                        Dim dt = Math.Sqrt(((bm.M41 - world.M41) ^ 2) + ((bm.M42 - world.M42) ^ 2) + ((bm.M43 - world.M43) ^ 2))
+                        Dim tr3 = (bm.M11 * world.M11) + (bm.M12 * world.M12) + (bm.M13 * world.M13) +
+                                  (bm.M21 * world.M21) + (bm.M22 * world.M22) + (bm.M23 * world.M23) +
+                                  (bm.M31 * world.M31) + (bm.M32 * world.M32) + (bm.M33 * world.M33)
+                        Dim cs = Math.Max(-1.0R, Math.Min(1.0R, (tr3 - 1.0R) / 2.0R))
+                        Dim ang = Math.Acos(cs) * 180.0R / Math.PI
+                        Dim nm = boneName
+                        ' Se vuelca TAMBIEN el dato crudo del mapeo y la forma del triangulo de
+                        ' particulas: un frame malo puede venir de un indice mal empacado o de un
+                        ' triangulo degenerado, y sin estos numeros las dos hipotesis son indistinguibles.
+                        Dim e01 = (p1 - p0).Length, e12 = (p2 - p1).Length, e20 = (p0 - p2).Length
+                        Dim nl = nrm.Length
+                        ' ⭐ EL TRIANGULO QUE EL AUTOR HORNEO. De `T = bind × M` sale `M = inv(bind) × T`, y
+                        ' en el bind `T` es el mundo del hueso: o sea `M_bind = inv(bind) × bindWorld`,
+                        ' cuyas filas 0 y 1 son los vectores `a` y `b` ORIGINALES. Comparar su largo con
+                        ' el actual separa dos causas que se ven igual: "mis particulas estan mal" (el
+                        ' authored es chico y el mio gigante) de "el indice apunta a otro triangulo"
+                        ' (el authored ya era gigante).
+                        Dim mb = Matrix4.Mult(MatrixOf(map.BindMatrix).Inverted(), bm)
+                        Dim ea = New Vector3(mb.M11, mb.M12, mb.M13).Length
+                        Dim eb = New Vector3(mb.M21, mb.M22, mb.M23).Length
+                        Dim mp = map
+                        Logger.LogLazy(Function() $"[CLOTH-DEFORM] '{nm}' dT={dt:F4} dAng={ang:F3}" &
+                                       $" tri={mp.TriangleIndex} idx=({i0},{i1},{i2})" &
+                                       $" packBone={mp.PackedBoneValue} flags={mp.PackedBoneFlags}" &
+                                       $" packVal={mp.PackedValue} mod6={mp.PackedValueFlags}" &
+                                       $" e=({e01:F3},{e12:F3},{e20:F3}) |n|={nl:F5}" &
+                                       $" src=({SrcOf(st, i0)},{SrcOf(st, i1)},{SrcOf(st, i2)})" &
+                                       $" bind_e=({ea:F3},{eb:F3})")
+                    End If
+                End If
+
                 ' Physics = inv(OrigL × Mount × Morph × Delta) × desiredLocal  — un DELTA, como el mount.
                 Dim baseLocal = bone.LocaLTransformWithoutPhysics
                 If baseLocal Is Nothing Then Continue For
@@ -726,6 +912,38 @@ Namespace Havok.Physics
                 _touched.AddOrUpdate(skeleton, Nothing)
             Next
         End Sub
+
+        ''' <summary>DIAGNOSTICO: a que VERTICE mapea el puente esa particula (-1 = sin entrada).</summary>
+        Private Shared Function GatherOf(st As ClothSimState, i As Integer) As Integer
+            If st.GatherMap Is Nothing OrElse i < 0 OrElse i >= st.GatherMap.Length Then Return -1
+            If st.GatherMapHas IsNot Nothing AndAlso i < st.GatherMapHas.Length AndAlso Not st.GatherMapHas(i) Then Return -1
+            Return CInt(st.GatherMap(i))
+        End Function
+
+        ''' <summary>DIAGNOSTICO: 1 = el destino de esa particula vino de la piel skinneada,
+        ''' 0 = vino del DefaultClothPose del archivo. Mezclar los dos en UN triangulo es lo que
+        ''' fabrica aristas de 100 unidades donde la tela mide 4.</summary>
+        Private Shared Function SrcOf(st As ClothSimState, i As Integer) As Integer
+            If st.TargetFromSkin Is Nothing OrElse i < 0 OrElse i >= st.TargetFromSkin.Length Then Return -1
+            Return If(st.TargetFromSkin(i), 1, 0)
+        End Function
+
+        ''' <summary>Profundidad del hueso en la jerarquia VIVA (raiz = 0). Un nombre que no resuelve
+        ''' devuelve <see cref="Integer.MaxValue"/> para que caiga al final y no se cuele delante de un
+        ''' padre real.</summary>
+        Private Shared Function DepthOf(skeleton As SkeletonInstance, boneName As String) As Integer
+            If skeleton Is Nothing OrElse String.IsNullOrWhiteSpace(boneName) Then Return Integer.MaxValue
+            Dim bone As HierarchiBone_class = Nothing
+            If Not skeleton.SkeletonDictionary.TryGetValue(boneName.Trim(), bone) OrElse bone Is Nothing Then Return Integer.MaxValue
+            Dim d = 0
+            Dim cur = bone.Parent
+            ' Tope defensivo: un ciclo en la jerarquia colgaria el render entero.
+            While cur IsNot Nothing AndAlso d < 512
+                d += 1
+                cur = cur.Parent
+            End While
+            Return d
+        End Function
 
         Private Shared Function SafeNormalize(v As Vector3) As Vector3
             Dim l2 = v.LengthSquared
@@ -737,7 +955,7 @@ Namespace Havok.Physics
         ' ObjectSpaceSkin: la malla de sim skinneada al cuerpo POSADO
         ' -----------------------------------------------------------------------------------------
         Private Shared Function BuildSkinnedByVertex(skin As HclObjectSpaceSkinPNOperatorGraph_Class,
-                                                     clothSkel As HkaSkeletonGraph_Class,
+                                                     clothSkel As Havok.Canon.Objects.HkObj_HkaSkeleton,
                                                      bindWorld As Matrix4(),
                                                      skeleton As SkeletonInstance) As Dictionary(Of Integer, Vector3)
             Dim result As New Dictionary(Of Integer, Vector3)
@@ -767,6 +985,22 @@ Namespace Havok.Physics
                 slotOk(slot) = True
             Next
 
+            If Logger.Enabled Then
+                Dim filas As New List(Of String)
+                For slot = 0 To skin.BoneTransforms.Count - 1
+                    Dim nm2 = "?"
+                    If slot < boneIndices.Count Then
+                        Dim ci2 = CInt(boneIndices(slot))
+                        If ci2 >= 0 AndAlso ci2 < clothSkel.Bones.Count Then nm2 = clothSkel.Bones(ci2).Name
+                    End If
+                    filas.Add($"{slot}:{nm2}{If(slotOk(slot), "", "[NO-RESUELTO]")}")
+                Next
+                Dim ff = filas
+                Dim nb = boneIndices.Count
+                Dim nt = skin.BoneTransforms.Count
+                Logger.LogLazy(Function() $"[CLOTH-SLOTS] boneTransforms={nt} boneIndices={nb} :: {String.Join(" ", ff)}")
+            End If
+
             For Each blk In skin.SkinBlocks
                 If blk Is Nothing OrElse blk.InfluenceBlock Is Nothing OrElse blk.VertexEntries Is Nothing Then Continue For
                 For Each entry In blk.VertexEntries
@@ -789,11 +1023,18 @@ Namespace Havok.Physics
             Dim any = False
             Dim lx = localPoint.X, ly = localPoint.Y, lz = localPoint.Z
             Dim count = Math.Min(lane.TransformIndices.Count, lane.WeightBytes.Count)
+            Dim wsum = 0.0R, wdropped = 0.0R
             For i = 0 To count - 1
                 Dim ti = CInt(lane.TransformIndices(i))
-                If ti < 0 OrElse ti >= matrices.Length OrElse Not valid(ti) Then Continue For
+                If ti < 0 OrElse ti >= matrices.Length OrElse Not valid(ti) Then
+                    ' ⛔ Saltear una influencia SIN renormalizar encoge el punto hacia el ORIGEN en
+                    ' proporcion al peso perdido. Se contabiliza para poder MEDIRLO.
+                    If i < lane.WeightBytes.Count Then wdropped += lane.WeightBytes(i) / 255.0R
+                    Continue For
+                End If
                 Dim w = lane.WeightBytes(i) / 255.0R
                 If w = 0.0R Then Continue For
+                wsum += w
                 Dim m = matrices(ti)
                 x += ((lx * m.M11) + (ly * m.M21) + (lz * m.M31) + m.M41) * w
                 y += ((lx * m.M12) + (ly * m.M22) + (lz * m.M32) + m.M42) * w
@@ -801,15 +1042,20 @@ Namespace Havok.Physics
                 any = True
             Next
             If Not any Then Return Nothing
+            If Logger.Enabled AndAlso wdropped > 0.001R Then
+                Dim ws = wsum, wd = wdropped
+                Logger.LogLazy(Function() $"[CLOTH-SKINW] peso perdido={wd:F3} (suma usada={ws:F3}) ⇒ el punto se encoge hacia el origen")
+            End If
             Return New Vector3(CSng(x), CSng(y), CSng(z))
         End Function
 
         ''' <summary>Bind global de cada hueso del cloth-skeleton embebido (ReferencePose compuesto por padres).</summary>
-        Private Shared Function ComputeEmbeddedBindWorld(skel As HkaSkeletonGraph_Class) As Matrix4()
+        Private Shared Function ComputeEmbeddedBindWorld(skel As Havok.Canon.Objects.HkObj_HkaSkeleton) As Matrix4()
             If skel?.Bones Is Nothing OrElse skel.ReferencePose Is Nothing Then Return New Matrix4() {}
             Dim n = skel.Bones.Count
             Dim world(Math.Max(0, n - 1)) As Matrix4
             Dim parents = skel.ParentIndices
+            Dim fueraDeOrden = 0
             For i = 0 To n - 1
                 Dim localM = Matrix4.Identity
                 If i < skel.ReferencePose.Count Then
@@ -821,9 +1067,15 @@ Namespace Havok.Physics
                 If p >= 0 AndAlso p < i Then
                     world(i) = Matrix4.Mult(localM, world(p))
                 Else
+                    If p >= i Then fueraDeOrden += 1
                     world(i) = localM
                 End If
             Next
+            If Logger.Enabled Then
+                Dim f = fueraDeOrden
+                Dim tot = n
+                Logger.LogLazy(Function() $"[CLOTH-BINDW] huesos={tot} con padre FUERA DE ORDEN (p>=i, tratados como raiz)={f}")
+            End If
             Return world
         End Function
 

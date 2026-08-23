@@ -25,11 +25,21 @@ Friend NotInheritable Class HclRenderGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclTransformSetDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Lector generado (HavokTyped.vb): los offsets salen de la reflexion de los dos
+        ' .exe y la tabla la elige el packfile. Sin literales que se puedan desincronizar.
+        Dim r As New Havok.Canon.Typed.Hk_HclTransformSetDefinition(graph, source)
+        If Not r.IsValid Then Return Nothing
+
+        ' ⛔ EL PARSER VIEJO LOS TENIA CRUZADOS. `hclTransformSetDefinition` declara
+        ' `+0x10 name`, `+0x18 type`, `+0x1C numTransforms` — y NO declara ningun `numFloatSlots`.
+        ' El codigo leia +0x18 (que es `type`) en `TransformCount` y +0x1C (que es `numTransforms`)
+        ' en `FloatSlotCount`. Lo destapo la migracion al lector generado, que mapea cada offset a
+        ' su nombre declarado. (VB no admite comentarios DENTRO de un inicializador de objeto.)
         Return New HclTransformSetDefinitionGraph_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .TransformCount = graph.ReadInt32(source.RelativeOffset + &H18),
-            .FloatSlotCount = graph.ReadInt32(source.RelativeOffset + &H1C)
+            .Name = r.Name,
+            .TransformCount = CInt(r.NumTransforms),
+            .FloatSlotCount = r.Type
         }
     End Function
 
@@ -37,17 +47,31 @@ Friend NotInheritable Class HclRenderGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclObjectSpaceSkinPNOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' ⭐ LECTOR GENERADO (HavokTyped.vb). El `hclObjectSpaceDeformer` va EMBEBIDO en +0x48 del
+        ' operador y el generador lo expone como un sub-lector: `r.ObjectSpaceDeformer.OneBlendEntries`
+        ' resuelve solo, sin sumar el offset del struct a mano y sin un literal que se desincronice.
+        Dim r As New Havok.Canon.Typed.Hk_HclObjectSpaceSkinPNOperator(graph, source)
+        If Not r.IsValid Then Return Nothing
+        Dim d = r.ObjectSpaceDeformer
+        Dim rel = source.RelativeOffset
+
         Dim result As New HclObjectSpaceSkinPNOperatorGraph_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 2),
-            .BoneTransformsField = graph.ReadArrayHeader(source.RelativeOffset + &H20),
-            .BoneIndicesField = graph.ReadArrayHeader(source.RelativeOffset + &H30),
-            .TransformSubsetField = graph.ReadArrayHeader(source.RelativeOffset + &H48),
-            .UnknownStructArrayField = graph.ReadArrayHeader(source.RelativeOffset + &H58),
-            .UnknownSingleStructField = graph.ReadArrayHeader(source.RelativeOffset + &H68),
-            .UnknownBytesField = graph.ReadArrayHeader(source.RelativeOffset + &H88),
-            .UnknownLargeStructField = graph.ReadArrayHeader(source.RelativeOffset + &HA0)
+            .Name = r.Name,
+            .BoneTransformsField = r.BoneFromSkinMeshTransforms,
+            .BoneIndicesField = r.TransformSubset,
+            .OutputBufferIndex = CInt(r.OutputBufferIndex),
+            .TransformSetIndex = CInt(r.TransformSetIndex),
+            .TransformSubsetField = d.FourBlendEntries,
+            .UnknownStructArrayField = d.ThreeBlendEntries,
+            .UnknownSingleStructField = d.TwoBlendEntries,
+            .OneBlendSubsetField = d.OneBlendEntries,
+            .StartVertexIndex = CUShort(d.StartVertexIndex),
+            .EndVertexIndex = CUShort(d.EndVertexIndex),
+            .PartialWrite = d.PartialWrite,
+            .UnknownBytesField = d.ControlBytes,
+            .UnknownLargeStructField = r.LocalPNs,
+            .LocalUnpackedPNsField = r.LocalUnpackedPNs
         }
 
         result.BoneIndices = ReadUInt16Array(graph, result.BoneIndicesField)
@@ -60,6 +84,14 @@ Friend NotInheritable Class HclRenderGraphParser_Class
 
         result.ThreeBlendSubsets = ReadWeightedTransformSubsetArray(graph, result.UnknownStructArrayField, 176, 3)
         result.TwoBlendSubsets = ReadWeightedTransformSubsetArray(graph, result.UnknownSingleStructField, 128, 2)
+        ' ⛔ LA CUARTA FAMILIA. `hclObjectSpaceDeformer` declara CUATRO arrays de entradas
+        ' (four/three/two/oneBlendEntries en +0x00/+0x10/+0x20/+0x30 del deformer, o sea
+        ' +0x48/+0x58/+0x68/+0x78 del operador) y aca se leian TRES. Los vertices con UNA sola
+        ' influencia quedaban SIN skinnear: no entraban al diccionario, asi que la particula que los
+        ' usaba caia al DefaultClothPose, que esta en otro espacio.
+        ' En HouseDress\Dress.nif no hay bloques de este tipo (medido: tipo0x17 tipo1x4 tipo2x1),
+        ' pero eso es una propiedad del ARCHIVO, no del formato.
+        result.OneBlendSubsets = ReadOneBlendTransformSubsetArray(graph, result.OneBlendSubsetField)
         result.SkinBlockTypeBytes = If(result.UnknownBytes, Array.Empty(Of Byte)())
         result.LocalBlocks = ReadLocalBlockPNArray(graph, result.UnknownLargeStructField)
         result.SkinBlocks.AddRange(BuildSkinBlocks(result))
@@ -68,16 +100,26 @@ Friend NotInheritable Class HclRenderGraphParser_Class
 
     Friend Shared Function ParseSimpleMeshBoneDeformOperator(graph As HkxObjectGraph_Class,
                                                              source As HkxVirtualObjectGraph_Class,
-                                                             Optional skeleton As HkaSkeletonGraph_Class = Nothing) As HclSimpleMeshBoneDeformOperatorGraph_Class
+                                                             Optional skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing) As HclSimpleMeshBoneDeformOperatorGraph_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimpleMeshBoneDeformOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' ⭐ LECTOR GENERADO. Los offsets ya no viven aca: salen de `HavokTyped.vb`, que se genera
+        ' de la reflexion de los DOS .exe y elige la tabla segun lo que el packfile declara. Es
+        ' game-aware por construccion y no hay un solo literal que se pueda desincronizar.
+        ' `IsValid` es False cuando el formato no tiene tabla (Skyrim32) o la clase no existe en
+        ' ese juego — que es el caso de todas las `hcl` en Skyrim, sin motor de cloth.
+        Dim r As New Havok.Canon.Typed.Hk_HclSimpleMeshBoneDeformOperator(graph, source)
+        If Not r.IsValid OrElse Not r.HasTriangleBonePairs Then Return Nothing
+        Dim rel = source.RelativeOffset
+
         Dim result As New HclSimpleMeshBoneDeformOperatorGraph_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 4),
-            .MappingField = graph.ReadArrayHeader(source.RelativeOffset + &H28),
-            .BindMatrixField = graph.ReadArrayHeader(source.RelativeOffset + &H38)
+            .Name = r.Name,
+            .InputBufferIndex = CInt(r.InputBufferIdx),
+            .OutputTransformSetIndex = CInt(r.OutputTransformSetIdx),
+            .MappingField = r.TriangleBonePairs,
+            .BindMatrixField = r.LocalBoneTransforms
         }
 
         result.BindMatrices = ReadMatrix4Array(graph, result.BindMatrixField)
@@ -157,6 +199,45 @@ Friend NotInheritable Class HclRenderGraphParser_Class
         For Each raw In ReadRawStructArray(graph, field, structSize)
             Dim subset = ParseWeightedTransformSubset(raw, influenceCount)
             If Not IsNothing(subset) Then result.Add(subset)
+        Next
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' `hclObjectSpaceDeformerOneBlendEntryBlock`: `vertexIndices` uint16x16 en +0x00 y `boneIndices`
+    ''' uint16x16 en +0x20 - 64 bytes, y SIN array de pesos, porque con una sola influencia el peso es
+    ''' 1 por definicion. Por eso no puede usar <see cref="ParseWeightedTransformSubset"/>, que calcula
+    ''' el tamano como `32 + n*32 + 16*n` (con n=1 daria 80 y leeria pesos que no existen).
+    ''' </summary>
+    Private Shared Function ReadOneBlendTransformSubsetArray(graph As HkxObjectGraph_Class,
+                                                             field As HkxObjectArrayHeader_Class) As List(Of HclObjectSpaceSkinTransformSubsetGraph_Class)
+        Dim result As New List(Of HclObjectSpaceSkinTransformSubsetGraph_Class)
+        For Each raw In ReadRawStructArray(graph, field, 64)
+            If IsNothing(raw) OrElse IsNothing(raw.RawBytes) OrElse raw.RawBytes.Length < 64 Then Continue For
+            Dim subset As New HclObjectSpaceSkinTransformSubsetGraph_Class With {
+                .EntryIndex = raw.EntryIndex,
+                .EntryRelativeOffset = raw.EntryRelativeOffset,
+                .RawStruct = raw,
+                .RawBytes = raw.RawBytes,
+                .InfluenceCount = 1
+            }
+            subset.InfluenceIndexGroups.Add(New List(Of UShort))
+            For lane = 0 To 15
+                Dim vertexIndex = BitConverter.ToUInt16(raw.RawBytes, lane * 2)
+                subset.VertexIndices.Add(vertexIndex)
+                Dim transformIndex = BitConverter.ToUInt16(raw.RawBytes, 32 + (lane * 2))
+                subset.InfluenceIndexGroups(0).Add(transformIndex)
+                Dim laneInfo As New HclObjectSpaceSkinVertexInfluenceGraph_Class With {
+                    .LaneIndex = lane,
+                    .VertexIndex = vertexIndex,
+                    .InfluenceCount = 1
+                }
+                laneInfo.TransformIndices.Add(transformIndex)
+                laneInfo.WeightBytes.Add(CByte(255))
+                laneInfo.WeightByteSum = 255
+                subset.VertexInfluences.Add(laneInfo)
+            Next
+            result.Add(subset)
         Next
         Return result
     End Function
@@ -259,6 +340,19 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             result.DecodedPositions.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorBInt16Values, PositionScaleFromW(result.Lanes(lane).VectorBInt16Values), lane, 1))
         Next
 
+        If Logger.Enabled Then
+            ' Histograma de los tags `w` del vector de POSICION. La regla actual mira UN bit y ofrece
+            ' dos escalas; si aca aparecen mas de dos valores distintos, la regla esta incompleta por
+            ' construccion y no hace falta discutirlo.
+            Dim ws As New List(Of String)
+            For lane = 0 To Math.Min(7, result.Lanes.Count - 1)
+                ws.Add("0x" & (result.Lanes(lane).VectorAInt16Values(3) And &HFFFF).ToString("X4"))
+                ws.Add("0x" & (result.Lanes(lane).VectorBInt16Values(3) And &HFFFF).ToString("X4"))
+            Next
+            Dim wl = ws
+            Logger.LogLazy(Function() "[CLOTH-WTAG] " & String.Join(",", wl))
+        End If
+
         For lane = 8 To Math.Min(15, result.Lanes.Count - 1)
             result.DecodedNormals.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorAInt16Values, 32767.0R, lane, 0))
             result.DecodedNormals.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorBInt16Values, 32767.0R, lane, 1))
@@ -267,14 +361,41 @@ Friend NotInheritable Class HclRenderGraphParser_Class
         Return result
     End Function
 
-    ' ObjectSpaceSkin POSITION quantization: la escala es per-vértice {256, 512}, seleccionada por el
-    ' bit 7 del 4º int16 ('w' tag) del propio vector: w=0x3380 (bit7=1) -> 256, w=0x3300 (bit7=0) -> 512.
-    ' Derivado bit-exacto del dato vanilla (reproduce DefaultClothPose a ~0.001u). ⛔ NO usar /256 fijo:
-    ' da ~2× de error en el 85% de los vértices. Solo aplica a posiciones; las normales usan 32767 fijo.
-    ' Ver memoria 25-cloth-objectspaceskin.
+    ''' <summary>
+    ''' Dequantizacion de la POSICION del bloque local del ObjectSpaceDeformer.
+    '''
+    ''' <para>⭐ LEIDA DEL MOTOR, no ajustada al dato. `TtObject Space Deform` @0x141939390, bucle de
+    ''' cuatro influencias en 0x1419399E0:</para>
+    ''' <code>
+    '''   movsd     xmm0, [ptr]        ; 8 bytes = los 4 int16 del vertice (x,y,z,w)
+    '''   punpcklwd xmm2, xmm0         ; xmm2=0 ⇒ cada int16 queda en los 16 bits ALTOS de un dword
+    '''   pshufd    xmm0, xmm2, 0xFF   ; lane 3 (el tag `w`) broadcast, SIN convertir
+    '''   cvtdq2ps  xmm1, xmm2         ; float(v &lt;&lt; 16)
+    '''   mulps     xmm1, xmm0         ; × el tag interpretado como PATRON DE BITS de un float
+    ''' </code>
+    ''' <para>O sea: <c>valor = float(v &lt;&lt; 16) × bitcast_float(w &lt;&lt; 16)</c>. El `w` NO es un flag:
+    ''' es la MITAD ALTA de un float IEEE-754 (mantisa baja en cero) que multiplica al vector entero.
+    ''' Es el truco clasico para guardar un exponente en 16 bits.</para>
+    '''
+    ''' <para>⛔ LO QUE HABIA ACA ESTABA ADIVINADO y por eso rompia. Decia: <i>"la escala es per-vertice
+    ''' {256, 512}, seleccionada por el bit 7"</i> — un ajuste de DOS puntos (w=0x3380→256,
+    ''' w=0x3300→512) presentado como ley. Los dos casos salen bien con la formula real
+    ''' (bitcast(0x33800000)=2^-24, ×65536 = 1/256 ✓ ; bitcast(0x33000000)=2^-25 ⇒ 1/512 ✓), pero
+    ''' cualquier otro exponente se decodificaba con la escala de al lado. MEDIDO en
+    ''' HouseDress\Dress.nif: 24 de 321 particulas salian con la posicion ×4 EXACTO (un exponente de
+    ''' diferencia, 1/1024 leido como 1/256), y con UNA sola alcanzaba para que el triangulo del
+    ''' cloth-bone del ruedo quedara convertido en una astilla de 100 unidades y la pollera se abriera
+    ''' en abanico.</para>
+    ''' <para>Las NORMALES son otra cosa: van con 32767 fijo (ver el llamador).</para>
+    ''' </summary>
     Private Shared Function PositionScaleFromW(values As IReadOnlyList(Of Short)) As Double
         If values Is Nothing OrElse values.Count < 4 Then Return 256.0R
-        Return If((values(3) And &H80) <> 0, 256.0R, 512.0R)
+        ' El multiplicador que aplica el motor: bitcast_float(w << 16) escalado por el << 16 de los datos.
+        Dim mul = CDbl(BitConverter.Int32BitsToSingle(CInt(values(3)) << 16)) * 65536.0R
+        ' `DecodeQuantizedVector3` DIVIDE, asi que se devuelve el reciproco. Un tag de cero (o
+        ' desnormalizado) daria una escala infinita: se cae al 256 historico antes que emitir infinitos.
+        If mul <= 0.0R OrElse Double.IsNaN(mul) OrElse Double.IsInfinity(mul) Then Return 256.0R
+        Return 1.0R / mul
     End Function
 
     Private Shared Function DecodeQuantizedVector3(values As IReadOnlyList(Of Short), scale As Double, laneIndex As Integer, pairIndex As Integer) As HclObjectSpaceSkinQuantizedVectorGraph_Class
@@ -305,6 +426,7 @@ Friend NotInheritable Class HclRenderGraphParser_Class
         Dim fourBlendIndex = 0
         Dim threeBlendIndex = 0
         Dim twoBlendIndex = 0
+        Dim oneBlendIndex = 0
         Dim blockTypeBytes = If(source.SkinBlockTypeBytes, Array.Empty(Of Byte)())
         Dim blockCount = Math.Max(blockTypeBytes.Length, source.LocalBlocks.Count)
 
@@ -336,6 +458,13 @@ Friend NotInheritable Class HclRenderGraphParser_Class
                         subset = source.TwoBlendSubsets(twoBlendIndex)
                         twoBlendIndex += 1
                     End If
+                Case 3
+                    blendCount = 1
+                    blockTypeName = "one-blend"
+                    If oneBlendIndex < source.OneBlendSubsets.Count Then
+                        subset = source.OneBlendSubsets(oneBlendIndex)
+                        oneBlendIndex += 1
+                    End If
             End Select
 
             Dim localBlock As HclObjectSpaceSkinLocalBlockPNGraph_Class = Nothing
@@ -354,6 +483,17 @@ Friend NotInheritable Class HclRenderGraphParser_Class
 
             If Not IsNothing(subset) AndAlso Not IsNothing(localBlock) Then
                 For slot = 0 To Math.Min(subset.VertexIndices.Count, 16) - 1
+                    ' ⛔⛔ RELLENO DEL BLOQUE PARCIAL. Los bloques son de 16 vertices FIJOS y el ultimo de
+                    ' cada familia viene a medias: Havok rellena los slots sobrantes REPITIENDO el ultimo
+                    ' indice valido. MEDIDO en HouseDress\Dress.nif: el bloque 20 termina en
+                    ' `...,336,337,337,337,337` y el 21 en `338,339,339,...` (nueve veces 339).
+                    ' Escribirlos igual PISA la entrada buena de ese vertice con la posicion local de un
+                    ' slot de relleno, y con UNO alcanza para que el triangulo de un cloth-bone quede
+                    ' convertido en una astilla de 100 unidades.
+                    ' ⛔ Filtrar por startVertexIndex/endVertexIndex NO alcanza: el relleno repite un
+                    ' indice que esta DENTRO del rango (339 <= endVertexIndex = 339). La senal es la
+                    ' REPETICION, no el rango: un vertice no puede aparecer dos veces en un deformer.
+                    If slot > 0 AndAlso subset.VertexIndices(slot) = subset.VertexIndices(slot - 1) Then Exit For
                     Dim entry As New HclObjectSpaceSkinBlockVertexEntryGraph_Class With {
                         .SlotIndex = slot,
                         .VertexIndex = subset.VertexIndices(slot)
@@ -366,6 +506,30 @@ Friend NotInheritable Class HclRenderGraphParser_Class
 
             result.Add(block)
         Next
+
+        If Logger.Enabled Then
+            Dim hist As New Dictionary(Of Integer, Integer)
+            For Each bt In blockTypeBytes
+                Dim k = CInt(bt)
+                hist(k) = If(hist.ContainsKey(k), hist(k) + 1, 1)
+            Next
+            Dim h = String.Join(" ", hist.OrderBy(Function(kv) kv.Key).Select(Function(kv) $"tipo{kv.Key}x{kv.Value}"))
+            ' Volcado de los DOS ultimos bloques: es donde vive el relleno, y ver los indices crudos
+            ' es lo unico que dice si el relleno repite, pone cero o trae basura.
+            For Each b3 In result.Skip(Math.Max(0, result.Count - 2))
+                Dim idxs = String.Join(",", b3.VertexEntries.Select(Function(e) e.VertexIndex.ToString()))
+                Dim bi = b3.BlockIndex
+                Dim bt = b3.BlockTypeName
+                Logger.LogLazy(Function() $"[CLOTH-SKINBLK-LAST] bloque {bi} ({bt}) idx={idxs}")
+            Next
+            Dim sv = source.StartVertexIndex, ev = source.EndVertexIndex
+            Logger.LogLazy(Function() $"[CLOTH-SKINBLK-RANGE] startVertexIndex={sv} endVertexIndex={ev}")
+            Dim lb = source.LocalBlocks.Count
+            Dim c4 = source.TransformSubsets.Count, c3 = source.ThreeBlendSubsets.Count, c2 = source.TwoBlendSubsets.Count
+            Dim sinSubset = result.Where(Function(b2) b2.InfluenceBlock Is Nothing).Count
+            Logger.LogLazy(Function() $"[CLOTH-SKINBLK] bloques={blockCount} localBlocks={lb} " &
+                           $"subsets 4/3/2 = {c4}/{c3}/{c2} · controlBytes: {h} · bloques SIN subset={sinSubset}")
+        End If
 
         Return result
     End Function
@@ -436,9 +600,30 @@ Public Class HclTransformSetDefinitionGraph_Class
 End Class
 
 Public Class HclObjectSpaceSkinPNOperatorGraph_Class
+    ''' <summary>
+    ''' `hclObjectSpaceDeformer.startVertexIndex` / `endVertexIndex` (+0x98 / +0x9A del operador; la
+    ''' reflexion los declara en +0x50/+0x52 del deformer, que va embebido en +0x48).
+    ''' <para>⛔ EXISTEN PORQUE EL ULTIMO BLOQUE ES PARCIAL. Los bloques son de 16 vertices fijos, asi
+    ''' que el ultimo trae RELLENO: slots cuyo `vertexIndex` no corresponde a ningun vertice de este
+    ''' deformer. Escribirlos igual pisa entradas legitimas con posiciones de otro lado.</para>
+    ''' </summary>
+    ''' <summary>`outputBufferIndex` (+0x40) y `transformSetIndex` (+0x44) del operador base.</summary>
+    Public Property OutputBufferIndex As Integer = -1
+    Public Property TransformSetIndex As Integer = -1
+    ''' <summary>`partialWrite` (+0x56 del deformer): el ultimo bloque escribe menos de 16 vertices.</summary>
+    Public Property PartialWrite As Boolean
+    ''' <summary>`localUnpackedPNs` (+0xB0): variante SIN cuantizar de los bloques locales. En el corpus
+    ''' de FO4 viene vacia (se usa `localPNs`), pero el formato la declara y no leerla dejaba un camino
+    ''' entero del formato invisible.</summary>
+    Public Property LocalUnpackedPNsField As HkxObjectArrayHeader_Class
+    ''' <summary>`hclObjectSpaceDeformer.oneBlendEntries` (+0x30 del deformer = +0x78 del operador).</summary>
+    Public Property OneBlendSubsetField As HkxObjectArrayHeader_Class
+    Public Property OneBlendSubsets As New List(Of HclObjectSpaceSkinTransformSubsetGraph_Class)
+    Public Property StartVertexIndex As UShort
+    Public Property EndVertexIndex As UShort
+
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property HeaderUInt32 As List(Of UInteger)
     Public Property BoneTransformsField As HkxObjectArrayHeader_Class
     Public Property BoneIndicesField As HkxObjectArrayHeader_Class
     Public Property TransformSubsetField As HkxObjectArrayHeader_Class
@@ -547,9 +732,13 @@ Public Class HclObjectSpaceSkinBlockVertexEntryGraph_Class
 End Class
 
 Public Class HclSimpleMeshBoneDeformOperatorGraph_Class
+    ''' <summary>`inputBufferIdx` (+0x20): que buffer de la escena lee este operador. Lo declara el
+    ''' formato y hasta ahora no se leia; con mas de un buffer por config es lo que dice cual.</summary>
+    Public Property InputBufferIndex As Integer = -1
+    ''' <summary>`outputTransformSetIdx` (+0x24): en que transform-set escribe los huesos.</summary>
+    Public Property OutputTransformSetIndex As Integer = -1
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property HeaderUInt32 As List(Of UInteger)
     Public Property MappingField As HkxObjectArrayHeader_Class
     Public Property BindMatrixField As HkxObjectArrayHeader_Class
     Public Property BoneMappings As New List(Of HclSimpleMeshBoneDeformMapping_Class)

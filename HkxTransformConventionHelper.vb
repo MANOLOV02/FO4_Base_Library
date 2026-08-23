@@ -12,6 +12,37 @@ Public NotInheritable Class HkxTransformConventionHelper
     Private Sub New()
     End Sub
 
+    ''' <summary>
+    ''' `hkQsTransform` desde sus 12 floats crudos, que es como lo entrega el objeto generado
+    ''' (`HavokObjects.vb`). El layout lo declara la reflexion: 48 bytes = translation(vector4) +
+    ''' rotation(quaternion) + scale(vector4).
+    ''' <para>Esta conversion NO se genera: la reflexion dice donde estan los floats, no que la
+    ''' rotacion es un cuaternion que hay que normalizar ni como se resuelve una escala en cero.
+    ''' Por eso el camino de decodificacion sigue siendo codigo escrito a mano, y vive aca, en el
+    ''' mismo lugar que la version que toma los objetos del parser viejo — asi las dos no pueden
+    ''' divergir.</para>
+    ''' </summary>
+    ''' <summary>
+    ''' Los 12 floats crudos de un `hkQsTransform` (lo que entrega el objeto generado) en la forma
+    ''' estructurada que espera la matematica de animacion. El layout lo declara la reflexion:
+    ''' translation(vector4) @0, rotation(quaternion) @16, scale(vector4) @32.
+    ''' <para>Es el UNICO punto donde se interpreta ese layout, para que no vuelva a haber dos
+    ''' lecturas del mismo dato que puedan divergir.</para>
+    ''' </summary>
+    Public Shared Function QsFromFloats(qs As Single()) As HkxQsTransformGraph_Class
+        If qs Is Nothing OrElse qs.Length < 12 Then Return Nothing
+        Return New HkxQsTransformGraph_Class With {
+            .Translation = New HkxVector4Graph_Class With {.X = qs(0), .Y = qs(1), .Z = qs(2), .W = qs(3)},
+            .Rotation = New HkxQuaternionGraph_Class With {.X = qs(4), .Y = qs(5), .Z = qs(6), .W = qs(7)},
+            .Scale = New HkxVector4Graph_Class With {.X = qs(8), .Y = qs(9), .Z = qs(10), .W = qs(11)}
+        }
+    End Function
+
+    Public Shared Function ToTransform(qs As Single()) As Transform_Class
+        ' Delega en la version sin allocar: este camino tambien lo recorre el render por frame.
+        Return ToTransformFromFloats(qs)
+    End Function
+
     Public Shared Function ToTransform(source As HkxQsTransformGraph_Class) As Transform_Class
         If source Is Nothing Then Return New Transform_Class()
         Return ToTransform(source.Translation, source.Rotation, source.Scale)
@@ -25,6 +56,35 @@ Public NotInheritable Class HkxTransformConventionHelper
         Dim ty = If(translation Is Nothing, 0.0F, translation.Y)
         Dim tz = If(translation Is Nothing, 0.0F, translation.Z)
         Return ToTransform(tx, ty, tz, rotationSource, scale)
+    End Function
+
+    ''' <summary>
+    ''' Version SIN ALLOCAR de <see cref="ToTransform"/>: el cuaternion entra como cuatro floats.
+    ''' <para>⛔ Existe por el camino CALIENTE de animacion: `BuildPose` la llama por hueso y por
+    ''' frame. Pasar por `HkxQuaternionGraph_Class` construia un objeto por llamada, que con ~100
+    ''' huesos a 30 fps son miles de allocaciones por segundo y se nota en la fluidez.</para>
+    ''' </summary>
+    Public Shared Function ToTransformRaw(translationX As Single, translationY As Single, translationZ As Single,
+                                          rotX As Single, rotY As Single, rotZ As Single, rotW As Single,
+                                          scaleX As Single, scaleY As Single, scaleZ As Single) As Transform_Class
+        Dim scale = ResolveScaleVector(scaleX, scaleY, scaleZ)
+        Dim rotation As New Quaternion(rotX, rotY, rotZ, rotW)
+        If rotation.LengthSquared <= 0.000001F Then
+            rotation = Quaternion.Identity
+        Else
+            rotation = Quaternion.Normalize(rotation)
+        End If
+        Dim transformMatrix =
+            Matrix4.CreateScale(scale.X, scale.Y, scale.Z) *
+            Matrix4.CreateFromQuaternion(rotation) *
+            Matrix4.CreateTranslation(translationX, translationY, translationZ)
+        Return New Transform_Class(transformMatrix)
+    End Function
+
+    ''' <summary>`hkQsTransform` desde sus 12 floats crudos, sin materializar objetos intermedios.</summary>
+    Public Shared Function ToTransformFromFloats(qs As Single()) As Transform_Class
+        If qs Is Nothing OrElse qs.Length < 12 Then Return New Transform_Class()
+        Return ToTransformRaw(qs(0), qs(1), qs(2), qs(4), qs(5), qs(6), qs(7), qs(8), qs(9), qs(10))
     End Function
 
     Public Shared Function ToTransform(translationX As Single,
