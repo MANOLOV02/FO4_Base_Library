@@ -98,8 +98,15 @@ Public NotInheritable Class HclClothPackageParser_Class
                 For Each op In clothData.Operators
                     Select Case NormalizeOperatorClassName(op.ClassName)
                         Case "hclobjectspaceskinpnoperator"
-                            clothConfig.ObjectSpaceSkin = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
-                            PopulateSkinBoneNames(clothConfig.ObjectSpaceSkin, result.Skeleton)
+                            ' ⛔ UNA PRENDA PUEDE TRAER VARIOS. MEDIDO: el Institute Lab Coat (y sus tres
+                            ' reemplazos CBBE) declaran DOS, escribiendo a buffers distintos (out=0 y
+                            ' out=1). Esta propiedad era SINGULAR, asi que el segundo se perdia en
+                            ' silencio y esa pieza de tela se quedaba sin destino skinneado.
+                            ' Se guardan TODOS; cual le toca al deform lo decide `inputBufferIdx`, mas
+                            ' abajo — no el orden en que aparecen.
+                            Dim skinOp = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
+                            PopulateSkinBoneNames(skinOp, result.Skeleton)
+                            clothConfig.ObjectSpaceSkins.Add(skinOp)
                         Case "hclmoveparticlesoperator"
                             clothConfig.MoveParticles = HclStructuredGraphParser_Class.ParseMoveParticlesOperator(graph, op)
                         Case "hclsimulateoperator"
@@ -731,7 +738,30 @@ Public Class HclClothConfigGraph_Class
     Public ReadOnly Property BufferDefinitions As New List(Of HclBufferDefinitionDetail_Class)
     Public ReadOnly Property ScratchBufferDefinitions As New List(Of HclScratchBufferDefinitionDetail_Class)
     Public ReadOnly Property TransformSets As New List(Of HclTransformSetDefinitionGraph_Class)
-    Public Property ObjectSpaceSkin As HclObjectSpaceSkinPNOperatorGraph_Class
+    ''' <summary>TODOS los `hclObjectSpaceSkinPNOperator` del config, en el orden del archivo.</summary>
+    Public ReadOnly Property ObjectSpaceSkins As New List(Of HclObjectSpaceSkinPNOperatorGraph_Class)
+
+    ''' <summary>
+    ''' El skin que alimenta al deform de ESTE config: el que escribe en el buffer que el deform
+    ''' declara leer (`hclSimpleMeshBoneDeformOperator.inputBufferIdx` contra
+    ''' `hclObjectSpaceSkinOperator.outputBufferIndex`).
+    ''' <para>⛔ NO es "el primero". Con dos skins escribiendo a buffers distintos, tomar el primero es
+    ''' una moneda al aire; el archivo DECLARA cual va. Si no hay con que decidir —un solo skin, o
+    ''' ninguno que coincida— se devuelve el primero, que es el comportamiento que habia.</para>
+    ''' </summary>
+    Public ReadOnly Property ObjectSpaceSkin As HclObjectSpaceSkinPNOperatorGraph_Class
+        Get
+            If ObjectSpaceSkins.Count = 0 Then Return Nothing
+            If ObjectSpaceSkins.Count = 1 Then Return ObjectSpaceSkins(0)
+            Dim quiere = If(SimpleMeshBoneDeform Is Nothing, -1, SimpleMeshBoneDeform.InputBufferIndex)
+            If quiere >= 0 Then
+                For Each sk In ObjectSpaceSkins
+                    If sk IsNot Nothing AndAlso sk.OutputBufferIndex = quiere Then Return sk
+                Next
+            End If
+            Return ObjectSpaceSkins(0)
+        End Get
+    End Property
     Public Property MoveParticles As HclMoveParticlesOperatorDetail_Class
     Public Property Simulate As HclSimulateOperatorDetail_Class
     Public Property SimpleMeshBoneDeform As HclSimpleMeshBoneDeformOperatorGraph_Class

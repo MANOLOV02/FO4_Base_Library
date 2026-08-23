@@ -1320,8 +1320,23 @@ Namespace Havok.Physics
                     End If
                 End If
 
-                ' `k` (el factor por-set de `StiffnessFactor`, 0x1418C6420) vale 1.0 salvo en el modo
-                ' adaptativo, que este simulador no implementa: se omite el producto por 1.
+                ' ⛔ EL FACTOR `k`, Y POR QUE VALE 1.0 — no es un supuesto, es una cuenta cerrada.
+                ' `StiffnessFactor` (0x1418C6420), literal:
+                '     si mode <> 2                      -> 1.0
+                '     si N = 1 y s1 = 1 y s2 = 1        -> 1.0
+                '     segun cs->type:  5 o 0xA -> 1.0 en la ULTIMA iteracion, 0.0 en las demas
+                '                      8       -> (iteracion + 1) / N
+                '                      resto   -> (N*s1*s2) ^ (-1,725)
+                ' MEDIDO en el corpus: `numberOfSolveIterations` = 1 en los 1.248 operadores. Con N = 1
+                ' la iteracion 0 ES la ultima, asi que la rama 5/0xA da 1.0; la 8 da (0+1)/1 = 1.0; y la
+                ' default da (1*s1*s2)^(-1,725) = 1.0 cuando s1 = s2 = 1. Las tres coinciden.
+                ' ⚠️ LIMITE DECLARADO: `s1`/`s2` (+0x1D0/+0x1D4 del sim-cloth) NO estan serializados —
+                ' los pone el motor con la ESCALA DEL ACTOR cuando `bEnableScaling:Cloth` esta en 1, que
+                ' es el default. Con un actor escalado dejan de valer 1 y la rama default deja de dar
+                ' 1.0. El preview renderiza a escala 1, asi que hoy no aplica; si algun dia se renderiza
+                ' un actor escalado, ESTO hay que implementarlo.
+                ' Tampoco se implementa el modo adaptativo en si: 846 de 1.248 operadores declaran
+                ' `adaptConstraintStiffness`, pero con N = 1 no cambia el resultado.
                 ' ⚠️ Las cuatro escrituras usan el MISMO `w`, calculado antes de tocar ninguna posicion
                 ' (Jacobi dentro del link). El motor hace exactamente eso.
                 Dim s = b.Stiffness
