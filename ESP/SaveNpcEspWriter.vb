@@ -1339,7 +1339,7 @@ Public Module SaveNpcEspWriter
                                      gameMaster As String,
                                      outputDir As String) As Byte()
         Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
-        Dim hedrVersion As Single = If(game = Config_App.Game_Enum.Fallout4, HEDR_VERSION_FO4, HEDR_VERSION_SSE)
+        Dim hedrVersion As Single = PluginWriter.HedrVersionFor(game)
 
         ' HEDR + CNAM + (MAST + DATA)*N
         Using bodyMs As New MemoryStream()

@@ -68,6 +68,16 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>LoadOrderActivatorProbe</_Parameter1>
     </AssemblyAttribute>
+    <!-- Tools/SlotResolutionProbe: Case18 gatea `PluginManager.AllowsHardcodedRange` por juego Y por
+         variante. Necesita `PluginWriter.HedrVersionFor` (Friend) para preguntarle a LA FUNCION que version
+         de HEDR emite este escritor, en vez de repetir el numero en el probe.
+         ⛔ Esto no es comodidad: hasta el 2026-08-22 el caso 18b afirmaba "la version que ESTA APP emite
+         (0.95)" con el 0.95 escrito a mano; cuando la constante paso a 1.0 el gate siguio verde afirmando
+         algo falso. Gatear el PREDICADO no es gatear la FUNCION (00-reglas-predicciones-que-no-pueden-fallar).
+         NADA se vuelve Public por esto. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SlotResolutionProbe</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

@@ -199,6 +199,8 @@ Public Module NpcVmadBuilder
         End If
         Dim objectFormat = npc.VirtualMachineAdapterObjectFormat
         Dim props = If(script.Properties, New List(Of VmadPropertySpec))
+        ' El contexto del arbol: lo necesita EnsureFieldPath para crear el contenedor de un arreglo vacio.
+        Dim ctxVista As Canon.WbContext = TryCast(npc, Canon.CanonView)?.Context
 
         If nf IsNot Nothing Then
             Dim e = TryCast(nf.AgregarScripts(), Canon.NpcFO4_Scripts)
@@ -209,7 +211,7 @@ Public Module NpcVmadBuilder
                 If p Is Nothing Then Continue For
                 Dim d = e.AgregarProperties()
                 If d Is Nothing Then Continue For
-                EscribirEscalarDePropiedad(d, p, objectFormat)
+                EscribirEscalarDePropiedad(d, p, objectFormat, ctxVista)
                 ' El generador le pone al mismo campo un nombre distinto en cada juego, porque lo
                 ' desambigua contra los otros niveles del VMAD, que no son iguales en los dos. Por eso
                 ' los arreglos se escriben por juego y los escalares una sola vez.
@@ -255,7 +257,7 @@ Public Module NpcVmadBuilder
                 If p Is Nothing Then Continue For
                 Dim d = e.AgregarProperties()
                 If d Is Nothing Then Continue For
-                EscribirEscalarDePropiedad(d, p, objectFormat)
+                EscribirEscalarDePropiedad(d, p, objectFormat, ctxVista)
                 Select Case p.PropType
                     Case VmadPropType.ArrayOfObject
                         For Each v In If(p.ObjectArray, New List(Of UInteger))
@@ -312,17 +314,43 @@ Public Module NpcVmadBuilder
         Return salida
     End Function
 
-    ''' <summary>Nombre, tipo, banderas y el valor cuando NO es un arreglo. El valor es una UNION: cual
-    ''' rama lleva dato lo dice el tipo, asi que el tipo se escribe PRIMERO y despues la rama que le
-    ''' toca. Escribir otra rama crearia un campo que el motor leeria como basura.
+    ''' <summary>Rutas de los CONTENEDORES de arreglo dentro de una property, por tipo. Son las mismas
+    ''' en los dos juegos: lo que cambia por juego es el NOMBRE del metodo generado, no la ruta.</summary>
+    Private ReadOnly RutaDelArreglo As New Dictionary(Of VmadPropType, String) From {
+        {VmadPropType.ArrayOfObject, "Property\Value\Array of Object"},
+        {VmadPropType.ArrayOfString, "Property\Value\Array of String"},
+        {VmadPropType.ArrayOfInt32, "Property\Value\Array of Int32"},
+        {VmadPropType.ArrayOfFloat, "Property\Value\Array of Float"},
+        {VmadPropType.ArrayOfBool, "Property\Value\Array of Bool"}
+    }
+
+    ''' <summary>Nombre, tipo, banderas y el valor cuando NO es un arreglo; y cuando SI lo es, el
+    ''' CONTENEDOR vacio. El valor es una UNION: cual rama lleva dato lo dice el tipo, asi que el tipo se
+    ''' escribe PRIMERO y despues la rama que le toca. Escribir otra rama crearia un campo que el motor
+    ''' leeria como basura.
     ''' <para>Las referencias van GLOBALES: el remapeo contra la MAST del archivo que se escribe lo hace
     ''' el emisor, igual que con cualquier otra referencia del record.</para>
     ''' <para>El destino entra sin tipo porque el generador da una clase por juego con los mismos
-    ''' nombres para estos campos; los arreglos, que si cambian de nombre, los escribe el llamador.</para></summary>
-    Private Sub EscribirEscalarDePropiedad(destino As Object, p As VmadPropertySpec, objectFormat As Short)
+    ''' nombres para estos campos; los ELEMENTOS de los arreglos, que si cambian de nombre, los escribe
+    ''' el llamador.</para>
+    ''' <para>⛔ EL CONTENEDOR SE CREA AUNQUE EL ARREGLO ESTE VACIO. Un arreglo vacio no es "nada": el
+    ''' formato pide igual su u32 de cantidad, en cero. Sin el contenedor el emisor escribia
+    ''' nombre+tipo+banderas y NO escribia la cantidad, y el VMAD salia CORRUPTO — MEDIDO 2026-08-22 con
+    ''' una property <c>OvlNode</c> de tipo 12 y cero elementos: los bytes pasaban de <c>0C 01</c>
+    ''' directo al nombre de la property SIGUIENTE, sin los <c>00 00 00 00</c>, y el lector siguiente
+    ''' tomaba <c>08 00 4E 6F</c> como cantidad, o sea 1.867 millones de elementos: colgado y sin
+    ''' memoria. El emisor real produce arreglos vacios (un NPC con skin override y sin overlays deja
+    ''' <c>OvlNode</c> en cero) y NINGUN VMAD vanilla los trae, asi que el camino no lo ejercia nadie.
+    ''' Lo caza el caso K de <c>Tools/VmadBuilderProbe</c>.</para></summary>
+    Private Sub EscribirEscalarDePropiedad(destino As Object, p As VmadPropertySpec, objectFormat As Short,
+                                           ctx As Canon.WbContext)
         destino.PropertyName = If(p.Name, "")
         destino.PropertyType = CByte(p.PropType)
         destino.PropertyFlags = PropertyFlagEdited
+        Dim ruta As String = Nothing
+        If ctx IsNot Nothing AndAlso RutaDelArreglo.TryGetValue(p.PropType, ruta) Then
+            Canon.WbEdit.EnsureFieldPath(DirectCast(destino.Node, Canon.WbNode), ctx, ruta)
+        End If
         Select Case p.PropType
             Case VmadPropType.ObjectRef
                 If objectFormat = 1S Then

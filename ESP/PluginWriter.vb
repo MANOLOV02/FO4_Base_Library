@@ -20,9 +20,31 @@ Public Module PluginWriter
     ' app-authored SSE record and the TES4 header as Skyrim LE.
     Friend Const TES4_RECORD_VERSION_SSE As UShort = &H2CUS   ' 44
 
-    ' HEDR subrecord version (float).
-    Friend Const HEDR_VERSION_FO4 As Single = 0.95F
+    ' Versión del HEDR (float). Depende del JUEGO y del EQUIPO, no sólo del juego: el casco de VR
+    ' cambia el valor. Son los cuatro que declara el formato, y coinciden con los archivos que trae
+    ' cada juego — MEDIDO leyendo el HEDR de la carpeta Data instalada, no supuesto:
+    '   Fallout 4     1.0    Fallout4.esm, DLCRobot, DLCworkshop01 y los 13 del Creation Club.
+    '                        ⚠️ Bethesda mezcló: DLCCoast, DLCNukaWorld, DLCworkshop02/03 y
+    '                        DLCUltraHighResolution traen 0.95. Manda el juego base.
+    '   Fallout 4 VR  0.95
+    '   Skyrim SE     1.71   Skyrim.esm, Dawnguard, HearthFires y Dragonborn.
+    '   Skyrim VR     1.7    que es además el de los 65 archivos del Creation Club de SSE.
+    Friend Const HEDR_VERSION_FO4 As Single = 1.0F
+    Friend Const HEDR_VERSION_FO4VR As Single = 0.95F
     Friend Const HEDR_VERSION_SSE As Single = 1.71F
+    Friend Const HEDR_VERSION_SSEVR As Single = 1.7F
+
+    ''' <summary>La versión del HEDR que este escritor emite para el juego y el equipo actuales.
+    ''' <para>⛔ Es UNA sola implementación a propósito: la eligen tanto el que escribe la cabecera
+    ''' como el que decide el piso de FormID, y dos copias que se desincronizan producen un archivo
+    ''' cuyo encabezado dice una cosa y cuyos object ids asumen otra.</para></summary>
+    Friend Function HedrVersionFor(game As Config_App.Game_Enum) As Single
+        Dim vr As Boolean = PluginManager.IsVrBuild()
+        If game = Config_App.Game_Enum.Skyrim Then
+            Return If(vr, HEDR_VERSION_SSEVR, HEDR_VERSION_SSE)
+        End If
+        Return If(vr, HEDR_VERSION_FO4VR, HEDR_VERSION_FO4)
+    End Function
 
     ' Convention: object IDs below 0x800 are reserved for the engine's own use.
     Friend Const NEXT_OBJECT_ID_DEFAULT As UInteger = &H800UI
@@ -30,10 +52,13 @@ Public Module PluginWriter
     ''' <summary>¿El archivo que estamos escribiendo puede usar el rango HARDCODED, o sea object ids por
     ''' DEBAJO de 0x800? Depende del JUEGO y de la VERSIÓN DEL HEDR que emitimos, y exige
     ''' al menos un master.
-    ''' <para>SSE pide <c>HEDR &gt;= 1.709</c> y nosotros escribimos <see cref="HEDR_VERSION_SSE"/> = 1.71
-    ''' ⇒ True en cuanto el archivo tiene un master. FO4 pide <c>&gt;= 1.0</c> y escribimos
-    ''' <see cref="HEDR_VERSION_FO4"/> = 0.95 ⇒ siempre False. O sea que es GAME-AWARE de verdad, no una
-    ''' constante: el espacio direccionable de un ESL nuestro es 0x001..0xFFF en SSE y 0x800..0xFFF en FO4.</para>
+    ''' <para>SSE pide <c>HEDR &gt;= 1.709</c> y escribimos 1.71 ⇒ True en cuanto el archivo tiene un
+    ''' master. FO4 pide <c>&gt;= 1.0</c> y escribimos 1.0 ⇒ también True. En VR no: Fallout 4 VR no
+    ''' está en la lista del formato, y Skyrim VR exige que esté instalado VRESL.</para>
+    ''' <para>⛔ CONTRAEJEMPLO: hasta el 2026-08-22 este escritor emitía 0.95 para Fallout 4, que es el
+    ''' valor de Fallout 4 VR, y por eso el rango daba siempre False. Medir el HEDR de la carpeta Data
+    ''' mostró que el juego base trae 1.0. Corregirlo ENSANCHA el espacio direccionable de un ESL
+    ''' nuestro en Fallout 4, de 0x800..0xFFF a 0x001..0xFFF.</para>
     ''' <para>Decide el PISO del espacio (1 vs 0x800), que es lo que el canónico usa para el wrap, la
     ''' recuperación y el agotamiento de object ids.
     ''' NO cambia de dónde arranca un guardado normal: eso sale del contador del HEDR, que esta app siembra
@@ -43,7 +68,7 @@ Public Module PluginWriter
     ''' las dos precondiciones de VR del canónico (FO4 VR no está en la lista; Skyrim VR exige VRESL), y en
     ''' un rig de VR el escritor y el lector terminan con pisos distintos para el mismo archivo.</para>
     Friend Function AllowsHardcodedRange(game As Config_App.Game_Enum, masterCount As Integer) As Boolean
-        Dim version As Single = If(game = Config_App.Game_Enum.Skyrim, HEDR_VERSION_SSE, HEDR_VERSION_FO4)
+        Dim version As Single = HedrVersionFor(game)
         Return PluginManager.AllowsHardcodedRange(version, masterCount, Config_App.Current.DataPath)
     End Function
 
@@ -70,7 +95,7 @@ Public Module PluginWriter
 
         Dim masterName As String = MasterFileName(game)
         Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
-        Dim hedrVersion As Single = If(game = Config_App.Game_Enum.Fallout4, HEDR_VERSION_FO4, HEDR_VERSION_SSE)
+        Dim hedrVersion As Single = HedrVersionFor(game)
 
         ' Master file size: read from disk if the .esm sits next to our output. The DATA subrecord
         ' is informational; engines tolerate 0, but a real value matches what CK produces.
