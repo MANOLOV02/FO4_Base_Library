@@ -1271,6 +1271,23 @@ Namespace Havok.Physics
                 ' numeros; cualquier otra cosa dice QUE hueso esta mal y CUANTO, que es lo unico que
                 ' distingue "el ancla esta mal" de "las particulas de origen estan mal".
                 If Logger.Enabled Then
+                    ' ⛔ LA REFERENCIA CORRECTA BAJO POSE. Comparar contra el BIND sirve en reposo y NO
+                    ' SIRVE animando: el cuerpo se movio, asi que apartarse del bind es lo ESPERADO y el
+                    ' numero no distingue "el deform esta bien y la prenda drapea" de "el deform esta
+                    ' roto". La referencia que si distingue es donde estaria el hueso POSADO SIN FISICA:
+                    ' la desviacion contra eso es el drape, y tiene que ser del orden de unas unidades.
+                    Dim sinFis = WorldSinFisica(bone)
+                    If sinFis IsNot Nothing Then
+                        Dim sm = sinFis.ToMatrix4()
+                        Dim dTp = Math.Sqrt(((sm.M41 - world.M41) ^ 2) + ((sm.M42 - world.M42) ^ 2) + ((sm.M43 - world.M43) ^ 2))
+                        Dim tp = (sm.M11 * world.M11) + (sm.M12 * world.M12) + (sm.M13 * world.M13) +
+                                 (sm.M21 * world.M21) + (sm.M22 * world.M22) + (sm.M23 * world.M23) +
+                                 (sm.M31 * world.M31) + (sm.M32 * world.M32) + (sm.M33 * world.M33)
+                        Dim angp = Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (tp - 1.0R) / 2.0R))) * 180.0R / Math.PI
+                        Dim nm4 = boneName
+                        Logger.LogLazy(Function() $"[CLOTH-DRAPE] '{nm4}' vs POSADO-SIN-FISICA: dT={dTp:F3} dAng={angp:F2}")
+                    End If
+
                     Dim bindW = bone.OriginalGetGlobalTransform
                     If bindW IsNot Nothing Then
                         Dim bm = bindW.ToMatrix4()
@@ -1333,6 +1350,30 @@ Namespace Havok.Physics
         ''' <summary>Profundidad del hueso en la jerarquia VIVA (raiz = 0). Un nombre que no resuelve
         ''' devuelve <see cref="Integer.MaxValue"/> para que caiga al final y no se cuele delante de un
         ''' padre real.</summary>
+        ''' <summary>World del hueso con las cuatro capas de pose pero SIN la de fisica: es donde
+        ''' estaria si la fisica no existiera. Se recorre la cadena de padres componiendo
+        ''' <c>LocaLTransformWithoutPhysics</c>, porque `GetGlobalTransform` arrastra la fisica de los
+        ''' ancestros y con eso la comparacion se muerde la cola.</summary>
+        Private Shared Function WorldSinFisica(bone As HierarchiBone_class) As Transform_Class
+            If bone Is Nothing Then Return Nothing
+            Dim cadena As New List(Of HierarchiBone_class)
+            Dim b = bone
+            Dim guarda = 0
+            While b IsNot Nothing AndAlso guarda < 256
+                cadena.Add(b)
+                b = b.Parent
+                guarda += 1
+            End While
+            cadena.Reverse()
+            Dim acc As Transform_Class = Nothing
+            For Each x In cadena
+                Dim l = x.LocaLTransformWithoutPhysics
+                If l Is Nothing Then Return Nothing
+                acc = If(acc Is Nothing, l, acc.ComposeTransforms(l))
+            Next
+            Return acc
+        End Function
+
         Private Shared Function DepthOf(skeleton As SkeletonInstance, boneName As String) As Integer
             If skeleton Is Nothing OrElse String.IsNullOrWhiteSpace(boneName) Then Return Integer.MaxValue
             Dim bone As HierarchiBone_class = Nothing
