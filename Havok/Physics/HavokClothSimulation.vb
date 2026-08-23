@@ -155,11 +155,24 @@ Namespace Havok.Physics
         Public UseRestPose As Boolean
     End Structure
 
+    ''' <summary>
+    ''' Una constraint de `hclLocalRangeConstraintSet`. ⛔ NO es una correa esferica: el motor confina
+    ''' la particula con TRES limites — uno radial y dos sobre el eje de la NORMAL de referencia.
+    ''' Ver <see cref="HavokClothSimulation.SolveLocalRange"/>.
+    ''' </summary>
     Friend Structure LocalRangeConstraint
         Public Particle As Integer
         ''' <summary>Indice de VERTICE de la malla skinneada (NO de particula). Difieren en el 13 % del corpus.</summary>
         Public ReferenceVertex As Integer
         Public MaxDistance As Single
+        ''' <summary>`maxNormalDistance` (+0x08). Cuanto puede ALEJARSE por delante de la superficie.</summary>
+        Public MaxNormal As Single
+        ''' <summary>`minNormalDistance` (+0x0C). Cuanto puede HUNDIRSE por detras.</summary>
+        Public MinNormal As Single
+        ''' <summary>`stiffness` del SET (+0x34), no de la constraint. Multiplica SOLO al termino radial.</summary>
+        Public Stiffness As Single
+        ''' <summary>`applyNormalComponent` del SET (+0x3C): si no, los dos limites normales no corren.</summary>
+        Public UsaNormal As Boolean
     End Structure
 
     Friend Structure CapsuleCollider
@@ -289,7 +302,8 @@ Namespace Havok.Physics
                 Dim st = states(ci)
 
                 ' --- posiciones SKINNEADAS en la pose ACTUAL: son la referencia de todo ---
-                Dim skinned = BuildSkinnedByVertex(cfg.ObjectSpaceSkin, clothSkel, bindWorld, skeleton)
+                Dim normalesRef As New Dictionary(Of Integer, Vector3)
+                Dim skinned = BuildSkinnedByVertex(cfg.ObjectSpaceSkin, clothSkel, bindWorld, skeleton, normalesRef)
 
                 EnsureState(st, sim, cfg, particleCount, dt)
 
@@ -377,12 +391,12 @@ Namespace Havok.Physics
                     Next
                     st.Seeded = True
                     If HavokPhysicsSettings.Mode = HavokPhysicsMode.FullSimulation AndAlso Not teleported Then
-                        Settle(st, target, skinned)
+                        Settle(st, target, skinned, normalesRef)
                     End If
                 End If
 
                 If HavokPhysicsSettings.Mode = HavokPhysicsMode.FullSimulation Then
-                    Simulate(st, target, skinned, dt)
+                    Simulate(st, target, skinned, normalesRef, dt)
                 End If
 
                 If Logger.Enabled AndAlso st.Links IsNot Nothing AndAlso st.Links.Count > 0 Then
@@ -552,9 +566,29 @@ Namespace Havok.Physics
                         st.LocalRange.Add(New LocalRangeConstraint With {
                             .Particle = pi,
                             .ReferenceVertex = CInt(c.ReferenceVertexIndex),
-                            .MaxDistance = c.MaximumDistance})
+                            .MaxDistance = c.MaximumDistance,
+                            .MaxNormal = c.MaximumNormalDistance,
+                            .MinNormal = c.MinimumNormalDistance,
+                            .Stiffness = lr.Stiffness,
+                            .UsaNormal = lr.ApplyNormalComponent})
                     Next
                     st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.LocalRange, .Start = iniLr, .Count = st.LocalRange.Count - iniLr})
+                    ' ⛔ LOS PARAMETROS REALES DE LA CORREA. Sin esto, "el termino normal empeoro el
+                    ' pelo" es una impresion: puede ser que la ley este mal, o que esa prenda declare
+                    ' `applyNormalComponent = False` y no le toque, o que los limites sean absurdos.
+                    If Logger.Enabled Then
+                        Dim n2 = st.LocalRange.Count - iniLr
+                        Dim mn = Single.MaxValue, mx = Single.MinValue
+                        Dim mnn = Single.MaxValue, mxn = Single.MinValue
+                        For q = iniLr To st.LocalRange.Count - 1
+                            mn = Math.Min(mn, st.LocalRange(q).MaxDistance)
+                            mx = Math.Max(mx, st.LocalRange(q).MaxDistance)
+                            mnn = Math.Min(mnn, st.LocalRange(q).MinNormal)
+                            mxn = Math.Max(mxn, st.LocalRange(q).MaxNormal)
+                        Next
+                        Dim an = lr.ApplyNormalComponent, sf = lr.Stiffness, shp = lr.ShapeType
+                        Logger.LogLazy(Function() $"[CLOTH-CORREA] {n2} constraints · applyNormal={an} stiffness={sf:F4} shapeType={shp} · maxDist=[{mn:F3}..{mx:F3}] minNormal={mnn:F3} maxNormal={mxn:F3}")
+                    End If
                 End If
             Next
         End Sub
@@ -775,7 +809,8 @@ Namespace Havok.Physics
         ' -----------------------------------------------------------------------------------------
         ' El bucle del motor
         ' -----------------------------------------------------------------------------------------
-        Private Shared Sub Simulate(st As ClothSimState, target As Vector3(), skinned As Dictionary(Of Integer, Vector3), dt As Single)
+        Private Shared Sub Simulate(st As ClothSimState, target As Vector3(), skinned As Dictionary(Of Integer, Vector3),
+                                    normalesRef As Dictionary(Of Integer, Vector3), dt As Single)
             Dim n = st.Positions.Length
             Dim substeps = st.SubSteps
             Dim dtSub = dt / substeps
@@ -824,7 +859,7 @@ Namespace Havok.Physics
                             Case ConstraintKind.Bend
                                 If HavokPhysicsSettings.EnableBend Then SolveBend(st, blk.Start, blk.Count)
                             Case ConstraintKind.LocalRange
-                                If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned, blk.Start, blk.Count)
+                                If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned, normalesRef, blk.Start, blk.Count)
                         End Select
                     Next
                     If HavokPhysicsSettings.EnableCollision Then SolveCapsules(st)
@@ -833,10 +868,11 @@ Namespace Havok.Physics
         End Sub
 
         ''' <summary>Asentamiento inicial: `uNumSimSettleSteps` = 10 pasos con gravedad, sin avanzar el reloj.</summary>
-        Private Shared Sub Settle(st As ClothSimState, target As Vector3(), skinned As Dictionary(Of Integer, Vector3))
+        Private Shared Sub Settle(st As ClothSimState, target As Vector3(), skinned As Dictionary(Of Integer, Vector3),
+                                  normalesRef As Dictionary(Of Integer, Vector3))
             Dim steps = Math.Max(0, HavokPhysicsSettings.SettleSteps)
             For s = 0 To steps - 1
-                Simulate(st, target, skinned, HavokPhysicsSettings.FixedTimeStep)
+                Simulate(st, target, skinned, normalesRef, HavokPhysicsSettings.FixedTimeStep)
             Next
         End Sub
 
@@ -1021,23 +1057,52 @@ Namespace Havok.Physics
         ''' vértice de referencia SOBRE EL CUERPO SKINNEADO. Sin ella la tela sobre-cae (medido: los
         ''' cloths SIN local-range son exactamente los que sobre-caían, 79,8 % de libres contra 2,4 %).
         ''' </summary>
-        Private Shared Sub SolveLocalRange(st As ClothSimState, skinned As Dictionary(Of Integer, Vector3), start As Integer, count As Integer)
+        Private Shared Sub SolveLocalRange(st As ClothSimState, skinned As Dictionary(Of Integer, Vector3),
+                                           normales As Dictionary(Of Integer, Vector3),
+                                           start As Integer, count As Integer)
+            Dim P = st.Positions
             For iC = start To start + count - 1
                 Dim c = st.LocalRange(iC)
                 If st.InvMass(c.Particle) = 0.0F Then Continue For
-                ' ⛔ `referenceVertex` indexa la malla SKINNEADA (el cuerpo), no el array de partículas.
-                ' Yo había escrito acá que en el corpus los dos índices coinciden: es FALSO. MEDIDO con
-                ' `--clothengine`: difieren en 2.671 de 20.002 constraints (13,35 %). Anclar la partícula
-                ' a su propio destino la clava y le anula el grado de libertad que la autoría le dio.
-                Dim ref As Vector3 = Nothing
-                ' Sin referencia skinneada no hay correa. Saltear es correcto; inventar una la clavaría
-                ' en el lugar equivocado, que es peor que no restringirla.
-                If Not skinned.TryGetValue(c.ReferenceVertex, ref) Then Continue For
-                Dim p = st.Positions(c.Particle)
-                Dim d = p - ref
-                Dim len = d.Length
-                If len <= c.MaxDistance OrElse len <= 0.000001F Then Continue For
-                st.Positions(c.Particle) = ref + (d * (c.MaxDistance / len))
+                ' ⛔ `referenceVertex` indexa la malla SKINNEADA (el cuerpo), no el array de particulas.
+                Dim refPos As Vector3 = Nothing
+                If Not skinned.TryGetValue(c.ReferenceVertex, refPos) Then Continue For
+
+                ' d = P − ref + eps. El epsilon (FLT_EPSILON, 0x142F3C760) lo suma el motor COMPONENTE
+                ' A COMPONENTE, y no es cosmetico: con la particula exactamente sobre la referencia la
+                ' direccion queda indefinida, y asi sale un vector chiquito pero valido.
+                Const EPS As Single = 0.00000011920929F
+                Dim d = P(c.Particle) - refPos
+                d = New Vector3(d.X + EPS, d.Y + EPS, d.Z + EPS)
+                Dim d2 = d.LengthSquared()
+                If d2 <= 0.0F Then Continue For
+                Dim len = CSng(Math.Sqrt(d2))
+                Dim dir = d / len
+
+                ' (1) RADIAL, unilateral: solo si se paso de `maximumDistance`. La rigidez del SET
+                ' multiplica ESTE termino y solo este — en el binario, `[rax]` entra en `xmm4` y no en
+                ' los dos terminos normales.
+                Dim er = (c.MaxDistance - len) * c.Stiffness
+                If er > 0.0F Then er = 0.0F
+                Dim nueva = P(c.Particle) + dir * er
+
+                ' (2) LOS DOS TOPES DEL EJE NORMAL. Sin esto la correa es una esfera, y una pollera
+                ' puede hundirse en la pierna o despegarse sin que nada la frene: son justo los dos
+                ' limites que el motor pone por separado del radial.
+                If c.UsaNormal AndAlso normales IsNot Nothing Then
+                    Dim refNrm As Vector3 = Nothing
+                    If normales.TryGetValue(c.ReferenceVertex, refNrm) Then
+                        ' La componente normal se mide sobre la distancia YA corregida por el radial.
+                        Dim nd = Vector3.Dot(dir, refNrm) * (er + len)
+                        Dim lo = nd - c.MinNormal
+                        If lo > 0.0F Then lo = 0.0F
+                        Dim hi = c.MaxNormal - nd
+                        If hi > 0.0F Then hi = 0.0F
+                        nueva = nueva - refNrm * lo + refNrm * hi
+                    End If
+                End If
+
+                P(c.Particle) = nueva
             Next
         End Sub
 
@@ -1400,7 +1465,8 @@ Namespace Havok.Physics
         Private Shared Function BuildSkinnedByVertex(skin As HclObjectSpaceSkinPNOperatorGraph_Class,
                                                      clothSkel As Havok.Canon.Objects.HkObj_HkaSkeleton,
                                                      bindWorld As Matrix4(),
-                                                     skeleton As SkeletonInstance) As Dictionary(Of Integer, Vector3)
+                                                     skeleton As SkeletonInstance,
+                                                     normales As Dictionary(Of Integer, Vector3)) As Dictionary(Of Integer, Vector3)
             Dim result As New Dictionary(Of Integer, Vector3)
             If skin Is Nothing OrElse skin.BoneTransforms Is Nothing Then Return result
 
@@ -1477,9 +1543,66 @@ Namespace Havok.Physics
                     If lane Is Nothing Then Continue For
                     Dim sp = SkinPoint(entry.Position, lane, slotMat, slotOk)
                     If sp.HasValue Then result(CInt(entry.VertexIndex)) = sp.Value
+                    ' La NORMAL del vertice de referencia. La necesita la correa: sus dos limites
+                    ' normales se miden sobre este eje, y sin el la correa degenera en una esfera.
+                    ' El operador es "PN" — posicion Y normal — asi que el dato ya viene en el archivo.
+                    If normales IsNot Nothing AndAlso entry.Normal IsNot Nothing Then
+                        Dim sn = SkinDirection(entry.Normal, lane, slotMat, slotOk)
+                        If sn.HasValue Then normales(CInt(entry.VertexIndex)) = sn.Value
+                    End If
+                    ' ⛔ CONTROL DE LA NORMAL. El motor NO la re-normaliza, asi que `minNormalDistance`
+                    ' y `maxNormalDistance` se comparan contra una proyeccion ESCALADA por |n|. Si el
+                    ' decodificado no diera ~1, los dos limites quedarian medidos en otra unidad y la
+                    ' correa empujaria cualquier cosa. Es la unica forma de saber si la ley esta bien
+                    ' implementada o si el dato de entrada esta mal.
+                    If Logger.Enabled AndAlso normales IsNot Nothing Then
+                        Dim nv As Vector3 = Nothing
+                        If normales.TryGetValue(CInt(entry.VertexIndex), nv) Then
+                            _normMin = Math.Min(_normMin, nv.Length)
+                            _normMax = Math.Max(_normMax, nv.Length)
+                        End If
+                    End If
                 Next
             Next
+            If Logger.Enabled AndAlso _normMax > 0.0F Then
+                Dim a = _normMin, b = _normMax
+                Logger.LogLazy(Function() $"[CLOTH-NORMAL] |normal de referencia| en [{a:F4}..{b:F4}] (tiene que ser ~1)")
+                _normMin = Single.MaxValue
+                _normMax = 0.0F
+            End If
             Return result
+        End Function
+
+        Private Shared _normMin As Single = Single.MaxValue
+        Private Shared _normMax As Single = 0.0F
+
+        ''' <summary>
+        ''' Igual que <see cref="SkinPoint"/> pero para una DIRECCION: la traslacion de la matriz no
+        ''' entra. El motor transforma la normal de referencia con las tres filas de rotacion y nada
+        ''' mas (0x141A03170: usa `[r9+0x80]`, `[r9+0x90]` y `[r9+0xA0]`, y NO suma `[r9+0xB0]`).
+        ''' <para>⛔ Tampoco la re-normaliza. Se replica: normalizar aca cambiaria la magnitud con la
+        ''' que se comparan `minNormalDistance` y `maxNormalDistance`.</para>
+        ''' </summary>
+        Private Shared Function SkinDirection(localDir As HclObjectSpaceSkinQuantizedVectorGraph_Class,
+                                              lane As HclObjectSpaceSkinVertexInfluenceGraph_Class,
+                                              matrices As Matrix4(), valid As Boolean()) As Vector3?
+            Dim x = 0.0R, y = 0.0R, z = 0.0R
+            Dim any = False
+            Dim lx = localDir.X, ly = localDir.Y, lz = localDir.Z
+            Dim count = Math.Min(lane.TransformIndices.Count, lane.WeightBytes.Count)
+            For i = 0 To count - 1
+                Dim ti = CInt(lane.TransformIndices(i))
+                If ti < 0 OrElse ti >= matrices.Length OrElse Not valid(ti) Then Continue For
+                Dim w = lane.WeightBytes(i) / 255.0R
+                If w = 0.0R Then Continue For
+                Dim m = matrices(ti)
+                x += ((lx * m.M11) + (ly * m.M21) + (lz * m.M31)) * w
+                y += ((lx * m.M12) + (ly * m.M22) + (lz * m.M32)) * w
+                z += ((lx * m.M13) + (ly * m.M23) + (lz * m.M33)) * w
+                any = True
+            Next
+            If Not any Then Return Nothing
+            Return New Vector3(CSng(x), CSng(y), CSng(z))
         End Function
 
         ''' <summary>Σ_k (w_k/255) · localPos · M[k] — la fórmula derivada y validada a 0,0011 u de media.</summary>

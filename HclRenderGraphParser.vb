@@ -353,9 +353,29 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             Logger.LogLazy(Function() "[CLOTH-WTAG] " & String.Join(",", wl))
         End If
 
+        ' ⛔⛔ LA NORMAL SE DECODIFICA COMO LA POSICION, NO CON UN 32767 INVENTADO.
+        '
+        ' Aca habia `32767.0R` fijo — el maximo de un int16 — que es lo que uno supondria si las
+        ' normales vinieran normalizadas a escala completa. NO ES LO QUE HACE EL MOTOR. En el deformer
+        ' que consume estos bloques (`hclObjectSpaceSkinPNOperator` -> 0x14193C5E0) las UNICAS dos
+        ' constantes que multiplican son `65536.0` (0x14262BA50) y `1/255` (0x142492850): la primera es
+        ' el `<< 16` del reinterpretado y la segunda es la normalizacion de los PESOS. No hay ningun
+        ' 32767 en el camino.
+        '
+        ' O sea que la normal usa el MISMO esquema que la posicion — `float(v << 16) x
+        ' bitcast_float(w << 16)`, con el factor por-bloque en el cuarto int16 — y por eso comparte
+        ' `PositionScaleFromW`.
+        '
+        ' LO QUE COSTABA, medido: con el 32767 la magnitud de la normal ya skinneada caia en
+        ' [0,50 .. 1,00] en vez de ~1, con 0,5 EXACTOS en parte de los vertices. Eso importa porque la
+        ' correa (`hclLocalRangeConstraintSet`) compara `minNormalDistance` y `maxNormalDistance`
+        ' contra una proyeccion ESCALADA por |n|, y el motor no la re-normaliza: con |n| = 0,5 los dos
+        ' limites actuaban al DOBLE de la distancia que declara el archivo.
         For lane = 8 To Math.Min(15, result.Lanes.Count - 1)
-            result.DecodedNormals.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorAInt16Values, 32767.0R, lane, 0))
-            result.DecodedNormals.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorBInt16Values, 32767.0R, lane, 1))
+            Dim va = result.Lanes(lane).VectorAInt16Values
+            Dim vb = result.Lanes(lane).VectorBInt16Values
+            result.DecodedNormals.Add(DecodeQuantizedVector3(va, PositionScaleFromW(va), lane, 0))
+            result.DecodedNormals.Add(DecodeQuantizedVector3(vb, PositionScaleFromW(vb), lane, 1))
         Next
 
         Return result
