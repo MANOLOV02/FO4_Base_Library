@@ -311,20 +311,6 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    ''' <summary>hkaAnimationContainer → enumera sus arrays de refs: skeletons@+0x10, animations@+0x20,
-    ''' bindings@+0x30, attachments@+0x40, skins@+0x50.</summary>
-    Public Function ParseAnimationContainer(source As HkxVirtualObjectGraph_Class) As HkaAnimationContainerGraph_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hkaAnimationContainer", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim rel = source.RelativeOffset
-        Dim result As New HkaAnimationContainerGraph_Class With {.SourceObject = source}
-        result.Skeletons.AddRange(ReadObjectReferenceArray(rel + &H10))
-        result.Animations.AddRange(ReadObjectReferenceArray(rel + &H20))
-        result.Bindings.AddRange(ReadObjectReferenceArray(rel + &H30))
-        result.Attachments.AddRange(ReadObjectReferenceArray(rel + &H40))
-        result.Skins.AddRange(ReadObjectReferenceArray(rel + &H50))
-        Return result
-    End Function
-
     ''' <summary>hkaSkeletonMapper (embebe hkaSkeletonMapperData inline) → el puente de huesos
     ''' entre dos esqueletos (típicamente ragdoll ↔ animación). Layout hk2014 verificado contra
     ''' HavokLib (classgen/hka_skeleton_mapper.py, patches HK700 + HK2012_1) y --dump sobre archivos
@@ -418,15 +404,6 @@ Public Partial Class HkxObjectGraph_Class
         }
     End Function
 
-End Class
-
-Public Class HkaAnimationContainerGraph_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public ReadOnly Property Skeletons As New List(Of HkxVirtualObjectGraph_Class)
-    Public ReadOnly Property Animations As New List(Of HkxVirtualObjectGraph_Class)
-    Public ReadOnly Property Bindings As New List(Of HkxVirtualObjectGraph_Class)
-    Public ReadOnly Property Attachments As New List(Of HkxVirtualObjectGraph_Class)
-    Public ReadOnly Property Skins As New List(Of HkxVirtualObjectGraph_Class)
 End Class
 
 Public Class HkaAnimatedReferenceFrameGraph_Class

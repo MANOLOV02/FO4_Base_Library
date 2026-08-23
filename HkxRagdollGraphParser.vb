@@ -35,17 +35,6 @@ Imports System.Linq
 
 Public Partial Class HkxObjectGraph_Class
 
-    ' --- Entry point: hknpPhysicsSceneData → hknpRagdollData (estructural, sólido) ---
-    Public Function ParsePhysicsSceneData(source As HkxVirtualObjectGraph_Class) As HknpPhysicsSceneDataGraph_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hknpPhysicsSceneData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim result As New HknpPhysicsSceneDataGraph_Class With {.SourceObject = source}
-        ' Lector generado: `systemDatas` sale de la reflexion, no de un +0x10 clavado.
-        Dim r As New Havok.Canon.Typed.Hk_HknpPhysicsSceneData(Me, source)
-        If Not r.IsValid Then Return result
-        result.SystemDatas.AddRange(ReadObjectReferenceArray(r.SystemDatas))
-        Return result
-    End Function
-
     ''' <summary>hknpRagdollData (FO4) — vista ESTRUCTURAL: name, skeleton, nombres de rigid body,
     ''' y las refs (deduplicadas) a sus hknp*Shape y hkp*ConstraintData. Todo se obtiene siguiendo
     ''' los fixups reales del packfile (no se infieren offsets de campos internos del hknp).</summary>
@@ -186,29 +175,6 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     ''' <summary>
-    ''' `hknpCapsuleShape`: `a`@+0x50 y `b`@+0x60 son los extremos del eje — CONFIRMADO por la reflexión
-    ''' (miembros declarados `a` y `b`), ya no es una inferencia.
-    ''' ⛔ `hknpShape::convexRadius`@+0x14 existe pero NO se expone: medido 11,58 en una cápsula cuyos
-    ''' extremos son ±1,9 y 5,89 en otra 8× más larga (b=28,81). La correlación está INVERTIDA (la
-    ''' cápsula más larga tiene el "radio" menor) ⇒ ese campo no es el radio en estas unidades.
-    ''' Exponerlo sería fabricar.
-    ''' </summary>
-    Public Function ParseNpCapsuleShape(source As HkxVirtualObjectGraph_Class) As HknpCapsuleShapeGraph_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hknpCapsuleShape", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Dim layout = CanonLayout
-        Dim result As New HknpCapsuleShapeGraph_Class With {.SourceObject = source}
-        If layout Is Nothing Then
-            result.LayoutNote = Havok.Canon.HavokLayout.UnsupportedNote(Packfile.Header.PackfileFormat)
-            Return result
-        End If
-        Dim rel = source.RelativeOffset
-        result.LayoutSupported = True
-        result.EndpointA = ReadVec3At(rel, layout.Offset("hknpCapsuleShape", "a"))
-        result.EndpointB = ReadVec3At(rel, layout.Offset("hknpCapsuleShape", "b"))
-        Return result
-    End Function
-
-    ''' <summary>
     ''' `hkpRagdollConstraintData` — límites del joint. Los cinco ángulos ya NO son `Guess_`: la
     ''' reflexión los nombra (`atoms.twistLimit.minAngle/.maxAngle`, `atoms.coneLimit.maxAngle`,
     ''' `atoms.planesLimit.minAngle/.maxAngle`) y los valores cierran sobre datos vanilla de FO4:
@@ -284,12 +250,6 @@ End Class
 
 ' ====================== Result classes (ragdoll / physics) ======================
 
-' hknpPhysicsSceneData — entry point del ragdoll FO4.
-Public Class HknpPhysicsSceneDataGraph_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public ReadOnly Property SystemDatas As New List(Of HkxVirtualObjectGraph_Class) ' refs a hknpRagdollData / hknpPhysicsSystemData
-End Class
-
 ' Vista unificada del ragdoll (hknpRagdollData FO4 o hkaRagdollInstance Skyrim). Lo de aquí es ESTRUCTURAL/sólido.
 Public Class HkxRagdollGraph_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
@@ -311,21 +271,6 @@ Public MustInherit Class HkxCanonLayoutResult_Class
     Public Property LayoutSupported As Boolean = False
     ''' <summary>Tag de la tabla usada ("FO4"/"SSE"), o el motivo por el que no hay.</summary>
     Public Property LayoutNote As String = ""
-End Class
-
-' hknpCapsuleShape — `a`/`b` CONFIRMADOS por la reflexión. El radio NO se expone (ver ParseNpCapsuleShape).
-Public Class HknpCapsuleShapeGraph_Class
-    Inherits HkxCanonLayoutResult_Class
-    Public Property EndpointA As HkxVector4Graph_Class
-    Public Property EndpointB As HkxVector4Graph_Class
-    ''' <summary>Largo del eje. Nothing si no se pudo leer alguno de los extremos.</summary>
-    Public ReadOnly Property AxisLength As Single?
-        Get
-            If IsNothing(EndpointA) OrElse IsNothing(EndpointB) Then Return Nothing
-            Dim dx = EndpointB.X - EndpointA.X, dy = EndpointB.Y - EndpointA.Y, dz = EndpointB.Z - EndpointA.Z
-            Return CSng(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)))
-        End Get
-    End Property
 End Class
 
 ' hkpRagdollConstraintData — límites de joint. Ángulos y pivotes por reflexión; Motors por fixup.
