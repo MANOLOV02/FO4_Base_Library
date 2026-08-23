@@ -79,8 +79,14 @@ Namespace Havok.Physics
         Public LastRootForward As Vector3
         Public HasLastRoot As Boolean = False
         Public Links As New List(Of DistanceLink)
+        ''' <summary>`hclStretchLinkConstraintSet`. Lista APARTE porque su ley es OTRA, no un
+        ''' parametro distinto de la misma: ver <see cref="HavokClothSimulation.SolveStretchLinks"/>.</summary>
+        Public Stretch As New List(Of DistanceLink)
         Public LocalRange As New List(Of LocalRangeConstraint)
         Public Bend As New List(Of BendLink)
+        ''' <summary>Los constraint sets EN EL ORDEN QUE LOS DECLARA EL ARCHIVO. Ver
+        ''' <see cref="ConstraintBlock"/>.</summary>
+        Public Blocks As New List(Of ConstraintBlock)
         Public Capsules As New List(Of CapsuleCollider)
         ''' <summary>gatherMap(particleIdx) = VertexIndex del ObjectSpaceSkin.</summary>
         Public GatherMap As UShort()
@@ -90,6 +96,36 @@ Namespace Havok.Physics
         ''' skinneada; False = del DefaultClothPose del archivo, que esta en OTRO espacio.</summary>
         Public TargetFromSkin As Boolean()
     End Class
+
+    ''' <summary>Que clase de constraint set es un bloque.</summary>
+    Friend Enum ConstraintKind
+        Distance
+        Stretch
+        Bend
+        LocalRange
+    End Enum
+
+    ''' <summary>
+    ''' Un constraint set del archivo, como un TRAMO de la lista aplanada que le corresponde.
+    '''
+    ''' <para>⛔ EXISTE PORQUE EL ORDEN IMPORTA Y LO DECLARA EL ARCHIVO. El motor resuelve
+    ''' (<c>TtSolve</c>, 0x141A133E0):</para>
+    ''' <code>
+    '''     for it in 0 .. numberOfSolveIterations − 1:
+    '''         for cs in simClothData.staticConstraintSets:      ' ← EL ORDEN DEL ARCHIVO
+    '''             cs->solve(...)
+    '''         CollideAndSolve(...)
+    ''' </code>
+    ''' <para>Este simulador los aplanaba por TIPO y los corria en un orden fijo suyo
+    ''' (distancia → bend → correa). MEDIDO sobre `FemaleHair04.nif`, el archivo declara
+    ''' <c>Standard → LocalRange → Stretch → Bend</c>: la correa va ENTRE los dos sets de links, no
+    ''' despues del bend. Gauss-Seidel no conmuta, asi que ese no es un detalle cosmetico.</para>
+    ''' </summary>
+    Friend Structure ConstraintBlock
+        Public Kind As ConstraintKind
+        Public Start As Integer
+        Public Count As Integer
+    End Structure
 
     Friend Structure DistanceLink
         Public A As Integer
@@ -457,17 +493,26 @@ Namespace Havok.Physics
 
         Private Shared Sub BuildConstraints(st As ClothSimState, sim As HclSimClothDataDetail_Class, particleCount As Integer)
             st.Links.Clear()
+            st.Stretch.Clear()
             st.LocalRange.Clear()
             st.Bend.Clear()
+            st.Blocks.Clear()
+            ' ⛔ `sim.ConstraintDetails` YA viene en el orden del archivo (se arma recorriendo
+            ' `staticConstraintSets`), asi que recorrerlo en orden y anotar un bloque por set es todo
+            ' lo que hace falta para que el solver respete la declaracion.
             For Each detail In sim.ConstraintDetails
                 Dim dist = TryCast(detail, HclStandardLinkConstraintSetDetail_Class)
                 If dist IsNot Nothing Then
-                    AddLinks(st, dist.LinkDetails, particleCount)
+                    Dim ini = st.Links.Count
+                    AddLinks(st, dist.LinkDetails, particleCount, st.Links)
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.Distance, .Start = ini, .Count = st.Links.Count - ini})
                     Continue For
                 End If
                 Dim stretch = TryCast(detail, HclStretchLinkConstraintSetDetail_Class)
                 If stretch IsNot Nothing Then
-                    AddLinks(st, stretch.LinkDetails, particleCount)
+                    Dim ini = st.Stretch.Count
+                    AddLinks(st, stretch.LinkDetails, particleCount, st.Stretch)
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.Stretch, .Start = ini, .Count = st.Stretch.Count - ini})
                     Continue For
                 End If
                 Dim bend = TryCast(detail, HclBendStiffnessConstraintSetDetail_Class)
@@ -480,6 +525,7 @@ Namespace Havok.Physics
                         Dim urp = bend.UseRestPoseConfig
                         Logger.LogLazy(Function() $"[CLOTH-BEND] set con {nb} links, useRestPoseConfig={urp} ⇒ ley {If(urp, "rest-pose (0x1419F9CF0)", "lineal (0x1419F9B50)")}")
                     End If
+                    Dim iniBend = st.Bend.Count
                     For Each bl In bend.LinkDetails
                         Dim ia = CInt(bl.ParticleA), ib = CInt(bl.ParticleB)
                         Dim ic = CInt(bl.ParticleC), id_ = CInt(bl.ParticleD)
@@ -493,11 +539,13 @@ Namespace Havok.Physics
                             .RestCurvature = bl.RestCurvature,
                             .UseRestPose = bend.UseRestPoseConfig})
                     Next
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.Bend, .Start = iniBend, .Count = st.Bend.Count - iniBend})
                     Continue For
                 End If
 
                 Dim lr = TryCast(detail, HclLocalRangeConstraintSetDetail_Class)
                 If lr IsNot Nothing Then
+                    Dim iniLr = st.LocalRange.Count
                     For Each c In lr.ConstraintDetails
                         Dim pi = CInt(c.ParticleIndex)
                         If pi < 0 OrElse pi >= particleCount Then Continue For
@@ -506,17 +554,26 @@ Namespace Havok.Physics
                             .ReferenceVertex = CInt(c.ReferenceVertexIndex),
                             .MaxDistance = c.MaximumDistance})
                     Next
+                    st.Blocks.Add(New ConstraintBlock With {.Kind = ConstraintKind.LocalRange, .Start = iniLr, .Count = st.LocalRange.Count - iniLr})
                 End If
             Next
         End Sub
 
-        Private Shared Sub AddLinks(st As ClothSimState, links As IEnumerable(Of HclDistanceConstraintGraph_Class), particleCount As Integer)
+        ''' <summary>
+        ''' ⛔ EL `stiffness` VA COMO VIENE. Antes se hacia
+        ''' <c>If(l.Stiffness &gt; 0, Math.Min(1, l.Stiffness), 1)</c> — un clamp a 1 y un default de 1
+        ''' que NO estan en el motor: los dos solvers (0x141A06170 y 0x141A06DB0) multiplican por el
+        ''' float del archivo tal cual, sin tocarlo, y despues por el factor por-set `k`. Ese "arreglo"
+        ''' defensivo convertia en 1.0 cualquier link con stiffness 0 — es decir, ponia a la maxima
+        ''' rigidez justo los links que el autor habia desactivado.
+        ''' </summary>
+        Private Shared Sub AddLinks(st As ClothSimState, links As IEnumerable(Of HclDistanceConstraintGraph_Class), particleCount As Integer, destino As List(Of DistanceLink))
             If links Is Nothing Then Exit Sub
             For Each l In links
                 Dim a = CInt(l.ParticleA), b = CInt(l.ParticleB)
                 If a < 0 OrElse b < 0 OrElse a >= particleCount OrElse b >= particleCount OrElse a = b Then Continue For
-                st.Links.Add(New DistanceLink With {.A = a, .B = b, .Rest = l.RestLength,
-                                                    .Stiffness = If(l.Stiffness > 0.0F, Math.Min(1.0F, l.Stiffness), 1.0F)})
+                destino.Add(New DistanceLink With {.A = a, .B = b, .Rest = l.RestLength,
+                                                   .Stiffness = l.Stiffness})
             Next
         End Sub
 
@@ -632,10 +689,21 @@ Namespace Havok.Physics
                 Next
 
                 ' (4) solve: N iteraciones × (constraints, después colisión)
+                ' Gauss-Seidel: N iteraciones y, DENTRO de cada una, los constraint sets en el orden
+                ' que declara el archivo y despues la colision. Ver `ConstraintBlock`.
                 For it = 0 To st.SolveIterations - 1
-                    SolveDistanceLinks(st)
-                    If HavokPhysicsSettings.EnableBend Then SolveBend(st)
-                    If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned)
+                    For Each blk In st.Blocks
+                        Select Case blk.Kind
+                            Case ConstraintKind.Distance
+                                SolveDistanceLinks(st, blk.Start, blk.Count)
+                            Case ConstraintKind.Stretch
+                                SolveStretchLinks(st, blk.Start, blk.Count)
+                            Case ConstraintKind.Bend
+                                If HavokPhysicsSettings.EnableBend Then SolveBend(st, blk.Start, blk.Count)
+                            Case ConstraintKind.LocalRange
+                                If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned, blk.Start, blk.Count)
+                        End Select
+                    Next
                     If HavokPhysicsSettings.EnableCollision Then SolveCapsules(st)
                 Next
             Next
@@ -649,19 +717,74 @@ Namespace Havok.Physics
             Next
         End Sub
 
-        Private Shared Sub SolveDistanceLinks(st As ClothSimState)
-            For Each l In st.Links
-                Dim pa = st.Positions(l.A), pb = st.Positions(l.B)
-                Dim d = pb - pa
-                Dim len = d.Length
-                If len <= 0.000001F Then Continue For
-                Dim diff = (len - l.Rest) / len
-                Dim wa = st.InvMass(l.A), wb = st.InvMass(l.B)
-                Dim wsum = wa + wb
-                If wsum <= 0.0F Then Continue For
-                Dim corr = d * (diff * l.Stiffness)
-                st.Positions(l.A) = pa + (corr * (wa / wsum))
-                st.Positions(l.B) = pb - (corr * (wb / wsum))
+        ''' <summary>
+        ''' `hclStandardLinkConstraintSet` — el link de distancia. Ley leida de <c>0x141A06170</c>
+        ''' (se llega por la cadena <c>"TtSolve Links"</c> en <c>0x142718DF0</c>). El struct del link
+        ''' mide <b>12 bytes</b>: <c>uint16 particleA, uint16 particleB, real restLength, real stiffness</c>.
+        ''' <code>
+        '''     d  = P[B] − P[A]
+        '''     c  = (|d| − restLength) · stiffness · k · d̂
+        '''     P[A] += invMass[A] · c
+        '''     P[B] −= invMass[B] · c
+        ''' </code>
+        '''
+        ''' <para>⛔⛔ NO HAY NORMALIZACION POR MASA. Esta implementacion hacia el reparto clasico de
+        ''' PBD — <c>wa/(wa+wb)</c> y <c>wb/(wa+wb)</c> — que es lo que dice cualquier paper y NO es lo
+        ''' que hace el motor: cada particula se mueve por SU PROPIA <c>invMass</c>, sin dividir. Con
+        ''' dos particulas libres de masa 1 el PBD reparte medio y medio y el motor mueve una unidad
+        ''' entera a cada una: el doble de correccion por iteracion.</para>
+        '''
+        ''' <para>La guarda de <c>|d|² &lt;= 0</c> es la del motor (<c>cmpleps</c> + <c>andnps</c> sobre
+        ''' el <c>rsqrt</c>): con longitud cero la direccion queda en cero y el link no aporta, en vez
+        ''' de dividir por cero.</para>
+        ''' </summary>
+        Private Shared Sub SolveDistanceLinks(st As ClothSimState, start As Integer, count As Integer)
+            Dim P = st.Positions
+            Dim inv = st.InvMass
+            For iL = start To start + count - 1
+                Dim l = st.Links(iL)
+                Dim d = P(l.B) - P(l.A)
+                Dim d2 = d.LengthSquared()
+                If d2 <= 0.0F Then Continue For
+                Dim len = CSng(Math.Sqrt(d2))
+                Dim dir = d / len
+                Dim c = dir * ((len - l.Rest) * l.Stiffness)
+                P(l.A) += c * inv(l.A)
+                P(l.B) -= c * inv(l.B)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `hclStretchLinkConstraintSet` — y NO es un link de distancia con otro nombre. Ley leida de
+        ''' <c>0x141A06DB0</c> (cadena <c>"TtSolve Stretch Links"</c> en <c>0x142719040</c>), mismo
+        ''' struct de 12 bytes:
+        ''' <code>
+        '''     d   = P[B] − P[A]
+        '''     err = min(restLength − |d|, 0)        ' ⛔ UNILATERAL
+        '''     P[B] += err · stiffness · k · d̂        ' ⛔ SOLO B, y SIN invMass
+        ''' </code>
+        '''
+        ''' <para>Las tres diferencias contra el link estandar son deliberadas y estaban las tres mal
+        ''' acá, porque los dos sets se metian en la misma lista y se resolvian con la misma funcion:</para>
+        ''' <list type="number">
+        ''' <item><b>Es unilateral</b> (<c>minps</c> contra cero): solo actua cuando la arista se ESTIRO
+        ''' de mas. Comprimida no hace nada. Tratarla como bilateral le mete a la tela una rigidez a la
+        ''' compresion que el motor no le pone.</item>
+        ''' <item><b>Mueve solo B.</b> A no se toca. Es asimetrico a proposito.</item>
+        ''' <item><b>No multiplica por <c>invMass</c>.</b> Ni por la de B.</item>
+        ''' </list>
+        ''' </summary>
+        Private Shared Sub SolveStretchLinks(st As ClothSimState, start As Integer, count As Integer)
+            Dim P = st.Positions
+            For iL = start To start + count - 1
+                Dim l = st.Stretch(iL)
+                Dim d = P(l.B) - P(l.A)
+                Dim d2 = d.LengthSquared()
+                If d2 <= 0.0F Then Continue For
+                Dim len = CSng(Math.Sqrt(d2))
+                Dim err = l.Rest - len
+                If err > 0.0F Then err = 0.0F          ' min(err, 0) — la parte unilateral
+                P(l.B) += (d / len) * (err * l.Stiffness)
             Next
         End Sub
 
@@ -713,10 +836,11 @@ Namespace Havok.Physics
         ''' dentro del link, no Gauss-Seidel). El motor hace exactamente eso: computa <c>xmm11</c> y
         ''' recién después escribe las cuatro posiciones.</para>
         ''' </summary>
-        Private Shared Sub SolveBend(st As ClothSimState)
+        Private Shared Sub SolveBend(st As ClothSimState, start As Integer, count As Integer)
             Dim P = st.Positions
             Dim inv = st.InvMass
-            For Each b In st.Bend
+            For iB = start To start + count - 1
+                Dim b = st.Bend(iB)
                 ' `v` es el vector de curvatura discreta, y es COMUN a las dos ramas.
                 Dim w = P(b.A) * b.WA + P(b.B) * b.WB + P(b.C) * b.WC + P(b.D) * b.WD
 
@@ -774,8 +898,9 @@ Namespace Havok.Physics
         ''' vértice de referencia SOBRE EL CUERPO SKINNEADO. Sin ella la tela sobre-cae (medido: los
         ''' cloths SIN local-range son exactamente los que sobre-caían, 79,8 % de libres contra 2,4 %).
         ''' </summary>
-        Private Shared Sub SolveLocalRange(st As ClothSimState, skinned As Dictionary(Of Integer, Vector3))
-            For Each c In st.LocalRange
+        Private Shared Sub SolveLocalRange(st As ClothSimState, skinned As Dictionary(Of Integer, Vector3), start As Integer, count As Integer)
+            For iC = start To start + count - 1
+                Dim c = st.LocalRange(iC)
                 If st.InvMass(c.Particle) = 0.0F Then Continue For
                 ' ⛔ `referenceVertex` indexa la malla SKINNEADA (el cuerpo), no el array de partículas.
                 ' Yo había escrito acá que en el corpus los dos índices coinciden: es FALSO. MEDIDO con
