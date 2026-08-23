@@ -580,6 +580,101 @@ Namespace Havok.Physics
         ' -----------------------------------------------------------------------------------------
         ' Destinos: dónde tiene que estar cada partícula en este frame según la piel POSADA
         ' -----------------------------------------------------------------------------------------
+        ''' <summary>
+        ''' Transformacion RIGIDA (rotacion + traslacion, sin escala) que lleva las posiciones de BIND
+        ''' del `DefaultClothPose` al espacio posado de AHORA, ajustada sobre las particulas que SI
+        ''' tienen destino skinneado.
+        '''
+        ''' <para>Es el algoritmo de Kabsch: se centran las dos nubes, se arma la matriz de covarianza
+        ''' y se saca la rotacion. Aca se resuelve por iteracion de la raiz cuadrada de matriz
+        ''' (Newton–Schulz sobre <c>R ← ½(R + R⁻ᵀ)</c>), que converge a la parte ortogonal de la
+        ''' covarianza en pocas vueltas y no necesita descomposicion SVD.</para>
+        '''
+        ''' <para>⛔ Devuelve la IDENTIDAD si hay menos de tres anclas o si la nube esta degenerada:
+        ''' con dos puntos la rotacion alrededor del eje que los une queda indeterminada, y elegir una
+        ''' cualquiera seria inventar. En ese caso se conserva el comportamiento anterior.</para>
+        '''
+        ''' <para>⚠️ EN REPOSO DEVUELVE LA IDENTIDAD EXACTA, porque el destino skinneado de cada ancla
+        ''' cae sobre su propia posicion de bind (eso es justo lo que verifica el control
+        ''' <c>[CLOTH-TARGET]</c>: <c>peor|skin-pose| = 0,00</c>). Por eso este cambio no puede mover el
+        ''' gate estatico, y si lo moviera seria que el control estaba mintiendo.</para>
+        ''' </summary>
+        Private Shared Function AjusteRigidoDeAnclas(st As ClothSimState,
+                                                     pose As HclSimClothPoseGraph_Class,
+                                                     skinned As Dictionary(Of Integer, Vector3),
+                                                     particleCount As Integer) As Matrix4
+            If pose Is Nothing OrElse pose.Pose Is Nothing OrElse st.GatherMap Is Nothing Then Return Matrix4.Identity
+
+            Dim origen As New List(Of Vector3)
+            Dim destino As New List(Of Vector3)
+            For i = 0 To particleCount - 1
+                If i >= st.GatherMap.Length OrElse i >= pose.Pose.Count Then Continue For
+                If st.GatherMapHas IsNot Nothing AndAlso (i >= st.GatherMapHas.Length OrElse Not st.GatherMapHas(i)) Then Continue For
+                Dim v As Vector3 = Nothing
+                If Not skinned.TryGetValue(CInt(st.GatherMap(i)), v) Then Continue For
+                Dim p = pose.Pose(i)
+                origen.Add(New Vector3(CSng(p.X), CSng(p.Y), CSng(p.Z)))
+                destino.Add(v)
+            Next
+            If origen.Count < 3 Then Return Matrix4.Identity
+
+            Dim co As Vector3 = Vector3.Zero, cd As Vector3 = Vector3.Zero
+            For k = 0 To origen.Count - 1
+                co += origen(k)
+                cd += destino(k)
+            Next
+            co /= origen.Count
+            cd /= origen.Count
+
+            ' Covarianza H = Σ (o−co)ᵀ (d−cd), en convencion de FILA.
+            Dim h11 = 0.0F, h12 = 0.0F, h13 = 0.0F
+            Dim h21 = 0.0F, h22 = 0.0F, h23 = 0.0F
+            Dim h31 = 0.0F, h32 = 0.0F, h33 = 0.0F
+            For k = 0 To origen.Count - 1
+                Dim a = origen(k) - co
+                Dim b = destino(k) - cd
+                h11 += a.X * b.X : h12 += a.X * b.Y : h13 += a.X * b.Z
+                h21 += a.Y * b.X : h22 += a.Y * b.Y : h23 += a.Y * b.Z
+                h31 += a.Z * b.X : h32 += a.Z * b.Y : h33 += a.Z * b.Z
+            Next
+
+            Dim r As New Matrix4(h11, h12, h13, 0.0F,
+                                 h21, h22, h23, 0.0F,
+                                 h31, h32, h33, 0.0F,
+                                 0.0F, 0.0F, 0.0F, 1.0F)
+            If Math.Abs(r.Determinant) < 0.000001F Then Return Matrix4.Identity
+
+            ' Newton–Schulz: R ← ½(R + R⁻ᵀ). Converge a la parte ortogonal. 12 vueltas alcanzan de
+            ' sobra para la precision de Single; si en el medio se vuelve singular, se abandona.
+            For it = 0 To 11
+                Dim inv As Matrix4
+                Try
+                    inv = r.Inverted()
+                Catch
+                    Return Matrix4.Identity
+                End Try
+                Dim it2 = Matrix4.Transpose(inv)
+                r = New Matrix4((r.M11 + it2.M11) * 0.5F, (r.M12 + it2.M12) * 0.5F, (r.M13 + it2.M13) * 0.5F, 0.0F,
+                                (r.M21 + it2.M21) * 0.5F, (r.M22 + it2.M22) * 0.5F, (r.M23 + it2.M23) * 0.5F, 0.0F,
+                                (r.M31 + it2.M31) * 0.5F, (r.M32 + it2.M32) * 0.5F, (r.M33 + it2.M33) * 0.5F, 0.0F,
+                                0.0F, 0.0F, 0.0F, 1.0F)
+            Next
+            ' Una reflexion (det < 0) no es una rotacion: se abandona en vez de espejar la prenda.
+            If r.Determinant < 0.0F Then Return Matrix4.Identity
+            For Each c In New Single() {r.M11, r.M12, r.M13, r.M21, r.M22, r.M23, r.M31, r.M32, r.M33}
+                If Single.IsNaN(c) OrElse Single.IsInfinity(c) Then Return Matrix4.Identity
+            Next
+
+            ' t = cd − co·R   (convencion de fila: el punto multiplica por la IZQUIERDA)
+            Dim rot = New Vector3(co.X * r.M11 + co.Y * r.M21 + co.Z * r.M31,
+                                  co.X * r.M12 + co.Y * r.M22 + co.Z * r.M32,
+                                  co.X * r.M13 + co.Y * r.M23 + co.Z * r.M33)
+            Dim t = cd - rot
+            r.M41 = t.X : r.M42 = t.Y : r.M43 = t.Z
+            r.M44 = 1.0F
+            Return r
+        End Function
+
         Private Shared Function BuildTargets(st As ClothSimState, sim As HclSimClothDataDetail_Class,
                                              cfg As HclClothConfigGraph_Class,
                                              skinned As Dictionary(Of Integer, Vector3),
@@ -589,6 +684,26 @@ Namespace Havok.Physics
             If st.TargetFromSkin Is Nothing OrElse st.TargetFromSkin.Length <> particleCount Then
                 ReDim st.TargetFromSkin(Math.Max(0, particleCount - 1))
             End If
+
+            ' ⛔⛔ EL AJUSTE RIGIDO DE LAS PARTICULAS SIN MAPEO.
+            '
+            ' `hclMoveParticlesOperator` se llama "move SOME particles" y eso es literal: en el pelo
+            ' vanilla ancla 22 de 113 particulas. Las otras 91 el motor NO las coloca — las SIMULA.
+            ' Esta funcion, para esas, usaba la posicion del `DefaultClothPose` TAL CUAL, que esta en
+            ' el espacio de BIND del archivo. En reposo eso coincide y el gate estatico da verde; bajo
+            ' pose, esas 91 se quedan clavadas en el bind mientras las 22 ancladas siguen al cuerpo, y
+            ' el triangulo que une unas con otras se estira sin limite. MEDIDO: aristas de ~3 u que
+            ' pasan a 8,3 u, y el gate de animacion en x49 con la fisica APAGADA (DeformOnly).
+            '
+            ' La correccion es llevar el bind al espacio de AHORA con la transformacion RIGIDA que
+            ' llevan las particulas que SI estan ancladas: se emparejan sus posiciones de bind con sus
+            ' destinos skinneados y se resuelve la rotacion+traslacion que mejor las lleva (Kabsch).
+            '
+            ' ⚠️ ES UNA REGLA DE LA APP, NO DEL MOTOR, y esta marcada como tal: el motor no la necesita
+            ' porque simula esas particulas. Lo que reemplaza es una regla que estaba MAL (dejarlas en
+            ' otro espacio). En REPOSO el ajuste da la identidad EXACTA, asi que no puede mover el gate
+            ' estatico — que es la comprobacion que hay que exigirle.
+            Dim ajuste = AjusteRigidoDeAnclas(st, pose, skinned, particleCount)
 
             For i = 0 To particleCount - 1
                 Dim got = False
@@ -606,7 +721,15 @@ Namespace Havok.Physics
                 End If
                 If Not got AndAlso pose IsNot Nothing AndAlso pose.Pose IsNot Nothing AndAlso i < pose.Pose.Count Then
                     Dim p = pose.Pose(i)
-                    target(i) = New Vector3(CSng(p.X), CSng(p.Y), CSng(p.Z))
+                    Dim enBind As New Vector3(CSng(p.X), CSng(p.Y), CSng(p.Z))
+                    ' Del espacio de bind del archivo al de AHORA. Sin anclas suficientes el ajuste es
+                    ' la identidad y queda el comportamiento viejo, que es lo unico que se puede hacer.
+                    ' Convencion de FILA, igual que el resto del modulo: el punto multiplica por la
+                    ' izquierda y la traslacion vive en la fila 3.
+                    target(i) = New Vector3(
+                        enBind.X * ajuste.M11 + enBind.Y * ajuste.M21 + enBind.Z * ajuste.M31 + ajuste.M41,
+                        enBind.X * ajuste.M12 + enBind.Y * ajuste.M22 + enBind.Z * ajuste.M32 + ajuste.M42,
+                        enBind.X * ajuste.M13 + enBind.Y * ajuste.M23 + enBind.Z * ajuste.M33 + ajuste.M43)
                     got = True
                 End If
                 If Not got Then target(i) = st.Positions(i)
@@ -1262,6 +1385,30 @@ Namespace Havok.Physics
                 Dim composed = Matrix4.Mult(MatrixOf(skin.BoneTransforms(slot)), bindWorld(ci))
                 slotMat(slot) = Matrix4.Mult(composed, poseDelta)
                 slotOk(slot) = True
+
+                ' ⛔ DIAGNOSTICO DEL BIND. El motor compone `boneFromSkinMeshTransforms[slot] x
+                ' transformSet[hueso]`, donde `transformSet` es el world POSADO del hueso
+                ' (hclObjectSpaceSkinPNOperator 0x14193BBD0 -> 0x14193BCE0 -> 0x141A0EEB0). Lo de aca
+                ' equivale a eso SOLO SI `bindWorld(ci)` (el bind EMBEBIDO en el HKX de la prenda) es
+                ' igual a `bindLive` (el bind del esqueleto vivo): la cadena queda
+                '     BoneTransforms x bindEmbebido x inv(bindVivo) x actualVivo
+                ' y los dos del medio solo se cancelan si son el mismo.
+                ' ⚠️ EN REPOSO ESTO NO SE PUEDE VER: con la pose en identidad `poseDelta` es la
+                ' identidad y la app queda consistente CONSIGO MISMA aunque los binds difieran. Por eso
+                ' se mide la diferencia explicitamente, y no se confia en que el gate estatico este verde.
+                If Logger.Enabled Then
+                    Dim be = bindWorld(ci)
+                    Dim bl = bindLive.ToMatrix4()
+                    Dim dT = Math.Sqrt(((be.M41 - bl.M41) ^ 2) + ((be.M42 - bl.M42) ^ 2) + ((be.M43 - bl.M43) ^ 2))
+                    Dim tr3 = (be.M11 * bl.M11) + (be.M12 * bl.M12) + (be.M13 * bl.M13) +
+                              (be.M21 * bl.M21) + (be.M22 * bl.M22) + (be.M23 * bl.M23) +
+                              (be.M31 * bl.M31) + (be.M32 * bl.M32) + (be.M33 * bl.M33)
+                        Dim ang = Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (tr3 - 1.0R) / 2.0R))) * 180.0R / Math.PI
+                    If dT > 0.001R OrElse ang > 0.05R Then
+                        Dim nm3 = nm
+                        Logger.LogLazy(Function() $"[CLOTH-BIND] '{nm3}' bindEmbebido vs bindVivo: dT={dT:F4} dAng={ang:F3} ⇒ la cadena NO se cancela bajo pose")
+                    End If
+                End If
             Next
 
             If Logger.Enabled Then
