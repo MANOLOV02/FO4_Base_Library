@@ -27,6 +27,30 @@ Public Interface IRenderableShape
     ReadOnly Property Geometry As IShapeGeometry
     ReadOnly Property NifSkin As INiSkin
     ReadOnly Property NifShader As INiShader
+
+    ''' <summary>El autor pidió CONSERVAR las normales de esta shape: no se recalculan.
+    ''' <para>⛔ SYNC: <c>SliderSet.cpp:255-257</c> lo lee del atributo <c>LockNormals</c> del
+    ''' <c>&lt;Shape&gt;</c>, y <c>BodySlideApp.cpp</c> lo consume en sus cuatro sitios de build con la misma
+    ''' forma: <c>if (!lockNormals) CalcNormalsForShape(shape, force, smoothSeamNormals);</c> — y
+    ''' <c>CalcTangentsForShape</c> FUERA del <c>if</c>. Es decisión POR SHAPE, no una casilla global.</para>
+    ''' <para>Default <b>False</b>, el del canónico. MEDIDO: 41 shapes del corpus lo traen en true (37 de
+    ''' FO4, 4 de SSE), y a todas se les recalculaban normales que el autor había hecho a mano.</para>
+    ''' <para>Vive acá, en la interfaz, y no como parámetro: la misma función la llaman el build
+    ''' (<c>BuildingForm</c>) y el PREVIEW (<c>Render.vb</c>), y un parámetro que el preview se olvide de
+    ''' pasar hace que lo que ves y lo que se construye dejen de coincidir — justo lo que la regla
+    ''' RENDER == BAKE del workspace prohíbe.</para></summary>
+    ReadOnly Property LockNormals As Boolean
+
+    ''' <summary>El autor pidió promediar (o NO promediar) las normales de la costura de esta shape.
+    ''' <para>⛔ SYNC: atributo <c>SmoothSeamNormals</c> del <c>&lt;Shape&gt;</c>, tercer argumento de
+    ''' <c>CalcNormalsForShape</c>. Default <b>True</b>, el del canónico. MEDIDO: 8 shapes de FO4 lo traen
+    ''' en false, y promediarles la costura les borra los cantos duros del metal y las gemas.</para>
+    ''' <para>⚠️ El atributo hermano <c>SmoothSeamNormalsAngle</c> (8 casos, todos en SSE) es INERTE para
+    ''' el build y por eso no está acá: el canónico llama <c>CalcNormalsForShape</c> con 3 argumentos y el
+    ''' umbral queda en el default <c>60.0f</c> (<c>NifFile.hpp:566-571</c>). Sólo lo consume el preview de
+    ''' Outfit Studio.</para></summary>
+    ReadOnly Property SmoothSeamNormals As Boolean
+
     ''' <summary>Geometría auxiliar que el MOTOR no dibuja nunca. Predicado del canónico
     ''' (BodySlide/OutfitStudio, <c>GLSurface.cpp</c>): <c>!shader || (shape-&gt;flags &amp; 1) != 0</c>,
     ''' con el comentario de <c>bHelperShape</c> en <c>Mesh.h</c>: "true for shapes with no shader or with

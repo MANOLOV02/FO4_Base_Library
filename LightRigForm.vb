@@ -300,6 +300,7 @@ Partial Public Class LightRigForm
         chkNormalize.Checked = tbn.NormalizeOutputs
         chkDeterministic.Checked = tbn.DeterministicOnCollapse
         chkSmoothSeams.Checked = tbn.SmoothSeamNormals
+        chkIgnoreAuthored.Checked = tbn.IgnoreAuthoredRestrictions
         nudSeamAngle.Value = ClampDec(nudSeamAngle, CDec(tbn.SmoothSeamNormalsAngle))
 
         chkWelding.Checked = tbn.EnableWelding
@@ -551,7 +552,7 @@ Partial Public Class LightRigForm
 
         ' Pestana Rendering: todo escribe en Config_App al vuelo, igual que las luces.
         For Each c In New CheckBox() {chkRecalcNormals, chkRepairNaN, chkNormalize, chkDeterministic,
-                                      chkSmoothSeams, chkGpuSkinning, chkSingleBone, chkHiddenSegments, chkShowHelperShapes,
+                                      chkSmoothSeams, chkIgnoreAuthored, chkGpuSkinning, chkSingleBone, chkHiddenSegments, chkShowHelperShapes,
                                       chkResetAngles, chkResetZoom}
             AddHandler c.CheckedChanged, Sub(sender, e) VolcarRenderEnModelo()
         Next
@@ -788,6 +789,7 @@ Partial Public Class LightRigForm
         tbn.NormalizeOutputs = chkNormalize.Checked
         tbn.DeterministicOnCollapse = chkDeterministic.Checked
         tbn.SmoothSeamNormals = chkSmoothSeams.Checked
+        tbn.IgnoreAuthoredRestrictions = chkIgnoreAuthored.Checked
         tbn.SmoothSeamNormalsAngle = CDbl(nudSeamAngle.Value)
         tbn.EnableWelding = chkWelding.Checked
         tbn.WeldByPositionOnly = rbWeldPosOnly.Checked

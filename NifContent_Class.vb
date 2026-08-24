@@ -128,17 +128,66 @@ Public Class Nifcontent_Class_Manolo
         End Select
         Return False
     End Function
-    Public Sub AddTriData(shapeName As String, triPath As String, toRoot As Boolean)
-        Dim target As NiAVObject
+    ''' <summary>Deja el archivo con EXACTAMENTE un BODYTRI, apuntando a <paramref name="triPath"/>.
+    ''' <para>⛔ SYNC: <c>BodySlideApp.cpp:5113-5151</c> (<c>SetTriData</c>, commit ee268496). Son tres
+    ''' pasos y los tres importan: (1) purgar TODO BODYTRI del archivo, cuelgue de donde cuelgue;
+    ''' (2) elegir anfitrión — la raíz en FO4, y en Skyrim/SSE la PRIMERA shape con vértices en ORDEN
+    ''' DE BLOQUE, sobre todas las shapes del NIF, no sólo las que lista el .osp; (3) estampar uno.</para>
+    ''' <para>Antes esto era <c>AddTriData(shapeName, …)</c>: el anfitrión lo elegía el llamador por
+    ''' orden alfabético y el estampado sólo miraba la lista que cuelga del anfitrión, así que un
+    ''' BODYTRI heredado del NIF fuente y colgado de OTRO sitio sobrevivía al build. MEDIDO: de 3.198
+    ''' NIF del corpus de FO4, 68 traen BODYTRI y 19 traen DOS, con la ruta vieja distinta de la
+    ''' nueva.</para>
+    ''' <para>El motor no se confunde con el duplicado —<c>NiObjectNET::GetExtraData</c>
+    ''' (f4se NiObjects.cpp:23-37) es un barrido lineal que devuelve el primero por nombre, y ése es
+    ''' el que se actualizaba—, así que esto NO era "la prenda sale sin morphs": era un bloque rancio
+    ''' de más en la salida, con un desempate que no gobierna nadie.</para></summary>
+    Public Sub SetTriData(triPath As String, toRoot As Boolean)
+        PurgarTodosLosBodyTri()
+
+        Dim target As NiAVObject = Nothing
         If toRoot Then
             target = GetRootNode()
         Else
-            target = FindBlockByName(Of INiShape)(shapeName)
+            ' `GetShapes()` es `Blocks.OfType(Of INiShape)()` (NiflySharp NifFile.cs:1053-1056), o sea
+            ' orden de bloque — el mismo que recorre el canónico con `for (auto& shape : nif.GetShapes())`
+            ' (nifly NifFile.cpp:2251-2259).
+            For Each s In GetShapes()
+                If s IsNot Nothing AndAlso s.VertexCount > 0 Then
+                    target = TryCast(s, NiAVObject)
+                    If target IsNot Nothing Then Exit For
+                End If
+            Next
         End If
 
-        If target IsNot Nothing Then
-            AssignExtraData(target, triPath)
-        End If
+        If target Is Nothing Then Return
+        AssignExtraData(target, triPath)
+    End Sub
+
+    ''' <summary>Saca del archivo TODOS los <c>NiStringExtraData</c> llamados BODYTRI, cuelguen de
+    ''' donde cuelguen.
+    ''' <para>⛔ SYNC: <c>BodySlideApp.cpp:5116-5127</c>. En orden DESCENDENTE, que es el
+    ''' <c>obsoleteIds.rbegin()</c> del canónico: así los índices que quedan por visitar siguen siendo
+    ''' válidos mientras se borra.</para>
+    ''' <para>⛔ NADA DE <c>RemoveBlockRef</c>. `NiBlockRefArray.RemoveBlockRef(id)` hace
+    ''' `_refs.RemoveAt(id)` (NiflySharp\BaseTypes\NiBlockRefArray.cs:90-97): el `id` es la POSICIÓN
+    ''' dentro de la lista de referencias, NO el índice de bloque. Su único guard es `_refs.Count > id`,
+    ''' así que falla en silencio de dos formas — si el índice de bloque cae fuera de la lista no hace
+    ''' nada, y si cae dentro DESENGANCHA OTRO EXTRA DATA. MEDIDO sobre las 87 referencias BODYTRI del
+    ''' corpus de FO4: 20 caían en `blockIndex &lt; listCount`; en 19 la víctima era el otro BODYTRI y se
+    ''' acertaba de casualidad, y en 1 no — `ShapeData\Jackets - Coats\MScoat.nif` tiene la raíz con
+    ''' `[ref -&gt; bloque 1 = BODYTRI, ref -&gt; bloque 2 = BSClothExtraData]`, así que se llevaba puesta la
+    ''' FÍSICA DE TELA del abrigo. `NifFile.RemoveBlock(int)` (NifFile.cs:1223-1264) ya desengancha la
+    ''' referencia correcta y reindexa el resto, igual que `NiHeader::DeleteBlock`
+    ''' (nifly BasicTypes.cpp:238-267).</para></summary>
+    Public Sub PurgarTodosLosBodyTri()
+        For i As Integer = Blocks.Count - 1 To 0 Step -1
+            Dim sed = TryCast(Blocks(i), NiStringExtraData)
+            If sed IsNot Nothing AndAlso sed.Name IsNot Nothing AndAlso
+               String.Equals(sed.Name.String, "BODYTRI", StringComparison.Ordinal) Then
+                RemoveBlock(i)
+            End If
+        Next
     End Sub
     ''' <summary>
     ''' Prende el bit 0 (hidden) de NiAVObject.flags, que es lo que hace BodySlide con
@@ -242,30 +291,6 @@ Public Class Nifcontent_Class_Manolo
         avo.Flags_us = CUShort(avo.Flags_us And Not 1US)
     End Sub
 
-    Public Sub RemoveTriData(shapeName As String, toRoot As Boolean)
-        Dim target As NiAVObject
-        If toRoot Then
-            target = GetRootNode()
-        Else
-            target = FindBlockByName(Of INiShape)(shapeName)
-        End If
-
-        If Not IsNothing(target) AndAlso Not IsNothing(target.ExtraDataList) Then
-            For Each ref As NiRef In target.ExtraDataList.References
-                Dim ed As NiStringExtraData
-                ed = TryCast(Blocks(ref.Index), NiStringExtraData)
-                If Not IsNothing(ed) Then
-                    'AssignExtraData()
-                    If ed.Name.String = "BODYTRI" Then
-                        target.ExtraDataList.RemoveBlockRef(ref.Index)
-                        RemoveBlock(ed)
-                        RemoveUnreferencedBlocks()
-                        Exit Sub
-                    End If
-                End If
-            Next
-        End If
-    End Sub
     Public Function AssignExtraData(target As NiAVObject, triPath As String) As UInteger
         If Not IsNothing(target.ExtraDataList) Then
             For Each ref As NiRef In target.ExtraDataList.References

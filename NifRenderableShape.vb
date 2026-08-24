@@ -167,6 +167,23 @@ Public Class NifRenderableShape
         End Get
     End Property
 
+    ''' <summary>Los DEFAULTS del canónico. Este envoltorio representa una shape de un NIF suelto, sin
+    ''' un <c>&lt;Shape&gt;</c> de un .osp detrás de donde leer los atributos, así que se comporta como un
+    ''' <c>&lt;Shape&gt;</c> que no los declara: <c>SliderSet.cpp:255-257</c> arranca en false / true.
+    ''' Ver <see cref="IRenderableShape.LockNormals"/>.</summary>
+    Public ReadOnly Property LockNormals As Boolean Implements IRenderableShape.LockNormals
+        Get
+            Return False
+        End Get
+    End Property
+
+    ''' <summary>Ver <see cref="IRenderableShape.SmoothSeamNormals"/>. Default del canónico: True.</summary>
+    Public ReadOnly Property SmoothSeamNormals As Boolean Implements IRenderableShape.SmoothSeamNormals
+        Get
+            Return True
+        End Get
+    End Property
+
     ''' <summary>Ver <see cref="IRenderableShape.IsHelperShape"/> para la ley y las fuentes.
     ''' Sólo <c>Flags_ui</c>: <c>_flags_us</c> únicamente se serializa con <c>StreamVersion &lt;= 26</c>
     ''' (Morrowind) — FO4 (130), SSE (100) y Oldrim (83) van todos por el uint32.</summary>

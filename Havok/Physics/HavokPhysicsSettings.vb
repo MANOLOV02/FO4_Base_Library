@@ -110,6 +110,21 @@ Namespace Havok.Physics
         ''' hacer el A/B y atribuir un cambio de forma a ESTE solver y no a otro.</summary>
         Public Shared Property EnableBend As Boolean = True
 
+        ''' <summary>
+        ''' A/B de la <b>rama adaptativa</b> de `hclLocalRangeConstraintSet` y
+        ''' `hclBonePlanesConstraintSet` — el 6.º argumento del `solve` virtual.
+        '''
+        ''' <para>⛔ NO ES UN MODO LEGACY: apagarla corre la OTRA rama del motor (`0x141A02700` /
+        ''' `0x1419FCBD0`), que es la que el propio motor usa cuando `subSteps = 1`. Existe por la
+        ''' misma razon que <see cref="EnableBend"/> y <see cref="EnableLocalRange"/>: para poder
+        ''' ATRIBUIR un cambio de forma a esta rama y no a otra cosa. El default es el
+        ''' comportamiento del motor.</para>
+        ''' <para>La rama adaptativa reescribe `Previous` despues de corregir la posicion, de modo que
+        ''' la correccion no inyecta velocidad. Corre cuando el operador declara
+        ''' `adaptConstraintStiffness` Y `subSteps &gt; 1`.</para>
+        ''' </summary>
+        Public Shared Property EnableAdaptiveConstraints As Boolean = True
+
         ''' <summary>Deja el estado de simulación limpio (todas las prendas vuelven a sembrar).</summary>
         Public Shared Sub ResetAll()
             HavokClothSimulation.ResetAll()

@@ -185,6 +185,28 @@ Public Class NiTriShapeGeometry
         Return res
     End Function
 
+    ''' <summary>Ver <see cref="IShapeGeometry.RemapLockedNormalIndices"/> para la ley y la medición.</summary>
+    Public Sub RemapLockedNormalIndices(oldToNew As Integer()) Implements IShapeGeometry.RemapLockedNormalIndices
+        If oldToNew Is Nothing Then Exit Sub
+        Dim lista = _shape?.ExtraDataList
+        If lista Is Nothing OrElse lista.References Is Nothing Then Exit Sub
+        For Each ref In lista.References
+            If ref.Index < 0 OrElse ref.Index >= _nif.Blocks.Count Then Continue For
+            Dim ints = TryCast(_nif.Blocks(CInt(ref.Index)), NiIntegersExtraData)
+            If ints Is Nothing OrElse ints.Data Is Nothing Then Continue For
+            If Not String.Equals(ints.Name?.String, "LOCKEDNORM", StringComparison.Ordinal) Then Continue For
+            Dim nuevos As New List(Of UInteger)(ints.Data.Count)
+            For Each v In ints.Data
+                Dim viejo As Long = CLng(v)
+                ' Ver el guard de rango en BSTriShapeGeometry: mismo motivo.
+                If viejo < 0 OrElse viejo >= oldToNew.Length Then Continue For
+                Dim nuevo As Integer = oldToNew(CInt(viejo))
+                If nuevo >= 0 Then nuevos.Add(CUInt(nuevo))
+            Next
+            ints.Data = nuevos
+        Next
+    End Sub
+
 
     Public ReadOnly Property Bounds As BoundingSphere Implements IShapeGeometry.Bounds
         Get

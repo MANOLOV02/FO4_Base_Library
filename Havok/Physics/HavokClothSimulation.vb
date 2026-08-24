@@ -127,6 +127,37 @@ Namespace Havok.Physics
         ''' que decide si `StiffnessFactor` devuelve 1 o la potencia: el otro termino del `and` es
         ''' `simCloth[+0x1CC]`, que el motor inicializa en 1 (`0x1418C66F4`).</summary>
         Public AdaptStiffness As Boolean
+        ''' <summary>
+        ''' El <b>6.º argumento</b> del <c>solve</c> virtual de cada constraint set. NO es lo mismo que
+        ''' <see cref="AdaptStiffness"/>: el motor lo calcula en <c>TtSolve</c> (0x141A1371E..0x141A13746) como
+        ''' <code>adaptFlag = !( mode == 1 || (subSteps == 1 &amp;&amp; s1 == 1 &amp;&amp; s2 == 1) )</code>
+        ''' con <c>mode = 2</c> sii el operador declara `adaptConstraintStiffness` (0x141A136EB).
+        ''' <para>⛔⛔ DOS sets DESPACHAN sobre el: `hclLocalRangeConstraintSet` (0x141A01F10 ⇒
+        ''' 0x141A027E0 / 0x141A02700) y `hclBonePlanesConstraintSet` (0x1419FCB80 ⇒ 0x1419FCD60 /
+        ''' 0x1419FCBD0). La rama adaptativa hace la MISMA correccion de posicion y ademas reescribe
+        ''' `Previous` para que la velocidad de Verlet no cambie. Sin eso, cada correccion de correa o
+        ''' de plano se le suma a la particula como velocidad en el substep siguiente — energia que el
+        ''' motor no mete. Con `s1 = s2 = 1` esto es `adapt AndAlso subSteps &gt; 1`, que es el caso del
+        ''' pelo de prueba (`sub=2 adapt=True`).</para>
+        ''' </summary>
+        Public AdaptFlag As Boolean
+        ''' <summary>El buffer `F` de `TtIntegrate` (0x141A12EE0): se CERA cada substep y cada
+        ''' `hclAction` acumula ahi antes del Verlet. Sin el, el termino de fuerzas del integrador no
+        ''' existe y las acciones del archivo no pueden aplicarse.</summary>
+        Public Fuerzas As Vector3()
+        ''' <summary>`hclSimClothData.actions` (+0xE8) ya parseadas. En vanilla vienen 0; el motor
+        ''' igual le monta una en runtime (ver <see cref="AplicarAcciones"/>).</summary>
+        Public Acciones As New List(Of HclActionDetail_Class)
+        ''' <summary>`hclSimClothData.totalMass` (+0x78). Con 0 el motor NO aplica viento
+        ''' (`0x1418F8420` sale temprano).</summary>
+        Public TotalMass As Single
+        ''' <summary>`releaseStuckParticlesCpu` (0x14195DF00): las particulas que quedaron SUELTAS del
+        ''' contacto en este substep. El motor pone en cero el plano de contacto CACHEADO de las dos
+        ''' particulas de todo link estirado mas que `stuckParticlesStretchFactorSq`, y el solve de
+        ''' contactos cacheados (`0x141A75E51`) saltea a las que tienen el byte de validez en cero.</summary>
+        Public SueltaDelContacto As Boolean()
+        ''' <summary>`hclSimulateOperator.simClothIndex` (+0x20) — cual de los `simClothDatas` se simula.</summary>
+        Public SimClothIndex As Integer
         ''' <summary>`dt / subSteps` — el paso de tiempo de UN substep. Es el `k` que el motor le pasa
         ''' a `CollideAndSolve` (0x14195C6C1) y lo unico que ese `k` hace es convertir la velocidad del
         ''' colisionable en el desplazamiento que hizo durante el substep.</summary>
@@ -161,7 +192,10 @@ Namespace Havok.Physics
         Public Seeded As Boolean = False
         ''' <summary>Transform del hueso raíz en el frame anterior, para detectar teleport.</summary>
         Public LastRootTranslation As Vector3
-        Public LastRootForward As Vector3
+        ''' <summary>La ROTACION del hueso raiz en el frame anterior, entera. Antes se guardaba un solo
+        ''' eje (la fila 1) y se comparaba el angulo CONTRA ESE EJE — un giro alrededor de ese mismo eje
+        ''' daba angulo CERO. El motor mide el angulo del cuaternion delta, que es el giro completo.</summary>
+        Public LastRootRotation As Matrix4
         Public HasLastRoot As Boolean = False
         Public Links As New List(Of DistanceLink)
         ''' <summary>`hclStretchLinkConstraintSet`. Lista APARTE porque su ley es OTRA, no un
@@ -174,6 +208,8 @@ Namespace Havok.Physics
         ''' <summary>`hclBonePlanesConstraintSet`: un plano pegado a un hueso por particula.</summary>
         Public BonePlanes As New List(Of BonePlaneConstraint)
         Public LocalRange As New List(Of LocalRangeConstraint)
+        ''' <summary>`hclVolumeConstraintMx`: un elemento por SET (no por link).</summary>
+        Public Volumen As New List(Of VolumeSet)
         Public Bend As New List(Of BendLink)
         ''' <summary>Los constraint sets EN EL ORDEN QUE LOS DECLARA EL ARCHIVO. Ver
         ''' <see cref="ConstraintBlock"/>.</summary>
@@ -197,6 +233,10 @@ Namespace Havok.Physics
         BendLink
         Compressible
         BonePlane
+        ''' <summary>`hclVolumeConstraintMx`. No es un constraint por link: es SHAPE-MATCHING sobre
+        ''' todo el conjunto (centroide + rotacion por descomposicion polar). Ver
+        ''' <see cref="HavokClothSimulation.SolveVolume"/>.</summary>
+        Volume
         ''' <summary>El `-1` de `constraintExecution`: aca va la colision, y va DONDE LO DICE LA LISTA.</summary>
         Colision
     End Enum
@@ -324,6 +364,26 @@ Namespace Havok.Physics
         Public Stiffness As Single
     End Structure
 
+    ''' <summary>
+    ''' Un `hclVolumeConstraintMx` entero. NO es un link: es una restriccion de conjunto que ajusta un
+    ''' FRAME RIGIDO a una nube de particulas y despues tira de otras hacia ese frame.
+    ''' Ver <see cref="HavokClothSimulation.SolveVolume"/> para la ley y sus VA.
+    ''' </summary>
+    Friend Structure VolumeSet
+        ''' <summary>`frameBatchDatas` + `frameSingleDatas`: los que DEFINEN el frame.</summary>
+        Public Frame As VolumeEntry()
+        ''' <summary>`applyBatchDatas` + `applySingleDatas`: los que RECIBEN la correccion.</summary>
+        Public Apply As VolumeEntry()
+    End Structure
+
+    ''' <summary>Una entrada de volumen. `Param` es `weight` en las de frame y `stiffness` en las de
+    ''' apply. `Fv` es el `frameVector` authored, o sea la posicion de reposo en el espacio del frame.</summary>
+    Friend Structure VolumeEntry
+        Public Particle As Integer
+        Public Fv As Vector3
+        Public Param As Single
+    End Structure
+
     Friend Structure LocalRangeConstraint
         Public Particle As Integer
         ''' <summary>Indice de VERTICE de la malla skinneada (NO de particula). Difieren en el 13 % del corpus.</summary>
@@ -427,6 +487,18 @@ Namespace Havok.Physics
             End If
             If shapes Is Nothing Then Exit Sub
 
+            ' ⛔ NO SE PARTE EL INTERVALO, PORQUE NO TENGO CON QUE CITARLO.
+            '
+            ' `bhkWorld::BuildClothJobsForStep` (0x1418756F0) corre `for step in 0..nSteps-1` con
+            ' `nSteps = [0x143D87EA8]`, y **el valor de ese global NO esta medido**: en el .exe esta en
+            ' 0 y lo escribe el runtime. Sin ese numero no se puede decir en cuantos pasos parte el
+            ' motor un frame, asi que cualquier regla que se ponga aca (incluido un tope) es un invento
+            ' de la app. Se deja el hueco y se dice que esta.
+            '
+            ' ⚠️ Queda entonces en pie la divergencia B10 de la auditoria, que es de DOCUMENTACION:
+            ' `HavokPhysicsSettings.FrameDeltaSeconds` dice que el intervalo se parte en pasos de
+            ' `FixedTimeStep`, y aca se usa como UN dt. El troceado vive en el arnes
+            ' (`ClothPhysicsGate/Harness.vb`), que es quien sabe cuanto dura un frame de clip.
             Dim dt = If(deltaSeconds > 0.0F, deltaSeconds, HavokPhysicsSettings.FixedTimeStep)
 
             ' ⛔ UN PASO POR BLOQUE, no por shape. `IRenderableShape.HasPhysics` es a nivel NIF, así que
@@ -437,10 +509,16 @@ Namespace Havok.Physics
             ' MEDIDO en el corpus vanilla: 262 de 309 NIF con cloth tienen más de una shape y
             ' exactamente un bloque (histograma: 11 shapes ×123, 10 ×22, 12 ×18…).
             Dim seen As New HashSet(Of BSClothExtraData)()
+            Dim bloques As New List(Of BSClothExtraData)()
             For Each shape In shapes
                 If shape Is Nothing OrElse Not shape.HasPhysics OrElse shape.NifContent Is Nothing Then Continue For
                 Dim block = SkeletonClothOverlayHelper_Class.ResolveClothBlockForShape(shape)
                 If block Is Nothing OrElse Not seen.Add(block) Then Continue For
+                bloques.Add(block)
+            Next
+            If bloques.Count = 0 Then Exit Sub
+
+            For Each block In bloques
                 Try
                     StepBlock(block, skeleton, dt)
                 Catch ex As Exception
@@ -488,7 +566,33 @@ Namespace Havok.Physics
             For ci = 0 To pkg.ClothConfigs.Count - 1
                 Dim cfg = pkg.ClothConfigs(ci)
                 If cfg Is Nothing OrElse cfg.SimpleMeshBoneDeform Is Nothing Then Continue For
-                Dim sim = cfg.SimClothDatas.FirstOrDefault()
+
+                ' ⛔⛔ CUAL SIM-CLOTH LO DICE EL OPERADOR, NO EL ORDEN.
+                '
+                ' `hclSimulateOperator.simClothIndex` (+0x20) indexa `hclClothData.simClothDatas`, y el
+                ' motor lo usa literal: `simCloth = clothInstance.simCloths[op.simClothIndex]`
+                ' (0x14195C3E0). Aca habia un `.FirstOrDefault()`, que coincide con el motor SOLO
+                ' mientras el indice sea 0. MEDIDO: el corpus vanilla trae `simCloth=0` en el 100 % de
+                ' las cadenas censadas, asi que hoy es un no-op; con un archivo que apunte a otro, la
+                ' app simulaba el sim-cloth equivocado sin decir nada.
+                Dim si = If(cfg.Simulate Is Nothing, 0, cfg.Simulate.SimClothIndex)
+                If si < 0 OrElse si >= cfg.SimClothDatas.Count Then
+                    If Logger.Enabled AndAlso si <> 0 Then
+                        Dim sq = si, nq = cfg.SimClothDatas.Count
+                        Logger.LogLazy(Function() $"[CLOTH-SIMIDX] simClothIndex={sq} fuera de rango (hay {nq}) ⇒ se usa el 0")
+                    End If
+                    si = 0
+                End If
+                ' ⚠️ LIMITE DECLARADO: el motor instancia UN `hclSimClothInstance` por cada
+                ' `hclSimClothData` y cada operador (simulate, moveParticles) nombra el suyo. Esta app
+                ' mantiene UN estado por config, asi que con mas de un sim-cloth simula el que apunta
+                ' el `hclSimulateOperator` y los demas quedan sin simular. MEDIDO: 0 de 989 prendas del
+                ' corpus declaran mas de uno, asi que hoy no se ejerce; se avisa en vez de callarlo.
+                If Logger.Enabled AndAlso cfg.SimClothDatas.Count > 1 Then
+                    Dim nq2 = cfg.SimClothDatas.Count, sq2 = si
+                    Logger.LogLazy(Function() $"[CLOTH-SIMIDX] ⚠️ el config declara {nq2} sim-cloth y esta app modela UNO: se simula el {sq2}, los otros quedan SIN simular")
+                End If
+                Dim sim = cfg.SimClothDatas(si)
                 If sim Is Nothing Then Continue For
                 Dim particleCount = sim.ParticleDatas.Count
                 If particleCount = 0 Then Continue For
@@ -527,6 +631,9 @@ Namespace Havok.Physics
             ReDim st.Radius(particleCount - 1)
             ReDim st.MascaraColision(particleCount - 1)
             ReDim st.NormalesSim(particleCount - 1)
+            ' El buffer `F` del integrador (0x141A12EE0 lo pide con `nParticulas × 16 B` y lo cera).
+            ReDim st.Fuerzas(particleCount - 1)
+            ReDim st.SueltaDelContacto(particleCount - 1)
 
             ' Los buffers, con el tamaño que declara cada `hclBufferDefinition` y en su posicion.
             Dim nBuf = If(cfg.BufferDefinitions Is Nothing, 0, cfg.BufferDefinitions.Count)
@@ -608,6 +715,24 @@ Namespace Havok.Physics
             If HavokPhysicsSettings.SubstepOverride > 0 Then subs = HavokPhysicsSettings.SubstepOverride
             st.SubSteps = Math.Max(1, subs)
             st.AdaptStiffness = cfg.Simulate IsNot Nothing AndAlso cfg.Simulate.AdaptConstraintStiffness
+            st.SimClothIndex = If(cfg.Simulate Is Nothing, 0, cfg.Simulate.SimClothIndex)
+
+            ' ⛔⛔ EL 6.º ARGUMENTO DEL `solve`. `TtSolve` lo arma en 0x141A1371E..0x141A13746:
+            '     mode      = simCloth[+0x1CC]  (init 1);  si mode==1 y op.adaptConstraintStiffness -> 2
+            '     adaptFlag = !( mode==1 || (subSteps==1 && s1==1 && s2==1) )
+            ' Con s1 = s2 = 1 (la app renderiza a escala 1, ver FactorDeRigidez) queda
+            ' `adapt AndAlso subSteps > 1`. NO es lo mismo que `AdaptStiffness`: con subSteps = 1 el
+            ' flag se apaga aunque el operador declare `adaptConstraintStiffness` — es el caso del
+            ' FLabCoat (`sub=1 adapt=True`), que por eso corre la rama normal.
+            st.AdaptFlag = st.AdaptStiffness AndAlso Not (st.SubSteps = 1 AndAlso S1Escala = 1.0F AndAlso S2Escala = 1.0F)
+            ' Perilla de ATRIBUCION (`--noadapt`), no de produccion: apagarla corre la OTRA rama del
+            ' motor, la misma que el motor usa con subSteps = 1. El default es el comportamiento real.
+            If Not HavokPhysicsSettings.EnableAdaptiveConstraints Then st.AdaptFlag = False
+
+            ' `actions` (+0xE8) y `totalMass` (+0x78): el termino `F` del integrador.
+            st.Acciones.Clear()
+            If sim.ActionDetails IsNot Nothing Then st.Acciones.AddRange(sim.ActionDetails.Where(Function(a) a IsNot Nothing))
+            st.TotalMass = sim.TotalMass
 
             Dim iters = If(cfg.Simulate IsNot Nothing, cfg.Simulate.SolveIterationCount, 1)
             If HavokPhysicsSettings.SolveIterationOverride > 0 Then iters = HavokPhysicsSettings.SolveIterationOverride
@@ -713,24 +838,44 @@ Namespace Havok.Physics
         End Sub
 
         ''' <summary>
-        ''' `damp = (1 − globalDampingPerSecond) ^ dtSub`, con las DOS ramas duras del motor
-        ''' (0x1418C75B0): d &gt;= 1 ⇒ 0 (la tela no hereda nada de velocidad) y d = 0 ⇒ 1.
+        ''' `damp = (1 − globalDampingPerSecond) ^ (dt / (subSteps · s1))`, con las DOS ramas duras del
+        ''' motor: d &gt;= 1 ⇒ 0 (la tela no hereda nada de velocidad) y d = 0 ⇒ 1. Ver el detalle y las
+        ''' direcciones en el cuerpo.
         ''' </summary>
         Private Shared Sub RecomputeDamping(st As ClothSimState, sim As HclSimClothDataDetail_Class, dt As Single)
             Dim d = sim.GlobalDampingPerSecond
-            ' ⛔ EL EXPONENTE ES EL dt DEL FRAME, NO EL DEL SUBSTEP. El factor vive en
-            ' `simCloth[+0x10c]` y se recalcula solo cuando cambia `simCloth[+0x108]`, que es el dt con
-            ' el que se lo calculo (0x14195B904: si `[+0x108]` ya vale el dt de este frame no recalcula
-            ' nada; si vale 0 lo guarda y sigue). Ese campo guarda el dt que recibe `Simulate`, o sea
-            ' el del FRAME. Aca estaba `dt / subSteps`, que con `d = 0,5` y 3 substeps da 0,9963 en vez
-            ' de 0,9889: la tela conserva mas velocidad de la que le corresponde.
-            ' Con `d >= 1` (el caso del vestido) las dos ramas dan 0 y no se nota; se ve en el pelo.
+            ' ⛔⛔ EL EXPONENTE ES EL dt DEL **SUBSTEP**, Y ACA DECIA LO CONTRARIO.
+            '
+            ' El comentario que estaba aca afirmaba que `simCloth[+0x108]` guarda "el dt que recibe
+            ' `Simulate`, o sea el del FRAME". **El binario dice que no.** Leido entero:
+            '
+            '     0x14195B838:  xmm7 = [r13]                      ; el dt del frame
+            '     0x14195B83E:  xmm7 = xmm7 / (subSteps * s1)     ; ⇒ xmm7 = dtSub
+            '     ...
+            '     0x14195B904:  xmm8 = [simCloth+0x108]           ; el dt cacheado
+            '     0x14195B90F:  if xmm8 == xmm7 -> return         ; ya calculado para ESTE dt
+            '     0x14195B923:  [simCloth+0x108] = xmm7           ; guarda el MISMO xmm7
+            '                   scope "TtUpdate Effective Damping"
+            '     0x14195B992:  xmm1 = xmm7                       ; y lo usa de EXPONENTE
+            '     0x14195B998:  call powf(1 - d, xmm7)
+            '
+            ' O sea que lo que se cachea y lo que se exponencia son el MISMO valor, y ese valor es
+            ' `dt / (subSteps * s1)`. Usar el dt del frame amortigua de mas por un factor `subSteps`
+            ' en el exponente: con d = 0,5 y 3 substeps, `0,5^(1/60) = 0,9885` por paso contra el
+            ' `0,5^(1/180) = 0,9962` del motor — y eso, tres veces por frame.
+            ' ⚠️ Con `d >= 1` (el vestido) las dos ramas dan 0 y no se nota; se ve en el pelo.
+            '
+            ' Las tres ramas si estaban bien, y se confirman en 0x14195B96F..0x14195B99D:
+            '     comiss d, 1.0 ; jb   -> si d >= 1  ⇒  damping = 0        (0x14195B974)
+            '     ucomiss d, 0  ; jne  -> si d == 0  ⇒  damping = 1        (0x14195B982)
+            '     si no                ⇒  powf(1 - d, dtSub)              (0x14195B998)
+            Dim dtSub = dt / Math.Max(1, st.SubSteps) / S1Escala
             If d >= 1.0F Then
                 st.Damping = 0.0F
             ElseIf d = 0.0F Then
                 st.Damping = 1.0F
             Else
-                st.Damping = CSng(Math.Pow(1.0R - d, dt))
+                st.Damping = CSng(Math.Pow(1.0R - d, dtSub))
             End If
         End Sub
 
@@ -743,6 +888,7 @@ Namespace Havok.Physics
             st.Compressible.Clear()
             st.BonePlanes.Clear()
             st.LocalRange.Clear()
+            st.Volumen.Clear()
             st.Bend.Clear()
             st.Blocks.Clear()
             ' Un bloque por CONSTRAINT SET, en el orden del array. La lista authored los referencia por
@@ -859,6 +1005,63 @@ Namespace Havok.Physics
                 Logger.LogLazy(Function() $"[CLOTH-HUERFANAS] libres sin NINGUNA constraint={_hh} · con 1 o 2={_ff} · de {_nn} particulas")
                 Logger.LogLazy(Function() $"[CLOTH-LINKS] n={_nlk} stiffness=[{_lMin:F4}..{_lMax:F4}] invMassMax={_iMax:F3} k={_k:F4} ⇒ factor de error por pasada = 1−(invA+invB)·s·k ∈ [{1.0F - 2.0F * _iMax * _lMax * _k:F3}..{1.0F - 2.0F * _iMax * _lMin * _k:F3}]")
                 Logger.LogLazy(Function() $"[CLOTH-ORDEN] authored=[{listaTxt}] ⇒ bloques: {bloquesTxt}")
+
+                ' ⛔⛔ ¿EL OBJETIVO ES ALCANZABLE? Esta es la pregunta que ningun numero de violacion
+                ' contesta. `restLength` describe la tela EN REPOSO, y el reposo de la malla de
+                ' simulacion es su `hclSimClothPose` (`DefaultClothPose`, +0xD8) — el bind del archivo.
+                ' Si `|DCP[A] − DCP[B]|` NO da `restLength`, entonces los links no describen esa malla y
+                ' toda violacion medida despues es contra un objetivo que el autor nunca puso: no hay
+                ' solver que la baje, y perseguirla es perseguir un defecto de lectura.
+                ' Es el control que faltaba al lado de [CLOTH-CONTROL] (que mide sobre la piel, que SI
+                ' puede diferir del reposo legitimamente).
+                Dim pose0 = sim.DefaultClothPoseDetails.FirstOrDefault()
+                If pose0 IsNot Nothing AndAlso pose0.Pose IsNot Nothing AndAlso st.Links.Count > 0 Then
+                    Dim nMed = 0
+                    Dim peorR = 0.0F, sumaR = 0.0R
+                    Dim ejemplo As String = ""
+                    For Each lk5 In st.Links
+                        ' Sin umbral: lo unico que hay que evitar es dividir por cero.
+                        If lk5.Rest = 0.0F Then Continue For
+                        If lk5.A >= pose0.Pose.Count OrElse lk5.B >= pose0.Pose.Count Then Continue For
+                        Dim pa5 = pose0.Pose(lk5.A) : Dim pb5 = pose0.Pose(lk5.B)
+                        Dim dd5 = New Vector3(CSng(pa5.X - pb5.X), CSng(pa5.Y - pb5.Y), CSng(pa5.Z - pb5.Z)).Length
+                        Dim rr5 = Math.Abs(dd5 - lk5.Rest) / lk5.Rest
+                        nMed += 1 : sumaR += rr5
+                        If rr5 > peorR Then
+                            peorR = rr5
+                            ejemplo = $"{lk5.A}-{lk5.B} dcp={dd5:F3} rest={lk5.Rest:F3}"
+                        End If
+                    Next
+                    Dim b5 = nMed, c5 = If(nMed > 0, sumaR / nMed, 0.0R), d5 = peorR, e5 = ejemplo
+                    Logger.LogLazy(Function() $"[CLOTH-REST] restLength vs DefaultClothPose sobre {b5} links: media={c5:P2} peor={d5:P2} ({e5})")
+                End If
+
+                ' ⭐⭐ EL CONTROL DE `hclVolumeConstraintMx`, SIN SIMULACION Y CON VERDAD CONOCIDA.
+                ' Si la ley esta bien y los `frameVector` son la posicion de reposo EN EL FRAME,
+                ' entonces con las particulas en el `DefaultClothPose` se cumple `P − C = fv·R₀`, y la
+                ' descomposicion polar devuelve exactamente `R₀`: el destino ES la posicion actual y el
+                ' paso NO MUEVE NADA. Cualquier otra cosa dice que la ley o el layout estan mal, y hay
+                ' que verlo ACA y no despues, mezclado con la fisica.
+                If pose0 IsNot Nothing AndAlso pose0.Pose IsNot Nothing AndAlso st.Volumen.Count > 0 Then
+                    Dim pdcp(particleCount - 1) As Vector3
+                    Dim nDcp = Math.Min(particleCount, pose0.Pose.Count)
+                    For q6 = 0 To nDcp - 1
+                        Dim pp6 = pose0.Pose(q6)
+                        pdcp(q6) = New Vector3(CSng(pp6.X), CSng(pp6.Y), CSng(pp6.Z))
+                    Next
+                    For q7 = 0 To st.Volumen.Count - 1
+                        Dim vs7 = st.Volumen(q7)
+                        Dim c7 As Vector3, x0 As Vector3, x1 As Vector3, x2 As Vector3
+                        CalcularFrameVolumen(vs7, pdcp, c7, x0, x1, x2)
+                        Dim peor7 = 0.0F
+                        For Each e7 In vs7.Apply
+                            Dim obj7 = (x0 * e7.Fv.X) + (x1 * e7.Fv.Y) + (x2 * e7.Fv.Z) + c7
+                            peor7 = Math.Max(peor7, (obj7 - pdcp(e7.Particle)).Length)
+                        Next
+                        Dim p7 = peor7, i7 = q7, n7 = vs7.Apply.Length
+                        Logger.LogLazy(Function() $"[CLOTH-VOLCTL] set {i7}: con las particulas en el DefaultClothPose, |target−P| peor={p7:F4} u sobre {n7} entradas  (la ley exige ~0)")
+                    Next
+                End If
             End If
         End Sub
 
@@ -973,6 +1176,25 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
+                Dim vol = TryCast(detail, HclVolumeConstraintMxDetail_Class)
+                If vol IsNot Nothing Then
+                    Dim iniV = st.Volumen.Count
+                    Dim fr = LeerEntradasVolumen(vol.FrameEntries, particleCount)
+                    Dim ap = LeerEntradasVolumen(vol.ApplyEntries, particleCount)
+                    If fr.Length > 0 AndAlso ap.Length > 0 Then
+                        st.Volumen.Add(New VolumeSet With {.Frame = fr, .Apply = ap})
+                    ElseIf Logger.Enabled Then
+                        Dim nf = fr.Length, na = ap.Length
+                        Logger.LogLazy(Function() $"[CLOTH-VOL] set de volumen sin datos utiles (frame={nf} apply={na}) ⇒ no se agrega")
+                    End If
+                    AgregarBloque(destino, porSet, idxSet, New ConstraintBlock With {.Kind = ConstraintKind.Volume, .TipoMotor = TipoDeMotor.VolumeMx, .Start = iniV, .Count = st.Volumen.Count - iniV})
+                    If Logger.Enabled Then
+                        Dim nf2 = fr.Length, na2 = ap.Length
+                        Logger.LogLazy(Function() $"[CLOTH-VOL] hclVolumeConstraintMx: {nf2} entradas de frame · {na2} de apply")
+                    End If
+                    Continue For
+                End If
+
                 Dim lr = TryCast(detail, HclLocalRangeConstraintSetDetail_Class)
                 If lr IsNot Nothing Then
                     Dim iniLr = st.LocalRange.Count
@@ -1006,6 +1228,25 @@ Namespace Havok.Physics
                         Dim an = lr.ApplyNormalComponent, sf = lr.Stiffness, shp = lr.ShapeType
                         Logger.LogLazy(Function() $"[CLOTH-CORREA] {n2} constraints · buffer de referencia={lr.ReferenceMeshBufferIdx} · applyNormal={an} stiffness={sf:F4} shapeType={shp} · maxDist=[{mn:F3}..{mx:F3}] minNormal={mnn:F3} maxNormal={mxn:F3}")
                     End If
+                    Continue For
+                End If
+
+                ' ⛔⛔ UN SET QUE NO SE PUEDE CORRER SE DICE. Todo lo de arriba termina en `Continue For`,
+                ' asi que llegar hasta aca significa que el archivo declara un `hclConstraintSet` que
+                ' este solver NO sabe resolver. Antes se caia por el final del bucle EN SILENCIO: el set
+                ' desaparecia del solve, `constraintExecution` lo referenciaba igual, y el unico rastro
+                ' era que `[CLOTH-ORDEN]` mostraba menos bloques que entradas authored — algo que hay
+                ' que estar buscando para verlo.
+                ' ✅ EL CASO QUE MOTIVO ESTE AVISO YA NO CAE ACA. `hclVolumeConstraintMx` (82 objetos
+                ' en 77 archivos del load order, Hancock\FOutfit entre ellos) se implemento en B15 y
+                ' tiene su propia rama mas arriba. VERIFICADO: ninguna corrida posterior imprime esta
+                ' linea; la que aparecia en los logs era de una corrida anterior al cableado.
+                ' El aviso queda igual, porque su razon de ser es que el PROXIMO hueco no sea mudo.
+                If detail IsNot Nothing Then
+                    Dim cn = TryCast(detail, HkxVirtualObjectGraph_Class)?.ClassName
+                    If String.IsNullOrEmpty(cn) Then cn = detail.GetType().Name
+                    Dim iq = idxSet, cq = cn
+                    Logger.LogLazy(Function() $"[CLOTH-SETHUECO] ⛔ el set [{iq}] es '{cq}' y este solver NO lo implementa: queda FUERA del solve (el archivo lo declara y `constraintExecution` lo referencia)")
                 End If
             Next
         End Sub
@@ -1085,6 +1326,26 @@ Namespace Havok.Physics
                 If Not got Then target(i) = st.Positions(i)   ' sin mapeo: la simula, no la coloca
                 If Not st.TargetFromSkin(i) Then st.TargetFromSkin(i) = False
             Next
+
+            ' ⛔⛔ EL CRUCE QUE FALTABA: ANCLA SIN MAPEO = ANCLA CONGELADA.
+            '
+            ' Una particula sin entrada en el puente conserva su posicion (la rama de arriba). Si
+            ' ADEMAS esta en `fixedParticleIndices` (invMass = 0), la integracion no la toca y las
+            ' anclas del substep le vuelven a escribir SU PROPIA posicion vieja: queda clavada en el
+            ' mundo para siempre mientras el resto de la prenda sigue al cuerpo, y los links que la
+            ' tocan se estiran sin limite. Es un caso que ninguno de los otros instrumentos ve: el
+            ' gate estatico da verde (en reposo coincide) y `[CLOTH-HUERFANAS]` no lo mira.
+            If Logger.Enabled AndAlso st.Fixed IsNot Nothing Then
+                Dim sinMapa As New List(Of Integer)
+                For Each q In st.Fixed
+                    If q >= 0 AndAlso q < particleCount AndAlso Not st.TargetFromSkin(q) Then sinMapa.Add(q)
+                Next
+                If sinMapa.Count > 0 Then
+                    Dim n1 = sinMapa.Count, n2 = st.Fixed.Length
+                    Dim quienes = String.Join(" ", sinMapa.Take(12).Select(Function(q) "p" & q))
+                    Logger.LogLazy(Function() $"[CLOTH-ANCLASINMAPA] ⛔ {n1} de {n2} anclas NO tienen entrada en el puente particula↔vertice: quedan CLAVADAS en el mundo ({quienes})")
+                End If
+            End If
 
             ' ⛔ CONTROL: en REPOSO el destino skinneado de CADA particula tiene que caer sobre su
             ' posicion del DefaultClothPose (que es el bind de la malla de simulacion). Una particula
@@ -1180,19 +1441,53 @@ Namespace Havok.Physics
         ''' pantalla se ven igual: "la tela se estiro" (violacion de links alta) y "la tela esta bien y
         ''' lo que esta mal es el frame que le doy al hueso" (violacion baja y el render igual roto).
         ''' </summary>
+        ''' <summary>
+        ''' ⚠️ LOS CORTES DE ESTE DIAGNOSTICO SON DE LA APP, NO DEL MOTOR. `CORTE_FUERA` y
+        ''' `CORTE_HONDO` no salen de ninguna direccion del binario: son filtros para que el log diga
+        ''' "cuantos" en vez de escupir miles de lineas. Estan como constantes con nombre y **se
+        ''' imprimen en la propia linea** para que el numero nunca se lea como una ley. Nada de lo que
+        ''' hay aca cambia una sola posicion: es todo `Logger`.
+        ''' </summary>
+        ''' <summary>
+        ''' Distancia de la particula `i` a SU posicion skinneada, cruzando el puente
+        ''' particula↔vertice. ⛔ El puente NO es la identidad: `gatherMap(particula) = VertexIndex`
+        ''' (medido: particula 293 → vertice 297). Indexar `Skinned` con el indice de PARTICULA da
+        ''' decenas de unidades de error inventado — me lo comi midiendo las anclas, y el propio
+        ''' comentario del puente ya lo avisaba.
+        ''' </summary>
+        Private Shared Function DistanciaAPiel(st As ClothSimState, i As Integer) As Single
+            If st.Skinned Is Nothing OrElse i < 0 OrElse i >= st.Positions.Length Then Return -1.0F
+            Dim vi = i
+            If st.GatherMap IsNot Nothing AndAlso i < st.GatherMap.Length AndAlso
+               (st.GatherMapHas Is Nothing OrElse (i < st.GatherMapHas.Length AndAlso st.GatherMapHas(i))) Then
+                vi = CInt(st.GatherMap(i))
+            End If
+            Dim v As Vector3 = Nothing
+            If Not st.Skinned.TryGetValue(vi, v) Then Return -1.0F
+            Return (st.Positions(i) - v).Length
+        End Function
+
         Private Shared Sub DiagnosticoDeLaMalla(st As ClothSimState)
             If Not Logger.Enabled OrElse st.Links Is Nothing OrElse st.Links.Count = 0 Then Exit Sub
+            ' filtros de impresion, de la app (ver el resumen de arriba)
+            Const CORTE_FUERA As Single = 0.25F
+            Const CORTE_HONDO As Single = 0.001F
             Dim peor = 0.0F, med = 0.0R, n = 0, fuera = 0
             Dim est = 0.0F, apl = 0.0F
             Dim pA = -1, pB = -1, pD = 0.0F, pRest = 0.0F
             For Each lk In st.Links
                 If lk.A < 0 OrElse lk.B < 0 OrElse lk.A >= st.Positions.Length OrElse lk.B >= st.Positions.Length Then Continue For
-                If lk.Rest <= 0.0001F Then Continue For
+                If lk.Rest <= 0.0F Then Continue For
                 Dim d = (st.Positions(lk.A) - st.Positions(lk.B)).Length
                 Dim r = Math.Abs(d - lk.Rest) / lk.Rest
                 n += 1 : med += r
-                If r > 0.25F Then fuera += 1
-                If d > lk.Rest Then est = Math.Max(est, d / lk.Rest) Else apl = Math.Max(apl, lk.Rest / Math.Max(d, 0.0001F))
+                If r > CORTE_FUERA Then fuera += 1
+                If d > lk.Rest Then
+                    est = Math.Max(est, d / lk.Rest)
+                ElseIf d > 0.0F Then
+                    ' sin epsilon: con d = 0 el aplaste es infinito y no hay numero que reportar
+                    apl = Math.Max(apl, lk.Rest / d)
+                End If
                 If r > peor Then
                     peor = r : pA = lk.A : pB = lk.B : pD = d : pRest = lk.Rest
                 End If
@@ -1202,15 +1497,17 @@ Namespace Havok.Physics
                 If st.InvMass(i) = 0.0F Then Continue For
                 Dim hond = 0.0F
                 For Each c In st.Capsules
-                    If c.Bit <> 0UI AndAlso (st.MascaraColision(i) And c.Bit) = 0UI Then Continue For
+                    If (st.MascaraColision(i) And c.Bit) = 0UI Then Continue For
                     Dim nn As Vector3 = Nothing
                     Dim prof = ProfundidadEnConoRedondeado(st.Positions(i), c.A, c.B, c.Radius, c.RadiusB, st.Radius(i), nn)
                     If prof > hond Then hond = prof
                 Next
-                If hond > 0.001F Then pen += 1 : penPeor = Math.Max(penPeor, hond)
+                If hond > CORTE_HONDO Then pen += 1 : penPeor = Math.Max(penPeor, hond)
             Next
             Dim p1 = peor, m1 = If(n > 0, med / n, 0.0R), f1 = fuera, n1 = n, e1 = est, a1 = apl
             Dim q1 = pen, q2 = penPeor
+
+            Dim c1 = CORTE_FUERA, c2 = CORTE_HONDO
             ' ⛔ QUIEN es el peor link, no solo cuanto. Un link a 4x el reposo entre dos particulas
             ' LIBRES es "el solver no llega"; entre una FIJA y una libre es "el ancla la esta
             ' arrastrando"; y si la fija esta lejos de donde la puso el skin, el destino esta mal.
@@ -1231,7 +1528,7 @@ Namespace Havok.Physics
             Dim bufSkin = If(st.BufSim >= 0 AndAlso st.Buffers IsNot Nothing, BufferDe(st, If(st.BufSim = 0, 1, 0)), Nothing)
             If bufSkin IsNot Nothing Then
                 For Each lk4 In st.Links
-                    If lk4.A < 0 OrElse lk4.B < 0 OrElse lk4.Rest <= 0.0001F Then Continue For
+                    If lk4.A < 0 OrElse lk4.B < 0 OrElse lk4.Rest <= 0.0F Then Continue For
                     Dim va = GatherOf(st, lk4.A), vb = GatherOf(st, lk4.B)
                     If va < 0 OrElse vb < 0 OrElse va >= bufSkin.Length OrElse vb >= bufSkin.Length Then Continue For
                     Dim dd2 = (bufSkin(va) - bufSkin(vb)).Length
@@ -1240,6 +1537,30 @@ Namespace Havok.Physics
                     skPeor = Math.Max(skPeor, rr2)
                 Next
             End If
+            ' ⛔ EL DEFECTO ES DE UN LADO. Reportado a ojo sobre el render: "el vestido a la derecha
+            ' de la pantalla (izquierda del NPC) se deforma completamente". Si la fisica fuera
+            ' simetrica, la violacion tendria que repartirse parejo entre X<0 y X>0. Esto lo mide.
+            If Logger.Enabled Then
+                Dim nIzq = 0, nDer = 0
+                Dim vIzq = 0.0R, vDer = 0.0R
+                Dim pIzq = 0.0F, pDer = 0.0F
+                For Each lz In st.Links
+                    If lz.A < 0 OrElse lz.B < 0 OrElse lz.Rest <= 0.0F Then Continue For
+                    If lz.A >= st.Positions.Length OrElse lz.B >= st.Positions.Length Then Continue For
+                    Dim dz = (st.Positions(lz.A) - st.Positions(lz.B)).Length
+                    Dim rz = Math.Abs(dz - lz.Rest) / lz.Rest
+                    Dim xm = (st.Positions(lz.A).X + st.Positions(lz.B).X) * 0.5F
+                    If xm < 0.0F Then
+                        nIzq += 1 : vIzq += rz : pIzq = Math.Max(pIzq, rz)
+                    Else
+                        nDer += 1 : vDer += rz : pDer = Math.Max(pDer, rz)
+                    End If
+                Next
+                Dim i1 = nIzq, i2 = If(nIzq > 0, vIzq / nIzq, 0.0R), i3 = pIzq
+                Dim d1 = nDer, d2 = If(nDer > 0, vDer / nDer, 0.0R), d3 = pDer
+                Logger.LogLazy(Function() $"[CLOTH-LADO] X<0: {i1} links media={i2:P1} peor={i3:P1} · X>0: {d1} links media={d2:P1} peor={d3:P1}")
+            End If
+
             Dim sk1 = skN, sk2 = skPeor, sk3 = If(skN > 0, skMed / skN, 0.0R)
             Logger.LogLazy(Function() $"[CLOTH-CONTROL] los MISMOS links sobre la malla SKINNEADA (sin fisica): n={sk1} media={sk3:P1} peor={sk2:P1}")
 
@@ -1247,7 +1568,7 @@ Namespace Havok.Physics
             Dim ffMed = 0.0R
             For Each lk3 In st.Links
                 If lk3.A < 0 OrElse lk3.B < 0 OrElse lk3.A >= st.Positions.Length OrElse lk3.B >= st.Positions.Length Then Continue For
-                If lk3.Rest <= 0.0001F Then Continue For
+                If lk3.Rest <= 0.0F Then Continue For
                 If st.InvMass(lk3.A) <> 0.0F OrElse st.InvMass(lk3.B) <> 0.0F Then Continue For
                 Dim dd = (st.Positions(lk3.A) - st.Positions(lk3.B)).Length
                 Dim rr = Math.Abs(dd - lk3.Rest) / lk3.Rest
@@ -1264,7 +1585,7 @@ Namespace Havok.Physics
                 Dim ia = st.Fixed(q4)
                 If ia < 0 OrElse ia >= st.Positions.Length Then Continue For
                 For Each cc In st.Capsules
-                    If cc.Bit <> 0UI AndAlso (st.MascaraColision(ia) And cc.Bit) = 0UI Then Continue For
+                    If (st.MascaraColision(ia) And cc.Bit) = 0UI Then Continue For
                     Dim nn2 As Vector3 = Nothing
                     Dim pf = ProfundidadEnConoRedondeado(st.Positions(ia), cc.A, cc.B, cc.Radius, cc.RadiusB, st.Radius(ia), nn2)
                     If pf > ancHondo Then ancHondo = pf
@@ -1281,8 +1602,35 @@ Namespace Havok.Physics
             Dim fB = pB >= 0 AndAlso st.InvMass(pB) = 0.0F
             Dim tipo = If(fA AndAlso fB, "FIJA-FIJA", If(fA OrElse fB, "FIJA-libre", "libre-libre"))
             Dim pA2 = pA, pB2 = pB, pD2 = pD, pR2 = pRest, tipo2 = tipo
-            Logger.LogLazy(Function() $"[CLOTH-PEOR] link {pA2}-{pB2} ({tipo2}) d={pD2:F2} rest={pR2:F2} ⇒ x{(pD2 / Math.Max(pR2, 0.0001F)):F2}")
-            Logger.LogLazy(Function() $"[CLOTH-VIOL] malla de sim: peor={p1:P1} media={m1:P1} estiron=x{e1:F2} aplaste=x{a1:F2} links>25%={f1}/{n1} · dentro del cuerpo={q1} (hasta {q2:F2} u)")
+            Logger.LogLazy(Function() $"[CLOTH-PEOR] link {pA2}-{pB2} ({tipo2}) d={pD2:F2} rest={pR2:F2} ⇒ x{(If(pR2 > 0.0F, pD2 / pR2, Single.PositiveInfinity)):F2}")
+
+            ' ⛔ EL PAR CULPABLE, EN DETALLE. Saber que "el link 83-82 esta a x6" no dice por que. Lo
+            ' que hace falta es, de CADA una de las dos particulas: cuanta masa inversa tiene, cuantos
+            ' links la sujetan, si tiene correa (`hclLocalRangeConstraintSet`) y cuanto se fue de su
+            ' posicion skinneada. Con eso se distingue "el solver no llega" de "algo la esta empujando".
+            If pA >= 0 AndAlso pB >= 0 Then
+                Dim linksA = 0, linksB = 0
+                For Each lz In st.Links
+                    If lz.A = pA OrElse lz.B = pA Then linksA += 1
+                    If lz.A = pB OrElse lz.B = pB Then linksB += 1
+                Next
+                Dim corrA = 0, corrB = 0
+                Dim mdA = -1.0F, mdB = -1.0F
+                If st.LocalRange IsNot Nothing Then
+                    For Each cz In st.LocalRange
+                        If cz.Particle = pA Then corrA += 1 : mdA = cz.MaxDistance
+                        If cz.Particle = pB Then corrB += 1 : mdB = cz.MaxDistance
+                    Next
+                End If
+                Dim skA = DistanciaAPiel(st, pA), skB = DistanciaAPiel(st, pB)
+                Dim iA = st.InvMass(pA), iB = st.InvMass(pB)
+                Dim mkA = st.MascaraColision(pA), mkB = st.MascaraColision(pB)
+                Dim aa = pA, bb = pB, l1 = linksA, l2 = linksB, c1b = corrA, c2b = corrB
+                Dim m1b = mdA, m2b = mdB, s1b = skA, s2b = skB
+                Logger.LogLazy(Function() $"[CLOTH-PEORDET] p{aa}: invMasa={iA:F3} links={l1} correas={c1b} maxDist={m1b:F2} mascara=0x{mkA:X} |P-piel|={s1b:F2} u" &
+                                          $"  ·  p{bb}: invMasa={iB:F3} links={l2} correas={c2b} maxDist={m2b:F2} mascara=0x{mkB:X} |P-piel|={s2b:F2} u")
+            End If
+            Logger.LogLazy(Function() $"[CLOTH-VIOL] malla de sim: peor={p1:P1} media={m1:P1} estiron=x{e1:F2} aplaste=x{a1:F2} · links con violacion > {c1:P0} (corte de la app) = {f1}/{n1} · dentro del cuerpo mas de {c2:F3} u (corte de la app) = {q1}, hasta {q2:F2} u")
         End Sub
 
         Private Shared Sub Simulate(st As ClothSimState, skeleton As SkeletonInstance, dt As Single)
@@ -1315,15 +1663,47 @@ Namespace Havok.Physics
             If Logger.Enabled Then
                 Dim aj = ancSalto, nf = st.Fixed.Length
                 Logger.LogLazy(Function() $"[CLOTH-ANCLA] {nf} anclas · la que mas se movio en este frame: {aj:F3} u")
+                ' ⛔ DONDE ESTAN LAS ANCLAS. Si son un anillo en la cintura, su Z esta agrupada arriba
+                ' y estan unidas entre si; si estan desparramadas por toda la prenda, el solver arrastra
+                ' la tela desde lugares equivocados. `[CLOTH-FIJAS] links FIJA-FIJA=0` ya era una senal:
+                ' 33 anclas de 321 sin UN solo link entre dos de ellas no es un anillo.
+                Dim zAnc = st.Fixed.Where(Function(q) q >= 0 AndAlso q < st.Positions.Length).
+                                    Select(Function(q) st.Positions(q).Z).ToArray()
+                Dim zTod = st.Positions.Select(Function(v) v.Z).ToArray()
+                If zAnc.Length > 0 AndAlso zTod.Length > 0 Then
+                    Dim a1 = zAnc.Min(), a2 = zAnc.Max(), a3 = zAnc.Average()
+                    Dim t1 = zTod.Min(), t2 = zTod.Max()
+                    ' cuantas anclas caen en el tercio de ARRIBA de la prenda
+                    Dim corte = t1 + (t2 - t1) * 2.0F / 3.0F
+                    Dim arriba = zAnc.Count(Function(z) z >= corte)
+                    Dim na = zAnc.Length
+                    Logger.LogLazy(Function() $"[CLOTH-ANCLAZ] anclas Z=[{a1:F1}..{a2:F1}] media={a3:F1} · prenda Z=[{t1:F1}..{t2:F1}] · {arriba}/{na} anclas en el tercio superior")
+                    ' Las que NO estan arriba: quienes son, a que distancia de la piel quedaron, y
+                    ' cuantos links las tocan. Un ancla lejos de la piel es un ancla mal colocada.
+                    For Each q In st.Fixed
+                        If q < 0 OrElse q >= st.Positions.Length Then Continue For
+                        If st.Positions(q).Z >= corte Then Continue For
+                        Dim dPiel = DistanciaAPiel(st, q)
+                        Dim nl = st.Links.Where(Function(lz) lz.A = q OrElse lz.B = q).Count()
+                        Dim qq = q, zz = st.Positions(q).Z, dd = dPiel, ll = nl
+                        Logger.LogLazy(Function() $"[CLOTH-ANCLABAJA] p{qq}: Z={zz:F1} · |P-piel|={dd:F3} u · links={ll}")
+                    Next
+                End If
             End If
 
             For s = 0 To substeps - 1
 
                 Dim alpha = CSng(s + 1) / substeps
 
-                ' (0) los colisionables se mueven ANTES que nada en el substep (0x14195C9B0).
+                ' (1) los colisionables se mueven ANTES que nada en el substep (0x14195C9B0).
                 ColocarColisionables(st, alpha)
 
+                ' (2) LA FASE DE TERRENO, Y VA ACA: ANTES DE LAS ANCLAS Y DEL INTEGRADOR.
+                ' `Simulate` la llama en 0x14195CB7A, entre `Substep Collidables` y la interpolacion
+                ' de anclas — no dentro del bucle de solve, que es donde estaba. Ver `FaseDeTerreno`.
+                FaseDeTerreno(st)
+
+                ' (3) anclas interpoladas (0x14195CB88).
                 For q = 0 To st.Fixed.Length - 1
                     Dim idx = st.Fixed(q)
                     Dim pa = Vector3.Lerp(ancPrev(q), ancPos(q), alpha)
@@ -1331,13 +1711,23 @@ Namespace Havok.Physics
                     st.Previous(idx) = pa
                 Next
 
-                ' (1) Verlet de posición. invMass = 0 (ancla) ⇒ aceleración 0.
+                ' (4) "TtIntegrate" (0x141A12EE0): F[] = 0 → cada action acumula → Verlet.
+                AplicarAcciones(st, dtSub)
+
+                ' ⛔ EL INTEGRADOR RECORRE TODAS LAS PARTICULAS. Aca habia un
+                ' `If inv = 0 Then Continue For`: el motor NO lo tiene (0x141A13150 barre las
+                ' `numParticles` sin mirar masa) y no le hace falta, porque con `invMass = 0` la
+                ' aceleracion se anula sola y el ancla acaba de quedar con `P == Pprev` ⇒ velocidad 0.
+                ' Para el ancla el resultado es idéntico; la diferencia aparece en una particula con
+                ' `invMass = 0` que NO este en `fixedParticles`: el motor la deja moverse con su
+                ' velocidad amortiguada y el atajo la congelaba, ademas de dejarle el `Previous` viejo
+                ' para siempre.
                 For i = 0 To n - 1
                     Dim inv = st.InvMass(i)
-                    If inv = 0.0F Then Continue For
                     Dim cur = st.Positions(i)
                     Dim vel = (cur - st.Previous(i)) * st.Damping
-                    Dim acc = gravity * (st.Mass(i) * inv)
+                    ' a = (mass·G + F[i]) · invMass — el termino F es el de las `hclAction`.
+                    Dim acc = ((gravity * st.Mass(i)) + st.Fuerzas(i)) * inv
                     st.Previous(i) = cur
                     st.Positions(i) = cur + vel + (acc * dtSub2)
                 Next
@@ -1369,15 +1759,17 @@ Namespace Havok.Physics
                             Case ConstraintKind.Compressible
                                 SolveCompressibleLinks(st, blk.Start, blk.Count, k)
                             Case ConstraintKind.BonePlane
-                                SolveBonePlanes(st, skeleton, blk.Start, blk.Count, k)
+                                SolveBonePlanes(st, skeleton, blk.Start, blk.Count, k, st.AdaptFlag)
                             Case ConstraintKind.LocalRange
-                                If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned, normalesRef, blk.Start, blk.Count, k)
+                                If HavokPhysicsSettings.EnableLocalRange Then SolveLocalRange(st, skinned, normalesRef, blk.Start, blk.Count, k, st.AdaptFlag)
+                            Case ConstraintKind.Volume
+                                SolveVolume(st, blk.Start, blk.Count, k)
                             Case ConstraintKind.Colision
                                 ' El `-1` de la lista authored. La colision NO va al final: va donde el
                                 ' archivo la puso, y puede aparecer mas de una vez.
+                                ' ⛔ El terreno NO va aca: es una fase aparte del substep (ver arriba).
                                 If HavokPhysicsSettings.EnableCollision Then
                                     SolveCapsules(st)
-                                    SolveTerreno(st)
                                     SolvePellizco(st)
                                     SolveAntiPinch(st, skeleton, skinned, normalesRef)
                                 End If
@@ -1385,10 +1777,77 @@ Namespace Havok.Physics
                     Next
                     If sinLista AndAlso HavokPhysicsSettings.EnableCollision Then
                         SolveCapsules(st)
-                        SolveTerreno(st)
                         SolvePellizco(st)
                         SolveAntiPinch(st, skeleton, skinned, normalesRef)
                     End If
+                Next
+
+                ' ⛔ LA COLA DE `TtSolve`, QUE FALTABA. Despues de TODAS las iteraciones, la version
+                ' con lista authored (0x141A13650 — la unica que usa el corpus) corre una segunda
+                ' pasada sobre `antiPinchConstraintSets`, y esta gateada SOLO por
+                ' `simulationInfo.pinchDetectionEnabled` (0x141A13857): NO exige "mas de un
+                ' colisionable con pellizco", que es la puerta del paso `k = 1,0` de dentro de
+                ' `CollideAndSolve`. Recorre unicamente los sets de tipo 19 (AntiPinch).
+                ' ⚠️ La version SIN lista no tiene esta cola, y por eso se gatea igual que el motor.
+                If Not sinLista Then SolveAntiPinchCola(st, skeleton, skinned, normalesRef)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' El buffer `F` del integrador. `TtIntegrate` (0x141A12EE0) lo CERA en cada substep
+        ''' (<c>movups [rax], xmm0</c> con xmm0 = 0 en 0x141A1302A) y despues recorre
+        ''' <c>hclSimClothData.actions</c> (+0xE8) llamando al slot <c>+0x20</c> de cada una
+        ''' (0x141A13093) con <c>(action, simCloth, dtSub, F)</c>.
+        '''
+        ''' <para>La unica accion serializable es `hclSimpleWindAction`; su `applyAction`
+        ''' (<c>0x1418F8420</c>, COMPARTIDA con la subclase de Bethesda) es:</para>
+        ''' <code>
+        '''     si totalMass == 0: no hace nada
+        '''     por particula i:
+        '''         f      = |dot3(normal_i, windDirection)|   ' 0,7 si no hay normales por particula
+        '''         relAir = airVelocity − (P[i] − Pprev[i]) / dtSub
+        '''         F[i]  += relAir · maximumDrag · f · (mass_i / totalMass)
+        ''' </code>
+        ''' <para>⚠️ MEDIDO: 0 de 342 prendas vanilla declaran `actions`. Pero el motor le monta una a
+        ''' TODAS en runtime — construye un `hclBSClothParameterizedWindAction` al iniciar el mundo de
+        ''' cloth (0x141875B8B) y lo registra en la prenda (0x1418A0BC2) —, y esa toma el viento del
+        ''' juego por un callback. Esta app no tiene viento de juego, asi que lo que corre aca es
+        ''' EXACTAMENTE lo que el archivo declare y nada mas: el hueco que queda es el viento
+        ''' ambiental, y queda DECLARADO, no tapado con un valor inventado.</para>
+        ''' </summary>
+        Private Shared Sub AplicarAcciones(st As ClothSimState, dtSub As Single)
+            Dim F = st.Fuerzas
+            If F Is Nothing Then Exit Sub
+            ' Sin acciones el buffer nunca se escribe, asi que sigue en los ceros del `ReDim` y el
+            ' `Array.Clear` por substep seria una pasada de memoria para nada. MEDIDO: 0 de 342
+            ' prendas vanilla declaran acciones, o sea que este es el camino de TODAS ellas.
+            If st.Acciones Is Nothing OrElse st.Acciones.Count = 0 Then Exit Sub
+            Array.Clear(F, 0, F.Length)
+            ' `totalMass == 0` ⇒ el motor sale ANTES de tocar F (0x1418F8420).
+            If st.TotalMass = 0.0F OrElse dtSub <= 0.0F Then Exit Sub
+            Dim invTotal = 1.0F / st.TotalMass
+            Dim invDt = 1.0F / dtSub
+            Dim hayNormales = st.HaceNormales AndAlso st.NormalesSim IsNot Nothing AndAlso st.NormalesSim.Length = F.Length
+
+            For Each accion In st.Acciones
+                Dim viento = TryCast(accion, HclSimpleWindActionDetail_Class)
+                If viento Is Nothing Then
+                    If Logger.Enabled Then
+                        Dim cn = If(accion Is Nothing, "?", accion.ClassName)
+                        Logger.LogLazy(Function() $"[CLOTH-ACTION] accion '{cn}' declarada y SIN implementar: no aporta a F")
+                    End If
+                    Continue For
+                End If
+                Dim dir = VectorDe(viento.WindDirection)
+                Dim aire = VectorDe(viento.AirVelocity)
+                Dim drag = viento.MaximumDrag
+                For i = 0 To F.Length - 1
+                    ' `cosN` = |cos| entre la normal de la TELA y la direccion del viento; sin normales
+                    ' por particula el motor usa la constante 0,7 en su lugar.
+                    Dim cosN = 0.7F
+                    If hayNormales Then cosN = Math.Abs(Vector3.Dot(st.NormalesSim(i), dir))
+                    Dim relAir = aire - ((st.Positions(i) - st.Previous(i)) * invDt)
+                    F(i) += relAir * (drag * cosN * (st.Mass(i) * invTotal))
                 Next
             Next
         End Sub
@@ -1493,10 +1952,14 @@ Namespace Havok.Physics
 
             ' Mb: la MISMA rotacion pero con el angulo escalado, y la traslacion escalada.
             Dim mb = Matrix4.Identity
-            If bRot > 0.0F AndAlso ang > 1.0E-6F Then
-                Dim eje = EjeDeRotacion(m, ang)
+            ' ⛔ Idem que en `ColocarColisionables`: el eje sale del cuaternion de Shepperd
+            ' (0x14135EE20) y la guarda es la longitud EXACTA en cero. El `1.0E-6F` que habia aca era
+            ' otro numero mio, y encima tapaba el caso de 180° que `EjeDeRotacion` no sabia resolver.
+            If bRot > 0.0F Then
+                Dim qM = MatrizAQuaternion(m)
+                Dim eje = New Vector3(qM.X, qM.Y, qM.Z)
                 If eje.LengthSquared > 0.0F Then
-                    mb = Matrix4.CreateFromAxisAngle(Vector3.Normalize(eje), ang * bRot)
+                    mb = Matrix4.CreateFromAxisAngle(NormalMotor(eje), ang * bRot)
                 End If
             End If
             mb.M41 = trasl.X * bTras
@@ -1529,22 +1992,19 @@ Namespace Havok.Physics
             If v >= vMax Then Return bMax
             If v <= vMin Then Return bMin
             Dim span = vMax - vMin
-            If Math.Abs(span) <= 1.0E-7F Then Return bMin
+            ' ⛔ EL EPSILON ES DEL MOTOR, NO MIO. Aca habia un `1.0E-7F` que me invente. El motor
+            ' compara contra la constante <c>1e-05</c> de <c>0x142632150</c>, y lo hace sobre el VALOR
+            ' ABSOLUTO del span — el `pslld xmm2, 1` + `psrld xmm2, 1` de 0x141A13B94/0x141A13B99 es
+            ' justamente "borrar el bit de signo":
+            '     0x141A13B9E:  if 1e-05 >= |span|  ->  pendiente = 0   (0x141A13BA3)
+            '                   si no                ->  pendiente = 1 / span
+            ' Con pendiente 0 el resultado es `0 * (...) + bMin` = bMin, o sea el mismo camino que
+            ' habia; lo que estaba mal era el numero, y por dos ordenes de magnitud.
+            Const EPS_SPAN As Single = 0.00001F
+            If Math.Abs(span) <= EPS_SPAN Then Return bMin
             Return bMin + (bMax - bMin) * ((v - vMin) / span)
         End Function
 
-        ''' <summary>Eje de la rotacion de una matriz de fila, sacado de la parte antisimetrica. Se usa
-        ''' solo para re-escalar el angulo, asi que no hace falta normalizar aca (el llamador lo hace).</summary>
-        Private Shared Function EjeDeRotacion(m As Matrix4, ang As Single) As Vector3
-            ' Cerca de 180° la parte antisimetrica se anula y hay que sacarlo de la diagonal.
-            If ang < 3.13F Then
-                Return New Vector3(m.M23 - m.M32, m.M31 - m.M13, m.M12 - m.M21)
-            End If
-            Dim x = Math.Sqrt(Math.Max(0.0R, (m.M11 + 1.0R) / 2.0R))
-            Dim y = Math.Sqrt(Math.Max(0.0R, (m.M22 + 1.0R) / 2.0R))
-            Dim z = Math.Sqrt(Math.Max(0.0R, (m.M33 + 1.0R) / 2.0R))
-            Return New Vector3(CSng(x), CSng(y), CSng(z))
-        End Function
 
         ''' <summary>
         ''' Normales de la malla de SIMULACION (`hclSimClothData.doNormals`, +0x14C), con el signo por
@@ -1579,7 +2039,7 @@ Namespace Havok.Physics
             Next
             For i = 0 To n - 1
                 Dim l = st.NormalesSim(i).Length
-                If l > 0.000001F Then st.NormalesSim(i) /= l
+                st.NormalesSim(i) = NormalMotor(st.NormalesSim(i))
             Next
         End Sub
 
@@ -1601,34 +2061,118 @@ Namespace Havok.Physics
         ''' link se estiro mas que ese factor (al cuadrado) se considera ENGANCHADA y el motor la
         ''' suelta del contacto en vez de seguir sosteniendola.</para>
         ''' </summary>
-        Private Shared Sub SolveTerreno(st As ClothSimState)
+        ''' <summary>
+        ''' LA FASE DE TERRENO DEL SUBSTEP — <c>0x14195DA70</c>, llamada desde <c>Simulate</c> en
+        ''' <c>0x14195CB7A</c>, o sea <b>entre `Substep Collidables` y la interpolacion de anclas</b>, y
+        ''' NO dentro del bucle de solve, que es donde estaba.
+        '''
+        ''' <para>El bloque del motor es
+        ''' <c>computeContactPlanes → collideTriangles → collideConvexes → releaseStuckParticlesCpu</c>,
+        ''' y esta gateado por <c>0x14195E3A0</c>:</para>
+        ''' <code>
+        '''     simulationInfo.landscapeCollisionEnabled (+0x1D) ≠ 0
+        ''' AND (simCloth[+0xF8].count ≠ 0 OR simCloth[+0x100].count ≠ 0)   ' geometria de terreno en RUNTIME
+        ''' AND clothData.numLandscapeCollidableParticles (+0x148) &gt; 0
+        ''' AND simCloth[+0xF0] ≠ 0
+        ''' </code>
+        ''' <para>⚠️ LIMITE DECLARADO, IGUAL QUE ANTES: las dos condiciones del medio son geometria de
+        ''' terreno que el motor recibe del mundo y esta app no tiene. Lo unico que se puede sostener
+        ''' es un plano horizontal a la altura del punto mas bajo del esqueleto vivo. Eso es una
+        ''' aproximacion de la app y sigue estandolo; lo que se corrige aca es la FASE en la que corre
+        ''' y la ley del enganche.</para>
+        ''' </summary>
+        Private Shared Sub FaseDeTerreno(st As ClothSimState)
+            ' El buffer de planos se CEROA entero al principio de la fase: `computeContactPlanes`
+            ' (0x141A14030) arranca con un bucle que escribe `xmm0 = 0` sobre las
+            ' `[simCloth+0x20]` entradas de 16 bytes antes de mirar nada.
+            If st.SueltaDelContacto IsNot Nothing Then Array.Clear(st.SueltaDelContacto, 0, st.SueltaDelContacto.Length)
             If Not st.TerrenoActivo Then Exit Sub
-            Dim n = Math.Min(st.TerrenoParticulas, st.Positions.Length)
+            ' ⛔ LA FASE BARRE TODAS LAS PARTICULAS, NO LAS `numLandscapeCollidableParticles`.
+            ' Los tres kernels usan `[simCloth+0x20]` como cota, y ese campo es el NUMERO DE
+            ' PARTICULAS: el buffer de planos se dimensiona `[simCloth+0x20] * 16` (0x14195C8A9) y
+            ' 0x141A14600 lo indexa con el indice GLOBAL de particula que traen los links
+            ' (`r9 + particula*16`) => tiene que tener una entrada por particula.
+            ' `numLandscapeCollidableParticles` (clothData+0x148) aparece SOLO en la puerta de
+            ' 0x14195E3A0, que exige que sea > 0 para correr la fase.
+            If st.TerrenoParticulas <= 0 Then Exit Sub
+            Dim n = st.Positions.Length
             If n <= 0 Then Exit Sub
+            ' ⛔ LA SUELTA VA ANTES DE APLICAR EL PLANO, NO DESPUES. En 0x14195DA70 el orden es
+            ' construir los planos -> `releaseStuckParticlesCpu` -> consumirlos; una particula que
+            ' quedo enganchada tiene su plano en CERO cuando el consumidor lo mira, o sea que el suelo
+            ' no la toca en este substep. Llamarla al final, como estaba, la dejaba sin efecto ninguno.
+            SoltarParticulasEnganchadas(st)
             Dim piso = st.TerrenoAltura + st.TerrenoRadio
+            Dim suelta = st.SueltaDelContacto
+            Dim proyectadas = 0, sueltas = 0, masBajo = Single.MaxValue
             For i = 0 To n - 1
-                If st.InvMass(i) = 0.0F Then Continue For
+                ' ⛔ SIN FILTRO POR MASA: 0x141A144C0 recorre las `[simCloth+0x20]` entradas sin mirar
+                ' `invMass` ni una vez. Aca habia un `If InvMass = 0 Then Continue For` sin cita. Y el
+                ' motor puede permitirselo porque la fase corre ANTES de la interpolacion de anclas
+                ' (0x14195CB88), que le vuelve a imponer su posicion a toda particula anclada.
+                If suelta IsNot Nothing AndAlso i < suelta.Length AndAlso suelta(i) Then sueltas += 1 : Continue For
                 Dim pq = st.Positions(i)
+                If pq.Z < masBajo Then masBajo = pq.Z
                 If pq.Z >= piso Then Continue For
-                If st.TerrenoDetectaEnganche AndAlso EstaEnganchada(st, i) Then Continue For
                 pq.Z = piso
                 st.Positions(i) = pq
+                proyectadas += 1
             Next
+            If Logger.Enabled Then
+                Dim a9 = proyectadas, b9 = n, c9 = piso, d9 = masBajo, e9 = sueltas
+                Logger.LogLazy(Function() $"[CLOTH-PISO] proyectadas {a9}/{b9} · piso={c9:F3} · particula mas baja={d9:F3} · sueltas del contacto={e9}")
+            End If
         End Sub
 
-        ''' <summary>Una particula esta ENGANCHADA si alguno de sus links supera el factor de estiron
-        ''' declarado. El campo viene al CUADRADO, asi que se compara contra el cuadrado del cociente y
-        ''' no hace falta ninguna raiz.</summary>
-        Private Shared Function EstaEnganchada(st As ClothSimState, particula As Integer) As Boolean
-            If st.TerrenoFactorEngancheSq <= 0.0F OrElse st.Links Is Nothing Then Return False
+        ''' <summary>
+        ''' `releaseStuckParticlesCpu` — <c>0x14195DF00</c>, el ultimo paso de la fase de terreno.
+        ''' <code>
+        '''     si clothData.landscapeCollisionData.enableStuckParticleDetection (+0x138) == 0: no hace nada
+        '''     factor = clothData[+0x13C]  (stuckParticlesStretchFactorSq)
+        '''     para cada cs de staticConstraintSets con type 1 (StandardLink) o 13 (StandardLinkMx):
+        '''         por cada link con |d|² &gt; restLength² · factor:
+        '''             pone en CERO el plano de contacto cacheado de LAS DOS particulas (0x141A14600)
+        ''' </code>
+        ''' <para>El kernel de tipo 1 (<c>0x141A14600</c>) se lee entero y es literal:</para>
+        ''' <code>
+        '''     r10 = set.links ; cuenta = set[+0x28] ; stride 0x0C
+        '''     por link:  A = u16[+0], B = u16[+2], rest = f32[+4]
+        '''         |pos[B] - pos[A]|&#178;  contra  rest&#178; * factorSq                 0x141A1466D
+        '''         si  rest&#178;*factorSq &lt; |d|&#178;  =>  planos[A] = 0  y  planos[B] = 0
+        '''                                       (la constante cero es 0x14271A2D0)
+        ''' </code>
+        ''' <para>⛔ NO es lo que hacia `EstaEnganchada`, que preguntaba "¿esta particula tiene algun
+        ''' link estirado?" para saltearle la proyeccion contra el piso. Las tres diferencias:
+        ''' el motor actua sobre <b>el par</b> del link, no sobre la particula que se esta procesando;
+        ''' lo hace <b>una vez por substep</b> recorriendo los sets, no una vez por particula
+        ''' recorriendo sus links; y lo que cerea es <b>la entrada del buffer de planos de terreno</b>
+        ''' que la fase acaba de construir - o sea que la particula suelta no la toca el suelo en este
+        ''' substep.</para>
+        ''' <para>⛔ CORREGIDO: antes esta marca la consultaba tambien `SolvePellizco`, con la cita
+        ''' <c>0x141A75E51</c>. <b>Esa cita no sostiene el vinculo.</b> El byte que mira 0x141A75E51
+        ''' vive en <c>[simCloth+0x198]</c> y se indexa por <c>i - minPinchedParticleIndex</c>; el
+        ''' buffer que cerea 0x141A14600 es el scratch de planos que `Simulate` reserva en 0x14195C8E4
+        ''' y libera en 0x14195CE1B, indexado por particula global. Son dos cosas distintas y el motor
+        ''' no las conecta.</para>
+        ''' </summary>
+        Private Shared Sub SoltarParticulasEnganchadas(st As ClothSimState)
+            If Not st.TerrenoDetectaEnganche Then Exit Sub
+            If st.TerrenoFactorEngancheSq <= 0.0F OrElse st.Links Is Nothing OrElse st.SueltaDelContacto Is Nothing Then Exit Sub
+            ' ⛔ Se recorre `st.Links` ENTERO, que es la union de los sets de tipo StandardLink en el
+            ' orden del archivo — el mismo barrido que hace el motor sobre `staticConstraintSets`. NO
+            ' se usa `st.Blocks`, que es la lista de EJECUCION y puede repetir un set.
+            Dim P = st.Positions
             For Each lk In st.Links
-                If lk.A <> particula AndAlso lk.B <> particula Then Continue For
-                If lk.Rest <= 0.0001F Then Continue For
-                Dim d2 = (st.Positions(lk.A) - st.Positions(lk.B)).LengthSquared
-                If d2 > st.TerrenoFactorEngancheSq * lk.Rest * lk.Rest Then Return True
+                ' Sin umbral: el motor compara `|d|² > restLength² · factor` y no descarta nada por
+                ' tener el reposo chico. Con `rest = 0` la condicion es `|d|² > 0`, que es correcta.
+                If lk.A < 0 OrElse lk.B < 0 OrElse lk.A >= P.Length OrElse lk.B >= P.Length Then Continue For
+                Dim d2 = (P(lk.A) - P(lk.B)).LengthSquared
+                If d2 > st.TerrenoFactorEngancheSq * lk.Rest * lk.Rest Then
+                    st.SueltaDelContacto(lk.A) = True
+                    st.SueltaDelContacto(lk.B) = True
+                End If
             Next
-            Return False
-        End Function
+        End Sub
 
         ''' <summary>
         ''' DETECCION DE PELLIZCO — `simulationInfo.pinchDetectionEnabled` (+0x1C del info),
@@ -1650,14 +2194,39 @@ Namespace Havok.Physics
         ''' </summary>
         Private Shared Sub SolvePellizco(st As ClothSimState)
             If Not st.PinchActivo OrElse st.Capsules.Count = 0 Then Exit Sub
-            ' "mas de un colisionable con pellizco habilitado", igual que el motor.
+            ' ⛔ "MAS DE UNO", Y ES DEL MOTOR — LEIDO ENTERO ESTA VEZ.
+            ' `CollideAndSolve` cuenta a mano cuantos colisionables tienen el pellizco prendido y recien
+            ' entra al camino de pellizco si son DOS O MAS (0x141A697F0..0x141A6980B):
+            '     rcx = [simCloth+0x1C0] + 0x80      ; el byte de pellizco del colisionable 0
+            '     r8  = [simCloth+0x1B8]             ; cuantos colisionables hay EN TOTAL
+            '     por cada uno:  cmp byte [rcx], 0
+            '                    lea eax, [rdx+1] ; cmove eax, edx      ; suma 1 solo si NO es cero
+            '                    rcx += 0x90                            ; stride del colisionable
+            '     if eax <= 1 -> se saltea todo el camino de pellizco   ; 0x141A69808 / 0x141A6980B
+            ' ⚠️ `[simCloth+0x1B8]` es el TOTAL de colisionables, no los que tienen pellizco: la puerta
+            ' de 0x141A697D4 (`> 0`) solo dice "hay colisionables". La condicion real es este conteo.
             Dim habilitados = st.Capsules.Where(Function(x) x.PinchHabilitado).Count()
+            If Logger.Enabled Then
+                Dim h0 = habilitados, c0 = st.Capsules.Count, p0 = st.PinchActivo
+                Logger.LogLazy(Function() $"[CLOTH-PZGATE] pinchActivo={p0} colisionables={c0} conPellizcoHabilitado={h0} (hace falta >1)")
+            End If
             If habilitados <= 1 Then Exit Sub
 
+            Dim nPellizcadas = 0, nResueltas = 0, nCandidatas = 0, movMax = 0.0F
             Dim desde = Math.Max(0, st.PinchMin)
             Dim hasta = Math.Min(st.Positions.Length - 1, If(st.PinchMax > 0, st.PinchMax, st.Positions.Length - 1))
             For i = desde To hasta
                 If st.InvMass(i) = 0.0F Then Continue For
+                ' ⛔ ACA HABIA UNA CONSULTA A `SueltaDelContacto` QUE NO TENIA CITA, y esta afuera:
+                ' el byte de validez de 0x141A75E51 vive en `[simCloth+0x198]` indexado por
+                ' `i - minPinchedParticleIndex`, y `releaseStuckParticlesCpu` NO lo toca - cerea el
+                ' buffer de planos de terreno, que es otro array. Ver `SoltarParticulasEnganchadas`.
+                ' ⭐ Y ya se sabe QUIEN lo cerea: `zeroCachedContacts` (0x141A75F40), que
+                ' `CollideAndSolve` llama al entrar al camino de pellizco (0x141A6984B). Barre
+                ' `maxPinchedParticleIndex - minPinchedParticleIndex + 1` bytes en `[simCloth+0x198]`,
+                ' cerea los planos de `[simCloth+0x1A0]` y llena `[simCloth+0x1A8]` con 0xFFFFFFFF.
+                ' O sea: el byte arranca en CERO cada pasada y lo PRENDE el que encuentra el contacto.
+                ' No tiene nada que ver con las particulas enganchadas del terreno.
                 If st.PinchPorParticula IsNot Nothing AndAlso i < st.PinchPorParticula.Length AndAlso
                    st.PinchPorParticula(i) = 0 Then Continue For
                 Dim pq = st.Positions(i)
@@ -1667,7 +2236,7 @@ Namespace Havok.Physics
                 For ci = 0 To st.Capsules.Count - 1
                     Dim cap = st.Capsules(ci)
                     If Not cap.PinchHabilitado Then Continue For
-                    If cap.Bit <> 0UI AndAlso (mask And cap.Bit) = 0UI Then Continue For
+                    If (mask And cap.Bit) = 0UI Then Continue For
                     Dim tq = 0.0F
                     Dim cl = ClosestPointOnSegment(pq, cap.A, cap.B, tq)
                     Dim rr = cap.Radius + ((cap.RadiusB - cap.Radius) * tq) + cap.PinchRadio
@@ -1676,19 +2245,54 @@ Namespace Havok.Physics
                     If cap.PinchPrioridad > mejorPrio Then
                         mejorPrio = cap.PinchPrioridad
                         mejor = ci
+                        ' (solo para el diagnostico; la resolucion usa la superficie real, mas abajo)
                         mejorObjetivo = cap.Radius + ((cap.RadiusB - cap.Radius) * tq) + st.Radius(i)
                     End If
                 Next
+                nCandidatas += 1
                 If cuantos < 2 OrElse mejor < 0 Then Continue For
+                nPellizcadas += 1
                 ' Pellizcada: se resuelve contra el de mayor prioridad y NADA MAS.
                 Dim capG = st.Capsules(mejor)
-                Dim tg = 0.0F
-                Dim clg = ClosestPointOnSegment(pq, capG.A, capG.B, tg)
-                Dim dg = pq - clg
-                Dim lg = dg.Length
-                Dim ng = If(lg <= 0.000001F, New Vector3(0.0F, 0.0F, 1.0F), dg / lg)
-                st.Positions(i) = clg + ng * mejorObjetivo
+
+                ' ⛔ LA MISMA SUPERFICIE QUE EL CAMINO NORMAL, NO OTRA. Aca habia un
+                ' `ClosestPointOnSegment` + radio interpolado por `t`, que es justamente la geometria
+                ' que `SolveCapsules` documenta como EQUIVOCADA (el punto de contacto de un cono esta
+                ' corrido respecto del pie de la perpendicular). El motor no tiene dos superficies: el
+                ' camino de pellizco consume el contacto CACHEADO (`[rax]` punto, `[rax+0x10]` normal
+                ' en 0x141A75E7D/0x141A75E86) que produjo `iterateCollidables`, o sea el mismo
+                ' colisionador que el camino normal.
+                Dim ng As Vector3 = Nothing
+                Dim profG = ProfundidadEnConoRedondeado(pq, capG.A, capG.B, capG.Radius, capG.RadiusB, st.Radius(i), ng)
+                If profG <= 0.0F Then Continue For
+                Dim nuevaG = pq + ng * profG
+
+                ' ⛔ EL SOLVE DE CONTACTOS TAMBIEN ESCRIBE `Previous`, NO SOLO LA POSICION.
+                ' `0x141A75E00` completo, decodificado instruccion por instruccion:
+                '     d      = dot(P - contactPoint, n)                        0x141A75E86..0x141A75EBC
+                '     P'     = P + (radius - d) * n                            0x141A75EC5/0x141A75EC8
+                '     v      = P' - Pprev - k * velocidadDelCuerpo             0x141A75ED0/0x141A75ED3
+                '     vt     = v - dot(v, n) * n                               0x141A75F01/0x141A75F04
+                '     Pprev' = Pprev + vt * friction                           0x141A75F07/0x141A75F0A
+                ' `radius` es `particleDatas[i]+0x08` y `friction` es `+0x0C` (reflexion
+                ' `hclSimClothDataParticleData`). Es la MISMA ley que el camino normal, y aca faltaba
+                ' entera: la particula pellizcada quedaba con la velocidad de antes del contacto.
+                Dim frG = st.Friction(i)
+                If frG <> 0.0F Then
+                    Dim contactoG = nuevaG - ng * st.Radius(i)
+                    Dim vCuerpoG = capG.VelLineal + Vector3.Cross(capG.VelAngular, contactoG - capG.Origen)
+                    Dim vG = (nuevaG - st.Previous(i)) - vCuerpoG * st.DtSub
+                    Dim vtG = vG - ng * Vector3.Dot(ng, vG)
+                    st.Previous(i) += vtG * frG
+                End If
+                nResueltas += 1
+                movMax = Math.Max(movMax, profG)
+                st.Positions(i) = nuevaG
             Next
+            If Logger.Enabled Then
+                Dim a8 = nCandidatas, b8 = nPellizcadas, c8 = nResueltas, d8 = movMax, e8 = hasta - desde + 1
+                Logger.LogLazy(Function() $"[CLOTH-PZ] rango={e8} particulas · candidatas={a8} · pellizcadas(>=2)={b8} · resueltas={c8} · mayor separacion={d8:F4} u")
+            End If
         End Sub
 
         ''' <summary>
@@ -1714,15 +2318,58 @@ Namespace Havok.Physics
             ' `pinchDetectionEnabled = False`, o sea que en el motor estos sets estan INERTES.
             If Not st.PinchActivo OrElse st.BloquesAntiPinch Is Nothing OrElse st.BloquesAntiPinch.Count = 0 Then Exit Sub
             If st.Capsules.Where(Function(x) x.PinchHabilitado).Count() <= 1 Then Exit Sub
-            For Each blk In st.BloquesAntiPinch
+            ResolverBloques(st, skeleton, skinned, normalesRef, st.BloquesAntiPinch, 1.0F)
+        End Sub
+
+        ''' <summary>
+        ''' LA COLA DE `TtSolve` — <c>0x141A13857</c>..<c>0x141A138C9</c>, en la version CON lista
+        ''' authored (la unica que usa el corpus: 1.856 de 1.856 operadores traen `constraintExecution`).
+        '''
+        ''' <para>Despues de terminar TODAS las iteraciones de solve, el motor hace una segunda pasada
+        ''' sobre <c>hclSimClothData.antiPinchConstraintSets</c> (+0xC8) y esta gateada por
+        ''' <b>una sola condicion</b>: <c>simulationInfo.pinchDetectionEnabled</c> (<c>0x141A13857</c>).
+        ''' NO exige "mas de un colisionable con pellizco habilitado", que si es la puerta del paso con
+        ''' <c>k = 1,0</c> de dentro de `CollideAndSolve` (<c>0x141A69808</c>) — el que modela
+        ''' <see cref="SolveAntiPinch"/>. Son dos pasadas distintas con dos puertas distintas, y esta
+        ''' faltaba entera.</para>
+        ''' <para>Ademas recorre <b>solo los sets de tipo 19</b> (AntiPinch): <c>cmp [rcx+0x18], 0x13</c>
+        ''' en <c>0x141A1388B</c>. La version SIN lista de `TtSolve` (<c>0x141A133E0</c>) no tiene esta
+        ''' cola, por eso el llamador la gatea igual.</para>
+        ''' <para>⚠️ MEDIDO: el corpus vanilla de FO4 no declara ningun `antiPinchConstraintSet`
+        ''' (0 de 1.854 sim-cloth), asi que hoy esto no corre. Se implementa porque el campo existe y
+        ''' un mod puede traerlo.</para>
+        ''' </summary>
+        Private Shared Sub SolveAntiPinchCola(st As ClothSimState, skeleton As SkeletonInstance,
+                                              skinned As Dictionary(Of Integer, Vector3),
+                                              normalesRef As Dictionary(Of Integer, Vector3))
+            If Not st.PinchActivo Then Exit Sub
+            If st.BloquesAntiPinch Is Nothing OrElse st.BloquesAntiPinch.Count = 0 Then Exit Sub
+            ' Solo los de tipo 19. Esta app no instancia `hclAntiPinchConstraintSet` (no aparece en el
+            ' corpus), asi que ningun bloque lleva ese `TipoMotor` y el filtro no deja pasar nada —
+            ' que es exactamente lo que hace el motor con estos archivos. Cuando se implemente la
+            ' clase, el filtro ya esta puesto y no hay que acordarse.
+            Dim deTipo19 = st.BloquesAntiPinch.Where(Function(b) b.TipoMotor = TipoDeMotor.AntiPinch).ToList()
+            If deTipo19.Count = 0 Then Exit Sub
+            ResolverBloques(st, skeleton, skinned, normalesRef, deTipo19, 1.0F)
+        End Sub
+
+        ''' <summary>Corre una lista de bloques con un `k` fijo. Existe para que las dos pasadas de
+        ''' anti-pinch no tengan dos copias del mismo `Select Case`: si un dia se agrega un tipo de
+        ''' constraint, lo ven las dos.</summary>
+        Private Shared Sub ResolverBloques(st As ClothSimState, skeleton As SkeletonInstance,
+                                           skinned As Dictionary(Of Integer, Vector3),
+                                           normalesRef As Dictionary(Of Integer, Vector3),
+                                           bloques As List(Of ConstraintBlock), k As Single)
+            For Each blk In bloques
                 Select Case blk.Kind
-                    Case ConstraintKind.Distance : SolveDistanceLinks(st, blk.Start, blk.Count, 1.0F)
-                    Case ConstraintKind.Stretch : SolveStretchLinks(st, blk.Start, blk.Count, 1.0F)
-                    Case ConstraintKind.Bend : SolveBend(st, blk.Start, blk.Count, 1.0F)
-                    Case ConstraintKind.BendLink : SolveBendLinks(st, blk.Start, blk.Count, 1.0F)
-                    Case ConstraintKind.Compressible : SolveCompressibleLinks(st, blk.Start, blk.Count, 1.0F)
-                    Case ConstraintKind.BonePlane : SolveBonePlanes(st, skeleton, blk.Start, blk.Count, 1.0F)
-                    Case ConstraintKind.LocalRange : SolveLocalRange(st, skinned, normalesRef, blk.Start, blk.Count, 1.0F)
+                    Case ConstraintKind.Distance : SolveDistanceLinks(st, blk.Start, blk.Count, k)
+                    Case ConstraintKind.Stretch : SolveStretchLinks(st, blk.Start, blk.Count, k)
+                    Case ConstraintKind.Bend : SolveBend(st, blk.Start, blk.Count, k)
+                    Case ConstraintKind.BendLink : SolveBendLinks(st, blk.Start, blk.Count, k)
+                    Case ConstraintKind.Compressible : SolveCompressibleLinks(st, blk.Start, blk.Count, k)
+                    Case ConstraintKind.BonePlane : SolveBonePlanes(st, skeleton, blk.Start, blk.Count, k, st.AdaptFlag)
+                    Case ConstraintKind.LocalRange : SolveLocalRange(st, skinned, normalesRef, blk.Start, blk.Count, k, st.AdaptFlag)
+                    Case ConstraintKind.Volume : SolveVolume(st, blk.Start, blk.Count, k)
                 End Select
             Next
         End Sub
@@ -1781,9 +2428,11 @@ Namespace Havok.Physics
             '
             ' Asi que sembrar = correr la cadena del estado SIN simulacion una vez. No hace falta
             ' inventar una posicion inicial: el archivo ya dice como se llena el buffer.
+            Dim sembroAhora = False
             If Not st.Seeded Then
                 Dim previo = EstadoSinSimulacion(cfg)
                 If previo IsNot Nothing AndAlso Not ReferenceEquals(previo, estado) Then
+                    sembroAhora = True
                     For Each idx0 In previo.OperatorIndices
                         If idx0 < 0 OrElse idx0 >= cfg.OperadoresEnOrden.Count Then Continue For
                         Dim op0 = cfg.OperadoresEnOrden(idx0)
@@ -1791,6 +2440,38 @@ Namespace Havok.Physics
                         If op0 Is Nothing OrElse TypeOf op0 Is HclSimpleMeshBoneDeformOperatorGraph_Class Then Continue For
                         EjecutarOperador(op0, cfg, st, sim, clothSkel, bindWorld, skeleton, particleCount, dt)
                     Next
+                End If
+
+                ' ⛔ SOLO SI LA SIEMBRA CORRIO DE VERDAD. Cuando el estado elegido ya ES el que no
+                ' simula (modo `DeformOnly`), el bloque de arriba no hace nada porque `previo` y
+                ' `estado` son el MISMO objeto — y la cadena que llena las particulas se ejecuta recien
+                ' despues, en el bucle de operadores. Logueando aca sin esta guarda se median los CEROS
+                ' del `ReDim` y salia "57,6 u contra el DefaultClothPose", que parece una siembra rota y
+                ' no es mas que el instrumento mirando antes de tiempo.
+                If sembroAhora Then
+                ' ⛔⛔ EL CONTROL DE LA SIEMBRA. La cadena del estado sin simulacion deja el buffer de
+                ' particulas lleno desde la piel. EN REPOSO ese contenido tiene que caer sobre el
+                ' `hclSimClothPose` (`DefaultClothPose`) partícula por partícula: es la misma malla,
+                ' una skinneada al esqueleto de bind y la otra horneada por el autor.
+                ' <para>Si NO coincide, todo lo que se mida despues es contra una siembra torcida: los
+                ' `restLength` describen el DefaultClothPose (verificado por [CLOTH-REST]), asi que una
+                ' siembra que no lo respeta arranca con los links ya violados y el solver no tiene como
+                ' cerrarlos. Es la diferencia entre "el solver no llega" y "el punto de partida es otro".</para>
+                If Logger.Enabled Then
+                    Dim pose1 = sim.DefaultClothPoseDetails.FirstOrDefault()
+                    If pose1 IsNot Nothing AndAlso pose1.Pose IsNot Nothing Then
+                        Dim nn1 = Math.Min(particleCount, pose1.Pose.Count)
+                        Dim peor1 = 0.0F, suma1 = 0.0R, quien1 = -1
+                        For i1 = 0 To nn1 - 1
+                            Dim pp1 = pose1.Pose(i1)
+                            Dim d1 = (st.Positions(i1) - New Vector3(CSng(pp1.X), CSng(pp1.Y), CSng(pp1.Z))).Length
+                            suma1 += d1
+                            If d1 > peor1 Then peor1 = d1 : quien1 = i1
+                        Next
+                        Dim a1 = peor1, b1 = If(nn1 > 0, suma1 / nn1, 0.0R), d1b = nn1, e1 = quien1
+                        Logger.LogLazy(Function() $"[CLOTH-SIEMBRA] sembrada vs DefaultClothPose sobre {d1b} particulas: media={b1:F4} u · peor={a1:F4} u en la {e1}")
+                    End If
+                End If
                 End If
             End If
 
@@ -1918,6 +2599,28 @@ Namespace Havok.Physics
                     dstN(kv.Key) = kv.Value
                 Next
             End If
+            ' ⛔ COBERTURA DEL BUFFER. `OpSkinPN` escribe SOLO las claves que produjo el operador: lo
+            ' que no cubre se queda con lo que hubiera (los ceros del `ReDim` la primera vez). Un link
+            ' cuyo vertice no esta cubierto mide contra un punto que nadie movio — y eso es
+            ' exactamente lo que ve `[CLOTH-CONTROL]` cuando da 150 % bajo un giro RIGIDO, que no
+            ' puede deformar nada.
+            If Logger.Enabled Then
+                Dim nCub = skinned.Count, nBuf = dst.Length
+                Dim sinCubrir = 0, linksTocados = 0
+                If st.Links IsNot Nothing Then
+                    For Each lz In st.Links
+                        Dim va2 = GatherOf(st, lz.A), vb2 = GatherOf(st, lz.B)
+                        Dim mala = (va2 < 0 OrElse Not skinned.ContainsKey(va2)) OrElse (vb2 < 0 OrElse Not skinned.ContainsKey(vb2))
+                        If mala Then linksTocados += 1
+                    Next
+                End If
+                For iz = 0 To dst.Length - 1
+                    If Not skinned.ContainsKey(iz) Then sinCubrir += 1
+                Next
+                Dim c1 = nCub, c2 = nBuf, c3 = sinCubrir, c4 = linksTocados
+                Logger.LogLazy(Function() $"[CLOTH-BUFCOV] el skin cubre {c1} de {c2} entradas del buffer · {c3} sin cubrir · links con un extremo sin cubrir: {c4}")
+            End If
+
             ' La piel tambien es la referencia de la correa y de las anclas.
             st.Skinned = skinned
             st.NormalesRef = normales
@@ -2061,24 +2764,271 @@ Namespace Havok.Physics
         ''' `bEnableScaling:Cloth` esta en 1. El preview renderiza a escala 1, asi que valen 1; si algun
         ''' dia se renderiza un actor escalado hay que traerlos de ahi y NO dejarlos fijos.</para>
         ''' </summary>
+        ''' <summary>
+        ''' `simCloth[+0x1D0]` y `+0x1D4` — los dos factores de ESCALA DEL ACTOR. El motor los
+        ''' inicializa en 1,0 (`0x1418C66FF`/`0x1418C670A`) y los pisa con la escala del actor cuando
+        ''' `bEnableScaling:Cloth` esta en 1 (que es el default).
+        ''' <para>⚠️ LIMITE DECLARADO: esta app renderiza a escala 1, asi que valen 1. Entran en TRES
+        ''' lugares del motor y por eso viven en UN solo sitio: el <c>dtEff = dt / s1</c> de
+        ''' `Simulate` (0x14195C3EF), la potencia <c>(N·s1·s2)^-1,725</c> de `StiffnessFactor`, y la
+        ''' condicion de `adaptFlag`. Si algun dia se renderiza un actor escalado, se traen de ahi y
+        ''' los tres los ven.</para>
+        ''' </summary>
+        Friend Const S1Escala As Single = 1.0F
+        Friend Const S2Escala As Single = 1.0F
+
         Friend Shared Function FactorDeRigidez(tipo As Integer, adapt As Boolean,
                                                subSteps As Integer, substep As Integer) As Single
-            ' s1 y s2 valen 1,0 mientras no se simule un actor escalado (ver el aviso de arriba).
-            Const S1 As Single = 1.0F
-            Const S2 As Single = 1.0F
             If Not adapt Then Return 1.0F
-            If subSteps = 1 AndAlso S1 = 1.0F AndAlso S2 = 1.0F Then Return 1.0F
+            If subSteps = 1 AndAlso S1Escala = 1.0F AndAlso S2Escala = 1.0F Then Return 1.0F
             Select Case tipo
                 Case TipoDeMotor.LocalRange, TipoDeMotor.BonePlanes
                     Return If(substep = subSteps - 1, 1.0F, 0.0F)
                 Case TipoDeMotor.Transition
                     Return CSng(substep + 1) / CSng(Math.Max(1, subSteps))
                 Case Else
-                    Return CSng(Math.Pow(CDbl(subSteps) * S1 * S2, -1.725R))
+                    Return CSng(Math.Pow(CDbl(subSteps) * S1Escala * S2Escala, -1.725R))
             End Select
         End Function
 
+
+
+        ''' <summary>Fases 1 a 3 de `hclVolumeConstraintMx`: el centroide y la rotacion por
+        ''' descomposicion polar. Vive aparte porque lo usan el solver Y el control de reposo, y una
+        ''' ley que se escribe dos veces se desincroniza.</summary>
+        Private Shared Sub CalcularFrameVolumen(vs As VolumeSet, P As Vector3(),
+                                                ByRef c As Vector3,
+                                                ByRef r0 As Vector3, ByRef r1 As Vector3, ByRef r2 As Vector3)
+            ' --- fase 1: el centroide ponderado. Es la fila de traslacion del frame.
+            c = Vector3.Zero
+            For Each e In vs.Frame
+                c += P(e.Particle) * e.Param
+            Next
+
+            ' --- fase 2: A(fila i) = S w . fv[i] . (P - C)
+            Dim a0 = Vector3.Zero, a1 = Vector3.Zero, a2 = Vector3.Zero
+            For Each e In vs.Frame
+                Dim d = (P(e.Particle) - c) * e.Param
+                a0 += d * e.Fv.X
+                a1 += d * e.Fv.Y
+                a2 += d * e.Fv.Z
+            Next
+
+            ' --- fase 3: M = A.At  (M(i,j) = A.fila_i . A.fila_j, simetrica)
+            Dim m00 = Vector3.Dot(a0, a0), m01 = Vector3.Dot(a0, a1), m02 = Vector3.Dot(a0, a2)
+            Dim m11 = Vector3.Dot(a1, a1), m12 = Vector3.Dot(a1, a2), m22 = Vector3.Dot(a2, a2)
+            Dim v0 As Vector3, v1 As Vector3, v2 As Vector3
+            Dim lam0, lam1, lam2 As Single
+            DiagonalizarSimetrica3(m00, m01, m02, m11, m12, m22, v0, v1, v2, lam0, lam1, lam2)
+
+            ' M^(-1/2) = V . diag(1/raiz|lambda|) . Vt, con la guarda del motor: lambda = 0 => 0.
+            Dim s0 = InvRaizGuardada(lam0), s1 = InvRaizGuardada(lam1), s2 = InvRaizGuardada(lam2)
+            Dim n00 = s0 * v0.X * v0.X + s1 * v1.X * v1.X + s2 * v2.X * v2.X
+            Dim n01 = s0 * v0.X * v0.Y + s1 * v1.X * v1.Y + s2 * v2.X * v2.Y
+            Dim n02 = s0 * v0.X * v0.Z + s1 * v1.X * v1.Z + s2 * v2.X * v2.Z
+            Dim n11 = s0 * v0.Y * v0.Y + s1 * v1.Y * v1.Y + s2 * v2.Y * v2.Y
+            Dim n12 = s0 * v0.Y * v0.Z + s1 * v1.Y * v1.Z + s2 * v2.Y * v2.Z
+            Dim n22 = s0 * v0.Z * v0.Z + s1 * v1.Z * v1.Z + s2 * v2.Z * v2.Z
+
+            ' R = M^(-1/2) . A   (R.fila_i = S_k Minv(i,k) . A.fila_k)
+            r0 = (a0 * n00) + (a1 * n01) + (a2 * n02)
+            r1 = (a0 * n01) + (a1 * n11) + (a2 * n12)
+            r2 = (a0 * n02) + (a1 * n12) + (a2 * n22)
+        End Sub
+
+        ''' <summary>Pasa las entradas del parser al estado, filtrando indices fuera de rango.</summary>
+        Private Shared Function LeerEntradasVolumen(src As List(Of HclVolumeMxEntry_Class), particleCount As Integer) As VolumeEntry()
+            If src Is Nothing Then Return New VolumeEntry() {}
+            Dim l As New List(Of VolumeEntry)(src.Count)
+            For Each e In src
+                If e Is Nothing Then Continue For
+                If e.ParticleIndex < 0 OrElse e.ParticleIndex >= particleCount Then Continue For
+                l.Add(New VolumeEntry With {.Particle = e.ParticleIndex,
+                                            .Fv = New Vector3(e.FrameX, e.FrameY, e.FrameZ),
+                                            .Param = e.Parameter})
+            Next
+            Return l.ToArray()
+        End Function
+
+        ''' <summary>
+        ''' `hclVolumeConstraintMx` — <c>0x141A0A4D0</c>, scope <c>TtVolume Constraints MX</c>.
+        '''
+        ''' <para>⛔ NO es un constraint por link: es <b>SHAPE MATCHING</b>. Ajusta un frame RIGIDO a la
+        ''' nube de particulas que lo define y despues tira de las particulas de aplicacion hacia la
+        ''' posicion de reposo que el autor horneo EN ESE FRAME. Por eso es lo que conserva el volumen
+        ''' de una prenda: sin el, la tela puede aplastarse contra el cuerpo sin violar ni un link.</para>
+        '''
+        ''' <para>El motor lo hace en cuatro fases, con un scratch persistente por set que localiza por
+        ''' indice en <c>simCloth[+0xB0]/[+0xB8]</c>:</para>
+        ''' <code>
+        '''   si k &lt;= 0: no hace nada                                   0x141A0A4F2
+        '''   scratch[+0x40] = 0
+        '''   fase 1  C = Σ weightᵢ · P[idxᵢ]           →  scratch[+0x40]  batch 0x141A0AB60 · single 0x141A675C0
+        '''   fase 2  A = Σ weightᵢ · fvᵢ ⊗ (P[idxᵢ] − C)                  batch 0x141A0ACC0 · single 0x141A67620
+        '''   fase 3  M = A · Aᵀ ; R = M^(-1/2) · A     →  scratch[+0x10..+0x30]     0x141A0A6F0
+        '''   fase 4  target = fvᵢ · R + C                                 batch 0x141A0A890 · single 0x141A67790
+        '''           P[idxᵢ] += stiffnessᵢ · k · (target − P[idxᵢ])
+        ''' </code>
+        '''
+        ''' <para>⭐ El frame vive como una matriz 4x4 de FILA en el scratch: las tres filas de rotacion
+        ''' en <c>+0x10/+0x20/+0x30</c> y <b>la traslacion en <c>+0x40</c>, que es exactamente donde la
+        ''' fase 1 acumulo el centroide</b>. Se ve en <c>0x141339F90</c>, que es el que convierte
+        ''' `frameVector` en el destino: <c>out = v.x·fila0 + v.y·fila1 + v.z·fila2 + fila3</c>.</para>
+        '''
+        ''' <para>⭐⭐ LA FASE 3 NO SE ADIVINA, SE DEDUCE. El motor hace
+        ''' <c>0x141360210</c> (transpone A en su lugar) y <c>0x141360290</c> (producto de matrices),
+        ''' llamado como <c>(rcx=salida, rdx=Aᵀ, r8=A)</c> ⇒ <c>M = A · Aᵀ</c>; despues
+        ''' <c>0x141360C70</c> con <b>20 iteraciones</b> y <c>eps = FLT_EPSILON</c> sobre esa simetrica
+        ''' (una diagonalizacion de Jacobi), y por ultimo <c>1/√|λ|</c> con <c>rsqrtps</c> + Newton.
+        ''' Eso es <c>M^(-1/2)</c>, y <c>R = M^(-1/2)·A</c> es <b>la descomposicion polar izquierda de
+        ''' A</b>. El factor polar de una matriz es UNICO, asi que resolverlo con una diagonalizacion
+        ''' exacta da el mismo R al que converge el motor: no hay ley que inventar, solo aritmetica.</para>
+        ''' <para>Control de la ley: si <c>P − C = fv·R₀</c> exactamente, entonces
+        ''' <c>A = (Σ w·fv⊗fv)·R₀ = Q₀·R₀</c> con Q₀ simetrica, <c>M = Q₀²</c> y
+        ''' <c>R = Q₀⁻¹·A = R₀</c>. O sea que con la nube en su forma de reposo el paso es un NO-OP.</para>
+        '''
+        ''' <para>⚠️ El <c>1/√λ</c> del motor va sobre <b>|λ|</b> (<c>pslld</c>+<c>psrld</c> de 1 borra el
+        ''' bit de signo) y esta guardado: <c>λ = 0 ⇒ 0</c>. Se replica, porque es lo que hace que una
+        ''' nube degenerada (todas las particulas alineadas) no produzca infinitos.</para>
+        ''' <para>MEDIDO: 82 objetos en 77 archivos del load order. El censo viejo lo daba por ausente
+        ''' porque solo miraba `Fallout4 - Meshes.ba2` + `MeshesExtra`.</para>
+        ''' </summary>
+        Private Shared Sub SolveVolume(st As ClothSimState, start As Integer, count As Integer, k As Single)
+            ' El motor sale antes de tocar nada con k <= 0 (0x141A0A4F2).
+            If k <= 0.0F Then Exit Sub
+            Dim P = st.Positions
+            For iV = start To start + count - 1
+                If iV < 0 OrElse iV >= st.Volumen.Count Then Continue For
+                Dim vs = st.Volumen(iV)
+                If vs.Frame Is Nothing OrElse vs.Apply Is Nothing Then Continue For
+
+                Dim c As Vector3, r0 As Vector3, r1 As Vector3, r2 As Vector3
+                CalcularFrameVolumen(vs, P, c, r0, r1, r2)
+
+                ' --- fase 4: target = fv · R + C ; P += stiffness · k · (target − P)
+                ' ⭐ CONTROL DE LA LEY, con verdad conocida: en REPOSO la nube esta en su forma
+                ' horneada, o sea `P − C = fv·R₀`, y entonces `R = R₀` y `target = P` EXACTO ⇒ el paso
+                ' es un NO-OP. Si esta distancia no da ~0 en reposo, la ley (o el layout del que salen
+                ' los `frameVector`) esta mal, y todo lo que se mida despues es contra ese error.
+                Dim peorObj = 0.0F
+                For Each e In vs.Apply
+                    Dim objetivo = (r0 * e.Fv.X) + (r1 * e.Fv.Y) + (r2 * e.Fv.Z) + c
+                    If Logger.Enabled Then peorObj = Math.Max(peorObj, (objetivo - P(e.Particle)).Length)
+                    P(e.Particle) += (objetivo - P(e.Particle)) * (e.Param * k)
+                Next
+                If Logger.Enabled Then
+                    Dim po = peorObj, nfr = vs.Frame.Length, nap = vs.Apply.Length
+                    Logger.LogLazy(Function() $"[CLOTH-VOL] set: frame={nfr} apply={nap} · |target−P| peor={po:F4} u  (en REPOSO tiene que ser ~0)")
+                End If
+            Next
+        End Sub
+
+        ''' <summary>`1/√|λ|` con la guarda del motor (<c>cmpleps</c> sobre el valor ABSOLUTO, que sale
+        ''' del <c>pslld</c>+<c>psrld</c> de 1): con λ nulo devuelve 0 en vez de infinito.</summary>
+        Private Shared Function InvRaizGuardada(lam As Single) As Single
+            Dim a = Math.Abs(lam)
+            If a <= 0.0F Then Return 0.0F
+            Return CSng(1.0R / Math.Sqrt(a))
+        End Function
+
+        ''' <summary>
+        ''' Diagonalizacion de una simetrica 3x3 por rotaciones de Jacobi. Devuelve los tres
+        ''' autovectores ortonormales (como VECTORES COLUMNA de V) y sus autovalores.
+        ''' <para>⛔ QUE ESTA TRANSCRITO Y QUE NO, dicho con precision:</para>
+        ''' <para><b>La ley de TERMINACION si esta transcrita</b> (<c>0x141360DC5</c>..<c>0x141360DD0</c>):
+        ''' el motor converge cuando <c>eps² · ||M||²_F &gt; Σ off-diagonales²</c>, un criterio
+        ''' RELATIVO — no el absoluto que habia aca antes — y corta a las 20 iteraciones aunque no
+        ''' haya convergido (<c>0x141360E25</c>). Ver el detalle en el cuerpo.</para>
+        ''' <para><b>Las rotaciones en si no estan transcritas instruccion por instruccion.</b> El motor
+        ''' transpone (<c>0x141360210</c>), multiplica (<c>0x141360290</c>) y llama a
+        ''' <c>0x141360730</c>; aca va un Jacobi ciclico clasico. Lo que lo hace equivalente y no una
+        ''' suposicion: con la MISMA ley de terminacion, el punto fijo de un Jacobi sobre una
+        ''' simetrica es unico salvo orden y signo de los autovectores, y el factor polar que se arma
+        ''' con ella —<c>V·diag(1/√λ)·Vᵀ</c>— es invariante a las dos cosas.</para>
+        ''' <para>Lo que justifica no hacerlo: el resultado de una diagonalizacion CONVERGIDA de una
+        ''' simetrica es unico salvo orden y signo de los autovectores, y el factor polar que se arma
+        ''' con ella —<c>V·diag(1/√λ)·Vᵀ</c>— es invariante a las dos cosas. O sea que dos metodos
+        ''' distintos que converjan dan el MISMO R. Y hay control: con las particulas en el
+        ''' `DefaultClothPose` el paso tiene que ser un no-op, y `[CLOTH-VOLCTL]` mide
+        ''' <c>|target−P| = 0,0000 u</c> sobre 229 entradas. Si algun dia ese control se rompe, esto es
+        ''' lo primero que hay que ir a leer de verdad.</para>
+        ''' </summary>
+        Private Shared Sub DiagonalizarSimetrica3(m00 As Single, m01 As Single, m02 As Single,
+                                                  m11 As Single, m12 As Single, m22 As Single,
+                                                  ByRef v0 As Vector3, ByRef v1 As Vector3, ByRef v2 As Vector3,
+                                                  ByRef lam0 As Single, ByRef lam1 As Single, ByRef lam2 As Single)
+            Dim a = New Double(2, 2) {}
+            a(0, 0) = m00 : a(0, 1) = m01 : a(0, 2) = m02
+            a(1, 0) = m01 : a(1, 1) = m11 : a(1, 2) = m12
+            a(2, 0) = m02 : a(2, 1) = m12 : a(2, 2) = m22
+            Dim v = New Double(2, 2) {}
+            v(0, 0) = 1.0R : v(1, 1) = 1.0R : v(2, 2) = 1.0R
+
+            ' ⛔ LA LEY DE TERMINACION, TRANSCRITA DE 0x141360DC5..0x141360DD0.
+            ' Aca habia un criterio ABSOLUTO mio — `|a01| + |a02| + |a12| <= FLT_EPSILON` — y el del
+            ' motor es RELATIVO, sobre los CUADRADOS y escalado por la norma de Frobenius:
+            '     xmm11 = (suma de los cuadrados de TODOS los elementos) * eps²
+            '     xmm6  = (m10² + m20² + m21²) * 2          ; los 3 de abajo, x2 por la simetria
+            '     ucomiss xmm11, xmm6 ; ja  ->  CONVERGIO, sale                    0x141360DCC/0x141360DD0
+            ' o sea:   eps² * ||M||²_F  >  suma de los off-diagonales al cuadrado.
+            ' La diferencia importa: con una matriz de norma grande el criterio absoluto exige mucha
+            ' mas precision de la que el motor pide, y con una de norma chica exige menos.
+            ' ⭐ `||M||_F` es INVARIANTE bajo rotaciones de Jacobi, asi que da lo mismo calcularla una
+            ' vez sobre la matriz de entrada (que es lo que hace el motor, leyendo `[rbx]` antes del
+            ' bucle) que recalcularla en cada barrido.
+            Dim normF2 = (CDbl(m00) * m00) + (CDbl(m11) * m11) + (CDbl(m22) * m22) +
+                         2.0R * ((CDbl(m01) * m01) + (CDbl(m02) * m02) + (CDbl(m12) * m12))
+            Const EPS_JACOBI As Double = 1.19209289550781E-07R
+            Dim umbral = normF2 * EPS_JACOBI * EPS_JACOBI
+            ' 20 barridos, igual que el motor (`mov dword ptr [rsp+0x20], 0x14` en 0x141A0A774), y el
+            ' tope se respeta AUNQUE no haya convergido — el motor sale por `cmp ebx, edi ; jge`
+            ' (0x141360E25) sin reintentar.
+            For sweep = 1 To 20
+                Dim off2 = (a(0, 1) * a(0, 1)) + (a(0, 2) * a(0, 2)) + (a(1, 2) * a(1, 2))
+                If umbral > 2.0R * off2 Then Exit For
+                For pq = 0 To 2
+                    Dim pi = 0, qi = 1
+                    If pq = 1 Then pi = 0 : qi = 2
+                    If pq = 2 Then pi = 1 : qi = 2
+                    Dim apq = a(pi, qi)
+                    ' Prueba EXACTA: si el termino de fuera de la diagonal ya es cero no hay rotacion
+                    ' que aplicar. Cualquier umbral por encima de cero seria un numero inventado.
+                    If apq = 0.0R Then Continue For
+                    Dim theta = (a(qi, qi) - a(pi, pi)) / (2.0R * apq)
+                    Dim t = Math.Sign(theta) / (Math.Abs(theta) + Math.Sqrt(theta * theta + 1.0R))
+                    If theta = 0.0R Then t = 1.0R
+                    Dim cs = 1.0R / Math.Sqrt(t * t + 1.0R)
+                    Dim sn = t * cs
+                    For r = 0 To 2
+                        Dim arp = a(r, pi), arq = a(r, qi)
+                        a(r, pi) = cs * arp - sn * arq
+                        a(r, qi) = sn * arp + cs * arq
+                    Next
+                    For cc = 0 To 2
+                        Dim apc = a(pi, cc), aqc = a(qi, cc)
+                        a(pi, cc) = cs * apc - sn * aqc
+                        a(qi, cc) = sn * apc + cs * aqc
+                    Next
+                    For r = 0 To 2
+                        Dim vrp = v(r, pi), vrq = v(r, qi)
+                        v(r, pi) = cs * vrp - sn * vrq
+                        v(r, qi) = sn * vrp + cs * vrq
+                    Next
+                Next
+            Next
+
+            v0 = New Vector3(CSng(v(0, 0)), CSng(v(1, 0)), CSng(v(2, 0)))
+            v1 = New Vector3(CSng(v(0, 1)), CSng(v(1, 1)), CSng(v(2, 1)))
+            v2 = New Vector3(CSng(v(0, 2)), CSng(v(1, 2)), CSng(v(2, 2)))
+            lam0 = CSng(a(0, 0)) : lam1 = CSng(a(1, 1)) : lam2 = CSng(a(2, 2))
+        End Sub
+
         Private Shared Sub SolveDistanceLinks(st As ClothSimState, start As Integer, count As Integer, k As Single)
+            ' El motor sale antes de tocar nada con k <= 0: TODOS los wrappers de `solve`
+            ' arrancan con `comiss xmm6, 0 / jbe end` (0x141A0609D para este). Con estos
+            ' solvers el paso es lineal en k y da lo mismo, pero se replica para que la ley
+            ' este en un solo lugar y no dependa de que cada kernel sea lineal.
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
             Dim inv = st.InvMass
             For iL = start To start + count - 1
@@ -2117,13 +3067,21 @@ Namespace Havok.Physics
         ''' el esqueleto de la prenda y usa el hueso vivo. Si el indice no cae ahi, la constraint se
         ''' saltea y se loguea, en vez de aplicar el plano de OTRO hueso.</para>
         ''' </summary>
+        ''' <param name="adapt">El 6.º argumento del `solve` (ver <see cref="ClothSimState.AdaptFlag"/>).
+        ''' <c>0x1419FCB80</c> despacha sobre el: <c>adapt ? 0x1419FCD60 : 0x1419FCBD0</c>. La rama
+        ''' adaptativa hace la MISMA correccion y ademas repone `Previous` para no inyectar velocidad.</param>
         Private Shared Sub SolveBonePlanes(st As ClothSimState, skeleton As SkeletonInstance,
-                                           start As Integer, count As Integer, k As Single)
+                                           start As Integer, count As Integer, k As Single, adapt As Boolean)
             If skeleton Is Nothing Then Exit Sub
+            ' El motor sale antes de tocar nada con k <= 0 (0x1419FCB90).
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
+            Dim Q = st.Previous
             For i = start To start + count - 1
                 Dim c = st.BonePlanes(i)
-                If st.InvMass(c.Particle) = 0.0F Then Continue For
+                ' ⛔ SIN FILTRO POR MASA. El kernel del motor (0x1419FCBD0) escribe la posicion sin
+                ' mirar `invMass`: un ancla con un plano de hueso TAMBIEN se corrige. Aca habia un
+                ' `If InvMass = 0 Then Continue For` que no esta en el binario.
                 Dim hueso As HierarchiBone_class = Nothing
                 If Not skeleton.SkeletonDictionary.TryGetValue(c.BoneName, hueso) OrElse hueso Is Nothing Then Continue For
                 Dim g = hueso.GetGlobalTransform
@@ -2135,9 +3093,21 @@ Namespace Havok.Physics
                     c.Nx * m.M12 + c.Ny * m.M22 + c.Nz * m.M32,
                     c.Nx * m.M13 + c.Ny * m.M23 + c.Nz * m.M33)
                 Dim o As New Vector3(m.M41, m.M42, m.M43)
+                ' ⭐ La velocidad de Verlet ANTES de corregir. La rama adaptativa la captura al entrar
+                ' (0x1419FCD76/0x1419FCD7A cargan Positions Y Previous) y la repone al salir.
+                Dim vAntes = P(c.Particle) - Q(c.Particle)
                 Dim sdist = Vector3.Dot(P(c.Particle) - o, n) + c.D
                 If sdist >= 0.0F Then Continue For
-                P(c.Particle) += n * (-sdist * c.Stiffness * k)
+                Dim nueva = P(c.Particle) + n * (-sdist * c.Stiffness * k)
+                P(c.Particle) = nueva
+                ' ⛔⛔ LA RAMA ADAPTATIVA (0x1419FCD60): `Previous = P' − (P − Pprev)`.
+                '     0x1419FCED4  movups [r11 + rdx*8], xmm3      ' Positions[i] = P'
+                '     0x1419FCED9  subps  xmm3, xmm9               ' xmm9 = P − Pprev, capturado arriba
+                '     0x1419FCEDD  movups [rbx + rdx*8], xmm3      ' Previous[i]  = P' − v
+                ' La correccion queda con velocidad NEUTRA: el paso siguiente ve la misma velocidad
+                ' que habia antes del plano. Sin esto, cada correccion se le suma a la particula como
+                ' velocidad en el substep siguiente y la tela gana energia que el motor no le da.
+                If adapt Then Q(c.Particle) = nueva - vAntes
             Next
         End Sub
 
@@ -2158,6 +3128,11 @@ Namespace Havok.Physics
         ''' debajo de <c>bendMinLength</c>. Entre los dos topes no hace nada.</para>
         ''' </summary>
         Private Shared Sub SolveBendLinks(st As ClothSimState, start As Integer, count As Integer, k As Single)
+            ' El motor sale antes de tocar nada con k <= 0: TODOS los wrappers de `solve`
+            ' arrancan con `comiss xmm6, 0 / jbe end` (0x1419F8E7D para este). Con estos
+            ' solvers el paso es lineal en k y da lo mismo, pero se replica para que la ley
+            ' este en un solo lugar y no dependa de que cada kernel sea lineal.
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
             Dim inv = st.InvMass
             For i = start To start + count - 1
@@ -2196,6 +3171,11 @@ Namespace Havok.Physics
         ''' "corregirlo", porque corregirlo seria inventar otra ley.</para>
         ''' </summary>
         Private Shared Sub SolveCompressibleLinks(st As ClothSimState, start As Integer, count As Integer, k As Single)
+            ' El motor sale antes de tocar nada con k <= 0: TODOS los wrappers de `solve`
+            ' arrancan con `comiss xmm6, 0 / jbe end` (0x1419FE78D para este). Con estos
+            ' solvers el paso es lineal en k y da lo mismo, pero se replica para que la ley
+            ' este en un solo lugar y no dependa de que cada kernel sea lineal.
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
             Dim inv = st.InvMass
             For i = start To start + count - 1
@@ -2235,6 +3215,11 @@ Namespace Havok.Physics
         ''' </list>
         ''' </summary>
         Private Shared Sub SolveStretchLinks(st As ClothSimState, start As Integer, count As Integer, k As Single)
+            ' El motor sale antes de tocar nada con k <= 0: TODOS los wrappers de `solve`
+            ' arrancan con `comiss xmm6, 0 / jbe end` (0x141A06CDD para este). Con estos
+            ' solvers el paso es lineal en k y da lo mismo, pero se replica para que la ley
+            ' este en un solo lugar y no dependa de que cada kernel sea lineal.
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
             For iL = start To start + count - 1
                 Dim l = st.Stretch(iL)
@@ -2297,6 +3282,11 @@ Namespace Havok.Physics
         ''' recién después escribe las cuatro posiciones.</para>
         ''' </summary>
         Private Shared Sub SolveBend(st As ClothSimState, start As Integer, count As Integer, k As Single)
+            ' El motor sale antes de tocar nada con k <= 0: TODOS los wrappers de `solve`
+            ' arrancan con `comiss xmm6, 0 / jbe end` (0x1419F9A4D para este). Con estos
+            ' solvers el paso es lineal en k y da lo mismo, pero se replica para que la ley
+            ' este en un solo lugar y no dependa de que cada kernel sea lineal.
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
             Dim inv = st.InvMass
             For iB = start To start + count - 1
@@ -2373,13 +3363,23 @@ Namespace Havok.Physics
         ''' vértice de referencia SOBRE EL CUERPO SKINNEADO. Sin ella la tela sobre-cae (medido: los
         ''' cloths SIN local-range son exactamente los que sobre-caían, 79,8 % de libres contra 2,4 %).
         ''' </summary>
+        ''' <param name="adapt">El 6.º argumento del `solve`. <c>0x141A01F10</c> despacha sobre el
+        ''' (<c>0x141A01FF8</c>: <c>adapt ? 0x141A027E0 : 0x141A02700</c>) y con `shapeType = 0` — el
+        ''' unico del corpus, 236 de 236 — termina en <c>0x141A03680</c> (adaptativa) o
+        ''' <c>0x141A034E0</c> (normal). La ley de la correccion es la MISMA; lo que cambia es que la
+        ''' adaptativa repone `Previous` para no inyectar velocidad.</param>
         Private Shared Sub SolveLocalRange(st As ClothSimState, skinned As Dictionary(Of Integer, Vector3),
                                            normales As Dictionary(Of Integer, Vector3),
-                                           start As Integer, count As Integer, k As Single)
+                                           start As Integer, count As Integer, k As Single, adapt As Boolean)
+            ' El motor sale antes de tocar nada con k <= 0 (0x141A01F2E).
+            If k <= 0.0F Then Exit Sub
             Dim P = st.Positions
+            Dim Q = st.Previous
             For iC = start To start + count - 1
                 Dim c = st.LocalRange(iC)
-                If st.InvMass(c.Particle) = 0.0F Then Continue For
+                ' ⛔ SIN FILTRO POR MASA. El kernel del motor (0x141A034E0 / 0x141A03680) escribe la
+                ' posicion sin mirar `invMass`. Aca habia un `If InvMass = 0 Then Continue For` que no
+                ' esta en el binario: una particula fija con correa TAMBIEN la obedece.
                 ' ⛔ `referenceVertex` indexa la malla SKINNEADA (el cuerpo), no el array de particulas.
                 Dim refPos As Vector3 = Nothing
                 ' ⛔ LA MALLA DE REFERENCIA ES UN BUFFER. `referenceMeshBufferIdx` (+0x30) se lee en
@@ -2398,6 +3398,9 @@ Namespace Havok.Physics
                 ' A COMPONENTE, y no es cosmetico: con la particula exactamente sobre la referencia la
                 ' direccion queda indefinida, y asi sale un vector chiquito pero valido.
                 Const EPS As Single = 0.00000011920929F
+                ' ⭐ La velocidad de Verlet ANTES de corregir. La rama adaptativa la captura al entrar
+                ' (`subps xmm11, [rdx + rcx*8]` con rdx = Previous) y la repone al salir.
+                Dim vAntes = P(c.Particle) - Q(c.Particle)
                 Dim d = P(c.Particle) - refPos
                 d = New Vector3(d.X + EPS, d.Y + EPS, d.Z + EPS)
                 Dim d2 = d.LengthSquared()
@@ -2432,6 +3435,14 @@ Namespace Havok.Physics
                 End If
 
                 P(c.Particle) = nueva
+                ' ⛔⛔ LA RAMA ADAPTATIVA (0x141A03680): `Previous = P' − (P − Pprev)`.
+                '     0x141A03834  movups [rdi + rcx*8], xmm5   ' Positions[p] = P'
+                '     0x141A03838  subps  xmm5, xmm11           ' xmm11 = P − Pprev, capturado al entrar
+                '     0x141A03841  movups [rdx + rcx*8], xmm5   ' Previous[p]  = P' − v
+                ' La correa deja de meter energia: corrige la posicion y la velocidad queda igual.
+                ' MEDIDO: `adaptConstraintStiffness` esta en 846 de los 1.248 operadores del corpus, y
+                ' con subSteps > 1 (el 86 % de las prendas) ESTA es la rama que corre el motor.
+                If adapt Then Q(c.Particle) = nueva - vAntes
             Next
         End Sub
 
@@ -2477,6 +3488,87 @@ Namespace Havok.Physics
         ''' <para>Devuelve la profundidad (&gt; 0 si hay penetracion) y deja en <paramref name="normal"/>
         ''' la direccion de salida, ya normalizada.</para>
         ''' </summary>
+        ''' <summary>
+        ''' NORMALIZAR COMO EL MOTOR. Leido del kernel de colision en <c>0x141A6A7F6</c>:
+        ''' <code>
+        '''     xmm5 = lenSq + 1,19209290e-07          ; FLT_EPSILON, constante en 0x142F5AE70
+        '''     xmm2 = rsqrtps(xmm5)                   ; + un paso de Newton (3 - x*r&#178;)*(r*0,5)
+        '''     xmm3 = (xmm5 &lt;= 0)                     ; prueba EXACTA contra cero
+        '''     resultado = v * (xmm3 ? 0 : invSqrt)
+        ''' </code>
+        ''' <para>Dos cosas que la app tenia mal en once lugares:</para>
+        ''' <para>1. <b>El umbral.</b> Habia un <c>0.000001F</c> inventado por mi. El motor no compara
+        ''' contra un epsilon: <b>le SUMA FLT_EPSILON al cuadrado de la longitud</b> y despues compara
+        ''' contra CERO exacto. Como <c>lenSq &ge; 0</c>, esa comparacion no dispara nunca: el epsilon
+        ''' ES la guarda, y es una constante del binario, no una opinion.</para>
+        ''' <para>2. <b>El resultado degenerado.</b> La app devolvia <c>(0,0,1)</c> — un eje elegido por
+        ''' mi — y eso <b>empuja la particula en una direccion arbitraria</b>. El motor devuelve el
+        ''' VECTOR NULO: <c>0 * (1/sqrt(eps))</c> = 0. O sea que no la empuja a ningun lado.</para>
+        ''' <para>⚠️ Lo unico que no se replica es la aproximacion: el motor usa <c>rsqrtps</c> mas un
+        ''' paso de Newton (~22 bits) y aca va la raiz exacta. La diferencia es del orden de 1e-7
+        ''' relativo y va a favor de la precision, no en contra.</para>
+        ''' </summary>
+        ''' <summary>
+        ''' MATRIZ -> CUATERNION, transcripcion de <c>0x14135EE20</c> (Shepperd). Es la rutina que el
+        ''' motor usa para TODO lo que sea rotacion: `setTransform` la llama dos veces
+        ''' (<c>0x141960646</c> y <c>0x141960654</c>) y el bucle de colisionables por substep una vez
+        ''' (<c>0x14195C9DA</c>). El motor <b>nunca saca un eje de la parte antisimetrica de una
+        ''' matriz</b>, que es lo que hacia `EjeDeRotacion` — y por eso necesitaba un cruce a 179,3°
+        ''' que me habia inventado yo. Shepperd no necesita ninguno: elige entre cuatro casos con
+        ''' comparaciones EXACTAS y todos estan bien condicionados.
+        ''' <code>
+        '''   t = m00 + m11 + m22
+        '''   si t &gt; 0                                    ; comiss + jbe, EXACTO   0x14135EE48
+        '''       s = sqrt(t + 1) ; inv = 0,5 / s ; w = s * 0,5
+        '''       x = (m12 - m21) * inv                    ; +0x18 - +0x24
+        '''       y = (m20 - m02) * inv                    ; +0x20 - +0x08
+        '''       z = (m01 - m10) * inv                    ; +0x04 - +0x10
+        '''   si no                                        ; 0x14135EEBB
+        '''       i = 0 ; si m11 &gt; m00 -&gt; i = 1 ; si m22 &gt; m[i][i] -&gt; i = 2
+        '''       j = nxt[i] ; k = nxt[j]      con nxt = {1, 2, 0}   ; el arreglo de 0x14135EEC2
+        '''       s = sqrt(m[i][i] - m[j][j] - m[k][k] + 1) ; inv = 0,5 / s
+        '''       q[i] = s * 0,5
+        '''       w    = (m[j][k] - m[k][j]) * inv
+        '''       q[j] = (m[i][j] + m[j][i]) * inv
+        '''       q[k] = (m[k][i] + m[i][k]) * inv
+        ''' </code>
+        ''' <para>La salida queda en (x, y, z, w): los cuatro `shufps` del final
+        ''' (0xE1 / 0xC6 / 0x27 / 0x39, <c>0x14135EE92</c>..<c>0x14135EEAE</c>) rotan las lineas hasta
+        ''' dejar w en la ultima.</para>
+        ''' </summary>
+        Private Shared Function MatrizAQuaternion(m As Matrix4) As Vector4
+            Dim mm = New Single(,) {{m.M11, m.M12, m.M13}, {m.M21, m.M22, m.M23}, {m.M31, m.M32, m.M33}}
+            Dim t = mm(0, 0) + mm(1, 1) + mm(2, 2)
+            If t > 0.0F Then
+                Dim sq = CSng(Math.Sqrt(CDbl(t) + 1.0R))
+                Dim inv = 0.5F / sq
+                Return New Vector4((mm(1, 2) - mm(2, 1)) * inv,
+                                   (mm(2, 0) - mm(0, 2)) * inv,
+                                   (mm(0, 1) - mm(1, 0)) * inv,
+                                   sq * 0.5F)
+            End If
+            Dim nxt = New Integer() {1, 2, 0}
+            Dim i = 0
+            If mm(1, 1) > mm(0, 0) Then i = 1
+            If mm(2, 2) > mm(i, i) Then i = 2
+            Dim j = nxt(i), k = nxt(j)
+            Dim sq2 = CSng(Math.Sqrt(CDbl(mm(i, i) - mm(j, j) - mm(k, k)) + 1.0R))
+            Dim inv2 = 0.5F / sq2
+            Dim q = New Single(3) {}
+            q(i) = sq2 * 0.5F
+            q(3) = (mm(j, k) - mm(k, j)) * inv2
+            q(j) = (mm(i, j) + mm(j, i)) * inv2
+            q(k) = (mm(k, i) + mm(i, k)) * inv2
+            Return New Vector4(q(0), q(1), q(2), q(3))
+        End Function
+
+        Private Shared Function NormalMotor(v As Vector3) As Vector3
+            ' 0x142F5AE70 — el mismo FLT_EPSILON que el motor suma antes del rsqrt.
+            Const FLT_EPSILON As Single = 0.00000011920929F
+            Dim lenSq = (v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z)
+            Return v * CSng(1.0R / Math.Sqrt(CDbl(lenSq) + CDbl(FLT_EPSILON)))
+        End Function
+
         Private Shared Function ProfundidadEnConoRedondeado(punto As Vector3, a As Vector3, b As Vector3,
                                                             radioA As Single, radioB As Single,
                                                             radioParticula As Single,
@@ -2484,10 +3576,12 @@ Namespace Havok.Physics
             Dim eje = b - a
             Dim l2 = eje.LengthSquared
             Dim v = punto - a
-            If l2 <= 0.000001F Then
+            ' Prueba exacta, como el `cmpleps` contra cero del motor (0x141A6A803).
+
+            If l2 <= 0.0F Then
                 ' Los dos extremos en el mismo punto: es una esfera.
                 Dim ls = v.Length
-                normal = If(ls <= 0.000001F, New Vector3(0.0F, 0.0F, 1.0F), v / ls)
+                normal = NormalMotor(v)
                 Return (Math.Max(radioA, radioB) + radioParticula) - ls
             End If
             Dim l = CSng(Math.Sqrt(l2))
@@ -2507,7 +3601,7 @@ Namespace Havok.Physics
                 Dim rr = If(usaB, rB, rA)
                 Dim dd = punto - cen
                 Dim ll = dd.Length
-                normal = If(ll <= 0.000001F, New Vector3(0.0F, 0.0F, 1.0F), dd / ll)
+                normal = NormalMotor(dd)
                 Return rr - ll
             End If
 
@@ -2516,27 +3610,32 @@ Namespace Havok.Physics
 
             ' La proyeccion sobre la RECTA TANGENTE decide la region. Fuera de [0, l/cosT] toca una tapa.
             Dim proy = (y * cosT) + (x * sinT)
-            Dim tope = l / Math.Max(cosT, 0.000001F)
+            ' Sin guarda: se llega aca solo si `|dr| < l`, o sea `|sinT| < 1`, o sea `cosT > 0`
+            ' estricto. El `Math.Max(cosT, 0.000001F)` que habia era codigo muerto con un numero mio.
+            Dim tope = l / cosT
 
             If proy <= 0.0F Then
                 Dim dd = punto - a
                 Dim ll = dd.Length
-                normal = If(ll <= 0.000001F, New Vector3(0.0F, 0.0F, 1.0F), dd / ll)
+                normal = NormalMotor(dd)
                 Return rA - ll
             End If
             If proy >= tope Then
                 Dim dd = punto - b
                 Dim ll = dd.Length
-                normal = If(ll <= 0.000001F, New Vector3(0.0F, 0.0F, 1.0F), dd / ll)
+                normal = NormalMotor(dd)
                 Return rB - ll
             End If
 
             ' Tronco de cono: la distancia a la superficie es la distancia al eje menos el radio del
             ' tangente en ese punto, todo medido PERPENDICULAR AL TANGENTE.
             Dim dist = (x * cosT) - (y * sinT)      ' distancia con signo a la recta tangente
-            Dim radialU = If(x <= 0.000001F, PerpendicularA(u), radial / x)
+            ' ⛔ SIN `PerpendicularA`. Con la particula EXACTO sobre el eje la direccion radial no
+            ' existe, y elegir una (lo que hacia `PerpendicularA`, con su 0,9 inventado adentro) la
+            ' empuja para un lado cualquiera. El motor deja el vector en CERO y no la empuja.
+            Dim radialU = NormalMotor(radial)
             ' La normal del tronco no es radial: se inclina con el cono.
-            normal = Vector3.Normalize((radialU * cosT) - (u * sinT))
+            normal = NormalMotor((radialU * cosT) - (u * sinT))
             Return rA - dist
         End Function
 
@@ -2556,23 +3655,26 @@ Namespace Havok.Physics
             Return (st.FlipsSim(b) And (CByte(1) << (t And 7))) <> 0
         End Function
 
-        ''' <summary>Un vector unitario perpendicular a `u`. Solo se usa cuando la particula cae EXACTO
-        ''' sobre el eje, donde la direccion radial no esta definida y hay que elegir alguna.</summary>
-        Private Shared Function PerpendicularA(u As Vector3) As Vector3
-            Dim aux = If(Math.Abs(u.Z) < 0.9F, New Vector3(0.0F, 0.0F, 1.0F), New Vector3(1.0F, 0.0F, 0.0F))
-            Return Vector3.Normalize(Vector3.Cross(u, aux))
-        End Function
+        ''' <summary>Cuantos contactos resolvio cada capsula en el ultimo frame. Sirve para ver si la
+        ''' colision es simetrica entre la pierna izquierda y la derecha.</summary>
+        Friend Shared ContactosPorCapsula As Integer()
 
         Private Shared Sub SolveCapsules(st As ClothSimState)
             If st.Capsules.Count = 0 Then Exit Sub
             For i = 0 To st.Positions.Length - 1
-                If st.InvMass(i) = 0.0F Then Continue For
+                ' ⛔⛔ SIN FILTRO POR MASA. El armado de pares del motor (0x141A71893) recorre TODAS
+                ' las particulas y filtra UNICAMENTE por `staticCollisionMasks`; el kernel de contacto
+                ' (0x141A6A8C1) tampoco mira `invMass`. Aca habia un `If InvMass = 0 Then Continue For`
+                ' que no esta en el binario, y no es cosmetico: en el motor un ANCLA que quedo dentro
+                ' de una capsula SALE EMPUJADA dentro del ultimo substep, y esa correccion llega al
+                ' deform. Con el atajo, el ancla se quedaba adentro y su vecina libre — que si salia —
+                ' tiraba del link sin poder cerrarlo nunca.
                 Dim p = st.Positions(i)
                 Dim pr = st.Radius(i)
                 Dim mask = st.MascaraColision(i)
                 For Each c In st.Capsules
                     ' ⛔ La mascara PRIMERO: el motor ni arma el par si el bit esta apagado.
-                    If c.Bit <> 0UI AndAlso (mask And c.Bit) = 0UI Then Continue For
+                    If (mask And c.Bit) = 0UI Then Continue For
                     ' ⛔⛔ LA SUPERFICIE ES UN CONO, NO UN RADIO INTERPOLADO.
                     '
                     ' `hclTaperedCapsuleShape` no guarda "dos radios y ya": guarda la geometria del
@@ -2632,7 +3734,9 @@ Namespace Havok.Physics
             t = 0.0F
             Dim ab = b - a
             Dim denom = Vector3.Dot(ab, ab)
-            If denom <= 0.000001F Then Return a
+            ' Prueba exacta: un segmento de largo cero es el punto `a`, sin epsilon de por medio.
+
+            If denom <= 0.0F Then Return a
             t = Vector3.Dot(p - a, ab) / denom
             t = Math.Max(0.0F, Math.Min(1.0F, t))
             Return a + (ab * t)
@@ -2673,11 +3777,14 @@ Namespace Havok.Physics
                 Dim trz = rD.M11 + rD.M22 + rD.M33
                 Dim ang = CSng(Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (trz - 1.0R) / 2.0R))))
                 Dim mm = rP
-                If ang > 0.000001F Then
-                    Dim eje = EjeDeRotacion(rD, ang)
-                    If eje.LengthSquared > 0.0F Then
-                        mm = Matrix4.Mult(rP, Matrix4.CreateFromAxisAngle(Vector3.Normalize(eje), ang * alpha))
-                    End If
+                ' ⛔ EL EJE SALE DEL CUATERNION, NO DE LA PARTE ANTISIMETRICA. Aca habia un
+                ' `EjeDeRotacion` con un cruce a 3,13 rad (179,3°) que me invente yo para el caso en
+                ' que esa parte se anula. El motor no tiene ese problema porque no usa esa forma:
+                ' convierte a cuaternion con Shepperd (0x14135EE20) y trabaja ahi. Sin umbral.
+                Dim qD = MatrizAQuaternion(rD)
+                Dim ejeQ = New Vector3(qD.X, qD.Y, qD.Z)
+                If ejeQ.LengthSquared > 0.0F Then
+                    mm = Matrix4.Mult(rP, Matrix4.CreateFromAxisAngle(NormalMotor(ejeQ), ang * alpha))
                 End If
                 Dim tt = tP + (tC - tP) * alpha
                 mm.M41 = tt.X : mm.M42 = tt.Y : mm.M43 = tt.Z
@@ -2773,8 +3880,22 @@ Namespace Havok.Physics
                 ' puso más volumen, y la tela penetraba ahí.
                 Dim rA = cd.ShapeDetail.Radius
                 Dim rB = If(cd.ShapeDetail.AuxiliaryRadius > 0.0F, cd.ShapeDetail.AuxiliaryRadius, rA)
-                ' La velocidad y el pinch vienen del PROPIO colisionable. `collidablePinchingDatas`
-                ' del sim-cloth es el override por prenda: si trae entrada para este indice, manda esa.
+                ' ⭐ LA PRECEDENCIA ESTA CITADA: EL SIM-CLOTH PISA AL COLISIONABLE, SIEMPRE.
+                ' En el armado de la instancia (0x1418C6890..0x1418C68D5), por cada colisionable:
+                '     rax = colisionable de runtime recien creado   ; 0x1419603F0
+                '     rdx = [clothData+0x118]                       ; collidablePinchingDatas.data
+                '     [rax+0x80] = byte [rdx + i]                   ; pinchDetectionEnabled
+                '     [rax+0x81] = byte [rdx + i + 1]               ; pinchDetectionPriority
+                '     [rax+0x84] = dword[rdx + i + 4]               ; pinchDetectionRadius
+                ' Se escribe SIN CONDICION: los campos propios del `hclCollidable` (que su
+                ' copy-constructor 0x141960840 acaba de copiar desde el original a +0x80/+0x81/+0x84)
+                ' quedan pisados por los de la prenda. La app hace lo mismo, con una guarda de mas por
+                ' si el arreglo viniera corto.
+                ' ⭐ Y de paso queda confirmado el STRIDE 8 del arreglo: el mismo `i` indexa punteros de
+                ' 8 bytes en `[clothData+0xA8]` y las entradas de pellizco en `[clothData+0x118]`.
+                ' ⭐ MEDIDO: sobre el load order entero hay 8 entradas en True de 1005, y **ninguna** en
+                ' las dos unicas prendas con `pinchDetectionEnabled` del sim-cloth en True (Hancock
+                ' FOutfit/Moutfit: 0 de 4). O sea que hoy este camino no corre en ninguna prenda.
                 Dim pinEn = cd.PinchDetectionEnabled
                 Dim pinPri = cd.PinchDetectionPriority
                 Dim pinRad = cd.PinchDetectionRadius
@@ -2819,16 +3940,30 @@ Namespace Havok.Physics
                 Dim rDelta = Matrix4.Mult(Transpuesta3(rPrev), SoloRotacion(m))
                 Dim trz = rDelta.M11 + rDelta.M22 + rDelta.M33
                 Dim angD = CSng(Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (trz - 1.0R) / 2.0R))))
+                ' ⛔ Idem: el eje sale del cuaternion (0x14135EE20), no de la parte antisimetrica, y la
+                ' guarda es la longitud EXACTA en cero — no un epsilon mio.
                 Dim vAng = Vector3.Zero
-                If angD > 0.000001F Then
-                    Dim ejeD = EjeDeRotacion(rDelta, angD)
-                    If ejeD.LengthSquared > 0.0F Then vAng = Vector3.Normalize(ejeD) * (angD * invDt)
-                End If
+                Dim qDelta = MatrizAQuaternion(rDelta)
+                Dim ejeD = New Vector3(qDelta.X, qDelta.Y, qDelta.Z)
+                If ejeD.LengthSquared > 0.0F Then vAng = NormalMotor(ejeD) * (angD * invDt)
 
                 Dim locA As New Vector3(CSng(cd.ShapeDetail.EndpointA.X), CSng(cd.ShapeDetail.EndpointA.Y), CSng(cd.ShapeDetail.EndpointA.Z))
                 Dim locB As New Vector3(CSng(cd.ShapeDetail.EndpointB.X), CSng(cd.ShapeDetail.EndpointB.Y), CSng(cd.ShapeDetail.EndpointB.Z))
+                ' ⛔ LA LEY DEL BIT, LEIDA DEL MOTOR (0x141A71744..0x141A71754):
+                '     mov ecx, 0x1e      ; 30
+                '     mov r12d, 1
+                '     cmp ebx, ecx
+                '     cmovl ecx, ebx     ; ecx = min(idx, 30)
+                '     shl r12d, cl       ; bit = 1 << min(idx, 30)
+                ' El tope es 30, NO 31, y a partir de ahi todos los colisionables COMPARTEN el bit 30.
+                ' Aca habia `If idx < 32 Then 1 << idx Else 0`, y ademas el consumidor trataba
+                ' `Bit = 0` como "no filtrar" — el motor hace lo CONTRARIO: con el bit en cero el
+                ' `test dword[mask], 0` da ZF y la particula se SALTEA. Con `min(idx,30)` el bit nunca
+                ' es cero, asi que esa rama desaparece del consumidor y no hay semantica que invertir.
+                ' MEDIDO: en vanilla hay ~3 colisionables por prenda (el OR de las mascaras da 0x7), asi
+                ' que esto solo se ejerce con un mod de 31 colisionables o mas.
                 st.Capsules.Add(New CapsuleCollider With {.A = a, .B = b, .Radius = rA, .RadiusB = rB,
-                                                          .Bit = If(idxCol >= 0 AndAlso idxCol < 32, 1UI << idxCol, 0UI),
+                                                          .Bit = 1UI << Math.Min(Math.Max(idxCol, 0), 30),
                                                           .LocalA = locA, .LocalB = locB,
                                                           .MPrev = mPrev, .MCur = m,
                                                           .VelLineal = vLin,
@@ -2849,6 +3984,27 @@ Namespace Havok.Physics
         ' -----------------------------------------------------------------------------------------
         ' Teleport: el motor lo DECLARA, no lo adivina (fMaxRootDistanceBeforeTeleport / …Angle)
         ' -----------------------------------------------------------------------------------------
+        ''' <summary>
+        ''' La puerta de TELEPORT del motor, leida de <c>0x1418A630E</c>:
+        ''' <code>
+        '''     xmm0 = fMaxRootDistanceBeforeTeleport            ; Setting en 0x142F4FBC8, default 100
+        '''     xmm0 = xmm0 * xmm0                               ; 0x1418A6316 — compara al CUADRADO
+        '''     if |delta traslacion|² &gt; xmm0            -> TELEPORT     ; 0x1418A631D / 0x1418A6320
+        '''     if angulo(cuaternion delta) &gt; fMaxRootAngleBeforeTeleport -> TELEPORT
+        '''                                                      ; 0x1418A6322, Setting en 0x142F4FBE0, default pi/2
+        '''     si no                                     -> no teleport  ; 0x1418A6329
+        ''' </code>
+        ''' <para>⛔ EL ANGULO ES EL DEL GIRO COMPLETO, NO EL DE UN EJE. Aca habia una regla mia: se
+        ''' guardaba la FILA 1 de la matriz del raiz y se comparaba el angulo entre esa fila y la del
+        ''' frame anterior. Eso mide la desviacion de UN eje, no el giro: una rotacion alrededor de esa
+        ''' misma fila da angulo CERO y el teleport no se disparaba nunca. El motor arma el cuaternion
+        ''' delta (los dos productos cruz con `shufps 0xC9` y el `rsqrt` de 0x1418A62E9) y le pide su
+        ''' angulo a <c>0x14135FA20</c>, que lo saca de la componente w — o sea el giro entero.</para>
+        ''' <para>⚠️ LIMITE DECLARADO, como antes: el motor toma la referencia de su propio objeto
+        ''' (<c>rdi+0x140</c> traslacion, <c>rdi+0x150</c> cuaternion) y esta app no modela ese objeto,
+        ''' asi que sigue usando el hueso raiz del esqueleto vivo. Lo que se corrige aca es la MEDIDA
+        ''' del angulo, que si sale del binario.</para>
+        ''' </summary>
         Private Shared Function DetectTeleport(st As ClothSimState, skeleton As SkeletonInstance) As Boolean
             Dim root As HierarchiBone_class = Nothing
             For Each candidate In {"Root", "COM", "Bip01"}
@@ -2859,19 +4015,25 @@ Namespace Havok.Physics
             If g Is Nothing Then Return False
             Dim m = g.ToMatrix4()
             Dim pos = New Vector3(m.M41, m.M42, m.M43)
-            Dim fwd = Vector3.Normalize(New Vector3(m.M21, m.M22, m.M23))
+            Dim rot = SoloRotacion(m)
             If Not st.HasLastRoot Then
                 st.LastRootTranslation = pos
-                st.LastRootForward = fwd
+                st.LastRootRotation = rot
                 st.HasLastRoot = True
                 Return False
             End If
-            Dim moved = (pos - st.LastRootTranslation).Length
-            Dim dot = Math.Max(-1.0F, Math.Min(1.0F, Vector3.Dot(fwd, st.LastRootForward)))
-            Dim angle = CSng(Math.Acos(dot))
+            ' Distancia: el motor compara el CUADRADO contra el ajuste al cuadrado, asi que aca tampoco
+            ' hace falta la raiz.
+            Dim movidoSq = (pos - st.LastRootTranslation).LengthSquared
+            ' Angulo del giro COMPLETO: la traza de `inv(prev) x cur` da el mismo angulo que el
+            ' cuaternion delta del motor, y sin construir el cuaternion.
+            Dim delta = Matrix4.Mult(Transpuesta3(st.LastRootRotation), rot)
+            Dim traza = delta.M11 + delta.M22 + delta.M33
+            Dim angle = CSng(Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (traza - 1.0R) / 2.0R))))
             st.LastRootTranslation = pos
-            st.LastRootForward = fwd
-            Return moved > HavokPhysicsSettings.MaxRootDistanceBeforeTeleport OrElse
+            st.LastRootRotation = rot
+            Dim dMax = HavokPhysicsSettings.MaxRootDistanceBeforeTeleport
+            Return movidoSq > (dMax * dMax) OrElse
                    angle > HavokPhysicsSettings.MaxRootAngleBeforeTeleport
         End Function
 
@@ -2906,6 +4068,13 @@ Namespace Havok.Physics
                 OrderBy(Function(x) x.Depth).ToList()
 
             Dim sinTri = 0, sinBind = 0, escritos = 0, fueraRango = 0
+            ' ⛔⛔ LOS SALTOS QUE NO CONTABA NADIE. Habia CINCO `Continue For` sin contador, y
+            ' saltear a un hueso NO es no-op: el hueso conserva el `PhysicsDeltaTransform` del
+            ' frame ANTERIOR. Queda congelado en una pose vieja mientras sus vecinos siguen a la
+            ' piel, y una prenda skinneada a los dos se PARTE justo ahi. `[CLOTH-WB]` decia
+            ' '9 de 9' sin mirar ninguno de los cinco.
+            Dim degenerado = 0, sinNombre = 0, sinHueso = 0, sinPadre = 0, sinBase = 0
+            Dim peorDegen As String = ""
             For Each par In ordenados
                 Dim map = par.Map
                 If map Is Nothing Then Continue For
@@ -2970,7 +4139,15 @@ Namespace Havok.Physics
                 ' revienta. Y NaN no se detecta con `= 0.0F` (NaN = 0 da False), asi que se comprueba
                 ' aparte: un NaN que entrara a la capa se quedaria ahi para siempre.
                 If u0.LengthSquared = 0.0F OrElse u1.LengthSquared = 0.0F OrElse u2.LengthSquared = 0.0F _
-                   OrElse Single.IsNaN(tr.X) OrElse Single.IsNaN(tr.Y) OrElse Single.IsNaN(tr.Z) Then Continue For
+                   OrElse Single.IsNaN(tr.X) OrElse Single.IsNaN(tr.Y) OrElse Single.IsNaN(tr.Z) Then
+                    ' ⛔ El motor escribe CERO en el eje degenerado (guarda `cmpleps`+`andnps`) y sigue;
+                    ' aca no se puede, porque una matriz singular en una jerarquia revienta el
+                    ' `Inverse()` del hijo. Lo que NO se puede hacer es callarlo: el hueso se queda con
+                    ' el delta del frame pasado.
+                    degenerado += 1
+                    If peorDegen.Length = 0 Then peorDegen = $"{map.BoneName} tri={map.TriangleIndex} |a|={a.Length:F4} |b|={b.Length:F4} |n|={nrm.Length:F6}"
+                    Continue For
+                End If
 
                 Dim world As New Matrix4(u0.X, u0.Y, u0.Z, 0.0F,
                                          u1.X, u1.Y, u1.Z, 0.0F,
@@ -2978,9 +4155,9 @@ Namespace Havok.Physics
                                          tr.X, tr.Y, tr.Z, 1.0F)
 
                 Dim boneName = map.BoneName
-                If String.IsNullOrWhiteSpace(boneName) Then Continue For
+                If String.IsNullOrWhiteSpace(boneName) Then sinNombre += 1 : Continue For
                 Dim bone As HierarchiBone_class = Nothing
-                If Not skeleton.SkeletonDictionary.TryGetValue(boneName.Trim(), bone) OrElse bone Is Nothing Then Continue For
+                If Not skeleton.SkeletonDictionary.TryGetValue(boneName.Trim(), bone) OrElse bone Is Nothing Then sinHueso += 1 : Continue For
 
                 ' desiredLocal = inv(parentWorld) × world     (la cascade del parent ya lleva su física)
                 Dim desiredLocal As Transform_Class
@@ -2988,7 +4165,7 @@ Namespace Havok.Physics
                     desiredLocal = New Transform_Class(world)
                 Else
                     Dim parentWorld = bone.Parent.GetGlobalTransform
-                    If parentWorld Is Nothing Then Continue For
+                    If parentWorld Is Nothing Then sinPadre += 1 : Continue For
                     desiredLocal = parentWorld.Inverse().ComposeTransforms(New Transform_Class(world))
                 End If
 
@@ -3052,7 +4229,7 @@ Namespace Havok.Physics
 
                 ' Physics = inv(OrigL × Mount × Morph × Delta) × desiredLocal  — un DELTA, como el mount.
                 Dim baseLocal = bone.LocaLTransformWithoutPhysics
-                If baseLocal Is Nothing Then Continue For
+                If baseLocal Is Nothing Then sinBase += 1 : Continue For
                 bone.PhysicsDeltaTransform = baseLocal.Inverse().ComposeTransforms(desiredLocal)
                 escritos += 1
                 skeleton.MarkPhysicsLayerWritten()
@@ -3062,7 +4239,10 @@ Namespace Havok.Physics
                 ' ⛔ QUE ESCRIBIO Y QUE SE SALTEO. "0 huesos con capa" puede venir de tres motivos muy
                 ' distintos y el sintoma es el mismo: sin desglose hay que adivinar cual.
                 Dim e1 = escritos, s1 = sinTri, s2 = sinBind, s3 = fueraRango, t1 = ordenados.Count
-                Logger.LogLazy(Function() $"[CLOTH-WB] writeback: {e1} de {t1} · sin triangulo={s1} · sin bind={s2} · fuera de rango={s3}")
+                Dim d1 = degenerado, n1 = sinNombre, h1 = sinHueso, p1 = sinPadre, bl1 = sinBase, pd1 = peorDegen
+                Logger.LogLazy(Function() $"[CLOTH-WB] writeback: {e1} de {t1} · sin triangulo={s1} · sin bind={s2} · fuera de rango={s3}" &
+                               $" · DEGENERADO={d1} · sin nombre={n1} · sin hueso={h1} · sin padre={p1} · sin base={bl1}" &
+                               If(d1 > 0, $"  ⛔ el 1.º: {pd1}", ""))
             End If
         End Sub
 
@@ -3141,7 +4321,22 @@ Namespace Havok.Physics
 
             ' M[slot] = BoneTransforms[slot] × bindEmbebido[bone] × poseDelta[bone]
             ' donde poseDelta = inv(bindVivo) × actualVivo ⇒ IDENTIDAD en reposo (no-op estricto).
+            '
+            ' ⛔ PROBADO Y REVERTIDO — no cambiar esto a `BoneTransforms × actualVivo`.
+            ' El motor termina en 0x141A0EEB0, un producto por lotes de DOS matrices
+            ' (`boneFromSkinMeshTransforms` × `transformSet[hueso]`), y de ahi se puede concluir mal que
+            ' aca sobra el bind. NO sobra: `BoneTransforms` esta expresado contra el bind EMBEBIDO en el
+            ' HKX de la prenda, no contra el del esqueleto vivo — es la formula que se derivo por dato y
+            ' se valido a 0,0011 u contra el `DefaultClothPose` (ver 25-cloth-objectspaceskin). El
+            ' `transformSet` del motor es el del esqueleto de LA PRENDA movido por la animacion, que es
+            ' exactamente lo que reconstruye `bindEmbebido × inv(bindVivo) × actualVivo`.
+            ' MEDIDO al probarlo: con `BoneTransforms × actualVivo` la siembra pasa de 0,039 u a
+            ' **57,6 u** contra el `DefaultClothPose` en REPOSO. Queda escrito para no volver a probarlo.
             Dim boneIndices = If(skin.BoneIndices, New List(Of UShort)())
+            _slotAngMin = Double.MaxValue : _slotAngMax = Double.MinValue
+
+            _slotQuietos = 0 : _slotMovidos = 0 : _slotEjemplo = Nothing
+
             Dim slotMat(Math.Max(0, skin.BoneTransforms.Count - 1)) As Matrix4
             Dim slotOk(Math.Max(0, skin.BoneTransforms.Count - 1)) As Boolean
             For slot = 0 To skin.BoneTransforms.Count - 1
@@ -3162,6 +4357,22 @@ Namespace Havok.Physics
                 slotMat(slot) = Matrix4.Mult(composed, poseDelta)
                 slotOk(slot) = True
 
+                ' ⛔ CUANTO GIRA CADA SLOT. Bajo un giro RIGIDO del actor todos los huesos tienen que
+                ' girar LO MISMO: si unos giran y otros no, la malla skinneada se rasga sin que la
+                ' fisica haya tocado nada. Es lo que mide `[CLOTH-CONTROL]`, y aca se ve QUIEN.
+                If Logger.Enabled Then
+                    Dim trd = poseDelta.M11 + poseDelta.M22 + poseDelta.M33
+                    Dim angd = Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (trd - 1.0R) / 2.0R))) * 180.0R / Math.PI
+                    _slotAngMin = Math.Min(_slotAngMin, angd)
+                    _slotAngMax = Math.Max(_slotAngMax, angd)
+                    If angd < 1.0R Then
+                        _slotQuietos += 1
+                        If _slotEjemplo Is Nothing Then _slotEjemplo = nm
+                    Else
+                        _slotMovidos += 1
+                    End If
+                End If
+
                 ' ⛔ DIAGNOSTICO DEL BIND. El motor compone `boneFromSkinMeshTransforms[slot] x
                 ' transformSet[hueso]`, donde `transformSet` es el world POSADO del hueso
                 ' (hclObjectSpaceSkinPNOperator 0x14193BBD0 -> 0x14193BCE0 -> 0x141A0EEB0). Lo de aca
@@ -3173,6 +4384,19 @@ Namespace Havok.Physics
                 ' identidad y la app queda consistente CONSIGO MISMA aunque los binds difieran. Por eso
                 ' se mide la diferencia explicitamente, y no se confia en que el gate estatico este verde.
                 If Logger.Enabled Then
+                    ' ⛔ LA LEY QUE SEPARA "DATO ROTO" DE "CODIGO ROTO", Y ES MEDIBLE SIN UMBRAL.
+                    ' `boneFromSkinMeshTransforms[slot]` es, por definicion, la que lleva del espacio de
+                    ' la malla de piel al espacio del hueso: compuesta con el bind de ese hueso tiene que
+                    ' dar la IDENTIDAD. Si no da, la prenda trae un corrimiento horneado en el archivo y
+                    ' ninguna cadena de la app lo puede deshacer sin inventar una regla.
+                    Dim cm = composed
+                    Dim dI = Math.Sqrt((cm.M41 ^ 2) + (cm.M42 ^ 2) + (cm.M43 ^ 2))
+                    Dim trI = cm.M11 + cm.M22 + cm.M33
+                    Dim angI = Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (trI - 1.0R) / 2.0R))) * 180.0R / Math.PI
+                    Dim nmI = nm
+                    Dim tx = cm.M41, ty = cm.M42, tz = cm.M43
+                    Logger.LogLazy(Function() $"[CLOTH-SXB] '{nmI}' boneFromSkinMesh x bindEmbebido vs I: dT={dI:F5} dAng={angI:F3} t=({tx:F5}, {ty:F5}, {tz:F5})")
+
                     Dim be = bindWorld(ci)
                     Dim bl = bindLive.ToMatrix4()
                     Dim dT = Math.Sqrt(((be.M41 - bl.M41) ^ 2) + ((be.M42 - bl.M42) ^ 2) + ((be.M43 - bl.M43) ^ 2))
@@ -3186,6 +4410,11 @@ Namespace Havok.Physics
                     End If
                 End If
             Next
+
+            If Logger.Enabled AndAlso _slotAngMax > Double.MinValue Then
+                Dim q1 = _slotQuietos, q2 = _slotMovidos, q3 = _slotAngMin, q4b = _slotAngMax, q5 = If(_slotEjemplo, "-")
+                Logger.LogLazy(Function() $"[CLOTH-SLOTGIRO] slots que giran menos de 1°: {q1} · que giran: {q2} · angulo en [{q3:F2}°..{q4b:F2}°] · ejemplo quieto: '{q5}'")
+            End If
 
             If Logger.Enabled Then
                 Dim filas As New List(Of String)
@@ -3246,6 +4475,12 @@ Namespace Havok.Physics
         Private Shared _radMax As Single = Single.MinValue
         Private Shared _friMin As Single = Single.MaxValue
         Private Shared _friMax As Single = Single.MinValue
+        Private Shared _slotAngMin As Double, _slotAngMax As Double
+
+        Private Shared _slotQuietos As Integer, _slotMovidos As Integer
+
+        Private Shared _slotEjemplo As String
+
         Private Shared _normMin As Single = Single.MaxValue
         Private Shared _normMax As Single = 0.0F
 

@@ -101,6 +101,7 @@ Partial Class LightRigForm
         chkNormalize = New CheckBox()
         chkDeterministic = New CheckBox()
         chkSmoothSeams = New CheckBox()
+        chkIgnoreAuthored = New CheckBox()
         lblSeamAngle = New Label()
         nudSeamAngle = New NumericUpDownCultura()
         lblEpsPos = New Label()
@@ -1036,13 +1037,14 @@ Partial Class LightRigForm
         grpNormals.Controls.Add(chkNormalize)
         grpNormals.Controls.Add(chkDeterministic)
         grpNormals.Controls.Add(chkSmoothSeams)
+        grpNormals.Controls.Add(chkIgnoreAuthored)
         grpNormals.Controls.Add(lblSeamAngle)
         grpNormals.Controls.Add(nudSeamAngle)
         grpNormals.Controls.Add(lblEpsPos)
         grpNormals.Controls.Add(nudEpsPos)
         grpNormals.Location = New Point(8, 132)
         grpNormals.Name = "grpNormals"
-        grpNormals.Size = New Size(418, 144)
+        grpNormals.Size = New Size(418, 170)
         grpNormals.TabIndex = 0
         grpNormals.TabStop = False
         grpNormals.Text = "Normals and tangents"
@@ -1054,7 +1056,10 @@ Partial Class LightRigForm
         chkRecalcNormals.Name = "chkRecalcNormals"
         chkRecalcNormals.Size = New Size(132, 19)
         chkRecalcNormals.TabIndex = 0
-        chkRecalcNormals.Text = "Recalculate normals"
+        ' El MISMO ajuste que la casilla de NPC Manager (`Setting_RecalculateNormals`): gobierna el build,
+        ' el morph, el render y el bake, no sólo lo que se ve. Y no toca sólo las normales — también el
+        ' espacio tangente. El nombre corto decía las dos cosas de menos.
+        chkRecalcNormals.Text = "Recalculate normals + tangents"
         ToolTip1.SetToolTip(chkRecalcNormals, resources.GetString("chkRecalcNormals.ToolTip"))
         ' 
         ' chkRepairNaN
@@ -1115,6 +1120,16 @@ Partial Class LightRigForm
         nudSeamAngle.TabIndex = 5
         nudSeamAngle.TextAlign = HorizontalAlignment.Right
         ' 
+        ' chkIgnoreAuthored
+        ' 
+        chkIgnoreAuthored.AutoSize = True
+        chkIgnoreAuthored.Location = New Point(11, 132)
+        chkIgnoreAuthored.Name = "chkIgnoreAuthored"
+        chkIgnoreAuthored.Size = New Size(178, 19)
+        chkIgnoreAuthored.TabIndex = 7
+        chkIgnoreAuthored.Text = "Ignore authored restrictions"
+        ToolTip1.SetToolTip(chkIgnoreAuthored, "Each shape in a project can ask for its normals to be left alone (LockNormals) or for its seam not to be averaged (SmoothSeamNormals=false), and BodySlide honours those per shape. Tick this to ignore them and recalculate every shape with the settings above. Off by default.")
+        ' 
         ' lblEpsPos
         ' 
         lblEpsPos.AutoSize = True
@@ -1145,7 +1160,7 @@ Partial Class LightRigForm
         grpWeld.Controls.Add(nudWeldPos)
         grpWeld.Controls.Add(lblWeldUv)
         grpWeld.Controls.Add(nudWeldUv)
-        grpWeld.Location = New Point(8, 282)
+        grpWeld.Location = New Point(8, 308)
         grpWeld.Name = "grpWeld"
         grpWeld.Size = New Size(418, 148)
         grpWeld.TabIndex = 1
@@ -1528,6 +1543,7 @@ Partial Class LightRigForm
     Friend WithEvents chkNormalize As CheckBox
     Friend WithEvents chkDeterministic As CheckBox
     Friend WithEvents chkSmoothSeams As CheckBox
+    Friend WithEvents chkIgnoreAuthored As CheckBox
     Friend WithEvents lblSeamAngle As Label
     Friend WithEvents nudSeamAngle As NumericUpDownCultura
     Friend WithEvents grpWeld As GroupBox

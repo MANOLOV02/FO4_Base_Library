@@ -72,6 +72,22 @@ Public Interface IShapeGeometry
     ''' </summary>
     Function GetLockedNormalIndices() As HashSet(Of Integer)
 
+    ''' <summary>Renumera el <c>LOCKEDNORM</c> al espacio de vértices NUEVO tras compactar, y descarta
+    ''' las entradas cuyo vértice se fue.
+    ''' <para>⛔ SYNC: <c>nifly\src\NifFile.cpp:4328-4353</c>, dentro de <c>DeleteVertsForShape</c>: el
+    ''' canónico re-mapea con <c>GenerateIndexCollapseMap</c> y BORRA lo que no sobrevive. Hasta ahora la
+    ''' app tenía LECTORES de esa lista y ningún ESCRITOR, así que después de un zap quedaba apuntando a
+    ''' números del espacio VIEJO — o sea a otros vértices. <c>RemoveZaps</c> compacta vértices,
+    ''' triángulos, skin, UVs, colores y particiones, pero no tocaba el extra data.</para>
+    ''' <para><paramref name="oldToNew"/> es el mapa de <c>MorphingHelper.RemoveZaps</c>, que ES el
+    ''' <c>indexCollapse</c> del canónico: se dimensiona sobre el espacio viejo completo y arranca todo en
+    ''' −1, y sólo los sobrevivientes reciben índice. Por eso cubre gratis el caso
+    ''' <c>val &gt; highestRemoved</c> que el canónico trata aparte.</para>
+    ''' <para>MEDIDO: 114 NIF de SSE traen la lista (0 en FO4) y 57 sliderSets la zapean; uno de ellos
+    ''' —<c>UBE SE 2.0 Release Brows UV map sliders</c>— con un zap que viene en 100 por defecto en el
+    ''' propio .osp, o sea que se dispara sin que el usuario toque nada.</para></summary>
+    Sub RemapLockedNormalIndices(oldToNew As Integer())
+
     ' ─────────────── Read ───────────────
     ''' <summary>Vertex positions in shape-local space.  Always returns VertexCount entries.</summary>
     Function GetVertexPositions() As List(Of SysNumerics.Vector3)

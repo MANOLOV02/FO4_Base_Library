@@ -974,12 +974,39 @@ Public Class SkinningHelper
         geo.Uvs_Weight = uvsWeight
         geo.BaseUvs_Weight = CType(uvsWeight.Clone(), Vector3())
 
-        If RecalculateNormals OrElse Not shapeGeom.HasNormals OrElse Not shapeGeom.HasTangents Then
-            Dim opts = Config_App.Current.Setting_TBN
-            RecalculateNormalsTangentsBitangents(geo, opts)
-        End If
+        ' ⛔ LAS TANGENTES NO VAN GATEADAS. El canónico las recalcula en CADA build y para CADA shape, sin
+        ' condición: `BodySlideApp.cpp:3904` (y sus gemelas :3932, :4778, :4806) tiene
+        ' `nifBig.CalcTangentsForShape(shape);` FUERA del `if (!lockNormals)`; lo único gateado es el pase
+        ' de NORMALES. Antes las dos cosas estaban dentro del mismo `If`, así que con el ajuste
+        ' "Recalculate normals" APAGADO no se rehacía ninguna de las dos y el marco tangente salía el del
+        ' .nif fuente — movido de posición pero sin rebasar.
+        '
+        ' MEDIDO: las 11.725 shapes de FO4 y 3.844 de las 4.821 de SSE traen normales Y tangentes, así que
+        ' con el ajuste apagado el `If` viejo no pasaba NUNCA para ellas. Contra una reimplementación de la
+        ' fase canónica —que reproduce 2.553 shapes del corpus byte a byte—, eso dejaba 1.358 de los 3.190
+        ' sliderSets con un marco tangente medible­mente distinto del que emite BodySlide: 509 por encima
+        ' de 1°, 208 por encima de 5° y 30 por encima de 15°, con un peor caso de 32° de media.
+        '
+        ' Ahora la función corre SIEMPRE y quien decide el pase de normales es `KeepExistingNormals`:
+        '   • ajuste ENCENDIDO (el default)      -> idéntico a antes, normales y tangentes.
+        '   • ajuste APAGADO y con normales      -> sólo tangentes. Es el cambio.
+        '   • sin canal de normales              -> idéntico a antes, se recalculan las dos.
+        ' Y la inyección sigue gateada aparte (`InjectToTrishape`, :1473 `HasNormals OrElse HasTangents`),
+        ' así que una shape sin ninguno de los dos canales sigue sin recibir escritura.
+        '
+        ' ⚠️ EL OTRO SITIO QUE RECALCULA NO SE TOCÓ: `MorphingHelper.ApplyMorph_CPU` (:307) tiene su propio
+        ' gate `(RecalculateNormals AndAlso huboCambioDePosicion) OrElse movioUVs`. Sacarlo de ahí también
+        ' sería la ley canónica, pero eso corre por cada aplicación de morph —o sea por cada movimiento de
+        ' slider en el preview— y el costo hay que medirlo antes. Queda declarado, no hecho.
+        Dim opts = Config_App.Current.Setting_TBN
+        ' `Setting_TBN` es una Structure devuelta POR VALOR desde una Property, así que esto es una COPIA
+        ' y mutarla no toca el config del usuario. (Verificado: Config_Class.vb:520.)
+        If Not (RecalculateNormals OrElse Not shapeGeom.HasNormals) Then opts.KeepExistingNormals = True
+        RecalcTBN.AplicarRestriccionesDelAutor(opts, shape)
+        RecalculateNormalsTangentsBitangents(geo, opts)
         Return geo
     End Function
+
 
     ''' <summary>SOLO PARA MEDIR: apaga el camino vectorial del kernel. Ver FastSkin.ForzarEscalar.</summary>
     Friend Shared Sub FastSkinForzarEscalar(v As Boolean)
@@ -2257,6 +2284,60 @@ End Class
 
 
 Public Class RecalcTBN
+
+    ''' <summary>Deja que el <c>&lt;Shape&gt;</c> APAGUE lo que el usuario dejó prendido, nunca al revés.
+    ''' <para>⛔ SYNC: <c>BodySlideApp.cpp</c>, cuatro sitios con la misma forma —
+    ''' <c>if (!lockNormals) CalcNormalsForShape(shape, force, smoothSeamNormals);</c> y
+    ''' <c>CalcTangentsForShape(shape)</c> FUERA del <c>if</c>. <c>KeepExistingNormals = True</c> es
+    ''' equivalente a no llamar a <c>CalcNormalsForShape</c>: envuelve el pase de normales entero
+    ''' (recálculo, bloqueadas, suavizado de costura y restauración) y deja correr el de tangentes, que
+    ''' es incondicional en las dos partes.</para>
+    ''' <para>Los operadores no son simétricos a propósito: <c>OrElse</c> para bloquear —el .osp puede
+    ''' pedir que NO se toquen aunque el usuario pida recalcular— y <c>AndAlso</c> para suavizar —el .osp
+    ''' puede apagar el suavizado, pero no prenderlo si el usuario lo apagó—. Con una asignación directa,
+    ''' como el default del atributo es True, se pisaba el toggle global en TODAS las shapes.</para>
+    ''' <para>La casilla "Ignore authored restrictions" de la ventana de opciones (default OFF) es la
+    ''' salida de emergencia para una prenda cuyas normales autoradas estén rotas.</para></summary>
+    Public Shared Sub AplicarRestriccionesDelAutor(ByRef opts As TBNOptions, shape As IRenderableShape)
+        If shape Is Nothing OrElse opts.IgnoreAuthoredRestrictions Then Return
+        opts.KeepExistingNormals = opts.KeepExistingNormals OrElse shape.LockNormals
+        opts.SmoothSeamNormals = opts.SmoothSeamNormals AndAlso shape.SmoothSeamNormals
+    End Sub
+
+    ' ═══════════════════════════════════════════════════════════════════════════════════════════════
+    ' ⚠️ PENDIENTE, A PROPÓSITO SIN IMPLEMENTAR — el corte de NORMALES EN ESPACIO DE MODELO.
+    '
+    ' LA LEY EXISTE Y ACÁ FALTA. `nifly\src\NifFile.cpp:3812-3816`, lo primero de `CalcNormalsForShape`:
+    '     if (hdr.GetVersion().IsSK() || hdr.GetVersion().IsSSE()) {
+    '         NiShader* shader = GetShader(shape);
+    '         if (shader && shader->IsModelSpace() && !force) return; }
+    ' con `IsModelSpace()` = `shaderFlags1 & (1 << 12)` (`Shaders.cpp:268-270`). Corta SÓLO las normales;
+    ' las tangentes siguen fuera del `if`.
+    '
+    ' POR QUÉ NO ESTÁ PUESTO. Dos motivos, y el segundo es el que manda:
+    '
+    '   1) HOY ES UN NO-OP, MEDIDO. Sobre los 5.610 NIF de los dos corpus: SSE tiene 977 shapes
+    '      model-space en 905 de 2.412 archivos y FO4 tiene 0 (la ley canónica ni siquiera aplica ahí).
+    '      De esas 977, NINGUNA pasa el gate de inyección de `InjectToTrishape` (`SkinningHelper.vb:1473`,
+    '      `HasNormals OrElse HasTangents`): no traen ni un canal ni el otro. O sea que la app ya calcula
+    '      en vano y NO ESCRIBE NADA — cero bytes de diferencia contra BodySlide.
+    '      ⛔ Ya se reportó una vez como defecto vivo del 40 % del corpus de SSE. No lo es.
+    '
+    '   2) DE DÓNDE SALE EL FLAG NO ESTÁ RESUELTO, y elegir mal lo rompe:
+    '        • el bloque de shader del NIF (`GetShader(shape).ModelSpace`) es lo que lee el canónico,
+    '          porque nifly es una librería de NIF y no conoce los materiales externos;
+    '        • el material RESUELTO (`ShapeMaterial.material.ModelSpaceNormals`) es lo que lee el RENDER
+    '          (`Render.vb:3028`), y en FO4 un BGSM REEMPLAZA lo del NIF
+    '          (`FO4UnifiedMaterial_Class.vb:3439` lo siembra desde el shader sólo cuando NO hay material).
+    '      En Skyrim las dos fuentes coinciden, así que el gate de versión las vuelve indistintas y la
+    '      pregunta queda sin responder por construcción. Poner una de las dos "porque compila" es elegir
+    '      a ciegas la ley de RENDER == BAKE.
+    '
+    ' Quien lo implemente: decidir primero la fuente con una medición que las SEPARE, no con el corpus
+    ' actual, que no puede distinguirlas.
+    ' ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+
     Public Structure TBNCache
         ' Copia/Referencia de índices del mesh (no se modifica aquí)
         Public Indices As UInteger()
@@ -2376,8 +2457,10 @@ Public Class RecalcTBN
         ''' NO es opcional para tener paridad: es lo que hace el canónico en CADA build
         ''' (<c>CalcNormalsForShape(shape, force, smoothSeamNormals)</c>, BodySlideApp.cpp:4494-4496 →
         ''' nifly <c>CalculateNormals</c>, Geometry.cpp:912-935), su default es <b>true</b> y el corpus
-        ''' no trae el atributo <c>SmoothSeamNormals</c> ni una sola vez ⇒ TODOS los shapes de los dos
-        ''' juegos se construyen con esto puesto. Por eso acá también arranca en True.
+        ''' trae el atributo <c>SmoothSeamNormals="false"</c> en <b>8</b> shapes de FO4 (la afirmación
+        ''' anterior de este comentario, "ni una sola vez", era FALSA y por eso nadie lo leía). En los otros
+        ''' 15.461 el default true rige igual, así que acá también arranca en True — pero la decisión es
+        ''' POR SHAPE y la trae el .osp: ver <see cref="IRenderableShape.SmoothSeamNormals"/>.
         '''
         ''' Sin esto, cada duplicado de una costura acumula sólo las caras que referencian SU índice —
         ''' medio vecindario — así que dos vértices en el MISMO punto de la superficie quedan con
@@ -2395,6 +2478,18 @@ Public Class RecalcTBN
         ''' esto no aporta — así una arista dura sigue dura. Default 60, que es
         ''' <c>SliderSetShape::SliderSetDefaultSmoothAngle</c> (SliderSet.h:24).</summary>
         Public Property SmoothSeamNormalsAngle As Double
+
+        ''' <summary>Ignora lo que cada shape pidió en su <c>&lt;Shape&gt;</c> y recalcula todo con estas
+        ''' opciones. Default <b>False</b>.
+        ''' <para>Con False —el default— manda el autor de la prenda, que es lo que hace BodySlide:
+        ''' <c>LockNormals</c> le dice "no me toques las normales" y <c>SmoothSeamNormals="false"</c> "no me
+        ''' promedies la costura", y el canónico los respeta shape por shape
+        ''' (<c>SliderSet.cpp:255-257</c> + los cuatro sitios de <c>BodySlideApp.cpp</c>). MEDIDO: 41 shapes
+        ''' del corpus piden lo primero y 8 lo segundo.</para>
+        ''' <para>Con True se ignoran los dos atributos y se recalcula con lo que diga esta ventana. Es la
+        ''' conducta que la app tenía antes de leerlos, y se deja como salida de emergencia para una prenda
+        ''' cuyas normales autoradas estén rotas.</para></summary>
+        Public Property IgnoreAuthoredRestrictions As Boolean
 
         ''' <summary>
         ''' Cuando el Gram-Schmidt del SECUNDARIO se cancela, completa la base con
@@ -2504,6 +2599,7 @@ Public Class RecalcTBN
                 .KeepExistingNormals = False,
                 .SmoothSeamNormals = True,             ' canonico: smooth = true por defecto
                 .SmoothSeamNormalsAngle = 60.0,        ' canonico: SliderSetDefaultSmoothAngle
+                .IgnoreAuthoredRestrictions = False,   ' manda el autor de la prenda, como BodySlide
                 .DeterministicOnCollapse = True,       ' el canonico ahi amplifica ruido: ver la doc de la opcion
                 .EnableWelding = False,
                 .WeldPosEpsilon = 0.000000000001,

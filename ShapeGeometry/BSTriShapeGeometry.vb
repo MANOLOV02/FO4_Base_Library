@@ -156,6 +156,32 @@ Public Class BSTriShapeGeometry
         Return res
     End Function
 
+    ''' <summary>Ver <see cref="IShapeGeometry.RemapLockedNormalIndices"/> para la ley y la medición.</summary>
+    Public Sub RemapLockedNormalIndices(oldToNew As Integer()) Implements IShapeGeometry.RemapLockedNormalIndices
+        If oldToNew Is Nothing Then Exit Sub
+        Dim lista = _tri?.ExtraDataList
+        If lista Is Nothing OrElse lista.References Is Nothing Then Exit Sub
+        For Each ref In lista.References
+            If ref.Index < 0 OrElse ref.Index >= _nif.Blocks.Count Then Continue For
+            Dim ints = TryCast(_nif.Blocks(CInt(ref.Index)), NiIntegersExtraData)
+            If ints Is Nothing OrElse ints.Data Is Nothing Then Continue For
+            If Not String.Equals(ints.Name?.String, "LOCKEDNORM", StringComparison.Ordinal) Then Continue For
+            Dim nuevos As New List(Of UInteger)(ints.Data.Count)
+            For Each v In ints.Data
+                Dim viejo As Long = CLng(v)
+                ' Fuera del espacio viejo = índice inválido; el canónico tampoco lo puede conservar (su
+                ' rama `val > highestRemoved` presupone que todo lo borrado está por debajo). Sin este
+                ' guard sería IndexOutOfRangeException, y no se puede acotar por el corpus: 117 de 118
+                ' shapes declaran `numVertices = 0` en el bloque, que es lo normal en SSE con skin.
+                If viejo < 0 OrElse viejo >= oldToNew.Length Then Continue For
+                Dim nuevo As Integer = oldToNew(CInt(viejo))
+                If nuevo >= 0 Then nuevos.Add(CUInt(nuevo))
+            Next
+            ' `NumIntegers` NO se toca: lo recalcula `Sync` desde `Data` (NiIntegersExtraData.g.cs:53).
+            ints.Data = nuevos
+        Next
+    End Sub
+
 
     ' ─────────────── Read ───────────────
     Public Function GetVertexPositions() As List(Of SysNumerics.Vector3) Implements IShapeGeometry.GetVertexPositions
@@ -861,7 +887,8 @@ Public Class BSTriShapeGeometry
 
     ''' <summary>Reconstruye la segmentacion de un BSSubIndexTriShape desde la info semantica + los partID por
     ''' triangulo. Replica linea por linea BSSubIndexTriShape::SetSegmentation de BS-OS: renumera los partID de
-    ''' forma monotona en el orden padre/hijo, ordena los triangulos por partID (estable), computa el triangulo
+    ''' forma monotona en el orden padre/hijo, ordena los triangulos por partID con un bucket sort ESTABLE
+    ''' (el canonico usa `std::stable_sort`; ver el comentario del sitio), computa el triangulo
     ''' inicial de cada particion y arma segments + dataRecords + arrayIndices. Los triangulos se reordenan, asi
     ''' que los rangos StartIndex/NumPrimitives quedan contiguos por particion.
     ''' <para>Es el punto de entrada autoritativo: muta Segments y SegmentData atomicamente por los setters
@@ -899,10 +926,29 @@ Public Class BSTriShapeGeometry
             End If
         Next
 
-        ' Sort triangle indices by partition ID (stable) — Geometry.cpp.
+        ' Sort triangle indices by partition ID — Geometry.cpp:1442-1449 usa `std::stable_sort`, o sea
+        ' que hay que PRESERVAR el orden relativo de los triángulos DENTRO de cada partición.
+        ' ⛔ ACÁ HABÍA UN `Array.Sort(triInds, Comparison)` con el comentario "(stable)": esa sobrecarga
+        ' es introsort y está documentada como INESTABLE, así que el comentario decía lo contrario de
+        ' lo que el código hacía.
+        ' Bucket sort en vez de `OrderBy` (que sí sería estable): los partID son densos en
+        ' [0, newPartID) por el renumerado de arriba, así que esto es O(n+k) y sin allocations de LINQ
+        ' — `System.Linq` no está importado en este proyecto. Recorrer `i` ascendente y emitir en orden
+        ' dentro de cada casillero ES la definición de estabilidad.
+        Dim conteo As Integer() = New Integer(newPartID) {}
+        For i = 0 To numTris - 1 : conteo(triParts(i)) += 1 : Next
+        Dim inicio As Integer() = New Integer(newPartID) {}
+        Dim acum As Integer = 0
+        For p = 0 To newPartID - 1
+            inicio(p) = acum
+            acum += conteo(p)
+        Next
         Dim triInds As Integer() = New Integer(numTris - 1) {}
-        For i = 0 To numTris - 1 : triInds(i) = i : Next
-        Array.Sort(triInds, Function(a, b) triParts(a).CompareTo(triParts(b)))
+        For i = 0 To numTris - 1
+            Dim p = triParts(i)
+            triInds(inicio(p)) = i
+            inicio(p) += 1
+        Next
 
         ' Reorder triangles in the shape to match the new partition order.
         Dim oldTris = subIndex.Triangles

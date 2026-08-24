@@ -146,7 +146,14 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         result.ActionDetails.AddRange(actionObjects.Select(Function(obj) ParseActionObject(graph, obj)).Where(Function(d) Not IsNothing(d)))
         result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj, collidableCache)).Where(Function(detail) Not IsNothing(detail)))
         result.DefaultClothPoseDetails.AddRange(defaultPoseObjects.Select(Function(obj) graph.ParseSimClothPose(obj)).Where(Function(detail) Not IsNothing(detail)))
-        result.ConstraintDetails.AddRange(constraintObjects.Select(Function(obj) ParseConstraintObject(graph, obj)).Where(Function(detail) Not IsNothing(detail)))
+        ' ⛔⛔ SIN COMPACTAR, A PROPOSITO. `hclSimulateOperator.constraintExecution` referencia los
+        ' constraint sets por su INDICE en este array (el motor hace `staticConstraintSets[e]` en
+        ' 0x141A137B0), asi que un elemento caido corre TODOS los indices posteriores y a partir de ahi
+        ' cada entrada authored resuelve el set equivocado. Habia un `.Where(Not IsNothing)` — el mismo
+        ' defecto que ya se pago con `bufferDefinitions`. `ParseConstraintObject` ya garantiza que un
+        ' objeto real nunca vuelve `Nothing` (cae al crudo); si igual llega un hueco, se conserva como
+        ' hueco para que la posicion siga siendo la del archivo.
+        result.ConstraintDetails.AddRange(constraintObjects.Select(Function(obj) ParseConstraintObject(graph, obj)))
         Return result
     End Function
 
@@ -345,9 +352,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
             Dim h = header
             Logger.LogLazy(Function() $"[CLOTH-OPHDR] hclSimulateOperator +0x18..+0x2C = {String.Join(" ", h)}  (+0x20=simClothIndex +0x24=subSteps +0x28=iters)")
         End If
+        ' `simClothIndex` (+0x20): CUAL de los `hclClothData.simClothDatas` simula este operador. El
+        ' motor lo usa literal — `simCloth = clothInstance.simCloths[op.simClothIndex]` (0x14195C3E0)
+        ' — y la app lo ignoraba, tomando siempre el primero.
         Return New HclSimulateOperatorDetail_Class With {
             .SourceObject = source,
             .Name = r.Name,
+            .SimClothIndex = CInt(r.SimClothIndex),
             .SubstepCount = If(header.Count > 3, CInt(header(3)), 0),
             .SolveIterationCount = If(header.Count > 4, CInt(header(4)), 0),
             .AdaptConstraintStiffness = r.AdaptConstraintStiffness,
@@ -791,6 +802,19 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
             .Field40VectorBlocks = ReadVectorStructArray(graph, r.ApplyBatchDatas, 22),
             .Field50VectorBlocks = ReadVectorStructArray(graph, r.ApplySingleDatas, 2)
         }
+
+        ' ⛔⛔ LOS CAMPOS CON NOMBRE, QUE ES LO QUE EL SOLVER NECESITA. Todo lo de abajo
+        ' (`FieldNN...`) es andamiaje de una sesion de RE anterior que nunca llego a resolver los
+        ' nombres. La reflexion del .exe los da:
+        '   frameBatchDatas  (+0x20) hclVolumeConstraintMxFrameBatchData  size=0x160
+        '       frameVector vector4[16] @+0x000 . particleIndex uint16[16] @+0x100 . weight real[16] @+0x120
+        '   frameSingleDatas (+0x30) stride 0x20: frameVector @+0x00 . particleIndex u16 @+0x10 . weight @+0x14
+        '   applyBatchDatas  (+0x40) igual que el frame batch, pero el real[16] de +0x120 es `stiffness`
+        '   applySingleDatas (+0x50) igual que el frame single, pero +0x14 es `stiffness`
+        ' Los carriles sobrantes de un batch traen peso/rigidez 0 y no aportan; el motor los recorre
+        ' igual porque es SIMD de 16 carriles.
+        result.FrameEntries.AddRange(LeerVolumenMx(f20raw, ReadRawStructArray(graph, r.FrameSingleDatas, 32)))
+        result.ApplyEntries.AddRange(LeerVolumenMx(f40raw, ReadRawStructArray(graph, r.ApplySingleDatas, 32)))
 
         result.Field20Batches.AddRange(ParseVolumeConstraintBatches(f20raw, result.Field20VectorBlocks))
         result.Field30Entries.AddRange(ParseVolumeConstraintVectorEntries(result.Field30VectorBlocks))
@@ -1355,23 +1379,64 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
+    ''' <summary>
+    ''' Un elemento de <c>hclSimClothData.staticConstraintSets</c> (+0xB8) llevado a su clase tipada.
+    '''
+    ''' <para>⛔⛔ ESTA LISTA SE INDEXA POR POSICION. `hclSimulateOperator.constraintExecution` (+0x30)
+    ''' referencia los sets por su INDICE en el array del archivo, y el motor los resuelve asi
+    ''' (<c>0x141A137B0</c>: <c>cs = staticConstraintSets[e]</c>). Por eso esta funcion NUNCA devuelve
+    ''' `Nothing` para un objeto real: una clase que no se sepa parsear vuelve como el objeto CRUDO,
+    ''' que ocupa su lugar y mantiene la alineacion. El unico `Nothing` que sale de aca es el de los
+    ''' argumentos nulos, y el llamador lo filtra.</para>
+    '''
+    ''' <para>⛔⛔ Y FALTABAN TRES. `hclBonePlanesConstraintSet`, `hclBendLinkConstraintSet` y
+    ''' `hclCompressibleLinkConstraintSet` caian en el `Case Else` y entraban a `ConstraintDetails`
+    ''' como objeto crudo. `HavokClothSimulation.IngerirSets` los busca con `TryCast` a su clase
+    ''' `…Detail_Class`, asi que los tres fallaban y el set desaparecia del solve EN SILENCIO:
+    ''' `SolveBonePlanes`, `SolveBendLinks` y `SolveCompressibleLinks` eran codigo muerto — escritos,
+    ''' verificados contra el binario (<c>0x1419FCB80</c>, <c>0x1419F8F70</c>, <c>0x1419FE850</c>) y
+    ''' sin ejecutarse jamas.</para>
+    ''' <para>MEDIDO sobre los BA2 instalados (`HkxLoadOrderAudit --dump &lt;clase&gt;`): BonePlanes 8
+    ''' objetos en 4 archivos (`Clothes\Residents\6SuitF/6SuitM` + las copias de BodySlide), BendLink
+    ''' 4 en 4 (`Armor\DCGuard\FOutfit/MOutfit`), Compressible 4 en 4
+    ''' (`Clothes\InstituteUniform\FLabCoat/MLabCoat`). Seis prendas vanilla simulaban sin uno de sus
+    ''' constraint sets.</para>
+    ''' </summary>
     Friend Shared Function ParseConstraintObject(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As Object
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
 
+        Dim tipado As Object = Nothing
         Select Case source.ClassName.ToLowerInvariant()
             Case "hclstandardlinkconstraintset"
-                Return ParseStandardLinkConstraintSet(graph, source)
+                tipado = ParseStandardLinkConstraintSet(graph, source)
             Case "hclstretchlinkconstraintset"
-                Return ParseStretchLinkConstraintSet(graph, source)
+                tipado = ParseStretchLinkConstraintSet(graph, source)
             Case "hclbendstiffnessconstraintset"
-                Return ParseBendStiffnessConstraintSet(graph, source)
+                tipado = ParseBendStiffnessConstraintSet(graph, source)
             Case "hcllocalrangeconstraintset"
-                Return ParseLocalRangeConstraintSet(graph, source)
+                tipado = ParseLocalRangeConstraintSet(graph, source)
+            Case "hclboneplanesconstraintset"
+                tipado = ParseBonePlanesConstraintSet(graph, source)
+            Case "hclbendlinkconstraintset"
+                tipado = ParseBendLinkConstraintSet(graph, source)
+            Case "hclcompressiblelinkconstraintset"
+                tipado = ParseCompressibleLinkConstraintSet(graph, source)
             Case "hclvolumeconstraintmx"
-                Return ParseVolumeConstraintMx(graph, source)
-            Case Else
-                Return source
+                tipado = ParseVolumeConstraintMx(graph, source)
         End Select
+
+        ' ⛔ Si el lector tipado no valido, el objeto crudo OCUPA SU LUGAR. Devolver `Nothing` lo
+        ' sacaria de la lista y correria todos los indices posteriores — y `constraintExecution`
+        ' direcciona por indice, asi que a partir de ahi el motor de la app resolveria OTRO set para
+        ' cada entrada authored. Es el mismo defecto que ya se pago con `bufferDefinitions`.
+        If tipado Is Nothing Then
+            If Logger.Enabled Then
+                Dim cn = source.ClassName
+                Logger.LogLazy(Function() $"[CLOTH-SET] '{cn}' no se pudo tipar: queda el objeto crudo para conservar el INDICE (el set no se resuelve)")
+            End If
+            Return source
+        End If
+        Return tipado
     End Function
 
     Private Shared Function CreateMatrix4FromVectorRows(vectors As IReadOnlyList(Of HkxVector4Graph_Class), startIndex As Integer) As HkxMatrix4Graph_Class
@@ -1483,6 +1548,43 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         Next
 
         Return result
+    End Function
+
+
+    ''' <summary>
+    ''' Aplana `hclVolumeConstraintMx` a una lista de entradas (frameVector, particleIndex,
+    ''' parametro), juntando los batches de 16 carriles y los singles. El layout sale de la
+    ''' reflexion del .exe; los offsets estan en el comentario de
+    ''' <see cref="ParseVolumeConstraintMx"/>.
+    ''' </summary>
+    Private Shared Function LeerVolumenMx(batches As List(Of HkxRawStructGraph_Class),
+                                          singles As List(Of HkxRawStructGraph_Class)) As List(Of HclVolumeMxEntry_Class)
+        Dim salida As New List(Of HclVolumeMxEntry_Class)
+        If batches IsNot Nothing Then
+            For Each b In batches
+                If b Is Nothing OrElse b.RawBytes Is Nothing OrElse b.RawBytes.Length < 352 Then Continue For
+                For lane = 0 To 15
+                    salida.Add(New HclVolumeMxEntry_Class With {
+                        .FrameX = BitConverter.ToSingle(b.RawBytes, lane * 16),
+                        .FrameY = BitConverter.ToSingle(b.RawBytes, lane * 16 + 4),
+                        .FrameZ = BitConverter.ToSingle(b.RawBytes, lane * 16 + 8),
+                        .ParticleIndex = CInt(BitConverter.ToUInt16(b.RawBytes, &H100 + lane * 2)),
+                        .Parameter = BitConverter.ToSingle(b.RawBytes, &H120 + lane * 4)})
+                Next
+            Next
+        End If
+        If singles IsNot Nothing Then
+            For Each e In singles
+                If e Is Nothing OrElse e.RawBytes Is Nothing OrElse e.RawBytes.Length < 32 Then Continue For
+                salida.Add(New HclVolumeMxEntry_Class With {
+                    .FrameX = BitConverter.ToSingle(e.RawBytes, 0),
+                    .FrameY = BitConverter.ToSingle(e.RawBytes, 4),
+                    .FrameZ = BitConverter.ToSingle(e.RawBytes, 8),
+                    .ParticleIndex = CInt(BitConverter.ToUInt16(e.RawBytes, &H10)),
+                    .Parameter = BitConverter.ToSingle(e.RawBytes, &H14)})
+            Next
+        End If
+        Return salida
     End Function
 
     Private Shared Function ReadRawStructArray(graph As HkxObjectGraph_Class, field As HkxObjectArrayHeader_Class, structSize As Integer) As List(Of HkxRawStructGraph_Class)
@@ -1900,6 +2002,10 @@ End Class
 Public Class HclSimulateOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
+    ''' <summary>`simClothIndex` (+0x20). Indexa `hclClothData.simClothDatas`: es el sim-cloth que ESTE
+    ''' operador simula. El motor lo lee en <c>0x14195C3E0</c>
+    ''' (<c>simCloth = clothInstance.simCloths[op.simClothIndex]</c>).</summary>
+    Public Property SimClothIndex As Integer
     Public Property SubstepCount As Integer
     Public Property SolveIterationCount As Integer
     ''' <summary>`adaptConstraintStiffness` (+0x40). ⛔ NO es informativo: es lo unico serializado que
@@ -2182,9 +2288,23 @@ Public Class HclLocalRangeConstraintSetDetail_Class
     Public Property ApplyNormalComponent As Boolean
 End Class
 
+''' <summary>Una entrada de `hclVolumeConstraintMx`, sea de batch (16 carriles) o single. El
+''' `Parameter` es `weight` en las de frame y `stiffness` en las de apply.</summary>
+Friend Class HclVolumeMxEntry_Class
+    Friend Property FrameX As Single
+    Friend Property FrameY As Single
+    Friend Property FrameZ As Single
+    Friend Property ParticleIndex As Integer
+    Friend Property Parameter As Single
+End Class
+
 Friend Class HclVolumeConstraintMxDetail_Class
     Friend Property SourceObject As HkxVirtualObjectGraph_Class
     Friend Property Name As String
+    ''' <summary>`frameBatchDatas` + `frameSingleDatas` aplanados: definen el centroide y la matriz A.</summary>
+    Friend ReadOnly Property FrameEntries As New List(Of HclVolumeMxEntry_Class)
+    ''' <summary>`applyBatchDatas` + `applySingleDatas` aplanados: a quien se le aplica la correccion.</summary>
+    Friend ReadOnly Property ApplyEntries As New List(Of HclVolumeMxEntry_Class)
     Friend Property Field20VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
     Friend Property Field30VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
     Friend Property Field40VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)

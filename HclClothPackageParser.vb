@@ -422,7 +422,11 @@ Public NotInheritable Class HclClothPackageParser_Class
             cfg.ConstraintIndex = index
             If index < 0 OrElse index >= constraintDetails.Count Then Continue For
 
+            ' ⛔ La lista NO se compacta (ver HclStructuredGraphParser: `constraintExecution` indexa
+            ' por posicion), asi que un hueco del archivo llega hasta aca como `Nothing`. Sin la
+            ' guarda, `GetType()` sobre ese hueco tumbaba el parseo de la prenda entera.
             Dim constraint = constraintDetails(index)
+            If constraint Is Nothing Then Continue For
             cfg.ResolvedConstraint = constraint
             cfg.ResolvedConstraintType = constraint.GetType().Name
             cfg.ResolvedConstraintName = ExtractConstraintName(constraint)
@@ -435,6 +439,9 @@ Public NotInheritable Class HclClothPackageParser_Class
         If TypeOf constraint Is HclStretchLinkConstraintSetDetail_Class Then Return DirectCast(constraint, HclStretchLinkConstraintSetDetail_Class).Name
         If TypeOf constraint Is HclBendStiffnessConstraintSetDetail_Class Then Return DirectCast(constraint, HclBendStiffnessConstraintSetDetail_Class).Name
         If TypeOf constraint Is HclLocalRangeConstraintSetDetail_Class Then Return DirectCast(constraint, HclLocalRangeConstraintSetDetail_Class).Name
+        If TypeOf constraint Is HclBonePlanesConstraintSetDetail_Class Then Return DirectCast(constraint, HclBonePlanesConstraintSetDetail_Class).Name
+        If TypeOf constraint Is HclBendLinkConstraintSetDetail_Class Then Return DirectCast(constraint, HclBendLinkConstraintSetDetail_Class).Name
+        If TypeOf constraint Is HclCompressibleLinkConstraintSetDetail_Class Then Return DirectCast(constraint, HclCompressibleLinkConstraintSetDetail_Class).Name
         If TypeOf constraint Is HclVolumeConstraintMxDetail_Class Then Return DirectCast(constraint, HclVolumeConstraintMxDetail_Class).Name
         Return String.Empty
     End Function
