@@ -100,10 +100,23 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         result.DoNormals = graph.ReadByte(Off("doNormals")) <> 0
         result.NumLandscapeCollidableParticles = graph.ReadInt32(Off("numLandscapeCollidableParticles"))
         result.LandscapeRadius = graph.ReadSingle(Off("landscapeCollisionData.landscapeRadius"))
+        result.EnableStuckParticleDetection = graph.ReadByte(Off("landscapeCollisionData.enableStuckParticleDetection")) <> 0
+        result.StuckParticlesStretchFactorSq = graph.ReadSingle(Off("landscapeCollisionData.stuckParticlesStretchFactorSq"))
+        result.LandscapePinchDetectionEnabled = graph.ReadByte(Off("landscapeCollisionData.pinchDetectionEnabled")) <> 0
+        result.LandscapePinchPriority = CInt(CSByte(graph.ReadByte(Off("landscapeCollisionData.pinchDetectionPriority"))))
+        result.LandscapePinchRadius = graph.ReadSingle(Off("landscapeCollisionData.pinchDetectionRadius"))
         result.TransferMotionTransformSetIndex = graph.ReadInt32(Off("transferMotionData.transformSetIndex"))
         result.TransferMotionTransformIndex = graph.ReadInt32(Off("transferMotionData.transformIndex"))
         result.TransferTranslationMotion = graph.ReadByte(Off("transferMotionData.transferTranslationMotion")) <> 0
         result.TransferRotationMotion = graph.ReadByte(Off("transferMotionData.transferRotationMotion")) <> 0
+        result.MinTranslationSpeed = graph.ReadSingle(Off("transferMotionData.minTranslationSpeed"))
+        result.MaxTranslationSpeed = graph.ReadSingle(Off("transferMotionData.maxTranslationSpeed"))
+        result.MinTranslationBlend = graph.ReadSingle(Off("transferMotionData.minTranslationBlend"))
+        result.MaxTranslationBlend = graph.ReadSingle(Off("transferMotionData.maxTranslationBlend"))
+        result.MinRotationSpeed = graph.ReadSingle(Off("transferMotionData.minRotationSpeed"))
+        result.MaxRotationSpeed = graph.ReadSingle(Off("transferMotionData.maxRotationSpeed"))
+        result.MinRotationBlend = graph.ReadSingle(Off("transferMotionData.minRotationBlend"))
+        result.MaxRotationBlend = graph.ReadSingle(Off("transferMotionData.maxRotationBlend"))
 
         result.ParticleDatas.AddRange(ParseSimParticleData(result.Field38Vectors))
         result.FixedParticleIndices.AddRange(result.Field48UInt16.Select(Function(value) CInt(value)))
@@ -111,9 +124,25 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         result.StaticCollisionMasks.AddRange(result.FieldF8UInt32)
         result.TriangleFlips.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(Off("triangleFlips"))))
         result.AntiPinchConstraintSets = graph.ReadObjectReferenceArray(Off("antiPinchConstraintSets"))
+        If result.AntiPinchConstraintSets IsNot Nothing Then
+            result.AntiPinchDetails.AddRange(result.AntiPinchConstraintSets.
+                Select(Function(obj) ParseConstraintObject(graph, obj)).Where(Function(d) Not IsNothing(d)))
+        End If
         ' `perParticlePinchDetectionEnabledFlags` (+0x108, array of bool): el stride=1 que se había MEDIDO
         ' sobre 276 hclSimClothData (Tools/PinchStrideProbe) queda CONFIRMADO por el tipo declarado.
         result.PinchDetectionFlags.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(Off("perParticlePinchDetectionEnabledFlags"))))
+        result.MinPinchedParticleIndex = U16(graph, Off("minPinchedParticleIndex"))
+        result.MaxPinchedParticleIndex = U16(graph, Off("maxPinchedParticleIndex"))
+        Dim hPinch = graph.ReadArrayHeader(Off("collidablePinchingDatas"))
+        If hPinch IsNot Nothing Then
+            For iP = 0 To hPinch.Count - 1
+                Dim o = hPinch.DataRelativeOffset + iP * 8
+                result.CollidablePinchingDatas.Add(New HclCollidablePinchingData_Class With {
+                    .Enabled = graph.ReadByte(o) <> 0,
+                    .Priority = CInt(CSByte(graph.ReadByte(o + 1))),
+                    .Radius = graph.ReadSingle(o + 4)})
+            Next
+        End If
         result.ActionDetails.AddRange(actionObjects.Select(Function(obj) ParseActionObject(graph, obj)).Where(Function(d) Not IsNothing(d)))
         result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj, collidableCache)).Where(Function(detail) Not IsNothing(detail)))
         result.DefaultClothPoseDetails.AddRange(defaultPoseObjects.Select(Function(obj) graph.ParseSimClothPose(obj)).Where(Function(detail) Not IsNothing(detail)))
@@ -293,6 +322,8 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         Return New HclMoveParticlesOperatorDetail_Class With {
             .SourceObject = source,
             .Name = r.Name,
+            .RefBufferIdx = CInt(r.RefBufferIdx),
+            .SimClothIndex = CInt(r.SimClothIndex),
             .Pairs = ReadVertexParticlePairs(graph, r.VertexParticlePairs)
         }
     End Function
@@ -307,11 +338,19 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         If Not r.IsValid Then Return Nothing
 
         Dim header = ReadUInt32Block(graph, source.RelativeOffset + &H18, 6)
+        ' ⛔ Los enteros CRUDOS del operador. `subSteps` (+0x24) y `numberOfSolveIterations` (+0x28) son
+        ' lo unico que decide cuanto trabajo hace el solver por frame; leerlos corridos un slot cambia
+        ' la fisica entera y no se nota en ningun otro lado.
+        If Logger.Enabled Then
+            Dim h = header
+            Logger.LogLazy(Function() $"[CLOTH-OPHDR] hclSimulateOperator +0x18..+0x2C = {String.Join(" ", h)}  (+0x20=simClothIndex +0x24=subSteps +0x28=iters)")
+        End If
         Return New HclSimulateOperatorDetail_Class With {
             .SourceObject = source,
             .Name = r.Name,
             .SubstepCount = If(header.Count > 3, CInt(header(3)), 0),
             .SolveIterationCount = If(header.Count > 4, CInt(header(4)), 0),
+            .AdaptConstraintStiffness = r.AdaptConstraintStiffness,
             .Configs = ReadUInt32ConfigArray(graph, r.ConstraintExecution)
         }
     End Function
@@ -332,7 +371,13 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
             .Name = r.Name,
             .PayloadUInt32 = payloadUInt32,
             .ElementCount = If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0),
-            .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes)
+            .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes),
+            .NumberOfVertices = CInt(r.NumberOfVertices),
+            .StartVertexIn = CInt(r.StartVertexIn),
+            .StartVertexOut = CInt(r.StartVertexOut),
+            .InputBufferIdx = CInt(r.InputBufferIdx),
+            .OutputBufferIdx = CInt(r.OutputBufferIdx),
+            .CopyNormals = r.CopyNormals
         }
     End Function
 
@@ -353,7 +398,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
             .PayloadUInt32 = payloadUInt32,
             .ElementCount = If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0),
             .GatheredVertexIndices = DecodePackedUInt16List(payloadUInt32.Skip(12), If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0)),
-            .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes)
+            .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes),
+            .InputBufferIdx = CInt(r.InputBufferIdx),
+            .OutputBufferIdx = CInt(r.OutputBufferIdx),
+            .GatherNormals = r.GatherNormals,
+            .PartialGather = r.PartialGather
         }
     End Function
 
@@ -441,7 +490,11 @@ Friend NotInheritable Class HclStructuredGraphParser_Class
         Dim r As New Havok.Canon.Typed.Hk_HclGatherSomeVerticesOperator(graph, source)
         If Not r.IsValid Then Return Nothing
         Dim h = r.VertexPairs
-        Dim result As New HclGatherSomeVerticesOperatorDetail_Class With {.SourceObject = source, .Name = r.Name}
+        Dim result As New HclGatherSomeVerticesOperatorDetail_Class With {
+            .SourceObject = source, .Name = r.Name,
+            .InputBufferIdx = CInt(r.InputBufferIdx),
+            .OutputBufferIdx = CInt(r.OutputBufferIdx),
+            .GatherNormals = r.GatherNormals}
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * 4)
@@ -1615,6 +1668,16 @@ Public Class HclSimClothDataDetail_Class
     ' Array +0x108, stride 1 MEDIDO (ver ParseSimClothData). Lo que NO está confirmado contra el SDK
     ' de Havok es la SEMÁNTICA: el nombre sale de que el 99,8% de los bytes valen 0/1.
     Public ReadOnly Property PinchDetectionFlags As New List(Of Byte)
+    ''' <summary>`collidablePinchingDatas` (+0x118) — UNA entrada por colisionable, 8 bytes:
+    ''' <c>bool pinchDetectionEnabled; int8 pinchDetectionPriority; real pinchDetectionRadius</c>.
+    ''' Dice, POR COLISIONABLE, si participa de la deteccion de pellizco, con que prioridad y con que
+    ''' radio. Antes no se leia: el censo de subsistemas lo encontro declarado en 1.659 sim-cloth del
+    ''' corpus y sin parsear siquiera.</summary>
+    Public ReadOnly Property CollidablePinchingDatas As New List(Of HclCollidablePinchingData_Class)
+    ''' <summary>`minPinchedParticleIndex`/`maxPinchedParticleIndex` (+0x128/+0x12A): el RANGO de
+    ''' particulas que el pellizco puede tocar. Fuera de el, el motor ni mira.</summary>
+    Public Property MinPinchedParticleIndex As Integer
+    Public Property MaxPinchedParticleIndex As Integer
     Public Property Field118Pairs As List(Of HkxUInt32PairGraph_Class)
     Public Property CollidableBindingUniformParameter As Single?
     Public Property CollidableBindingParametersUniform As Boolean
@@ -1646,11 +1709,35 @@ Public Class HclSimClothDataDetail_Class
     Public Property DoNormals As Boolean
     Public Property NumLandscapeCollidableParticles As Integer
     Public Property LandscapeRadius As Single
+    ''' <summary>`landscapeCollisionData.enableStuckParticleDetection` (+0x04) y
+    ''' `stuckParticlesStretchFactorSq` (+0x08): una particula cuyo link supera ese factor de
+    ''' estiramiento AL CUADRADO se considera enganchada en el terreno y el motor la libera.</summary>
+    Public Property EnableStuckParticleDetection As Boolean
+    Public Property StuckParticlesStretchFactorSq As Single
+    ''' <summary>Pinch del TERRENO: `landscapeCollisionData.pinchDetectionEnabled` (+0x0C),
+    ''' `pinchDetectionPriority` (+0x0D, con signo) y `pinchDetectionRadius` (+0x10).</summary>
+    Public Property LandscapePinchDetectionEnabled As Boolean
+    Public Property LandscapePinchPriority As Integer
+    Public Property LandscapePinchRadius As Single
     Public Property CollidableTransformSetIndex As Integer
     Public Property TransferMotionTransformSetIndex As Integer
     Public Property TransferMotionTransformIndex As Integer
     Public Property TransferTranslationMotion As Boolean
+    ''' <summary>Los cuatro numeros que arman la mezcla de TRASLACION: por debajo de
+    ''' `minTranslationSpeed` se transfiere `minTranslationBlend`, por encima de `maxTranslationSpeed`
+    ''' se transfiere `maxTranslationBlend`, y en el medio va lineal. La velocidad es
+    ''' |delta traslacion| / dt, en unidades por segundo.</summary>
+    Public Property MinTranslationSpeed As Single
+    Public Property MaxTranslationSpeed As Single
+    Public Property MinTranslationBlend As Single
+    Public Property MaxTranslationBlend As Single
     Public Property TransferRotationMotion As Boolean
+    ''' <summary>Idem para la ROTACION, pero la velocidad va en GRADOS por segundo: el motor
+    ''' multiplica el angulo por 57,29578 (= 180/π) antes de compararlo (0x141A13B50).</summary>
+    Public Property MinRotationSpeed As Single
+    Public Property MaxRotationSpeed As Single
+    Public Property MinRotationBlend As Single
+    Public Property MaxRotationBlend As Single
     ''' <summary>`triangleFlips` (+0x68). Antes se documentaba como "m_unknown68, tipo desconocido".</summary>
     Public ReadOnly Property TriangleFlips As New List(Of Byte)
     ''' <summary>`actions` (+0xE8) — acciones de la sim (viento). Antes no se leía.</summary>
@@ -1658,9 +1745,22 @@ Public Class HclSimClothDataDetail_Class
     Public ReadOnly Property ActionDetails As New List(Of HclActionDetail_Class)
     ''' <summary>`antiPinchConstraintSets` (+0xC8). Antes no se leía.</summary>
     Public Property AntiPinchConstraintSets As List(Of HkxVirtualObjectGraph_Class)
+    ''' <summary>Los `antiPinchConstraintSets` YA PARSEADOS, igual que `ConstraintDetails`. Antes solo
+    ''' se guardaban los objetos crudos del grafo, o sea que estaban "leidos" y no se podian ejecutar:
+    ''' el motor los resuelve despues de cada colision con k = 1,0 (`CollideAndSolve`, 0x141A69730).</summary>
+    Public ReadOnly Property AntiPinchDetails As New List(Of Object)
 End Class
 
 ''' <summary>Base de las hclAction. Hoy la única serializable es hclSimpleWindAction.</summary>
+''' <summary>`hclSimClothDataCollidablePinchingData` — 8 bytes, uno por colisionable.</summary>
+Public Class HclCollidablePinchingData_Class
+    Public Property Enabled As Boolean
+    ''' <summary>`pinchDetectionPriority` es int8 CON SIGNO: gana el de prioridad mas alta cuando una
+    ''' particula queda entre dos colisionables.</summary>
+    Public Property Priority As Integer
+    Public Property Radius As Single
+End Class
+
 Public MustInherit Class HclActionDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property ClassName As String = ""
@@ -1785,6 +1885,9 @@ Public Class HclMoveParticlesOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
     Public Property Pairs As List(Of HclMoveParticlesVertexParticlePairGraph_Class)
+    ''' <summary>`refBufferIdx` (+0x34): el buffer del que salen las posiciones de las anclas.</summary>
+    Public Property RefBufferIdx As Integer
+    Public Property SimClothIndex As Integer
 End Class
 
 Public Class HclMoveParticlesVertexParticlePairGraph_Class
@@ -1799,6 +1902,10 @@ Public Class HclSimulateOperatorDetail_Class
     Public Property Name As String
     Public Property SubstepCount As Integer
     Public Property SolveIterationCount As Integer
+    ''' <summary>`adaptConstraintStiffness` (+0x40). ⛔ NO es informativo: es lo unico serializado que
+    ''' pone a `StiffnessFactor` en el modo 2, donde el factor `k` de TODOS los constraint sets deja de
+    ''' valer 1 y pasa a `(subSteps·s1·s2)^-1,725`. MEDIDO: 846 de los 1.248 operadores del corpus.</summary>
+    Public Property AdaptConstraintStiffness As Boolean
     Public Property Configs As List(Of HclSimulateOperatorConfigGraph_Class)
 End Class
 
@@ -1823,6 +1930,18 @@ Public Class HclCopyVerticesOperatorDetail_Class
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ElementCount As Integer
     Public Property PayloadAsciiTag As String
+    ''' <summary>`numberOfVertices`, `startVertexIn` y `startVertexOut`: la copia es
+    ''' <c>out[startVertexOut + i] = in[startVertexIn + i]</c> para i en [0, numberOfVertices).
+    ''' MEDIDO en el corpus: 875 de 875 con los dos `start` en 0 y la cuenta completa — o sea la
+    ''' IDENTIDAD. Por eso se lo trataba como no-op; pero ser la identidad es justamente lo que lo
+    ''' convierte en el puente particula↔vertice del estado SIN fisica, y ahi si hace falta.</summary>
+    Public Property NumberOfVertices As Integer
+    Public Property StartVertexIn As Integer
+    Public Property StartVertexOut As Integer
+    Public Property InputBufferIdx As Integer
+    Public Property OutputBufferIdx As Integer
+    ''' <summary>`copyNormals` (+0x30). MEDIDO: True en los 875 del corpus.</summary>
+    Public Property CopyNormals As Boolean
 End Class
 
 Public Class HclGatherAllVerticesOperatorDetail_Class
@@ -1832,6 +1951,12 @@ Public Class HclGatherAllVerticesOperatorDetail_Class
     Public Property ElementCount As Integer
     Public Property PayloadAsciiTag As String
     Public Property GatheredVertexIndices As New List(Of UShort)
+    ''' <summary>`inputBufferIdx` (+0x30) / `outputBufferIdx` (+0x34) / `gatherNormals` (+0x38).
+    ''' Sin estos el operador no se puede ejecutar: dicen DE QUE buffer lee y A CUAL escribe.</summary>
+    Public Property InputBufferIdx As Integer
+    Public Property OutputBufferIdx As Integer
+    Public Property GatherNormals As Boolean
+    Public Property PartialGather As Boolean
 End Class
 
 ' --- Cloth-menores: detalles TIPADOS (cero bytes crudos), structs verificados por --dump multi-elemento.
@@ -1906,6 +2031,9 @@ Public Class HclGatherSomeVerticesOperatorDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
     Public ReadOnly Property Pairs As New List(Of HclVertexGatherPair_Class)
+    Public Property InputBufferIdx As Integer
+    Public Property OutputBufferIdx As Integer
+    Public Property GatherNormals As Boolean
 End Class
 
 ' hclCollidable — TODOS los campos por reflexión (size 0x90, ver 3). Ver ParseCollidable para el

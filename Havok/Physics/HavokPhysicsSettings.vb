@@ -83,6 +83,12 @@ Namespace Havok.Physics
         ''' render dejaría de ser reproducible (y RENDER == BAKE dejaría de poder cumplirse).
         ''' </summary>
         Public Shared Property FixedTimeStep As Single = 1.0F / 60.0F
+        ''' <summary>Tiempo REAL transcurrido desde el frame anterior. 0 = "un paso fijo", que es el
+        ''' caso del render interactivo. Un reproductor de animacion que avanza la pose un frame de
+        ''' clip por cuadro tiene que poner aca la duracion de ESE frame: la fisica parte el intervalo
+        ''' en pasos de <see cref="FixedTimeStep"/>, igual que el motor, que simula a su ritmo y no al
+        ''' ritmo al que le llega la pose.</summary>
+        Public Shared Property FrameDeltaSeconds As Single = 0.0F
 
         ''' <summary>`uNumSimSettleSteps` del motor: pasos de asentamiento al activar una prenda.</summary>
         Public Shared Property SettleSteps As Integer = 10

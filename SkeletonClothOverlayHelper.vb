@@ -254,9 +254,22 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         If String.IsNullOrWhiteSpace(boneName) Then Return Nothing
         Dim dictionaryKey = If(String.IsNullOrWhiteSpace(requestedName), boneName, requestedName.Trim())
 
+        ' ⛔ REUTILIZAR UN HUESO QUE YA EXISTE NO ES GRATIS. La fisica escribe el cloth-bone contra el
+        ' bind que declara el HKX de la prenda; el render lo lee contra el bind del hueso VIVO. Si el
+        ' nombre ya estaba en el esqueleto con OTRO bind, los dos espacios dejan de coincidir y la
+        ' malla se desgarra justo donde estan los vertices de ese hueso. En reposo no se ve —cada lado
+        ' es consistente consigo mismo—, aparece con la pose.
+        ' No se corrige acá (pisar el bind de un hueso del cuerpo romperia el resto del render): se
+        ' MIDE, para saber si el desgarro que se ve viene de aca o de otro lado.
         Dim existing As HierarchiBone_class = Nothing
-        If targetSkeleton.SkeletonDictionary.TryGetValue(dictionaryKey, existing) Then Return existing
-        If Not dictionaryKey.Equals(boneName, StringComparison.OrdinalIgnoreCase) AndAlso targetSkeleton.SkeletonDictionary.TryGetValue(boneName, existing) Then Return existing
+        If targetSkeleton.SkeletonDictionary.TryGetValue(dictionaryKey, existing) Then
+            AvisarBindDistinto(existing, skeleton, index, dictionaryKey, shapeName)
+            Return existing
+        End If
+        If Not dictionaryKey.Equals(boneName, StringComparison.OrdinalIgnoreCase) AndAlso targetSkeleton.SkeletonDictionary.TryGetValue(boneName, existing) Then
+            AvisarBindDistinto(existing, skeleton, index, boneName, shapeName)
+            Return existing
+        End If
 
         Dim parentBone As HierarchiBone_class = Nothing
         Dim parentIndex = If(index < skeleton.ParentIndices.Count, CInt(skeleton.ParentIndices(index)), -1)
@@ -281,6 +294,32 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         targetSkeleton.InjectedBones.Add(dictionaryKey)
         Return nuevo
     End Function
+
+    ''' <summary>
+    ''' Compara el bind LOCAL del hueso vivo contra el `referencePose` que declara el HKX de la prenda
+    ''' para ese mismo hueso. Tienen que ser el mismo: la fisica escribe contra el segundo y el render
+    ''' lee contra el primero.
+    ''' <para>⛔ EN REPOSO ESTA DIFERENCIA ES INVISIBLE, porque cada lado es consistente consigo mismo.
+    ''' Solo se manifiesta con pose, y como un desgarro LOCAL — justo en los vertices de ese hueso.</para>
+    ''' </summary>
+    Private Shared Sub AvisarBindDistinto(vivo As HierarchiBone_class,
+                                          skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
+                                          index As Integer, nombre As String, shapeName As String)
+        If Not Logger.Enabled OrElse vivo Is Nothing Then Exit Sub
+        If skeleton Is Nothing OrElse skeleton.ReferencePose Is Nothing OrElse index >= skeleton.ReferencePose.Count Then Exit Sub
+        Dim hkx = HkxTransformConventionHelper.ToTransform(skeleton.ReferencePose(index))
+        Dim viv = vivo.OriginalLocaLTransform
+        If hkx Is Nothing OrElse viv Is Nothing Then Exit Sub
+        Dim a = hkx.ToMatrix4(), b = viv.ToMatrix4()
+        Dim dT = Math.Sqrt(((a.M41 - b.M41) ^ 2) + ((a.M42 - b.M42) ^ 2) + ((a.M43 - b.M43) ^ 2))
+        Dim tr = (a.M11 * b.M11) + (a.M12 * b.M12) + (a.M13 * b.M13) +
+                 (a.M21 * b.M21) + (a.M22 * b.M22) + (a.M23 * b.M23) +
+                 (a.M31 * b.M31) + (a.M32 * b.M32) + (a.M33 * b.M33)
+        Dim ang = Math.Acos(Math.Max(-1.0R, Math.Min(1.0R, (tr - 1.0R) / 2.0R))) * 180.0R / Math.PI
+        If dT <= 0.01R AndAlso ang <= 0.1R Then Exit Sub
+        Dim nm = nombre, sh = shapeName
+        Logger.LogLazy(Function() $"[CLOTH-BINDDIF] '{nm}' (shape '{sh}') ya existia con OTRO bind: dT={dT:F3} dAng={ang:F2} ⇒ la fisica y el render usan espacios distintos para este hueso")
+    End Sub
 
     Private Shared Function NormalizeBoneName(name As String) As String
         If String.IsNullOrWhiteSpace(name) Then Return String.Empty

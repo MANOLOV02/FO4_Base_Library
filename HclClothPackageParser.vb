@@ -75,6 +75,17 @@ Public NotInheritable Class HclClothPackageParser_Class
                         Select(Function(obj) HclStructuredGraphParser_Class.ParseSimClothData(graph, obj, collidableCache)).
                         Where(Function(detail) Not IsNothing(detail)))
 
+                ' ⛔⛔ LA LISTA TIENE QUE QUEDAR ALINEADA CON EL ARCHIVO.
+                '
+                ' El `.Where(Not IsNothing)` COMPACTABA la lista al descartar los scratch, y con eso los
+                ' indices dejaban de ser los del array `hclClothData.bufferDefinitions`. Los operadores
+                ' referencian sus buffers POR POSICION (`inputBufferIdx`, `outputBufferIdx`,
+                ' `hclSimpleMeshBoneDeformOperator.inputBufferIdx`), asi que cualquier consumidor que
+                ' indexe esta lista con esos numeros lee OTRO buffer — o se sale de rango en silencio.
+                ' Medido en el vestido: el archivo declara [0]CLOTH_SIM (scratch) y [1]SimBuf, el deform
+                ' pide el 1, y la lista compactada tenia un solo elemento.
+                '
+                ' Un scratch entra como Nothing en su posicion: se pierde el dato, no el indice.
                 clothConfig.BufferDefinitions.AddRange(
                     clothData.BufferDefinitions.
                         Select(Function(obj)
@@ -82,46 +93,63 @@ Public NotInheritable Class HclClothPackageParser_Class
                                        Return Nothing
                                    End If
                                    Return HclStructuredGraphParser_Class.ParseBufferDefinition(graph, obj)
-                               End Function).
-                        Where(Function(detail) Not IsNothing(detail)))
+                               End Function))
 
+                ' ⛔ TAMBIEN ALINEADA. `hclClothData.bufferDefinitions` mezcla `hclBufferDefinition` y
+                ' `hclScratchBufferDefinition` en el MISMO array, y los operadores indexan ese array.
+                ' Compactar cualquiera de las dos listas rompe la correspondencia: el `outputBufferIdx`
+                ' de un skin puede apuntar a un scratch, y si ese hueco no existe el operador escribe
+                ' en la nada. MEDIDO en el vestido: [0] es CLOTH_SIM (scratch, 340 v) y el skin escribe
+                ' justo ahi.
                 clothConfig.ScratchBufferDefinitions.AddRange(
                     clothData.BufferDefinitions.
-                        Select(Function(obj) HclStructuredGraphParser_Class.ParseScratchBufferDefinition(graph, obj)).
-                        Where(Function(detail) Not IsNothing(detail)))
+                        Select(Function(obj) HclStructuredGraphParser_Class.ParseScratchBufferDefinition(graph, obj)))
 
                 clothConfig.TransformSets.AddRange(
                     clothData.TransformSetDefinitions.
                         Select(Function(obj) HclRenderGraphParser_Class.ParseTransformSetDefinition(graph, obj)).
                         Where(Function(detail) Not IsNothing(detail)))
 
+                ' ⛔⛔ LA CADENA, EN EL ORDEN DEL ARCHIVO.
+                '
+                ' El motor NO corre una secuencia fija: `hclClothState.operators` es una lista de
+                ' INDICES a `hclClothData.operators`, y `Execute Operators` los despacha uno por uno en
+                ' ese orden. Las propiedades singulares de abajo (`Simulate`, `SimpleMeshBoneDeform`,
+                ' …) son un resumen por CLASE — sirven para consultar, no para ejecutar: pierden el
+                ' orden, pierden los repetidos, y obligan a la app a inventar una secuencia propia.
+                ' `OperadoresEnOrden` conserva la posicion, que es lo unico que el estado referencia.
                 For Each op In clothData.Operators
-                    Select Case NormalizeOperatorClassName(op.ClassName)
-                        Case "hclobjectspaceskinpnoperator"
-                            ' ⛔ UNA PRENDA PUEDE TRAER VARIOS. MEDIDO: el Institute Lab Coat (y sus tres
-                            ' reemplazos CBBE) declaran DOS, escribiendo a buffers distintos (out=0 y
-                            ' out=1). Esta propiedad era SINGULAR, asi que el segundo se perdia en
-                            ' silencio y esa pieza de tela se quedaba sin destino skinneado.
-                            ' Se guardan TODOS; cual le toca al deform lo decide `inputBufferIdx`, mas
-                            ' abajo — no el orden en que aparecen.
-                            Dim skinOp = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
-                            PopulateSkinBoneNames(skinOp, result.Skeleton)
-                            clothConfig.ObjectSpaceSkins.Add(skinOp)
-                        Case "hclmoveparticlesoperator"
-                            clothConfig.MoveParticles = HclStructuredGraphParser_Class.ParseMoveParticlesOperator(graph, op)
-                        Case "hclsimulateoperator"
-                            clothConfig.Simulate = HclStructuredGraphParser_Class.ParseSimulateOperator(graph, op)
-                        Case "hclsimplemeshbonedeformoperator"
-                            clothConfig.SimpleMeshBoneDeform = HclRenderGraphParser_Class.ParseSimpleMeshBoneDeformOperator(graph, op, result.Skeleton)
-                        Case "hclcopyverticesoperator"
-                            clothConfig.CopyVertices = HclStructuredGraphParser_Class.ParseCopyVerticesOperator(graph, op)
-                        Case "hclgatherallverticesoperator"
-                            clothConfig.GatherAllVertices = HclStructuredGraphParser_Class.ParseGatherAllVerticesOperator(graph, op)
-                        Case "hclgathersomeverticesoperator"
-                            clothConfig.GatherSomeVertices = HclStructuredGraphParser_Class.ParseGatherSomeVerticesOperator(graph, op)
-                        Case Else
-                            clothConfig.UnknownOperators.Add(op)
-                    End Select
+                    clothConfig.OperadoresEnOrden.Add(ParseOperadorPorClase(graph, op, result.Skeleton))
+                Next
+
+                ' ⛔ LAS PROPIEDADES SINGULARES APUNTAN A LAS MISMAS INSTANCIAS DE LA CADENA.
+                ' Parsear dos veces el mismo operador daba dos objetos distintos, y todo el
+                ' post-proceso (resolver triangulos del deform, emparejar configs, …) corria sobre el
+                ' de la propiedad singular mientras la cadena ejecutaba el OTRO — que quedaba a medio
+                ' armar. Se parsea UNA vez, en orden, y el resumen por clase referencia esas mismas.
+                For i = 0 To clothConfig.OperadoresEnOrden.Count - 1
+                    Dim det = clothConfig.OperadoresEnOrden(i)
+                    If det Is Nothing Then
+                        clothConfig.UnknownOperators.Add(clothData.Operators(i))
+                        Continue For
+                    End If
+                    Dim skinOp = TryCast(det, HclObjectSpaceSkinPNOperatorGraph_Class)
+                    If skinOp IsNot Nothing Then
+                        clothConfig.ObjectSpaceSkins.Add(skinOp)
+                        Continue For
+                    End If
+                    Dim mv = TryCast(det, HclMoveParticlesOperatorDetail_Class)
+                    If mv IsNot Nothing Then clothConfig.MoveParticles = mv : Continue For
+                    Dim sm = TryCast(det, HclSimulateOperatorDetail_Class)
+                    If sm IsNot Nothing Then clothConfig.Simulate = sm : Continue For
+                    Dim df = TryCast(det, HclSimpleMeshBoneDeformOperatorGraph_Class)
+                    If df IsNot Nothing Then clothConfig.SimpleMeshBoneDeform = df : Continue For
+                    Dim cp = TryCast(det, HclCopyVerticesOperatorDetail_Class)
+                    If cp IsNot Nothing Then clothConfig.CopyVertices = cp : Continue For
+                    Dim ga = TryCast(det, HclGatherAllVerticesOperatorDetail_Class)
+                    If ga IsNot Nothing Then clothConfig.GatherAllVertices = ga : Continue For
+                    Dim gs = TryCast(det, HclGatherSomeVerticesOperatorDetail_Class)
+                    If gs IsNot Nothing Then clothConfig.GatherSomeVertices = gs : Continue For
                 Next
 
                 clothConfig.ClothStates.AddRange(
@@ -354,6 +382,26 @@ Public NotInheritable Class HclClothPackageParser_Class
         maxDelta = Math.Max(maxDelta, Math.Abs(left.M43 - right.M43))
         maxDelta = Math.Max(maxDelta, Math.Abs(left.M44 - right.M44))
         Return maxDelta
+    End Function
+
+    ''' <summary>El detalle parseado de UN operador, elegido por su clase. Devuelve Nothing para las
+    ''' clases que esta app no ejecuta — asi la posicion en la lista se conserva igual.</summary>
+    Private Shared Function ParseOperadorPorClase(graph As HkxObjectGraph_Class, op As HkxVirtualObjectGraph_Class,
+                                                  skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton) As Object
+        If op Is Nothing Then Return Nothing
+        Select Case NormalizeOperatorClassName(op.ClassName)
+            Case "hclobjectspaceskinpnoperator"
+                Dim skinOp = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
+                PopulateSkinBoneNames(skinOp, skeleton)
+                Return skinOp
+            Case "hclmoveparticlesoperator" : Return HclStructuredGraphParser_Class.ParseMoveParticlesOperator(graph, op)
+            Case "hclsimulateoperator" : Return HclStructuredGraphParser_Class.ParseSimulateOperator(graph, op)
+            Case "hclsimplemeshbonedeformoperator" : Return HclRenderGraphParser_Class.ParseSimpleMeshBoneDeformOperator(graph, op, skeleton)
+            Case "hclcopyverticesoperator" : Return HclStructuredGraphParser_Class.ParseCopyVerticesOperator(graph, op)
+            Case "hclgatherallverticesoperator" : Return HclStructuredGraphParser_Class.ParseGatherAllVerticesOperator(graph, op)
+            Case "hclgathersomeverticesoperator" : Return HclStructuredGraphParser_Class.ParseGatherSomeVerticesOperator(graph, op)
+            Case Else : Return Nothing
+        End Select
     End Function
 
     Private Shared Sub PopulateResolvedSimulateConfigs(config As HclClothConfigGraph_Class)
@@ -666,8 +714,10 @@ Public NotInheritable Class HclClothPackageParser_Class
         If IsNothing(config) Then Return
 
         Dim bufferNames As New List(Of String)
-        bufferNames.AddRange(config.BufferDefinitions.Select(Function(detail) detail.Name))
-        bufferNames.AddRange(config.ScratchBufferDefinitions.Select(Function(detail) detail.Name))
+        ' Los scratch entran como Nothing para conservar el indice del archivo (ver arriba).
+        bufferNames.AddRange(config.BufferDefinitions.Where(Function(d) d IsNot Nothing).Select(Function(detail) detail.Name))
+        ' Los scratch entran como Nothing en su posicion para conservar el indice del archivo.
+        bufferNames.AddRange(config.ScratchBufferDefinitions.Where(Function(d) d IsNot Nothing).Select(Function(detail) detail.Name))
 
         For Each state In config.ClothStates
             For Each access In state.BufferAccesses.Concat(state.AuxiliaryBufferAccesses)
@@ -766,6 +816,10 @@ Public Class HclClothConfigGraph_Class
     Public Property Simulate As HclSimulateOperatorDetail_Class
     Public Property SimpleMeshBoneDeform As HclSimpleMeshBoneDeformOperatorGraph_Class
     Public Property CopyVertices As HclCopyVerticesOperatorDetail_Class
+    ''' <summary>Los operadores del `hclClothData`, YA PARSEADOS y en la POSICION del archivo.
+    ''' `hclClothState.operators` los referencia por indice: esta es la lista que hay que recorrer para
+    ''' ejecutar la cadena. Nothing donde la clase no se ejecuta.</summary>
+    Public ReadOnly Property OperadoresEnOrden As New List(Of Object)
     Public Property GatherAllVertices As HclGatherAllVerticesOperatorDetail_Class
     Public Property GatherSomeVertices As HclGatherSomeVerticesOperatorDetail_Class
     Public ReadOnly Property UnknownOperators As New List(Of HkxVirtualObjectGraph_Class)

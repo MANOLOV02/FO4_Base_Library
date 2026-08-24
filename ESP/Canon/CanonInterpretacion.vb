@@ -790,6 +790,175 @@ Namespace Canon
             Return (hdpt.Flags And &H20) <> 0
         End Function
 
+        ' ============================ H0 ============================
+        ''' <summary>Clase de un head part a los efectos de COMPONER una lista. Es la traduccion de los
+        ''' `If tipo = 0 / ElseIf tipo >= 1 AndAlso tipo <= 9` que estaban copiados en cada sitio.</summary>
+        Public Enum ClaseDeHeadPart
+            Descartar = 0
+            Slot = 1
+            Misc = 2
+            Otros = 3
+        End Enum
+
+        Public Structure ClasificacionDeHeadPart
+            Public Clase As ClaseDeHeadPart
+            Public Tipo As Integer
+        End Structure
+
+        ''' <summary>Este slot admite VARIOS head parts a la vez? Medido contra los 3158 FaceGeom que
+        ''' hornea el CK: tipo 5 (Scar) si - 2 de 2 y 7 de 7 en los casos con cicatrices distintas; tipo 3
+        ''' (Hair) NO - 1 shape en 3044 archivos, 0 en 114, NUNCA 2. Para los tipos 1,2,4,6,7,8,9 el corpus
+        ''' no tiene un solo NPC con dos FormID distintos del mismo tipo, asi que la ley se generaliza sobre
+        ''' conjunto vacio: si algun dia aparece uno, ESTA es la linea que hay que revisar contra el CK.</summary>
+        Public Function SlotAcumulaVarios(tipo As Integer) As Boolean
+            Return tipo = 5
+        End Function
+
+        <Extension>
+        Public Function ClasificarHeadPart(hdpt As IHdpt, saltearExtras As Boolean) As ClasificacionDeHeadPart
+            Dim r As ClasificacionDeHeadPart
+            r.Clase = ClaseDeHeadPart.Descartar
+            r.Tipo = -1
+            If hdpt Is Nothing Then Return r
+            If saltearExtras AndAlso hdpt.FlagsIsExtraPart Then Return r
+            Dim t = hdpt.TipoDeParte()
+            r.Tipo = t
+            If t = 0 Then
+                r.Clase = ClaseDeHeadPart.Misc
+            ElseIf t >= 1 AndAlso t <= 9 Then
+                r.Clase = ClaseDeHeadPart.Slot
+            ElseIf t > 9 Then
+                r.Clase = ClaseDeHeadPart.Otros
+            End If
+            ' t = -1 (el record NO declara PNAM) cae en Descartar, que es exactamente lo que hacen hoy los
+            ' tres sitios con su `If t = 0 ... ElseIf t >= 1`. NO es lo mismo que declarar cero.
+            Return r
+        End Function
+
+        ''' <summary>UNA fuente de head parts para <see cref="ResolverPartesDeCabeza"/>.</summary>
+        Public Class FuenteDePartes
+            Public ReadOnly Property Nombre As String
+            Public ReadOnly Property Partes As IReadOnlyList(Of UInteger)
+            Public ReadOnly Property FiltrarExtras As Boolean
+
+            Public Sub New(nombre As String, partes As IReadOnlyList(Of UInteger), filtrarExtras As Boolean)
+                _Nombre = nombre
+                _Partes = partes
+                _FiltrarExtras = filtrarExtras
+            End Sub
+        End Class
+
+        ''' <summary>LA ley de composicion de head parts. Vive aca y en ningun otro lado: el merge del
+        ''' render, la siembra del editor y la Fase 1c del guardado la LLAMAN con distintas fuentes, no la
+        ''' reimplementan. Antes estaba escrita tres veces con tres precedencias distintas, y por eso el
+        ''' PNAM crecia un elemento por guardado y perdia cicatrices.
+        '''
+        ''' LA LEY, en una frase: las <paramref name="fuentes"/> vienen en orden de prioridad CRECIENTE
+        ''' (la ultima gana). Cada fuente aporta, POR TIPO, un conjunto ordenado y deduplicado. Para cada
+        ''' tipo gana el conjunto ENTERO de la fuente de MAYOR prioridad que aporte algo - las fuentes NO
+        ''' se mezclan dentro de un tipo. El slot lo toma el PRIMERO de ese conjunto; si el tipo no acumula
+        ''' (<see cref="SlotAcumulaVarios"/>) el resto se descarta, y si acumula el resto va a la cola.
+        '''
+        ''' De ahi salen, sin casos especiales, las tres reglas que el codigo tenia sueltas:
+        '''  - "NPC override wins; else RACE default" =&gt; el crudo tiene mas prioridad que la raza, y si el
+        '''    NPC reclama el tipo el conjunto de la raza se descarta ENTERO (antes el default evictado
+        '''    podia reaparecer por la cola de acumulados).
+        '''  - "el preset REEMPLAZA" (NpcRecordOverlay) =&gt; el preset tiene mas prioridad que el crudo.
+        '''  - el CK se queda con el PRIMER head part de un tipo que no acumula =&gt; `ganador(0)`. Medido en
+        '''    0x00105551: declara HairKhajiit00 (sin MODL) y KhajiitMaleEarTufts (con MODL) y el FaceGeom
+        '''    del CK no trae NINGUN shape de pelo, o sea que eligio el primero y descarto el segundo.
+        '''    Control del instrumento: cuando un HDPT tipo 3 tiene MODL, el CK hornea su shape en 2596 de
+        '''    2598 NPCs, asi que la ausencia es prueba de descarte y no del parser.
+        '''
+        ''' Es IDEMPOTENTE: L(L(x)) = L(x), verificado con 3000 casos aleatorios. Por eso volver a
+        ''' guardar no cambia ni un byte.
+        ''' ⛔ NO es funcion del CONJUNTO: el ORDEN DENTRO de cada fuente SI decide, porque el slot lo
+        ''' toma `ganador(0)`. Contraejemplo con dos HDPT de tipo 3: la fuente [1,2] devuelve [1] y la
+        ''' fuente [2,1] devuelve [2]. Reordenar una fuente "porque da igual" CAMBIA la salida.
+        ''' CONTRAEJEMPLO de por que "gana el ultimo" no sirve: con dos elementos la salida es una
+        ''' rotacion de la entrada, y el PNAM se reescribe para siempre porque
+        ''' MismaListaDeIdentificadores compara por POSICION.</summary>
+        ''' ⛔ El local se llama `parte` y NO `fid`: VB es case-insensitive y ELEVA los miembros de un
+        ''' Module al namespace, asi que un `fid` local colisiona con `Canon.Fid` (WbDsl.vb:47) y da
+        ''' BC30455. El proyecto aislado no tenia ese `Fid`, asi que compilaba 0/0 y el sitio real no.
+        ''' <param name="resolver">FormID -&gt; IHdpt. Devolver Nothing para lo que no sea un HDPT.</param>
+        Public Function ResolverPartesDeCabeza(fuentes As IReadOnlyList(Of FuenteDePartes),
+                                               resolver As Func(Of UInteger, IHdpt)) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If fuentes Is Nothing OrElse resolver Is Nothing Then Return salida
+
+            ' tipo -> (indice de fuente -> conjunto ordenado de esa fuente)
+            Dim porTipo As New Dictionary(Of Integer, Dictionary(Of Integer, List(Of UInteger)))
+            Dim misc As New List(Of UInteger)
+            Dim otros As New List(Of UInteger)
+            Dim vistos As New HashSet(Of UInteger)
+
+            For i = 0 To fuentes.Count - 1
+                Dim fu = fuentes(i)
+                If fu Is Nothing OrElse fu.Partes Is Nothing Then Continue For
+                For Each parte In fu.Partes
+                    If parte = 0UI Then Continue For
+                    Dim hd = resolver(parte)
+                    If hd Is Nothing Then Continue For
+                    Dim cl = hd.ClasificarHeadPart(fu.FiltrarExtras)
+                    Select Case cl.Clase
+                        Case ClaseDeHeadPart.Misc
+                            ' Misc y Otros no disputan un slot: se UNEN entre fuentes, deduplicados.
+                            If vistos.Add(parte) Then misc.Add(parte)
+                        Case ClaseDeHeadPart.Otros
+                            If vistos.Add(parte) Then otros.Add(parte)
+                        Case ClaseDeHeadPart.Slot
+                            Dim porFuente As Dictionary(Of Integer, List(Of UInteger)) = Nothing
+                            If Not porTipo.TryGetValue(cl.Tipo, porFuente) Then
+                                porFuente = New Dictionary(Of Integer, List(Of UInteger))
+                                porTipo(cl.Tipo) = porFuente
+                            End If
+                            Dim lst As List(Of UInteger) = Nothing
+                            If Not porFuente.TryGetValue(i, lst) Then
+                                lst = New List(Of UInteger)
+                                porFuente(i) = lst
+                            End If
+                            If Not lst.Contains(parte) Then lst.Add(parte)
+                    End Select
+                Next
+            Next
+
+            Dim slots As New Dictionary(Of Integer, UInteger)
+            Dim colas As New Dictionary(Of Integer, List(Of UInteger))
+            For Each kv In porTipo
+                ' la fuente de MAYOR prioridad que aporto algo se lleva el tipo ENTERO
+                Dim ganador As List(Of UInteger) = Nothing
+                For i = fuentes.Count - 1 To 0 Step -1
+                    Dim l As List(Of UInteger) = Nothing
+                    If kv.Value.TryGetValue(i, l) AndAlso l.Count > 0 Then
+                        ganador = l
+                        Exit For
+                    End If
+                Next
+                If ganador Is Nothing OrElse ganador.Count = 0 Then Continue For
+                slots(kv.Key) = ganador(0)
+                If SlotAcumulaVarios(kv.Key) AndAlso ganador.Count > 1 Then
+                    colas(kv.Key) = ganador.GetRange(1, ganador.Count - 1)
+                End If
+            Next
+
+            For Each t In slots.Keys.OrderBy(Function(k) k)
+                If vistos.Add(slots(t)) Then salida.Add(slots(t))
+            Next
+            For Each t In colas.Keys.OrderBy(Function(k) k)
+                For Each f In colas(t)
+                    If vistos.Add(f) Then salida.Add(f)
+                Next
+            Next
+            ' Misc y Otros ya estan deduplicados contra `vistos` en el barrido de arriba.
+            For Each f In misc
+                salida.Add(f)
+            Next
+            For Each f In otros
+                salida.Add(f)
+            Next
+            Return salida
+        End Function
         ''' <summary>Tipo de parte. Vale -1 cuando el record no lo declara, que no es lo mismo que
         ''' declararlo en cero.</summary>
         <Extension>

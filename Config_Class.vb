@@ -184,7 +184,17 @@ Public Class Config_App
         ' de cloth de FO4 — pagando el scan de bloques por shape y por frame, y corriendo el solver
         ' equivocado si el NIF traía un BSClothExtraData portado.
         ' Havok Cloth es EXCLUSIVO de FO4: SkyrimSE.exe no declara ni una sola clase hcl (medido).
+        ' ⛔⛔ SOLO EN DEBUG, AUNQUE EL FLAG ESTE PERSISTIDO.
+        ' La fisica de cloth esta EN DESARROLLO y la app SE DISTRIBUYE. `Setting_HavokPhysics` vive en
+        ' config.json como cualquier otra perilla, asi que un config con la fisica prendida viajaria
+        ' con el usuario y le cambiaria el render de una build publicada. El compilador la saca del
+        ' binario de Release: no es una perilla en runtime, no esta.
+        ' Con esto apagado, `Render` ni siquiera arma el diccionario de instancias por frame.
+#If DEBUG Then
         Havok.Physics.HavokPhysicsSettings.Enabled = Setting_HavokPhysics AndAlso Game = Game_Enum.Fallout4
+#Else
+        Havok.Physics.HavokPhysicsSettings.Enabled = False
+#End If
         Havok.Physics.HavokPhysicsSettings.Mode =
             CType(Math.Max(0, Math.Min(2, Setting_HavokPhysicsMode)), Havok.Physics.HavokPhysicsMode)
         Havok.Physics.HavokPhysicsSettings.GravityScale = Setting_HavokPhysicsGravityScale
