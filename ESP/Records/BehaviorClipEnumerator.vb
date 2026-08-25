@@ -292,11 +292,9 @@ Public NotInheritable Class BehaviorClipEnumerator
         If bytes Is Nothing OrElse bytes.Length = 0 Then Return d
         Try
             Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(bytes))
-            Dim b = g.GetObjectsByClassName("hkaAnimationBinding").FirstOrDefault()
-            If b IsNot Nothing Then
-                Dim ab = Havok.Canon.Objects.HkObj_HkaAnimationBinding.Read(g, b)
-                If ab IsNot Nothing Then d.EsAditivo = (ab.BlendHint <> 0)
-            End If
+            ' ⛔ El binding sale de `hkaAnimationContainer.bindings`, no del primer bloque serializado.
+            Dim ab = g.BindingPrincipal()
+            If ab IsNot Nothing Then d.EsAditivo = (ab.BlendHint <> 0)
             ' ⛔⛔ TRES ESCALARES SE LEEN COMO TRES ESCALARES. NO se llama a `ParseAnimations`.
             '
             ' Aca decia "el grafo YA esta construido: leer frames y duracion no cuesta ni un archivo ni
@@ -320,7 +318,8 @@ Public NotInheritable Class BehaviorClipEnumerator
             ' ⚠ Se mira SOLO `hkaSplineCompressedAnimation`, igual que antes: `ParseAnimations`
             ' tampoco miraba `hkaLosslessCompressedAnimation`, y para esos archivos `Leido` quedaba en
             ' False. Se conserva tal cual para no cambiar en silencio que clips reportan crop ignorado.
-            Dim ao = g.GetObjectsByClassName("hkaSplineCompressedAnimation").FirstOrDefault()
+            ' ⛔ La animacion sale de `hkaAnimationContainer.animations`, no del primer bloque serializado.
+            Dim ao = g.BloquesDelContenedor("animations", {"hkaSplineCompressedAnimation"}).FirstOrDefault(Function(x) x.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase))
             If ao IsNot Nothing Then
                 Dim an = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Read(g, ao)
                 If an IsNot Nothing Then

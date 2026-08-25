@@ -60,10 +60,20 @@ Public Partial Class HkxObjectGraph_Class
 
 
 
+    ''' <summary>El binding del clip: el PRIMERO QUE EL CONTENEDOR DECLARA, no el primer
+    ''' bloque serializado. Nothing si el archivo no trae ninguno.</summary>
+    Public Function BindingPrincipal() As Havok.Canon.Objects.HkObj_HkaAnimationBinding
+        Dim b = ParseAnimationBindings()
+        If b.Count = 0 Then Return Nothing
+        Return b(0)
+    End Function
+
     Public Function ParseAnimationBindings() As List(Of Havok.Canon.Objects.HkObj_HkaAnimationBinding)
         Dim result As New List(Of Havok.Canon.Objects.HkObj_HkaAnimationBinding)
 
-        For Each obj In GetObjectsByClassName("hkaAnimationBinding").OrderBy(Function(item) item.RelativeOffset)
+        ' ⛔ EL ORDEN LO DECLARA `hkaAnimationContainer.bindings`. Ordenar por `RelativeOffset` es
+        ' usar el orden en que el serializador dejo los bloques, que no es una ley del formato.
+        For Each obj In BloquesDelContenedor("bindings", {"hkaAnimationBinding"})
             Dim binding = Havok.Canon.Objects.HkObj_HkaAnimationBinding.Read(Me, obj)
             If Not IsNothing(binding) Then result.Add(binding)
         Next
