@@ -87,12 +87,19 @@ Public Partial Class HkxObjectGraph_Class
     Public Function Animaciones() As List(Of HkxAnimacionDescomprimida_Class)
         Dim r As New List(Of HkxAnimacionDescomprimida_Class)
 
-        For Each obj In GetObjectsByClassName("hkaSplineCompressedAnimation").OrderBy(Function(item) item.RelativeOffset)
-            Dim a = ParseAnimation(obj)
-            If Not IsNothing(a) Then r.Add(a)
-        Next
-        For Each obj In GetObjectsByClassName("hkaLosslessCompressedAnimation").OrderBy(Function(item) item.RelativeOffset)
-            Dim a = ParseLosslessAnimation(obj)
+        ' ⛔ EL ORDEN LO DECLARA `hkaAnimationContainer.animations`, no el serializador.
+        ' Antes eran DOS barridos por clase, cada uno ordenado por `RelativeOffset`: eso
+        ' ademas ponia TODAS las spline antes que TODAS las lossless, un orden que el archivo
+        ' no dice en ningun lado. La subclase concreta la sigue diciendo el nombre de clase
+        ' del bloque, que es lo unico que la declara.
+        For Each obj In BloquesDelContenedor("animations",
+                                            {"hkaSplineCompressedAnimation", "hkaLosslessCompressedAnimation"})
+            Dim a As HkxAnimacionDescomprimida_Class = Nothing
+            If obj.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
+                a = ParseAnimation(obj)
+            ElseIf obj.ClassName.Equals("hkaLosslessCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
+                a = ParseLosslessAnimation(obj)
+            End If
             If Not IsNothing(a) Then r.Add(a)
         Next
         If r.Count = 0 Then Return r
@@ -240,20 +247,61 @@ Public Partial Class HkxObjectGraph_Class
             If framesInBlock <= 0 Then Continue For
 
             Dim offset = blockStart
-            EnsureBlobReadable(blob, offset, 4 * numTracks, "Track mask block")
+            ' ⛔⛔ EL BLOQUE DE MASCARAS ES DE LARGO VARIABLE. Leido de `Fallout4.exe`
+            ' (descompresor 0x1419B1780): hay UN byte de cuantizacion por track, y despues un
+            ' byte de banderas por componente PERO SOLO SI su cuantizacion es una de las que
+            ' declara el enum. Si no, el motor no lo consume:
+            '     pos  ∉ {BITS8, BITS16} -> `jne 0x1419B1A22`, sin `inc rdi`
+            '     rot  > UNCOMPRESSED    -> `ja  0x1419B1B95`, sin `inc rdi`
+            '     esc  ∉ {BITS8, BITS16} -> `jne 0x1419B1C11`, sin `inc rdi`
+            ' O sea entre 1 y 4 bytes por track. Esto leia CUATRO siempre, asi que en cuanto
+            ' un track salteaba un byte, las banderas de todos los siguientes quedaban
+            ' corridas. El corpus de FO4 trae el byte 0x07 (pos=3, salteado) en 2 de los 4
+            ' tracks-bloque de su unica animacion spline: el defecto estaba VIVO.
+            Dim escMax = MaximoDe(EscQ)
+            Dim rotMax = MaximoDe(RotQ)
             For trackIndex = 0 To numTracks - 1
+                EnsureBlobReadable(blob, offset, 1, "Track quantization byte")
                 Dim packedMask = blob(offset)
-                masks(trackIndex).PosQuant = CByte(packedMask And &H3)
-                masks(trackIndex).RotQuant = CByte((packedMask >> 2) And &HF)
-                masks(trackIndex).ScaleQuant = CByte((packedMask >> 6) And &H3)
-                masks(trackIndex).PosFlags = blob(offset + 1)
-                masks(trackIndex).RotFlags = blob(offset + 2)
-                masks(trackIndex).ScaleFlags = blob(offset + 3)
-                Contar(destino.RotQuantUsados, CInt(masks(trackIndex).RotQuant))
-                Contar(destino.PosQuantUsados, CInt(masks(trackIndex).PosQuant))
-                Contar(destino.ScaleQuantUsados, CInt(masks(trackIndex).ScaleQuant))
+                offset += 1
+
+                Dim pq = CInt(packedMask And &H3)
+                Dim rq = CInt((packedMask >> 2) And &HF)
+                Dim sq = CInt((packedMask >> 6) And &H3)
+                masks(trackIndex).PosQuant = CByte(pq)
+                masks(trackIndex).RotQuant = CByte(rq)
+                masks(trackIndex).ScaleQuant = CByte(sq)
+
+                ' Sin byte de banderas no hay componente animado: cero es `Identity` en
+                ' `GetPositionType`/`GetScaleType`, que es justo lo que hace el motor al saltear.
+                If pq >= 0 AndAlso pq <= escMax Then
+                    EnsureBlobReadable(blob, offset, 1, "Position mask byte")
+                    masks(trackIndex).PosFlags = blob(offset)
+                    offset += 1
+                Else
+                    masks(trackIndex).PosFlags = 0
+                End If
+
+                If rq >= 0 AndAlso rq <= rotMax Then
+                    EnsureBlobReadable(blob, offset, 1, "Rotation mask byte")
+                    masks(trackIndex).RotFlags = blob(offset)
+                    offset += 1
+                Else
+                    masks(trackIndex).RotFlags = 0
+                End If
+
+                If sq >= 0 AndAlso sq <= escMax Then
+                    EnsureBlobReadable(blob, offset, 1, "Scale mask byte")
+                    masks(trackIndex).ScaleFlags = blob(offset)
+                    offset += 1
+                Else
+                    masks(trackIndex).ScaleFlags = 0
+                End If
+
+                Contar(destino.RotQuantUsados, rq)
+                Contar(destino.PosQuantUsados, pq)
+                Contar(destino.ScaleQuantUsados, sq)
                 Contar(destino.MascaraCruda, CInt(packedMask))
-                offset += 4
             Next
 
             offset = blockStart + maskAndQuantSize
@@ -587,11 +635,25 @@ Public Partial Class HkxObjectGraph_Class
     ''' seis valores, y eso se comprueba aca abajo en vez de afirmarlo.</para>
     ''' <para>Antes esto era `Case 0 / 1 / 2 / 5` sin decir que era cada numero.</para>
     ''' </summary>
-    Private Shared ReadOnly RotQ As IReadOnlyDictionary(Of String, Integer) = CargarRotQ()
+    Private Shared ReadOnly RotQ As IReadOnlyDictionary(Of String, Integer) = CargarEnum("RotationQuantization")
 
-    Private Shared Function CargarRotQ() As IReadOnlyDictionary(Of String, Integer)
+    ''' <summary>`ScalarQuantization` de la reflexion: `BITS8=0 . BITS16=1`. Es la que usan
+    ''' la posicion y la escala, y el motor SALTEA el componente si el valor no es ninguno
+    ''' de esos dos (`cmp ecx,1 / jne` en 0x1419B19B0 y 0x1419B1B9E).</summary>
+    Private Shared ReadOnly EscQ As IReadOnlyDictionary(Of String, Integer) = CargarEnum("ScalarQuantization")
+
+    ''' <summary>El valor mas alto que declara un enum. El motor compara contra el
+    ''' (`cmp r15d,5 / ja` en 0x1419B1A26, y 5 es UNCOMPRESSED), asi que sale de la tabla.</summary>
+    Private Shared Function MaximoDe(e As IReadOnlyDictionary(Of String, Integer)) As Integer
+        Dim m = -1
+        For Each kv In e
+            If kv.Value > m Then m = kv.Value
+        Next
+        Return m
+    End Function
+
+    Private Shared Function CargarEnum(E As String) As IReadOnlyDictionary(Of String, Integer)
         Const C As String = "hkaSplineCompressedAnimationTrackCompressionParams"
-        Const E As String = "RotationQuantization"
         Dim a = Havok.Canon.HavokLayout.FO4.EnumValues(C, E)
         Dim b = Havok.Canon.HavokLayout.SSE.EnumValues(C, E)
         If a Is Nothing Then

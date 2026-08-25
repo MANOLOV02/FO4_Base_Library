@@ -90,13 +90,11 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         Dim parsed As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
         Try
             Dim graph = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(cloth))
-            Dim skeletonObject = graph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
-            If skeletonObject IsNot Nothing Then
-                Dim skeleton = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(graph, skeletonObject)
-                If skeleton IsNot Nothing AndAlso skeleton.Bones IsNot Nothing AndAlso skeleton.ReferencePose IsNot Nothing AndAlso skeleton.ParentIndices IsNot Nothing Then
-                    If skeleton.Bones.Count > 0 AndAlso skeleton.ReferencePose.Count = skeleton.Bones.Count Then
-                        parsed = skeleton
-                    End If
+            ' ⛔ El esqueleto sale de `hkaAnimationContainer.skeletons`, no del primer bloque.
+            Dim skeleton = graph.EsqueletoPrincipal()
+            If skeleton IsNot Nothing AndAlso skeleton.Bones IsNot Nothing AndAlso skeleton.ReferencePose IsNot Nothing AndAlso skeleton.ParentIndices IsNot Nothing Then
+                If skeleton.Bones.Count > 0 AndAlso skeleton.ReferencePose.Count = skeleton.Bones.Count Then
+                    parsed = skeleton
                 End If
             End If
         Catch ex As Exception

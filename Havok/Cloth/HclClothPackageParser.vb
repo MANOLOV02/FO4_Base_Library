@@ -36,10 +36,8 @@ Public NotInheritable Class HclClothPackageParser_Class
             .Graph = graph
         }
 
-        Dim skeletonObject = graph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
-        If Not IsNothing(skeletonObject) Then
-            result.Skeleton = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(graph, skeletonObject)
-        End If
+        ' ⛔ El esqueleto sale de `hkaAnimationContainer.skeletons`, no del primer bloque.
+        result.Skeleton = graph.EsqueletoPrincipal()
 
         ' ⛔ DEL ARBOL GENERADO. Antes habia un memo a mano (`Dictionary(Of Integer,
         ' DTO a mano)`) para no re-parsear el mismo `hclCollidable` a nivel package y

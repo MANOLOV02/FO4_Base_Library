@@ -224,6 +224,82 @@ Public Partial Class HkxObjectGraph_Class
         Return Enumerable.Empty(Of HkxVirtualObjectGraph_Class)()
     End Function
 
+    ''' <summary>
+    ''' ⛔⛔ LOS BLOQUES QUE EL CONTENEDOR DECLARA EN UN ARREGLO, EN SU ORDEN.
+    ''' <para>`hkaAnimationContainer` declara `skeletons`, `animations` y `bindings`. Sacar
+    ''' esas listas con `GetObjectsByClassName(...)` ordenado por `RelativeOffset` es usar el
+    ''' orden en que el serializador dejo los bloques, que no es una ley del formato.</para>
+    ''' <para>Devuelve el BLOQUE (`HkxVirtualObjectGraph_Class`) y no el objeto leido porque
+    ''' el arreglo es de la clase BASE: la subclase concreta la dice el nombre de clase del
+    ''' bloque, que es lo unico que la declara.</para>
+    ''' <para>Si el archivo no trae contenedor se cae al barrido por clase — ausencia conocida
+    ''' del archivo, no una preferencia.</para>
+    ''' </summary>
+    Public Function BloquesDelContenedor(campo As String, claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
+        Dim r As New List(Of HkxVirtualObjectGraph_Class)
+        For Each c In GetObjectsByClassName("hkaAnimationContainer")
+            Dim cont = Havok.Canon.Objects.HkObj_HkaAnimationContainer.Read(Me, c)
+            If cont Is Nothing Then Continue For
+            Dim n = 0
+            Select Case campo
+                Case "animations" : n = cont.Raw.AnimationsCount
+                Case "bindings" : n = cont.Raw.BindingsCount
+                Case Else : n = 0
+            End Select
+            For i = 0 To n - 1
+                Dim b As HkxVirtualObjectGraph_Class = Nothing
+                Select Case campo
+                    Case "animations" : b = cont.Raw.AnimationsRef(i)
+                    Case "bindings" : b = cont.Raw.BindingsRef(i)
+                End Select
+                If b IsNot Nothing Then r.Add(b)
+            Next
+        Next
+        If r.Count > 0 Then Return r
+
+        For Each cn In claseSuelta
+            r.AddRange(GetObjectsByClassName(cn).OrderBy(Function(x) x.RelativeOffset))
+        Next
+        Return r
+    End Function
+
+    ''' <summary>
+    ''' ⛔⛔ LOS ESQUELETOS QUE EL ARCHIVO DECLARA, EN EL ORDEN QUE LOS DECLARA.
+    ''' <para>`hkaAnimationContainer` declara `skeletons` como `array of hkaSkeleton`: el
+    ''' archivo DICE cuales son. Seis sitios del arbol hacian
+    ''' `GetObjectsByClassName("hkaSkeleton").FirstOrDefault()` — o sea el primer BLOQUE de esa
+    ''' clase que aparece en el packfile. El orden de los bloques no es una ley: es como
+    ''' quedaron serializados, y con dos esqueletos elegir el primero es tirar una moneda.</para>
+    ''' <para>Si el archivo no trae contenedor —pasa en los `.hkx` de esqueleto suelto, que son
+    ''' un `hkaSkeleton` y nada mas— se cae al barrido por clase, que es lo que habia. Esa
+    ''' rama es una AUSENCIA CONOCIDA del archivo, no una preferencia.</para>
+    ''' </summary>
+    Public Function Esqueletos() As List(Of Havok.Canon.Objects.HkObj_HkaSkeleton)
+        Dim r As New List(Of Havok.Canon.Objects.HkObj_HkaSkeleton)
+        For Each c In GetObjectsByClassName("hkaAnimationContainer")
+            Dim cont = Havok.Canon.Objects.HkObj_HkaAnimationContainer.Read(Me, c)
+            If cont Is Nothing OrElse cont.Skeletons Is Nothing Then Continue For
+            For Each s In cont.Skeletons
+                If s IsNot Nothing Then r.Add(s)
+            Next
+        Next
+        If r.Count > 0 Then Return r
+
+        For Each o In GetObjectsByClassName("hkaSkeleton")
+            Dim s = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, o)
+            If s IsNot Nothing Then r.Add(s)
+        Next
+        Return r
+    End Function
+
+    ''' <summary>El esqueleto del archivo: el PRIMERO QUE EL CONTENEDOR DECLARA, no el primer
+    ''' bloque. Nothing si el archivo no trae ninguno.</summary>
+    Public Function EsqueletoPrincipal() As Havok.Canon.Objects.HkObj_HkaSkeleton
+        Dim e = Esqueletos()
+        If e.Count = 0 Then Return Nothing
+        Return e(0)
+    End Function
+
     Public Function GetRootObject() As HkxVirtualObjectGraph_Class
         If IsNothing(Packfile.RootObject) Then Return Nothing
         Return GetObject(Packfile.RootObject.RelativeOffset)
