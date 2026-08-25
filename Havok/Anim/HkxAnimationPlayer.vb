@@ -30,7 +30,7 @@ Public Class HkxAnimationPlayer
     Private _firstFrame As Integer = 0
 ''' <summary>Ultimo frame reproducible. ⛔ -1 significa "hasta FrameCount-1", NO "frame -1": los dos
 ''' consumidores que crean el player sin llamar nunca a SetPlayableRange (Wardrobe_Manager\
-''' HkxPoseImport_Form.vb y Tools\ClothDrapeViewer\ViewerForm.vb) tienen que comportarse EXACTAMENTE
+''' HkxPoseImport_Form.vb) tienen que comportarse EXACTAMENTE
 ''' como antes. Con 0 quedarian congelados en el frame 0.</summary>
     Private _lastFrame As Integer = -1
 ''' <summary>El clip rebota en vez de loopear (hkbClipGenerator mode 3 = PING_PONG). Medido: 1 clip en
@@ -107,7 +107,7 @@ Public Class HkxAnimationPlayer
     ''' <summary>Frame que corresponde mostrar AHORA según el reloj real y <see cref="TargetFps"/>
     ''' (loopeado). Devuelve -1 si no hay animación.</summary>
     Public Function FrameForNow() As Integer
-        ' ⛔ El guard va ANTES de RangoReproducible(): es CONTRATO. ClothDrapeViewer\ViewerForm.vb y
+        ' ⛔ El guard va ANTES de RangoReproducible(): es CONTRATO. Los reproductores y
         ' OnAppIdle leen el -1 como "no hay animacion". Y sin el, count = 0 daria largo = 0 y el modulo
         ' tiraria DivideByZeroException dentro de un bucle Application.Idle, donde no hay Try que la agarre.
         Dim count = FrameCount

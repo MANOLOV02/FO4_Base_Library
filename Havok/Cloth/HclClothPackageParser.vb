@@ -8,7 +8,7 @@ Option Explicit On
 '
 ' NO ESTÁ EN LA RUTA DEL RENDER: el render usa HkxPackfileParser + HkxObjectGraphParser +
 ' SkeletonClothOverlayHelper directamente. Sus consumidores son
-' Wardrobe_Manager/PhysicsWeightCollapseHelper y las herramientas de Tools/ (ClothDrapeViewer,
+' Wardrobe_Manager/PhysicsWeightCollapseHelper y las herramientas de Tools/ (
 ' HkxLoadOrderAudit, CollidableDedupProbe, HkxParserProbe).
 '
 ' ALCANCE: los offsets ya no se escriben aca. Todo campo declarado sale del objeto generado

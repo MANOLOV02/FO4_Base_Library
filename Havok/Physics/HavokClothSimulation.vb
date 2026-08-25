@@ -3512,6 +3512,53 @@ Namespace Havok.Physics
         End Sub
 
         ''' <summary>
+        ''' ⛔⛔ EL NUCLEO DE LA LEY DE LOCAL-RANGE, EN UN SOLO LUGAR.
+        ''' <para>Sale del motor: `0x141A01F2E` (el early-out con k&lt;=0), `0x141A034E0` y
+        ''' `0x141A03680` (los dos kernels). Son TRES limites — uno radial y dos sobre el eje de
+        ''' la normal de referencia — y no una correa esferica.</para>
+        ''' <para>Vive aparte de `SolveLocalRange` porque ahi la mitad del cuerpo es de DONDE salen
+        ''' la referencia y su normal (los buffers) y la otra mitad es la CUENTA. Separadas, la
+        ''' cuenta se lee contra el desensamblado sin el ruido del contexto.</para>
+        ''' </summary>
+        Friend Shared Function CorregirLocalRange(p As Vector3, refPos As Vector3,
+                                                  tieneNormal As Boolean, refNrm As Vector3,
+                                                  maxDistance As Single, minNormal As Single,
+                                                  maxNormal As Single, stiffness As Single,
+                                                  k As Single) As Vector3
+            ' d = P - ref + eps. El epsilon (FLT_EPSILON, 0x142F3C760) lo suma el motor COMPONENTE
+            ' A COMPONENTE: con la particula exactamente sobre la referencia la direccion queda
+            ' indefinida, y asi sale un vector chiquito pero valido.
+            Const EPS As Single = 0.00000011920929F
+            Dim d = p - refPos
+            d = New Vector3(d.X + EPS, d.Y + EPS, d.Z + EPS)
+            Dim d2 = d.LengthSquared()
+            If d2 <= 0.0F Then Return p
+            Dim len = CSng(Math.Sqrt(d2))
+            Dim dir = d / len
+
+            ' (1) RADIAL, unilateral: solo si se paso de `maximumDistance`. La rigidez del SET
+            ' multiplica ESTE termino y solo este — en el binario `[rax]` entra en `xmm4` y no en
+            ' los dos terminos normales.
+            Dim er = (maxDistance - len) * stiffness * k
+            If er > 0.0F Then er = 0.0F
+            Dim nueva = p + dir * er
+
+            ' (2) LOS DOS TOPES DEL EJE NORMAL. Sin esto la correa es una esfera, y una pollera
+            ' puede hundirse en la pierna o despegarse sin que nada la frene.
+            If tieneNormal Then
+                ' La componente normal se mide sobre la distancia YA corregida por el radial.
+                Dim nd = Vector3.Dot(dir, refNrm) * (er + len)
+                Dim lo = nd - minNormal
+                If lo > 0.0F Then lo = 0.0F
+                Dim hi = maxNormal - nd
+                If hi > 0.0F Then hi = 0.0F
+                nueva = nueva - refNrm * lo + refNrm * hi
+            End If
+            Return nueva
+        End Function
+
+
+        ''' <summary>
         ''' La "correa": `hclLocalRangeConstraintSet` limita cuánto puede alejarse la partícula de su
         ''' vértice de referencia SOBRE EL CUERPO SKINNEADO. Sin ella la tela sobre-cae (medido: los
         ''' cloths SIN local-range son exactamente los que sobre-caían, 79,8 % de libres contra 2,4 %).
@@ -3547,45 +3594,26 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                ' d = P − ref + eps. El epsilon (FLT_EPSILON, 0x142F3C760) lo suma el motor COMPONENTE
-                ' A COMPONENTE, y no es cosmetico: con la particula exactamente sobre la referencia la
-                ' direccion queda indefinida, y asi sale un vector chiquito pero valido.
-                Const EPS As Single = 0.00000011920929F
-                ' ⭐ La velocidad de Verlet ANTES de corregir. La rama adaptativa la captura al entrar
-                ' (`subps xmm11, [rdx + rcx*8]` con rdx = Previous) y la repone al salir.
+                ' ⭐ La velocidad de Verlet ANTES de corregir. La rama adaptativa la captura al
+                ' entrar (`subps xmm11, [rdx + rcx*8]` con rdx = Previous) y la repone al salir.
                 Dim vAntes = P(c.Particle) - Q(c.Particle)
-                Dim d = P(c.Particle) - refPos
-                d = New Vector3(d.X + EPS, d.Y + EPS, d.Z + EPS)
-                Dim d2 = d.LengthSquared()
-                If d2 <= 0.0F Then Continue For
-                Dim len = CSng(Math.Sqrt(d2))
-                Dim dir = d / len
 
-                ' (1) RADIAL, unilateral: solo si se paso de `maximumDistance`. La rigidez del SET
-                ' multiplica ESTE termino y solo este — en el binario, `[rax]` entra en `xmm4` y no en
-                ' los dos terminos normales.
-                Dim er = (c.MaxDistance - len) * c.Stiffness * k
-                If er > 0.0F Then er = 0.0F
-                Dim nueva = P(c.Particle) + dir * er
-
-                ' (2) LOS DOS TOPES DEL EJE NORMAL. Sin esto la correa es una esfera, y una pollera
-                ' puede hundirse en la pierna o despegarse sin que nada la frene: son justo los dos
-                ' limites que el motor pone por separado del radial.
+                ' ⛔ LA CUENTA ES `CorregirLocalRange` Y NO SE REESCRIBE ACA. Lo unico que este
+                ' contexto agrega es de donde salen la referencia y su normal (los buffers).
+                Dim refNrm As Vector3 = Nothing
+                Dim hayN = False
                 If c.UsaNormal AndAlso normales IsNot Nothing Then
-                    Dim refNrm As Vector3 = Nothing
                     Dim bufN = NormalDe(st, c.BufferRef)
-                    Dim hayN = bufN IsNot Nothing AndAlso c.ReferenceVertex >= 0 AndAlso c.ReferenceVertex < bufN.Length
-                    If hayN Then refNrm = bufN(c.ReferenceVertex)
-                    If hayN OrElse normales.TryGetValue(c.ReferenceVertex, refNrm) Then
-                        ' La componente normal se mide sobre la distancia YA corregida por el radial.
-                        Dim nd = Vector3.Dot(dir, refNrm) * (er + len)
-                        Dim lo = nd - c.MinNormal
-                        If lo > 0.0F Then lo = 0.0F
-                        Dim hi = c.MaxNormal - nd
-                        If hi > 0.0F Then hi = 0.0F
-                        nueva = nueva - refNrm * lo + refNrm * hi
+                    hayN = bufN IsNot Nothing AndAlso c.ReferenceVertex >= 0 AndAlso c.ReferenceVertex < bufN.Length
+                    If hayN Then
+                        refNrm = bufN(c.ReferenceVertex)
+                    Else
+                        hayN = normales.TryGetValue(c.ReferenceVertex, refNrm)
                     End If
                 End If
+                Dim nueva = CorregirLocalRange(P(c.Particle), refPos, hayN, refNrm,
+                                               c.MaxDistance, c.MinNormal, c.MaxNormal,
+                                               c.Stiffness, k)
 
                 P(c.Particle) = nueva
                 ' ⛔⛔ LA RAMA ADAPTATIVA (0x141A03680): `Previous = P' − (P − Pprev)`.
