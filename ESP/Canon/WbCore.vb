@@ -87,8 +87,18 @@ Namespace Canon
     ''' Por eso el tamaño de un struct es f(versión), no una constante.</summary>
     Public NotInheritable Class WbContext
         Public ReadOnly Property Game As WbGame
-        ''' <summary>Form Version del record (RecordHeader.Version). Entrada de los deciders de versión.</summary>
+        ''' <summary>Form Version del record (RecordHeader.Version). Entrada de los deciders de versión.
+        ''' <para>Arranca en <see cref="VersionPorDefecto"/> —131 en FO4, 44 en SSE—, no en 0: ver el
+        ''' constructor. El lector la pisa con la del header al parsear.</para></summary>
         Public Property FormVersion As UShort
+            Get
+                Return _FormVersion
+            End Get
+            Set(value As UShort)
+                _FormVersion = value
+            End Set
+        End Property
+        Private _FormVersion As UShort
         ''' <summary>Flag 0x80 del TES4 del archivo FUENTE. Con localización un lstring es un id u32;
         ''' sin ella es una zstring inline.</summary>
         Public Property Localized As Boolean
@@ -199,7 +209,32 @@ Namespace Canon
         Public Sub New(game As WbGame)
             _Game = game
             _findings = New List(Of WbFinding)()
+            ' ⛔ LA VERSIÓN ARRANCA EN LA DEL JUEGO, NO EN 0. Un `UShort` nace en 0, y con FormVersion 0
+            ' TODO decider `wbFromVersion(N, …)` elige la rama de CERO bytes: un record CREADO por la app
+            ' sale sin los campos que el juego sí trae.
+            ' SYNC: xEdit hace exactamente esto al crear un record —`wbImplementation.pas:10129-10136`:
+            '     gmFO4, gmFO4VR               : BasePtr.mrsVersion^ := 131;
+            '     gmSSE, gmTES5VR, gmEnderalSE : BasePtr.mrsVersion^ := 44;
+            ' y después materializa todos los miembros `Required` (`:10220-10224`).
+            ' MEDIDO: un AIDT creado así sale de 20 bytes donde los 4.629 del corpus miden 24 desde la
+            ' Form Version 29 (`wbDefinitionsFO4.pas:6214-6231`), y un `RACE.DATA` saldría de 142 bytes
+            ' donde los 115 RACE del juego miden 200.
+            ' ⚠️ ALCANCE HOY: la vía que crea records (`npcCreateEntries`) tiene 0 llamadores, así que
+            ' esto no mueve un byte de lo que la app emite hoy. Es la causa RAÍZ, no el síntoma.
+            ' ⚠️ NO pisa la versión de un record PARSEADO: el lector asigna `FormVersion` desde el header
+            ' antes de emitir, y `WbWriter.EmitBody` tira si no coincide con `ParsedFormVersion`.
+            _FormVersion = VersionPorDefecto(game)
         End Sub
+
+        ''' <summary>Form Version que estampa el CK/xEdit al crear un record nuevo, por juego.
+        ''' SYNC: <c>wbImplementation.pas:10129-10136</c>.</summary>
+        Public Shared Function VersionPorDefecto(game As WbGame) As UShort
+            Select Case game
+                Case WbGame.Fallout4 : Return 131US
+                Case WbGame.Skyrim : Return 44US
+                Case Else : Return 0US
+            End Select
+        End Function
 
         ''' <summary>El mismo contexto, pero contestando la pregunta del ESCRITOR: hacia qué archivo
         ''' se emite y con qué se resuelven los textos localizados.

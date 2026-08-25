@@ -295,6 +295,57 @@ Public Module NpcVmadBuilder
     End Sub
 
     ''' <summary>Los nombres de los scripts del record, en orden. Lista vacia si no trae VMAD.</summary>
+    ''' <summary>⭐ LA REGLA: <b>un solo apply-script de esta app por record; todo lo demás queda</b>.
+    ''' Saca del VMAD cada script con el prefijo reservado cuyo nombre NO sea
+    ''' <paramref name="elQueSobrevive"/>, y devuelve los que sacó.
+    '''
+    ''' <para><b>Por qué hace falta.</b> El nombre del apply-script lleva el stem del plugin adentro, y la
+    ''' app arma el record de salida a partir del que está GANANDO en ese momento
+    ''' (<c>PluginManager.GetRecord</c> — su doc dice que <c>AllRecords</c> guarda sólo el winning
+    ''' record). Si otro plugin nuestro ya scripteó ese NPC y sigue instalado, su script viaja adentro y
+    ''' <see cref="UpsertScript"/> lo conserva —porque se llama distinto y cae en "los demás"—. Resultado:
+    ''' UN solo record, el ganador, con DOS apply-scripts nuestros. El motor instancia los dos, y cada uno
+    ''' al cargar barre overlays/morphs/piel y aplica lo suyo: el segundo pisa al primero y el orden entre
+    ''' dos <c>OnLoad</c> no está garantizado (el <c>.psc</c> documenta haber visto los dos sobre la MISMA
+    ''' referencia en el mismo instante).</para>
+    '''
+    ''' <para>⛔ <b>Que un record nombre varios scripts es NORMAL</b>, no una anomalía: medido sobre el
+    ''' Data de SSE, 248 NPC_ tienen un único record con más de uno (189 con 2, 57 con 3, 2 con 4).
+    ''' Por eso la preservación de <see cref="UpsertScript"/> es correcta en general y NO se toca: es lo
+    ''' que impide borrarle a Bijin Warmaidens su <c>MQDelphineScript</c>. Lo que este barrido acota es
+    ''' sólo el prefijo RESERVADO.</para>
+    '''
+    ''' <para>⭐ <b>Por qué sacar el viejo no deja nada pegado en el savegame.</b>
+    ''' <c>RemovePrevious()</c> del <c>.psc</c> no barre por la ficha de lo que ese script puso: ENUMERA
+    ''' las zonas (<c>ClearOverlayGroup</c> + <c>PurgeOverlayGroup</c> sobre cada pool) y las limpia
+    ''' todas. Así que el script que sobrevive limpia igual lo que había dejado el que se sacó.</para>
+    '''
+    ''' <para>⚠️ <b>Alcance real</b>, sobre el disco del usuario al 2026-08-25: <b>0 records</b> con más de
+    ''' un apply-script en los dos juegos, y de los 9 <c>.pex</c> con nombre por plugin <b>7 son
+    ''' huérfanos</b> (su ESP ya no está). El defecto es prospectivo: muerde el día que dos plugins
+    ''' nuestros estén instalados a la vez sobre el mismo NPC.</para>
+    '''
+    ''' <para>⚠️ Un apply-script de OTRO AUTOR que use esta app también se saca. Es la semántica de un
+    ''' override: el record ganador es el nuestro y decide. Conservarlo sería volver a poner dos a
+    ''' pelearse, que es justo lo que esto evita.</para></summary>
+    Public Function DejarSoloNuestroApplyScript(npc As Canon.INpc,
+                                                game As Config_App.Game_Enum,
+                                                elQueSobrevive As String) As List(Of String)
+        Dim sacados As New List(Of String)
+        If npc Is Nothing OrElse String.IsNullOrEmpty(elQueSobrevive) Then Return sacados
+        For Each n In NombresDeScripts(npc)
+            If String.IsNullOrEmpty(n) Then Continue For
+            If Not n.StartsWith(ReservedScriptPrefix, StringComparison.OrdinalIgnoreCase) Then Continue For
+            If String.Equals(n, elQueSobrevive, StringComparison.OrdinalIgnoreCase) Then Continue For
+            sacados.Add(n)
+        Next
+        ' El borrado va en una segunda pasada: `UpsertScript` muta la lista que `NombresDeScripts` recorrió.
+        For Each n In sacados
+            UpsertScript(npc, Nothing, game, n)
+        Next
+        Return sacados
+    End Function
+
     Private Function NombresDeScripts(npc As Canon.INpc) As List(Of String)
         Dim salida As New List(Of String)
         If npc Is Nothing Then Return salida

@@ -100,6 +100,18 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>SlotResolutionProbe</_Parameter1>
     </AssemblyAttribute>
+    <!-- Tools/TbnWeldSelfTest y Tools/TbnPerfProbe: los DOS arneses del kernel de TBN. Trabajan sobre
+         geometria SINTETICA (mallas fabricadas para aislar welding, clausura de sucios y costo), o sea
+         SIN una shape con autor detras, asi que la puerta publica `RecalcularParaShape` no les sirve:
+         necesitan `KernelTBN` (Friend) directo.
+         ⛔ Ese `Friend` es justamente lo que hace que la ley del autor no se pueda saltear desde la app
+         (BC30456 en compilacion). Estos dos entran por aca y NADA se vuelve Public. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>TbnWeldSelfTest</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>TbnPerfProbe</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

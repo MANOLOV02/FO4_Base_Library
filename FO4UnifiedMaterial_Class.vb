@@ -322,6 +322,11 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
         copy._NifShaderType = _NifShaderType
+        ' Los dos viajan por la MISMA razón que _NifShaderType: son estado de runtime que no vive en el
+        ' payload del .bgsm/.bgem, y los clones que se ESCRIBEN (ShapeMaterialTranscriber,
+        ' FaceTextureRepointer) resuelven el tipo efectivo con ellos.
+        copy._NifEyeEnvironmentMapping = _NifEyeEnvironmentMapping
+        copy._MaterialFileApplied = _MaterialFileApplied
         copy._EnvmapMaskPath = _EnvmapMaskPath
         ' SIN ESTA LINEA UN BGEM CON Cast_Shadows QUEDA `IsDirty` DESDE LA CARGA. `ClearDirty` hace
         ' `_cleanSnapshot = Clone()` y `IsDirty` compara por reflexion TODAS las propiedades publicas — y
@@ -351,6 +356,24 @@ Public Class FO4UnifiedMaterial_Class
 
     ' NIF ShaderType — not part of BGSM/BGEM file format, stored here as runtime field
     Private _NifShaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default
+
+    ''' <summary>SLSF1 bit 17 (Eye_Environment_Mapping) TAL COMO VIENE DEL NIF, guardado aparte del
+    ''' material porque el motor NUNCA lo pisa desde el archivo de material.
+    ''' <para>SYNC: <c>Tools\re-docs\RE_shader_report.md</c> §1.4, RE de <c>Fallout4.exe</c> —
+    ''' <c>FUN_142163560</c> (0x142163560) es el MERGE y hace overwrite incondicional de los bits
+    ''' 7/10/18/21/38/56 desde los bool del material, pero **no escribe el bit 17**: *"Eye sobrevive
+    ''' del NIF inline (SLSF1 bit 17). Es el único tipo que el material no controla por flag."*
+    ''' Por eso `EyeEnvironmentMapping` (que sale del BGSM) NO es la fuente del motor cuando hay
+    ''' archivo de material, y este campo sí.</para></summary>
+    Private _NifEyeEnvironmentMapping As Boolean = False
+
+    ''' <summary>True cuando sobre este material se aplicó un ARCHIVO de material (.bgsm/.bgem).
+    ''' <para>Es el disparador del motor, no una preferencia: <c>FUN_14216EFB0</c> (0x14216EFB0) saca el
+    ''' path del material del property y recién ahí corren el merge (<c>FUN_142163560</c>) y el factory
+    ''' (<c>FUN_142163BE0</c>). Sin path, ninguno de los dos corre y el enum inline del NIF ES el tipo
+    ''' (ver 30-fo4-material-vs-nif). Se sella en <see cref="Deserialize"/>, que es la única puerta por
+    ''' la que entra un payload de material (GetRelatedMaterial llama ahí).</para></summary>
+    Private _MaterialFileApplied As Boolean = False
     ' Env mask path for BGSM — NIF texture set slot 5. Not serialized in the .bgsm binary
     ' (BGSM has no envmapMaskTexture field; path lives only in the NIF texture set).
     ' Evidence: BodySlide MaterialFile.cpp:91-113 (BGSM binary has 9 strings, none for envmask),
@@ -599,7 +622,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' BGEM devuelve Default (su render va por el path bIsEffectShader, no por este tipo).</summary>
     Public Function ResolveEffectiveType() As EffectiveLightingType
         If IsBGEM() Then Return EffectiveLightingType.[Default]
-        If EyeEnvironmentMapping Then Return EffectiveLightingType.Eye
+        If IsEngineEye() Then Return EffectiveLightingType.Eye
         If EnvironmentMapping Then Return EffectiveLightingType.Envmap
         ' ORDEN DE PRIORIDAD, NO TOCAR SIN ABRIR EL BINARIO. Esta rutina replica el factory de material
         ' de Fallout4.exe, que es una cascada sobre los flags en este orden exacto:
@@ -614,6 +637,40 @@ Public Class FO4UnifiedMaterial_Class
         If SkinTint Then Return EffectiveLightingType.SkinTint
         If Hair Then Return EffectiveLightingType.HairTint
         Return EffectiveLightingType.[Default]
+    End Function
+
+    ''' <summary>Bit 17 (Eye_Environment_Mapping) COMO LO VE EL MOTOR, no como lo declara el material.
+    ''' <para>El merge <c>FUN_142163560</c> pisa los bits de tipo desde los bool del .bgsm — pero el 17
+    ''' NO está en su lista, así que Eye sale del NIF inline aunque haya archivo de material
+    ''' (RE_shader_report.md §1.4: *"Eye sobrevive del NIF inline… es el único tipo que el material no
+    ''' controla por flag"*). Sin archivo de material el merge ni corre, y ahí el campo del material ES
+    ''' el del NIF por construcción (lo siembra <c>Create_From_Shader</c>), así que la rama de abajo da
+    ''' lo mismo en los dos sentidos.</para>
+    ''' <para>MEDIDO sobre el corpus (230.791 entradas .nif de FO4, 1.116.077 shapes con .bgsm
+    ''' resoluble): 70 shapes en 62 NIF tienen BGSM eye=1 con el bit 17 del NIF APAGADO — la app las
+    ''' ruteaba como Eye y el motor no (54 van a Envmap, 16 a Default). El caso inverso —motor Eye y app
+    ''' no— es <b>0 shapes</b>, así que este cambio no puede apagar un Eye legítimo.</para></summary>
+    Public Function IsEngineEye() As Boolean
+        If IsBGEM() Then Return False
+        If _MaterialFileApplied Then Return _NifEyeEnvironmentMapping
+        Return EyeEnvironmentMapping
+    End Function
+
+    ''' <summary>¿El motor trata esta shape como PIEL? Única puerta para los gates de sustitución de
+    ''' textura de piel; nadie compara <see cref="NifShaderType"/> contra SkinTint por su cuenta.
+    ''' <para>El motor decide por el MATERIAL: <c>FUN_142163560</c> hace overwrite incondicional del bit
+    ''' 21 (Skin_Tint) desde el bool <c>+0x97</c> del ARCHIVO de material, y el factory
+    ''' <c>FUN_142163BE0</c> reconstruye el material desde los flags ya merged. El enum inline del NIF se
+    ''' descarta. Con el nombre de material VACÍO no corre ninguno de los dos y el enum inline SÍ es el
+    ''' tipo — por eso la rama.</para>
+    ''' <para>MEDIDO: 20 shapes en 9 NIF de FO4 declaran SkinTint en el NIF y su .bgsm dice
+    ''' <c>bSkinTint = false</c> (los nueve de <c>Meshes\imAarwyn\AWNOveralls\</c>): la app les ponía las
+    ''' texturas del CUERPO a la ropa. Régimen inline: 95.583 shapes FO4 + 120.431 SSE, 0 discrepancias
+    ''' ⇒ esta rama no puede regresionar ahí y SSE no se mueve un bit.</para></summary>
+    Public Function IsEngineSkinTint() As Boolean
+        If IsBGEM() Then Return False
+        If _MaterialFileApplied Then Return ResolveEffectiveType() = EffectiveLightingType.SkinTint
+        Return NifShaderType = NiflySharp.Enums.BSLightingShaderType.SkinTint
     End Function
 
     <Category("Textures")>
@@ -3502,11 +3559,13 @@ Public Class FO4UnifiedMaterial_Class
         ' used consistently with Save_To_Shader.
         If Not IsNothing(shad) Then
             _NifShaderType = shad.ShaderType_SK_FO4
+            _NifEyeEnvironmentMapping = ShaderHelper.HasFlagSF1(shad, EyeEnvironmentMappingFlagValue(shad))
             _skinTintAlpha = shad.SkinTintAlpha
             _NifGlossiness = shad.Glossiness
             _NifGlossinessFromShader = True
         Else
             _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default
+            _NifEyeEnvironmentMapping = False
             _skinTintAlpha = 1.0F
             _NifGlossiness = 1.0F
             _NifGlossinessFromShader = False
@@ -4227,7 +4286,15 @@ Public Class FO4UnifiedMaterial_Class
         Dim shadCast = Nif?.GetShader(shap)
         If shadCast IsNot Nothing Then
             _castShadowsDelNif = ShaderHelper.HasFlagSF1(shadCast, CastShadowsFlagValue(shadCast))
+            ' MISMA REGLA QUE EL BIT DE ARRIBA, Y POR LA MISMA RAZON: este dato sale del SHADER DEL NIF,
+            ' no del payload, asi que va ANTES de todo early-return. El motor nunca lo pisa desde el
+            ' material (ver el doc de _NifEyeEnvironmentMapping), o sea que el NIF es su unica sede.
+            _NifEyeEnvironmentMapping = ShaderHelper.HasFlagSF1(shadCast, EyeEnvironmentMappingFlagValue(shadCast))
         End If
+        ' Se llego aca ⇒ el property NOMBRA un archivo de material, que es exactamente el disparador de
+        ' FUN_14216EFB0. Va antes de los early-returns por lo mismo: un .bgem guardado como JSON o un
+        ' archivo vacio son igual de "material aplicado" para el motor.
+        _MaterialFileApplied = True
         If Memory.Length = 0 Then Exit Sub
         ' P5 — JSON payload guard. A handful of vanilla materials (5 BGEM in Fallout4 - Startup.ba2)
         ' are stored as JSON text, not the binary BGSM/BGEM layout. MaterialLib's binary Deserialize

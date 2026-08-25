@@ -1337,6 +1337,7 @@ Public Class PreviewControl
                 End If
                 MorphEngine.ApplyMorphPlan(
                     mesh.MeshData.Meshgeometry, plan,
+                    mesh.MeshData.Shape,
                     intent.RecalculateNormals,
                     allowMask:=AllowMask,
                     maskedVertices:=mesh.MeshData.Shape.MaskedVertices)
@@ -4227,7 +4228,10 @@ Public Class PreviewModel
             ' se puebla desde `shad.HasEyeEnvironmentMapping` para AMBOS juegos (:3295), borrarla le agregaba a
             ' los ojos de FO4 un highlight especular que antes no tenian. Queda SOLO para FO4; en SSE la
             ' envmask real llega por el slot 5 (arriba) y robar el slot 7 romperia specular/backlight.
-            If Not isSSE AndAlso materialBase.EyeEnvironmentMapping AndAlso smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
+            ' `IsEngineEye()` y no `EyeEnvironmentMapping`: con archivo de material el bit 17 sale del NIF,
+            ' porque el merge FUN_142163560 NO lo escribe (RE_shader_report.md §1.4). Una sola ley para los
+            ' cuatro consumidores de este archivo.
+            If Not isSSE AndAlso materialBase.IsEngineEye() AndAlso smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
                 envmapMaskTextureId = smoothSpecTextureId
                 smoothSpecTextureId = 0
             End If
@@ -4501,10 +4505,12 @@ Public Class PreviewModel
             ' ?? TOGGLES DE EFECTOS Y SOMBREADO
             '===============================
             shader.SetBool("bCubemap", hasCubemap)
-            shader.SetBool("bEnvMap", materialBase.EnvironmentMapping OrElse materialBase.EyeEnvironmentMapping)
+            shader.SetBool("bEnvMap", materialBase.EnvironmentMapping OrElse materialBase.IsEngineEye())
             ' SSE Eye technique (16): the engine reflects the cubemap about the eyeball's radial (geometric)
             ' normal, not the bump normal (Fragment_SSE bEye branch; sse_eye.asm L108-118 / eye VS o7).
-            If isSSE Then shader.SetBool("bEye", materialBase.EyeEnvironmentMapping)
+            ' En SSE no hay archivo de material, asi que IsEngineEye() devuelve el mismo campo: se usa igual
+            ' para que la ley viva en UN solo lugar y nadie tenga que acordarse de cual juego es cual.
+            If isSSE Then shader.SetBool("bEye", materialBase.IsEngineEye())
             ' SSE Hair + ANISO_LIGHTING (SLSF2 Anisotropic_Lighting): 2-lobe shifted-normal Kajiya-Kay
             ' (Fragment_SSE; sse_hair_aniso.asm). FO4 hair is always KK via flow map; SSE only when the
             ' aniso flag is set (plain sse_hair vs sse_hair_aniso). Gated isSSE; the shader also needs bHairTint.
@@ -4512,7 +4518,7 @@ Public Class PreviewModel
             ' Alpha-blend (forward b6) vs opaque (deferred): gates the strong forward material-cube envmap.
             ' Opaque BGSM (pierce-type chrome gems) render deferred where the engine uses the scene IBL,
             ' not the material cube -- so the forward *3 over-grays them. (Eye keeps it via its inline path.)
-            shader.SetBool("bHasAlphaBlend", hasAlphaBlend OrElse materialBase.EyeEnvironmentMapping)
+            shader.SetBool("bHasAlphaBlend", hasAlphaBlend OrElse materialBase.IsEngineEye())
             shader.SetBool("bAlphaTest", hasAlphaTest)
             shader.SetBool("bEnvMask", envmapMaskTextureId <> 0)
             shader.SetBool("bNormalMap", normalTextureId <> 0)

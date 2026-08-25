@@ -8,10 +8,27 @@ Public Module PluginConstants
     ' Record flags
     Public Const FLAG_ESM As UInteger = &H1UI
     Public Const FLAG_LOCALIZED As UInteger = &H80UI
-    ''' <summary>0x100. En FO4/SSE NO significa nada: el soporte de "update" sólo aplica a Starfield
-    ''' o a VR con VRESL. Donde SÍ vale, suprime la regla "extensión .esl ⇒ light".
-    ''' Ver `PluginManager.IsLightSlot`.</summary>
-    Public Const FLAG_UPDATE As UInteger = &H100UI
+    ''' <summary><b>0x00100000</b> — el bit de "update" que lee el motor con VRESL.
+    ''' <para>⛔ ACÁ DECÍA <c>&amp;H100</c> Y ERA EL BIT EQUIVOCADO, no sólo un valor sin uso.
+    ''' SYNC: <c>TES5Edit\Core\wbInterface.pas:20425-20432</c>
+    ''' <code>
+    ''' function TwbMainRecordStructFlags.IsUpdate: Boolean;
+    ''' begin
+    '''   Result := wbIsUpdateSupported and (
+    '''        (wbIsStarfield and ((_Flags and $00000200) &lt;&gt; 0))
+    '''     or (wbVRESL       and ((_Flags and $00100000) &lt;&gt; 0)) );
+    ''' end;
+    ''' </code>
+    ''' O sea: con VRESL es <c>$00100000</c>, y el <c>$200</c> es la rama de <b>Starfield</b>. Fuera de
+    ''' Starfield, <c>$200</c> es justamente <see cref="FLAG_ESL"/> (<c>IsLight</c>,
+    ''' <c>wbInterface.pas:20414-20421</c>). El <c>$100</c> no es ninguno de los dos: es
+    ''' <c>IsLight</c> <b>en Starfield</b>.</para>
+    ''' <para>Alcance HOY: <b>0 casos</b> — ningún rig del usuario es VR, así que
+    ''' <c>UpdateIsSupported</c> devuelve False y la rama no se toca. Es una corrección de ley, no de
+    ''' comportamiento observable.</para>
+    ''' <para>Donde SÍ vale, suprime la regla "extensión .esl ⇒ light". Ver
+    ''' <c>PluginManager.IsLightSlot</c>.</para></summary>
+    Public Const FLAG_UPDATE As UInteger = &H100000UI
     Public Const FLAG_ESL As UInteger = &H200UI
     Public Const FLAG_COMPRESSED As UInteger = &H40000UI
 

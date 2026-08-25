@@ -1002,8 +1002,7 @@ Public Class SkinningHelper
         ' `Setting_TBN` es una Structure devuelta POR VALOR desde una Property, así que esto es una COPIA
         ' y mutarla no toca el config del usuario. (Verificado: Config_Class.vb:520.)
         If Not (RecalculateNormals OrElse Not shapeGeom.HasNormals) Then opts.KeepExistingNormals = True
-        RecalcTBN.AplicarRestriccionesDelAutor(opts, shape)
-        RecalculateNormalsTangentsBitangents(geo, opts)
+        RecalcTBN.RecalcularParaShape(geo, shape, opts)
         Return geo
     End Function
 
@@ -2298,11 +2297,46 @@ Public Class RecalcTBN
     ''' como el default del atributo es True, se pisaba el toggle global en TODAS las shapes.</para>
     ''' <para>La casilla "Ignore authored restrictions" de la ventana de opciones (default OFF) es la
     ''' salida de emergencia para una prenda cuyas normales autoradas estén rotas.</para></summary>
-    Public Shared Sub AplicarRestriccionesDelAutor(ByRef opts As TBNOptions, shape As IRenderableShape)
+    Private Shared Sub AplicarRestriccionesDelAutor(ByRef opts As TBNOptions, shape As IRenderableShape)
         If shape Is Nothing OrElse opts.IgnoreAuthoredRestrictions Then Return
         opts.KeepExistingNormals = opts.KeepExistingNormals OrElse shape.LockNormals
         opts.SmoothSeamNormals = opts.SmoothSeamNormals AndAlso shape.SmoothSeamNormals
     End Sub
+
+    ''' <summary>⭐ LA ÚNICA PUERTA para recalcular TBN. Recibe la SHAPE, no sólo la geometría, así que
+    ''' la ley del autor (<c>LockNormals</c> / <c>SmoothSeamNormals</c> del .osp) no se puede saltear.
+    '''
+    ''' <para><b>Por qué existe.</b> La ley vivía en una función aparte que cada llamador tenía que
+    ''' acordarse de invocar. De los CUATRO sitios que recalculan fuera de <c>Tools\</c>, dos la
+    ''' invocaban (<c>ExtractSkinnedGeometry</c> y <c>MorphingHelper.ApplyMorph_CPU</c>, o sea el BAKE) y
+    ''' dos no (<c>MorphEngine.ApplyMorphPlan</c> y el toggle de MSN del editor, o sea el RENDER).
+    ''' Resultado medido: <b>177,98° de divergencia</b> entre el preview y el build en
+    ''' <c>Charming High Heels</c> / shape <c>CBBE For Heels</c> — el preview recalculaba las normales
+    ''' que el build conservaba. Es exactamente el defecto que RENDER == BAKE existe para impedir
+    ''' (ver 00-reglas-dos-juegos-y-render-bake).</para>
+    '''
+    ''' <para><b>Por qué el kernel es <c>Friend</c> y esto es lo único <c>Public</c>.</b> Agregar la
+    ''' llamada en los dos sitios que faltaban arregla el síntoma de hoy y deja el quinto llamador libre
+    ''' de volver a olvidarse. Con el kernel fuera de alcance, saltearse la ley es un
+    ''' <c>BC30456</c> en tiempo de compilación, no una convención.</para>
+    '''
+    ''' <para><b>Alcance de la ley</b>, medido sobre el corpus: 41 shapes con <c>LockNormals</c> y 8 con
+    ''' <c>SmoothSeamNormals="false"</c>.</para>
+    '''
+    ''' <para>⚠️ El piso de ruido para verificar RENDER == BAKE se MIDE, no se inventa:
+    ''' <c>ExtractSkinnedGeometry</c> acumula en <c>Parallel.ForEach</c> y no es bit-determinista entre
+    ''' corridas — 0,0216°–0,0283° medidos. Un gate de paridad tiene que medir su propio piso.</para>
+    '''
+    ''' <param name="shape">La shape dueña de la geometría. <c>Nothing</c> es legítimo (geometría
+    ''' sintética de un arnés): ahí no hay autor que respetar y la ley es un no-op.</param>
+    ''' <returns>Los vértices tocados ADEMÁS de los sucios; el llamador los marca para el render.</returns>
+    ''' </summary>
+    Public Shared Function RecalcularParaShape(ByRef geo As SkinnedGeometry,
+                                               shape As IRenderableShape,
+                                               ByVal opts As TBNOptions) As List(Of Integer)
+        AplicarRestriccionesDelAutor(opts, shape)
+        Return KernelTBN(geo, opts)
+    End Function
 
     ' ═══════════════════════════════════════════════════════════════════════════════════════════════
     ' ⚠️ PENDIENTE, A PROPÓSITO SIN IMPLEMENTAR — el corte de NORMALES EN ESPACIO DE MODELO.
@@ -3075,7 +3109,11 @@ Public Class RecalcTBN
     '''
     ''' Devuelve los vértices tocados ADEMÁS de los sucios; el llamador los marca para el render.
     ''' </summary>
-    Public Shared Function RecalculateNormalsTangentsBitangents(ByRef geo As SkinnedGeometry, ByVal opts As TBNOptions) As List(Of Integer)
+    ''' <para>⛔ <b>KERNEL. NO ES LA PUERTA.</b> Es <c>Friend</c> a propósito: quien recalcula TBN sobre
+    ''' una shape real entra por <see cref="RecalcularParaShape"/>, que aplica la ley del autor. Los
+    ''' únicos que llaman acá directo son los arneses de <c>Tools\</c> (geometría sintética, sin autor),
+    ''' que llegan por <c>InternalsVisibleTo</c>. Ver el doc de la puerta.</para>
+    Friend Shared Function KernelTBN(ByRef geo As SkinnedGeometry, ByVal opts As TBNOptions) As List(Of Integer)
         Dim nVerts As Integer = geo.Vertices.Length
         If nVerts = 0 OrElse geo.dirtyVertexIndices Is Nothing OrElse geo.dirtyVertexIndices.Count = 0 Then
             Return New List(Of Integer)()

@@ -347,7 +347,13 @@ Public Class MorphEngine
     ''' by passing a null plan (or a resolver that returns null) instead of keeping
     ''' stale deltas pegged on the mesh.
     ''' </summary>
+    ''' <param name="shape">⛔ OBLIGATORIO y sin default: es lo que le permite a este camino —el del
+    ''' RENDER— respetar la ley del autor de la prenda igual que la del BAKE. Sin el parámetro, este
+    ''' sitio recalculaba normales que el build conservaba: 177,98° de divergencia medidos en
+    ''' <c>Charming High Heels</c> / <c>CBBE For Heels</c>. Ver <c>RecalcTBN.RecalcularParaShape</c> y
+    ''' 00-reglas-dos-juegos-y-render-bake.</param>
     Public Shared Sub ApplyMorphPlan(ByRef geom As SkinnedGeometry, plan As MorphPlan,
+                                     shape As IRenderableShape,
                                      recalculateNormals As Boolean,
                                      Optional allowMask As Boolean = False,
                                      Optional maskedVertices As HashSet(Of Integer) = Nothing)
@@ -548,12 +554,22 @@ Public Class MorphEngine
         ' resultado de `BaseUndies` (35,20 grados, identico en 4 versiones distintas del codigo), asi
         ' que la divergencia de ese shape NO esta aca — sus tangentes llegan al NIF por otro camino, y
         ' forzarlo cuesta un recalculo de malla entera por frame sin beneficio medido.
-        If ((recalculateNormals AndAlso huboCambioDePosicion) OrElse uvsCambiaron) AndAlso geom.dirtyVertexIndices.Count > 0 Then
+        ' ⭐ EL PASE DE TANGENTES ES INCONDICIONAL — ley del canonico, BodySlideApp.cpp:4494-4501:
+        '     if (!lockNormals) CalcNormalsForShape(shape, force, smoothSeamNormals);
+        '     CalcTangentsForShape(shape);                       <-- FUERA del if
+        ' Son dos pases independientes: la casilla del usuario y la ley del autor gobiernan el de
+        ' NORMALES (via opt.KeepExistingNormals = soloTangentes, mas AplicarRestriccionesDelAutor dentro
+        ' de la puerta), y el de TANGENTES corre siempre que se haya movido algo.
+        ' ⛔ Por eso la condicion de entrada es SOLO "hay vertices sucios": meter `RecalculateNormals` aca
+        ' hacia que apagar la casilla dejara de rehacer TAMBIEN las tangentes, que el canonico rehace igual.
+        ' El guard de sucios se queda: sin nada sucio el kernel devuelve lista vacia de todos modos, y
+        ' forzar malla entera esta MEDIDO y DESCARTADO (ver los dos comentarios de abajo).
+        If geom.dirtyVertexIndices.Count > 0 Then
             Dim opt As RecalcTBN.TBNOptions = Config_App.Current.Setting_TBN
             opt.KeepExistingNormals = soloTangentes
             ' Devuelve una List, no un HashSet, y puede repetir vertices que ya estaban sucios: los
             ' dos Add de abajo son idempotentes, asi que no hace falta filtrarla.
-            Dim adicionales = RecalcTBN.RecalculateNormalsTangentsBitangents(geom, opt)
+            Dim adicionales = RecalcTBN.RecalcularParaShape(geom, shape, opt)
             For Each ad In adicionales
                 geom.dirtyVertexIndices.Add(ad)
                 geom.dirtyVertexFlags(ad) = True
