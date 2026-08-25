@@ -294,7 +294,7 @@ Public NotInheritable Class BehaviorClipEnumerator
             Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(bytes))
             Dim b = g.GetObjectsByClassName("hkaAnimationBinding").FirstOrDefault()
             If b IsNot Nothing Then
-                Dim ab = g.ParseAnimationBinding(b)
+                Dim ab = Havok.Canon.Objects.HkObj_HkaAnimationBinding.Read(g, b)
                 If ab IsNot Nothing Then d.EsAditivo = (ab.BlendHint <> 0)
             End If
             ' ⛔⛔ TRES ESCALARES SE LEEN COMO TRES ESCALARES. NO se llama a `ParseAnimations`.
@@ -364,22 +364,22 @@ Public NotInheritable Class BehaviorClipEnumerator
         ' del parser (saltaba 2 arrays en vez de 3) la leía mal y motivó un scan por NOMBRE de
         ' DynamicAnimationTaggingGenerator acá — ELIMINADO: el binding del archivo es la única fuente.
         For Each obj In graph.GetObjectsByClassName("hkbClipGenerator")
-            Dim cg = graph.ParseClipGenerator(obj)
+            Dim cg = Havok.Canon.Objects.HkObj_HkbClipGenerator.Read(graph, obj)
             If IsNothing(cg) OrElse String.IsNullOrWhiteSpace(cg.AnimationName) Then Continue For
             Dim animFile = ResolveClipByExistence(cg.AnimationName, saptFolders, actorRoot, animSet)
             If animFile = "" Then Continue For
             Dim velEfectiva = VelocidadEfectiva(cg.PlaybackSpeed)
-            Dim esPP = EsPingPong(cg.PlaybackMode)
-            Dim claveClip = ClaveDedup(animFile, cg.CropStartLocalTime, cg.CropEndLocalTime, velEfectiva, esPP)
+            Dim esPP = EsPingPong(cg.Mode)
+            Dim claveClip = ClaveDedup(animFile, cg.CropStartAmountLocalTime, cg.CropEndAmountLocalTime, velEfectiva, esPP)
             Dim clip As ResolvedAnimationClip = Nothing
             If Not byClip.TryGetValue(claveClip, clip) Then
                 clip = New ResolvedAnimationClip With {
                     .AnimationFile = animFile,
                     .ClipName = If(cg.Name, ""),
                     .PlaybackSpeed = cg.PlaybackSpeed,
-                    .CropStartLocalTime = cg.CropStartLocalTime,
-                    .CropEndLocalTime = cg.CropEndLocalTime,
-                    .PlaybackMode = cg.PlaybackMode,
+                    .CropStartLocalTime = cg.CropStartAmountLocalTime,
+                    .CropEndLocalTime = cg.CropEndAmountLocalTime,
+                    .PlaybackMode = cg.Mode,
                     .IsPingPong = esPP,
                     .VelocidadReproduccion = velEfectiva,
                     .SourceSkeletonPath = SourceSkelForAnim(animFile, actorRoot, raceSkel)
@@ -397,9 +397,12 @@ Public NotInheritable Class BehaviorClipEnumerator
         ' Referencias a otros behaviors (relativas al actor del behavior referenciante), MISMO SAPT/Role/eje.
         Dim behRoot = ActorRootOfAnim(behFile)
         For Each refObj In graph.GetObjectsByClassName("hkbBehaviorReferenceGenerator")
-            ' m_behaviorName version-robust (FO4 +0x88 / SSE +0x48) — sin esto el walk NO seguía las sub-behaviors
-            ' de SSE (Weap/Magic/Locomotion/…) y la lista de SSE salía corta. [[24-anim-behavior-por-raza]]
-            Dim refName = graph.ResolveGeneratorTargetString(refObj, graph.HkbLayout.BehaviorRefName)
+            ' ⛔ `hkbBehaviorReferenceGenerator.behaviorName` DEL LECTOR GENERADO. Antes salia de una
+            ' tabla escrita a mano (FO4 +0x88 / SSE +0x48); ahora la elige el packfile. Sin esto el walk
+            ' NO seguia las sub-behaviors de SSE (Weap/Magic/Locomotion/...) y la lista salia corta.
+            ' [[24-anim-behavior-por-raza]]
+            Dim refLector = Havok.Canon.Objects.HkObj_HkbBehaviorReferenceGenerator.Read(graph, refObj)
+            Dim refName = If(refLector Is Nothing, String.Empty, If(refLector.BehaviorName, String.Empty))
             If String.IsNullOrWhiteSpace(refName) Then Continue For
             EnumBehaviorClips(NormHkx(CombineActor(behRoot, refName)), saptFolders, role, stateAxis, reqFemale, perspective, loadBehaviorHkx,
                               animSet, actorRoot, raceSkel, byClip, result, graphCache, visited, depth + 1)
@@ -453,7 +456,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         Try
             Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(pb))
             For Each o In g.GetObjectsByClassName("hkbProjectStringData")
-                Dim psd = g.ParseProjectStringData(o)
+                Dim psd = Havok.Canon.Objects.HkObj_HkbProjectStringData.Read(g, o)
                 If psd Is Nothing Then Continue For
                 For Each cf In psd.CharacterFilenames
                     If String.IsNullOrWhiteSpace(cf) Then Continue For
@@ -462,7 +465,7 @@ Public NotInheritable Class BehaviorClipEnumerator
                     If cb Is Nothing Then Continue For
                     Dim gc = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(cb))
                     For Each co In gc.GetObjectsByClassName("hkbCharacterStringData")
-                        Dim csd = gc.ParseCharacterStringData(co)
+                        Dim csd = Havok.Canon.Objects.HkObj_HkbCharacterStringData.Read(gc, co)
                         If csd IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(csd.BehaviorFilename) Then Return NormHkx(CombineActor(actorRoot, csd.BehaviorFilename))
                     Next
                 Next
@@ -506,7 +509,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         Try
             Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(projBytes))
             For Each o In g.GetObjectsByClassName("hkbProjectStringData")
-                Dim psd = g.ParseProjectStringData(o)
+                Dim psd = Havok.Canon.Objects.HkObj_HkbProjectStringData.Read(g, o)
                 If psd IsNot Nothing Then charFiles.AddRange(psd.CharacterFilenames)
             Next
         Catch
@@ -521,7 +524,7 @@ Public NotInheritable Class BehaviorClipEnumerator
             Try
                 Dim gc = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(charBytes))
                 For Each o In gc.GetObjectsByClassName("hkbCharacterStringData")
-                    Dim csd = gc.ParseCharacterStringData(o)
+                    Dim csd = Havok.Canon.Objects.HkObj_HkbCharacterStringData.Read(gc, o)
                     If csd IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(csd.RigName) Then
                         Return NormHkx(CombineActor(actorRoot, csd.RigName))
                     End If

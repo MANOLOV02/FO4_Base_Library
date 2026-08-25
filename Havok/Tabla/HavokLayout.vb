@@ -40,9 +40,8 @@ Namespace Havok.Canon
         ''' <summary>Offset en BYTES, absoluto dentro de la clase que lo declara.</summary>
         Public ReadOnly Property Offset As Integer
         ''' <summary>Tipo Havok: real, uint16, vector4, array, pointer, struct, stringptr, ...</summary>
-        Public ReadOnly Property TypeName As String
-        ''' <summary>Subtipo (el elemento, cuando TypeName es array/pointer). "" si no aplica.</summary>
         Public ReadOnly Property SubTypeName As String
+        Public ReadOnly Property TypeName As String
         ''' <summary>Cantidad de elementos si es un array C fijo; 0 si no lo es.</summary>
         Public ReadOnly Property CArraySize As Integer
         ''' <summary>Clase del struct/puntero apuntado. "" si no aplica.</summary>
@@ -164,6 +163,27 @@ Namespace Havok.Canon
             Return _classes.TryGetValue(className, result)
         End Function
 
+        ''' <summary>
+        ''' ⛔ SI UNA CLASE DERIVA DE OTRA, LO DICE LA TABLA. La reflexion declara el padre de cada
+        ''' clase, asi que "¿es un generador?" se contesta subiendo por `ParentName` hasta la raiz.
+        ''' <para>Decidirlo por el NOMBRE esta medidamente mal: contra la union de las dos tablas,
+        ''' 40 clases derivan de `hkbGenerator` y 58 contienen "Generator". La regla por nombre se
+        ''' pierde `hkbBehaviorGraph` y los cinco `*TransitionEffect`, y mete 25 de mas que son
+        ''' `*InternalState` y `hkbGeneratorSyncInfo*` — datos, no generadores.</para>
+        ''' </summary>
+        Public Function DerivaDe(className As String, baseName As String) As Boolean
+            If String.IsNullOrEmpty(className) OrElse String.IsNullOrEmpty(baseName) Then Return False
+            Dim actual = className
+            Dim vistas As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            While Not String.IsNullOrEmpty(actual) AndAlso vistas.Add(actual)
+                If actual.Equals(baseName, StringComparison.OrdinalIgnoreCase) Then Return True
+                Dim c As HavokClass = Nothing
+                If Not _classes.TryGetValue(actual, c) OrElse c Is Nothing Then Return False
+                actual = c.ParentName
+            End While
+            Return False
+        End Function
+
         Public Function HasClass(className As String) As Boolean
             Return Not String.IsNullOrEmpty(className) AndAlso _classes.ContainsKey(className)
         End Function
@@ -171,11 +191,6 @@ Namespace Havok.Canon
         Public Function ClassSize(className As String) As Integer
             Dim c As HavokClass = Nothing
             Return If(TryGetClass(className, c), c.Size, -1)
-        End Function
-
-        Public Function ClassVersion(className As String) As Integer
-            Dim c As HavokClass = Nothing
-            Return If(TryGetClass(className, c), c.Version, -1)
         End Function
 
         ''' <summary>
@@ -256,7 +271,7 @@ Namespace Havok.Canon
             Dim ms = MembersOf(className)
             If ms Is Nothing OrElse ms.Count = 0 Then Return 0
             Dim last = ms(ms.Count - 1)
-            Dim lastSize = HavokGenericReader.SizeOfType(Me, last.TypeName, last.SubTypeName, last.StructClassName)
+            Dim lastSize = SizeOfType(Me, last.TypeName, last.SubTypeName, last.StructClassName)
             If lastSize <= 0 Then lastSize = 8
             Dim n = If(last.CArraySize > 1, last.CArraySize, 1)
             Return last.Offset + (lastSize * n)
@@ -383,8 +398,11 @@ Namespace Havok.Canon
         ''' equivocada. Nothing = formato sin tabla (Skyrim32).
         ''' </summary>
         Public Shared Function ForGraph(graph As HkxObjectGraph_Class) As HavokLayout
-            If graph Is Nothing OrElse graph.Packfile Is Nothing OrElse graph.Packfile.Header Is Nothing Then Return Nothing
-            Return [For](graph.Packfile.Header.PackfileFormat)
+            ' El formato lo declara el GRAFO: el de arranque lo trae derivado y el normal lo copia del
+            ' packfile. Preguntarselo a `Packfile.Header` ataba esto a que la cabecera ya estuviera
+            ' parseada, que es lo que impedia leer la cabecera con el lector generado.
+            If graph Is Nothing Then Return Nothing
+            Return [For](graph.Formato)
         End Function
 
         Public Shared Function [For](format As HkxPackfileFormat_Enum) As HavokLayout
@@ -400,15 +418,49 @@ Namespace Havok.Canon
             Return [For](format) IsNot Nothing
         End Function
 
-        ''' <summary>Texto para logs/errores cuando no hay tabla.</summary>
-        Public Shared Function UnsupportedNote(format As HkxPackfileFormat_Enum) As String
-            Return $"formato de packfile '{format}' sin tabla de layout canonica " &
-                   "(la tabla describe x64; los packfiles de 32 bits tienen otro layout)"
-        End Function
-
         Public Overrides Function ToString() As String
             Return $"HavokLayout[{Tag}] {ClassCount} clases, exe {SourceStamp}"
         End Function
+
+        ''' <summary>
+        ''' ⛔ EL TAMANO DE UN TIPO SEGUN LA TABLA. Vivia en `HavokGenericReader`, que era un
+        ''' SEGUNDO lector del archivo; esto no lee nada: es aritmetica de la propia tabla y por eso
+        ''' se queda aca, con la tabla.
+        ''' </summary>
+        ''' <summary>
+        ''' Tamano en bytes de un tipo declarado, en el layout x64 que describe la tabla.
+        ''' <para>⛔ Estos NO son numeros elegidos: son los tamanos del layout que la propia tabla
+        ''' describe (la tabla trae `objectSize` por clase, y los offsets consecutivos de sus miembros
+        ''' los confirman). Un tamano mal puesto aca corre TODO un array de structs, asi que
+        ''' <see cref="SizeOfType"/> devuelve -1 para lo que no sabe y el lector se planta en vez de
+        ''' inventar un stride.</para>
+        ''' </summary>
+        Public Shared Function SizeOfType(layout As HavokLayout, typeName As String, subType As String, structClass As String) As Integer
+            Select Case LCase(If(typeName, ""))
+                Case "bool", "int8", "uint8", "char" : Return 1
+                Case "int16", "uint16", "half" : Return 2
+                Case "int32", "uint32", "real" : Return 4
+                Case "int64", "uint64", "ulong", "pointer", "cstring", "stringptr", "variant" : Return 8
+                Case "vector4", "quaternion" : Return 16
+                Case "matrix3", "rotation" : Return 48
+                Case "qstransform" : Return 48
+                Case "matrix4", "transform" : Return 64
+                Case "array", "simplearray" : Return 16
+                Case "relarray" : Return 4
+                Case "void" : Return 0
+                Case "enum", "flags"
+                    ' El ancho de un enum lo da su tipo BASE, que la tabla declara como subtipo.
+                    Dim baseSize = SizeOfType(layout, subType, "", "")
+                    Return If(baseSize > 0, baseSize, 4)
+                Case "struct"
+                    If layout Is Nothing OrElse String.IsNullOrEmpty(structClass) Then Return -1
+                    Dim sz = layout.SizeOfClass(structClass)
+                    Return If(sz > 0, sz, -1)
+                Case Else
+                    Return -1
+            End Select
+        End Function
+
     End Class
 
 End Namespace

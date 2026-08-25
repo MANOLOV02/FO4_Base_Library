@@ -1,4 +1,4 @@
-' Version Uploaded of Fo4Library 3.2.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports System.Collections.Generic
 Imports System.Diagnostics
 Imports System.Runtime.InteropServices
@@ -37,23 +37,12 @@ Public Class HkxAnimationPlayer
 ''' 14.477 (tailbehavior.hkx :: 1HM_WalkForward, SSE) — y no es un accidente de autoria: es un barrido
 ''' de COLA, que es el caso de uso canonico. Default False = comportamiento de siempre.</summary>
     Public Property PingPong As Boolean
-''' <summary>True si el crop pedido no se pudo honrar y se esta reproduciendo el clip COMPLETO.
-''' ⛔ Hoy NADIE lo lee: se expone para que la UI lo pueda mostrar, pero la barra de animacion no tiene
-''' donde (sus unicos labels son LabelAnimTitle y LabelAnimMs; el frame lo muestra el propio slider
-''' inline). Agregar el aviso es un control nuevo en el Designer = decision del usuario.</summary>
-    Public Property PlayableRangeIgnored As Boolean
     Private _playing As Boolean = False
     Private _poseName As String = "HKX Pose"
 
     Public Sub New(session As HkxPoseImportSession)
         _session = session
     End Sub
-
-    Public ReadOnly Property Session As HkxPoseImportSession
-        Get
-            Return _session
-        End Get
-    End Property
 
     ''' <summary>FPS objetivo de reproducción. Roundtrip a milisegundos: <c>ms = 1000 / FPS</c>.</summary>
     Public Property TargetFps As Double = 30.0
@@ -181,10 +170,6 @@ Public Class HkxAnimationPlayer
         Return pose
     End Function
 
-    Public Sub ClearCache()
-        _poseCache.Clear()
-    End Sub
-
     ' ─────────────────────────────────────────────────────────────────────────────────────────
     ' Loop de render basado en Application.Idle (best practice WinForms/OpenTK para tiempo real).
     ' Alternativa al WinForms Timer durante el play: renderiza apenas el hilo UI queda libre (sin
@@ -241,6 +226,10 @@ Public Class HkxAnimationPlayer
         Return Not PeekMessage(msg, IntPtr.Zero, 0UI, 0UI, 0UI)
     End Function
 
+    ' ⛔ LAYOUT DE INTEROP: ES EL `MSG` DE WIN32. `WParam`, `LParam` y `Time` no los lee este
+    ' codigo, y aun asi NO SE TOCAN: `PeekMessage` escribe sobre esta memoria y sacar un campo
+    ' corre todos los que vienen despues. Un censo de miembros muertos los marca; son la
+    ' excepcion, y por eso queda escrito aca.
     <StructLayout(LayoutKind.Sequential)>
     Private Structure NativeMessage
         Public Handle As IntPtr
@@ -334,13 +323,11 @@ Public Class HkxAnimationPlayer
         If r.honrable Then
             _firstFrame = r.lo
             _lastFrame = r.hi
-            PlayableRangeIgnored = False
         Else
             _firstFrame = 0
             _lastFrame = -1
             ' ⛔ Solo es "ignorado" si de verdad se pidio algo: `honrable = False` tambien cubre el clip
             ' que no pidio crop, y avisar ahi seria mentir.
-            PlayableRangeIgnored = pidioCrop AndAlso count > 1
         End If
 
         ' ⛔ ULTIMA linea: ClampFrame lee RangoReproducible(), que necesita los dos campos ya asignados.

@@ -1,9 +1,10 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Collections.Generic
 Imports System.IO
 Imports System.Linq
+Imports System.Numerics
 
 Public Partial Class HkxObjectGraph_Class
     Private Enum HkxSplineTrackValueType_Enum
@@ -57,214 +58,154 @@ Public Partial Class HkxObjectGraph_Class
         Public MaxValue As Single
     End Structure
 
-    Private Structure HkxVector3Frame_Struct
-        Public X As Single
-        Public Y As Single
-        Public Z As Single
-    End Structure
 
-    Private Structure HkxQuaternionFrame_Struct
-        Public X As Single
-        Public Y As Single
-        Public Z As Single
-        Public W As Single
-    End Structure
 
-    Public Function ParseAnimationBindings() As List(Of HkaAnimationBindingGraph_Class)
-        Dim result As New List(Of HkaAnimationBindingGraph_Class)
+    Public Function ParseAnimationBindings() As List(Of Havok.Canon.Objects.HkObj_HkaAnimationBinding)
+        Dim result As New List(Of Havok.Canon.Objects.HkObj_HkaAnimationBinding)
 
         For Each obj In GetObjectsByClassName("hkaAnimationBinding").OrderBy(Function(item) item.RelativeOffset)
-            Dim binding = ParseAnimationBinding(obj)
+            Dim binding = Havok.Canon.Objects.HkObj_HkaAnimationBinding.Read(Me, obj)
             If Not IsNothing(binding) Then result.Add(binding)
         Next
 
         Return result
     End Function
 
-    Public Function ParseAnimations() As List(Of HkaSplineCompressedAnimationGraph_Class)
-        Dim animations As New List(Of HkaSplineCompressedAnimationGraph_Class)
+
+    ''' <summary>
+    ''' ⛔ LAS ANIMACIONES DEL ARCHIVO, SEA CUAL SEA LA COMPRESION.
+    '''
+    ''' <para>Habia dos funciones con el MISMO cuerpo — emparejar bindings, fallback posicional,
+    ''' log — una por compresion, y quince consumidores que llamaban a las dos en pareja. Un `.hkx`
+    ''' con spline Y lossless devolvia solo la primera, porque el segundo brazo del `If` solo corria
+    ''' cuando el primero venia vacio.</para>
+    '''
+    ''' <para>El emparejado con `hkaAnimationBinding` se hace UNA vez sobre el conjunto entero, que
+    ''' es lo que el archivo declara: los bindings apuntan a su animacion por referencia, sin
+    ''' importar como este comprimida.</para>
+    ''' </summary>
+    Public Function Animaciones() As List(Of HkxAnimacionDescomprimida_Class)
+        Dim r As New List(Of HkxAnimacionDescomprimida_Class)
 
         For Each obj In GetObjectsByClassName("hkaSplineCompressedAnimation").OrderBy(Function(item) item.RelativeOffset)
-            Dim animation = ParseAnimation(obj)
-            If Not IsNothing(animation) Then animations.Add(animation)
+            Dim a = ParseAnimation(obj)
+            If Not IsNothing(a) Then r.Add(a)
+        Next
+        For Each obj In GetObjectsByClassName("hkaLosslessCompressedAnimation").OrderBy(Function(item) item.RelativeOffset)
+            Dim a = ParseLosslessAnimation(obj)
+            If Not IsNothing(a) Then r.Add(a)
+        Next
+        If r.Count = 0 Then Return r
+
+        Dim porOffset As New Dictionary(Of Integer, HkxAnimacionDescomprimida_Class)
+        For Each a In r
+            If a.Animacion?.Source Is Nothing Then Continue For
+            porOffset(a.Animacion.Source.RelativeOffset) = a
         Next
 
-        If animations.Count = 0 Then Return animations
-
-        Dim animationsByOffset As New Dictionary(Of Integer, HkaSplineCompressedAnimationGraph_Class)
-        For Each animation In animations
-            If animation.SourceObject Is Nothing Then Continue For
-            animationsByOffset(animation.SourceObject.RelativeOffset) = animation
-        Next
-
-        Dim remainingBindings As New List(Of HkaAnimationBindingGraph_Class)
+        Dim sueltos As New List(Of Havok.Canon.Objects.HkObj_HkaAnimationBinding)
         For Each binding In ParseAnimationBindings()
-            If binding.AnimationObject IsNot Nothing Then
-                Dim matchedAnimation As HkaSplineCompressedAnimationGraph_Class = Nothing
-                If animationsByOffset.TryGetValue(binding.AnimationObject.RelativeOffset, matchedAnimation) AndAlso matchedAnimation.Binding Is Nothing Then
-                    matchedAnimation.Binding = binding
+            If binding.Animation IsNot Nothing Then
+                Dim quien As HkxAnimacionDescomprimida_Class = Nothing
+                If porOffset.TryGetValue(binding.Animation.RelativeOffset, quien) AndAlso quien.Binding Is Nothing Then
+                    quien.Binding = binding
                     Continue For
                 End If
             End If
-
-            remainingBindings.Add(binding)
+            sueltos.Add(binding)
         Next
 
-        ' Positional fallback for bindings whose AnimationObject ref did not resolve.
-        ' Only safe when it is UNAMBIGUOUS: exactly one unmatched animation and exactly
-        ' one unmatched binding. Stapling N bindings to N animations by enumeration order
-        ' would silently mis-pair tracks→bones on any file where the ref-match was the
-        ' real mapping, so leave Binding = Nothing and log instead of guessing.
-        Dim unmatchedAnimations = animations.Where(Function(a) a.Binding Is Nothing).ToList()
-        If remainingBindings.Count = 1 AndAlso unmatchedAnimations.Count = 1 Then
-            unmatchedAnimations(0).Binding = remainingBindings(0)
-        ElseIf remainingBindings.Count > 0 Then
-            Dim bindingCount = remainingBindings.Count
-            Dim animCount = unmatchedAnimations.Count
-            Logger.LogLazy(Function() $"[HKX-SPLINE] {bindingCount} binding(s) did not resolve their AnimationObject ref and {animCount} animation(s) are unbound; positional fallback skipped (ambiguous). Affected animations left with Binding=Nothing.")
+        ''' ⛔ El fallback POSICIONAL solo cuando es INEQUIVOCO: exactamente una animacion sin
+        ''' binding y exactamente un binding sin animacion. Grapar N con N por orden de enumeracion
+        ''' cruzaria tracks con huesos en silencio en cualquier archivo donde el ref-match era el
+        ''' mapeo real, asi que se deja `Binding = Nothing` y se loguea en vez de adivinar.
+        Dim sinBinding = r.Where(Function(a) a.Binding Is Nothing).ToList()
+        If sueltos.Count = 1 AndAlso sinBinding.Count = 1 Then
+            sinBinding(0).Binding = sueltos(0)
+        ElseIf sueltos.Count > 0 Then
+            Dim nb = sueltos.Count, na = sinBinding.Count
+            Logger.LogLazy(Function() $"[HKX-ANIM] {nb} binding(s) no resolvieron su ref de animacion y {na} animacion(es) quedan sin binding; fallback posicional salteado (ambiguo).")
         End If
 
-        Return animations
+        Return r
     End Function
 
-    Public Function ParseAnimationBinding(source As HkxVirtualObjectGraph_Class) As HkaAnimationBindingGraph_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hkaAnimationBinding", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-
-        Dim baseFieldOffset = BaseObjectFieldOffset
-        Dim bindingNameOffset = baseFieldOffset
-        Dim animationReferenceOffset = bindingNameOffset + PointerSizeValue
-        Dim trackToBoneArrayOffset = animationReferenceOffset + PointerSizeValue
-        ' blendHint (int8) viene DESPUÉS de los hkArray de hkaAnimationBinding, y CUÁNTOS arrays
-        ' hay depende de la versión de contenido Havok — NO es fijo entre juegos. Fuente canónica:
-        ' HavokLib classgen (HavokLib/source/packfile/hka_animation_binding.inl, tabla LAYOUTS):
-        '   hk_2014 (Fallout 4): transformTrackToBone[] + floatTrackToFloatSlot[] + partitionIndices[]
-        '       → 3 arrays; blendHint @ trackToBone+3 (offset 80 en 64-bit).
-        '   hk_2010/2011 (Skyrim LE + SE): SIN partitionIndices (numPartitionIndices=-1 en la tabla)
-        '       → 2 arrays; blendHint @ trackToBone+2 (offset 64 en 64-bit, 40 en 32-bit).
-        ' Clavar +3 (correcto solo para FO4) leía PAST-END en Skyrim (objeto de 72 bytes) → byte
-        ' basura (p.ej. 78) → clips NORMALES se marcaban ADITIVOS y el render colapsaba (cuerpo se
-        ' dispersa). Discriminador = PackfileFormat (FileVersion 11=FO4/hk2014, 8=Skyrim/hk2010).
-        Dim arraysBeforeBlendHint = If(Packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64, 3, 2)
-        Dim blendHintOffset = trackToBoneArrayOffset + (arraysBeforeBlendHint * ArrayHeaderSizeValue)
-
-        If source.Size > 0 AndAlso source.Size < blendHintOffset + 1 Then
-            Throw New InvalidDataException($"hkaAnimationBinding @0x{source.RelativeOffset:X} is truncated.")
-        End If
-
-        Dim result As New HkaAnimationBindingGraph_Class With {
-            .SourceObject = source,
-            .OriginalSkeletonName = ResolveLocalString(source.RelativeOffset + bindingNameOffset),
-            .AnimationObject = ResolveGlobalObject(source.RelativeOffset + animationReferenceOffset),
-            .BlendHint = CInt(ReadByte(source.RelativeOffset + blendHintOffset))
-        }
-
-        result.TransformTrackToBoneIndices.AddRange(ReadInt16Array(source.RelativeOffset + trackToBoneArrayOffset))
-        Return result
-    End Function
-
-    Public Function ParseAnimation(source As HkxVirtualObjectGraph_Class) As HkaSplineCompressedAnimationGraph_Class
+    Public Function ParseAnimation(source As HkxVirtualObjectGraph_Class) As HkxAnimacionDescomprimida_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        Dim baseFieldOffset = BaseObjectFieldOffset
-        Dim animationDurationOffset = baseFieldOffset + 4
-        Dim transformTrackCountOffset = baseFieldOffset + 8
-        Dim floatTrackCountOffset = baseFieldOffset + 12
-        Dim extractedMotionOffset = baseFieldOffset + 16
-        Dim annotationTracksOffset = extractedMotionOffset + PointerSizeValue
-        Dim splineBaseOffset = annotationTracksOffset + ArrayHeaderSizeValue
-        Dim frameCountOffset = splineBaseOffset
-        Dim blockCountOffset = splineBaseOffset + 4
-        Dim maxFramesPerBlockOffset = splineBaseOffset + 8
-        Dim maskAndQuantSizeOffset = splineBaseOffset + 12
-        Dim frameDurationOffset = splineBaseOffset + 24
-        Dim blockOffsetsArrayOffset = AlignValue(splineBaseOffset + 28, PointerSizeValue)
-        Dim floatBlockOffsetsArrayOffset = blockOffsetsArrayOffset + ArrayHeaderSizeValue
-        Dim transformOffsetsArrayOffset = floatBlockOffsetsArrayOffset + ArrayHeaderSizeValue
-        Dim floatOffsetsArrayOffset = transformOffsetsArrayOffset + ArrayHeaderSizeValue
-        Dim dataArrayOffset = floatOffsetsArrayOffset + ArrayHeaderSizeValue
+        ' ⛔⛔ LOS DIECIOCHO OFFSETS SE DERIVABAN A MANO, sumando `BaseObjectFieldOffset`,
+        ' `PointerSizeValue` y `ArrayHeaderSizeValue`, con un `AlignValue` en el medio. La reflexion
+        ' declara la clase entera y el lector generado la resuelve por juego:
+        '     hkaAnimation{ duration +0x14 . numberOfTransformTracks +0x18 . numberOfFloatTracks +0x1C
+        '                   extractedMotion +0x20 . annotationTracks +0x28 }
+        '     hkaSplineCompressedAnimation{ numFrames +0x38 . numBlocks +0x3C . maxFramesPerBlock +0x40
+        '        . maskAndQuantizationSize +0x44 . frameDuration +0x50 . blockOffsets +0x58
+        '        . floatBlockOffsets +0x68 . transformOffsets +0x78 . floatOffsets +0x88 . data +0x98 }
+        Dim hkr As New Havok.Canon.Typed.Hk_HkaSplineCompressedAnimation(Me, source)
+        If Not hkr.IsValid Then Return Nothing
 
-        If source.Size > 0 AndAlso source.Size < dataArrayOffset + ArrayHeaderSizeValue Then
-            Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} is truncated.")
-        End If
+        ' `maxFramesPerBlock` y `maskAndQuantizationSize` son de este parseo y no salen de aca:
+        ' quedan como locales en vez de campos que nadie mas lee.
+        Dim maxFramesPerBlock = hkr.MaxFramesPerBlock
+        Dim maskAndQuantizationSize = hkr.MaskAndQuantizationSize
 
-        Dim result As New HkaSplineCompressedAnimationGraph_Class With {
-            .SourceObject = source,
-            .Duration = ReadSingle(source.RelativeOffset + animationDurationOffset),
-            .FrameDuration = ReadSingle(source.RelativeOffset + frameDurationOffset),
-            .NumFrames = ReadInt32(source.RelativeOffset + frameCountOffset),
-            .NumTransformTracks = ReadInt32(source.RelativeOffset + transformTrackCountOffset),
-            .NumFloatTracks = ReadInt32(source.RelativeOffset + floatTrackCountOffset),
-            .NumBlocks = ReadInt32(source.RelativeOffset + blockCountOffset),
-            .MaxFramesPerBlock = ReadInt32(source.RelativeOffset + maxFramesPerBlockOffset),
-            .MaskAndQuantizationSize = ReadInt32(source.RelativeOffset + maskAndQuantSizeOffset)
+        Dim result As New HkxAnimacionDescomprimida_Class With {
+            .Animacion = Havok.Canon.Objects.HkObj_HkaAnimation.Read(Me, source),
+            .FrameDuration = hkr.FrameDuration,
+            .NumFrames = hkr.NumFrames,
+            .NumBlocks = hkr.NumBlocks
         }
 
-        If result.NumFrames < 0 OrElse result.NumTransformTracks < 0 OrElse result.NumFloatTracks < 0 OrElse
-           result.NumBlocks < 0 OrElse result.MaxFramesPerBlock < 0 OrElse result.MaskAndQuantizationSize < 0 Then
+        If result.NumFrames < 0 OrElse result.Animacion.NumberOfTransformTracks < 0 OrElse result.Animacion.NumberOfFloatTracks < 0 OrElse
+           result.NumBlocks < 0 OrElse maxFramesPerBlock < 0 OrElse maskAndQuantizationSize < 0 Then
             Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has invalid negative counts.")
         End If
 
-        If result.NumBlocks > 0 AndAlso result.MaxFramesPerBlock <= 0 Then
-            Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has invalid MaxFramesPerBlock={result.MaxFramesPerBlock}.")
+        If result.NumBlocks > 0 AndAlso maxFramesPerBlock <= 0 Then
+            Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has invalid MaxFramesPerBlock={maxFramesPerBlock}.")
         End If
 
-        result.TrackNames.AddRange(ReadAnnotationTrackNames(source.RelativeOffset + annotationTracksOffset))
+        Dim blockOffsets As New List(Of UInteger)
+        For i = 0 To hkr.BlockOffsetsCount - 1
+            blockOffsets.Add(CUInt(hkr.BlockOffsetsItem(i)))
+        Next
+        Dim splineBlob = ReadByteArray(hkr.Data.FieldRelativeOffset)
 
-        Dim blockOffsets = ReadUInt32Array(source.RelativeOffset + blockOffsetsArrayOffset)
-        Dim splineBlob = ReadByteArray(source.RelativeOffset + dataArrayOffset)
-
-        If (result.NumFrames > 0 OrElse result.NumTransformTracks > 0 OrElse result.NumBlocks > 0) AndAlso (splineBlob.Length = 0 OrElse blockOffsets.Count = 0) Then
+        If (result.NumFrames > 0 OrElse result.Animacion.NumberOfTransformTracks > 0 OrElse result.NumBlocks > 0) AndAlso (splineBlob.Length = 0 OrElse blockOffsets.Count = 0) Then
             Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has no spline payload.")
         End If
 
-        result.TrackTransforms.AddRange(DecompressSplineAnimation(splineBlob,
-                                                                  result.NumTransformTracks,
+        DecompressSplineAnimation(result, splineBlob,
+                                                                  result.Animacion.NumberOfTransformTracks,
                                                                   result.NumFrames,
                                                                   result.NumBlocks,
-                                                                  result.MaxFramesPerBlock,
+                                                                  maxFramesPerBlock,
                                                                   blockOffsets,
-                                                                  result.MaskAndQuantizationSize))
+                                                                  maskAndQuantizationSize)
 
         Return result
     End Function
 
-    Private Function ReadAnnotationTrackNames(fieldRelativeOffset As Integer) As List(Of String)
-        Dim result As New List(Of String)
-        Dim header = ReadArrayHeader(fieldRelativeOffset)
-        If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
-
-        Dim annotationTrackStride = PointerSizeValue + ArrayHeaderSizeValue
-        For index = 0 To header.Count - 1
-            Dim trackOffset = header.DataRelativeOffset + (index * annotationTrackStride)
-            result.Add(ResolveLocalString(trackOffset))
-        Next
-
-        Return result
-    End Function
-
-    Private Function DecompressSplineAnimation(blob As Byte(),
+    Private Sub DecompressSplineAnimation(destino As HkxAnimacionDescomprimida_Class, blob As Byte(),
                                                numTracks As Integer,
                                                numFrames As Integer,
                                                numBlocks As Integer,
                                                maxFramesPerBlock As Integer,
                                                blockOffsets As IReadOnlyList(Of UInteger),
-                                               maskAndQuantSize As Integer) As HkxAnimationTransformGraph_Class()
+                                               maskAndQuantSize As Integer)
         Dim totalTransformCount = CLng(numTracks) * CLng(numFrames)
         If totalTransformCount > Integer.MaxValue Then
             Throw New InvalidDataException($"Animation transform table is too large: {totalTransformCount} entries.")
         End If
 
+        ' ⛔ EL FRAME EN LA FORMA CANONICA: un `hkQsTransform` de doce floats por track y frame.
         Dim totalTransforms = CInt(totalTransformCount)
-        Dim result As HkxAnimationTransformGraph_Class() =
-            If(totalTransforms > 0,
-               New HkxAnimationTransformGraph_Class(totalTransforms - 1) {},
-               Array.Empty(Of HkxAnimationTransformGraph_Class)())
-
-        For index = 0 To result.Length - 1
-            result(index) = CreateIdentityAnimationTransform()
+        For index = 0 To totalTransforms - 1
+            destino.TrackTransforms.Add(New Single() {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F, 0.0F})
+            destino.TrackMask.Add(0)
         Next
 
-        If numTracks = 0 OrElse numFrames = 0 OrElse numBlocks = 0 Then Return result
+        If numTracks = 0 OrElse numFrames = 0 OrElse numBlocks = 0 Then Return
         If blockOffsets.Count < numBlocks Then Throw New InvalidDataException("Animation block offset array is truncated.")
 
         If maskAndQuantSize = 0 Then
@@ -278,7 +219,7 @@ Public Partial Class HkxObjectGraph_Class
         Next
 
         Dim knots As New List(Of Single)
-        Dim quaternionControlPoints As New List(Of HkxQuaternionFrame_Struct)
+        Dim quaternionControlPoints As New List(Of Quaternion)
 
         For blockIndex = 0 To numBlocks - 1
             Dim blockStart = UInt32ToInt32(blockOffsets(blockIndex), "block offset")
@@ -378,7 +319,7 @@ Public Partial Class HkxObjectGraph_Class
 
                     For frameInBlock = 0 To framesInBlock - 1
                         Dim time = CSng(frameInBlock)
-                        Dim value As New HkxVector3Frame_Struct
+                        Dim value As New Vector3
 
                         For axis = 0 To 2
                             Select Case axisInfos(axis).Type
@@ -393,7 +334,7 @@ Public Partial Class HkxObjectGraph_Class
                         positionFrames(frameInBlock) = value
                     Next
                 Else
-                    Dim staticPosition As New HkxVector3Frame_Struct
+                    Dim staticPosition As New Vector3
                     For axis = 0 To 2
                         If mask.GetPositionType(axis) <> HkxSplineTrackValueType_Enum.StaticValue Then Continue For
                         EnsureBlobReadable(blob, offset, 4, "Static position value")
@@ -434,8 +375,8 @@ Public Partial Class HkxObjectGraph_Class
                         Dim quat = ReadQuaternion(quaternionFormat, blob, offset, blob.Length - offset, consumed)
                         offset += consumed
 
-                        If quaternionControlPoints.Count > 0 AndAlso DotQuaternion(quat, quaternionControlPoints(quaternionControlPoints.Count - 1)) < 0.0F Then
-                            NegateQuaternion(quat)
+                        If quaternionControlPoints.Count > 0 AndAlso Quaternion.Dot(quat, quaternionControlPoints(quaternionControlPoints.Count - 1)) < 0.0F Then
+                            quat = Quaternion.Negate(quat)
                         End If
 
                         quaternionControlPoints.Add(quat)
@@ -523,7 +464,7 @@ Public Partial Class HkxObjectGraph_Class
 
                     For frameInBlock = 0 To framesInBlock - 1
                         Dim time = CSng(frameInBlock)
-                        Dim value As New HkxVector3Frame_Struct With {.X = 1.0F, .Y = 1.0F, .Z = 1.0F}
+                        Dim value = Vector3.One
 
                         For axis = 0 To 2
                             Select Case axisInfos(axis).Type
@@ -538,7 +479,7 @@ Public Partial Class HkxObjectGraph_Class
                         scaleFrames(frameInBlock) = value
                     Next
                 Else
-                    Dim staticScale As New HkxVector3Frame_Struct With {.X = 1.0F, .Y = 1.0F, .Z = 1.0F}
+                    Dim staticScale = Vector3.One
                     For axis = 0 To 2
                         If mask.GetScaleType(axis) <> HkxSplineTrackValueType_Enum.StaticValue Then Continue For
                         EnsureBlobReadable(blob, offset, 4, "Static scale value")
@@ -553,45 +494,33 @@ Public Partial Class HkxObjectGraph_Class
 
                 offset = AlignValue(offset, 4)
 
+                Dim msk = 0
+                If mask.GetPositionType(0) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 1
+                If mask.GetPositionType(1) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 2
+                If mask.GetPositionType(2) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 4
+                If rotationType <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 8
+                If mask.GetScaleType(0) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 16
+                If mask.GetScaleType(1) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 32
+                If mask.GetScaleType(2) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 64
+
                 For frameInBlock = 0 To framesInBlock - 1
                     Dim destinationIndex = ((firstFrame + frameInBlock) * numTracks) + trackIndex
-                    Dim destination = result(destinationIndex)
-                    destination.Translation.X = positionFrames(frameInBlock).X
-                    destination.Translation.Y = positionFrames(frameInBlock).Y
-                    destination.Translation.Z = positionFrames(frameInBlock).Z
-                    destination.Rotation.X = rotationFrames(frameInBlock).X
-                    destination.Rotation.Y = rotationFrames(frameInBlock).Y
-                    destination.Rotation.Z = rotationFrames(frameInBlock).Z
-                    destination.Rotation.W = rotationFrames(frameInBlock).W
-                    destination.Scale.X = scaleFrames(frameInBlock).X
-                    destination.Scale.Y = scaleFrames(frameInBlock).Y
-                    destination.Scale.Z = scaleFrames(frameInBlock).Z
-                    destination.TranslationXAnimated = mask.GetPositionType(0) <> HkxSplineTrackValueType_Enum.Identity
-                    destination.TranslationYAnimated = mask.GetPositionType(1) <> HkxSplineTrackValueType_Enum.Identity
-                    destination.TranslationZAnimated = mask.GetPositionType(2) <> HkxSplineTrackValueType_Enum.Identity
-                    destination.RotationAnimated = rotationType <> HkxSplineTrackValueType_Enum.Identity
-                    destination.ScaleXAnimated = mask.GetScaleType(0) <> HkxSplineTrackValueType_Enum.Identity
-                    destination.ScaleYAnimated = mask.GetScaleType(1) <> HkxSplineTrackValueType_Enum.Identity
-                    destination.ScaleZAnimated = mask.GetScaleType(2) <> HkxSplineTrackValueType_Enum.Identity
+                    Dim pf = positionFrames(frameInBlock)
+                    Dim rf = rotationFrames(frameInBlock)
+                    Dim sf = scaleFrames(frameInBlock)
+                    destino.TrackTransforms(destinationIndex) = New Single() {pf.X, pf.Y, pf.Z, 0.0F,
+                                                                             rf.X, rf.Y, rf.Z, rf.W,
+                                                                             sf.X, sf.Y, sf.Z, 0.0F}
+                    destino.TrackMask(destinationIndex) = msk
                 Next
             Next
         Next
+    End Sub
 
-        Return result
-    End Function
+    Private Shared Function CreateVector3FrameArray(count As Integer, x As Single, y As Single, z As Single) As Vector3()
+        If count <= 0 Then Return Array.Empty(Of Vector3)()
 
-    Private Shared Function CreateIdentityAnimationTransform() As HkxAnimationTransformGraph_Class
-        Return New HkxAnimationTransformGraph_Class With {
-            .Translation = New HkxVector4Graph_Class With {.X = 0.0F, .Y = 0.0F, .Z = 0.0F, .W = 0.0F},
-            .Rotation = New HkxQuaternionGraph_Class With {.X = 0.0F, .Y = 0.0F, .Z = 0.0F, .W = 1.0F},
-            .Scale = New HkxVector4Graph_Class With {.X = 1.0F, .Y = 1.0F, .Z = 1.0F, .W = 0.0F}
-        }
-    End Function
-
-    Private Shared Function CreateVector3FrameArray(count As Integer, x As Single, y As Single, z As Single) As HkxVector3Frame_Struct()
-        If count <= 0 Then Return Array.Empty(Of HkxVector3Frame_Struct)()
-
-        Dim result(count - 1) As HkxVector3Frame_Struct
+        Dim result(count - 1) As Vector3
         For index = 0 To result.Length - 1
             result(index).X = x
             result(index).Y = y
@@ -600,10 +529,10 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    Private Shared Function CreateQuaternionFrameArray(count As Integer, x As Single, y As Single, z As Single, w As Single) As HkxQuaternionFrame_Struct()
-        If count <= 0 Then Return Array.Empty(Of HkxQuaternionFrame_Struct)()
+    Private Shared Function CreateQuaternionFrameArray(count As Integer, x As Single, y As Single, z As Single, w As Single) As Quaternion()
+        If count <= 0 Then Return Array.Empty(Of Quaternion)()
 
-        Dim result(count - 1) As HkxQuaternionFrame_Struct
+        Dim result(count - 1) As Quaternion
         For index = 0 To result.Length - 1
             result(index).X = x
             result(index).Y = y
@@ -639,7 +568,7 @@ Public Partial Class HkxObjectGraph_Class
         Return minimum + ((maximum - minimum) * (CSng(value) / 65535.0F))
     End Function
 
-    Private Shared Function ReadQuaternion(format As Integer, data As Byte(), offset As Integer, available As Integer, ByRef consumed As Integer) As HkxQuaternionFrame_Struct
+    Private Shared Function ReadQuaternion(format As Integer, data As Byte(), offset As Integer, available As Integer, ByRef consumed As Integer) As Quaternion
         Select Case format
             Case 0
                 consumed = 4
@@ -659,7 +588,7 @@ Public Partial Class HkxObjectGraph_Class
         End Select
     End Function
 
-    Private Shared Function Read32BitQuaternion(data As Byte(), offset As Integer, available As Integer) As HkxQuaternionFrame_Struct
+    Private Shared Function Read32BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 4, "32-bit quaternion")
 
         Dim compressed = BitConverter.ToUInt32(data, offset)
@@ -676,7 +605,7 @@ Public Partial Class HkxObjectGraph_Class
         End If
 
         Dim magnitude = MathF.Sqrt(Math.Max(0.0F, 1.0F - (radius * radius)))
-        Dim result As New HkxQuaternionFrame_Struct With {
+        Dim result As New Quaternion With {
             .X = MathF.Sin(phi) * MathF.Cos(theta) * magnitude,
             .Y = MathF.Sin(phi) * MathF.Sin(theta) * magnitude,
             .Z = MathF.Cos(phi) * magnitude,
@@ -693,7 +622,7 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    Private Shared Function Read40BitQuaternion(data As Byte(), offset As Integer, available As Integer) As HkxQuaternionFrame_Struct
+    Private Shared Function Read40BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 5, "40-bit quaternion")
 
         Const Fractal As Single = 0.000345436F
@@ -714,23 +643,23 @@ Public Partial Class HkxObjectGraph_Class
         If ((raw >> 38) And 1UL) <> 0UL Then w = -w
 
         Dim shift = CInt((raw >> 36) And 3UL)
-        Dim result As New HkxQuaternionFrame_Struct
+        Dim result As New Quaternion
         Select Case shift
             Case 0
-                result = New HkxQuaternionFrame_Struct With {.X = w, .Y = x, .Z = y, .W = z}
+                result = New Quaternion With {.X = w, .Y = x, .Z = y, .W = z}
             Case 1
-                result = New HkxQuaternionFrame_Struct With {.X = x, .Y = w, .Z = y, .W = z}
+                result = New Quaternion With {.X = x, .Y = w, .Z = y, .W = z}
             Case 2
-                result = New HkxQuaternionFrame_Struct With {.X = x, .Y = y, .Z = w, .W = z}
+                result = New Quaternion With {.X = x, .Y = y, .Z = w, .W = z}
             Case Else
-                result = New HkxQuaternionFrame_Struct With {.X = x, .Y = y, .Z = z, .W = w}
+                result = New Quaternion With {.X = x, .Y = y, .Z = z, .W = w}
         End Select
 
         NormalizeQuaternion(result)
         Return result
     End Function
 
-    Private Shared Function Read48BitQuaternion(data As Byte(), offset As Integer, available As Integer) As HkxQuaternionFrame_Struct
+    Private Shared Function Read48BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 6, "48-bit quaternion")
 
         Const Fractal As Single = 0.000043161F
@@ -748,26 +677,26 @@ Public Partial Class HkxObjectGraph_Class
         Dim w = MathF.Sqrt(Math.Max(0.0F, 1.0F - ((x * x) + (y * y) + (z * z))))
         If radiusNegative Then w = -w
 
-        Dim result As New HkxQuaternionFrame_Struct
+        Dim result As New Quaternion
         Select Case shift
             Case 0
-                result = New HkxQuaternionFrame_Struct With {.X = w, .Y = x, .Z = y, .W = z}
+                result = New Quaternion With {.X = w, .Y = x, .Z = y, .W = z}
             Case 1
-                result = New HkxQuaternionFrame_Struct With {.X = x, .Y = w, .Z = y, .W = z}
+                result = New Quaternion With {.X = x, .Y = w, .Z = y, .W = z}
             Case 2
-                result = New HkxQuaternionFrame_Struct With {.X = x, .Y = y, .Z = w, .W = z}
+                result = New Quaternion With {.X = x, .Y = y, .Z = w, .W = z}
             Case Else
-                result = New HkxQuaternionFrame_Struct With {.X = x, .Y = y, .Z = z, .W = w}
+                result = New Quaternion With {.X = x, .Y = y, .Z = z, .W = w}
         End Select
 
         NormalizeQuaternion(result)
         Return result
     End Function
 
-    Private Shared Function ReadUncompressedQuaternion(data As Byte(), offset As Integer, available As Integer) As HkxQuaternionFrame_Struct
+    Private Shared Function ReadUncompressedQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 16, "Uncompressed quaternion")
 
-        Dim result As New HkxQuaternionFrame_Struct With {
+        Dim result As New Quaternion With {
             .X = BitConverter.ToSingle(data, offset),
             .Y = BitConverter.ToSingle(data, offset + 4),
             .Z = BitConverter.ToSingle(data, offset + 8),
@@ -778,7 +707,11 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    Private Shared Sub NormalizeQuaternion(ByRef value As HkxQuaternionFrame_Struct)
+    ' ⛔ POR QUE ESTO NO ES `Quaternion.Normalize`. La de la BCL divide por la magnitud sin
+    ' mirar: con un cuaternion de magnitud ~0 devuelve NaN y el NaN se propaga por toda la
+    ' pose. Esta devuelve la IDENTIDAD en ese caso. No son la misma funcion, y la diferencia
+    ' esta justo en el caso degenerado que un clip comprimido puede traer.
+    Private Shared Sub NormalizeQuaternion(ByRef value As Quaternion)
         Dim magnitude = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z) + (value.W * value.W))
         If magnitude < 1.0E-10F Then
             value.X = 0.0F
@@ -884,8 +817,8 @@ Public Partial Class HkxObjectGraph_Class
                                                   degree As Integer,
                                                   time As Single,
                                                   knots As List(Of Single),
-                                                  controlPoints As List(Of HkxQuaternionFrame_Struct)) As HkxQuaternionFrame_Struct
-        If controlPoints.Count = 0 Then Return New HkxQuaternionFrame_Struct With {.W = 1.0F}
+                                                  controlPoints As List(Of Quaternion)) As Quaternion
+        If controlPoints.Count = 0 Then Return Quaternion.Identity
         If controlPoints.Count = 1 Then Return controlPoints(0)
 
         Dim basis(degree) As Single
@@ -901,7 +834,7 @@ Public Partial Class HkxObjectGraph_Class
             Next
         Next
 
-        Dim result As New HkxQuaternionFrame_Struct
+        Dim result As New Quaternion
         For degreeIndex = 0 To degree
             Dim controlPointIndex = knotSpan - degreeIndex
             If controlPointIndex < 0 OrElse controlPointIndex >= controlPoints.Count Then Continue For
@@ -915,18 +848,9 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    Private Shared Function DotQuaternion(left As HkxQuaternionFrame_Struct, right As HkxQuaternionFrame_Struct) As Single
-        Return (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z) + (left.W * right.W)
-    End Function
 
-    Private Shared Sub NegateQuaternion(ByRef value As HkxQuaternionFrame_Struct)
-        value.X = -value.X
-        value.Y = -value.Y
-        value.Z = -value.Z
-        value.W = -value.W
-    End Sub
 
-    Private Shared Sub SetVectorAxis(ByRef value As HkxVector3Frame_Struct, axis As Integer, component As Single)
+    Private Shared Sub SetVectorAxis(ByRef value As Vector3, axis As Integer, component As Single)
         Select Case axis
             Case 0
                 value.X = component
@@ -936,65 +860,289 @@ Public Partial Class HkxObjectGraph_Class
                 value.Z = component
         End Select
     End Sub
-End Class
+    ''' <summary>
+    ''' ── DESCOMPRESION LOSSLESS — venia de `HkxLosslessAnimationGraphParser.vb`, que se borro.
+    ''' Eran las dos mitades de lo MISMO (descomprimir una animacion) repartidas en dos archivos,
+    ''' y el unico miembro publico del segundo tenia CERO llamadores fuera del primero.
+    ''' </summary>
 
-Public Class HkaAnimationBindingGraph_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property OriginalSkeletonName As String
-    Public Property AnimationObject As HkxVirtualObjectGraph_Class
-    Public ReadOnly Property TransformTrackToBoneIndices As New List(Of Short)
-    Public Property BlendHint As Integer
-End Class
+    Private Enum LosslessTrackType_Enum
+        Identity = 0
+        StaticVal = 1
+        Dynamic = 2
+    End Enum
 
-Public Class HkxAnimationTransformGraph_Class
-    Public Property Translation As HkxVector4Graph_Class
-    Public Property Rotation As HkxQuaternionGraph_Class
-    Public Property Scale As HkxVector4Graph_Class
-    Public Property TranslationXAnimated As Boolean
-    Public Property TranslationYAnimated As Boolean
-    Public Property TranslationZAnimated As Boolean
-    Public Property RotationAnimated As Boolean
-    Public Property ScaleXAnimated As Boolean
-    Public Property ScaleYAnimated As Boolean
-    Public Property ScaleZAnimated As Boolean
+    ' Memoiza esqueletos parseados por RelativeOffset del origen, para que ParseSkeletonMapper no
+    ' re-parsee el mismo esqueleto completo una vez por mapper. Es equivalente porque ParseSkeleton
+    ' es función pura de su objeto de origen.
+    Private ReadOnly _parsedSkeletonCache As New Dictionary(Of Integer, Havok.Canon.Objects.HkObj_HkaSkeleton)
 
-    Public ReadOnly Property HasAnyMissingComponent As Boolean
+    Private Function ParseSkeletonMemoized(source As HkxVirtualObjectGraph_Class) As Havok.Canon.Objects.HkObj_HkaSkeleton
+        If IsNothing(source) Then Return Nothing
+        Dim cached As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
+        If _parsedSkeletonCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
+        Dim parsed = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, source)
+        _parsedSkeletonCache(source.RelativeOffset) = parsed
+        Return parsed
+    End Function
+
+    ' hkArray slot size dentro del objeto (ptr + count(4) + capFlags(4)) = ArrayHeaderSizeValue.
+    Private ReadOnly Property LosslessArraysBaseOffset As Integer
         Get
-            Return TranslationXAnimated = False OrElse
-                   TranslationYAnimated = False OrElse
-                   TranslationZAnimated = False OrElse
-                   RotationAnimated = False OrElse
-                   ScaleXAnimated = False OrElse
-                   ScaleYAnimated = False OrElse
-                   ScaleZAnimated = False
+            ' = annotationTracksOffset + ArrayHeaderSizeValue (mismo cálculo de base que el parser spline).
+            Dim baseField = BaseObjectFieldOffset
+            Dim extractedMotionOffset = baseField + 16
+            Dim annotationTracksOffset = extractedMotionOffset + PointerSizeValue
+            Return annotationTracksOffset + ArrayHeaderSizeValue
         End Get
     End Property
+
+    ''' <summary>Decodifica un hkaLosslessCompressedAnimation a TRS por (frame, track).</summary>
+    Public Function ParseLosslessAnimation(source As HkxVirtualObjectGraph_Class) As HkxAnimacionDescomprimida_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkaLosslessCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+
+        ' ⛔⛔ TODO EL HEADER, DEL LECTOR GENERADO. Antes los once campos salian de ARITMETICA
+        ' sobre dos constantes de la app (`BaseObjectFieldOffset`, `LosslessArraysBaseOffset`) mas el
+        ' tamano de la cabecera de array: `rel + l + 7 * ahs`. Eso no es leer el archivo, es derivarlo
+        ' — y una derivacion se rompe callada si el layout cambia entre juegos. La reflexion los
+        ' declara por nombre:
+        '     hkaAnimation{ duration +0x14 . numberOfTransformTracks +0x18 . numberOfFloatTracks +0x1C
+        '                   annotationTracks +0x28 }
+        '     hkaLosslessCompressedAnimation{ dynamicTranslations +0x38 . staticTranslations +0x48 .
+        '        translationTypeAndOffsets +0x58 . dynamicRotations +0x68 . staticRotations +0x78 .
+        '        rotationTypeAndOffsets +0x88 . dynamicScales +0x98 . staticScales +0xA8 .
+        '        scaleTypeAndOffsets +0xB8 . floats +0xC8 . numFrames +0xD8 }
+        ' ⛔ TODO POR EL OBJETO. Antes esto sacaba NUEVE cabeceras de array del lector tipado y
+        ' despues las recorria a mano con el stride escrito aca (8 / 2 / 4 / 16). El objeto
+        ' materializa los nueve arrays con el layout de la reflexion.
+        Dim rel = source.RelativeOffset
+        Dim lo = Havok.Canon.Objects.HkObj_HkaLosslessCompressedAnimation.Read(Me, source)
+        If lo Is Nothing Then Return Nothing
+
+        Dim duration = lo.Duration
+        Dim numTransformTracks = lo.NumberOfTransformTracks
+        Dim numFloatTracks = lo.NumberOfFloatTracks
+        Dim numFrames = lo.NumFrames
+
+        If numFrames < 0 OrElse numTransformTracks < 0 Then
+            Throw New InvalidDataException($"hkaLosslessCompressedAnimation @0x{rel:X} has negative counts (numFrames={numFrames}, tracks={numTransformTracks}).")
+        End If
+        If CLng(numFrames) * CLng(numTransformTracks) > Integer.MaxValue Then
+            Throw New InvalidDataException($"hkaLosslessCompressedAnimation @0x{rel:X} transform table is too large.")
+        End If
+
+        Dim result As New HkxAnimacionDescomprimida_Class With {
+            .Animacion = Havok.Canon.Objects.HkObj_HkaAnimation.Read(Me, source),
+            .FrameDuration = If(numFrames > 0, duration / numFrames, 1.0F / 30.0F),
+            .NumFrames = numFrames
+        }
+
+        ' Nombres de hueso por track: el pose-import los usa para mapear track → hueso del NIF vivo.
+        ' ⛔ `annotationTracks` sale del lector generado; antes su offset se derivaba sumando
+        ' `baseField + 16 + PointerSizeValue`.
+
+        ' Leer las tablas type+offset (una entrada por track).
+        ' ⛔ LAS TABLAS type+offset, DEL OBJETO GENERADO. Cada `uint64` trae CUATRO uint16
+        ' empaquetados — uno por componente — y eso si es decodificacion: la reflexion declara el
+        ' array como `uint64`, no dice que adentro vengan cuatro.
+        Dim transType = DesempaquetarCuatro(lo.TranslationTypeAndOffsets, numTransformTracks)
+        Dim scaleType = DesempaquetarCuatro(lo.ScaleTypeAndOffsets, numTransformTracks)
+        Dim rotType = If(lo.RotationTypeAndOffsets, New List(Of Integer)()).Take(numTransformTracks).ToList()
+
+        ' Strides dinámicos por-frame = nº de componentes Dynamic sumados sobre todos los tracks.
+        Dim transStride = SumDynamicComponents(transType)
+        Dim scaleStride = SumDynamicComponents(scaleType)
+        Dim rotStride = 0
+        For Each rt In rotType
+            If (rt And 3) = LosslessTrackType_Enum.Dynamic Then rotStride += 1
+        Next
+
+        ' Decodificar todos los frames × tracks.
+        Dim totalTransforms = numFrames * numTransformTracks
+        For i = 0 To totalTransforms - 1
+            result.TrackTransforms.Add(Nothing)
+            result.TrackMask.Add(0)
+        Next
+
+        For frame = 0 To numFrames - 1
+            For track = 0 To numTransformTracks - 1
+                Dim tT = If(track < transType.Count, transType(track), New Integer() {0, 0, 0, 0})
+                Dim sT = If(track < scaleType.Count, scaleType(track), New Integer() {0, 0, 0, 0})
+                Dim rT = If(track < rotType.Count, rotType(track), 0)
+
+                Dim tx = ResolveScalar(tT(0), lo.StaticTranslations, lo.DynamicTranslations, 0.0F, transStride, frame)
+                Dim ty = ResolveScalar(tT(1), lo.StaticTranslations, lo.DynamicTranslations, 0.0F, transStride, frame)
+                Dim tz = ResolveScalar(tT(2), lo.StaticTranslations, lo.DynamicTranslations, 0.0F, transStride, frame)
+
+                Dim sx = ResolveScalar(sT(0), lo.StaticScales, lo.DynamicScales, 1.0F, scaleStride, frame)
+                Dim sy = ResolveScalar(sT(1), lo.StaticScales, lo.DynamicScales, 1.0F, scaleStride, frame)
+                Dim sz = ResolveScalar(sT(2), lo.StaticScales, lo.DynamicScales, 1.0F, scaleStride, frame)
+
+                Dim q = ResolveQuaternion(rT, lo.StaticRotations, lo.DynamicRotations, rotStride, frame)
+
+                Dim iPlano = (frame * numTransformTracks) + track
+                result.TrackTransforms(iPlano) = New Single() {tx, ty, tz, 0.0F, q(0), q(1), q(2), q(3), sx, sy, sz, 0.0F}
+                Dim msk = 0
+                If (tT(0) And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 1
+                If (tT(1) And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 2
+                If (tT(2) And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 4
+                If (rT And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 8
+                If (sT(0) And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 16
+                If (sT(1) And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 32
+                If (sT(2) And 3) <> LosslessTrackType_Enum.Identity Then msk = msk Or 64
+                result.TrackMask(iPlano) = msk
+            Next
+        Next
+
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' ⛔ EL DESEMPAQUETADO, QUE ES LO UNICO QUE LA REFLEXION NO DICE.
+    ''' `translationTypeAndOffsets` y `scaleTypeAndOffsets` son `array&lt;uint64&gt;`: la tabla
+    ''' declara el array y su tipo, pero no que cada elemento traiga CUATRO uint16 — uno por
+    ''' componente (x, y, z, w) — con los dos bits bajos como tipo y el resto como indice.
+    ''' </summary>
+    Private Shared Function DesempaquetarCuatro(tabla As List(Of Long), cuantos As Integer) As List(Of Integer())
+        Dim r As New List(Of Integer())
+        If tabla Is Nothing Then Return r
+        For i = 0 To Math.Min(cuantos, tabla.Count) - 1
+            Dim v = tabla(i)
+            r.Add(New Integer() {CInt(v And &HFFFFL), CInt((v >> 16) And &HFFFFL),
+                                 CInt((v >> 32) And &HFFFFL), CInt((v >> 48) And &HFFFFL)})
+        Next
+        Return r
+    End Function
+
+    ''' <summary>Un componente escalar: los dos bits bajos dicen si es identidad, estatico o
+    ''' por-frame, y el resto es el indice dentro de la lista que corresponda.</summary>
+    Private Shared Function ResolveScalar(indexType As Integer, estaticos As List(Of Single),
+                                          dinamicos As List(Of Single), identidad As Single,
+                                          stride As Integer, frame As Integer) As Single
+        Dim ttype = indexType And 3
+        Dim index = indexType >> 2
+        Select Case ttype
+            Case LosslessTrackType_Enum.StaticVal
+                If estaticos Is Nothing OrElse index < 0 OrElse index >= estaticos.Count Then Return identidad
+                Return estaticos(index)
+            Case LosslessTrackType_Enum.Dynamic
+                If dinamicos Is Nothing Then Return identidad
+                Dim k = index + (frame * stride)
+                If k < 0 OrElse k >= dinamicos.Count Then Return identidad
+                Return dinamicos(k)
+            Case Else
+                Return identidad
+        End Select
+    End Function
+
+    ''' <summary>Idem para el cuaternion, que el objeto entrega como `Single()` de cuatro.</summary>
+    Private Shared Function ResolveQuaternion(indexType As Integer, estaticos As List(Of Single()),
+                                              dinamicos As List(Of Single()), stride As Integer,
+                                              frame As Integer) As Single()
+        Dim identidad = New Single() {0.0F, 0.0F, 0.0F, 1.0F}
+        Dim ttype = indexType And 3
+        Dim index = indexType >> 2
+        Dim q As Single() = Nothing
+        Select Case ttype
+            Case LosslessTrackType_Enum.StaticVal
+                If estaticos IsNot Nothing AndAlso index >= 0 AndAlso index < estaticos.Count Then q = estaticos(index)
+            Case LosslessTrackType_Enum.Dynamic
+                If dinamicos IsNot Nothing Then
+                    Dim k = index + (frame * stride)
+                    If k >= 0 AndAlso k < dinamicos.Count Then q = dinamicos(k)
+                End If
+        End Select
+        If q Is Nothing OrElse q.Length < 4 Then Return identidad
+        Return q
+    End Function
+
+    Private Shared Function SumDynamicComponents(typeTable As List(Of Integer())) As Integer
+        Dim total = 0
+        For Each entry In typeTable
+            For c = 0 To 3
+                If (entry(c) And 3) = LosslessTrackType_Enum.Dynamic Then total += 1
+            Next
+        Next
+        Return total
+    End Function
+
+    Private Shared Function BoneName(bones As List(Of Havok.Canon.Objects.HkObj_HkaBone), index As Short) As String
+        If IsNothing(bones) OrElse index < 0 OrElse index >= bones.Count Then Return ""
+        Return bones(index).Name
+    End Function
+
+
 End Class
 
-Public Class HkaSplineCompressedAnimationGraph_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Duration As Single
-    Public Property FrameDuration As Single
+''' <summary>
+''' ⛔ UNA ANIMACION YA DESCOMPRIMIDA A FRAMES.
+'''
+''' <para>No es el calco de una clase: la alimentan DOS — `hkaSplineCompressedAnimation` y
+''' `hkaLosslessCompressedAnimation` — y lo que tienen en comun lo declara la base `hkaAnimation`,
+''' que viaja entera en <see cref="Animacion"/>. De ahi salen `duration`, `numberOfTransformTracks`,
+''' `numberOfFloatTracks` y `annotationTracks`, sin copiarlos.</para>
+'''
+''' <para>Los campos propios son los que NO salen de un solo campo declarado: `NumFrames` (lo
+''' declara cada clase concreta, no la base), `FrameDuration` (spline lo declara; lossless lo deriva
+''' de `duration / numFrames`), `NumBlocks` (spline; en lossless no existe) y los frames
+''' descomprimidos, que son todo el trabajo.</para>
+''' </summary>
+Public Class HkxAnimacionDescomprimida_Class
+    Public Property Animacion As Havok.Canon.Objects.HkObj_HkaAnimation
+    ''' <summary>`numFrames` de la clase concreta.</summary>
     Public Property NumFrames As Integer
-    Public Property NumTransformTracks As Integer
-    Public Property NumFloatTracks As Integer
+    ''' <summary>Spline lo declara; lossless lo deriva de `duration / numFrames`.</summary>
+    Public Property FrameDuration As Single
+    ''' <summary>`numBlocks` del spline. Cero cuando la fuente es lossless, que no los tiene.</summary>
     Public Property NumBlocks As Integer
-    Public Property MaxFramesPerBlock As Integer
-    Public Property MaskAndQuantizationSize As Integer
-    Public ReadOnly Property TrackNames As New List(Of String)
-    Public ReadOnly Property TrackTransforms As New List(Of HkxAnimationTransformGraph_Class)
-    Public Property Binding As HkaAnimationBindingGraph_Class
-    ' Esquema de compresión de origen del que se decodificó esta animación: "spline" (default,
-    ' hkaSplineCompressedAnimation) o "lossless" (hkaLosslessCompressedAnimation). El contenedor
-    ' es común porque ambos terminan en TrackTransforms = TRS por (frame, track).
-    Public Property SourceCompression As String = "spline"
+    ''' <summary>
+    ''' ⛔ LOS FRAMES DESCOMPRIMIDOS, EN LA FORMA CANONICA DEL `hkQsTransform`.
+    ''' <para>Doce floats por frame y por track: `translation 0..3 · rotation 4..7 · scale 8..11`.
+    ''' Es la MISMA forma que devuelve `hkaSkeleton.referencePose` y la que consume
+    ''' `HkxTransformConventionHelper`, asi que el frame de un clip y la pose de reposo se leen
+    ''' igual. Antes esto era un tipo a mano con `Translation`/`Rotation`/`Scale` por separado:
+    ''' una segunda forma del mismo dato.</para>
+    ''' <para>Indice: `frame * numTransformTracks + track`.</para>
+    ''' </summary>
+    Public ReadOnly Property TrackTransforms As New List(Of Single())
 
-    Public Function GetTransform(frameIndex As Integer, trackIndex As Integer) As HkxAnimationTransformGraph_Class
-        If frameIndex < 0 OrElse trackIndex < 0 OrElse NumTransformTracks <= 0 Then Return Nothing
-        If frameIndex >= NumFrames OrElse trackIndex >= NumTransformTracks Then Return Nothing
+    ''' <summary>Que componentes ANIMA el clip en ese frame, en bits:
+    ''' `1 TX · 2 TY · 4 TZ · 8 R · 16 SX · 32 SY · 64 SZ`. Los que no estan animados hay que
+    ''' tomarlos del reposo del rig, no del frame. Mismo indice que `TrackTransforms`.</summary>
+    Public ReadOnly Property TrackMask As New List(Of Integer)
+    Public Property Binding As Havok.Canon.Objects.HkObj_HkaAnimationBinding
 
-        Dim flatIndex = (frameIndex * NumTransformTracks) + trackIndex
-        If flatIndex < 0 OrElse flatIndex >= TrackTransforms.Count Then Return Nothing
-        Return TrackTransforms(flatIndex)
+    ''' <summary>`hkaAnimation.annotationTracks[i].trackName`. Los dos parsers lo leian con un
+    ''' stride escrito a mano; el objeto generado lo declara.</summary>
+    Public ReadOnly Property TrackNames As List(Of String)
+        Get
+            Dim r As New List(Of String)
+            If Animacion Is Nothing OrElse Animacion.AnnotationTracks Is Nothing Then Return r
+            For Each t In Animacion.AnnotationTracks
+                r.Add(If(t?.TrackName, ""))
+            Next
+            Return r
+        End Get
+    End Property
+
+    ''' <summary>El `hkQsTransform` de un frame y un track: doce floats, o Nothing.</summary>
+    Public Function GetTransform(frameIndex As Integer, trackIndex As Integer) As Single()
+        Dim i = IndicePlano(frameIndex, trackIndex)
+        If i < 0 OrElse i >= TrackTransforms.Count Then Return Nothing
+        Return TrackTransforms(i)
+    End Function
+
+    ''' <summary>La mascara de componentes animados de ese frame y track. Cero si no hay.</summary>
+    Public Function GetMask(frameIndex As Integer, trackIndex As Integer) As Integer
+        Dim i = IndicePlano(frameIndex, trackIndex)
+        If i < 0 OrElse i >= TrackMask.Count Then Return 0
+        Return TrackMask(i)
+    End Function
+
+    Private Function IndicePlano(frameIndex As Integer, trackIndex As Integer) As Integer
+        Dim nT = If(Animacion Is Nothing, 0, Animacion.NumberOfTransformTracks)
+        If frameIndex < 0 OrElse trackIndex < 0 OrElse nT <= 0 Then Return -1
+        If frameIndex >= NumFrames OrElse trackIndex >= nT Then Return -1
+        Return (frameIndex * nT) + trackIndex
     End Function
 End Class

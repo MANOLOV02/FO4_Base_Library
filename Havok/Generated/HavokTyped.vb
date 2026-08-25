@@ -1,6 +1,6 @@
 ﻿' ================================================================================================
 '  GENERADO POR Tools/HavokLayoutGen/gentyped.py - NO EDITAR A MANO.
-'  Generado: 2026-08-23   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
+'  Generado: 2026-08-25   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
 '
 '  Un lector tipado por clase, con UNA sola API para los dos juegos: el offset sale de un
 '  Integer() elegido una vez al construir, segun lo que el packfile DECLARA. Ver el
@@ -61,8 +61,12 @@ Namespace Havok.Canon.Typed
         ''' Una comparacion de String ahi son millones de comparaciones en un barrido.</para>
         ''' </summary>
         Friend Function TablaDe(g As HkxObjectGraph_Class, offFo4 As Integer(), offSse As Integer()) As Integer()
-            If g Is Nothing OrElse g.Packfile Is Nothing OrElse g.Packfile.Header Is Nothing Then Return Nothing
-            Select Case g.Packfile.Header.PackfileFormat
+            ' ⛔ EL FORMATO LO DECLARA EL GRAFO, NO LA CABECERA. Mirando `Packfile.Header` el lector
+            ' no podia leer la CABECERA: para elegir tabla necesitaba la cabecera ya parseada. El
+            ' grafo de arranque trae el formato derivado de fileVersion+pointerSize, dos campos que
+            ' las dos tablas declaran en el MISMO offset (0xC y 0x10), asi que se leen sin elegir.
+            If g Is Nothing Then Return Nothing
+            Select Case g.Formato
                 Case HkxPackfileFormat_Enum.Fallout64
                     Return offFo4
                 Case HkxPackfileFormat_Enum.Skyrim64
