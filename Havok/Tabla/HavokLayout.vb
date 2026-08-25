@@ -117,7 +117,7 @@ Namespace Havok.Canon
             End Get
         End Property
 
-        Private Sub New(tag As String, sha As String, stamp As String, rows As String())
+        Private Sub New(tag As String, sha As String, stamp As String, rows As String(), enums As String())
             _Tag = tag
             _SourceSha256 = sha
             _SourceStamp = stamp
@@ -125,6 +125,21 @@ Namespace Havok.Canon
             For Each row In rows
                 Dim parsed = ParseRow(row)
                 If parsed IsNot Nothing Then _classes(parsed.Name) = parsed
+            Next
+
+            ' clase|enum|nombre=valor,nombre=valor,...
+            _enums = New Dictionary(Of String, IReadOnlyDictionary(Of String, Integer))(StringComparer.OrdinalIgnoreCase)
+            For Each row In enums
+                Dim p = row.Split("|"c)
+                If p.Length <> 3 Then Continue For
+                Dim items As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+                For Each it In p(2).Split(","c)
+                    Dim eq = it.LastIndexOf("="c)
+                    If eq <= 0 Then Continue For
+                    Dim v As Integer
+                    If Integer.TryParse(it.Substring(eq + 1), v) Then items(it.Substring(0, eq)) = v
+                Next
+                If items.Count > 0 Then _enums(p(0) & "|" & p(1)) = items
             Next
         End Sub
 
@@ -183,6 +198,51 @@ Namespace Havok.Canon
             End While
             Return False
         End Function
+
+        Private ReadOnly _enums As Dictionary(Of String, IReadOnlyDictionary(Of String, Integer))
+
+        ''' <summary>
+        ''' ⛔⛔ LOS ENUMS QUE LA REFLEXION DECLARA. MISMA FUENTE QUE LOS OFFSETS.
+        ''' <para>El ctor de `hkClass` pasa `declaredEnums` en `[rsp+0x30]` y `numDeclaredEnums` en
+        ''' `[rsp+0x38]`, al lado de los miembros. El generador los ignoraba, asi que cosas como
+        ''' `hkaSplineCompressedAnimationTrackCompressionParams.RotationQuantization`
+        ''' (`POLAR32=0 . THREECOMP40=1 . THREECOMP48=2 . THREECOMP24=3 . STRAIGHT16=4 .
+        ''' UNCOMPRESSED=5`) se escribian a mano sin poder citarlas. Ahora salen del binario.</para>
+        ''' </summary>
+        Public Function EnumValues(className As String, enumName As String) As IReadOnlyDictionary(Of String, Integer)
+            If String.IsNullOrEmpty(className) OrElse String.IsNullOrEmpty(enumName) Then Return Nothing
+            Dim r As IReadOnlyDictionary(Of String, Integer) = Nothing
+            If _enums.TryGetValue(className & "|" & enumName, r) Then Return r
+            Return Nothing
+        End Function
+
+        ''' <summary>El valor de un item, o -1 si la clase, el enum o el item no existen.</summary>
+        Public Function EnumValue(className As String, enumName As String, itemName As String) As Integer
+            Dim e = EnumValues(className, enumName)
+            If e Is Nothing OrElse String.IsNullOrEmpty(itemName) Then Return -1
+            Dim v As Integer
+            If e.TryGetValue(itemName, v) Then Return v
+            Return -1
+        End Function
+
+        ''' <summary>Como `EnumValue`, pero TIRA si no esta: para las leyes que no pueden
+        ''' degradar en silencio a un valor por defecto.</summary>
+        Public Function RequireEnumValue(className As String, enumName As String, itemName As String) As Integer
+            Dim v = EnumValue(className, enumName, itemName)
+            If v < 0 Then
+                Throw New KeyNotFoundException(
+                    $"La tabla de {Tag} no declara {className}.{enumName}.{itemName}. Regenerar con " &
+                    "Tools/HavokLayoutGen/gen.py y correr Tools/HavokLayoutGate.")
+            End If
+            Return v
+        End Function
+
+        ''' <summary>Cuantos enums trae la tabla. Cero = el generador no los emitio.</summary>
+        Public ReadOnly Property EnumCount As Integer
+            Get
+                Return _enums.Count
+            End Get
+        End Property
 
         Public Function HasClass(className As String) As Boolean
             Return Not String.IsNullOrEmpty(className) AndAlso _classes.ContainsKey(className)
@@ -365,13 +425,15 @@ Namespace Havok.Canon
             Function() New HavokLayout("FO4",
                                        HavokLayoutData_FO4.SourceSha256,
                                        HavokLayoutData_FO4.SourceStamp,
-                                       HavokLayoutData_FO4.Rows))
+                                       HavokLayoutData_FO4.Rows,
+                                       HavokLayoutData_FO4.Enums))
 
         Private Shared ReadOnly _sse As New Lazy(Of HavokLayout)(
             Function() New HavokLayout("SSE",
                                        HavokLayoutData_SSE.SourceSha256,
                                        HavokLayoutData_SSE.SourceStamp,
-                                       HavokLayoutData_SSE.Rows))
+                                       HavokLayoutData_SSE.Rows,
+                                       HavokLayoutData_SSE.Enums))
 
         ''' <summary>Tabla de Fallout 4 (hk2014 x64).</summary>
         Public Shared ReadOnly Property FO4 As HavokLayout

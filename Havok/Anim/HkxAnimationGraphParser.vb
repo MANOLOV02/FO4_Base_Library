@@ -249,6 +249,10 @@ Public Partial Class HkxObjectGraph_Class
                 masks(trackIndex).PosFlags = blob(offset + 1)
                 masks(trackIndex).RotFlags = blob(offset + 2)
                 masks(trackIndex).ScaleFlags = blob(offset + 3)
+                Contar(destino.RotQuantUsados, CInt(masks(trackIndex).RotQuant))
+                Contar(destino.PosQuantUsados, CInt(masks(trackIndex).PosQuant))
+                Contar(destino.ScaleQuantUsados, CInt(masks(trackIndex).ScaleQuant))
+                Contar(destino.MascaraCruda, CInt(packedMask))
                 offset += 4
             Next
 
@@ -553,6 +557,13 @@ Public Partial Class HkxObjectGraph_Class
         End If
     End Sub
 
+    ''' <summary>Un voto mas para ese valor de cuantizacion.</summary>
+    Private Shared Sub Contar(d As Dictionary(Of Integer, Integer), v As Integer)
+        Dim n = 0
+        d.TryGetValue(v, n)
+        d(v) = n + 1
+    End Sub
+
     Private Shared Function AlignValue(offset As Integer, alignment As Integer) As Integer
         If alignment <= 1 Then Return offset
         Dim remainder = offset Mod alignment
@@ -568,24 +579,183 @@ Public Partial Class HkxObjectGraph_Class
         Return minimum + ((maximum - minimum) * (CSng(value) / 65535.0F))
     End Function
 
-    Private Shared Function ReadQuaternion(format As Integer, data As Byte(), offset As Integer, available As Integer, ByRef consumed As Integer) As Quaternion
-        Select Case format
-            Case 0
-                consumed = 4
-                Return Read32BitQuaternion(data, offset, available)
-            Case 1
-                consumed = 5
-                Return Read40BitQuaternion(data, offset, available)
-            Case 2
-                consumed = 6
-                Return Read48BitQuaternion(data, offset, available)
-            Case 5
-                consumed = 16
-                Return ReadUncompressedQuaternion(data, offset, available)
-            Case Else
-                consumed = 5
-                Return Read40BitQuaternion(data, offset, available)
+    ''' <summary>
+    ''' ⛔⛔ LOS FORMATOS DE ROTACION SALEN DE LA REFLEXION, NO DE NUMEROS SUELTOS.
+    ''' <para>`hkaSplineCompressedAnimationTrackCompressionParams` declara el enum
+    ''' `RotationQuantization`, y el ctor de `hkClass` lo pasa en `[rsp+0x30]` igual que a los
+    ''' miembros — solo que el generador no lo miraba. Los dos ejecutables declaran los MISMOS
+    ''' seis valores, y eso se comprueba aca abajo en vez de afirmarlo.</para>
+    ''' <para>Antes esto era `Case 0 / 1 / 2 / 5` sin decir que era cada numero.</para>
+    ''' </summary>
+    Private Shared ReadOnly RotQ As IReadOnlyDictionary(Of String, Integer) = CargarRotQ()
+
+    Private Shared Function CargarRotQ() As IReadOnlyDictionary(Of String, Integer)
+        Const C As String = "hkaSplineCompressedAnimationTrackCompressionParams"
+        Const E As String = "RotationQuantization"
+        Dim a = Havok.Canon.HavokLayout.FO4.EnumValues(C, E)
+        Dim b = Havok.Canon.HavokLayout.SSE.EnumValues(C, E)
+        If a Is Nothing Then
+            Throw New InvalidOperationException(
+                $"La tabla de FO4 no declara {C}.{E}. Regenerar con Tools/HavokLayoutGen/gen.py.")
+        End If
+        ' El codec es UNO SOLO para los dos juegos: si las tablas discrepan, el formato
+        ' cambio entre builds y hay que mirarlo, no elegir una.
+        If b IsNot Nothing Then
+            For Each kv In a
+                Dim v As Integer
+                If Not b.TryGetValue(kv.Key, v) OrElse v <> kv.Value Then
+                    Throw New InvalidOperationException(
+                        $"FO4 y SSE declaran {C}.{E}.{kv.Key} distinto: el codec asume que coinciden.")
+                End If
+            Next
+        End If
+        Return a
+    End Function
+
+    ''' <summary>Cuantos bytes ocupa cada formato en el flujo. NO lo declara la reflexion:
+    ''' el enum dice QUE formatos hay, no cuanto miden. Los cuatro anchos salen del propio
+    ''' nombre (32/40/48 bits, y UNCOMPRESSED = cuatro floats).</summary>
+    Private Shared Function AnchoDe(nombre As String) As Integer
+        Select Case nombre
+            Case "POLAR32" : Return 4
+            Case "THREECOMP40" : Return 5
+            Case "THREECOMP48" : Return 6
+            Case "THREECOMP24" : Return 3      ' `add qword ptr [rdi], 3` en 0x1419B3E1F
+            Case "STRAIGHT16" : Return 2       ' `add qword ptr [rdi], 2` en 0x1419B3F99
+            Case "UNCOMPRESSED" : Return 16
+            Case Else : Return 0
         End Select
+    End Function
+
+    Private Shared Function ReadQuaternion(format As Integer, data As Byte(), offset As Integer, available As Integer, ByRef consumed As Integer) As Quaternion
+        ' ⛔ EL HUECO, NOMBRADO. El binario declara SEIS formatos y aca se leen CUATRO:
+        ' `THREECOMP24` (3) y `STRAIGHT16` (4) estan declarados y no tienen lector. Antes
+        ' caian en un `Case Else` mudo que los leia como THREECOMP40 — o sea, basura
+        ' silenciosa. Ahora se dice cual es y se sigue leyendo como antes, que es el
+        ' comportamiento medido; si algun dia el corpus trae uno, el log lo va a decir.
+        If format = RotQ("POLAR32") Then
+            consumed = AnchoDe("POLAR32")
+            Return Read32BitQuaternion(data, offset, available)
+        ElseIf format = RotQ("THREECOMP40") Then
+            consumed = AnchoDe("THREECOMP40")
+            Return Read40BitQuaternion(data, offset, available)
+        ElseIf format = RotQ("THREECOMP48") Then
+            consumed = AnchoDe("THREECOMP48")
+            Return Read48BitQuaternion(data, offset, available)
+        ElseIf format = RotQ("THREECOMP24") Then
+            consumed = AnchoDe("THREECOMP24")
+            Return Read24BitQuaternion(data, offset, available)
+        ElseIf format = RotQ("STRAIGHT16") Then
+            consumed = AnchoDe("STRAIGHT16")
+            Return Read16BitQuaternion(data, offset, available)
+        ElseIf format = RotQ("UNCOMPRESSED") Then
+            consumed = AnchoDe("UNCOMPRESSED")
+            Return ReadUncompressedQuaternion(data, offset, available)
+        End If
+
+        If Logger.Enabled Then
+            Dim nombre = RotQ.FirstOrDefault(Function(kv) kv.Value = format).Key
+            Logger.LogLazy(Function() $"[ANIM-ROTQ] formato {format} ({If(nombre, "no declarado")}) sin lector: se lee como THREECOMP40")
+        End If
+        consumed = AnchoDe("THREECOMP40")
+        Return Read40BitQuaternion(data, offset, available)
+    End Function
+
+    ''' <summary>
+    ''' ⛔⛔ THREECOMP24 — TRES COMPONENTES DE 7 BITS EN 3 BYTES. Leido de `Fallout4.exe`:
+    ''' el lector estatico es `0x141A474D0`, al que llega `0x1419B3CF0` desde el caso 3 de la
+    ''' tabla de saltos `0x1419B1D3C` del descompresor `0x1419B1780`.
+    ''' <para>Lo que hace el binario, instruccion por instruccion:</para>
+    ''' <list type="bullet">
+    ''' <item>`and ecx,0x7F` sobre cada uno de los tres bytes: tres componentes de 7 bits.</item>
+    ''' <item>`or r11d, b0>>1` con `b1 And &amp;H80`, luego `shr r11d,6`: dos bits que dicen
+    ''' QUE componente NO viene — el mayor, que se reconstruye.</item>
+    ''' <item>El buffer se pre-carga con `[63,63,63,63]` (`movdqa` de `0x3F,0x3F,0x3F,0x3F`)
+    ''' y los tres valores se escriben SALTEANDO ese carril; asi el que falta queda en 63 y
+    ''' da cero al restar el sesgo.</item>
+    ''' <item>`cvtdq2ps` / `subps` con 63.0 / `mulps` con `0.0112239169` — el paso de
+    ''' cuantizacion, que es 1/89,0955. (En la MISMA tabla del motor esta `2894,89526`,
+    ''' cuyo reciproco es `0.000345436`: el numero que este archivo ya usaba para
+    ''' THREECOMP40 sin poder citarlo.)</item>
+    ''' <item>`subps` de 1, `rsqrtps` y `cmpleps` contra cero: el componente que falta es
+    ''' `sqrt(1 - suma)`, y CERO si la suma pasa de 1 (el `andnps` lo anula). El signo sale
+    ''' del bit 7 del tercer byte (`test r9b,r9b` / `jns`).</item>
+    ''' </list>
+    ''' </summary>
+    Private Shared Function Read24BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+        EnsureBlobReadable(data, offset, 3, "24-bit quaternion")
+
+        Dim b0 = CInt(data(offset))
+        Dim b1 = CInt(data(offset + 1))
+        Dim b2 = CInt(data(offset + 2))
+
+        ' El carril que NO viene: `((b1 And &H80) Or (b0 >> 1)) >> 6`, o sea el bit 7 de b1 y el
+        ' bit 7 de b0 en ese orden.
+        Dim faltante = (((b1 And &H80) Or (b0 >> 1)) >> 6) And 3
+
+        ' Los cuatro carriles arrancan en el sesgo; los tres presentes lo pisan salteando el que falta.
+        Dim carril() As Integer = {63, 63, 63, 63}
+        Dim comps() As Integer = {b0 And &H7F, b1 And &H7F, b2 And &H7F}
+        Dim k = 0
+        For i = 0 To 3
+            If i = faltante Then Continue For
+            carril(i) = comps(k)
+            k += 1
+        Next
+
+        Const Paso24 As Single = 0.0112239169F
+        Dim v(3) As Single
+        Dim suma = 0.0F
+        For i = 0 To 3
+            v(i) = (CSng(carril(i)) - 63.0F) * Paso24
+            suma += v(i) * v(i)
+        Next
+
+        ' `subps` de 1 y `cmpleps` contra cero: si la suma pasa de 1, el que falta es CERO.
+        Dim resto = 1.0F - suma
+        Dim w = If(resto <= 0.0F, 0.0F, MathF.Sqrt(resto))
+        If (b2 And &H80) <> 0 Then w = -w
+        v(faltante) = w
+
+        Dim result As New Quaternion With {.X = v(0), .Y = v(1), .Z = v(2), .W = v(3)}
+        NormalizeQuaternion(result)
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' ⛔⛔ STRAIGHT16 — CUATRO COMPONENTES DE 4 BITS EN 2 BYTES. Leido de `Fallout4.exe`:
+    ''' el lector estatico es `0x141A47430`, al que llega `0x1419B3E60` desde el caso 4 de la
+    ''' tabla `0x1419B1D3C`.
+    ''' <para>A diferencia de los THREECOMP, aca NO hay componente reconstruido: vienen los
+    ''' cuatro. El binario extrae `b0 And &amp;HF`, `b0 >> 4`, `b1 And &amp;HF`, `b1 >> 4` y los
+    ''' entrelaza con dos `punpckldq` en ese orden (x, y, z, w). Despues `subps` con
+    ''' `[7,7,7,7]` y `mulps` con `[0.142857149,…]`, que es 1/7 — o sea `(v - 7) / 7`.</para>
+    ''' <para>El motor cierra con una vuelta de Newton-Raphson sobre `rsqrtps`
+    ''' (`0.5*r*(3 - len2*r*r)`), que es normalizar aproximando. Aca se usa
+    ''' `NormalizeQuaternion`, que normaliza EXACTO y ademas cubre el caso de magnitud ~0
+    ''' (los cuatro carriles en 7) donde el `rsqrtps` del motor daria infinito.</para>
+    ''' <para>El lector avanza DOS bytes y lee desde un origen alineado a 2
+    ''' (`and rcx, &amp;HFFFFFFFFFFFFFFFE`).</para>
+    ''' </summary>
+    Private Shared Function Read16BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+        ' El origen se alinea a 2, como hace `0x1419B3F85`.
+        Dim o = offset And Not 1
+        EnsureBlobReadable(data, o, 2, "16-bit quaternion")
+
+        Dim b0 = CInt(data(o))
+        Dim b1 = CInt(data(o + 1))
+        Dim carril() As Integer = {b0 And &HF, b0 >> 4, b1 And &HF, b1 >> 4}
+
+        Const Sesgo16 As Single = 7.0F
+        Const Paso16 As Single = 0.142857149F
+        Dim result As New Quaternion With {
+            .X = (CSng(carril(0)) - Sesgo16) * Paso16,
+            .Y = (CSng(carril(1)) - Sesgo16) * Paso16,
+            .Z = (CSng(carril(2)) - Sesgo16) * Paso16,
+            .W = (CSng(carril(3)) - Sesgo16) * Paso16
+        }
+        NormalizeQuaternion(result)
+        Return result
     End Function
 
     Private Shared Function Read32BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
@@ -1110,6 +1280,20 @@ Public Class HkxAnimacionDescomprimida_Class
     ''' `1 TX · 2 TY · 4 TZ · 8 R · 16 SX · 32 SY · 64 SZ`. Los que no estan animados hay que
     ''' tomarlos del reposo del rig, no del frame. Mismo indice que `TrackTransforms`.</summary>
     Public ReadOnly Property TrackMask As New List(Of Integer)
+
+    ''' <summary>Que valores de `RotationQuantization` usa este clip, y cuantos tracks-bloque
+    ''' con cada uno. Sale del nibble `(packedMask >> 2) And &HF` de la mascara por track.
+    ''' El binario declara SEIS (POLAR32..UNCOMPRESSED); esto dice cuales trae el archivo.</summary>
+    Public ReadOnly Property RotQuantUsados As New Dictionary(Of Integer, Integer)
+
+    ''' <summary>Idem para `ScalarQuantization` de posicion y escala (2 bits cada uno).</summary>
+    Public ReadOnly Property PosQuantUsados As New Dictionary(Of Integer, Integer)
+    Public ReadOnly Property ScaleQuantUsados As New Dictionary(Of Integer, Integer)
+
+    ''' <summary>El BYTE CRUDO de la mascara por track, tal cual lo trae el bloque. Se guarda
+    ''' entero a proposito: cuantos bits ocupa cada campo adentro es lo que hay que MEDIR, y
+    ''' partirlo antes de medirlo seria presuponer la respuesta.</summary>
+    Public ReadOnly Property MascaraCruda As New Dictionary(Of Integer, Integer)
     Public Property Binding As Havok.Canon.Objects.HkObj_HkaAnimationBinding
 
     ''' <summary>`hkaAnimation.annotationTracks[i].trackName`. Los dos parsers lo leian con un
