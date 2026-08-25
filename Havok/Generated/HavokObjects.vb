@@ -1,6 +1,6 @@
 ﻿' ================================================================================================
 '  GENERADO POR Tools/HavokLayoutGen/genobjects.py - NO EDITAR A MANO.
-'  Generado: 2026-08-24
+'  Generado: 2026-08-25
 '
 '  LOS OBJETOS HAVOK QUE CONSUME LA APLICACION. Reemplazan a los parsers escritos a mano:
 '  devuelven listas y sub-objetos ya armados, se materializan perezosamente y se cachean.
@@ -5345,7 +5345,7 @@ Namespace Havok.Canon.Objects
                 If _statedata_c Is Nothing Then
                     _statedata_c = New List(Of HkObj_BSIStateManagerModifierBSiStateData)()
                     For i = 0 To _r.[StateDataCount] - 1
-                        Dim o = HkObj_BSIStateManagerModifierBSiStateData.ReadAt(_g, _r.[StateDataItem](i))
+                        Dim o = HkObj_BSIStateManagerModifierBSiStateData.ReadAt(_g, _r.[StateDataItemOffset](i))
                         If o IsNot Nothing Then _statedata_c.Add(o)
                     Next
                 End If
@@ -7188,7 +7188,7 @@ Namespace Havok.Canon.Objects
                 If _bones_c Is Nothing Then
                     _bones_c = New List(Of HkObj_BSLookAtModifierBoneData)()
                     For i = 0 To _r.[BonesCount] - 1
-                        Dim o = HkObj_BSLookAtModifierBoneData.ReadAt(_g, _r.[BonesItem](i))
+                        Dim o = HkObj_BSLookAtModifierBoneData.ReadAt(_g, _r.[BonesItemOffset](i))
                         If o IsNot Nothing Then _bones_c.Add(o)
                     Next
                 End If
@@ -7204,7 +7204,7 @@ Namespace Havok.Canon.Objects
                 If _eyebones_c Is Nothing Then
                     _eyebones_c = New List(Of HkObj_BSLookAtModifierBoneData)()
                     For i = 0 To _r.[EyeBonesCount] - 1
-                        Dim o = HkObj_BSLookAtModifierBoneData.ReadAt(_g, _r.[EyeBonesItem](i))
+                        Dim o = HkObj_BSLookAtModifierBoneData.ReadAt(_g, _r.[EyeBonesItemOffset](i))
                         If o IsNot Nothing Then _eyebones_c.Add(o)
                     Next
                 End If
@@ -12114,7 +12114,7 @@ Namespace Havok.Canon.Objects
                 If _perparticledata_c Is Nothing Then
                     _perparticledata_c = New List(Of HkObj_HclAntiPinchConstraintSetPerParticle)()
                     For i = 0 To _r.[PerParticleDataCount] - 1
-                        Dim o = HkObj_HclAntiPinchConstraintSetPerParticle.ReadAt(_g, _r.[PerParticleDataItem](i))
+                        Dim o = HkObj_HclAntiPinchConstraintSetPerParticle.ReadAt(_g, _r.[PerParticleDataItemOffset](i))
                         If o IsNot Nothing Then _perparticledata_c.Add(o)
                     Next
                 End If
@@ -12307,7 +12307,7 @@ Namespace Havok.Canon.Objects
                 If _links_c Is Nothing Then
                     _links_c = New List(Of HkObj_HclBendLinkConstraintSetLink)()
                     For i = 0 To _r.[LinksCount] - 1
-                        Dim o = HkObj_HclBendLinkConstraintSetLink.ReadAt(_g, _r.[LinksItem](i))
+                        Dim o = HkObj_HclBendLinkConstraintSetLink.ReadAt(_g, _r.[LinksItemOffset](i))
                         If o IsNot Nothing Then _links_c.Add(o)
                     Next
                 End If
@@ -12500,7 +12500,7 @@ Namespace Havok.Canon.Objects
                 If _batches_c Is Nothing Then
                     _batches_c = New List(Of HkObj_HclBendLinkConstraintSetMxBatch)()
                     For i = 0 To _r.[BatchesCount] - 1
-                        Dim o = HkObj_HclBendLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItem](i))
+                        Dim o = HkObj_HclBendLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItemOffset](i))
                         If o IsNot Nothing Then _batches_c.Add(o)
                     Next
                 End If
@@ -12516,7 +12516,7 @@ Namespace Havok.Canon.Objects
                 If _singles_c Is Nothing Then
                     _singles_c = New List(Of HkObj_HclBendLinkConstraintSetMxSingle)()
                     For i = 0 To _r.[SinglesCount] - 1
-                        Dim o = HkObj_HclBendLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItem](i))
+                        Dim o = HkObj_HclBendLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItemOffset](i))
                         If o IsNot Nothing Then _singles_c.Add(o)
                     Next
                 End If
@@ -12885,7 +12885,7 @@ Namespace Havok.Canon.Objects
                 If _links_c Is Nothing Then
                     _links_c = New List(Of HkObj_HclBendStiffnessConstraintSetLink)()
                     For i = 0 To _r.[LinksCount] - 1
-                        Dim o = HkObj_HclBendStiffnessConstraintSetLink.ReadAt(_g, _r.[LinksItem](i))
+                        Dim o = HkObj_HclBendStiffnessConstraintSetLink.ReadAt(_g, _r.[LinksItemOffset](i))
                         If o IsNot Nothing Then _links_c.Add(o)
                     Next
                 End If
@@ -13123,7 +13123,7 @@ Namespace Havok.Canon.Objects
                 If _batches_c Is Nothing Then
                     _batches_c = New List(Of HkObj_HclBendStiffnessConstraintSetMxBatch)()
                     For i = 0 To _r.[BatchesCount] - 1
-                        Dim o = HkObj_HclBendStiffnessConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItem](i))
+                        Dim o = HkObj_HclBendStiffnessConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItemOffset](i))
                         If o IsNot Nothing Then _batches_c.Add(o)
                     Next
                 End If
@@ -13139,7 +13139,7 @@ Namespace Havok.Canon.Objects
                 If _singles_c Is Nothing Then
                     _singles_c = New List(Of HkObj_HclBendStiffnessConstraintSetMxSingle)()
                     For i = 0 To _r.[SinglesCount] - 1
-                        Dim o = HkObj_HclBendStiffnessConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItem](i))
+                        Dim o = HkObj_HclBendStiffnessConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItemOffset](i))
                         If o IsNot Nothing Then _singles_c.Add(o)
                     Next
                 End If
@@ -13655,7 +13655,7 @@ Namespace Havok.Canon.Objects
                 If _blendentries_c Is Nothing Then
                     _blendentries_c = New List(Of HkObj_HclBlendSomeVerticesOperatorBlendEntry)()
                     For i = 0 To _r.[BlendEntriesCount] - 1
-                        Dim o = HkObj_HclBlendSomeVerticesOperatorBlendEntry.ReadAt(_g, _r.[BlendEntriesItem](i))
+                        Dim o = HkObj_HclBlendSomeVerticesOperatorBlendEntry.ReadAt(_g, _r.[BlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _blendentries_c.Add(o)
                     Next
                 End If
@@ -13866,7 +13866,7 @@ Namespace Havok.Canon.Objects
                 If _boneplanes_c Is Nothing Then
                     _boneplanes_c = New List(Of HkObj_HclBonePlanesConstraintSetBonePlane)()
                     For i = 0 To _r.[BonePlanesCount] - 1
-                        Dim o = HkObj_HclBonePlanesConstraintSetBonePlane.ReadAt(_g, _r.[BonePlanesItem](i))
+                        Dim o = HkObj_HclBonePlanesConstraintSetBonePlane.ReadAt(_g, _r.[BonePlanesItemOffset](i))
                         If o IsNot Nothing Then _boneplanes_c.Add(o)
                     Next
                 End If
@@ -14019,7 +14019,7 @@ Namespace Havok.Canon.Objects
                 If _fourblendentries_c Is Nothing Then
                     _fourblendentries_c = New List(Of HkObj_HclBoneSpaceDeformerFourBlendEntryBlock)()
                     For i = 0 To _r.[FourBlendEntriesCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerFourBlendEntryBlock.ReadAt(_g, _r.[FourBlendEntriesItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerFourBlendEntryBlock.ReadAt(_g, _r.[FourBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _fourblendentries_c.Add(o)
                     Next
                 End If
@@ -14035,7 +14035,7 @@ Namespace Havok.Canon.Objects
                 If _threeblendentries_c Is Nothing Then
                     _threeblendentries_c = New List(Of HkObj_HclBoneSpaceDeformerThreeBlendEntryBlock)()
                     For i = 0 To _r.[ThreeBlendEntriesCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerThreeBlendEntryBlock.ReadAt(_g, _r.[ThreeBlendEntriesItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerThreeBlendEntryBlock.ReadAt(_g, _r.[ThreeBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _threeblendentries_c.Add(o)
                     Next
                 End If
@@ -14051,7 +14051,7 @@ Namespace Havok.Canon.Objects
                 If _twoblendentries_c Is Nothing Then
                     _twoblendentries_c = New List(Of HkObj_HclBoneSpaceDeformerTwoBlendEntryBlock)()
                     For i = 0 To _r.[TwoBlendEntriesCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerTwoBlendEntryBlock.ReadAt(_g, _r.[TwoBlendEntriesItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerTwoBlendEntryBlock.ReadAt(_g, _r.[TwoBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _twoblendentries_c.Add(o)
                     Next
                 End If
@@ -14067,7 +14067,7 @@ Namespace Havok.Canon.Objects
                 If _oneblendentries_c Is Nothing Then
                     _oneblendentries_c = New List(Of HkObj_HclBoneSpaceDeformerOneBlendEntryBlock)()
                     For i = 0 To _r.[OneBlendEntriesCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerOneBlendEntryBlock.ReadAt(_g, _r.[OneBlendEntriesItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerOneBlendEntryBlock.ReadAt(_g, _r.[OneBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _oneblendentries_c.Add(o)
                     Next
                 End If
@@ -15371,7 +15371,7 @@ Namespace Havok.Canon.Objects
                 If _localpns_c Is Nothing Then
                     _localpns_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockPN)()
                     For i = 0 To _r.[LocalPNsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItemOffset](i))
                         If o IsNot Nothing Then _localpns_c.Add(o)
                     Next
                 End If
@@ -15387,7 +15387,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpns_c Is Nothing Then
                     _localunpackedpns_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPN)()
                     For i = 0 To _r.[LocalUnpackedPNsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpns_c.Add(o)
                     Next
                 End If
@@ -15534,7 +15534,7 @@ Namespace Havok.Canon.Objects
                 If _localpntbs_c Is Nothing Then
                     _localpntbs_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockPNTB)()
                     For i = 0 To _r.[LocalPNTBsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localpntbs_c.Add(o)
                     Next
                 End If
@@ -15550,7 +15550,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpntbs_c Is Nothing Then
                     _localunpackedpntbs_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNTB)()
                     For i = 0 To _r.[LocalUnpackedPNTBsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpntbs_c.Add(o)
                     Next
                 End If
@@ -15697,7 +15697,7 @@ Namespace Havok.Canon.Objects
                 If _localpnts_c Is Nothing Then
                     _localpnts_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockPNT)()
                     For i = 0 To _r.[LocalPNTsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItemOffset](i))
                         If o IsNot Nothing Then _localpnts_c.Add(o)
                     Next
                 End If
@@ -15713,7 +15713,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpnts_c Is Nothing Then
                     _localunpackedpnts_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNT)()
                     For i = 0 To _r.[LocalUnpackedPNTsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpnts_c.Add(o)
                     Next
                 End If
@@ -15860,7 +15860,7 @@ Namespace Havok.Canon.Objects
                 If _localps_c Is Nothing Then
                     _localps_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockP)()
                     For i = 0 To _r.[LocalPsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItemOffset](i))
                         If o IsNot Nothing Then _localps_c.Add(o)
                     Next
                 End If
@@ -15876,7 +15876,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedps_c Is Nothing Then
                     _localunpackedps_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedP)()
                     For i = 0 To _r.[LocalUnpackedPsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedps_c.Add(o)
                     Next
                 End If
@@ -16136,7 +16136,7 @@ Namespace Havok.Canon.Objects
                 If _localpns_c Is Nothing Then
                     _localpns_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockPN)()
                     For i = 0 To _r.[LocalPNsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItemOffset](i))
                         If o IsNot Nothing Then _localpns_c.Add(o)
                     Next
                 End If
@@ -16152,7 +16152,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpns_c Is Nothing Then
                     _localunpackedpns_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPN)()
                     For i = 0 To _r.[LocalUnpackedPNsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpns_c.Add(o)
                     Next
                 End If
@@ -16290,7 +16290,7 @@ Namespace Havok.Canon.Objects
                 If _localpntbs_c Is Nothing Then
                     _localpntbs_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockPNTB)()
                     For i = 0 To _r.[LocalPNTBsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localpntbs_c.Add(o)
                     Next
                 End If
@@ -16306,7 +16306,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpntbs_c Is Nothing Then
                     _localunpackedpntbs_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNTB)()
                     For i = 0 To _r.[LocalUnpackedPNTBsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpntbs_c.Add(o)
                     Next
                 End If
@@ -16444,7 +16444,7 @@ Namespace Havok.Canon.Objects
                 If _localpnts_c Is Nothing Then
                     _localpnts_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockPNT)()
                     For i = 0 To _r.[LocalPNTsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItemOffset](i))
                         If o IsNot Nothing Then _localpnts_c.Add(o)
                     Next
                 End If
@@ -16460,7 +16460,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpnts_c Is Nothing Then
                     _localunpackedpnts_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNT)()
                     For i = 0 To _r.[LocalUnpackedPNTsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpnts_c.Add(o)
                     Next
                 End If
@@ -16598,7 +16598,7 @@ Namespace Havok.Canon.Objects
                 If _localps_c Is Nothing Then
                     _localps_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockP)()
                     For i = 0 To _r.[LocalPsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItemOffset](i))
                         If o IsNot Nothing Then _localps_c.Add(o)
                     Next
                 End If
@@ -16614,7 +16614,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedps_c Is Nothing Then
                     _localunpackedps_c = New List(Of HkObj_HclBoneSpaceDeformerLocalBlockUnpackedP)()
                     For i = 0 To _r.[LocalUnpackedPsCount] - 1
-                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItem](i))
+                        Dim o = HkObj_HclBoneSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedps_c.Add(o)
                     Next
                 End If
@@ -17477,7 +17477,7 @@ Namespace Havok.Canon.Objects
                 If _usedbuffers_c Is Nothing Then
                     _usedbuffers_c = New List(Of HkObj_HclClothStateBufferAccess)()
                     For i = 0 To _r.[UsedBuffersCount] - 1
-                        Dim o = HkObj_HclClothStateBufferAccess.ReadAt(_g, _r.[UsedBuffersItem](i))
+                        Dim o = HkObj_HclClothStateBufferAccess.ReadAt(_g, _r.[UsedBuffersItemOffset](i))
                         If o IsNot Nothing Then _usedbuffers_c.Add(o)
                     Next
                 End If
@@ -17493,7 +17493,7 @@ Namespace Havok.Canon.Objects
                 If _usedtransformsets_c Is Nothing Then
                     _usedtransformsets_c = New List(Of HkObj_HclClothStateTransformSetAccess)()
                     For i = 0 To _r.[UsedTransformSetsCount] - 1
-                        Dim o = HkObj_HclClothStateTransformSetAccess.ReadAt(_g, _r.[UsedTransformSetsItem](i))
+                        Dim o = HkObj_HclClothStateTransformSetAccess.ReadAt(_g, _r.[UsedTransformSetsItemOffset](i))
                         If o IsNot Nothing Then _usedtransformsets_c.Add(o)
                     Next
                 End If
@@ -17884,7 +17884,7 @@ Namespace Havok.Canon.Objects
                 If _links_c Is Nothing Then
                     _links_c = New List(Of HkObj_HclCompressibleLinkConstraintSetLink)()
                     For i = 0 To _r.[LinksCount] - 1
-                        Dim o = HkObj_HclCompressibleLinkConstraintSetLink.ReadAt(_g, _r.[LinksItem](i))
+                        Dim o = HkObj_HclCompressibleLinkConstraintSetLink.ReadAt(_g, _r.[LinksItemOffset](i))
                         If o IsNot Nothing Then _links_c.Add(o)
                     Next
                 End If
@@ -18068,7 +18068,7 @@ Namespace Havok.Canon.Objects
                 If _batches_c Is Nothing Then
                     _batches_c = New List(Of HkObj_HclCompressibleLinkConstraintSetMxBatch)()
                     For i = 0 To _r.[BatchesCount] - 1
-                        Dim o = HkObj_HclCompressibleLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItem](i))
+                        Dim o = HkObj_HclCompressibleLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItemOffset](i))
                         If o IsNot Nothing Then _batches_c.Add(o)
                     Next
                 End If
@@ -18084,7 +18084,7 @@ Namespace Havok.Canon.Objects
                 If _singles_c Is Nothing Then
                     _singles_c = New List(Of HkObj_HclCompressibleLinkConstraintSetMxSingle)()
                     For i = 0 To _r.[SinglesCount] - 1
-                        Dim o = HkObj_HclCompressibleLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItem](i))
+                        Dim o = HkObj_HclCompressibleLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItemOffset](i))
                         If o IsNot Nothing Then _singles_c.Add(o)
                     Next
                 End If
@@ -19175,7 +19175,7 @@ Namespace Havok.Canon.Objects
                 If _vertexpairs_c Is Nothing Then
                     _vertexpairs_c = New List(Of HkObj_HclGatherSomeVerticesOperatorVertexPair)()
                     For i = 0 To _r.[VertexPairsCount] - 1
-                        Dim o = HkObj_HclGatherSomeVerticesOperatorVertexPair.ReadAt(_g, _r.[VertexPairsItem](i))
+                        Dim o = HkObj_HclGatherSomeVerticesOperatorVertexPair.ReadAt(_g, _r.[VertexPairsItemOffset](i))
                         If o IsNot Nothing Then _vertexpairs_c.Add(o)
                     Next
                 End If
@@ -19463,7 +19463,7 @@ Namespace Havok.Canon.Objects
                 If _localconstraints_c Is Nothing Then
                     _localconstraints_c = New List(Of HkObj_HclLocalRangeConstraintSetLocalConstraint)()
                     For i = 0 To _r.[LocalConstraintsCount] - 1
-                        Dim o = HkObj_HclLocalRangeConstraintSetLocalConstraint.ReadAt(_g, _r.[LocalConstraintsItem](i))
+                        Dim o = HkObj_HclLocalRangeConstraintSetLocalConstraint.ReadAt(_g, _r.[LocalConstraintsItemOffset](i))
                         If o IsNot Nothing Then _localconstraints_c.Add(o)
                     Next
                 End If
@@ -19701,7 +19701,7 @@ Namespace Havok.Canon.Objects
                 If _trianglebonepairs_c Is Nothing Then
                     _trianglebonepairs_c = New List(Of HkObj_HclMeshBoneDeformOperatorTriangleBonePair)()
                     For i = 0 To _r.[TriangleBonePairsCount] - 1
-                        Dim o = HkObj_HclMeshBoneDeformOperatorTriangleBonePair.ReadAt(_g, _r.[TriangleBonePairsItem](i))
+                        Dim o = HkObj_HclMeshBoneDeformOperatorTriangleBonePair.ReadAt(_g, _r.[TriangleBonePairsItemOffset](i))
                         If o IsNot Nothing Then _trianglebonepairs_c.Add(o)
                     Next
                 End If
@@ -19903,7 +19903,7 @@ Namespace Havok.Canon.Objects
                 If _trianglevertexpairs_c Is Nothing Then
                     _trianglevertexpairs_c = New List(Of HkObj_HclMeshMeshDeformOperatorTriangleVertexPair)()
                     For i = 0 To _r.[TriangleVertexPairsCount] - 1
-                        Dim o = HkObj_HclMeshMeshDeformOperatorTriangleVertexPair.ReadAt(_g, _r.[TriangleVertexPairsItem](i))
+                        Dim o = HkObj_HclMeshMeshDeformOperatorTriangleVertexPair.ReadAt(_g, _r.[TriangleVertexPairsItemOffset](i))
                         If o IsNot Nothing Then _trianglevertexpairs_c.Add(o)
                     Next
                 End If
@@ -20159,7 +20159,7 @@ Namespace Havok.Canon.Objects
                 If _vertexparticlepairs_c Is Nothing Then
                     _vertexparticlepairs_c = New List(Of HkObj_HclMoveParticlesOperatorVertexParticlePair)()
                     For i = 0 To _r.[VertexParticlePairsCount] - 1
-                        Dim o = HkObj_HclMoveParticlesOperatorVertexParticlePair.ReadAt(_g, _r.[VertexParticlePairsItem](i))
+                        Dim o = HkObj_HclMoveParticlesOperatorVertexParticlePair.ReadAt(_g, _r.[VertexParticlePairsItemOffset](i))
                         If o IsNot Nothing Then _vertexparticlepairs_c.Add(o)
                     Next
                 End If
@@ -20303,7 +20303,7 @@ Namespace Havok.Canon.Objects
                 If _fourblendentries_c Is Nothing Then
                     _fourblendentries_c = New List(Of HkObj_HclObjectSpaceDeformerFourBlendEntryBlock)()
                     For i = 0 To _r.[FourBlendEntriesCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerFourBlendEntryBlock.ReadAt(_g, _r.[FourBlendEntriesItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerFourBlendEntryBlock.ReadAt(_g, _r.[FourBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _fourblendentries_c.Add(o)
                     Next
                 End If
@@ -20319,7 +20319,7 @@ Namespace Havok.Canon.Objects
                 If _threeblendentries_c Is Nothing Then
                     _threeblendentries_c = New List(Of HkObj_HclObjectSpaceDeformerThreeBlendEntryBlock)()
                     For i = 0 To _r.[ThreeBlendEntriesCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerThreeBlendEntryBlock.ReadAt(_g, _r.[ThreeBlendEntriesItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerThreeBlendEntryBlock.ReadAt(_g, _r.[ThreeBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _threeblendentries_c.Add(o)
                     Next
                 End If
@@ -20335,7 +20335,7 @@ Namespace Havok.Canon.Objects
                 If _twoblendentries_c Is Nothing Then
                     _twoblendentries_c = New List(Of HkObj_HclObjectSpaceDeformerTwoBlendEntryBlock)()
                     For i = 0 To _r.[TwoBlendEntriesCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerTwoBlendEntryBlock.ReadAt(_g, _r.[TwoBlendEntriesItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerTwoBlendEntryBlock.ReadAt(_g, _r.[TwoBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _twoblendentries_c.Add(o)
                     Next
                 End If
@@ -20351,7 +20351,7 @@ Namespace Havok.Canon.Objects
                 If _oneblendentries_c Is Nothing Then
                     _oneblendentries_c = New List(Of HkObj_HclObjectSpaceDeformerOneBlendEntryBlock)()
                     For i = 0 To _r.[OneBlendEntriesCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerOneBlendEntryBlock.ReadAt(_g, _r.[OneBlendEntriesItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerOneBlendEntryBlock.ReadAt(_g, _r.[OneBlendEntriesItemOffset](i))
                         If o IsNot Nothing Then _oneblendentries_c.Add(o)
                     Next
                 End If
@@ -21703,7 +21703,7 @@ Namespace Havok.Canon.Objects
                 If _localpns_c Is Nothing Then
                     _localpns_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockPN)()
                     For i = 0 To _r.[LocalPNsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItemOffset](i))
                         If o IsNot Nothing Then _localpns_c.Add(o)
                     Next
                 End If
@@ -21719,7 +21719,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpns_c Is Nothing Then
                     _localunpackedpns_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPN)()
                     For i = 0 To _r.[LocalUnpackedPNsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpns_c.Add(o)
                     Next
                 End If
@@ -21883,7 +21883,7 @@ Namespace Havok.Canon.Objects
                 If _localpntbs_c Is Nothing Then
                     _localpntbs_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockPNTB)()
                     For i = 0 To _r.[LocalPNTBsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localpntbs_c.Add(o)
                     Next
                 End If
@@ -21899,7 +21899,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpntbs_c Is Nothing Then
                     _localunpackedpntbs_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNTB)()
                     For i = 0 To _r.[LocalUnpackedPNTBsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpntbs_c.Add(o)
                     Next
                 End If
@@ -22063,7 +22063,7 @@ Namespace Havok.Canon.Objects
                 If _localpnts_c Is Nothing Then
                     _localpnts_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockPNT)()
                     For i = 0 To _r.[LocalPNTsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItemOffset](i))
                         If o IsNot Nothing Then _localpnts_c.Add(o)
                     Next
                 End If
@@ -22079,7 +22079,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpnts_c Is Nothing Then
                     _localunpackedpnts_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNT)()
                     For i = 0 To _r.[LocalUnpackedPNTsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpnts_c.Add(o)
                     Next
                 End If
@@ -22243,7 +22243,7 @@ Namespace Havok.Canon.Objects
                 If _localps_c Is Nothing Then
                     _localps_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockP)()
                     For i = 0 To _r.[LocalPsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItemOffset](i))
                         If o IsNot Nothing Then _localps_c.Add(o)
                     Next
                 End If
@@ -22259,7 +22259,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedps_c Is Nothing Then
                     _localunpackedps_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedP)()
                     For i = 0 To _r.[LocalUnpackedPsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedps_c.Add(o)
                     Next
                 End If
@@ -22553,7 +22553,7 @@ Namespace Havok.Canon.Objects
                 If _localpns_c Is Nothing Then
                     _localpns_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockPN)()
                     For i = 0 To _r.[LocalPNsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPN.ReadAt(_g, _r.[LocalPNsItemOffset](i))
                         If o IsNot Nothing Then _localpns_c.Add(o)
                     Next
                 End If
@@ -22569,7 +22569,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpns_c Is Nothing Then
                     _localunpackedpns_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPN)()
                     For i = 0 To _r.[LocalUnpackedPNsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPN.ReadAt(_g, _r.[LocalUnpackedPNsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpns_c.Add(o)
                     Next
                 End If
@@ -22724,7 +22724,7 @@ Namespace Havok.Canon.Objects
                 If _localpntbs_c Is Nothing Then
                     _localpntbs_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockPNTB)()
                     For i = 0 To _r.[LocalPNTBsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNTB.ReadAt(_g, _r.[LocalPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localpntbs_c.Add(o)
                     Next
                 End If
@@ -22740,7 +22740,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpntbs_c Is Nothing Then
                     _localunpackedpntbs_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNTB)()
                     For i = 0 To _r.[LocalUnpackedPNTBsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNTB.ReadAt(_g, _r.[LocalUnpackedPNTBsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpntbs_c.Add(o)
                     Next
                 End If
@@ -22895,7 +22895,7 @@ Namespace Havok.Canon.Objects
                 If _localpnts_c Is Nothing Then
                     _localpnts_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockPNT)()
                     For i = 0 To _r.[LocalPNTsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockPNT.ReadAt(_g, _r.[LocalPNTsItemOffset](i))
                         If o IsNot Nothing Then _localpnts_c.Add(o)
                     Next
                 End If
@@ -22911,7 +22911,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedpnts_c Is Nothing Then
                     _localunpackedpnts_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNT)()
                     For i = 0 To _r.[LocalUnpackedPNTsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedPNT.ReadAt(_g, _r.[LocalUnpackedPNTsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedpnts_c.Add(o)
                     Next
                 End If
@@ -23066,7 +23066,7 @@ Namespace Havok.Canon.Objects
                 If _localps_c Is Nothing Then
                     _localps_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockP)()
                     For i = 0 To _r.[LocalPsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockP.ReadAt(_g, _r.[LocalPsItemOffset](i))
                         If o IsNot Nothing Then _localps_c.Add(o)
                     Next
                 End If
@@ -23082,7 +23082,7 @@ Namespace Havok.Canon.Objects
                 If _localunpackedps_c Is Nothing Then
                     _localunpackedps_c = New List(Of HkObj_HclObjectSpaceDeformerLocalBlockUnpackedP)()
                     For i = 0 To _r.[LocalUnpackedPsCount] - 1
-                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItem](i))
+                        Dim o = HkObj_HclObjectSpaceDeformerLocalBlockUnpackedP.ReadAt(_g, _r.[LocalUnpackedPsItemOffset](i))
                         If o IsNot Nothing Then _localunpackedps_c.Add(o)
                     Next
                 End If
@@ -24033,7 +24033,7 @@ Namespace Havok.Canon.Objects
                 If _particledatas_c Is Nothing Then
                     _particledatas_c = New List(Of HkObj_HclSimClothDataParticleData)()
                     For i = 0 To _r.[ParticleDatasCount] - 1
-                        Dim o = HkObj_HclSimClothDataParticleData.ReadAt(_g, _r.[ParticleDatasItem](i))
+                        Dim o = HkObj_HclSimClothDataParticleData.ReadAt(_g, _r.[ParticleDatasItemOffset](i))
                         If o IsNot Nothing Then _particledatas_c.Add(o)
                     Next
                 End If
@@ -24237,7 +24237,7 @@ Namespace Havok.Canon.Objects
                 If _collidablepinchingdatas_c Is Nothing Then
                     _collidablepinchingdatas_c = New List(Of HkObj_HclSimClothDataCollidablePinchingData)()
                     For i = 0 To _r.[CollidablePinchingDatasCount] - 1
-                        Dim o = HkObj_HclSimClothDataCollidablePinchingData.ReadAt(_g, _r.[CollidablePinchingDatasItem](i))
+                        Dim o = HkObj_HclSimClothDataCollidablePinchingData.ReadAt(_g, _r.[CollidablePinchingDatasItemOffset](i))
                         If o IsNot Nothing Then _collidablepinchingdatas_c.Add(o)
                     Next
                 End If
@@ -25113,7 +25113,7 @@ Namespace Havok.Canon.Objects
                 If _trianglebonepairs_c Is Nothing Then
                     _trianglebonepairs_c = New List(Of HkObj_HclSimpleMeshBoneDeformOperatorTriangleBonePair)()
                     For i = 0 To _r.[TriangleBonePairsCount] - 1
-                        Dim o = HkObj_HclSimpleMeshBoneDeformOperatorTriangleBonePair.ReadAt(_g, _r.[TriangleBonePairsItem](i))
+                        Dim o = HkObj_HclSimpleMeshBoneDeformOperatorTriangleBonePair.ReadAt(_g, _r.[TriangleBonePairsItemOffset](i))
                         If o IsNot Nothing Then _trianglebonepairs_c.Add(o)
                     Next
                 End If
@@ -25536,7 +25536,7 @@ Namespace Havok.Canon.Objects
                 If _boneinfluences_c Is Nothing Then
                     _boneinfluences_c = New List(Of HkObj_HclSkinOperatorBoneInfluence)()
                     For i = 0 To _r.[BoneInfluencesCount] - 1
-                        Dim o = HkObj_HclSkinOperatorBoneInfluence.ReadAt(_g, _r.[BoneInfluencesItem](i))
+                        Dim o = HkObj_HclSkinOperatorBoneInfluence.ReadAt(_g, _r.[BoneInfluencesItemOffset](i))
                         If o IsNot Nothing Then _boneinfluences_c.Add(o)
                     Next
                 End If
@@ -25927,7 +25927,7 @@ Namespace Havok.Canon.Objects
                 If _links_c Is Nothing Then
                     _links_c = New List(Of HkObj_HclStandardLinkConstraintSetLink)()
                     For i = 0 To _r.[LinksCount] - 1
-                        Dim o = HkObj_HclStandardLinkConstraintSetLink.ReadAt(_g, _r.[LinksItem](i))
+                        Dim o = HkObj_HclStandardLinkConstraintSetLink.ReadAt(_g, _r.[LinksItemOffset](i))
                         If o IsNot Nothing Then _links_c.Add(o)
                     Next
                 End If
@@ -26102,7 +26102,7 @@ Namespace Havok.Canon.Objects
                 If _batches_c Is Nothing Then
                     _batches_c = New List(Of HkObj_HclStandardLinkConstraintSetMxBatch)()
                     For i = 0 To _r.[BatchesCount] - 1
-                        Dim o = HkObj_HclStandardLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItem](i))
+                        Dim o = HkObj_HclStandardLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItemOffset](i))
                         If o IsNot Nothing Then _batches_c.Add(o)
                     Next
                 End If
@@ -26118,7 +26118,7 @@ Namespace Havok.Canon.Objects
                 If _singles_c Is Nothing Then
                     _singles_c = New List(Of HkObj_HclStandardLinkConstraintSetMxSingle)()
                     For i = 0 To _r.[SinglesCount] - 1
-                        Dim o = HkObj_HclStandardLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItem](i))
+                        Dim o = HkObj_HclStandardLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItemOffset](i))
                         If o IsNot Nothing Then _singles_c.Add(o)
                     Next
                 End If
@@ -26617,7 +26617,7 @@ Namespace Havok.Canon.Objects
                 If _links_c Is Nothing Then
                     _links_c = New List(Of HkObj_HclStretchLinkConstraintSetLink)()
                     For i = 0 To _r.[LinksCount] - 1
-                        Dim o = HkObj_HclStretchLinkConstraintSetLink.ReadAt(_g, _r.[LinksItem](i))
+                        Dim o = HkObj_HclStretchLinkConstraintSetLink.ReadAt(_g, _r.[LinksItemOffset](i))
                         If o IsNot Nothing Then _links_c.Add(o)
                     Next
                 End If
@@ -26792,7 +26792,7 @@ Namespace Havok.Canon.Objects
                 If _batches_c Is Nothing Then
                     _batches_c = New List(Of HkObj_HclStretchLinkConstraintSetMxBatch)()
                     For i = 0 To _r.[BatchesCount] - 1
-                        Dim o = HkObj_HclStretchLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItem](i))
+                        Dim o = HkObj_HclStretchLinkConstraintSetMxBatch.ReadAt(_g, _r.[BatchesItemOffset](i))
                         If o IsNot Nothing Then _batches_c.Add(o)
                     Next
                 End If
@@ -26808,7 +26808,7 @@ Namespace Havok.Canon.Objects
                 If _singles_c Is Nothing Then
                     _singles_c = New List(Of HkObj_HclStretchLinkConstraintSetMxSingle)()
                     For i = 0 To _r.[SinglesCount] - 1
-                        Dim o = HkObj_HclStretchLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItem](i))
+                        Dim o = HkObj_HclStretchLinkConstraintSetMxSingle.ReadAt(_g, _r.[SinglesItemOffset](i))
                         If o IsNot Nothing Then _singles_c.Add(o)
                     Next
                 End If
@@ -27353,7 +27353,7 @@ Namespace Havok.Canon.Objects
                 If _percomponenttransformtrackers_c Is Nothing Then
                     _percomponenttransformtrackers_c = New List(Of HkObj_HclTransformSetUsageTransformTracker)()
                     For i = 0 To _r.[PerComponentTransformTrackersCount] - 1
-                        Dim o = HkObj_HclTransformSetUsageTransformTracker.ReadAt(_g, _r.[PerComponentTransformTrackersItem](i))
+                        Dim o = HkObj_HclTransformSetUsageTransformTracker.ReadAt(_g, _r.[PerComponentTransformTrackersItemOffset](i))
                         If o IsNot Nothing Then _percomponenttransformtrackers_c.Add(o)
                     Next
                 End If
@@ -27519,7 +27519,7 @@ Namespace Havok.Canon.Objects
                 If _perparticledata_c Is Nothing Then
                     _perparticledata_c = New List(Of HkObj_HclTransitionConstraintSetPerParticle)()
                     For i = 0 To _r.[PerParticleDataCount] - 1
-                        Dim o = HkObj_HclTransitionConstraintSetPerParticle.ReadAt(_g, _r.[PerParticleDataItem](i))
+                        Dim o = HkObj_HclTransitionConstraintSetPerParticle.ReadAt(_g, _r.[PerParticleDataItemOffset](i))
                         If o IsNot Nothing Then _perparticledata_c.Add(o)
                     Next
                 End If
@@ -27978,7 +27978,7 @@ Namespace Havok.Canon.Objects
                 If _involvedtriangles_c Is Nothing Then
                     _involvedtriangles_c = New List(Of HkObj_HclUpdateSomeVertexFramesOperatorTriangle)()
                     For i = 0 To _r.[InvolvedTrianglesCount] - 1
-                        Dim o = HkObj_HclUpdateSomeVertexFramesOperatorTriangle.ReadAt(_g, _r.[InvolvedTrianglesItem](i))
+                        Dim o = HkObj_HclUpdateSomeVertexFramesOperatorTriangle.ReadAt(_g, _r.[InvolvedTrianglesItemOffset](i))
                         If o IsNot Nothing Then _involvedtriangles_c.Add(o)
                     Next
                 End If
@@ -28320,7 +28320,7 @@ Namespace Havok.Canon.Objects
                 If _framedatas_c Is Nothing Then
                     _framedatas_c = New List(Of HkObj_HclVolumeConstraintFrameData)()
                     For i = 0 To _r.[FrameDatasCount] - 1
-                        Dim o = HkObj_HclVolumeConstraintFrameData.ReadAt(_g, _r.[FrameDatasItem](i))
+                        Dim o = HkObj_HclVolumeConstraintFrameData.ReadAt(_g, _r.[FrameDatasItemOffset](i))
                         If o IsNot Nothing Then _framedatas_c.Add(o)
                     Next
                 End If
@@ -28336,7 +28336,7 @@ Namespace Havok.Canon.Objects
                 If _applydatas_c Is Nothing Then
                     _applydatas_c = New List(Of HkObj_HclVolumeConstraintApplyData)()
                     For i = 0 To _r.[ApplyDatasCount] - 1
-                        Dim o = HkObj_HclVolumeConstraintApplyData.ReadAt(_g, _r.[ApplyDatasItem](i))
+                        Dim o = HkObj_HclVolumeConstraintApplyData.ReadAt(_g, _r.[ApplyDatasItemOffset](i))
                         If o IsNot Nothing Then _applydatas_c.Add(o)
                     Next
                 End If
@@ -28575,7 +28575,7 @@ Namespace Havok.Canon.Objects
                 If _framebatchdatas_c Is Nothing Then
                     _framebatchdatas_c = New List(Of HkObj_HclVolumeConstraintMxFrameBatchData)()
                     For i = 0 To _r.[FrameBatchDatasCount] - 1
-                        Dim o = HkObj_HclVolumeConstraintMxFrameBatchData.ReadAt(_g, _r.[FrameBatchDatasItem](i))
+                        Dim o = HkObj_HclVolumeConstraintMxFrameBatchData.ReadAt(_g, _r.[FrameBatchDatasItemOffset](i))
                         If o IsNot Nothing Then _framebatchdatas_c.Add(o)
                     Next
                 End If
@@ -28591,7 +28591,7 @@ Namespace Havok.Canon.Objects
                 If _framesingledatas_c Is Nothing Then
                     _framesingledatas_c = New List(Of HkObj_HclVolumeConstraintMxFrameSingleData)()
                     For i = 0 To _r.[FrameSingleDatasCount] - 1
-                        Dim o = HkObj_HclVolumeConstraintMxFrameSingleData.ReadAt(_g, _r.[FrameSingleDatasItem](i))
+                        Dim o = HkObj_HclVolumeConstraintMxFrameSingleData.ReadAt(_g, _r.[FrameSingleDatasItemOffset](i))
                         If o IsNot Nothing Then _framesingledatas_c.Add(o)
                     Next
                 End If
@@ -28607,7 +28607,7 @@ Namespace Havok.Canon.Objects
                 If _applybatchdatas_c Is Nothing Then
                     _applybatchdatas_c = New List(Of HkObj_HclVolumeConstraintMxApplyBatchData)()
                     For i = 0 To _r.[ApplyBatchDatasCount] - 1
-                        Dim o = HkObj_HclVolumeConstraintMxApplyBatchData.ReadAt(_g, _r.[ApplyBatchDatasItem](i))
+                        Dim o = HkObj_HclVolumeConstraintMxApplyBatchData.ReadAt(_g, _r.[ApplyBatchDatasItemOffset](i))
                         If o IsNot Nothing Then _applybatchdatas_c.Add(o)
                     Next
                 End If
@@ -28623,7 +28623,7 @@ Namespace Havok.Canon.Objects
                 If _applysingledatas_c Is Nothing Then
                     _applysingledatas_c = New List(Of HkObj_HclVolumeConstraintMxApplySingleData)()
                     For i = 0 To _r.[ApplySingleDatasCount] - 1
-                        Dim o = HkObj_HclVolumeConstraintMxApplySingleData.ReadAt(_g, _r.[ApplySingleDatasItem](i))
+                        Dim o = HkObj_HclVolumeConstraintMxApplySingleData.ReadAt(_g, _r.[ApplySingleDatasItemOffset](i))
                         If o IsNot Nothing Then _applysingledatas_c.Add(o)
                     Next
                 End If
@@ -30030,7 +30030,7 @@ Namespace Havok.Canon.Objects
                 If _declaredmembers_c Is Nothing Then
                     _declaredmembers_c = New List(Of HkObj_HkClassMember)()
                     For i = 0 To _r.[DeclaredMembersCount] - 1
-                        Dim o = HkObj_HkClassMember.ReadAt(_g, _r.[DeclaredMembersItem](i))
+                        Dim o = HkObj_HkClassMember.ReadAt(_g, _r.[DeclaredMembersItemOffset](i))
                         If o IsNot Nothing Then _declaredmembers_c.Add(o)
                     Next
                 End If
@@ -30157,7 +30157,7 @@ Namespace Havok.Canon.Objects
                 If _items_c Is Nothing Then
                     _items_c = New List(Of HkObj_HkClassEnumItem)()
                     For i = 0 To _r.[ItemsCount] - 1
-                        Dim o = HkObj_HkClassEnumItem.ReadAt(_g, _r.[ItemsItem](i))
+                        Dim o = HkObj_HkClassEnumItem.ReadAt(_g, _r.[ItemsItemOffset](i))
                         If o IsNot Nothing Then _items_c.Add(o)
                     Next
                 End If
@@ -30753,7 +30753,7 @@ Namespace Havok.Canon.Objects
                 If _attributes_c Is Nothing Then
                     _attributes_c = New List(Of HkObj_HkCustomAttributesAttribute)()
                     For i = 0 To _r.[AttributesCount] - 1
-                        Dim o = HkObj_HkCustomAttributesAttribute.ReadAt(_g, _r.[AttributesItem](i))
+                        Dim o = HkObj_HkCustomAttributesAttribute.ReadAt(_g, _r.[AttributesItemOffset](i))
                         If o IsNot Nothing Then _attributes_c.Add(o)
                     Next
                 End If
@@ -31298,7 +31298,7 @@ Namespace Havok.Canon.Objects
                 If _elements_c Is Nothing Then
                     _elements_c = New List(Of HkObj_HknpMaterial)()
                     For i = 0 To _r.[ElementsCount] - 1
-                        Dim o = HkObj_HknpMaterial.ReadAt(_g, _r.[ElementsItem](i))
+                        Dim o = HkObj_HknpMaterial.ReadAt(_g, _r.[ElementsItemOffset](i))
                         If o IsNot Nothing Then _elements_c.Add(o)
                     Next
                 End If
@@ -31369,7 +31369,7 @@ Namespace Havok.Canon.Objects
                 If _elements_c Is Nothing Then
                     _elements_c = New List(Of HkObj_HknpMotionProperties)()
                     For i = 0 To _r.[ElementsCount] - 1
-                        Dim o = HkObj_HknpMotionProperties.ReadAt(_g, _r.[ElementsItem](i))
+                        Dim o = HkObj_HknpMotionProperties.ReadAt(_g, _r.[ElementsItemOffset](i))
                         If o IsNot Nothing Then _elements_c.Add(o)
                     Next
                 End If
@@ -31440,7 +31440,7 @@ Namespace Havok.Canon.Objects
                 If _elements_c Is Nothing Then
                     _elements_c = New List(Of HkObj_HknpShapeInstance)()
                     For i = 0 To _r.[ElementsCount] - 1
-                        Dim o = HkObj_HknpShapeInstance.ReadAt(_g, _r.[ElementsItem](i))
+                        Dim o = HkObj_HknpShapeInstance.ReadAt(_g, _r.[ElementsItemOffset](i))
                         If o IsNot Nothing Then _elements_c.Add(o)
                     Next
                 End If
@@ -31537,7 +31537,7 @@ Namespace Havok.Canon.Objects
                 If _triangles_c Is Nothing Then
                     _triangles_c = New List(Of HkObj_HkGeometryTriangle)()
                     For i = 0 To _r.[TrianglesCount] - 1
-                        Dim o = HkObj_HkGeometryTriangle.ReadAt(_g, _r.[TrianglesItem](i))
+                        Dim o = HkObj_HkGeometryTriangle.ReadAt(_g, _r.[TrianglesItemOffset](i))
                         If o IsNot Nothing Then _triangles_c.Add(o)
                     Next
                 End If
@@ -31897,7 +31897,7 @@ Namespace Havok.Canon.Objects
                 If _indexmappings_c Is Nothing Then
                     _indexmappings_c = New List(Of HkObj_HkMeshBoneIndexMapping)()
                     For i = 0 To _r.[IndexMappingsCount] - 1
-                        Dim o = HkObj_HkMeshBoneIndexMapping.ReadAt(_g, _r.[IndexMappingsItem](i))
+                        Dim o = HkObj_HkMeshBoneIndexMapping.ReadAt(_g, _r.[IndexMappingsItemOffset](i))
                         If o IsNot Nothing Then _indexmappings_c.Add(o)
                     Next
                 End If
@@ -32619,7 +32619,7 @@ Namespace Havok.Canon.Objects
                 If _sections_c Is Nothing Then
                     _sections_c = New List(Of HkObj_HkMemoryMeshShapeSection)()
                     For i = 0 To _r.[SectionsCount] - 1
-                        Dim o = HkObj_HkMemoryMeshShapeSection.ReadAt(_g, _r.[SectionsItem](i))
+                        Dim o = HkObj_HkMemoryMeshShapeSection.ReadAt(_g, _r.[SectionsItemOffset](i))
                         If o IsNot Nothing Then _sections_c.Add(o)
                     Next
                 End If
@@ -33335,7 +33335,7 @@ Namespace Havok.Canon.Objects
                 If _references_c Is Nothing Then
                     _references_c = New List(Of HkObj_HkMemoryResourceHandleExternalLink)()
                     For i = 0 To _r.[ReferencesCount] - 1
-                        Dim o = HkObj_HkMemoryResourceHandleExternalLink.ReadAt(_g, _r.[ReferencesItem](i))
+                        Dim o = HkObj_HkMemoryResourceHandleExternalLink.ReadAt(_g, _r.[ReferencesItemOffset](i))
                         If o IsNot Nothing Then _references_c.Add(o)
                     Next
                 End If
@@ -34349,7 +34349,7 @@ Namespace Havok.Canon.Objects
                 If _colorpairs_c Is Nothing Then
                     _colorpairs_c = New List(Of HkObj_HkMonitorStreamColorTableColorPair)()
                     For i = 0 To _r.[ColorPairsCount] - 1
-                        Dim o = HkObj_HkMonitorStreamColorTableColorPair.ReadAt(_g, _r.[ColorPairsItem](i))
+                        Dim o = HkObj_HkMonitorStreamColorTableColorPair.ReadAt(_g, _r.[ColorPairsItemOffset](i))
                         If o IsNot Nothing Then _colorpairs_c.Add(o)
                     Next
                 End If
@@ -34619,7 +34619,7 @@ Namespace Havok.Canon.Objects
                 If _map_c Is Nothing Then
                     _map_c = New List(Of HkObj_HkMonitorStreamStringMapStringMap)()
                     For i = 0 To _r.[MapCount] - 1
-                        Dim o = HkObj_HkMonitorStreamStringMapStringMap.ReadAt(_g, _r.[MapItem](i))
+                        Dim o = HkObj_HkMonitorStreamStringMapStringMap.ReadAt(_g, _r.[MapItemOffset](i))
                         If o IsNot Nothing Then _map_c.Add(o)
                     Next
                 End If
@@ -35133,7 +35133,7 @@ Namespace Havok.Canon.Objects
                 If _lockedelements_c Is Nothing Then
                     _lockedelements_c = New List(Of HkObj_HkMultipleVertexBufferLockedElement)()
                     For i = 0 To _r.[LockedElementsCount] - 1
-                        Dim o = HkObj_HkMultipleVertexBufferLockedElement.ReadAt(_g, _r.[LockedElementsItem](i))
+                        Dim o = HkObj_HkMultipleVertexBufferLockedElement.ReadAt(_g, _r.[LockedElementsItemOffset](i))
                         If o IsNot Nothing Then _lockedelements_c.Add(o)
                     Next
                 End If
@@ -35170,7 +35170,7 @@ Namespace Havok.Canon.Objects
                 If _elementinfos_c Is Nothing Then
                     _elementinfos_c = New List(Of HkObj_HkMultipleVertexBufferElementInfo)()
                     For i = 0 To _r.[ElementInfosCount] - 1
-                        Dim o = HkObj_HkMultipleVertexBufferElementInfo.ReadAt(_g, _r.[ElementInfosItem](i))
+                        Dim o = HkObj_HkMultipleVertexBufferElementInfo.ReadAt(_g, _r.[ElementInfosItemOffset](i))
                         If o IsNot Nothing Then _elementinfos_c.Add(o)
                     Next
                 End If
@@ -35186,7 +35186,7 @@ Namespace Havok.Canon.Objects
                 If _vertexbufferinfos_c Is Nothing Then
                     _vertexbufferinfos_c = New List(Of HkObj_HkMultipleVertexBufferVertexBufferInfo)()
                     For i = 0 To _r.[VertexBufferInfosCount] - 1
-                        Dim o = HkObj_HkMultipleVertexBufferVertexBufferInfo.ReadAt(_g, _r.[VertexBufferInfosItem](i))
+                        Dim o = HkObj_HkMultipleVertexBufferVertexBufferInfo.ReadAt(_g, _r.[VertexBufferInfosItemOffset](i))
                         If o IsNot Nothing Then _vertexbufferinfos_c.Add(o)
                     Next
                 End If
@@ -36542,7 +36542,7 @@ Namespace Havok.Canon.Objects
                 If _entries_c Is Nothing Then
                     _entries_c = New List(Of HkObj_HkRefCountedPropertiesEntry)()
                     For i = 0 To _r.[EntriesCount] - 1
-                        Dim o = HkObj_HkRefCountedPropertiesEntry.ReadAt(_g, _r.[EntriesItem](i))
+                        Dim o = HkObj_HkRefCountedPropertiesEntry.ReadAt(_g, _r.[EntriesItemOffset](i))
                         If o IsNot Nothing Then _entries_c.Add(o)
                     Next
                 End If
@@ -37040,7 +37040,7 @@ Namespace Havok.Canon.Objects
                 If _namedvariants_c Is Nothing Then
                     _namedvariants_c = New List(Of HkObj_HkRootLevelContainerNamedVariant)()
                     For i = 0 To _r.[NamedVariantsCount] - 1
-                        Dim o = HkObj_HkRootLevelContainerNamedVariant.ReadAt(_g, _r.[NamedVariantsItem](i))
+                        Dim o = HkObj_HkRootLevelContainerNamedVariant.ReadAt(_g, _r.[NamedVariantsItemOffset](i))
                         If o IsNot Nothing Then _namedvariants_c.Add(o)
                     Next
                 End If
@@ -37296,7 +37296,7 @@ Namespace Havok.Canon.Objects
                 If _elem_c Is Nothing Then
                     _elem_c = New List(Of HkObj_HkIntRealPair)()
                     For i = 0 To _r.[ElemCount] - 1
-                        Dim o = HkObj_HkIntRealPair.ReadAt(_g, _r.[ElemItem](i))
+                        Dim o = HkObj_HkIntRealPair.ReadAt(_g, _r.[ElemItemOffset](i))
                         If o IsNot Nothing Then _elem_c.Add(o)
                     Next
                 End If
@@ -37513,7 +37513,7 @@ Namespace Havok.Canon.Objects
                 If _elem_c Is Nothing Then
                     _elem_c = New List(Of HkObj_HkIntRealPair)()
                     For i = 0 To _r.[ElemCount] - 1
-                        Dim o = HkObj_HkIntRealPair.ReadAt(_g, _r.[ElemItem](i))
+                        Dim o = HkObj_HkIntRealPair.ReadAt(_g, _r.[ElemItemOffset](i))
                         If o IsNot Nothing Then _elem_c.Add(o)
                     Next
                 End If
@@ -38641,7 +38641,7 @@ Namespace Havok.Canon.Objects
                 If _bonesets_c Is Nothing Then
                     _bonesets_c = New List(Of HkObj_HkSkinnedMeshShapeBoneSet)()
                     For i = 0 To _r.[BoneSetsCount] - 1
-                        Dim o = HkObj_HkSkinnedMeshShapeBoneSet.ReadAt(_g, _r.[BoneSetsItem](i))
+                        Dim o = HkObj_HkSkinnedMeshShapeBoneSet.ReadAt(_g, _r.[BoneSetsItemOffset](i))
                         If o IsNot Nothing Then _bonesets_c.Add(o)
                     Next
                 End If
@@ -38657,7 +38657,7 @@ Namespace Havok.Canon.Objects
                 If _bonesections_c Is Nothing Then
                     _bonesections_c = New List(Of HkObj_HkSkinnedMeshShapeBoneSection)()
                     For i = 0 To _r.[BoneSectionsCount] - 1
-                        Dim o = HkObj_HkSkinnedMeshShapeBoneSection.ReadAt(_g, _r.[BoneSectionsItem](i))
+                        Dim o = HkObj_HkSkinnedMeshShapeBoneSection.ReadAt(_g, _r.[BoneSectionsItemOffset](i))
                         If o IsNot Nothing Then _bonesections_c.Add(o)
                     Next
                 End If
@@ -38673,7 +38673,7 @@ Namespace Havok.Canon.Objects
                 If _parts_c Is Nothing Then
                     _parts_c = New List(Of HkObj_HkSkinnedMeshShapePart)()
                     For i = 0 To _r.[PartsCount] - 1
-                        Dim o = HkObj_HkSkinnedMeshShapePart.ReadAt(_g, _r.[PartsItem](i))
+                        Dim o = HkObj_HkSkinnedMeshShapePart.ReadAt(_g, _r.[PartsItemOffset](i))
                         If o IsNot Nothing Then _parts_c.Add(o)
                     Next
                 End If
@@ -39076,7 +39076,7 @@ Namespace Havok.Canon.Objects
                 If _allocations_c Is Nothing Then
                     _allocations_c = New List(Of HkObj_HkTrackerSerializableScanSnapshotAllocation)()
                     For i = 0 To _r.[AllocationsCount] - 1
-                        Dim o = HkObj_HkTrackerSerializableScanSnapshotAllocation.ReadAt(_g, _r.[AllocationsItem](i))
+                        Dim o = HkObj_HkTrackerSerializableScanSnapshotAllocation.ReadAt(_g, _r.[AllocationsItemOffset](i))
                         If o IsNot Nothing Then _allocations_c.Add(o)
                     Next
                 End If
@@ -39092,7 +39092,7 @@ Namespace Havok.Canon.Objects
                 If _blocks_c Is Nothing Then
                     _blocks_c = New List(Of HkObj_HkTrackerSerializableScanSnapshotBlock)()
                     For i = 0 To _r.[BlocksCount] - 1
-                        Dim o = HkObj_HkTrackerSerializableScanSnapshotBlock.ReadAt(_g, _r.[BlocksItem](i))
+                        Dim o = HkObj_HkTrackerSerializableScanSnapshotBlock.ReadAt(_g, _r.[BlocksItemOffset](i))
                         If o IsNot Nothing Then _blocks_c.Add(o)
                     Next
                 End If
@@ -39680,7 +39680,7 @@ Namespace Havok.Canon.Objects
                 If _boolvariableinfo_c Is Nothing Then
                     _boolvariableinfo_c = New List(Of HkObj_HkVariableTweakingHelperBoolVariableInfo)()
                     For i = 0 To _r.[BoolVariableInfoCount] - 1
-                        Dim o = HkObj_HkVariableTweakingHelperBoolVariableInfo.ReadAt(_g, _r.[BoolVariableInfoItem](i))
+                        Dim o = HkObj_HkVariableTweakingHelperBoolVariableInfo.ReadAt(_g, _r.[BoolVariableInfoItemOffset](i))
                         If o IsNot Nothing Then _boolvariableinfo_c.Add(o)
                     Next
                 End If
@@ -39696,7 +39696,7 @@ Namespace Havok.Canon.Objects
                 If _intvariableinfo_c Is Nothing Then
                     _intvariableinfo_c = New List(Of HkObj_HkVariableTweakingHelperIntVariableInfo)()
                     For i = 0 To _r.[IntVariableInfoCount] - 1
-                        Dim o = HkObj_HkVariableTweakingHelperIntVariableInfo.ReadAt(_g, _r.[IntVariableInfoItem](i))
+                        Dim o = HkObj_HkVariableTweakingHelperIntVariableInfo.ReadAt(_g, _r.[IntVariableInfoItemOffset](i))
                         If o IsNot Nothing Then _intvariableinfo_c.Add(o)
                     Next
                 End If
@@ -39712,7 +39712,7 @@ Namespace Havok.Canon.Objects
                 If _realvariableinfo_c Is Nothing Then
                     _realvariableinfo_c = New List(Of HkObj_HkVariableTweakingHelperRealVariableInfo)()
                     For i = 0 To _r.[RealVariableInfoCount] - 1
-                        Dim o = HkObj_HkVariableTweakingHelperRealVariableInfo.ReadAt(_g, _r.[RealVariableInfoItem](i))
+                        Dim o = HkObj_HkVariableTweakingHelperRealVariableInfo.ReadAt(_g, _r.[RealVariableInfoItemOffset](i))
                         If o IsNot Nothing Then _realvariableinfo_c.Add(o)
                     Next
                 End If
@@ -39728,7 +39728,7 @@ Namespace Havok.Canon.Objects
                 If _vector4variableinfo_c Is Nothing Then
                     _vector4variableinfo_c = New List(Of HkObj_HkVariableTweakingHelperVector4VariableInfo)()
                     For i = 0 To _r.[Vector4VariableInfoCount] - 1
-                        Dim o = HkObj_HkVariableTweakingHelperVector4VariableInfo.ReadAt(_g, _r.[Vector4VariableInfoItem](i))
+                        Dim o = HkObj_HkVariableTweakingHelperVector4VariableInfo.ReadAt(_g, _r.[Vector4VariableInfoItemOffset](i))
                         If o IsNot Nothing Then _vector4variableinfo_c.Add(o)
                     Next
                 End If
@@ -40692,7 +40692,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -41199,7 +41199,7 @@ Namespace Havok.Canon.Objects
                 If _annotations_c Is Nothing Then
                     _annotations_c = New List(Of HkObj_HkaAnnotationTrackAnnotation)()
                     For i = 0 To _r.[AnnotationsCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrackAnnotation.ReadAt(_g, _r.[AnnotationsItem](i))
+                        Dim o = HkObj_HkaAnnotationTrackAnnotation.ReadAt(_g, _r.[AnnotationsItemOffset](i))
                         If o IsNot Nothing Then _annotations_c.Add(o)
                     Next
                 End If
@@ -42231,7 +42231,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -42612,7 +42612,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -42938,7 +42938,7 @@ Namespace Havok.Canon.Objects
                 If _mappings_c Is Nothing Then
                     _mappings_c = New List(Of HkObj_HkaMeshBindingMapping)()
                     For i = 0 To _r.[MappingsCount] - 1
-                        Dim o = HkObj_HkaMeshBindingMapping.ReadAt(_g, _r.[MappingsItem](i))
+                        Dim o = HkObj_HkaMeshBindingMapping.ReadAt(_g, _r.[MappingsItemOffset](i))
                         If o IsNot Nothing Then _mappings_c.Add(o)
                     Next
                 End If
@@ -43417,7 +43417,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -43803,7 +43803,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -44206,7 +44206,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -44329,7 +44329,7 @@ Namespace Havok.Canon.Objects
                 If _bones_c Is Nothing Then
                     _bones_c = New List(Of HkObj_HkaBone)()
                     For i = 0 To _r.[BonesCount] - 1
-                        Dim o = HkObj_HkaBone.ReadAt(_g, _r.[BonesItem](i))
+                        Dim o = HkObj_HkaBone.ReadAt(_g, _r.[BonesItemOffset](i))
                         If o IsNot Nothing Then _bones_c.Add(o)
                     Next
                 End If
@@ -44398,7 +44398,7 @@ Namespace Havok.Canon.Objects
                 If _localframes_c Is Nothing Then
                     _localframes_c = New List(Of HkObj_HkaSkeletonLocalFrameOnBone)()
                     For i = 0 To _r.[LocalFramesCount] - 1
-                        Dim o = HkObj_HkaSkeletonLocalFrameOnBone.ReadAt(_g, _r.[LocalFramesItem](i))
+                        Dim o = HkObj_HkaSkeletonLocalFrameOnBone.ReadAt(_g, _r.[LocalFramesItemOffset](i))
                         If o IsNot Nothing Then _localframes_c.Add(o)
                     Next
                 End If
@@ -44414,7 +44414,7 @@ Namespace Havok.Canon.Objects
                 If _partitions_c Is Nothing Then
                     _partitions_c = New List(Of HkObj_HkaSkeletonPartition)()
                     For i = 0 To _r.[PartitionsCount] - 1
-                        Dim o = HkObj_HkaSkeletonPartition.ReadAt(_g, _r.[PartitionsItem](i))
+                        Dim o = HkObj_HkaSkeletonPartition.ReadAt(_g, _r.[PartitionsItemOffset](i))
                         If o IsNot Nothing Then _partitions_c.Add(o)
                     Next
                 End If
@@ -44712,7 +44712,7 @@ Namespace Havok.Canon.Objects
                 If _simplemappingpartitionranges_c Is Nothing Then
                     _simplemappingpartitionranges_c = New List(Of HkObj_HkaSkeletonMapperDataPartitionMappingRange)()
                     For i = 0 To _r.[SimpleMappingPartitionRangesCount] - 1
-                        Dim o = HkObj_HkaSkeletonMapperDataPartitionMappingRange.ReadAt(_g, _r.[SimpleMappingPartitionRangesItem](i))
+                        Dim o = HkObj_HkaSkeletonMapperDataPartitionMappingRange.ReadAt(_g, _r.[SimpleMappingPartitionRangesItemOffset](i))
                         If o IsNot Nothing Then _simplemappingpartitionranges_c.Add(o)
                     Next
                 End If
@@ -44728,7 +44728,7 @@ Namespace Havok.Canon.Objects
                 If _chainmappingpartitionranges_c Is Nothing Then
                     _chainmappingpartitionranges_c = New List(Of HkObj_HkaSkeletonMapperDataPartitionMappingRange)()
                     For i = 0 To _r.[ChainMappingPartitionRangesCount] - 1
-                        Dim o = HkObj_HkaSkeletonMapperDataPartitionMappingRange.ReadAt(_g, _r.[ChainMappingPartitionRangesItem](i))
+                        Dim o = HkObj_HkaSkeletonMapperDataPartitionMappingRange.ReadAt(_g, _r.[ChainMappingPartitionRangesItemOffset](i))
                         If o IsNot Nothing Then _chainmappingpartitionranges_c.Add(o)
                     Next
                 End If
@@ -44744,7 +44744,7 @@ Namespace Havok.Canon.Objects
                 If _simplemappings_c Is Nothing Then
                     _simplemappings_c = New List(Of HkObj_HkaSkeletonMapperDataSimpleMapping)()
                     For i = 0 To _r.[SimpleMappingsCount] - 1
-                        Dim o = HkObj_HkaSkeletonMapperDataSimpleMapping.ReadAt(_g, _r.[SimpleMappingsItem](i))
+                        Dim o = HkObj_HkaSkeletonMapperDataSimpleMapping.ReadAt(_g, _r.[SimpleMappingsItemOffset](i))
                         If o IsNot Nothing Then _simplemappings_c.Add(o)
                     Next
                 End If
@@ -44760,7 +44760,7 @@ Namespace Havok.Canon.Objects
                 If _chainmappings_c Is Nothing Then
                     _chainmappings_c = New List(Of HkObj_HkaSkeletonMapperDataChainMapping)()
                     For i = 0 To _r.[ChainMappingsCount] - 1
-                        Dim o = HkObj_HkaSkeletonMapperDataChainMapping.ReadAt(_g, _r.[ChainMappingsItem](i))
+                        Dim o = HkObj_HkaSkeletonMapperDataChainMapping.ReadAt(_g, _r.[ChainMappingsItemOffset](i))
                         If o IsNot Nothing Then _chainmappings_c.Add(o)
                     Next
                 End If
@@ -45247,7 +45247,7 @@ Namespace Havok.Canon.Objects
                 If _annotationtracks_c Is Nothing Then
                     _annotationtracks_c = New List(Of HkObj_HkaAnnotationTrack)()
                     For i = 0 To _r.[AnnotationTracksCount] - 1
-                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItem](i))
+                        Dim o = HkObj_HkaAnnotationTrack.ReadAt(_g, _r.[AnnotationTracksItemOffset](i))
                         If o IsNot Nothing Then _annotationtracks_c.Add(o)
                     Next
                 End If
@@ -47386,7 +47386,7 @@ Namespace Havok.Canon.Objects
                 If _assignments_c Is Nothing Then
                     _assignments_c = New List(Of HkObj_HkbAttributeModifierAssignment)()
                     For i = 0 To _r.[AssignmentsCount] - 1
-                        Dim o = HkObj_HkbAttributeModifierAssignment.ReadAt(_g, _r.[AssignmentsItem](i))
+                        Dim o = HkObj_HkbAttributeModifierAssignment.ReadAt(_g, _r.[AssignmentsItemOffset](i))
                         If o IsNot Nothing Then _assignments_c.Add(o)
                     Next
                 End If
@@ -48509,7 +48509,7 @@ Namespace Havok.Canon.Objects
                 If _variableinfos_c Is Nothing Then
                     _variableinfos_c = New List(Of HkObj_HkbVariableInfo)()
                     For i = 0 To _r.[VariableInfosCount] - 1
-                        Dim o = HkObj_HkbVariableInfo.ReadAt(_g, _r.[VariableInfosItem](i))
+                        Dim o = HkObj_HkbVariableInfo.ReadAt(_g, _r.[VariableInfosItemOffset](i))
                         If o IsNot Nothing Then _variableinfos_c.Add(o)
                     Next
                 End If
@@ -48525,7 +48525,7 @@ Namespace Havok.Canon.Objects
                 If _characterpropertyinfos_c Is Nothing Then
                     _characterpropertyinfos_c = New List(Of HkObj_HkbVariableInfo)()
                     For i = 0 To _r.[CharacterPropertyInfosCount] - 1
-                        Dim o = HkObj_HkbVariableInfo.ReadAt(_g, _r.[CharacterPropertyInfosItem](i))
+                        Dim o = HkObj_HkbVariableInfo.ReadAt(_g, _r.[CharacterPropertyInfosItemOffset](i))
                         If o IsNot Nothing Then _characterpropertyinfos_c.Add(o)
                     Next
                 End If
@@ -48541,7 +48541,7 @@ Namespace Havok.Canon.Objects
                 If _eventinfos_c Is Nothing Then
                     _eventinfos_c = New List(Of HkObj_HkbEventInfo)()
                     For i = 0 To _r.[EventInfosCount] - 1
-                        Dim o = HkObj_HkbEventInfo.ReadAt(_g, _r.[EventInfosItem](i))
+                        Dim o = HkObj_HkbEventInfo.ReadAt(_g, _r.[EventInfosItemOffset](i))
                         If o IsNot Nothing Then _eventinfos_c.Add(o)
                     Next
                 End If
@@ -48557,7 +48557,7 @@ Namespace Havok.Canon.Objects
                 If _variablebounds_c Is Nothing Then
                     _variablebounds_c = New List(Of HkObj_HkbVariableBounds)()
                     For i = 0 To _r.[VariableBoundsCount] - 1
-                        Dim o = HkObj_HkbVariableBounds.ReadAt(_g, _r.[VariableBoundsItem](i))
+                        Dim o = HkObj_HkbVariableBounds.ReadAt(_g, _r.[VariableBoundsItemOffset](i))
                         If o IsNot Nothing Then _variablebounds_c.Add(o)
                     Next
                 End If
@@ -48633,7 +48633,7 @@ Namespace Havok.Canon.Objects
                 If _wordminvariablevalues_c Is Nothing Then
                     _wordminvariablevalues_c = New List(Of HkObj_HkbVariableValue)()
                     For i = 0 To _r.[WordMinVariableValuesCount] - 1
-                        Dim o = HkObj_HkbVariableValue.ReadAt(_g, _r.[WordMinVariableValuesItem](i))
+                        Dim o = HkObj_HkbVariableValue.ReadAt(_g, _r.[WordMinVariableValuesItemOffset](i))
                         If o IsNot Nothing Then _wordminvariablevalues_c.Add(o)
                     Next
                 End If
@@ -48649,7 +48649,7 @@ Namespace Havok.Canon.Objects
                 If _wordmaxvariablevalues_c Is Nothing Then
                     _wordmaxvariablevalues_c = New List(Of HkObj_HkbVariableValue)()
                     For i = 0 To _r.[WordMaxVariableValuesCount] - 1
-                        Dim o = HkObj_HkbVariableValue.ReadAt(_g, _r.[WordMaxVariableValuesItem](i))
+                        Dim o = HkObj_HkbVariableValue.ReadAt(_g, _r.[WordMaxVariableValuesItemOffset](i))
                         If o IsNot Nothing Then _wordmaxvariablevalues_c.Add(o)
                     Next
                 End If
@@ -49160,7 +49160,7 @@ Namespace Havok.Canon.Objects
                 If _idtonamepairs_c Is Nothing Then
                     _idtonamepairs_c = New List(Of HkObj_HkbBehaviorInfoIdToNamePair)()
                     For i = 0 To _r.[IdToNamePairsCount] - 1
-                        Dim o = HkObj_HkbBehaviorInfoIdToNamePair.ReadAt(_g, _r.[IdToNamePairsItem](i))
+                        Dim o = HkObj_HkbBehaviorInfoIdToNamePair.ReadAt(_g, _r.[IdToNamePairsItemOffset](i))
                         If o IsNot Nothing Then _idtonamepairs_c.Add(o)
                     Next
                 End If
@@ -50414,7 +50414,7 @@ Namespace Havok.Canon.Objects
                 If _childreninternalstates_c Is Nothing Then
                     _childreninternalstates_c = New List(Of HkObj_HkbBlenderGeneratorChildInternalState)()
                     For i = 0 To _r.[ChildrenInternalStatesCount] - 1
-                        Dim o = HkObj_HkbBlenderGeneratorChildInternalState.ReadAt(_g, _r.[ChildrenInternalStatesItem](i))
+                        Dim o = HkObj_HkbBlenderGeneratorChildInternalState.ReadAt(_g, _r.[ChildrenInternalStatesItemOffset](i))
                         If o IsNot Nothing Then _childreninternalstates_c.Add(o)
                     Next
                 End If
@@ -51554,7 +51554,7 @@ Namespace Havok.Canon.Objects
                 If _samples_c Is Nothing Then
                     _samples_c = New List(Of HkObj_HkbBoolVariableSequencedDataSample)()
                     For i = 0 To _r.[SamplesCount] - 1
-                        Dim o = HkObj_HkbBoolVariableSequencedDataSample.ReadAt(_g, _r.[SamplesItem](i))
+                        Dim o = HkObj_HkbBoolVariableSequencedDataSample.ReadAt(_g, _r.[SamplesItemOffset](i))
                         If o IsNot Nothing Then _samples_c.Add(o)
                     Next
                 End If
@@ -53404,7 +53404,7 @@ Namespace Havok.Canon.Objects
                 If _characterpropertyinfos_c Is Nothing Then
                     _characterpropertyinfos_c = New List(Of HkObj_HkbVariableInfo)()
                     For i = 0 To _r.[CharacterPropertyInfosCount] - 1
-                        Dim o = HkObj_HkbVariableInfo.ReadAt(_g, _r.[CharacterPropertyInfosItem](i))
+                        Dim o = HkObj_HkbVariableInfo.ReadAt(_g, _r.[CharacterPropertyInfosItemOffset](i))
                         If o IsNot Nothing Then _characterpropertyinfos_c.Add(o)
                     Next
                 End If
@@ -54474,7 +54474,7 @@ Namespace Havok.Canon.Objects
                 If _skinnames_c Is Nothing Then
                     _skinnames_c = New List(Of HkObj_HkbCharacterStringDataFileNameMeshNamePair)()
                     For i = 0 To _r.[SkinNamesCount] - 1
-                        Dim o = HkObj_HkbCharacterStringDataFileNameMeshNamePair.ReadAt(_g, _r.[SkinNamesItem](i))
+                        Dim o = HkObj_HkbCharacterStringDataFileNameMeshNamePair.ReadAt(_g, _r.[SkinNamesItemOffset](i))
                         If o IsNot Nothing Then _skinnames_c.Add(o)
                     Next
                 End If
@@ -54490,7 +54490,7 @@ Namespace Havok.Canon.Objects
                 If _boneattachmentnames_c Is Nothing Then
                     _boneattachmentnames_c = New List(Of HkObj_HkbCharacterStringDataFileNameMeshNamePair)()
                     For i = 0 To _r.[BoneAttachmentNamesCount] - 1
-                        Dim o = HkObj_HkbCharacterStringDataFileNameMeshNamePair.ReadAt(_g, _r.[BoneAttachmentNamesItem](i))
+                        Dim o = HkObj_HkbCharacterStringDataFileNameMeshNamePair.ReadAt(_g, _r.[BoneAttachmentNamesItemOffset](i))
                         If o IsNot Nothing Then _boneattachmentnames_c.Add(o)
                     Next
                 End If
@@ -54506,7 +54506,7 @@ Namespace Havok.Canon.Objects
                 If _animationbundlenamedata_c Is Nothing Then
                     _animationbundlenamedata_c = New List(Of HkObj_HkbAssetBundleStringData)()
                     For i = 0 To _r.[AnimationBundleNameDataCount] - 1
-                        Dim o = HkObj_HkbAssetBundleStringData.ReadAt(_g, _r.[AnimationBundleNameDataItem](i))
+                        Dim o = HkObj_HkbAssetBundleStringData.ReadAt(_g, _r.[AnimationBundleNameDataItemOffset](i))
                         If o IsNot Nothing Then _animationbundlenamedata_c.Add(o)
                     Next
                 End If
@@ -54522,7 +54522,7 @@ Namespace Havok.Canon.Objects
                 If _animationbundlefilenamedata_c Is Nothing Then
                     _animationbundlefilenamedata_c = New List(Of HkObj_HkbAssetBundleStringData)()
                     For i = 0 To _r.[AnimationBundleFilenameDataCount] - 1
-                        Dim o = HkObj_HkbAssetBundleStringData.ReadAt(_g, _r.[AnimationBundleFilenameDataItem](i))
+                        Dim o = HkObj_HkbAssetBundleStringData.ReadAt(_g, _r.[AnimationBundleFilenameDataItemOffset](i))
                         If o IsNot Nothing Then _animationbundlefilenamedata_c.Add(o)
                     Next
                 End If
@@ -55966,7 +55966,7 @@ Namespace Havok.Canon.Objects
                 If _echos_c Is Nothing Then
                     _echos_c = New List(Of HkObj_HkbClipGeneratorEcho)()
                     For i = 0 To _r.[EchosCount] - 1
-                        Dim o = HkObj_HkbClipGeneratorEcho.ReadAt(_g, _r.[EchosItem](i))
+                        Dim o = HkObj_HkbClipGeneratorEcho.ReadAt(_g, _r.[EchosItemOffset](i))
                         If o IsNot Nothing Then _echos_c.Add(o)
                     Next
                 End If
@@ -56218,7 +56218,7 @@ Namespace Havok.Canon.Objects
                 If _triggers_c Is Nothing Then
                     _triggers_c = New List(Of HkObj_HkbClipTrigger)()
                     For i = 0 To _r.[TriggersCount] - 1
-                        Dim o = HkObj_HkbClipTrigger.ReadAt(_g, _r.[TriggersItem](i))
+                        Dim o = HkObj_HkbClipTrigger.ReadAt(_g, _r.[TriggersItemOffset](i))
                         If o IsNot Nothing Then _triggers_c.Add(o)
                     Next
                 End If
@@ -56699,7 +56699,7 @@ Namespace Havok.Canon.Objects
                 If _rpn_c Is Nothing Then
                     _rpn_c = New List(Of HkObj_HkbCompiledExpressionSetToken)()
                     For i = 0 To _r.[RpnCount] - 1
-                        Dim o = HkObj_HkbCompiledExpressionSetToken.ReadAt(_g, _r.[RpnItem](i))
+                        Dim o = HkObj_HkbCompiledExpressionSetToken.ReadAt(_g, _r.[RpnItemOffset](i))
                         If o IsNot Nothing Then _rpn_c.Add(o)
                     Next
                 End If
@@ -59815,7 +59815,7 @@ Namespace Havok.Canon.Objects
                 If _nestedtypearraystruct_c Is Nothing Then
                     _nestedtypearraystruct_c = New List(Of HkObj_HkbCustomTestGeneratorNestedTypesBase)()
                     For i = 0 To _r.[NestedTypeArrayStructCount] - 1
-                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItem](i))
+                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItemOffset](i))
                         If o IsNot Nothing Then _nestedtypearraystruct_c.Add(o)
                     Next
                 End If
@@ -61660,7 +61660,7 @@ Namespace Havok.Canon.Objects
                 If _nestedtypearraystruct_c Is Nothing Then
                     _nestedtypearraystruct_c = New List(Of HkObj_HkbCustomTestGeneratorNestedTypesBase)()
                     For i = 0 To _r.[NestedTypeArrayStructCount] - 1
-                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItem](i))
+                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItemOffset](i))
                         If o IsNot Nothing Then _nestedtypearraystruct_c.Add(o)
                     Next
                 End If
@@ -63487,7 +63487,7 @@ Namespace Havok.Canon.Objects
                 If _nestedtypearraystruct_c Is Nothing Then
                     _nestedtypearraystruct_c = New List(Of HkObj_HkbCustomTestGeneratorNestedTypesBase)()
                     For i = 0 To _r.[NestedTypeArrayStructCount] - 1
-                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItem](i))
+                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItemOffset](i))
                         If o IsNot Nothing Then _nestedtypearraystruct_c.Add(o)
                     Next
                 End If
@@ -65904,7 +65904,7 @@ Namespace Havok.Canon.Objects
                 If _nestedtypearraystruct_c Is Nothing Then
                     _nestedtypearraystruct_c = New List(Of HkObj_HkbCustomTestGeneratorNestedTypesBase)()
                     For i = 0 To _r.[NestedTypeArrayStructCount] - 1
-                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItem](i))
+                        Dim o = HkObj_HkbCustomTestGeneratorNestedTypesBase.ReadAt(_g, _r.[NestedTypeArrayStructItemOffset](i))
                         If o IsNot Nothing Then _nestedtypearraystruct_c.Add(o)
                     Next
                 End If
@@ -69690,7 +69690,7 @@ Namespace Havok.Canon.Objects
                 If _internalexpressionsdata_c Is Nothing Then
                     _internalexpressionsdata_c = New List(Of HkObj_HkbEvaluateExpressionModifierInternalExpressionData)()
                     For i = 0 To _r.[InternalExpressionsDataCount] - 1
-                        Dim o = HkObj_HkbEvaluateExpressionModifierInternalExpressionData.ReadAt(_g, _r.[InternalExpressionsDataItem](i))
+                        Dim o = HkObj_HkbEvaluateExpressionModifierInternalExpressionData.ReadAt(_g, _r.[InternalExpressionsDataItemOffset](i))
                         If o IsNot Nothing Then _internalexpressionsdata_c.Add(o)
                     Next
                 End If
@@ -71131,7 +71131,7 @@ Namespace Havok.Canon.Objects
                 If _eventdata_c Is Nothing Then
                     _eventdata_c = New List(Of HkObj_HkbEventRangeData)()
                     For i = 0 To _r.[EventDataCount] - 1
-                        Dim o = HkObj_HkbEventRangeData.ReadAt(_g, _r.[EventDataItem](i))
+                        Dim o = HkObj_HkbEventRangeData.ReadAt(_g, _r.[EventDataItemOffset](i))
                         If o IsNot Nothing Then _eventdata_c.Add(o)
                     Next
                 End If
@@ -71220,7 +71220,7 @@ Namespace Havok.Canon.Objects
                 If _events_c Is Nothing Then
                     _events_c = New List(Of HkObj_HkbEventSequencedDataSequencedEvent)()
                     For i = 0 To _r.[EventsCount] - 1
-                        Dim o = HkObj_HkbEventSequencedDataSequencedEvent.ReadAt(_g, _r.[EventsItem](i))
+                        Dim o = HkObj_HkbEventSequencedDataSequencedEvent.ReadAt(_g, _r.[EventsItemOffset](i))
                         If o IsNot Nothing Then _events_c.Add(o)
                     Next
                 End If
@@ -71940,7 +71940,7 @@ Namespace Havok.Canon.Objects
                 If _expressionsdata_c Is Nothing Then
                     _expressionsdata_c = New List(Of HkObj_HkbExpressionData)()
                     For i = 0 To _r.[ExpressionsDataCount] - 1
-                        Dim o = HkObj_HkbExpressionData.ReadAt(_g, _r.[ExpressionsDataItem](i))
+                        Dim o = HkObj_HkbExpressionData.ReadAt(_g, _r.[ExpressionsDataItemOffset](i))
                         If o IsNot Nothing Then _expressionsdata_c.Add(o)
                     Next
                 End If
@@ -73242,7 +73242,7 @@ Namespace Havok.Canon.Objects
                 If _legs_c Is Nothing Then
                     _legs_c = New List(Of HkObj_HkbFootIkControlsModifierLeg)()
                     For i = 0 To _r.[LegsCount] - 1
-                        Dim o = HkObj_HkbFootIkControlsModifierLeg.ReadAt(_g, _r.[LegsItem](i))
+                        Dim o = HkObj_HkbFootIkControlsModifierLeg.ReadAt(_g, _r.[LegsItemOffset](i))
                         If o IsNot Nothing Then _legs_c.Add(o)
                     Next
                 End If
@@ -73458,7 +73458,7 @@ Namespace Havok.Canon.Objects
                 If _legs_c Is Nothing Then
                     _legs_c = New List(Of HkObj_HkbFootIkDriverInfoLeg)()
                     For i = 0 To _r.[LegsCount] - 1
-                        Dim o = HkObj_HkbFootIkDriverInfoLeg.ReadAt(_g, _r.[LegsItem](i))
+                        Dim o = HkObj_HkbFootIkDriverInfoLeg.ReadAt(_g, _r.[LegsItemOffset](i))
                         If o IsNot Nothing Then _legs_c.Add(o)
                     Next
                 End If
@@ -74146,7 +74146,7 @@ Namespace Havok.Canon.Objects
                 If _legs_c Is Nothing Then
                     _legs_c = New List(Of HkObj_HkbFootIkModifierLeg)()
                     For i = 0 To _r.[LegsCount] - 1
-                        Dim o = HkObj_HkbFootIkModifierLeg.ReadAt(_g, _r.[LegsItem](i))
+                        Dim o = HkObj_HkbFootIkModifierLeg.ReadAt(_g, _r.[LegsItemOffset](i))
                         If o IsNot Nothing Then _legs_c.Add(o)
                     Next
                 End If
@@ -74288,7 +74288,7 @@ Namespace Havok.Canon.Objects
                 If _internallegdata_c Is Nothing Then
                     _internallegdata_c = New List(Of HkObj_HkbFootIkModifierInternalLegData)()
                     For i = 0 To _r.[InternalLegDataCount] - 1
-                        Dim o = HkObj_HkbFootIkModifierInternalLegData.ReadAt(_g, _r.[InternalLegDataItem](i))
+                        Dim o = HkObj_HkbFootIkModifierInternalLegData.ReadAt(_g, _r.[InternalLegDataItemOffset](i))
                         If o IsNot Nothing Then _internallegdata_c.Add(o)
                     Next
                 End If
@@ -77535,7 +77535,7 @@ Namespace Havok.Canon.Objects
                 If _hands_c Is Nothing Then
                     _hands_c = New List(Of HkObj_HkbHandIkControlsModifierHand)()
                     For i = 0 To _r.[HandsCount] - 1
-                        Dim o = HkObj_HkbHandIkControlsModifierHand.ReadAt(_g, _r.[HandsItem](i))
+                        Dim o = HkObj_HkbHandIkControlsModifierHand.ReadAt(_g, _r.[HandsItemOffset](i))
                         If o IsNot Nothing Then _hands_c.Add(o)
                     Next
                 End If
@@ -77706,7 +77706,7 @@ Namespace Havok.Canon.Objects
                 If _hands_c Is Nothing Then
                     _hands_c = New List(Of HkObj_HkbHandIkDriverInfoHand)()
                     For i = 0 To _r.[HandsCount] - 1
-                        Dim o = HkObj_HkbHandIkDriverInfoHand.ReadAt(_g, _r.[HandsItem](i))
+                        Dim o = HkObj_HkbHandIkDriverInfoHand.ReadAt(_g, _r.[HandsItemOffset](i))
                         If o IsNot Nothing Then _hands_c.Add(o)
                     Next
                 End If
@@ -78118,7 +78118,7 @@ Namespace Havok.Canon.Objects
                 If _hands_c Is Nothing Then
                     _hands_c = New List(Of HkObj_HkbHandIkModifierHand)()
                     For i = 0 To _r.[HandsCount] - 1
-                        Dim o = HkObj_HkbHandIkModifierHand.ReadAt(_g, _r.[HandsItem](i))
+                        Dim o = HkObj_HkbHandIkModifierHand.ReadAt(_g, _r.[HandsItemOffset](i))
                         If o IsNot Nothing Then _hands_c.Add(o)
                     Next
                 End If
@@ -79143,7 +79143,7 @@ Namespace Havok.Canon.Objects
                 If _samples_c Is Nothing Then
                     _samples_c = New List(Of HkObj_HkbIntVariableSequencedDataSample)()
                     For i = 0 To _r.[SamplesCount] - 1
-                        Dim o = HkObj_HkbIntVariableSequencedDataSample.ReadAt(_g, _r.[SamplesItem](i))
+                        Dim o = HkObj_HkbIntVariableSequencedDataSample.ReadAt(_g, _r.[SamplesItemOffset](i))
                         If o IsNot Nothing Then _samples_c.Add(o)
                     Next
                 End If
@@ -80183,7 +80183,7 @@ Namespace Havok.Canon.Objects
                 If _keyframeinfo_c Is Nothing Then
                     _keyframeinfo_c = New List(Of HkObj_HkbKeyframeBonesModifierKeyframeInfo)()
                     For i = 0 To _r.[KeyframeInfoCount] - 1
-                        Dim o = HkObj_HkbKeyframeBonesModifierKeyframeInfo.ReadAt(_g, _r.[KeyframeInfoItem](i))
+                        Dim o = HkObj_HkbKeyframeBonesModifierKeyframeInfo.ReadAt(_g, _r.[KeyframeInfoItemOffset](i))
                         If o IsNot Nothing Then _keyframeinfo_c.Add(o)
                     Next
                 End If
@@ -80887,7 +80887,7 @@ Namespace Havok.Canon.Objects
                 If _layerinternalstates_c Is Nothing Then
                     _layerinternalstates_c = New List(Of HkObj_HkbLayerGeneratorLayerInternalState)()
                     For i = 0 To _r.[LayerInternalStatesCount] - 1
-                        Dim o = HkObj_HkbLayerGeneratorLayerInternalState.ReadAt(_g, _r.[LayerInternalStatesItem](i))
+                        Dim o = HkObj_HkbLayerGeneratorLayerInternalState.ReadAt(_g, _r.[LayerInternalStatesItemOffset](i))
                         If o IsNot Nothing Then _layerinternalstates_c.Add(o)
                     Next
                 End If
@@ -82044,7 +82044,7 @@ Namespace Havok.Canon.Objects
                 If _activetransitions_c Is Nothing Then
                     _activetransitions_c = New List(Of HkObj_HkbStateMachineActiveTransitionInfo)()
                     For i = 0 To _r.[ActiveTransitionsCount] - 1
-                        Dim o = HkObj_HkbStateMachineActiveTransitionInfo.ReadAt(_g, _r.[ActiveTransitionsItem](i))
+                        Dim o = HkObj_HkbStateMachineActiveTransitionInfo.ReadAt(_g, _r.[ActiveTransitionsItemOffset](i))
                         If o IsNot Nothing Then _activetransitions_c.Add(o)
                     Next
                 End If
@@ -88616,7 +88616,7 @@ Namespace Havok.Canon.Objects
                 If _generatorpairs_c Is Nothing Then
                     _generatorpairs_c = New List(Of HkObj_HkbRadialSelectorGeneratorGeneratorPair)()
                     For i = 0 To _r.[GeneratorPairsCount] - 1
-                        Dim o = HkObj_HkbRadialSelectorGeneratorGeneratorPair.ReadAt(_g, _r.[GeneratorPairsItem](i))
+                        Dim o = HkObj_HkbRadialSelectorGeneratorGeneratorPair.ReadAt(_g, _r.[GeneratorPairsItemOffset](i))
                         If o IsNot Nothing Then _generatorpairs_c.Add(o)
                     Next
                 End If
@@ -89196,7 +89196,7 @@ Namespace Havok.Canon.Objects
                 If _samples_c Is Nothing Then
                     _samples_c = New List(Of HkObj_HkbRealVariableSequencedDataSample)()
                     For i = 0 To _r.[SamplesCount] - 1
-                        Dim o = HkObj_HkbRealVariableSequencedDataSample.ReadAt(_g, _r.[SamplesItem](i))
+                        Dim o = HkObj_HkbRealVariableSequencedDataSample.ReadAt(_g, _r.[SamplesItemOffset](i))
                         If o IsNot Nothing Then _samples_c.Add(o)
                     Next
                 End If
@@ -91256,7 +91256,7 @@ Namespace Havok.Canon.Objects
                 If _ranges_c Is Nothing Then
                     _ranges_c = New List(Of HkObj_HkbSenseHandleModifierRange)()
                     For i = 0 To _r.[RangesCount] - 1
-                        Dim o = HkObj_HkbSenseHandleModifierRange.ReadAt(_g, _r.[RangesItem](i))
+                        Dim o = HkObj_HkbSenseHandleModifierRange.ReadAt(_g, _r.[RangesItemOffset](i))
                         If o IsNot Nothing Then _ranges_c.Add(o)
                     Next
                 End If
@@ -94753,7 +94753,7 @@ Namespace Havok.Canon.Objects
                 If _events_c Is Nothing Then
                     _events_c = New List(Of HkObj_HkbEventProperty)()
                     For i = 0 To _r.[EventsCount] - 1
-                        Dim o = HkObj_HkbEventProperty.ReadAt(_g, _r.[EventsItem](i))
+                        Dim o = HkObj_HkbEventProperty.ReadAt(_g, _r.[EventsItemOffset](i))
                         If o IsNot Nothing Then _events_c.Add(o)
                     Next
                 End If
@@ -94842,7 +94842,7 @@ Namespace Havok.Canon.Objects
                 If _activetransitions_c Is Nothing Then
                     _activetransitions_c = New List(Of HkObj_HkbStateMachineActiveTransitionInfo)()
                     For i = 0 To _r.[ActiveTransitionsCount] - 1
-                        Dim o = HkObj_HkbStateMachineActiveTransitionInfo.ReadAt(_g, _r.[ActiveTransitionsItem](i))
+                        Dim o = HkObj_HkbStateMachineActiveTransitionInfo.ReadAt(_g, _r.[ActiveTransitionsItemOffset](i))
                         If o IsNot Nothing Then _activetransitions_c.Add(o)
                     Next
                 End If
@@ -94894,7 +94894,7 @@ Namespace Havok.Canon.Objects
                 If _delayedtransitions_c Is Nothing Then
                     _delayedtransitions_c = New List(Of HkObj_HkbStateMachineDelayedTransitionInfo)()
                     For i = 0 To _r.[DelayedTransitionsCount] - 1
-                        Dim o = HkObj_HkbStateMachineDelayedTransitionInfo.ReadAt(_g, _r.[DelayedTransitionsItem](i))
+                        Dim o = HkObj_HkbStateMachineDelayedTransitionInfo.ReadAt(_g, _r.[DelayedTransitionsItemOffset](i))
                         If o IsNot Nothing Then _delayedtransitions_c.Add(o)
                     Next
                 End If
@@ -95717,7 +95717,7 @@ Namespace Havok.Canon.Objects
                 If _transitions_c Is Nothing Then
                     _transitions_c = New List(Of HkObj_HkbStateMachineTransitionInfo)()
                     For i = 0 To _r.[TransitionsCount] - 1
-                        Dim o = HkObj_HkbStateMachineTransitionInfo.ReadAt(_g, _r.[TransitionsItem](i))
+                        Dim o = HkObj_HkbStateMachineTransitionInfo.ReadAt(_g, _r.[TransitionsItemOffset](i))
                         If o IsNot Nothing Then _transitions_c.Add(o)
                     Next
                 End If
@@ -97609,7 +97609,7 @@ Namespace Havok.Canon.Objects
                 If _bindings_c Is Nothing Then
                     _bindings_c = New List(Of HkObj_HkbVariableBindingSetBinding)()
                     For i = 0 To _r.[BindingsCount] - 1
-                        Dim o = HkObj_HkbVariableBindingSetBinding.ReadAt(_g, _r.[BindingsItem](i))
+                        Dim o = HkObj_HkbVariableBindingSetBinding.ReadAt(_g, _r.[BindingsItemOffset](i))
                         If o IsNot Nothing Then _bindings_c.Add(o)
                     Next
                 End If
@@ -98061,7 +98061,7 @@ Namespace Havok.Canon.Objects
                 If _wordvariablevalues_c Is Nothing Then
                     _wordvariablevalues_c = New List(Of HkObj_HkbVariableValue)()
                     For i = 0 To _r.[WordVariableValuesCount] - 1
-                        Dim o = HkObj_HkbVariableValue.ReadAt(_g, _r.[WordVariableValuesItem](i))
+                        Dim o = HkObj_HkbVariableValue.ReadAt(_g, _r.[WordVariableValuesItemOffset](i))
                         If o IsNot Nothing Then _wordvariablevalues_c.Add(o)
                     Next
                 End If
@@ -99722,7 +99722,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodec32)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -99793,7 +99793,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecInt16)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -99864,7 +99864,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUint)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -99935,7 +99935,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUlong)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100006,7 +100006,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodec32)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100104,7 +100104,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUint)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100202,7 +100202,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecInt16)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100300,7 +100300,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUlong)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100398,7 +100398,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodec32)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100469,7 +100469,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecInt16)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100540,7 +100540,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUint)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100611,7 +100611,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUlong)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100682,7 +100682,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodec32)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100753,7 +100753,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUint)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100824,7 +100824,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecInt16)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100895,7 +100895,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUlong)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -100966,7 +100966,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodec32)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -101064,7 +101064,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUint)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUint.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -101162,7 +101162,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecInt16)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecInt16.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -101260,7 +101260,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodecRawUlong)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodecRawUlong.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -101530,7 +101530,7 @@ Namespace Havok.Canon.Objects
                 If _geomsources_c Is Nothing Then
                     _geomsources_c = New List(Of HkObj_HkcdPlanarCsgOperandGeomSource)()
                     For i = 0 To _r.[GeomSourcesCount] - 1
-                        Dim o = HkObj_HkcdPlanarCsgOperandGeomSource.ReadAt(_g, _r.[GeomSourcesItem](i))
+                        Dim o = HkObj_HkcdPlanarCsgOperandGeomSource.ReadAt(_g, _r.[GeomSourcesItemOffset](i))
                         If o IsNot Nothing Then _geomsources_c.Add(o)
                     Next
                 End If
@@ -101908,7 +101908,7 @@ Namespace Havok.Canon.Objects
                 If _planes_c Is Nothing Then
                     _planes_c = New List(Of HkObj_HkcdPlanarGeometryPrimitivesPlane)()
                     For i = 0 To _r.[PlanesCount] - 1
-                        Dim o = HkObj_HkcdPlanarGeometryPrimitivesPlane.ReadAt(_g, _r.[PlanesItem](i))
+                        Dim o = HkObj_HkcdPlanarGeometryPrimitivesPlane.ReadAt(_g, _r.[PlanesItemOffset](i))
                         If o IsNot Nothing Then _planes_c.Add(o)
                     Next
                 End If
@@ -102527,7 +102527,7 @@ Namespace Havok.Canon.Objects
                 If _storage_c Is Nothing Then
                     _storage_c = New List(Of HkObj_HkcdPlanarSolidNode)()
                     For i = 0 To _r.[StorageCount] - 1
-                        Dim o = HkObj_HkcdPlanarSolidNode.ReadAt(_g, _r.[StorageItem](i))
+                        Dim o = HkObj_HkcdPlanarSolidNode.ReadAt(_g, _r.[StorageItemOffset](i))
                         If o IsNot Nothing Then _storage_c.Add(o)
                     Next
                 End If
@@ -102827,7 +102827,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdSimdTreeNode)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdSimdTreeNode.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdSimdTreeNode.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -103088,7 +103088,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -103140,7 +103140,7 @@ Namespace Havok.Canon.Objects
                 If _sections_c Is Nothing Then
                     _sections_c = New List(Of HkObj_HkcdStaticMeshTreeBaseSection)()
                     For i = 0 To _r.[SectionsCount] - 1
-                        Dim o = HkObj_HkcdStaticMeshTreeBaseSection.ReadAt(_g, _r.[SectionsItem](i))
+                        Dim o = HkObj_HkcdStaticMeshTreeBaseSection.ReadAt(_g, _r.[SectionsItemOffset](i))
                         If o IsNot Nothing Then _sections_c.Add(o)
                     Next
                 End If
@@ -103156,7 +103156,7 @@ Namespace Havok.Canon.Objects
                 If _primitives_c Is Nothing Then
                     _primitives_c = New List(Of HkObj_HkcdStaticMeshTreeBasePrimitive)()
                     For i = 0 To _r.[PrimitivesCount] - 1
-                        Dim o = HkObj_HkcdStaticMeshTreeBasePrimitive.ReadAt(_g, _r.[PrimitivesItem](i))
+                        Dim o = HkObj_HkcdStaticMeshTreeBasePrimitive.ReadAt(_g, _r.[PrimitivesItemOffset](i))
                         If o IsNot Nothing Then _primitives_c.Add(o)
                     Next
                 End If
@@ -103442,7 +103442,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis4)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -103864,7 +103864,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -103916,7 +103916,7 @@ Namespace Havok.Canon.Objects
                 If _sections_c Is Nothing Then
                     _sections_c = New List(Of HkObj_HkcdStaticMeshTreeBaseSection)()
                     For i = 0 To _r.[SectionsCount] - 1
-                        Dim o = HkObj_HkcdStaticMeshTreeBaseSection.ReadAt(_g, _r.[SectionsItem](i))
+                        Dim o = HkObj_HkcdStaticMeshTreeBaseSection.ReadAt(_g, _r.[SectionsItemOffset](i))
                         If o IsNot Nothing Then _sections_c.Add(o)
                     Next
                 End If
@@ -103932,7 +103932,7 @@ Namespace Havok.Canon.Objects
                 If _primitives_c Is Nothing Then
                     _primitives_c = New List(Of HkObj_HkcdStaticMeshTreeBasePrimitive)()
                     For i = 0 To _r.[PrimitivesCount] - 1
-                        Dim o = HkObj_HkcdStaticMeshTreeBasePrimitive.ReadAt(_g, _r.[PrimitivesItem](i))
+                        Dim o = HkObj_HkcdStaticMeshTreeBasePrimitive.ReadAt(_g, _r.[PrimitivesItemOffset](i))
                         If o IsNot Nothing Then _primitives_c.Add(o)
                     Next
                 End If
@@ -104002,7 +104002,7 @@ Namespace Havok.Canon.Objects
                 If _primitivedataruns_c Is Nothing Then
                     _primitivedataruns_c = New List(Of HkObj_HknpCompressedMeshShapeTreeDataRun)()
                     For i = 0 To _r.[PrimitiveDataRunsCount] - 1
-                        Dim o = HkObj_HknpCompressedMeshShapeTreeDataRun.ReadAt(_g, _r.[PrimitiveDataRunsItem](i))
+                        Dim o = HkObj_HknpCompressedMeshShapeTreeDataRun.ReadAt(_g, _r.[PrimitiveDataRunsItemOffset](i))
                         If o IsNot Nothing Then _primitivedataruns_c.Add(o)
                     Next
                 End If
@@ -104127,7 +104127,7 @@ Namespace Havok.Canon.Objects
                 If _blocks_c Is Nothing Then
                     _blocks_c = New List(Of HkObj_HkcdStaticPvsBlockHeader)()
                     For i = 0 To _r.[BlocksCount] - 1
-                        Dim o = HkObj_HkcdStaticPvsBlockHeader.ReadAt(_g, _r.[BlocksItem](i))
+                        Dim o = HkObj_HkcdStaticPvsBlockHeader.ReadAt(_g, _r.[BlocksItemOffset](i))
                         If o IsNot Nothing Then _blocks_c.Add(o)
                     Next
                 End If
@@ -104593,7 +104593,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodecRaw)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -104664,7 +104664,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis4)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -104735,7 +104735,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -104806,7 +104806,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis6)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -104877,7 +104877,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodecRaw)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -104939,7 +104939,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis4)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105001,7 +105001,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105063,7 +105063,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis6)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105125,7 +105125,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis4)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105187,7 +105187,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105249,7 +105249,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis6)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105311,7 +105311,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodecRaw)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105373,7 +105373,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodecRaw)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodecRaw.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105444,7 +105444,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis4)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis4.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105515,7 +105515,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105586,7 +105586,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis6)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -105885,7 +105885,7 @@ Namespace Havok.Canon.Objects
                 If _materiala_c Is Nothing Then
                     _materiala_c = New List(Of HkObj_HknpBSMaterial)()
                     For i = 0 To _r.[MaterialACount] - 1
-                        Dim o = HkObj_HknpBSMaterial.ReadAt(_g, _r.[MaterialAItem](i))
+                        Dim o = HkObj_HknpBSMaterial.ReadAt(_g, _r.[MaterialAItemOffset](i))
                         If o IsNot Nothing Then _materiala_c.Add(o)
                     Next
                 End If
@@ -109154,7 +109154,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis5)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis5.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -109206,7 +109206,7 @@ Namespace Havok.Canon.Objects
                 If _sections_c Is Nothing Then
                     _sections_c = New List(Of HkObj_HkcdStaticMeshTreeBaseSection)()
                     For i = 0 To _r.[SectionsCount] - 1
-                        Dim o = HkObj_HkcdStaticMeshTreeBaseSection.ReadAt(_g, _r.[SectionsItem](i))
+                        Dim o = HkObj_HkcdStaticMeshTreeBaseSection.ReadAt(_g, _r.[SectionsItemOffset](i))
                         If o IsNot Nothing Then _sections_c.Add(o)
                     Next
                 End If
@@ -109222,7 +109222,7 @@ Namespace Havok.Canon.Objects
                 If _primitives_c Is Nothing Then
                     _primitives_c = New List(Of HkObj_HkcdStaticMeshTreeBasePrimitive)()
                     For i = 0 To _r.[PrimitivesCount] - 1
-                        Dim o = HkObj_HkcdStaticMeshTreeBasePrimitive.ReadAt(_g, _r.[PrimitivesItem](i))
+                        Dim o = HkObj_HkcdStaticMeshTreeBasePrimitive.ReadAt(_g, _r.[PrimitivesItemOffset](i))
                         If o IsNot Nothing Then _primitives_c.Add(o)
                     Next
                 End If
@@ -109292,7 +109292,7 @@ Namespace Havok.Canon.Objects
                 If _primitivedataruns_c Is Nothing Then
                     _primitivedataruns_c = New List(Of HkObj_HknpCompressedMeshShapeTreeDataRun)()
                     For i = 0 To _r.[PrimitiveDataRunsCount] - 1
-                        Dim o = HkObj_HknpCompressedMeshShapeTreeDataRun.ReadAt(_g, _r.[PrimitiveDataRunsItem](i))
+                        Dim o = HkObj_HknpCompressedMeshShapeTreeDataRun.ReadAt(_g, _r.[PrimitiveDataRunsItemOffset](i))
                         If o IsNot Nothing Then _primitivedataruns_c.Add(o)
                     Next
                 End If
@@ -111026,7 +111026,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdDynamicTreeCodec32)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdDynamicTreeCodec32.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -113154,7 +113154,7 @@ Namespace Havok.Canon.Objects
                 If _entries_c Is Nothing Then
                     _entries_c = New List(Of HkObj_HknpMaterialDescriptor)()
                     For i = 0 To _r.[EntriesCount] - 1
-                        Dim o = HkObj_HknpMaterialDescriptor.ReadAt(_g, _r.[EntriesItem](i))
+                        Dim o = HkObj_HknpMaterialDescriptor.ReadAt(_g, _r.[EntriesItemOffset](i))
                         If o IsNot Nothing Then _entries_c.Add(o)
                     Next
                 End If
@@ -113216,7 +113216,7 @@ Namespace Havok.Canon.Objects
                 If _coarsetreedata_c Is Nothing Then
                     _coarsetreedata_c = New List(Of HkObj_HknpMinMaxQuadTreeMinMaxLevel)()
                     For i = 0 To _r.[CoarseTreeDataCount] - 1
-                        Dim o = HkObj_HknpMinMaxQuadTreeMinMaxLevel.ReadAt(_g, _r.[CoarseTreeDataItem](i))
+                        Dim o = HkObj_HknpMinMaxQuadTreeMinMaxLevel.ReadAt(_g, _r.[CoarseTreeDataItemOffset](i))
                         If o IsNot Nothing Then _coarsetreedata_c.Add(o)
                     Next
                 End If
@@ -114333,7 +114333,7 @@ Namespace Havok.Canon.Objects
                 If _materials_c Is Nothing Then
                     _materials_c = New List(Of HkObj_HknpMaterial)()
                     For i = 0 To _r.[MaterialsCount] - 1
-                        Dim o = HkObj_HknpMaterial.ReadAt(_g, _r.[MaterialsItem](i))
+                        Dim o = HkObj_HknpMaterial.ReadAt(_g, _r.[MaterialsItemOffset](i))
                         If o IsNot Nothing Then _materials_c.Add(o)
                     Next
                 End If
@@ -114349,7 +114349,7 @@ Namespace Havok.Canon.Objects
                 If _motionproperties_c Is Nothing Then
                     _motionproperties_c = New List(Of HkObj_HknpMotionProperties)()
                     For i = 0 To _r.[MotionPropertiesCount] - 1
-                        Dim o = HkObj_HknpMotionProperties.ReadAt(_g, _r.[MotionPropertiesItem](i))
+                        Dim o = HkObj_HknpMotionProperties.ReadAt(_g, _r.[MotionPropertiesItemOffset](i))
                         If o IsNot Nothing Then _motionproperties_c.Add(o)
                     Next
                 End If
@@ -114365,7 +114365,7 @@ Namespace Havok.Canon.Objects
                 If _motioncinfos_c Is Nothing Then
                     _motioncinfos_c = New List(Of HkObj_HknpMotionCinfo)()
                     For i = 0 To _r.[MotionCinfosCount] - 1
-                        Dim o = HkObj_HknpMotionCinfo.ReadAt(_g, _r.[MotionCinfosItem](i))
+                        Dim o = HkObj_HknpMotionCinfo.ReadAt(_g, _r.[MotionCinfosItemOffset](i))
                         If o IsNot Nothing Then _motioncinfos_c.Add(o)
                     Next
                 End If
@@ -114381,7 +114381,7 @@ Namespace Havok.Canon.Objects
                 If _bodycinfos_c Is Nothing Then
                     _bodycinfos_c = New List(Of HkObj_HknpBodyCinfo)()
                     For i = 0 To _r.[BodyCinfosCount] - 1
-                        Dim o = HkObj_HknpBodyCinfo.ReadAt(_g, _r.[BodyCinfosItem](i))
+                        Dim o = HkObj_HknpBodyCinfo.ReadAt(_g, _r.[BodyCinfosItemOffset](i))
                         If o IsNot Nothing Then _bodycinfos_c.Add(o)
                     Next
                 End If
@@ -114397,7 +114397,7 @@ Namespace Havok.Canon.Objects
                 If _constraintcinfos_c Is Nothing Then
                     _constraintcinfos_c = New List(Of HkObj_HknpConstraintCinfo)()
                     For i = 0 To _r.[ConstraintCinfosCount] - 1
-                        Dim o = HkObj_HknpConstraintCinfo.ReadAt(_g, _r.[ConstraintCinfosItem](i))
+                        Dim o = HkObj_HknpConstraintCinfo.ReadAt(_g, _r.[ConstraintCinfosItemOffset](i))
                         If o IsNot Nothing Then _constraintcinfos_c.Add(o)
                     Next
                 End If
@@ -114660,7 +114660,7 @@ Namespace Havok.Canon.Objects
                 If _materials_c Is Nothing Then
                     _materials_c = New List(Of HkObj_HknpMaterial)()
                     For i = 0 To _r.[MaterialsCount] - 1
-                        Dim o = HkObj_HknpMaterial.ReadAt(_g, _r.[MaterialsItem](i))
+                        Dim o = HkObj_HknpMaterial.ReadAt(_g, _r.[MaterialsItemOffset](i))
                         If o IsNot Nothing Then _materials_c.Add(o)
                     Next
                 End If
@@ -114676,7 +114676,7 @@ Namespace Havok.Canon.Objects
                 If _motionproperties_c Is Nothing Then
                     _motionproperties_c = New List(Of HkObj_HknpMotionProperties)()
                     For i = 0 To _r.[MotionPropertiesCount] - 1
-                        Dim o = HkObj_HknpMotionProperties.ReadAt(_g, _r.[MotionPropertiesItem](i))
+                        Dim o = HkObj_HknpMotionProperties.ReadAt(_g, _r.[MotionPropertiesItemOffset](i))
                         If o IsNot Nothing Then _motionproperties_c.Add(o)
                     Next
                 End If
@@ -114692,7 +114692,7 @@ Namespace Havok.Canon.Objects
                 If _motioncinfos_c Is Nothing Then
                     _motioncinfos_c = New List(Of HkObj_HknpMotionCinfo)()
                     For i = 0 To _r.[MotionCinfosCount] - 1
-                        Dim o = HkObj_HknpMotionCinfo.ReadAt(_g, _r.[MotionCinfosItem](i))
+                        Dim o = HkObj_HknpMotionCinfo.ReadAt(_g, _r.[MotionCinfosItemOffset](i))
                         If o IsNot Nothing Then _motioncinfos_c.Add(o)
                     Next
                 End If
@@ -114708,7 +114708,7 @@ Namespace Havok.Canon.Objects
                 If _bodycinfos_c Is Nothing Then
                     _bodycinfos_c = New List(Of HkObj_HknpBodyCinfo)()
                     For i = 0 To _r.[BodyCinfosCount] - 1
-                        Dim o = HkObj_HknpBodyCinfo.ReadAt(_g, _r.[BodyCinfosItem](i))
+                        Dim o = HkObj_HknpBodyCinfo.ReadAt(_g, _r.[BodyCinfosItemOffset](i))
                         If o IsNot Nothing Then _bodycinfos_c.Add(o)
                     Next
                 End If
@@ -114724,7 +114724,7 @@ Namespace Havok.Canon.Objects
                 If _constraintcinfos_c Is Nothing Then
                     _constraintcinfos_c = New List(Of HkObj_HknpConstraintCinfo)()
                     For i = 0 To _r.[ConstraintCinfosCount] - 1
-                        Dim o = HkObj_HknpConstraintCinfo.ReadAt(_g, _r.[ConstraintCinfosItem](i))
+                        Dim o = HkObj_HknpConstraintCinfo.ReadAt(_g, _r.[ConstraintCinfosItemOffset](i))
                         If o IsNot Nothing Then _constraintcinfos_c.Add(o)
                     Next
                 End If
@@ -116791,7 +116791,7 @@ Namespace Havok.Canon.Objects
                 If _nodes_c Is Nothing Then
                     _nodes_c = New List(Of HkObj_HkcdStaticTreeCodec3Axis6)()
                     For i = 0 To _r.[NodesCount] - 1
-                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItem](i))
+                        Dim o = HkObj_HkcdStaticTreeCodec3Axis6.ReadAt(_g, _r.[NodesItemOffset](i))
                         If o IsNot Nothing Then _nodes_c.Add(o)
                     Next
                 End If
@@ -117218,7 +117218,7 @@ Namespace Havok.Canon.Objects
                 If _tyremarkpoints_c Is Nothing Then
                     _tyremarkpoints_c = New List(Of HkObj_HknpTyremarkPoint)()
                     For i = 0 To _r.[TyremarkPointsCount] - 1
-                        Dim o = HkObj_HknpTyremarkPoint.ReadAt(_g, _r.[TyremarkPointsItem](i))
+                        Dim o = HkObj_HknpTyremarkPoint.ReadAt(_g, _r.[TyremarkPointsItemOffset](i))
                         If o IsNot Nothing Then _tyremarkpoints_c.Add(o)
                     Next
                 End If
@@ -117598,7 +117598,7 @@ Namespace Havok.Canon.Objects
                 If _wheelparams_c Is Nothing Then
                     _wheelparams_c = New List(Of HkObj_HknpVehicleDataWheelComponentParams)()
                     For i = 0 To _r.[WheelParamsCount] - 1
-                        Dim o = HkObj_HknpVehicleDataWheelComponentParams.ReadAt(_g, _r.[WheelParamsItem](i))
+                        Dim o = HkObj_HknpVehicleDataWheelComponentParams.ReadAt(_g, _r.[WheelParamsItemOffset](i))
                         If o IsNot Nothing Then _wheelparams_c.Add(o)
                     Next
                 End If
@@ -118041,7 +118041,7 @@ Namespace Havok.Canon.Objects
                 If _wheelbrakingproperties_c Is Nothing Then
                     _wheelbrakingproperties_c = New List(Of HkObj_HknpVehicleDefaultBrakeWheelBrakingProperties)()
                     For i = 0 To _r.[WheelBrakingPropertiesCount] - 1
-                        Dim o = HkObj_HknpVehicleDefaultBrakeWheelBrakingProperties.ReadAt(_g, _r.[WheelBrakingPropertiesItem](i))
+                        Dim o = HkObj_HknpVehicleDefaultBrakeWheelBrakingProperties.ReadAt(_g, _r.[WheelBrakingPropertiesItemOffset](i))
                         If o IsNot Nothing Then _wheelbrakingproperties_c.Add(o)
                     Next
                 End If
@@ -118430,7 +118430,7 @@ Namespace Havok.Canon.Objects
                 If _wheelparams_c Is Nothing Then
                     _wheelparams_c = New List(Of HkObj_HknpVehicleSuspensionSuspensionWheelParameters)()
                     For i = 0 To _r.[WheelParamsCount] - 1
-                        Dim o = HkObj_HknpVehicleSuspensionSuspensionWheelParameters.ReadAt(_g, _r.[WheelParamsItem](i))
+                        Dim o = HkObj_HknpVehicleSuspensionSuspensionWheelParameters.ReadAt(_g, _r.[WheelParamsItemOffset](i))
                         If o IsNot Nothing Then _wheelparams_c.Add(o)
                     Next
                 End If
@@ -118446,7 +118446,7 @@ Namespace Havok.Canon.Objects
                 If _wheelspringparams_c Is Nothing Then
                     _wheelspringparams_c = New List(Of HkObj_HknpVehicleDefaultSuspensionWheelSpringSuspensionParameters)()
                     For i = 0 To _r.[WheelSpringParamsCount] - 1
-                        Dim o = HkObj_HknpVehicleDefaultSuspensionWheelSpringSuspensionParameters.ReadAt(_g, _r.[WheelSpringParamsItem](i))
+                        Dim o = HkObj_HknpVehicleDefaultSuspensionWheelSpringSuspensionParameters.ReadAt(_g, _r.[WheelSpringParamsItemOffset](i))
                         If o IsNot Nothing Then _wheelspringparams_c.Add(o)
                     Next
                 End If
@@ -119326,7 +119326,7 @@ Namespace Havok.Canon.Objects
                 If _wheelsinfo_c Is Nothing Then
                     _wheelsinfo_c = New List(Of HkObj_HknpVehicleInstanceWheelInfo)()
                     For i = 0 To _r.[WheelsInfoCount] - 1
-                        Dim o = HkObj_HknpVehicleInstanceWheelInfo.ReadAt(_g, _r.[WheelsInfoItem](i))
+                        Dim o = HkObj_HknpVehicleInstanceWheelInfo.ReadAt(_g, _r.[WheelsInfoItemOffset](i))
                         If o IsNot Nothing Then _wheelsinfo_c.Add(o)
                     Next
                 End If
@@ -119788,7 +119788,7 @@ Namespace Havok.Canon.Objects
                 If _wheelstates_c Is Nothing Then
                     _wheelstates_c = New List(Of HkObj_HknpVehicleLinearCastWheelCollideWheelState)()
                     For i = 0 To _r.[WheelStatesCount] - 1
-                        Dim o = HkObj_HknpVehicleLinearCastWheelCollideWheelState.ReadAt(_g, _r.[WheelStatesItem](i))
+                        Dim o = HkObj_HknpVehicleLinearCastWheelCollideWheelState.ReadAt(_g, _r.[WheelStatesItemOffset](i))
                         If o IsNot Nothing Then _wheelstates_c.Add(o)
                     Next
                 End If
@@ -120117,7 +120117,7 @@ Namespace Havok.Canon.Objects
                 If _wheelparams_c Is Nothing Then
                     _wheelparams_c = New List(Of HkObj_HknpVehicleSuspensionSuspensionWheelParameters)()
                     For i = 0 To _r.[WheelParamsCount] - 1
-                        Dim o = HkObj_HknpVehicleSuspensionSuspensionWheelParameters.ReadAt(_g, _r.[WheelParamsItem](i))
+                        Dim o = HkObj_HknpVehicleSuspensionSuspensionWheelParameters.ReadAt(_g, _r.[WheelParamsItemOffset](i))
                         If o IsNot Nothing Then _wheelparams_c.Add(o)
                     Next
                 End If
@@ -120929,7 +120929,7 @@ Namespace Havok.Canon.Objects
                 If _bodies_c Is Nothing Then
                     _bodies_c = New List(Of HkObj_HknpBody)()
                     For i = 0 To _r.[BodiesCount] - 1
-                        Dim o = HkObj_HknpBody.ReadAt(_g, _r.[BodiesItem](i))
+                        Dim o = HkObj_HknpBody.ReadAt(_g, _r.[BodiesItemOffset](i))
                         If o IsNot Nothing Then _bodies_c.Add(o)
                     Next
                 End If
@@ -120963,7 +120963,7 @@ Namespace Havok.Canon.Objects
                 If _motions_c Is Nothing Then
                     _motions_c = New List(Of HkObj_HknpMotion)()
                     For i = 0 To _r.[MotionsCount] - 1
-                        Dim o = HkObj_HknpMotion.ReadAt(_g, _r.[MotionsItem](i))
+                        Dim o = HkObj_HknpMotion.ReadAt(_g, _r.[MotionsItemOffset](i))
                         If o IsNot Nothing Then _motions_c.Add(o)
                     Next
                 End If
@@ -120979,7 +120979,7 @@ Namespace Havok.Canon.Objects
                 If _constraints_c Is Nothing Then
                     _constraints_c = New List(Of HkObj_HknpConstraintCinfo)()
                     For i = 0 To _r.[ConstraintsCount] - 1
-                        Dim o = HkObj_HknpConstraintCinfo.ReadAt(_g, _r.[ConstraintsItem](i))
+                        Dim o = HkObj_HknpConstraintCinfo.ReadAt(_g, _r.[ConstraintsItemOffset](i))
                         If o IsNot Nothing Then _constraints_c.Add(o)
                     Next
                 End If
@@ -121259,7 +121259,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -122723,7 +122723,7 @@ Namespace Havok.Canon.Objects
                 If _infos_c Is Nothing Then
                     _infos_c = New List(Of HkObj_HkpBallSocketChainDataConstraintInfo)()
                     For i = 0 To _r.[InfosCount] - 1
-                        Dim o = HkObj_HkpBallSocketChainDataConstraintInfo.ReadAt(_g, _r.[InfosItem](i))
+                        Dim o = HkObj_HkpBallSocketChainDataConstraintInfo.ReadAt(_g, _r.[InfosItemOffset](i))
                         If o IsNot Nothing Then _infos_c.Add(o)
                     Next
                 End If
@@ -124155,7 +124155,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -126575,7 +126575,7 @@ Namespace Havok.Canon.Objects
                 If _bigtriangles_c Is Nothing Then
                     _bigtriangles_c = New List(Of HkObj_HkpCompressedMeshShapeBigTriangle)()
                     For i = 0 To _r.[BigTrianglesCount] - 1
-                        Dim o = HkObj_HkpCompressedMeshShapeBigTriangle.ReadAt(_g, _r.[BigTrianglesItem](i))
+                        Dim o = HkObj_HkpCompressedMeshShapeBigTriangle.ReadAt(_g, _r.[BigTrianglesItemOffset](i))
                         If o IsNot Nothing Then _bigtriangles_c.Add(o)
                     Next
                 End If
@@ -126591,7 +126591,7 @@ Namespace Havok.Canon.Objects
                 If _chunks_c Is Nothing Then
                     _chunks_c = New List(Of HkObj_HkpCompressedMeshShapeChunk)()
                     For i = 0 To _r.[ChunksCount] - 1
-                        Dim o = HkObj_HkpCompressedMeshShapeChunk.ReadAt(_g, _r.[ChunksItem](i))
+                        Dim o = HkObj_HkpCompressedMeshShapeChunk.ReadAt(_g, _r.[ChunksItemOffset](i))
                         If o IsNot Nothing Then _chunks_c.Add(o)
                     Next
                 End If
@@ -126607,7 +126607,7 @@ Namespace Havok.Canon.Objects
                 If _convexpieces_c Is Nothing Then
                     _convexpieces_c = New List(Of HkObj_HkpCompressedMeshShapeConvexPiece)()
                     For i = 0 To _r.[ConvexPiecesCount] - 1
-                        Dim o = HkObj_HkpCompressedMeshShapeConvexPiece.ReadAt(_g, _r.[ConvexPiecesItem](i))
+                        Dim o = HkObj_HkpCompressedMeshShapeConvexPiece.ReadAt(_g, _r.[ConvexPiecesItemOffset](i))
                         If o IsNot Nothing Then _convexpieces_c.Add(o)
                     Next
                 End If
@@ -126681,7 +126681,7 @@ Namespace Havok.Canon.Objects
                 If _namedmaterials_c Is Nothing Then
                     _namedmaterials_c = New List(Of HkObj_HkpNamedMeshMaterial)()
                     For i = 0 To _r.[NamedMaterialsCount] - 1
-                        Dim o = HkObj_HkpNamedMeshMaterial.ReadAt(_g, _r.[NamedMaterialsItem](i))
+                        Dim o = HkObj_HkpNamedMeshMaterial.ReadAt(_g, _r.[NamedMaterialsItemOffset](i))
                         If o IsNot Nothing Then _namedmaterials_c.Add(o)
                     Next
                 End If
@@ -129596,7 +129596,7 @@ Namespace Havok.Canon.Objects
                 If _rotatedvertices_c Is Nothing Then
                     _rotatedvertices_c = New List(Of HkObj_HkpConvexVerticesShapeFourVectors)()
                     For i = 0 To _r.[RotatedVerticesCount] - 1
-                        Dim o = HkObj_HkpConvexVerticesShapeFourVectors.ReadAt(_g, _r.[RotatedVerticesItem](i))
+                        Dim o = HkObj_HkpConvexVerticesShapeFourVectors.ReadAt(_g, _r.[RotatedVerticesItemOffset](i))
                         If o IsNot Nothing Then _rotatedvertices_c.Add(o)
                     Next
                 End If
@@ -131191,7 +131191,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -131846,7 +131846,7 @@ Namespace Havok.Canon.Objects
                 If _trianglessubparts_c Is Nothing Then
                     _trianglessubparts_c = New List(Of HkObj_HkpExtendedMeshShapeTrianglesSubpart)()
                     For i = 0 To _r.[TrianglesSubpartsCount] - 1
-                        Dim o = HkObj_HkpExtendedMeshShapeTrianglesSubpart.ReadAt(_g, _r.[TrianglesSubpartsItem](i))
+                        Dim o = HkObj_HkpExtendedMeshShapeTrianglesSubpart.ReadAt(_g, _r.[TrianglesSubpartsItemOffset](i))
                         If o IsNot Nothing Then _trianglessubparts_c.Add(o)
                     Next
                 End If
@@ -131862,7 +131862,7 @@ Namespace Havok.Canon.Objects
                 If _shapessubparts_c Is Nothing Then
                     _shapessubparts_c = New List(Of HkObj_HkpExtendedMeshShapeShapesSubpart)()
                     For i = 0 To _r.[ShapesSubpartsCount] - 1
-                        Dim o = HkObj_HkpExtendedMeshShapeShapesSubpart.ReadAt(_g, _r.[ShapesSubpartsItem](i))
+                        Dim o = HkObj_HkpExtendedMeshShapeShapesSubpart.ReadAt(_g, _r.[ShapesSubpartsItemOffset](i))
                         If o IsNot Nothing Then _shapessubparts_c.Add(o)
                     Next
                 End If
@@ -132578,7 +132578,7 @@ Namespace Havok.Canon.Objects
                 If _subparts_c Is Nothing Then
                     _subparts_c = New List(Of HkObj_HkpMeshShapeSubpart)()
                     For i = 0 To _r.[SubpartsCount] - 1
-                        Dim o = HkObj_HkpMeshShapeSubpart.ReadAt(_g, _r.[SubpartsItem](i))
+                        Dim o = HkObj_HkpMeshShapeSubpart.ReadAt(_g, _r.[SubpartsItemOffset](i))
                         If o IsNot Nothing Then _subparts_c.Add(o)
                     Next
                 End If
@@ -135974,7 +135974,7 @@ Namespace Havok.Canon.Objects
                 If _childinfo_c Is Nothing Then
                     _childinfo_c = New List(Of HkObj_HkpListShapeChildInfo)()
                     For i = 0 To _r.[ChildInfoCount] - 1
-                        Dim o = HkObj_HkpListShapeChildInfo.ReadAt(_g, _r.[ChildInfoItem](i))
+                        Dim o = HkObj_HkpListShapeChildInfo.ReadAt(_g, _r.[ChildInfoItemOffset](i))
                         If o IsNot Nothing Then _childinfo_c.Add(o)
                     Next
                 End If
@@ -136826,7 +136826,7 @@ Namespace Havok.Canon.Objects
                 If _subparts_c Is Nothing Then
                     _subparts_c = New List(Of HkObj_HkpMeshShapeSubpart)()
                     For i = 0 To _r.[SubpartsCount] - 1
-                        Dim o = HkObj_HkpMeshShapeSubpart.ReadAt(_g, _r.[SubpartsItem](i))
+                        Dim o = HkObj_HkpMeshShapeSubpart.ReadAt(_g, _r.[SubpartsItemOffset](i))
                         If o IsNot Nothing Then _subparts_c.Add(o)
                     Next
                 End If
@@ -138539,7 +138539,7 @@ Namespace Havok.Canon.Objects
                 If _rays_c Is Nothing Then
                     _rays_c = New List(Of HkObj_HkpMultiRayShapeRay)()
                     For i = 0 To _r.[RaysCount] - 1
-                        Dim o = HkObj_HkpMultiRayShapeRay.ReadAt(_g, _r.[RaysItem](i))
+                        Dim o = HkObj_HkpMultiRayShapeRay.ReadAt(_g, _r.[RaysItemOffset](i))
                         If o IsNot Nothing Then _rays_c.Add(o)
                     Next
                 End If
@@ -139378,7 +139378,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -140578,7 +140578,7 @@ Namespace Havok.Canon.Objects
                 If _infos_c Is Nothing Then
                     _infos_c = New List(Of HkObj_HkpPoweredChainDataConstraintInfo)()
                     For i = 0 To _r.[InfosCount] - 1
-                        Dim o = HkObj_HkpPoweredChainDataConstraintInfo.ReadAt(_g, _r.[InfosItem](i))
+                        Dim o = HkObj_HkpPoweredChainDataConstraintInfo.ReadAt(_g, _r.[InfosItemOffset](i))
                         If o IsNot Nothing Then _infos_c.Add(o)
                     Next
                 End If
@@ -140812,7 +140812,7 @@ Namespace Havok.Canon.Objects
                 If _links_c Is Nothing Then
                     _links_c = New List(Of HkObj_HkpPoweredChainMapperLinkInfo)()
                     For i = 0 To _r.[LinksCount] - 1
-                        Dim o = HkObj_HkpPoweredChainMapperLinkInfo.ReadAt(_g, _r.[LinksItem](i))
+                        Dim o = HkObj_HkpPoweredChainMapperLinkInfo.ReadAt(_g, _r.[LinksItemOffset](i))
                         If o IsNot Nothing Then _links_c.Add(o)
                     Next
                 End If
@@ -140828,7 +140828,7 @@ Namespace Havok.Canon.Objects
                 If _targets_c Is Nothing Then
                     _targets_c = New List(Of HkObj_HkpPoweredChainMapperTarget)()
                     For i = 0 To _r.[TargetsCount] - 1
-                        Dim o = HkObj_HkpPoweredChainMapperTarget.ReadAt(_g, _r.[TargetsItem](i))
+                        Dim o = HkObj_HkpPoweredChainMapperTarget.ReadAt(_g, _r.[TargetsItemOffset](i))
                         If o IsNot Nothing Then _targets_c.Add(o)
                     Next
                 End If
@@ -142986,7 +142986,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -143752,7 +143752,7 @@ Namespace Havok.Canon.Objects
                 If _contactpoints_c Is Nothing Then
                     _contactpoints_c = New List(Of HkObj_HkContactPoint)()
                     For i = 0 To _r.[ContactPointsCount] - 1
-                        Dim o = HkObj_HkContactPoint.ReadAt(_g, _r.[ContactPointsItem](i))
+                        Dim o = HkObj_HkContactPoint.ReadAt(_g, _r.[ContactPointsItemOffset](i))
                         If o IsNot Nothing Then _contactpoints_c.Add(o)
                     Next
                 End If
@@ -144049,7 +144049,7 @@ Namespace Havok.Canon.Objects
                 If _transforms_c Is Nothing Then
                     _transforms_c = New List(Of HkObj_HkpSerializedDisplayRbTransformsDisplayTransformPair)()
                     For i = 0 To _r.[TransformsCount] - 1
-                        Dim o = HkObj_HkpSerializedDisplayRbTransformsDisplayTransformPair.ReadAt(_g, _r.[TransformsItem](i))
+                        Dim o = HkObj_HkpSerializedDisplayRbTransformsDisplayTransformPair.ReadAt(_g, _r.[TransformsItemOffset](i))
                         If o IsNot Nothing Then _transforms_c.Add(o)
                     Next
                 End If
@@ -145236,7 +145236,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -145715,7 +145715,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -145781,7 +145781,7 @@ Namespace Havok.Canon.Objects
                 If _collisiondetails_c Is Nothing Then
                     _collisiondetails_c = New List(Of HkObj_HkpSimpleShapePhantomCollisionDetail)()
                     For i = 0 To _r.[CollisionDetailsCount] - 1
-                        Dim o = HkObj_HkpSimpleShapePhantomCollisionDetail.ReadAt(_g, _r.[CollisionDetailsItem](i))
+                        Dim o = HkObj_HkpSimpleShapePhantomCollisionDetail.ReadAt(_g, _r.[CollisionDetailsItemOffset](i))
                         If o IsNot Nothing Then _collisiondetails_c.Add(o)
                     Next
                 End If
@@ -147099,7 +147099,7 @@ Namespace Havok.Canon.Objects
                 If _infos_c Is Nothing Then
                     _infos_c = New List(Of HkObj_HkpStiffSpringChainDataConstraintInfo)()
                     For i = 0 To _r.[InfosCount] - 1
-                        Dim o = HkObj_HkpStiffSpringChainDataConstraintInfo.ReadAt(_g, _r.[InfosItem](i))
+                        Dim o = HkObj_HkpStiffSpringChainDataConstraintInfo.ReadAt(_g, _r.[InfosItemOffset](i))
                         If o IsNot Nothing Then _infos_c.Add(o)
                     Next
                 End If
@@ -147601,7 +147601,7 @@ Namespace Havok.Canon.Objects
                 If _trianglessubparts_c Is Nothing Then
                     _trianglessubparts_c = New List(Of HkObj_HkpExtendedMeshShapeTrianglesSubpart)()
                     For i = 0 To _r.[TrianglesSubpartsCount] - 1
-                        Dim o = HkObj_HkpExtendedMeshShapeTrianglesSubpart.ReadAt(_g, _r.[TrianglesSubpartsItem](i))
+                        Dim o = HkObj_HkpExtendedMeshShapeTrianglesSubpart.ReadAt(_g, _r.[TrianglesSubpartsItemOffset](i))
                         If o IsNot Nothing Then _trianglessubparts_c.Add(o)
                     Next
                 End If
@@ -147617,7 +147617,7 @@ Namespace Havok.Canon.Objects
                 If _shapessubparts_c Is Nothing Then
                     _shapessubparts_c = New List(Of HkObj_HkpExtendedMeshShapeShapesSubpart)()
                     For i = 0 To _r.[ShapesSubpartsCount] - 1
-                        Dim o = HkObj_HkpExtendedMeshShapeShapesSubpart.ReadAt(_g, _r.[ShapesSubpartsItem](i))
+                        Dim o = HkObj_HkpExtendedMeshShapeShapesSubpart.ReadAt(_g, _r.[ShapesSubpartsItemOffset](i))
                         If o IsNot Nothing Then _shapessubparts_c.Add(o)
                     Next
                 End If
@@ -147963,7 +147963,7 @@ Namespace Havok.Canon.Objects
                 If _materials_c Is Nothing Then
                     _materials_c = New List(Of HkObj_HkpStorageExtendedMeshShapeMaterial)()
                     For i = 0 To _r.[MaterialsCount] - 1
-                        Dim o = HkObj_HkpStorageExtendedMeshShapeMaterial.ReadAt(_g, _r.[MaterialsItem](i))
+                        Dim o = HkObj_HkpStorageExtendedMeshShapeMaterial.ReadAt(_g, _r.[MaterialsItemOffset](i))
                         If o IsNot Nothing Then _materials_c.Add(o)
                     Next
                 End If
@@ -147979,7 +147979,7 @@ Namespace Havok.Canon.Objects
                 If _namedmaterials_c Is Nothing Then
                     _namedmaterials_c = New List(Of HkObj_HkpNamedMeshMaterial)()
                     For i = 0 To _r.[NamedMaterialsCount] - 1
-                        Dim o = HkObj_HkpNamedMeshMaterial.ReadAt(_g, _r.[NamedMaterialsItem](i))
+                        Dim o = HkObj_HkpNamedMeshMaterial.ReadAt(_g, _r.[NamedMaterialsItemOffset](i))
                         If o IsNot Nothing Then _namedmaterials_c.Add(o)
                     Next
                 End If
@@ -148095,7 +148095,7 @@ Namespace Havok.Canon.Objects
                 If _materials_c Is Nothing Then
                     _materials_c = New List(Of HkObj_HkpStorageExtendedMeshShapeMaterial)()
                     For i = 0 To _r.[MaterialsCount] - 1
-                        Dim o = HkObj_HkpStorageExtendedMeshShapeMaterial.ReadAt(_g, _r.[MaterialsItem](i))
+                        Dim o = HkObj_HkpStorageExtendedMeshShapeMaterial.ReadAt(_g, _r.[MaterialsItemOffset](i))
                         If o IsNot Nothing Then _materials_c.Add(o)
                     Next
                 End If
@@ -148247,7 +148247,7 @@ Namespace Havok.Canon.Objects
                 If _subparts_c Is Nothing Then
                     _subparts_c = New List(Of HkObj_HkpMeshShapeSubpart)()
                     For i = 0 To _r.[SubpartsCount] - 1
-                        Dim o = HkObj_HkpMeshShapeSubpart.ReadAt(_g, _r.[SubpartsItem](i))
+                        Dim o = HkObj_HkpMeshShapeSubpart.ReadAt(_g, _r.[SubpartsItemOffset](i))
                         If o IsNot Nothing Then _subparts_c.Add(o)
                     Next
                 End If
@@ -149432,7 +149432,7 @@ Namespace Havok.Canon.Objects
                 If _eventqueue_c Is Nothing Then
                     _eventqueue_c = New List(Of HkObj_HkpTriggerVolumeEventInfo)()
                     For i = 0 To _r.[EventQueueCount] - 1
-                        Dim o = HkObj_HkpTriggerVolumeEventInfo.ReadAt(_g, _r.[EventQueueItem](i))
+                        Dim o = HkObj_HkpTriggerVolumeEventInfo.ReadAt(_g, _r.[EventQueueItemOffset](i))
                         If o IsNot Nothing Then _eventqueue_c.Add(o)
                     Next
                 End If
@@ -153072,7 +153072,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkpProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkpProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -153716,7 +153716,7 @@ Namespace Havok.Canon.Objects
                 If _attributes_c Is Nothing Then
                     _attributes_c = New List(Of HkObj_HkxAttribute)()
                     For i = 0 To _r.[AttributesCount] - 1
-                        Dim o = HkObj_HkxAttribute.ReadAt(_g, _r.[AttributesItem](i))
+                        Dim o = HkObj_HkxAttribute.ReadAt(_g, _r.[AttributesItemOffset](i))
                         If o IsNot Nothing Then _attributes_c.Add(o)
                     Next
                 End If
@@ -153787,7 +153787,7 @@ Namespace Havok.Canon.Objects
                 If _attributegroups_c Is Nothing Then
                     _attributegroups_c = New List(Of HkObj_HkxAttributeGroup)()
                     For i = 0 To _r.[AttributeGroupsCount] - 1
-                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItem](i))
+                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItemOffset](i))
                         If o IsNot Nothing Then _attributegroups_c.Add(o)
                     Next
                 End If
@@ -154085,7 +154085,7 @@ Namespace Havok.Canon.Objects
                 If _items_c Is Nothing Then
                     _items_c = New List(Of HkObj_HkxEnumItem)()
                     For i = 0 To _r.[ItemsCount] - 1
-                        Dim o = HkObj_HkxEnumItem.ReadAt(_g, _r.[ItemsItem](i))
+                        Dim o = HkObj_HkxEnumItem.ReadAt(_g, _r.[ItemsItemOffset](i))
                         If o IsNot Nothing Then _items_c.Add(o)
                     Next
                 End If
@@ -154251,7 +154251,7 @@ Namespace Havok.Canon.Objects
                 If _variables_c Is Nothing Then
                     _variables_c = New List(Of HkObj_HkxEnvironmentVariable)()
                     For i = 0 To _r.[VariablesCount] - 1
-                        Dim o = HkObj_HkxEnvironmentVariable.ReadAt(_g, _r.[VariablesItem](i))
+                        Dim o = HkObj_HkxEnvironmentVariable.ReadAt(_g, _r.[VariablesItemOffset](i))
                         If o IsNot Nothing Then _variables_c.Add(o)
                     Next
                 End If
@@ -154639,7 +154639,7 @@ Namespace Havok.Canon.Objects
                 If _attributegroups_c Is Nothing Then
                     _attributegroups_c = New List(Of HkObj_HkxAttributeGroup)()
                     For i = 0 To _r.[AttributeGroupsCount] - 1
-                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItem](i))
+                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItemOffset](i))
                         If o IsNot Nothing Then _attributegroups_c.Add(o)
                     Next
                 End If
@@ -154668,7 +154668,7 @@ Namespace Havok.Canon.Objects
                 If _stages_c Is Nothing Then
                     _stages_c = New List(Of HkObj_HkxMaterialTextureStage)()
                     For i = 0 To _r.[StagesCount] - 1
-                        Dim o = HkObj_HkxMaterialTextureStage.ReadAt(_g, _r.[StagesItem](i))
+                        Dim o = HkObj_HkxMaterialTextureStage.ReadAt(_g, _r.[StagesItemOffset](i))
                         If o IsNot Nothing Then _stages_c.Add(o)
                     Next
                 End If
@@ -154839,7 +154839,7 @@ Namespace Havok.Canon.Objects
                 If _properties_c Is Nothing Then
                     _properties_c = New List(Of HkObj_HkxMaterialProperty)()
                     For i = 0 To _r.[PropertiesCount] - 1
-                        Dim o = HkObj_HkxMaterialProperty.ReadAt(_g, _r.[PropertiesItem](i))
+                        Dim o = HkObj_HkxMaterialProperty.ReadAt(_g, _r.[PropertiesItemOffset](i))
                         If o IsNot Nothing Then _properties_c.Add(o)
                     Next
                 End If
@@ -155617,7 +155617,7 @@ Namespace Havok.Canon.Objects
                 If _bonematrixmap_c Is Nothing Then
                     _bonematrixmap_c = New List(Of HkObj_HkMeshBoneIndexMapping)()
                     For i = 0 To _r.[BoneMatrixMapCount] - 1
-                        Dim o = HkObj_HkMeshBoneIndexMapping.ReadAt(_g, _r.[BoneMatrixMapItem](i))
+                        Dim o = HkObj_HkMeshBoneIndexMapping.ReadAt(_g, _r.[BoneMatrixMapItemOffset](i))
                         If o IsNot Nothing Then _bonematrixmap_c.Add(o)
                     Next
                 End If
@@ -155706,7 +155706,7 @@ Namespace Havok.Canon.Objects
                 If _attributegroups_c Is Nothing Then
                     _attributegroups_c = New List(Of HkObj_HkxAttributeGroup)()
                     For i = 0 To _r.[AttributeGroupsCount] - 1
-                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItem](i))
+                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItemOffset](i))
                         If o IsNot Nothing Then _attributegroups_c.Add(o)
                     Next
                 End If
@@ -155830,7 +155830,7 @@ Namespace Havok.Canon.Objects
                 If _attributegroups_c Is Nothing Then
                     _attributegroups_c = New List(Of HkObj_HkxAttributeGroup)()
                     For i = 0 To _r.[AttributeGroupsCount] - 1
-                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItem](i))
+                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItemOffset](i))
                         If o IsNot Nothing Then _attributegroups_c.Add(o)
                     Next
                 End If
@@ -155913,7 +155913,7 @@ Namespace Havok.Canon.Objects
                 If _annotations_c Is Nothing Then
                     _annotations_c = New List(Of HkObj_HkxNodeAnnotationData)()
                     For i = 0 To _r.[AnnotationsCount] - 1
-                        Dim o = HkObj_HkxNodeAnnotationData.ReadAt(_g, _r.[AnnotationsItem](i))
+                        Dim o = HkObj_HkxNodeAnnotationData.ReadAt(_g, _r.[AnnotationsItemOffset](i))
                         If o IsNot Nothing Then _annotations_c.Add(o)
                     Next
                 End If
@@ -156083,7 +156083,7 @@ Namespace Havok.Canon.Objects
                 If _attributegroups_c Is Nothing Then
                     _attributegroups_c = New List(Of HkObj_HkxAttributeGroup)()
                     For i = 0 To _r.[AttributeGroupsCount] - 1
-                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItem](i))
+                        Dim o = HkObj_HkxAttributeGroup.ReadAt(_g, _r.[AttributeGroupsItemOffset](i))
                         If o IsNot Nothing Then _attributegroups_c.Add(o)
                     Next
                 End If
@@ -157369,7 +157369,7 @@ Namespace Havok.Canon.Objects
                 If _componentmap_c Is Nothing Then
                     _componentmap_c = New List(Of HkObj_HkxVertexAnimationUsageMap)()
                     For i = 0 To _r.[ComponentMapCount] - 1
-                        Dim o = HkObj_HkxVertexAnimationUsageMap.ReadAt(_g, _r.[ComponentMapItem](i))
+                        Dim o = HkObj_HkxVertexAnimationUsageMap.ReadAt(_g, _r.[ComponentMapItemOffset](i))
                         If o IsNot Nothing Then _componentmap_c.Add(o)
                     Next
                 End If
@@ -157785,7 +157785,7 @@ Namespace Havok.Canon.Objects
                 If _decls_c Is Nothing Then
                     _decls_c = New List(Of HkObj_HkxVertexDescriptionElementDecl)()
                     For i = 0 To _r.[DeclsCount] - 1
-                        Dim o = HkObj_HkxVertexDescriptionElementDecl.ReadAt(_g, _r.[DeclsItem](i))
+                        Dim o = HkObj_HkxVertexDescriptionElementDecl.ReadAt(_g, _r.[DeclsItemOffset](i))
                         If o IsNot Nothing Then _decls_c.Add(o)
                     Next
                 End If

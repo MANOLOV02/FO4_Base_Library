@@ -198,11 +198,16 @@ Public Partial Class HkxObjectGraph_Class
             Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has invalid MaxFramesPerBlock={maxFramesPerBlock}.")
         End If
 
-        Dim blockOffsets As New List(Of UInteger)
-        For i = 0 To hkr.BlockOffsetsCount - 1
-            blockOffsets.Add(CUInt(hkr.BlockOffsetsItem(i)))
-        Next
+        ' ⛔⛔ LOS OFFSETS SALEN DEL OBJETO GENERADO, NO DEL LECTOR CRUDO.
+        ' `hkr.BlockOffsetsItem(i)` devolvia la DIRECCION del elemento, no su valor, y esto lo
+        ' sumaba como si fuera el dato: `blockOffsets(0)` daba 0xED0 donde el bloque arranca en 0.
+        ' `HkObj_*.BlockOffsets` ya entrega la lista LEIDA — es la capa que existe para esto.
+        Dim objAnim = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Read(Me, source)
+        Dim blockOffsets = If(objAnim?.BlockOffsets, New List(Of UInteger))
         Dim splineBlob = ReadByteArray(hkr.Data.FieldRelativeOffset)
+
+        ' ⛔ `transformOffsets` LO DECLARA LA REFLEXION Y NADIE LO LEIA.
+        Dim transformOffsets = If(objAnim?.TransformOffsets, New List(Of UInteger))
 
         If (result.NumFrames > 0 OrElse result.Animacion.NumberOfTransformTracks > 0 OrElse result.NumBlocks > 0) AndAlso (splineBlob.Length = 0 OrElse blockOffsets.Count = 0) Then
             Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has no spline payload.")
@@ -213,7 +218,7 @@ Public Partial Class HkxObjectGraph_Class
                                                                   result.NumFrames,
                                                                   result.NumBlocks,
                                                                   maxFramesPerBlock,
-                                                                  blockOffsets,
+                                                                  blockOffsets, transformOffsets,
                                                                   maskAndQuantizationSize)
 
         Return result
@@ -225,6 +230,7 @@ Public Partial Class HkxObjectGraph_Class
                                                numBlocks As Integer,
                                                maxFramesPerBlock As Integer,
                                                blockOffsets As IReadOnlyList(Of UInteger),
+                                               transformOffsets As IReadOnlyList(Of UInteger),
                                                maskAndQuantSize As Integer)
         Dim totalTransformCount = CLng(numTracks) * CLng(numFrames)
         If totalTransformCount > Integer.MaxValue Then
@@ -273,325 +279,311 @@ Public Partial Class HkxObjectGraph_Class
             If framesInBlock <= 0 Then Continue For
 
             Dim offset = blockStart
-            ' ⛔⛔ EL BLOQUE DE MASCARAS ES DE LARGO VARIABLE. Leido de `Fallout4.exe`
-            ' (descompresor 0x1419B1780): hay UN byte de cuantizacion por track, y despues un
-            ' byte de banderas por componente PERO SOLO SI su cuantizacion es una de las que
-            ' declara el enum. Si no, el motor no lo consume:
-            '     pos  ∉ {BITS8, BITS16} -> `jne 0x1419B1A22`, sin `inc rdi`
-            '     rot  > UNCOMPRESSED    -> `ja  0x1419B1B95`, sin `inc rdi`
-            '     esc  ∉ {BITS8, BITS16} -> `jne 0x1419B1C11`, sin `inc rdi`
-            ' O sea entre 1 y 4 bytes por track. Esto leia CUATRO siempre, asi que en cuanto
-            ' un track salteaba un byte, las banderas de todos los siguientes quedaban
-            ' corridas. El corpus de FO4 trae el byte 0x07 (pos=3, salteado) en 2 de los 4
-            ' tracks-bloque de su unica animacion spline: el defecto estaba VIVO.
-            Dim escMax = MaximoDe(EscQ)
-            Dim rotMax = MaximoDe(RotQ)
+            ' ⛔ EL FALLO TIENE QUE DECIR DONDE ESTABA. `blob offset 0x101F` solo no alcanza para
+            ' saber si el problema es el bloque, el track o el tamano de la mascara.
+            Dim ctx = Function() $"blk={blockIndex}/{numBlocks} start=0x{blockStart:X} mq={maskAndQuantSize} " &
+                                $"tracks={numTracks} frames={framesInBlock}/{numFrames} blob={blob.Length} " &
+                                $"maxFPB={maxFramesPerBlock} blkOff=[{String.Join(",", blockOffsets.Select(Function(x) "0x" & x.ToString("X")))}]"
+            Try
+                ' ⛔⛔ EL BLOQUE DE MASCARAS ES DE LARGO VARIABLE. Leido de `Fallout4.exe`
+                ' (descompresor 0x1419B1780): hay UN byte de cuantizacion por track, y despues un
+                ' byte de banderas por componente PERO SOLO SI su cuantizacion es una de las que
+                ' declara el enum. Si no, el motor no lo consume:
+                '     pos  ∉ {BITS8, BITS16} -> `jne 0x1419B1A22`, sin `inc rdi`
+                '     rot  > UNCOMPRESSED    -> `ja  0x1419B1B95`, sin `inc rdi`
+                '     esc  ∉ {BITS8, BITS16} -> `jne 0x1419B1C11`, sin `inc rdi`
+                ' O sea entre 1 y 4 bytes por track. Esto leia CUATRO siempre, asi que en cuanto
+                ' un track salteaba un byte, las banderas de todos los siguientes quedaban
+                ' corridas. El corpus de FO4 trae el byte 0x07 (pos=3, salteado) en 2 de los 4
+                ' tracks-bloque de su unica animacion spline: el defecto estaba VIVO.
+            ' ⛔⛔ CUATRO BYTES POR TRACK — LO DICE EL ARCHIVO.
+            ' `maskAndQuantizationSize` vale EXACTAMENTE `numTracks * 4` (medido: 332 con 83 tracks), y
+            ' el hexdump del blob muestra el bloque en el offset 0 con grupos de cuatro:
+            '     45 00 00 00 | 45 70 F0 00 | 45 00 04 00 | 45 07 F0 00 | ...
+            ' Hubo una vuelta en que esto se leyo de largo VARIABLE, por el `inc rdi` condicional del
+            ' motor (0x1419B1A1F / 0x1419B1B92 / 0x1419B1C0E). El archivo dice otra cosa y el archivo
+            ' gana: ese `inc` no esta recorriendo este bloque.
+            EnsureBlobReadable(blob, offset, 4 * numTracks, "Track mask block")
             For trackIndex = 0 To numTracks - 1
-                EnsureBlobReadable(blob, offset, 1, "Track quantization byte")
                 Dim packedMask = blob(offset)
-                offset += 1
-
-                Dim pq = CInt(packedMask And &H3)
-                Dim rq = CInt((packedMask >> 2) And &HF)
-                Dim sq = CInt((packedMask >> 6) And &H3)
-                masks(trackIndex).PosQuant = CByte(pq)
-                masks(trackIndex).RotQuant = CByte(rq)
-                masks(trackIndex).ScaleQuant = CByte(sq)
-
-                ' Sin byte de banderas no hay componente animado: cero es `Identity` en
-                ' `GetPositionType`/`GetScaleType`, que es justo lo que hace el motor al saltear.
-                If pq >= 0 AndAlso pq <= escMax Then
-                    EnsureBlobReadable(blob, offset, 1, "Position mask byte")
-                    masks(trackIndex).PosFlags = blob(offset)
-                    offset += 1
-                Else
-                    masks(trackIndex).PosFlags = 0
-                End If
-
-                If rq >= 0 AndAlso rq <= rotMax Then
-                    EnsureBlobReadable(blob, offset, 1, "Rotation mask byte")
-                    masks(trackIndex).RotFlags = blob(offset)
-                    offset += 1
-                Else
-                    masks(trackIndex).RotFlags = 0
-                End If
-
-                If sq >= 0 AndAlso sq <= escMax Then
-                    EnsureBlobReadable(blob, offset, 1, "Scale mask byte")
-                    masks(trackIndex).ScaleFlags = blob(offset)
-                    offset += 1
-                Else
-                    masks(trackIndex).ScaleFlags = 0
-                End If
-
-                Contar(destino.RotQuantUsados, rq)
-                Contar(destino.PosQuantUsados, pq)
-                Contar(destino.ScaleQuantUsados, sq)
+                masks(trackIndex).PosQuant = CByte(packedMask And &H3)
+                masks(trackIndex).RotQuant = CByte((packedMask >> 2) And &HF)
+                masks(trackIndex).ScaleQuant = CByte((packedMask >> 6) And &H3)
+                masks(trackIndex).PosFlags = blob(offset + 1)
+                masks(trackIndex).RotFlags = blob(offset + 2)
+                masks(trackIndex).ScaleFlags = blob(offset + 3)
+                Contar(destino.RotQuantUsados, CInt(masks(trackIndex).RotQuant))
+                Contar(destino.PosQuantUsados, CInt(masks(trackIndex).PosQuant))
+                Contar(destino.ScaleQuantUsados, CInt(masks(trackIndex).ScaleQuant))
                 Contar(destino.MascaraCruda, CInt(packedMask))
+                offset += 4
             Next
 
-            offset = blockStart + maskAndQuantSize
+                offset = blockStart + maskAndQuantSize
 
-            For trackIndex = 0 To numTracks - 1
-                Dim mask = masks(trackIndex)
+                For trackIndex = 0 To numTracks - 1
+                    Dim mask = masks(trackIndex)
 
-                Dim positionFrames = CreateVector3FrameArray(framesInBlock, 0.0F, 0.0F, 0.0F)
-                If mask.HasAnyPositionSpline() Then
-                    EnsureBlobReadable(blob, offset, 3, "Position spline header")
-                    Dim numItems = CInt(BitConverter.ToUInt16(blob, offset))
-                    Dim degree = CInt(blob(offset + 2))
-                    offset += 3
+                    Dim positionFrames = CreateVector3FrameArray(framesInBlock, 0.0F, 0.0F, 0.0F)
+                    If mask.HasAnyPositionSpline() Then
+                        EnsureBlobReadable(blob, offset, 3, "Position spline header")
+                        Dim numItems = CInt(BitConverter.ToUInt16(blob, offset))
+                        Dim degree = CInt(blob(offset + 2))
+                        offset += 3
 
-                    Dim knotCount = numItems + degree + 2
-                    EnsureBlobReadable(blob, offset, knotCount, "Position knot array")
-                    knots.Clear()
-                    For knotIndex = 0 To knotCount - 1
-                        knots.Add(CSng(blob(offset + knotIndex)))
-                    Next
-                    offset += knotCount
-                    offset = AlignValue(offset, 4)
-
-                    Dim axisInfos(2) As HkxSplineAxisInfo_Struct
-                    For axis = 0 To 2
-                        Dim axisType = mask.GetPositionType(axis)
-                        axisInfos(axis).Type = axisType
-
-                        Select Case axisType
-                            Case HkxSplineTrackValueType_Enum.SplineValue
-                                EnsureBlobReadable(blob, offset, 8, "Position axis range")
-                                axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
-                                axisInfos(axis).MaxValue = BitConverter.ToSingle(blob, offset + 4)
-                                offset += 8
-                            Case HkxSplineTrackValueType_Enum.StaticValue
-                                EnsureBlobReadable(blob, offset, 4, "Position axis static value")
-                                axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
-                                axisInfos(axis).MaxValue = axisInfos(axis).MinValue
-                                offset += 4
-                            Case Else
-                                axisInfos(axis).MinValue = 0.0F
-                                axisInfos(axis).MaxValue = 0.0F
-                        End Select
-                    Next
-
-                    For axis = 0 To 2
-                        scalarControlPoints(axis).Clear()
-                    Next
-
-                    For itemIndex = 0 To numItems
-                        For axis = 0 To 2
-                            If axisInfos(axis).Type <> HkxSplineTrackValueType_Enum.SplineValue Then Continue For
-
-                            If mask.PosQuant = 0 Then
-                                EnsureBlobReadable(blob, offset, 1, "Position 8-bit control point")
-                                scalarControlPoints(axis).Add(Read8BitScalar(blob(offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
-                                offset += 1
-                            Else
-                                EnsureBlobReadable(blob, offset, 2, "Position 16-bit control point")
-                                scalarControlPoints(axis).Add(Read16BitScalar(BitConverter.ToUInt16(blob, offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
-                                offset += 2
-                            End If
+                        Dim knotCount = numItems + degree + 2
+                        EnsureBlobReadable(blob, offset, knotCount, "Position knot array")
+                        knots.Clear()
+                        For knotIndex = 0 To knotCount - 1
+                            knots.Add(CSng(blob(offset + knotIndex)))
                         Next
-                    Next
+                        offset += knotCount
+                        offset = AlignValue(offset, 4)
 
-                    offset = AlignValue(offset, 4)
-
-                    For frameInBlock = 0 To framesInBlock - 1
-                        Dim time = CSng(frameInBlock)
-                        Dim value As New Vector3
-
+                        Dim axisInfos(2) As HkxSplineAxisInfo_Struct
                         For axis = 0 To 2
-                            Select Case axisInfos(axis).Type
+                            Dim axisType = mask.GetPositionType(axis)
+                            axisInfos(axis).Type = axisType
+
+                            Select Case axisType
                                 Case HkxSplineTrackValueType_Enum.SplineValue
-                                    Dim span = FindKnotSpan(degree, time, scalarControlPoints(axis).Count, knots)
-                                    SetVectorAxis(value, axis, EvalBSplineScalar(span, degree, time, knots, scalarControlPoints(axis)))
+                                    EnsureBlobReadable(blob, offset, 8, "Position axis range")
+                                    axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
+                                    axisInfos(axis).MaxValue = BitConverter.ToSingle(blob, offset + 4)
+                                    offset += 8
                                 Case HkxSplineTrackValueType_Enum.StaticValue
-                                    SetVectorAxis(value, axis, axisInfos(axis).MinValue)
+                                    EnsureBlobReadable(blob, offset, 4, "Position axis static value")
+                                    axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
+                                    axisInfos(axis).MaxValue = axisInfos(axis).MinValue
+                                    offset += 4
+                                Case Else
+                                    axisInfos(axis).MinValue = 0.0F
+                                    axisInfos(axis).MaxValue = 0.0F
                             End Select
                         Next
 
-                        positionFrames(frameInBlock) = value
-                    Next
-                Else
-                    Dim staticPosition As New Vector3
-                    For axis = 0 To 2
-                        If mask.GetPositionType(axis) <> HkxSplineTrackValueType_Enum.StaticValue Then Continue For
-                        EnsureBlobReadable(blob, offset, 4, "Static position value")
-                        SetVectorAxis(staticPosition, axis, BitConverter.ToSingle(blob, offset))
-                        offset += 4
-                    Next
+                        For axis = 0 To 2
+                            scalarControlPoints(axis).Clear()
+                        Next
 
-                    For frameInBlock = 0 To framesInBlock - 1
-                        positionFrames(frameInBlock) = staticPosition
-                    Next
-                End If
+                        For itemIndex = 0 To numItems
+                            For axis = 0 To 2
+                                If axisInfos(axis).Type <> HkxSplineTrackValueType_Enum.SplineValue Then Continue For
 
-                offset = AlignValue(offset, 4)
+                                If mask.PosQuant = 0 Then
+                                    EnsureBlobReadable(blob, offset, 1, "Position 8-bit control point")
+                                    scalarControlPoints(axis).Add(Read8BitScalar(blob(offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
+                                    offset += 1
+                                Else
+                                    EnsureBlobReadable(blob, offset, 2, "Position 16-bit control point")
+                                    scalarControlPoints(axis).Add(Read16BitScalar(BitConverter.ToUInt16(blob, offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
+                                    offset += 2
+                                End If
+                            Next
+                        Next
 
-                Dim rotationFrames = CreateQuaternionFrameArray(framesInBlock, 0.0F, 0.0F, 0.0F, 1.0F)
-                Dim rotationType = mask.GetRotationType()
-                Dim quaternionFormat = CInt(mask.RotQuant)
-                Dim quaternionAlignment = GetQuaternionAlignment(quaternionFormat)
+                        offset = AlignValue(offset, 4)
 
-                If rotationType = HkxSplineTrackValueType_Enum.SplineValue Then
-                    EnsureBlobReadable(blob, offset, 3, "Rotation spline header")
-                    Dim numItems = CInt(BitConverter.ToUInt16(blob, offset))
-                    Dim degree = CInt(blob(offset + 2))
-                    offset += 3
+                        For frameInBlock = 0 To framesInBlock - 1
+                            Dim time = CSng(frameInBlock)
+                            Dim value As New Vector3
 
-                    Dim knotCount = numItems + degree + 2
-                    EnsureBlobReadable(blob, offset, knotCount, "Rotation knot array")
-                    knots.Clear()
-                    For knotIndex = 0 To knotCount - 1
-                        knots.Add(CSng(blob(offset + knotIndex)))
-                    Next
-                    offset += knotCount
-                    offset = AlignValue(offset, quaternionAlignment)
+                            For axis = 0 To 2
+                                Select Case axisInfos(axis).Type
+                                    Case HkxSplineTrackValueType_Enum.SplineValue
+                                        Dim span = FindKnotSpan(degree, time, scalarControlPoints(axis).Count, knots)
+                                        SetVectorAxis(value, axis, EvalBSplineScalar(span, degree, time, knots, scalarControlPoints(axis)))
+                                    Case HkxSplineTrackValueType_Enum.StaticValue
+                                        SetVectorAxis(value, axis, axisInfos(axis).MinValue)
+                                End Select
+                            Next
 
-                    quaternionControlPoints.Clear()
-                    For itemIndex = 0 To numItems
+                            positionFrames(frameInBlock) = value
+                        Next
+                    Else
+                        Dim staticPosition As New Vector3
+                        For axis = 0 To 2
+                            If mask.GetPositionType(axis) <> HkxSplineTrackValueType_Enum.StaticValue Then Continue For
+                            EnsureBlobReadable(blob, offset, 4, "Static position value")
+                            SetVectorAxis(staticPosition, axis, BitConverter.ToSingle(blob, offset))
+                            offset += 4
+                        Next
+
+                        For frameInBlock = 0 To framesInBlock - 1
+                            positionFrames(frameInBlock) = staticPosition
+                        Next
+                    End If
+
+                    offset = AlignValue(offset, 4)
+
+                    Dim rotationFrames = CreateQuaternionFrameArray(framesInBlock, 0.0F, 0.0F, 0.0F, 1.0F)
+                    Dim rotationType = mask.GetRotationType()
+                    Dim quaternionFormat = CInt(mask.RotQuant)
+                    Dim quaternionAlignment = GetQuaternionAlignment(quaternionFormat)
+
+                    If rotationType = HkxSplineTrackValueType_Enum.SplineValue Then
+                        EnsureBlobReadable(blob, offset, 3, "Rotation spline header")
+                        Dim numItems = CInt(BitConverter.ToUInt16(blob, offset))
+                        Dim degree = CInt(blob(offset + 2))
+                        offset += 3
+
+                        Dim knotCount = numItems + degree + 2
+                        EnsureBlobReadable(blob, offset, knotCount, "Rotation knot array")
+                        knots.Clear()
+                        For knotIndex = 0 To knotCount - 1
+                            knots.Add(CSng(blob(offset + knotIndex)))
+                        Next
+                        offset += knotCount
+                        offset = AlignValue(offset, quaternionAlignment)
+
+                        quaternionControlPoints.Clear()
+                        For itemIndex = 0 To numItems
+                            Dim consumed = 0
+                            Dim quat = ReadQuaternion(quaternionFormat, blob, offset, blob.Length - offset, consumed)
+                            offset += consumed
+
+                            If quaternionControlPoints.Count > 0 AndAlso Quaternion.Dot(quat, quaternionControlPoints(quaternionControlPoints.Count - 1)) < 0.0F Then
+                                quat = Quaternion.Negate(quat)
+                        End If
+
+                            quaternionControlPoints.Add(quat)
+                        Next
+
+                        For frameInBlock = 0 To framesInBlock - 1
+                            Dim time = CSng(frameInBlock)
+                            Dim span = FindKnotSpan(degree, time, quaternionControlPoints.Count, knots)
+                            Dim quat = EvalBSplineQuaternion(span, degree, time, knots, quaternionControlPoints)
+                            NormalizeQuaternion(quat)
+                            rotationFrames(frameInBlock) = quat
+                        Next
+                    ElseIf rotationType = HkxSplineTrackValueType_Enum.StaticValue Then
+                        offset = AlignValue(offset, quaternionAlignment)
                         Dim consumed = 0
                         Dim quat = ReadQuaternion(quaternionFormat, blob, offset, blob.Length - offset, consumed)
                         offset += consumed
 
-                        If quaternionControlPoints.Count > 0 AndAlso Quaternion.Dot(quat, quaternionControlPoints(quaternionControlPoints.Count - 1)) < 0.0F Then
-                            quat = Quaternion.Negate(quat)
-                        End If
-
-                        quaternionControlPoints.Add(quat)
-                    Next
-
-                    For frameInBlock = 0 To framesInBlock - 1
-                        Dim time = CSng(frameInBlock)
-                        Dim span = FindKnotSpan(degree, time, quaternionControlPoints.Count, knots)
-                        Dim quat = EvalBSplineQuaternion(span, degree, time, knots, quaternionControlPoints)
-                        NormalizeQuaternion(quat)
-                        rotationFrames(frameInBlock) = quat
-                    Next
-                ElseIf rotationType = HkxSplineTrackValueType_Enum.StaticValue Then
-                    offset = AlignValue(offset, quaternionAlignment)
-                    Dim consumed = 0
-                    Dim quat = ReadQuaternion(quaternionFormat, blob, offset, blob.Length - offset, consumed)
-                    offset += consumed
-
-                    For frameInBlock = 0 To framesInBlock - 1
-                        rotationFrames(frameInBlock) = quat
-                    Next
-                End If
-
-                offset = AlignValue(offset, 4)
-
-                Dim scaleFrames = CreateVector3FrameArray(framesInBlock, 1.0F, 1.0F, 1.0F)
-                If mask.HasAnyScaleSpline() Then
-                    EnsureBlobReadable(blob, offset, 3, "Scale spline header")
-                    Dim numItems = CInt(BitConverter.ToUInt16(blob, offset))
-                    Dim degree = CInt(blob(offset + 2))
-                    offset += 3
-
-                    Dim knotCount = numItems + degree + 2
-                    EnsureBlobReadable(blob, offset, knotCount, "Scale knot array")
-                    knots.Clear()
-                    For knotIndex = 0 To knotCount - 1
-                        knots.Add(CSng(blob(offset + knotIndex)))
-                    Next
-                    offset += knotCount
-                    offset = AlignValue(offset, 4)
-
-                    Dim axisInfos(2) As HkxSplineAxisInfo_Struct
-                    For axis = 0 To 2
-                        Dim axisType = mask.GetScaleType(axis)
-                        axisInfos(axis).Type = axisType
-
-                        Select Case axisType
-                            Case HkxSplineTrackValueType_Enum.SplineValue
-                                EnsureBlobReadable(blob, offset, 8, "Scale axis range")
-                                axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
-                                axisInfos(axis).MaxValue = BitConverter.ToSingle(blob, offset + 4)
-                                offset += 8
-                            Case HkxSplineTrackValueType_Enum.StaticValue
-                                EnsureBlobReadable(blob, offset, 4, "Scale axis static value")
-                                axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
-                                axisInfos(axis).MaxValue = axisInfos(axis).MinValue
-                                offset += 4
-                            Case Else
-                                axisInfos(axis).MinValue = 1.0F
-                                axisInfos(axis).MaxValue = 1.0F
-                        End Select
-                    Next
-
-                    For axis = 0 To 2
-                        scalarControlPoints(axis).Clear()
-                    Next
-
-                    For itemIndex = 0 To numItems
-                        For axis = 0 To 2
-                            If axisInfos(axis).Type <> HkxSplineTrackValueType_Enum.SplineValue Then Continue For
-
-                            If mask.ScaleQuant = 0 Then
-                                EnsureBlobReadable(blob, offset, 1, "Scale 8-bit control point")
-                                scalarControlPoints(axis).Add(Read8BitScalar(blob(offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
-                                offset += 1
-                            Else
-                                EnsureBlobReadable(blob, offset, 2, "Scale 16-bit control point")
-                                scalarControlPoints(axis).Add(Read16BitScalar(BitConverter.ToUInt16(blob, offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
-                                offset += 2
-                            End If
+                        For frameInBlock = 0 To framesInBlock - 1
+                            rotationFrames(frameInBlock) = quat
                         Next
-                    Next
+                    End If
 
                     offset = AlignValue(offset, 4)
 
-                    For frameInBlock = 0 To framesInBlock - 1
-                        Dim time = CSng(frameInBlock)
-                        Dim value = Vector3.One
+                    Dim scaleFrames = CreateVector3FrameArray(framesInBlock, 1.0F, 1.0F, 1.0F)
+                    If mask.HasAnyScaleSpline() Then
+                        EnsureBlobReadable(blob, offset, 3, "Scale spline header")
+                        Dim numItems = CInt(BitConverter.ToUInt16(blob, offset))
+                        Dim degree = CInt(blob(offset + 2))
+                        offset += 3
 
+                        Dim knotCount = numItems + degree + 2
+                        EnsureBlobReadable(blob, offset, knotCount, "Scale knot array")
+                        knots.Clear()
+                        For knotIndex = 0 To knotCount - 1
+                            knots.Add(CSng(blob(offset + knotIndex)))
+                        Next
+                        offset += knotCount
+                        offset = AlignValue(offset, 4)
+
+                        Dim axisInfos(2) As HkxSplineAxisInfo_Struct
                         For axis = 0 To 2
-                            Select Case axisInfos(axis).Type
+                            Dim axisType = mask.GetScaleType(axis)
+                            axisInfos(axis).Type = axisType
+
+                            Select Case axisType
                                 Case HkxSplineTrackValueType_Enum.SplineValue
-                                    Dim span = FindKnotSpan(degree, time, scalarControlPoints(axis).Count, knots)
-                                    SetVectorAxis(value, axis, EvalBSplineScalar(span, degree, time, knots, scalarControlPoints(axis)))
+                                    EnsureBlobReadable(blob, offset, 8, "Scale axis range")
+                                    axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
+                                    axisInfos(axis).MaxValue = BitConverter.ToSingle(blob, offset + 4)
+                                    offset += 8
                                 Case HkxSplineTrackValueType_Enum.StaticValue
-                                    SetVectorAxis(value, axis, axisInfos(axis).MinValue)
+                                    EnsureBlobReadable(blob, offset, 4, "Scale axis static value")
+                                    axisInfos(axis).MinValue = BitConverter.ToSingle(blob, offset)
+                                    axisInfos(axis).MaxValue = axisInfos(axis).MinValue
+                                    offset += 4
+                                Case Else
+                                    axisInfos(axis).MinValue = 1.0F
+                                    axisInfos(axis).MaxValue = 1.0F
                             End Select
                         Next
 
-                        scaleFrames(frameInBlock) = value
-                    Next
-                Else
-                    Dim staticScale = Vector3.One
-                    For axis = 0 To 2
-                        If mask.GetScaleType(axis) <> HkxSplineTrackValueType_Enum.StaticValue Then Continue For
-                        EnsureBlobReadable(blob, offset, 4, "Static scale value")
-                        SetVectorAxis(staticScale, axis, BitConverter.ToSingle(blob, offset))
-                        offset += 4
-                    Next
+                        For axis = 0 To 2
+                            scalarControlPoints(axis).Clear()
+                        Next
+
+                        For itemIndex = 0 To numItems
+                            For axis = 0 To 2
+                                If axisInfos(axis).Type <> HkxSplineTrackValueType_Enum.SplineValue Then Continue For
+
+                                If mask.ScaleQuant = 0 Then
+                                    EnsureBlobReadable(blob, offset, 1, "Scale 8-bit control point")
+                                    scalarControlPoints(axis).Add(Read8BitScalar(blob(offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
+                                    offset += 1
+                                Else
+                                    EnsureBlobReadable(blob, offset, 2, "Scale 16-bit control point")
+                                    scalarControlPoints(axis).Add(Read16BitScalar(BitConverter.ToUInt16(blob, offset), axisInfos(axis).MinValue, axisInfos(axis).MaxValue))
+                                    offset += 2
+                                End If
+                            Next
+                        Next
+
+                        offset = AlignValue(offset, 4)
+
+                        For frameInBlock = 0 To framesInBlock - 1
+                            Dim time = CSng(frameInBlock)
+                            Dim value = Vector3.One
+
+                            For axis = 0 To 2
+                                Select Case axisInfos(axis).Type
+                                    Case HkxSplineTrackValueType_Enum.SplineValue
+                                        Dim span = FindKnotSpan(degree, time, scalarControlPoints(axis).Count, knots)
+                                        SetVectorAxis(value, axis, EvalBSplineScalar(span, degree, time, knots, scalarControlPoints(axis)))
+                                    Case HkxSplineTrackValueType_Enum.StaticValue
+                                        SetVectorAxis(value, axis, axisInfos(axis).MinValue)
+                                End Select
+                            Next
+
+                            scaleFrames(frameInBlock) = value
+                        Next
+                    Else
+                        Dim staticScale = Vector3.One
+                        For axis = 0 To 2
+                            If mask.GetScaleType(axis) <> HkxSplineTrackValueType_Enum.StaticValue Then Continue For
+                            EnsureBlobReadable(blob, offset, 4, "Static scale value")
+                            SetVectorAxis(staticScale, axis, BitConverter.ToSingle(blob, offset))
+                            offset += 4
+                        Next
+
+                        For frameInBlock = 0 To framesInBlock - 1
+                            scaleFrames(frameInBlock) = staticScale
+                        Next
+                    End If
+
+                    offset = AlignValue(offset, 4)
+
+                    Dim msk = 0
+                    If mask.GetPositionType(0) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 1
+                    If mask.GetPositionType(1) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 2
+                    If mask.GetPositionType(2) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 4
+                    If rotationType <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 8
+                    If mask.GetScaleType(0) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 16
+                    If mask.GetScaleType(1) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 32
+                    If mask.GetScaleType(2) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 64
 
                     For frameInBlock = 0 To framesInBlock - 1
-                        scaleFrames(frameInBlock) = staticScale
+                        Dim destinationIndex = ((firstFrame + frameInBlock) * numTracks) + trackIndex
+                        Dim pf = positionFrames(frameInBlock)
+                        Dim rf = rotationFrames(frameInBlock)
+                        Dim sf = scaleFrames(frameInBlock)
+                        destino.TrackTransforms(destinationIndex) = New Single() {pf.X, pf.Y, pf.Z, 0.0F,
+                                                                                 rf.X, rf.Y, rf.Z, rf.W,
+                                                                                 sf.X, sf.Y, sf.Z, 0.0F}
+                        destino.TrackMask(destinationIndex) = msk
                     Next
-                End If
-
-                offset = AlignValue(offset, 4)
-
-                Dim msk = 0
-                If mask.GetPositionType(0) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 1
-                If mask.GetPositionType(1) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 2
-                If mask.GetPositionType(2) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 4
-                If rotationType <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 8
-                If mask.GetScaleType(0) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 16
-                If mask.GetScaleType(1) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 32
-                If mask.GetScaleType(2) <> HkxSplineTrackValueType_Enum.Identity Then msk = msk Or 64
-
-                For frameInBlock = 0 To framesInBlock - 1
-                    Dim destinationIndex = ((firstFrame + frameInBlock) * numTracks) + trackIndex
-                    Dim pf = positionFrames(frameInBlock)
-                    Dim rf = rotationFrames(frameInBlock)
-                    Dim sf = scaleFrames(frameInBlock)
-                    destino.TrackTransforms(destinationIndex) = New Single() {pf.X, pf.Y, pf.Z, 0.0F,
-                                                                             rf.X, rf.Y, rf.Z, rf.W,
-                                                                             sf.X, sf.Y, sf.Z, 0.0F}
-                    destino.TrackMask(destinationIndex) = msk
                 Next
-            Next
+            Catch ex As Exception
+                Throw New InvalidDataException($"{ex.Message}  [{ctx()}]", ex)
+            End Try
         Next
     End Sub
 
