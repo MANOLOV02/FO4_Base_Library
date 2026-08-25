@@ -315,7 +315,6 @@ Public Partial Class HkxObjectGraph_Class
                 Contar(destino.RotQuantUsados, CInt(masks(trackIndex).RotQuant))
                 Contar(destino.PosQuantUsados, CInt(masks(trackIndex).PosQuant))
                 Contar(destino.ScaleQuantUsados, CInt(masks(trackIndex).ScaleQuant))
-                Contar(destino.MascaraCruda, CInt(packedMask))
                 offset += 4
             Next
 
@@ -1370,10 +1369,6 @@ Public Class HkxAnimacionDescomprimida_Class
     Public ReadOnly Property PosQuantUsados As New Dictionary(Of Integer, Integer)
     Public ReadOnly Property ScaleQuantUsados As New Dictionary(Of Integer, Integer)
 
-    ''' <summary>El BYTE CRUDO de la mascara por track, tal cual lo trae el bloque. Se guarda
-    ''' entero a proposito: cuantos bits ocupa cada campo adentro es lo que hay que MEDIR, y
-    ''' partirlo antes de medirlo seria presuponer la respuesta.</summary>
-    Public ReadOnly Property MascaraCruda As New Dictionary(Of Integer, Integer)
     Public Property Binding As Havok.Canon.Objects.HkObj_HkaAnimationBinding
 
     ''' <summary>`hkaAnimation.annotationTracks[i].trackName`. Los dos parsers lo leian con un
