@@ -94,8 +94,14 @@ Public Partial Class HkxObjectGraph_Class
     ''' es lo que el archivo declara: los bindings apuntan a su animacion por referencia, sin
     ''' importar como este comprimida.</para>
     ''' </summary>
+    ''' <summary>Los clips que NO se pudieron descomprimir en la ultima llamada a
+    ''' `Animaciones()`, con su clase y el motivo. Un clip roto es un DATO del archivo: si se
+    ''' lo traga el parser, el llamador ve 'este .hkx no tiene animaciones' y no es cierto.</summary>
+    Public ReadOnly Property AnimacionesFallidas As New List(Of String)
+
     Public Function Animaciones() As List(Of HkxAnimacionDescomprimida_Class)
         Dim r As New List(Of HkxAnimacionDescomprimida_Class)
+        AnimacionesFallidas.Clear()
 
         ' ⛔ EL ORDEN LO DECLARA `hkaAnimationContainer.animations`, no el serializador.
         ' Antes eran DOS barridos por clase, cada uno ordenado por `RelativeOffset`: eso
@@ -104,12 +110,22 @@ Public Partial Class HkxObjectGraph_Class
         ' del bloque, que es lo unico que la declara.
         For Each obj In BloquesDelContenedor("animations",
                                             {"hkaSplineCompressedAnimation", "hkaLosslessCompressedAnimation"})
+            ' ⛔⛔ UN CLIP ROTO NO SE LLEVA PUESTOS A LOS DEMAS.
+            ' Sin esta guarda, si el clip #2 del archivo tira, se pierden TODOS los del archivo y el
+            ' llamador ve 'no tiene animaciones'. Medido sobre el corpus: 15.055 archivos de FO4 y
+            ' 6.117 de SSE terminaban asi. El que falla queda ANOTADO, no tragado.
             Dim a As HkxAnimacionDescomprimida_Class = Nothing
-            If obj.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
-                a = ParseAnimation(obj)
-            ElseIf obj.ClassName.Equals("hkaLosslessCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
-                a = ParseLosslessAnimation(obj)
-            End If
+            Try
+                If obj.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
+                    a = ParseAnimation(obj)
+                ElseIf obj.ClassName.Equals("hkaLosslessCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
+                    a = ParseLosslessAnimation(obj)
+                End If
+            Catch ex As Exception
+                AnimacionesFallidas.Add($"{obj.ClassName} @0x{obj.RelativeOffset:X}: {ex.GetType().Name}: {ex.Message}")
+                If Logger.Enabled Then Logger.LogLazy(Function() $"[ANIM-FALLO] {obj.ClassName} @0x{obj.RelativeOffset:X}: {ex.Message}")
+                a = Nothing
+            End Try
             If Not IsNothing(a) Then r.Add(a)
         Next
         If r.Count = 0 Then Return r

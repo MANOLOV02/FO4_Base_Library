@@ -2084,9 +2084,12 @@ Namespace Havok.Physics
             Dim invPrev As Matrix4 = Nothing
             Try
                 invPrev = prev.Inverted()
-            Catch
-                Exit Sub
-            End Try
+                Catch ex As Exception
+                    ' Una `prev` singular no se puede invertir y este hueso se queda sin movimiento en el
+                    ' frame. Salir sin decir nada hace que un esqueleto degenerado se vea como uno quieto.
+                    If Logger.Enabled Then Logger.LogLazy(Function() $"[CLOTH-INVPREV] matriz previa no invertible: se saltea el movimiento del hueso ({ex.GetType().Name})")
+                    Exit Sub
+                End Try
 
             ' M = cur · inv(prev): el movimiento del hueso, en convencion de FILA como todo el modulo.
             Dim m = Matrix4.Mult(cur, invPrev)

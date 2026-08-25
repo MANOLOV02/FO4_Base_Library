@@ -98,6 +98,10 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
                 End If
             End If
         Catch ex As Exception
+            ' Sin esqueleto embebido no hay overlay de cloth-bones y la prenda se renderiza sin
+            ' ellos. Callarlo hace que un .hkx roto se vea igual que uno que simplemente no trae
+            ' esqueleto: son dos cosas distintas y la segunda es normal.
+            If Logger.Enabled Then Logger.LogLazy(Function() $"[CLOTH-SKELOVL] el esqueleto embebido no parseo: {ex.GetType().Name}: {ex.Message}")
             parsed = Nothing
         End Try
 
