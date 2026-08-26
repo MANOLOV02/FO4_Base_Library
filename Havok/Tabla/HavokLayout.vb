@@ -99,6 +99,8 @@ Namespace Havok.Canon
     Public NotInheritable Class HavokLayout
 
         Private ReadOnly _classes As Dictionary(Of String, HavokClass)
+        ''' <summary>Los tamanos que emitio el generador para ESTE juego. Ver `SizeOfClass`.</summary>
+        Private ReadOnly _sizes As Dictionary(Of String, Integer)
         Private ReadOnly _flat As New ConcurrentDictionary(Of String, IReadOnlyDictionary(Of String, HavokMember))(StringComparer.OrdinalIgnoreCase)
 
         Public ReadOnly Property Tag As String
@@ -121,6 +123,7 @@ Namespace Havok.Canon
             _Tag = tag
             _SourceSha256 = sha
             _SourceStamp = stamp
+            _sizes = HkSizes.Para(tag)
             _classes = New Dictionary(Of String, HavokClass)(StringComparer.OrdinalIgnoreCase)
             For Each row In rows
                 Dim parsed = ParseRow(row)
@@ -216,34 +219,6 @@ Namespace Havok.Canon
             Return Nothing
         End Function
 
-        ''' <summary>El valor de un item, o -1 si la clase, el enum o el item no existen.</summary>
-        Public Function EnumValue(className As String, enumName As String, itemName As String) As Integer
-            Dim e = EnumValues(className, enumName)
-            If e Is Nothing OrElse String.IsNullOrEmpty(itemName) Then Return -1
-            Dim v As Integer
-            If e.TryGetValue(itemName, v) Then Return v
-            Return -1
-        End Function
-
-        ''' <summary>Como `EnumValue`, pero TIRA si no esta: para las leyes que no pueden
-        ''' degradar en silencio a un valor por defecto.</summary>
-        Public Function RequireEnumValue(className As String, enumName As String, itemName As String) As Integer
-            Dim v = EnumValue(className, enumName, itemName)
-            If v < 0 Then
-                Throw New KeyNotFoundException(
-                    $"La tabla de {Tag} no declara {className}.{enumName}.{itemName}. Regenerar con " &
-                    "Tools/HavokLayoutGen/gen.py y correr Tools/HavokLayoutGate.")
-            End If
-            Return v
-        End Function
-
-        ''' <summary>Cuantos enums trae la tabla. Cero = el generador no los emitio.</summary>
-        Public ReadOnly Property EnumCount As Integer
-            Get
-                Return _enums.Count
-            End Get
-        End Property
-
         Public Function HasClass(className As String) As Boolean
             Return Not String.IsNullOrEmpty(className) AndAlso _classes.ContainsKey(className)
         End Function
@@ -301,41 +276,24 @@ Namespace Havok.Canon
         End Function
 
         ''' <summary>
-        ''' Todos los miembros que la clase declara, INCLUYENDO los heredados y con los structs
-        ''' anidados aplanados (ruta con puntos). Es lo que necesita un lector generico para poder
-        ''' recorrer una clase entera sin tener escrita su lista de campos.
+        ''' El tamano en bytes de la clase, en el layout x64.
+        ''' <para>⛔ NO SE DERIVA ACA. Habia una derivacion propia —con su tabla de anchos, su tabla de
+        ''' alineamientos y su respaldo a la otra tabla— que era una SEGUNDA transcripcion de
+        ''' `gentyped.ancho`, y las dos YA HABIAN DIVERGIDO: medido, 253 clases de FO4 y 205 de SSE
+        ''' daban distinto. Se dejo declarada como duplicacion inevitable "porque el generador corre
+        ''' offline y no puede llamar a esta funcion" — lo que no puede es LLAMARLA; EMITIR la respuesta
+        ''' si puede, que es lo que ya hacia con los offsets y con los strides. Ahora la emite:
+        ''' <see cref="HkSizes"/>.</para>
+        ''' <para>0 = la tabla no declara esa clase, o la declara sin miembros y sin `objectSize`. El
+        ''' llamador decide; no se inventa un tamano.</para>
         ''' </summary>
-        Public Function MembersOf(className As String) As IReadOnlyList(Of HavokMember)
-            Dim map = Flat(className)
-            If map Is Nothing Then Return Nothing
-            ' Quien pide MembersOf los lee TODOS (es lo que hace el lector generico), asi que se
-            ' acreditan todos. Si esto no se registrara, el censo de cobertura diria que la clase no
-            ' se lee cuando en realidad se lee entera: el instrumento mediria el METODO en vez del
-            ' resultado.
-            If RecordCoverage Then
-                For Each m In map.Values
-                    RecordRequest(className, m.Name)
-                Next
-            End If
-            Return map.Values.OrderBy(Function(m) m.Offset).ToList()
-        End Function
-
-        ''' <summary>`objectSize` declarado por la reflexion, o 0 si no lo trae (structs embebidos:
-        ''' su tamano se deduce del offset del miembro que les sigue en la clase que los contiene).</summary>
         Public Function SizeOfClass(className As String) As Integer
             If String.IsNullOrEmpty(className) Then Return 0
-            Dim c As HavokClass = Nothing
-            If Not _classes.TryGetValue(className, c) OrElse c Is Nothing Then Return 0
-            If c.Size > 0 Then Return c.Size
-            ' Sin objectSize: el tamano minimo es el offset del ultimo miembro mas su propio tamano.
-            Dim ms = MembersOf(className)
-            If ms Is Nothing OrElse ms.Count = 0 Then Return 0
-            Dim last = ms(ms.Count - 1)
-            Dim lastSize = SizeOfType(Me, last.TypeName, last.SubTypeName, last.StructClassName)
-            If lastSize <= 0 Then lastSize = 8
-            Dim n = If(last.CArraySize > 1, last.CArraySize, 1)
-            Return last.Offset + (lastSize * n)
+            Dim n As Integer
+            If _sizes IsNot Nothing AndAlso _sizes.TryGetValue(className, n) Then Return n
+            Return 0
         End Function
+
 
         ''' <summary>Offset absoluto del miembro (ruta con puntos), o -1 si la clase o el miembro no existen.</summary>
         Public Function Offset(className As String, memberPath As String) As Integer
@@ -346,11 +304,13 @@ Namespace Havok.Canon
         ''' <summary>El miembro, o Nothing.</summary>
         Public Function Member(className As String, memberPath As String) As HavokMember
             If String.IsNullOrEmpty(memberPath) Then Return Nothing
-            If RecordCoverage Then RecordRequest(className, memberPath)
             Dim map = Flat(className)
             Dim result As HavokMember = Nothing
-            If map.TryGetValue(memberPath, result) Then Return result
-            Return Nothing
+            If Not map.TryGetValue(memberPath, result) Then Return Nothing
+            ' ⛔ SE REGISTRA DESPUES DE ENCONTRARLO. Antes se registraba la PETICION, asi que una ruta
+            ' inexistente entraba al censo: el registro decia "lo que se pidio", no "lo que se leyo".
+            If RecordCoverage Then RecordRequest(className, memberPath)
+            Return result
         End Function
 
         ' =======================================================================================
@@ -371,15 +331,27 @@ Namespace Havok.Canon
         ''' <summary>Prender ANTES de parsear. Apagado no cuesta nada (una comparacion booleana).</summary>
         Public Shared Property RecordCoverage As Boolean = False
 
+        ''' <summary>
+        ''' ⛔ LA CLAVE LLEVA EL JUEGO. Esto es `Shared` y antes se indexaba SOLO por nombre de clase:
+        ''' como la mayoria de las `hka*`/`hkb*` existen con el mismo nombre en las dos tablas, un
+        ''' barrido de un load order mixto acreditaba en SSE lo que solo se habia leido en FO4. La
+        ''' cobertura salia inflada y no habia forma de verlo desde el reporte.
+        ''' </summary>
         Private Shared ReadOnly _requested As New Dictionary(Of String, HashSet(Of String))(StringComparer.OrdinalIgnoreCase)
 
-        Private Shared Sub RecordRequest(className As String, memberPath As String)
+        ''' <summary>La clave del censo: `tag|clase`. El tag lo declara la tabla.</summary>
+        Private Function ClaveDeCenso(className As String) As String
+            Return If(Tag, String.Empty) & "|" & className
+        End Function
+
+        Private Sub RecordRequest(className As String, memberPath As String)
             If String.IsNullOrEmpty(className) Then Exit Sub
+            Dim clave = ClaveDeCenso(className)
             SyncLock _requested
                 Dim set0 As HashSet(Of String) = Nothing
-                If Not _requested.TryGetValue(className, set0) Then
+                If Not _requested.TryGetValue(clave, set0) Then
                     set0 = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-                    _requested(className) = set0
+                    _requested(clave) = set0
                 End If
                 set0.Add(memberPath)
                 ' Una ruta anidada `a.b` tambien acredita al padre `a`: el parser lo esta leyendo,
@@ -389,8 +361,10 @@ Namespace Havok.Canon
             End SyncLock
         End Sub
 
-        ''' <summary>Lo pedido hasta ahora, por clase. Copia: el llamador no puede mutar el registro.</summary>
-        Public Shared Function CoverageSnapshot() As Dictionary(Of String, HashSet(Of String))
+        ''' <summary>Lo pedido por `tag|clase`. ⛔ La clave lleva el JUEGO: dos tablas declaran la
+        ''' misma clase y lo leido en una no acredita en la otra. Usar <see cref="CoberturaDe"/> para
+        ''' consultarla desde una tabla concreta.</summary>
+        Private Shared Function CoverageSnapshot() As Dictionary(Of String, HashSet(Of String))
             SyncLock _requested
                 Dim copy As New Dictionary(Of String, HashSet(Of String))(StringComparer.OrdinalIgnoreCase)
                 For Each kv In _requested
@@ -399,6 +373,31 @@ Namespace Havok.Canon
                 Return copy
             End SyncLock
         End Function
+
+        ''' <summary>Lo que se leyo de <paramref name="className"/> EN ESTA TABLA. Vacio si nada.</summary>
+        Public Function CoberturaDe(className As String) As HashSet(Of String)
+            Dim clave = ClaveDeCenso(className)
+            SyncLock _requested
+                Dim set0 As HashSet(Of String) = Nothing
+                If _requested.TryGetValue(clave, set0) Then Return New HashSet(Of String)(set0, StringComparer.OrdinalIgnoreCase)
+            End SyncLock
+            Return New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
+        ''' ⛔ REGISTRA UNA LECTURA REAL DE CAMPOS. Existe porque el codigo GENERADO no pasa por
+        ''' `Member`/`Offset`: los `HkObj_*` traen los offsets precalculados, asi que todo lo que se
+        ''' lee por la capa de objetos era INVISIBLE para el censo. El unico punto por el que esa
+        ''' capa pasa entera es `HavokObjetoGenerico.Leer`, y desde ahi se registra.
+        ''' <para>Antes esto no se notaba porque `SizeOfClass` acreditaba el 100 % de cualquier
+        ''' clase sin haber leido un byte: el censo daba numeros altos por el motivo equivocado.</para>
+        ''' </summary>
+        Public Sub RegistrarLectura(className As String, campos As IEnumerable(Of String))
+            If Not RecordCoverage OrElse String.IsNullOrEmpty(className) OrElse campos Is Nothing Then Exit Sub
+            For Each c In campos
+                RecordRequest(className, c)
+            Next
+        End Sub
 
         Public Shared Sub ResetCoverage()
             SyncLock _requested
@@ -450,10 +449,6 @@ Namespace Havok.Canon
         End Property
 
         ''' <summary>
-        ''' Tabla que corresponde al formato QUE EL ARCHIVO DECLARA. Nothing para Skyrim32:
-        ''' la tabla describe x64 y un packfile de 32 bits tiene otro layout (ver cabecera).
-        ''' </summary>
-        ''' <summary>
         ''' Tabla canonica del formato que el PACKFILE DECLARA. Es el unico punto donde se decide que
         ''' juego se esta leyendo, y la decision sale del archivo, no de la config: `Config_App.Game`
         ''' viene en Skyrim por defecto y usarlo aca haria que un HKX de Fallout se leyera con la tabla
@@ -475,52 +470,8 @@ Namespace Havok.Canon
             End Select
         End Function
 
-        ''' <summary>True si hay tabla canonica para ese formato.</summary>
-        Public Shared Function IsSupported(format As HkxPackfileFormat_Enum) As Boolean
-            Return [For](format) IsNot Nothing
-        End Function
-
         Public Overrides Function ToString() As String
             Return $"HavokLayout[{Tag}] {ClassCount} clases, exe {SourceStamp}"
-        End Function
-
-        ''' <summary>
-        ''' ⛔ EL TAMANO DE UN TIPO SEGUN LA TABLA. Vivia en `HavokGenericReader`, que era un
-        ''' SEGUNDO lector del archivo; esto no lee nada: es aritmetica de la propia tabla y por eso
-        ''' se queda aca, con la tabla.
-        ''' </summary>
-        ''' <summary>
-        ''' Tamano en bytes de un tipo declarado, en el layout x64 que describe la tabla.
-        ''' <para>⛔ Estos NO son numeros elegidos: son los tamanos del layout que la propia tabla
-        ''' describe (la tabla trae `objectSize` por clase, y los offsets consecutivos de sus miembros
-        ''' los confirman). Un tamano mal puesto aca corre TODO un array de structs, asi que
-        ''' <see cref="SizeOfType"/> devuelve -1 para lo que no sabe y el lector se planta en vez de
-        ''' inventar un stride.</para>
-        ''' </summary>
-        Public Shared Function SizeOfType(layout As HavokLayout, typeName As String, subType As String, structClass As String) As Integer
-            Select Case LCase(If(typeName, ""))
-                Case "bool", "int8", "uint8", "char" : Return 1
-                Case "int16", "uint16", "half" : Return 2
-                Case "int32", "uint32", "real" : Return 4
-                Case "int64", "uint64", "ulong", "pointer", "cstring", "stringptr", "variant" : Return 8
-                Case "vector4", "quaternion" : Return 16
-                Case "matrix3", "rotation" : Return 48
-                Case "qstransform" : Return 48
-                Case "matrix4", "transform" : Return 64
-                Case "array", "simplearray" : Return 16
-                Case "relarray" : Return 4
-                Case "void" : Return 0
-                Case "enum", "flags"
-                    ' El ancho de un enum lo da su tipo BASE, que la tabla declara como subtipo.
-                    Dim baseSize = SizeOfType(layout, subType, "", "")
-                    Return If(baseSize > 0, baseSize, 4)
-                Case "struct"
-                    If layout Is Nothing OrElse String.IsNullOrEmpty(structClass) Then Return -1
-                    Dim sz = layout.SizeOfClass(structClass)
-                    Return If(sz > 0, sz, -1)
-                Case Else
-                    Return -1
-            End Select
         End Function
 
     End Class

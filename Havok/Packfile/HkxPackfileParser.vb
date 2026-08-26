@@ -26,6 +26,13 @@ Public Enum HkxPackfileFormat_Enum
     Fallout64 = 3
 End Enum
 
+''' <summary>
+''' ⛔⛔ EL ENVOLTORIO SE LEE POR OFFSET DECLARADO, NO EN SECUENCIA.
+''' <para>Esto era un inicializador donde cada `reader.ReadX()` avanzaba el stream, o sea que
+''' el ORDEN DE LAS LINEAS era el formato. Un campo que nadie usaba no se podia borrar: sacar
+''' `userTag` corria CUATRO BYTES todo lo que venia despues y el cloth entero dejaba de
+''' resolver, en silencio. Leyendo por offset, un campo que no se usa simplemente no se lee.</para>
+''' </summary>
 Public NotInheritable Class HkxPackfileParser_Class
     ' ⛔ POR QUE ESTE ARCHIVO NO USA EL LECTOR GENERADO.
     ' La reflexion SI declara el envoltorio — `hkPackfileHeader{magic[2],0 . userTag,8 . fileVersion,C
@@ -39,9 +46,17 @@ Public NotInheritable Class HkxPackfileParser_Class
     ' Lo que no se puede es leerlos CON el lector generado: `Hk_*` necesita un
     ' `HkxObjectGraph_Class`, que se construye a partir de las secciones y los fixups que este
     ' archivo produce. Es el arranque: la cabecera se lee antes de que exista el grafo que la leeria.
-    ''' <summary>El envoltorio no declara `objectSize`, asi que su tamano lo deduce la tabla
-    ''' del ultimo miembro declarado: FO4 `predicateArraySizePlusPadding` @0x3E uint16 y SSE
-    ''' `pad` @0x3C int32 terminan los dos en 0x40.</summary>
+    ''' <summary>
+    ''' El envoltorio no declara `objectSize`, asi que su tamano lo deduce la tabla del ultimo miembro
+    ''' declarado: FO4 `predicateArraySizePlusPadding` @0x3E uint16 y SSE `pad` @0x3C int32 terminan
+    ''' los dos en 0x40.
+    ''' <para>⛔ Y ESO SE COMPRUEBA — pero en `HavokLayoutGate` fase 5, NO aca. Estuvo un rato en un
+    ''' inicializador de campo `Shared ReadOnly`: si algun dia las dos tablas dejaran de coincidir, eso
+    ''' se convierte en `TypeInitializationException`, .NET la CACHEA para toda la vida del proceso, y
+    ''' <see cref="EsPackfileHavok"/> y <see cref="FormatoDe"/> —documentadas «sin lanzar, para que un
+    ''' barrido pueda clasificar miles de archivos»— pasan a tirar. Una pregunta sobre la TABLA se
+    ''' contesta en el gate, no en el camino caliente del parser.</para>
+    ''' </summary>
     Private Shared ReadOnly HeaderFixedSize As Integer = Havok.Canon.HavokLayout.FO4.SizeOfClass("hkPackfileHeader")
     Public Const HavokMagic0 As UInteger = &H57E0E057UI
     Public Const HavokMagic1 As UInteger = &H10C0C010UI
@@ -72,9 +87,20 @@ Public NotInheritable Class HkxPackfileParser_Class
         ' ⛔ EL ORDEN DEL ARRANQUE. 1) el formato sale de dos campos que las dos tablas declaran en
         ' el mismo offset; 2) con el formato ya se puede anclar un grafo en el byte 0; 3) desde ahi
         ' `Hk_HkPackfileHeader` lee la cabecera como cualquier otra clase declarada.
-        result.Formato = FormatoDeclarado(bytes)
+        ' ⛔ NO ES UN FALLO DE LECTURA, ES OTRO FORMATO. Ver `HkxNoEsPackfileException`: el barrido
+        ' lo cuenta aparte, igual que Skyrim32, porque un contador que mezcla "no lo pude leer" con
+        ' "esto no es lo que leo" manda a buscar el defecto adonde no esta.
+        If Not EsPackfileHavok(bytes) Then
+            Throw New HkxNoEsPackfileException("Unsupported HKX magic. The payload is not a Havok packfile.")
+        End If
+        result.Formato = FormatoDe(bytes)
+        If result.Formato = HkxPackfileFormat_Enum.Unknown Then
+            Throw New HkxNoEsPackfileException(
+                $"Unsupported HKX variant: FileVersion={BitConverter.ToInt32(bytes, Off("hkPackfileHeader", "fileVersion"))}, " &
+                $"PointerSize={PointerSizeDe(bytes)}.")
+        End If
         result.Grafo0 = New HkxObjectGraph_Class(bytes, result.Formato, PointerSizeDe(bytes))
-        result.Header = New Havok.Canon.Typed.Hk_HkPackfileHeader(result.Grafo0, 0)
+        result.Header = Havok.Canon.Objects.HkObj_HkPackfileHeader.ReadAt(result.Grafo0, 0)
         ValidarCabecera(result, bytes.Length)
         ReadSections(result, bytes, bytes.Length)
 
@@ -87,58 +113,71 @@ Public NotInheritable Class HkxPackfileParser_Class
 
     ''' <summary>
     ''' ⛔ EL OFFSET DE UN CAMPO DEL ENVOLTORIO, DE LA TABLA — NO CONTANDO BYTES.
-    ''' Las dos tablas declaran `hkPackfileHeader` y `hkPackfileSectionHeader` con los MISMOS
-    ''' offsets en todo lo que el arranque necesita, asi que se puede usar cualquiera antes de
-    ''' saber de que juego es el archivo — que es justo lo que la cabecera viene a decir.
+    ''' <para>Para elegir entre la tabla de FO4 y la de SSE hace falta leer campos SIN HABER ELEGIDO
+    ''' TODAVIA. Se puede porque las dos tablas los declaran en el MISMO offset, y eso no se afirma
+    ''' en un comentario: se VERIFICA aca, la primera vez que se pide cada campo. Si algun dia dejan
+    ''' de coincidir, esto tira y se ve.</para>
+    ''' <para>⛔ LA COMPROBACION ESTABA EN `FormatoDeclarado` Y MIRABA TRES CAMPOS A DEDO (`magic`,
+    ''' `fileVersion`, `layoutRules`). Aca cubre los que el arranque pide DE VERDAD, sea cual sea la
+    ''' lista: es lo que el codigo usa, no lo que a alguien se le ocurrio enumerar.</para>
+    ''' <para>⚠️ MEDIDO, PARA NO PROMETER DE MAS: hoy las cuatro llamadas vivas son de
+    ''' `hkPackfileHeader` (`magic`, `fileVersion` x2, `layoutRules`). `hkPackfileSectionHeader` NO
+    ''' pasa por aca —y no tiene por que: sus offsets se leen con
+    ''' <c>HavokLayout.For(Formato)</c>, o sea con la tabla del juego ya elegida, y las dos NO
+    ''' coinciden (0x40 en FO4, 0x30 en SSE). El tamano de la cabecera, que si se usa para los dos
+    ''' juegos, se comprueba ahi mismo.</para>
     ''' </summary>
     Private Shared Function Off(clase As String, campo As String) As Integer
-        Return Havok.Canon.HavokLayout.FO4.RequireOffset(clase, campo)
+        Return _offVerificado.GetOrAdd(clase & "." & campo,
+            Function(k)
+                Dim a = Havok.Canon.HavokLayout.FO4.RequireOffset(clase, campo)
+                Dim b = Havok.Canon.HavokLayout.SSE.RequireOffset(clase, campo)
+                If a <> b Then
+                    Throw New InvalidDataException(
+                        $"Las dos tablas declaran {k} en offsets distintos (FO4 0x{a:X}, SSE 0x{b:X}); " &
+                        "el arranque del packfile asume que coinciden.")
+                End If
+                Return a
+            End Function)
     End Function
 
-    ''' <summary>
-    ''' ⛔⛔ EL ENVOLTORIO SE LEE POR OFFSET DECLARADO, NO EN SECUENCIA.
-    ''' <para>Esto era un inicializador donde cada `reader.ReadX()` avanzaba el stream, o sea que
-    ''' el ORDEN DE LAS LINEAS era el formato. Un campo que nadie usaba no se podia borrar: sacar
-    ''' `userTag` corria CUATRO BYTES todo lo que venia despues y el cloth entero dejaba de
-    ''' resolver, en silencio. Leyendo por offset, un campo que no se usa simplemente no se lee.</para>
-    ''' </summary>
+    ''' <summary>El offset ya verificado contra las DOS tablas. Se comprueba una vez por campo.</summary>
+    Private Shared ReadOnly _offVerificado As New Collections.Concurrent.ConcurrentDictionary(Of String, Integer)(StringComparer.Ordinal)
+
     ''' <summary>El ancho de puntero, que es `layoutRules[0]`. Se lee antes de elegir tabla.</summary>
     Private Shared Function PointerSizeDe(bytes As Byte()) As Integer
         Return bytes(Off("hkPackfileHeader", "layoutRules"))
     End Function
 
-    ''' <summary>
-    ''' ⛔⛔ LOS DOS UNICOS CAMPOS QUE SE LEEN ANTES DE SABER QUE TABLA USAR, Y SE COMPRUEBA.
-    ''' <para>Para elegir entre la tabla de FO4 y la de SSE hace falta `fileVersion` y
-    ''' `layoutRules[0]` — o sea, hay que leer dos campos sin haber elegido todavia. Se puede
-    ''' porque las DOS tablas los declaran en el MISMO offset, y eso no se afirma en un
-    ''' comentario: se VERIFICA aca. Si algun dia dejan de coincidir, esto tira y se ve.</para>
-    ''' </summary>
-    Private Shared Function FormatoDeclarado(bytes As Byte()) As HkxPackfileFormat_Enum
+    ''' <summary>¿Los ocho bytes de arranque son el magic de un packfile Havok? El offset del campo lo
+    ''' dice la tabla, no un literal.</summary>
+    Public Shared Function EsPackfileHavok(bytes As Byte()) As Boolean
         Const C As String = "hkPackfileHeader"
-        For Each campo In {"magic", "fileVersion", "layoutRules"}
-            Dim a = Havok.Canon.HavokLayout.FO4.RequireOffset(C, campo)
-            Dim b = Havok.Canon.HavokLayout.SSE.RequireOffset(C, campo)
-            If a <> b Then
-                Throw New InvalidDataException(
-                    $"Las dos tablas declaran {C}.{campo} en offsets distintos (FO4 0x{a:X}, SSE 0x{b:X}); " &
-                    "el arranque del packfile asume que coinciden.")
-            End If
-        Next
+        Dim o = Off(C, "magic")
+        If bytes Is Nothing OrElse bytes.Length < o + 8 Then Return False
+        Return BitConverter.ToUInt32(bytes, o) = HavokMagic0 AndAlso BitConverter.ToUInt32(bytes, o + 4) = HavokMagic1
+    End Function
 
-        If BitConverter.ToUInt32(bytes, Off(C, "magic")) <> HavokMagic0 OrElse
-           BitConverter.ToUInt32(bytes, Off(C, "magic") + 4) <> HavokMagic1 Then
-            Throw New InvalidDataException("Unsupported HKX magic. The payload is not a Havok packfile.")
-        End If
-
-        Dim fileVersion = BitConverter.ToInt32(bytes, Off(C, "fileVersion"))
+    ''' <summary>
+    ''' ⛔⛔ QUE VARIANTE DE PACKFILE ES, EN UN SOLO LUGAR. `Unknown` si no es un packfile Havok o si es
+    ''' una variante que esta app no soporta — sin lanzar, para que un barrido de load order pueda
+    ''' clasificar miles de archivos.
+    ''' <para>`HkxLoadOrderAudit` tenia su propio `DetectFormat` con los offsets `0`, `4`, `0xC` y
+    ''' `0x10` escritos a mano y un juego de strings paralelo al enum. Los offsets salen de la tabla y
+    ''' el resultado es el enum: no hay dos vocabularios.</para>
+    ''' </summary>
+    Public Shared Function FormatoDe(bytes As Byte()) As HkxPackfileFormat_Enum
+        Const C As String = "hkPackfileHeader"
+        If Not EsPackfileHavok(bytes) Then Return HkxPackfileFormat_Enum.Unknown
+        Dim oV = Off(C, "fileVersion")
+        If bytes.Length < oV + 4 Then Return HkxPackfileFormat_Enum.Unknown
+        Dim fileVersion = BitConverter.ToInt32(bytes, oV)
         Dim pointerSize = PointerSizeDe(bytes)
         Select Case True
             Case fileVersion = 11 AndAlso pointerSize = 8 : Return HkxPackfileFormat_Enum.Fallout64
             Case fileVersion = 8 AndAlso pointerSize = 8 : Return HkxPackfileFormat_Enum.Skyrim64
             Case fileVersion = 8 AndAlso pointerSize = 4 : Return HkxPackfileFormat_Enum.Skyrim32
-            Case Else
-                Throw New InvalidDataException($"Unsupported HKX variant: FileVersion={fileVersion}, PointerSize={pointerSize}.")
+            Case Else : Return HkxPackfileFormat_Enum.Unknown
         End Select
     End Function
 
@@ -146,22 +185,46 @@ Public NotInheritable Class HkxPackfileParser_Class
     ''' (el offset absoluto de la tabla de secciones, que no es un campo declarado).</summary>
     Private Shared Sub ValidarCabecera(packfile As HkxPackfile_Class, fileLength As Integer)
         Dim h = packfile.Header
-        Dim endianness = h.LayoutRules(1)
+        ' ⛔ SIN TABLA NO SE PUEDE LEER LA CABECERA, Y HAY QUE DECIR ESO. `Skyrim32` (fileVersion 8 con
+        ' punteros de 4) no tiene tabla canonica: el .exe de 32 bits no esta en el corpus. El lector
+        ' tipado devuelve el DEFAULT de cada campo cuando no hay tabla, asi que la cabecera se leia
+        ' entera en cero y el primer campo mirado se llevaba la culpa: los dos `skeleton_*_sk.hkx` de
+        ' BodySlide salian rechazados por "endianness 0" teniendo `layoutRules = [4,1,0,1]` — o sea el
+        ' 1 de little-endian en el byte crudo. Un mensaje que acusa al campo equivocado manda a buscar
+        ' el defecto adonde no esta.
+        ' ⛔ Y VA PRIMERO POR OTRA RAZON: mas abajo `HavokLayout.For(...)` se desreferencia para el
+        ' tamano del section header. Que ese NRE no se viera dependia de que este throw saliera antes
+        ' por accidente. Ahora la condicion esta dicha.
+        If Havok.Canon.HavokLayout.For(packfile.Formato) Is Nothing Then
+            Throw New HkxSinTablaCanonicaException(packfile.Formato)
+        End If
+        Dim endianness = If(h.LayoutRules IsNot Nothing AndAlso h.LayoutRules.Count > 1, h.LayoutRules(1), -1)
         If endianness <> 1 Then Throw New InvalidDataException($"Unsupported HKX endianness flag: {endianness}.")
 
         ' En FO4 la tabla de secciones arranca DESPUES del arreglo de predicados; en SSE, justo
         ' al terminar la cabecera. `predicateArraySizePlusPadding` es el campo que lo dice, y solo
         ' la tabla de FO4 lo declara — por eso la rama.
         packfile.SectionHeadersAbsoluteOffset =
-            If(packfile.Formato = HkxPackfileFormat_Enum.Fallout64 AndAlso h.HasPredicateArraySizePlusPadding,
+            If(packfile.Formato = HkxPackfileFormat_Enum.Fallout64 AndAlso h.Raw.HasPredicateArraySizePlusPadding,
                HeaderFixedSize + h.PredicateArraySizePlusPadding,
                HeaderFixedSize)
 
-        If h.NumSections <= 0 OrElse h.NumSections > 64 Then
-            Throw New InvalidDataException($"Invalid HKX section count: {h.NumSections}.")
-        End If
+        ' ⛔ EL OFFSET PRIMERO. Al reves, un `SectionHeadersAbsoluteOffset` corrupto hace negativo el
+        ' `fileLength - offset` de abajo y el mensaje le echa la culpa a `numSections`, que estaba
+        ' sano: el archivo se rechaza igual pero se pierde CUAL campo esta podrido.
         If packfile.SectionHeadersAbsoluteOffset < HeaderFixedSize OrElse packfile.SectionHeadersAbsoluteOffset >= fileLength Then
             Throw New InvalidDataException($"Invalid HKX section header offset: 0x{packfile.SectionHeadersAbsoluteOffset:X}.")
+        End If
+        ' ⛔ EL TOPE SALE DEL ARCHIVO, NO DE UN 64 INVENTADO. La reflexion declara `numSections`
+        ' como `int32` y nada mas: no hay ningun maximo que citar. Lo unico que se puede afirmar es
+        ' que los encabezados TIENEN QUE ENTRAR — que es la misma condicion que `ReadSections` ya
+        ' exige encabezado por encabezado, escrita una vez y por adelantado.
+        Dim shSize = Havok.Canon.HavokLayout.For(packfile.Formato).SizeOfClass("hkPackfileSectionHeader")
+        If h.NumSections <= 0 OrElse
+           CLng(h.NumSections) * shSize > CLng(fileLength) - packfile.SectionHeadersAbsoluteOffset Then
+            Throw New InvalidDataException(
+                $"Invalid HKX section count: {h.NumSections} encabezados de {shSize} bytes no entran desde " &
+                $"0x{packfile.SectionHeadersAbsoluteOffset:X} en un archivo de {fileLength} bytes.")
         End If
     End Sub
 
@@ -187,10 +250,10 @@ Public NotInheritable Class HkxPackfileParser_Class
                 Throw New InvalidDataException($"Section header #{i} is truncated.")
             End If
 
-            Dim sh As New Havok.Canon.Typed.Hk_HkPackfileSectionHeader(packfile.Grafo0, o)
+            Dim sh = Havok.Canon.Objects.HkObj_HkPackfileSectionHeader.ReadAt(packfile.Grafo0, o)
             Dim section As New HkxPackfileSection_Class With {
                 .Index = i,
-                .Name = AsciiFijo(bytes, o + Off(C, "sectionTag"), 19),
+                .Name = TextoDeCharArray(sh.SectionTag),
                 .AbsoluteDataStart = sh.AbsoluteDataStart
             }
 
@@ -282,56 +345,56 @@ Public NotInheritable Class HkxPackfileParser_Class
         Next
     End Sub
 
-    Private Shared Sub ParseLocalFixups(packfile As HkxPackfile_Class, section As HkxPackfileSection_Class)
-        If section.LocalFixupsAbsoluteStart < 0 OrElse section.LocalFixupsAbsoluteEnd <= section.LocalFixupsAbsoluteStart Then Exit Sub
-
-        Dim cursor = section.LocalFixupsAbsoluteStart
-        While cursor + 8 <= section.LocalFixupsAbsoluteEnd
+    ''' <summary>
+    ''' ⛔ LA LEY DE UNA TABLA DE FIXUPS, UNA SOLA VEZ: entradas de zancada fija, desde `desde` hasta
+    ''' `hasta`, y un `sourceOffset` de -1 como CENTINELA de relleno que corta la tabla.
+    ''' <para>Las tres tablas del envoltorio (local, global, virtual) la comparten; lo unico que
+    ''' cambia es la zancada y que campos lee cada una, y eso lo pone el llamador.</para>
+    ''' </summary>
+    Private Shared Sub RecorrerTablaDeFixups(packfile As HkxPackfile_Class, desde As Integer, hasta As Integer,
+                                             zancada As Integer, alta As Action(Of Integer, Integer))
+        If desde < 0 OrElse hasta <= desde Then Exit Sub
+        Dim cursor = desde
+        While cursor + zancada <= hasta
             Dim sourceOffset = BitConverter.ToInt32(packfile.RawBytes, cursor)
-            If sourceOffset = -1 Then Exit While  ' padding sentinel — same convention as Global/Virtual fixups
-
-            packfile.LocalFixups.Add(New HkxLocalFixupEntry_Class With {
-                .SectionIndex = section.Index,
-                .SourceRelativeOffset = sourceOffset,
-                .DestinationRelativeOffset = BitConverter.ToInt32(packfile.RawBytes, cursor + 4)
-            })
-            cursor += 8
+            If sourceOffset = -1 Then Exit While
+            alta(sourceOffset, cursor)
+            cursor += zancada
         End While
+    End Sub
+
+    Private Shared Sub ParseLocalFixups(packfile As HkxPackfile_Class, section As HkxPackfileSection_Class)
+        RecorrerTablaDeFixups(packfile, section.LocalFixupsAbsoluteStart, section.LocalFixupsAbsoluteEnd, 8,
+                              Sub(sourceOffset, cursor)
+                                  packfile.LocalFixups.Add(New HkxLocalFixupEntry_Class With {
+                                      .SectionIndex = section.Index,
+                                      .SourceRelativeOffset = sourceOffset,
+                                      .DestinationRelativeOffset = BitConverter.ToInt32(packfile.RawBytes, cursor + 4)
+                                  })
+                              End Sub)
     End Sub
 
     Private Shared Sub ParseGlobalFixups(packfile As HkxPackfile_Class, section As HkxPackfileSection_Class)
-        If section.GlobalFixupsAbsoluteStart < 0 OrElse section.GlobalFixupsAbsoluteEnd <= section.GlobalFixupsAbsoluteStart Then Exit Sub
-
-        Dim cursor = section.GlobalFixupsAbsoluteStart
-        While cursor + 12 <= section.GlobalFixupsAbsoluteEnd
-            Dim sourceOffset = BitConverter.ToInt32(packfile.RawBytes, cursor)
-            If sourceOffset = -1 Then Exit While
-
-            packfile.GlobalFixups.Add(New HkxGlobalFixupEntry_Class With {
-                .SectionIndex = section.Index,
-                .SourceRelativeOffset = sourceOffset,
-                .TargetRelativeOffset = BitConverter.ToInt32(packfile.RawBytes, cursor + 8)
-            })
-            cursor += 12
-        End While
+        RecorrerTablaDeFixups(packfile, section.GlobalFixupsAbsoluteStart, section.GlobalFixupsAbsoluteEnd, 12,
+                              Sub(sourceOffset, cursor)
+                                  packfile.GlobalFixups.Add(New HkxGlobalFixupEntry_Class With {
+                                      .SectionIndex = section.Index,
+                                      .SourceRelativeOffset = sourceOffset,
+                                      .TargetRelativeOffset = BitConverter.ToInt32(packfile.RawBytes, cursor + 8)
+                                  })
+                              End Sub)
     End Sub
 
     Private Shared Sub ParseVirtualFixups(packfile As HkxPackfile_Class, section As HkxPackfileSection_Class)
-        If section.VirtualFixupsAbsoluteStart < 0 OrElse section.VirtualFixupsAbsoluteEnd <= section.VirtualFixupsAbsoluteStart Then Exit Sub
-
-        Dim cursor = section.VirtualFixupsAbsoluteStart
-        While cursor + 12 <= section.VirtualFixupsAbsoluteEnd
-            Dim sourceOffset = BitConverter.ToInt32(packfile.RawBytes, cursor)
-            If sourceOffset = -1 Then Exit While
-
-            packfile.VirtualFixups.Add(New HkxVirtualFixupEntry_Class With {
-                .SectionIndex = section.Index,
-                .ObjectRelativeOffset = sourceOffset,
-                .ClassNameSectionIndex = BitConverter.ToInt32(packfile.RawBytes, cursor + 4),
-                .ClassNameRelativeOffset = BitConverter.ToInt32(packfile.RawBytes, cursor + 8)
-            })
-            cursor += 12
-        End While
+        RecorrerTablaDeFixups(packfile, section.VirtualFixupsAbsoluteStart, section.VirtualFixupsAbsoluteEnd, 12,
+                              Sub(sourceOffset, cursor)
+                                  packfile.VirtualFixups.Add(New HkxVirtualFixupEntry_Class With {
+                                      .SectionIndex = section.Index,
+                                      .ObjectRelativeOffset = sourceOffset,
+                                      .ClassNameSectionIndex = BitConverter.ToInt32(packfile.RawBytes, cursor + 4),
+                                      .ClassNameRelativeOffset = BitConverter.ToInt32(packfile.RawBytes, cursor + 8)
+                                  })
+                              End Sub)
     End Sub
 
     Private Shared Sub ResolveRootObject(packfile As HkxPackfile_Class)
@@ -345,9 +408,6 @@ Public NotInheritable Class HkxPackfileParser_Class
         packfile.RootObject = New HkxRootObject_Class With {
             .SectionIndex = header.ContentsSectionIndex,
             .RelativeOffset = header.ContentsSectionOffset,
-            .AbsoluteOffset = section.AbsoluteDataStart + header.ContentsSectionOffset,
-            .ClassNameSectionIndex = header.ContentsClassNameSectionIndex,
-            .ClassNameRelativeOffset = header.ContentsClassNameSectionOffset,
             .ClassName = If(classEntry?.Name, String.Empty)
         }
     End Sub
@@ -394,13 +454,21 @@ Public NotInheritable Class HkxPackfileParser_Class
         Return True
     End Function
 
-    ''' <summary>ASCII de largo fijo en un offset ABSOLUTO. Sin stream, para que leer un campo no
-    ''' dependa de haber leido los de arriba.</summary>
-    Private Shared Function AsciiFijo(bytes As Byte(), offset As Integer, length As Integer) As String
-        If offset < 0 OrElse offset + length > bytes.Length Then Return String.Empty
-        Dim nul = Array.IndexOf(bytes, CByte(0), offset, length)
-        Dim n = If(nul < 0, length, nul - offset)
-        Return Encoding.ASCII.GetString(bytes, offset, n)
+    ''' <summary>
+    ''' ⛔⛔ UN `char[N]` DE HAVOK, LEIDO HASTA EL PRIMER CERO. UNA SOLA LEY.
+    ''' <para>El largo NO se escribe: es el de la lista que entrega el objeto generado, que sale del
+    ''' `cArraySize` de la tabla de reflexion. Antes habia dos sitios con el largo a mano — el `19` de
+    ''' `sectionTag` y el `0 To 15` de `contentsVersion` — teniendo el objeto ya construido y
+    ''' `SectionTagCount` / `ContentsVersionCount` emitidos por el generador.</para>
+    ''' </summary>
+    Friend Shared Function TextoDeCharArray(chars As List(Of Integer)) As String
+        If chars Is Nothing OrElse chars.Count = 0 Then Return String.Empty
+        Dim sb As New Text.StringBuilder(chars.Count)
+        For Each c In chars
+            If c = 0 Then Exit For
+            sb.Append(ChrW(c))
+        Next
+        Return sb.ToString()
     End Function
 End Class
 
@@ -410,7 +478,7 @@ Public Class HkxPackfile_Class
     End Sub
 
     ''' <summary>La cabecera, LEIDA POR EL LECTOR GENERADO. No hay clase espejo.</summary>
-    Public Property Header As Havok.Canon.Typed.Hk_HkPackfileHeader
+    Public Property Header As Havok.Canon.Objects.HkObj_HkPackfileHeader
 
     ''' <summary>Que tabla de la reflexion declara este archivo. Se deriva de `fileVersion`
     ''' + `layoutRules[0]`; no es un campo declarado.</summary>
@@ -430,17 +498,11 @@ Public Class HkxPackfile_Class
     Public ReadOnly Property VirtualFixups As New List(Of HkxVirtualFixupEntry_Class)
     Public Property RootObject As HkxRootObject_Class
 
-    ''' <summary>`contentsVersion` es un `char[16]` terminado en cero. El String no es un campo:
-    ''' es la lectura de ese arreglo, y se arma aca para no armarlo en cada consumidor.</summary>
+    ''' <summary>`contentsVersion` es un `char[N]` terminado en cero. El String no es un campo: es
+    ''' la lectura de ese arreglo, con la misma ley que `sectionTag`.</summary>
     Public Function ContentsVersionTexto() As String
-        If Not Header.IsValid OrElse Not Header.HasContentsVersion Then Return String.Empty
-        Dim sb As New Text.StringBuilder(16)
-        For i = 0 To 15
-            Dim c = Header.ContentsVersion(i)
-            If c = 0 Then Exit For
-            sb.Append(ChrW(c))
-        Next
-        Return sb.ToString()
+        If Header Is Nothing Then Return String.Empty
+        Return HkxPackfileParser_Class.TextoDeCharArray(Header.ContentsVersion)
     End Function
 
     Public Function GetSection(name As String) As HkxPackfileSection_Class
@@ -535,9 +597,6 @@ End Class
 Public Class HkxRootObject_Class
     Public Property SectionIndex As Integer
     Public Property RelativeOffset As Integer
-    Public Property AbsoluteOffset As Integer
-    Public Property ClassNameSectionIndex As Integer
-    Public Property ClassNameRelativeOffset As Integer
     Public Property ClassName As String
 End Class
 
@@ -545,3 +604,40 @@ End Class
 
 
 
+
+''' <summary>
+''' El archivo NO es un packfile Havok binario: el magic no es el que declara `hkPackfileHeader`, o
+''' la combinacion `fileVersion`/`pointerSize` no corresponde a ninguna variante conocida.
+''' <para>⛔ ES UN TIPO PROPIO POR LO MISMO QUE <see cref="HkxSinTablaCanonicaException"/>: un `.hkx`
+''' en otro formato (un tagfile, un stub) es una ausencia CONOCIDA del lector, no un fallo de
+''' lectura. Contarlo como fallo deja al barrido en rojo por algo que no es un defecto, y de ahi la
+''' salida siempre termina siendo apagar el gate.</para>
+''' </summary>
+Public Class HkxNoEsPackfileException
+    Inherits IO.IOException
+
+    Public Sub New(mensaje As String)
+        MyBase.New(mensaje)
+    End Sub
+End Class
+
+''' <summary>
+''' El archivo declara un formato para el que NO hay tabla canonica. Hoy es unicamente `Skyrim32`
+''' (fileVersion 8 con punteros de 4 bytes): la reflexion sale de los .exe de 64 bits y el de 32 no
+''' esta en el corpus.
+''' <para>⛔ ES UN TIPO PROPIO, NO UN MENSAJE. Un llamador que quiera separar "no lo puedo leer" de
+''' "no tengo la tabla para leerlo" tiene que poder preguntarlo sin comparar textos: el barrido ya
+''' traia el contador `sin tabla (Skyrim32)` y era INALCANZABLE, porque `Parse` tiraba antes con una
+''' `InvalidDataException` que ademas culpaba al campo equivocado. Un hueco declarado que se cuenta
+''' como fallo de lectura es un hueco que se busca donde no esta.</para>
+''' </summary>
+Public Class HkxSinTablaCanonicaException
+    Inherits IO.IOException
+
+    Public ReadOnly Property Formato As HkxPackfileFormat_Enum
+
+    Public Sub New(formato As HkxPackfileFormat_Enum)
+        MyBase.New($"HKX sin tabla canonica: el archivo declara el formato {formato} y la reflexion de los .exe de 64 bits no lo describe.")
+        _Formato = formato
+    End Sub
+End Class

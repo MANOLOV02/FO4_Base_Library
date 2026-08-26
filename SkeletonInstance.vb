@@ -7,27 +7,6 @@ Imports NiflySharp.Blocks
 ''' that gets folded into <see cref="LocaLTransform"/> when present.
 ''' </summary>
 Public Class HierarchiBone_class
-    ''' <summary>Effective local transform of this bone, composed as 4 layers:
-    ''' <c>OriginalLocaLTransform × MountDeltaTransform × MorphDeltaTransform × DeltaTransform</c>.
-    ''' <para>
-    ''' Capas (de bind hacia afuera):
-    ''' <list type="bullet">
-    ''' <item><c>OriginalLocaLTransform</c> — skeleton bind (jamás se muta).</item>
-    ''' <item><c>MountDeltaTransform</c> — chunk-mount correction (delta multiplicativo
-    ''' sobre el bind). Se computa como <c>MountDelta = inv(OrigL) × newLocal</c> donde
-    ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.</item>
-    ''' <item><c>MorphDeltaTransform</c> — bone-morph de apariencia del NPC (race height,
-    ''' body weight MWGT/NNAM/MRSV, face FMRI/FMRS, ARMA sculpt) escrito por
-    ''' <c>ApplyBoneMorphPose</c>. Capa estructural como el mount: SOBREVIVE a un cambio de
-    ''' pose/animación.</item>
-    ''' <item><c>DeltaTransform</c> — pose/animación (HKX por frame, ScreenArcher, etc.)
-    ''' escrito por <c>ApplyPose</c>. Aplica AL FINAL, libre para animar sin tocar el morph.</item>
-    ''' </list>
-    ''' </para>
-    ''' <para>Componer con <c>Nothing</c> es no-op, así que una capa ausente no cuesta ni mueve bits.</para>
-    ''' <para>Cascade: <c>GetGlobalTransform</c> compone parent chain con esta
-    ''' <c>LocaLTransform</c>, propagando Mount/Morph/Delta del parent automáticamente.</para>
-    ''' </summary>
     ''' <summary>
     ''' ⛔ La composición se escribe UNA sola vez: acá se agrega la física a
     ''' <see cref="LocaLTransformWithoutPhysics"/>, que es la que lista las otras cuatro capas.
@@ -57,9 +36,27 @@ Public Class HierarchiBone_class
     ''' </summary>
     Public PhysicsDeltaTransform As Transform_Class = Nothing
 
-    ''' <summary>
-    ''' La composición SIN la capa de física: <c>OrigL × Mount × Morph × Delta</c>.
+    ''' <summary>Effective local transform of this bone WITHOUT the physics layer, composed as 4 layers:
+    ''' <c>OriginalLocaLTransform × MountDeltaTransform × MorphDeltaTransform × DeltaTransform</c>.
     ''' Es contra esto que se calcula el delta de física, igual que el mount se calcula contra el bind.
+    ''' <para>
+    ''' Capas (de bind hacia afuera):
+    ''' <list type="bullet">
+    ''' <item><c>OriginalLocaLTransform</c> — skeleton bind (jamás se muta).</item>
+    ''' <item><c>MountDeltaTransform</c> — chunk-mount correction (delta multiplicativo
+    ''' sobre el bind). Se computa como <c>MountDelta = inv(OrigL) × newLocal</c> donde
+    ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.</item>
+    ''' <item><c>MorphDeltaTransform</c> — bone-morph de apariencia del NPC (race height,
+    ''' body weight MWGT/NNAM/MRSV, face FMRI/FMRS, ARMA sculpt) escrito por
+    ''' <c>ApplyBoneMorphPose</c>. Capa estructural como el mount: SOBREVIVE a un cambio de
+    ''' pose/animación.</item>
+    ''' <item><c>DeltaTransform</c> — pose/animación (HKX por frame, ScreenArcher, etc.)
+    ''' escrito por <c>ApplyPose</c>. Aplica AL FINAL, libre para animar sin tocar el morph.</item>
+    ''' </list>
+    ''' </para>
+    ''' <para>Componer con <c>Nothing</c> es no-op, así que una capa ausente no cuesta ni mueve bits.</para>
+    ''' <para>Cascade: <c>GetGlobalTransform</c> compone parent chain con esta
+    ''' <c>LocaLTransform</c>, propagando Mount/Morph/Delta del parent automáticamente.</para>
     ''' </summary>
     Public ReadOnly Property LocaLTransformWithoutPhysics As Transform_Class
         Get
@@ -225,7 +222,7 @@ Public Class SkeletonInstance
     ''' lock. NO agregar locks en el lado lector (riesgo de perf/deadlock); preservar este orden
     ''' build-then-read es lo que mantiene la corrección.</para></summary>
     Friend Function BuildGlobalTransformCacheForRenderPass() As SkeletonGlobalTransformCache
-        ' INVARIANTE de threading: ver el <summary> arriba. El _lock acá serializa builds concurrentes,
+        ' INVARIANTE de threading: ver la doc XML de la clase, arriba. El _lock acá serializa builds concurrentes,
         ' pero los lectores (render pass) corren lock-free confiando en "toda mutación + esta build
         ' completan antes de leer". No agregar locks en los read sites.
         SyncLock _lock
@@ -620,20 +617,21 @@ Public Class SkeletonInstance
 
             ' ⭐ OBJETO GENERADO. `HkObj_HkaSkeleton` sale de la reflexion de los dos .exe y elige
             ' la tabla segun lo que el packfile DECLARA, asi que este codigo lee Fallout y Skyrim sin
-            ' una sola rama por juego. Equivalencia con el parser viejo MEDIDA sobre 290 esqueletos de
-            ' FO4 y 382 de SSE, campo por campo (nombre, indices de padre, nombres de hueso, pose de
-            ' referencia): 0 diferencias. Ver `--hkxsweep`.
+            ' una sola rama por juego.
+            ' ⛔ ACA DECIA "equivalencia con el parser viejo MEDIDA sobre 290 esqueletos de FO4 y 382
+            ' de SSE … 0 diferencias". Esa medicion NO EXISTIA: el bloque de `--hkxsweep` que la
+            ' producia comparaba la MISMA llamada contra si misma —`viejo` y `nuevo` eran el mismo
+            ' `Leer(Of HkObj_HkaSkeleton)`— asi que las 0 diferencias eran ciertas por construccion y
+            ' el numero no decia nada. Se borro el bloque y se borra la cita.
+            ' Lo que SI esta medido, y se vuelve a medir solo: el barrido lee 148.354 objetos de
+            ' 17.511 archivos de FO4 y 116.833 de 7.702 de SSE sin un fallo, y el A/B de la ley de
+            ' esqueleto —que compara DOS leyes distintas— da 0 divergencias sobre 575 archivos.
             Dim sk As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
             Try
                 Dim sg = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(hkxBytes))
-                Dim cands = sg.GetObjectsByClassName("hkaSkeleton").Select(Function(o) Havok.Canon.Objects.HkObj_HkaSkeleton.Read(sg, o)).
-                               Where(Function(s) s IsNot Nothing AndAlso s.Bones IsNot Nothing AndAlso
-                                     s.ParentIndices IsNot Nothing AndAlso s.ReferencePose IsNot Nothing AndAlso
-                                     s.ReferencePose.Count >= s.Bones.Count).ToList()
-                ' Selección anim-vs-ragdoll: el root del de animación existe en el NIF base; sino, no-'Ragdoll'.
-                sk = cands.FirstOrDefault(Function(s) SkeletonDictionary.ContainsKey(HkxRootBoneName(s)))
-                If sk Is Nothing Then sk = cands.FirstOrDefault(Function(s) String.IsNullOrEmpty(s.Name) OrElse
-                                                                   s.Name.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) < 0)
+                ' ⛔ LA LEY ES `EsqueletoDeAnimacion`, NO UNA COPIA. Lo unico propio de este consumidor
+                ' es el desempate: si el root del esqueleto existe en el NIF vivo, ese es el bueno.
+                sk = sg.EsqueletoDeAnimacion(Function(s) SkeletonDictionary.ContainsKey(HkxRootBoneName(s)))
             Catch ex As Exception
                 ' Devolver 0 en silencio hacia que un HKX ilegible se viera igual que uno sin huesos.
                 Logger.LogLazy(Function() $"[SKEL-HKX] no pude leer el esqueleto del HKX: {ex.GetType().Name}: {ex.Message}")

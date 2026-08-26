@@ -6,10 +6,11 @@ Option Explicit On
 ' Orquestador del parseo completo de un HKX de tela embebido en un NIF:
 ' skeleton, collidables, capsule shapes, cloth data, operators, states.
 '
-' NO ESTÁ EN LA RUTA DEL RENDER: el render usa HkxPackfileParser + HkxObjectGraphParser +
-' SkeletonClothOverlayHelper directamente. Sus consumidores son
-' Wardrobe_Manager/PhysicsWeightCollapseHelper y las herramientas de Tools/ (
-' HkxLoadOrderAudit, CollidableDedupProbe, HkxParserProbe).
+' ⛔ SI ESTA EN LA RUTA DEL RENDER. La cabecera decia lo contrario y nombraba a
+' Wardrobe_Manager/PhysicsWeightCollapseHelper como consumidor principal: es falso.
+' `HavokClothSimulation` lo llama para armar el paquete de tela, y `Render.vb` llama a
+' `HavokClothSimulation.StepShapes` dentro del `#If DEBUG` que abre unas lineas mas arriba.
+' Los otros consumidores (Wardrobe_Manager y las herramientas de Tools/) tambien existen.
 '
 ' ALCANCE: los offsets ya no se escriben aca. Todo campo declarado sale del objeto generado
 ' (`HavokObjects.vb`), que resuelve la tabla de la reflexion del .exe del juego que corresponda.
@@ -82,13 +83,23 @@ Public NotInheritable Class HclClothPackageParser_Class
                 ' ⛔ DEL ARBOL GENERADO. `clothData.BufferDefinitions` ya es
                 ' `List(Of HkObj_HclBufferDefinition)`. El scratch es una SUBCLASE: se lo distingue
                 ' por el nombre de clase del objeto crudo, en la MISMA posicion del array.
-                For iB = 0 To clothData.BufferDefinitions.Count - 1
+                ' ⛔ LA COTA ES LA QUE DECLARA LA CABECERA, NO EL LARGO DE LA LISTA MATERIALIZADA.
+                ' Es la misma ley que `HavokConstraintSets.CuantosDeclara`: la propiedad generada
+                ' COMPACTA (`If o IsNot Nothing Then Add`), asi que su `.Count` puede ser MENOR que lo
+                ' que el archivo declara y acotar con el corta la COLA. Y aca era peor: la linea
+                ' mezclaba los dos espacios de indices —`Raw.BufferDefinitionsRef(iB)` es el crudo y
+                ' `clothData.BufferDefinitions(iB)` el compactado—, asi que con UN hueco antes de `iB`
+                ' se emparejaban objetos DISTINTOS. Justo la desalineacion que el comentario de arriba
+                ' dice estar evitando. El dato sale ahora del ref crudo, en su posicion.
+                For iB = 0 To clothData.Raw.BufferDefinitionsCount - 1
                     Dim crudoB = clothData.Raw.BufferDefinitionsRef(iB)
-                    Dim esScratch = crudoB IsNot Nothing AndAlso
-                                    crudoB.ClassName.Equals("hclScratchBufferDefinition", StringComparison.OrdinalIgnoreCase)
-                    clothConfig.BufferDefinitions.Add(If(esScratch, Nothing, clothData.BufferDefinitions(iB)))
-                    clothConfig.ScratchBufferDefinitions.Add(
-                        If(esScratch, Havok.Canon.Objects.HkObj_HclScratchBufferDefinition.Read(graph, crudoB), Nothing))
+                    ' ⛔ SIN LITERAL: `Leer(Of T)` devuelve Nothing si el bloque declara otra clase, asi que
+                    ' la lectura y el "¿es un scratch?" son la MISMA pregunta.
+                    Dim scratch = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclScratchBufferDefinition)(graph, crudoB)
+                    Dim def_ = If(scratch IsNot Nothing, Nothing,
+                                  Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclBufferDefinition)(graph, crudoB))
+                    clothConfig.BufferDefinitions.Add(def_)
+                    clothConfig.ScratchBufferDefinitions.Add(scratch)
                 Next
 
                 ' ⛔ TAMBIEN ALINEADA. `hclClothData.bufferDefinitions` mezcla `hclBufferDefinition` y
@@ -108,8 +119,15 @@ Public NotInheritable Class HclClothPackageParser_Class
                 ' …) son un resumen por CLASE — sirven para consultar, no para ejecutar: pierden el
                 ' orden, pierden los repetidos, y obligan a la app a inventar una secuencia propia.
                 ' `OperadoresEnOrden` conserva la posicion, que es lo unico que el estado referencia.
-                For iOp = 0 To clothData.Operators.Count - 1
-                    clothConfig.OperadoresEnOrden.Add(ParseOperadorPorClase(graph, clothData.Raw.OperatorsRef(iOp), result.Skeleton))
+                ' ⛔ LA COTA DECLARADA, igual que arriba: `Operators` compacta y su `.Count` corta la
+                ' cola. El indice es ademas la clave de `SkinDecodificado`/`DeformDecodificado` y el
+                ' mismo que referencia `hclClothState.operators`.
+                For iOp = 0 To clothData.Raw.OperatorsCount - 1
+                    ' ⛔ LA CADENA GUARDA EL OBJETO GENERADO, SIEMPRE. Lo que ademas se DECODIFICA
+                    ' (los dos operadores con analisis propio) queda indexado por esta misma posicion,
+                    ' que es como `hclClothState.operators` los referencia.
+                    clothConfig.OperadoresEnOrden.Add(
+                        ParseOperadorPorClase(graph, clothData.Raw.OperatorsRef(iOp), result.Skeleton, clothConfig, iOp))
                 Next
 
                 ' ⛔ EL RESUMEN POR CLASE NO SE GUARDA: SE LEE DE LA CADENA.
@@ -133,14 +151,12 @@ Public NotInheritable Class HclClothPackageParser_Class
         Return result
     End Function
 
-    Private Shared Function NormalizeOperatorClassName(className As String) As String
-        If String.IsNullOrWhiteSpace(className) Then Return String.Empty
-        Return className.Replace(ChrW(0), String.Empty).Trim().ToLowerInvariant()
-    End Function
-
     Private Shared Sub PopulateSkinBoneNames(skin As HclObjectSpaceSkinPNOperatorGraph_Class, skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton)
         If IsNothing(skin) OrElse IsNothing(skeleton?.Bones) Then Return
 
+        ' ⛔ IDEMPOTENTE. El segundo bucle lee lo que este AGREGA, asi que llamar dos veces sobre el
+        ' mismo skin duplicaria la paleta y todo `ti` resolveria al hueso equivocado, sin error.
+        skin.ResolvedBoneNames.Clear()
         For Each boneIndex In skin.Operador.TransformSubset
             If boneIndex >= 0 AndAlso boneIndex < skeleton.Bones.Count Then
                 skin.ResolvedBoneNames.Add(skeleton.Bones(CInt(boneIndex)).Name)
@@ -149,19 +165,16 @@ Public NotInheritable Class HclClothPackageParser_Class
             End If
         Next
 
-        ' Y el nombre de cada influencia de cada vertice, por el mismo puente:
-        ' `transformIndices` indexa la PALETA (`transformSubset`), y la paleta indexa el esqueleto.
+        ' Y el nombre de cada influencia de cada vertice. ⛔ POR LA TABLA QUE ACABA DE ARMARSE, no
+        ' resolviendo el puente otra vez: `transformIndices` indexa la PALETA (`transformSubset`), y
+        ' `ResolvedBoneNames` ya es esa paleta resuelta a nombres. Aca estaba escrito el mismo
+        ' `TransformSubset(ti) -> Bones(si).Name` por segunda vez, en el mismo Sub.
         For Each v In skin.Vertices
             If v Is Nothing Then Continue For
             v.ResolvedBoneNames.Clear()
             For Each ti In v.TransformIndices
-                If ti < 0 OrElse ti >= skin.Operador.TransformSubset.Count Then Continue For
-                Dim si = CInt(skin.Operador.TransformSubset(CInt(ti)))
-                If si >= 0 AndAlso si < skeleton.Bones.Count Then
-                    v.ResolvedBoneNames.Add(skeleton.Bones(si).Name)
-                Else
-                    v.ResolvedBoneNames.Add("#" & si.ToString())
-                End If
+                If ti < 0 OrElse ti >= skin.ResolvedBoneNames.Count Then Continue For
+                v.ResolvedBoneNames.Add(skin.ResolvedBoneNames(CInt(ti)))
             Next
         Next
     End Sub
@@ -194,45 +207,74 @@ Public NotInheritable Class HclClothPackageParser_Class
         Next
     End Sub
 
-    Private Shared Function MaxMatrixDelta(left As Matrix4x4, right As Matrix4x4) As Double
-        Dim maxDelta = 0.0R
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M11 - right.M11))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M12 - right.M12))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M13 - right.M13))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M14 - right.M14))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M21 - right.M21))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M22 - right.M22))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M23 - right.M23))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M24 - right.M24))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M31 - right.M31))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M32 - right.M32))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M33 - right.M33))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M34 - right.M34))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M41 - right.M41))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M42 - right.M42))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M43 - right.M43))
-        maxDelta = Math.Max(maxDelta, Math.Abs(left.M44 - right.M44))
-        Return maxDelta
-    End Function
+    ''' <summary>
+    ''' Los tipos generados que NO se entregan crudos porque van ENVUELTOS en una clase de analisis.
+    ''' <para>⛔ SE DERIVAN DE LA PROPIEDAD `Operador` DE CADA ENVOLTORIO, no se escriben: si el
+    ''' envoltorio cambia de tipo, esta lista cambia con el. Es la misma correspondencia que
+    ''' `HavokLayoutGate` usa para exigir que `EjecutarOperador` tenga una rama por cada tipo
+    ''' declarado.</para>
+    ''' </summary>
+    Private Shared ReadOnly TiposQueNecesitanDecodificacion As Type() =
+        {
+            GetType(HclObjectSpaceSkinPNOperatorGraph_Class).GetProperty("Operador").PropertyType,
+            GetType(HclSimpleMeshBoneDeformOperatorGraph_Class).GetProperty("Operador").PropertyType
+        }
 
-    ''' <summary>El detalle parseado de UN operador, elegido por su clase. Devuelve Nothing para las
-    ''' clases que esta app no ejecuta — asi la posicion en la lista se conserva igual.</summary>
+    ''' <summary>
+    ''' El detalle parseado de UN operador, elegido por su clase. Devuelve Nothing para las clases que
+    ''' esta app no ejecuta — asi la posicion en la lista se conserva igual.
+    ''' <para>⛔ CERO LITERALES DE NOMBRE DE CLASE Y CERO SEGUNDA LISTA. Aca hubo primero un
+    ''' `Select Case` con siete strings en minuscula y un normalizador propio; despues, cinco
+    ''' `Leer(Of T)` escritos a mano, que es una lista paralela a
+    ''' <see cref="Havok.Physics.HavokClothSimulation.TiposDeOperadorQueEjecuta"/> con nada que las
+    ''' obligue a coincidir. Ahora manda esa lista: se recorre y se prueba `LeerPorTipo`, que deriva
+    ''' el nombre del tipo con la regla del generador.</para>
+    ''' <para>Los DOS que llevan analisis propio (el entrelazado SIMD de los carriles, los pares
+    ''' hueso/triangulo) se prueban ANTES, con su parser. Si ese parseo falla sobre un bloque que SI
+    ''' es de esa clase, el operador es un HUECO y se dice: <see cref="TiposQueNecesitanDecodificacion"/>
+    ''' impide que el bucle lo entregue CRUDO. `EjecutarOperador` hoy SI tiene rama para el objeto
+    ''' pelado —despacha por el tipo generado— pero sin lo decodificado no puede hacer el trabajo:
+    ''' entregarlo igual lo dejaria sin ejecutar mientras `[CLOTH-CADENA]`,
+    ''' `--clothcover` y el gate lo cuentan como implementado.</para>
+    ''' </summary>
     Private Shared Function ParseOperadorPorClase(graph As HkxObjectGraph_Class, op As HkxVirtualObjectGraph_Class,
-                                                  skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton) As Object
+                                                  skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton,
+                                                  cfg As HclClothConfigGraph_Class, pos As Integer) As Object
         If op Is Nothing Then Return Nothing
-        Select Case NormalizeOperatorClassName(op.ClassName)
-            Case "hclobjectspaceskinpnoperator"
-                Dim skinOp = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
-                PopulateSkinBoneNames(skinOp, skeleton)
-                Return skinOp
-            Case "hclmoveparticlesoperator" : Return Havok.Canon.Objects.HkObj_HclMoveParticlesOperator.Read(graph, op)
-            Case "hclsimulateoperator" : Return Havok.Canon.Objects.HkObj_HclSimulateOperator.Read(graph, op)
-            Case "hclsimplemeshbonedeformoperator" : Return HclRenderGraphParser_Class.ParseSimpleMeshBoneDeformOperator(graph, op, skeleton)
-            Case "hclcopyverticesoperator" : Return Havok.Canon.Objects.HkObj_HclCopyVerticesOperator.Read(graph, op)
-            Case "hclgatherallverticesoperator" : Return Havok.Canon.Objects.HkObj_HclGatherAllVerticesOperator.Read(graph, op)
-            Case "hclgathersomeverticesoperator" : Return Havok.Canon.Objects.HkObj_HclGatherSomeVerticesOperator.Read(graph, op)
-            Case Else : Return Nothing
-        End Select
+        ' Los DOS que llevan decodificacion propia: se decodifican y lo decodificado se guarda por
+        ' POSICION. Lo que va a la cadena es el objeto generado, igual que los otros cinco.
+        Dim skinOp = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
+        If skinOp IsNot Nothing Then
+            PopulateSkinBoneNames(skinOp, skeleton)
+            cfg.SkinDecodificado(pos) = skinOp
+            Return skinOp.Operador
+        End If
+        Dim deform = HclRenderGraphParser_Class.ParseSimpleMeshBoneDeformOperator(graph, op, skeleton)
+        If deform IsNot Nothing Then
+            cfg.DeformDecodificado(pos) = deform
+            Return deform.Operador
+        End If
+
+        For Each t In Havok.Physics.HavokClothSimulation.TiposDeOperadorQueEjecuta
+            Dim o = Havok.Canon.HavokConstraintSets.LeerPorTipo(t, graph, op)
+            If o Is Nothing Then Continue For
+            ' ⛔ LO QUE VA ENVUELTO NO SE ENTREGA CRUDO. Si el parseo del envoltorio fallo sobre un
+            ' bloque que SI es de esa clase, el operador es un HUECO. Devolverlo crudo lo mete en la
+            ' cadena, `EjecutarOperador` no tiene rama para el —despacha por el envoltorio— y el
+            ' operador queda sin ejecutar mientras `[CLOTH-CADENA]`, `--clothcover` y el gate lo
+            ' cuentan como implementado: tres instrumentos mintiendo a la vez.
+            If TiposQueNecesitanDecodificacion.Contains(t) Then Exit For
+            Return o
+        Next
+
+        ' ⛔ EL HUECO SE DICE ACA, QUE ES DONDE SE SABE LA CLASE. `EjecutarOperador` solo ve el objeto
+        ' ya parseado, y el bucle de la cadena saltea los Nothing sin decir una palabra: un operador
+        ' que el archivo declara y esta app no parsea desaparecia sin dejar rastro.
+        If Logger.Enabled Then
+            Dim cq = If(op.ClassName, "(sin clase)")
+            Logger.LogLazy(Function() $"[CLOTH-OPDESC] operador declarado que esta app NO parsea: {cq}")
+        End If
+        Return Nothing
     End Function
 
     ''' <summary>
@@ -253,68 +295,36 @@ Public NotInheritable Class HclClothPackageParser_Class
             Dim e As New EntradaDeEjecucion_Class With {.EntryIndex = i, .Value = valor,
                                                         .IsTerminator = (valor < 0), .ConstraintIndex = -1}
             config.EjecucionResuelta.Add(e)
-            If e.IsTerminator OrElse sim Is Nothing OrElse sim.StaticConstraintSets Is Nothing Then Continue For
+            If e.IsTerminator OrElse sim Is Nothing Then Continue For
             e.ConstraintIndex = valor
-            If valor < 0 OrElse valor >= sim.StaticConstraintSets.Count Then Continue For
-            ' ⛔ La lista NO se compacta: `constraintExecution` indexa por POSICION en el array,
-            ' asi que un hueco del archivo llega hasta aca y hay que dejarlo pasar sin resolver.
-            Dim crudo = sim.Raw.StaticConstraintSetsRef(valor)
+            ' ⛔ SIN COTA PROPIA. Habia un `valor >= sim.StaticConstraintSets.Count` — la lista
+            ' COMPACTADA, que saltea los punteros sin fixup — y eso cortaba la COLA: una entrada de
+            ' `constraintExecution` que apunta al ultimo elemento del arreglo salia sin resolver.
+            ' `CrudoEn` ya acota con `CuantosDeclara` (el conteo del header, que es la ley), asi que
+            ' esta cota no solo sobraba: contradecia a la unica que vale.
+            ' ⛔ EL BLOQUE LO DA LA LEY. Este era el TERCER sitio que hacia el `.Raw` a mano.
+            Dim crudo = Havok.Canon.HavokConstraintSets.CrudoEn(sim, valor)
             If crudo Is Nothing Then Continue For
             e.ResolvedConstraintType = crudo.ClassName
             Dim cs = Havok.Canon.Objects.HkObj_HclConstraintSet.Read(sim.Graph, crudo)
             If cs IsNot Nothing Then e.ResolvedConstraintName = cs.Name
         Next
     End Sub
-    Private Shared Function ComputeSignedDihedral(oppA As Vector3,
-                                                  oppB As Vector3,
-                                                  sharedA As Vector3,
-                                                  sharedB As Vector3) As Double
-        Dim edge = sharedB - sharedA
-        If edge.LengthSquared() <= 0.000001F Then Return 0.0R
-        edge = Vector3.Normalize(edge)
-
-        Dim tri0Normal = NormalizeOrZero(Vector3.Cross(sharedA - oppA, sharedB - oppA))
-        Dim tri1Normal = NormalizeOrZero(Vector3.Cross(sharedB - oppB, sharedA - oppB))
-        If tri0Normal.LengthSquared() <= 0.000001F OrElse tri1Normal.LengthSquared() <= 0.000001F Then Return 0.0R
-
-        Dim clampedDot = Math.Max(-1.0R, Math.Min(1.0R, CDbl(Vector3.Dot(tri0Normal, tri1Normal))))
-        Dim angle = Math.Acos(clampedDot)
-        Dim sign = Math.Sign(CDbl(Vector3.Dot(edge, Vector3.Cross(tri0Normal, tri1Normal))))
-        If sign = 0 Then sign = 1
-        Return angle * sign
-    End Function
-
-    Private Shared Function NormalizeOrZero(value As Vector3) As Vector3
-        Dim length = value.Length()
-        If length <= 0.000001F Then Return Vector3.Zero
-        Return value / length
-    End Function
 
     ''' <summary>Los triangulos del sim-cloth, desde la lista PLANA que entrega el objeto generado.
     ''' `hclSimClothData.triangleIndices` es `array of uint16` y cada triangulo son tres seguidos:
     ''' no hay una segunda lista que mantener, es la misma leida de a tres.</summary>
-    Private Shared Function TriCount(sim As Havok.Canon.Objects.HkObj_HclSimClothData) As Integer
+    Public Shared Function TriCount(sim As Havok.Canon.Objects.HkObj_HclSimClothData) As Integer
         If sim Is Nothing OrElse sim.TriangleIndices Is Nothing Then Return 0
         Return sim.TriangleIndices.Count \ 3
     End Function
 
-    Private Shared Function TriDe(sim As Havok.Canon.Objects.HkObj_HclSimClothData, i As Integer) As HclTrianguloDeSim_Class
+    Public Shared Function TriDe(sim As Havok.Canon.Objects.HkObj_HclSimClothData, i As Integer) As HclTrianguloDeSim_Class
         If sim Is Nothing OrElse i < 0 OrElse (i * 3) + 2 >= sim.TriangleIndices.Count Then Return Nothing
         Return New HclTrianguloDeSim_Class With {
             .Value0 = CUShort(sim.TriangleIndices(i * 3)),
             .Value1 = CUShort(sim.TriangleIndices((i * 3) + 1)),
             .Value2 = CUShort(sim.TriangleIndices((i * 3) + 2))}
-    End Function
-
-    ''' <summary>Un `vector4` del objeto generado (llega como `Single()`) a `Vector3`.</summary>
-    Private Shared Function ToVector3F(f As Single()) As Vector3
-        If f Is Nothing OrElse f.Length < 3 Then Return Vector3.Zero
-        Return New Vector3(f(0), f(1), f(2))
-    End Function
-    Private Shared Function MakeBendEdgeKey(a As Integer, b As Integer) As String
-        Dim low = Math.Min(a, b)
-        Dim high = Math.Max(a, b)
-        Return low.ToString() & ":" & high.ToString()
     End Function
 
     Private Shared Sub PopulateResolvedTriangles(config As HclClothConfigGraph_Class)
@@ -352,6 +362,19 @@ Public Class HclClothPackageGraph_Class
     Public ReadOnly Property Collidables As New List(Of Havok.Canon.Objects.HkObj_HclCollidable)
 End Class
 
+''' <summary>
+''' La configuracion de UNA prenda: la cadena de operadores en el orden del archivo, mas las
+''' proyecciones que este parser calcula sobre ella.
+''' <para>⛔ LAS PROPIEDADES EN SINGULAR (`Simulate`, `MoveParticles`, `SimpleMeshBoneDeform`,
+''' `CopyVertices`, `GatherAllVertices`, `GatherSomeVertices`) NO SON LA EJECUCION. El motor corre
+''' la CADENA ENTERA en orden, y esta app tambien: `EjecutarCadena` recorre `OperadoresEnOrden` y
+''' no mira ninguna de ellas. Lo unico que sale de ahi son PARAMETROS de arranque (substeps,
+''' iteraciones, indices de buffer, el puente de gather), que en el corpus vienen del mismo
+''' operador. Cuando el archivo declara mas de uno gana el ULTIMO; antes eso se justificaba con
+''' "es lo que hacia el bucle que escribia este campo", que es auto-justificacion, no una cita.</para>
+''' <para>⚠️ Cuando queda mas de uno, el otro no se mira. `--clothcover` lo cuenta y enrojece:
+''' `operadores DESCARTADOS por quedar la propiedad en singular`.</para>
+''' </summary>
 Public Class HclClothConfigGraph_Class
     ' ⛔⛔ NO HAY LISTAS COPIADAS ACA. `HkObj_HclClothData` ya declara y CACHEA
     ' `SimClothDatas` y `ClothStateDatas`; este config las duplicaba con `AddRange`. El mismo
@@ -380,12 +403,34 @@ Public Class HclClothConfigGraph_Class
     End Function
     Public ReadOnly Property BufferDefinitions As New List(Of Havok.Canon.Objects.HkObj_HclBufferDefinition)
     Public ReadOnly Property ScratchBufferDefinitions As New List(Of Havok.Canon.Objects.HkObj_HclScratchBufferDefinition)
-    ''' <summary>TODOS los `hclObjectSpaceSkinPNOperator` de la cadena, en el orden del archivo.</summary>
+    ''' <summary>
+    ''' Lo DECODIFICADO de los dos operadores que lo necesitan, indexado por su POSICION en
+    ''' `hclClothData.operators` — que es como `hclClothState.operators` los referencia.
+    ''' <para>⛔ ESTO EXISTE PARA QUE LA CADENA SEA UNIFORME. `OperadoresEnOrden` guardaba el objeto
+    ''' generado para cinco tipos y una clase envoltorio para estos dos, asi que el despacho, la
+    ''' eleccion de estado y el bucle de siembra tenian que saber cual era cual — y hacia falta una
+    ''' lista aparte (`TiposEnvueltos`) para que el objeto pelado no se colara en la cadena sin rama
+    ''' que lo ejecutara. Ahora la cadena es una sola cosa y esto es el analisis, aparte.</para>
+    ''' <para>El dato que guardan NO esta en el archivo: el desentrelazado SIMD de los carriles y los
+    ''' pares hueso/triangulo desempaquetados. Por eso no puede vivir en el objeto generado.</para>
+    ''' </summary>
+    Public ReadOnly Property SkinDecodificado As New Dictionary(Of Integer, HclObjectSpaceSkinPNOperatorGraph_Class)
+    ''' <summary>Idem para `hclSimpleMeshBoneDeformOperator`. Ver <see cref="SkinDecodificado"/>.</summary>
+    Public ReadOnly Property DeformDecodificado As New Dictionary(Of Integer, HclSimpleMeshBoneDeformOperatorGraph_Class)
+
+    ''' <summary>TODOS los `hclObjectSpaceSkinPNOperator` de la cadena, en el orden del archivo.
+    ''' <para>⛔ SE ARMA UNA VEZ. Los diccionarios se llenan en el parseo y no vuelven a cambiar;
+    ''' `EnsureState` y `ObjectSpaceSkin` piden esta lista por frame y por config, y ordenar+
+    ''' materializar ahi es basura de GC por cada vuelta del render.</para></summary>
     Public ReadOnly Property ObjectSpaceSkins As List(Of HclObjectSpaceSkinPNOperatorGraph_Class)
         Get
-            Return OperadoresEnOrden.OfType(Of HclObjectSpaceSkinPNOperatorGraph_Class)().ToList()
+            If _skinsEnOrden Is Nothing Then
+                _skinsEnOrden = SkinDecodificado.OrderBy(Function(kv) kv.Key).Select(Function(kv) kv.Value).ToList()
+            End If
+            Return _skinsEnOrden
         End Get
     End Property
+    Private _skinsEnOrden As List(Of HclObjectSpaceSkinPNOperatorGraph_Class)
 
     ''' <summary>
     ''' El skin que alimenta al deform de ESTE config: el que escribe en el buffer que el deform
@@ -397,40 +442,54 @@ Public Class HclClothConfigGraph_Class
     ''' </summary>
     Public ReadOnly Property ObjectSpaceSkin As HclObjectSpaceSkinPNOperatorGraph_Class
         Get
-            If ObjectSpaceSkins.Count = 0 Then Return Nothing
-            If ObjectSpaceSkins.Count = 1 Then Return ObjectSpaceSkins(0)
+            ' ⛔ UNA SOLA LECTURA DE LA LISTA. Se llamaba a `ObjectSpaceSkins` hasta cuatro veces por
+            ' acceso, y cada llamada rearmaba la lista.
+            Dim skins = ObjectSpaceSkins
+            If skins.Count = 0 Then Return Nothing
+            If skins.Count = 1 Then Return skins(0)
             Dim quiere = If(SimpleMeshBoneDeform Is Nothing, -1, CInt(SimpleMeshBoneDeform.Operador.InputBufferIdx))
             If quiere >= 0 Then
-                For Each sk In ObjectSpaceSkins
+                For Each sk In skins
                     If sk IsNot Nothing AndAlso CInt(sk.Operador.OutputBufferIndex) = quiere Then Return sk
                 Next
             End If
-            Return ObjectSpaceSkins(0)
+            Return skins(0)
         End Get
     End Property
     ''' <summary>El `HclMoveParticlesOperator` de la cadena. Si el archivo declara mas de uno gana el
-    ''' ULTIMO, que es lo que hacia el bucle que escribia este campo.</summary>
+    ''' ULTIMO — ver <see cref="HclClothConfigGraph_Class"/> para por que eso no afecta la
+    ''' ejecucion.</summary>
     Public ReadOnly Property MoveParticles As Havok.Canon.Objects.HkObj_HclMoveParticlesOperator
         Get
             Return OperadoresEnOrden.OfType(Of Havok.Canon.Objects.HkObj_HclMoveParticlesOperator)().LastOrDefault()
         End Get
     End Property
     ''' <summary>El `HclSimulateOperator` de la cadena. Si el archivo declara mas de uno gana el
-    ''' ULTIMO, que es lo que hacia el bucle que escribia este campo.</summary>
+    ''' ULTIMO — ver <see cref="HclClothConfigGraph_Class"/> para por que eso no afecta la
+    ''' ejecucion.</summary>
     Public ReadOnly Property Simulate As Havok.Canon.Objects.HkObj_HclSimulateOperator
         Get
             Return OperadoresEnOrden.OfType(Of Havok.Canon.Objects.HkObj_HclSimulateOperator)().LastOrDefault()
         End Get
     End Property
-    ''' <summary>El `Class` de la cadena. Si el archivo declara mas de uno gana el
-    ''' ULTIMO, que es lo que hacia el bucle que escribia este campo.</summary>
+    ''' <summary>El `HclSimpleMeshBoneDeformOperator` de la cadena. Si el archivo declara mas de uno gana el
+    ''' ULTIMO — ver <see cref="HclClothConfigGraph_Class"/> para por que eso no afecta la
+    ''' ejecucion.</summary>
     Public ReadOnly Property SimpleMeshBoneDeform As HclSimpleMeshBoneDeformOperatorGraph_Class
         Get
-            Return OperadoresEnOrden.OfType(Of HclSimpleMeshBoneDeformOperatorGraph_Class)().LastOrDefault()
+            ' ⛔ IDEM: una vez, no por frame. Ver `ObjectSpaceSkins`.
+            If Not _deformResuelto Then
+                _deformUltimo = DeformDecodificado.OrderBy(Function(kv) kv.Key).Select(Function(kv) kv.Value).LastOrDefault()
+                _deformResuelto = True
+            End If
+            Return _deformUltimo
         End Get
     End Property
+    Private _deformUltimo As HclSimpleMeshBoneDeformOperatorGraph_Class
+    Private _deformResuelto As Boolean
     ''' <summary>El `HclCopyVerticesOperator` de la cadena. Si el archivo declara mas de uno gana el
-    ''' ULTIMO, que es lo que hacia el bucle que escribia este campo.</summary>
+    ''' ULTIMO — ver <see cref="HclClothConfigGraph_Class"/> para por que eso no afecta la
+    ''' ejecucion.</summary>
     Public ReadOnly Property CopyVertices As Havok.Canon.Objects.HkObj_HclCopyVerticesOperator
         Get
             Return OperadoresEnOrden.OfType(Of Havok.Canon.Objects.HkObj_HclCopyVerticesOperator)().LastOrDefault()
@@ -441,14 +500,16 @@ Public Class HclClothConfigGraph_Class
     ''' ejecutar la cadena. Nothing donde la clase no se ejecuta.</summary>
     Public ReadOnly Property OperadoresEnOrden As New List(Of Object)
     ''' <summary>El `HclGatherAllVerticesOperator` de la cadena. Si el archivo declara mas de uno gana el
-    ''' ULTIMO, que es lo que hacia el bucle que escribia este campo.</summary>
+    ''' ULTIMO — ver <see cref="HclClothConfigGraph_Class"/> para por que eso no afecta la
+    ''' ejecucion.</summary>
     Public ReadOnly Property GatherAllVertices As Havok.Canon.Objects.HkObj_HclGatherAllVerticesOperator
         Get
             Return OperadoresEnOrden.OfType(Of Havok.Canon.Objects.HkObj_HclGatherAllVerticesOperator)().LastOrDefault()
         End Get
     End Property
     ''' <summary>El `HclGatherSomeVerticesOperator` de la cadena. Si el archivo declara mas de uno gana el
-    ''' ULTIMO, que es lo que hacia el bucle que escribia este campo.</summary>
+    ''' ULTIMO — ver <see cref="HclClothConfigGraph_Class"/> para por que eso no afecta la
+    ''' ejecucion.</summary>
     Public ReadOnly Property GatherSomeVertices As Havok.Canon.Objects.HkObj_HclGatherSomeVerticesOperator
         Get
             Return OperadoresEnOrden.OfType(Of Havok.Canon.Objects.HkObj_HclGatherSomeVerticesOperator)().LastOrDefault()

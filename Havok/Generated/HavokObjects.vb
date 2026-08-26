@@ -1,6 +1,6 @@
 ﻿' ================================================================================================
 '  GENERADO POR Tools/HavokLayoutGen/genobjects.py - NO EDITAR A MANO.
-'  Generado: 2026-08-25
+'  Generado: 2026-08-26
 '
 '  LOS OBJETOS HAVOK QUE CONSUME LA APLICACION. Reemplazan a los parsers escritos a mano:
 '  devuelven listas y sub-objetos ya armados, se materializan perezosamente y se cachean.
@@ -15215,7 +15215,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -15346,7 +15346,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -15509,7 +15509,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -15672,7 +15672,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -15835,7 +15835,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -15971,7 +15971,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -16093,7 +16093,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -16247,7 +16247,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -16401,7 +16401,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -16555,7 +16555,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -18473,7 +18473,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TetrahedraGrid]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _tetrahedragrid_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _tetrahedragrid_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -19719,7 +19719,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TriangleBoneStartForBone]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _trianglebonestartforbone_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _trianglebonestartforbone_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -19887,7 +19887,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -19921,7 +19921,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TriangleVertexStartForVertex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _trianglevertexstartforvertex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _trianglevertexstartforvertex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -21513,7 +21513,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -21661,7 +21661,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -21841,7 +21841,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -22021,7 +22021,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -22201,7 +22201,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InputTrianglesSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _inputtrianglessubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _inputtrianglessubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -22371,7 +22371,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -22510,7 +22510,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -22681,7 +22681,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -22852,7 +22852,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -23023,7 +23023,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TransformSubset]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _transformsubset_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _transformsubset_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -23691,7 +23691,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TriangleIndices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _triangleindices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _triangleindices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -23840,7 +23840,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TriangleIndices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _triangleindices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _triangleindices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -24051,7 +24051,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[FixedParticles]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _fixedparticles_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _fixedparticles_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -24069,7 +24069,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TriangleIndices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _triangleindices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _triangleindices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -25554,7 +25554,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[BoneInfluenceStartPerVertex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _boneinfluencestartpervertex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _boneinfluencestartpervertex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -25589,7 +25589,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[UsedBoneGroupIds]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _usedbonegroupids_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _usedbonegroupids_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -26524,7 +26524,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[TriangleIndices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _triangleindices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _triangleindices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -27750,7 +27750,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[VertToNormalID]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _verttonormalid_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _verttonormalid_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -27786,7 +27786,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[ReferenceVertices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _referencevertices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _referencevertices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -27996,7 +27996,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InvolvedVertices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _involvedvertices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _involvedvertices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -28014,7 +28014,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[SelectionVertexToInvolvedVertex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _selectionvertextoinvolvedvertex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _selectionvertextoinvolvedvertex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -28032,7 +28032,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[InvolvedVertexToNormalID]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _involvedvertextonormalid_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _involvedvertextonormalid_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -28068,7 +28068,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[ReferenceVertices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _referencevertices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _referencevertices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -32637,7 +32637,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Indices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _indices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _indices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -42718,7 +42718,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[RotationTypeAndOffsets]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _rotationtypeandoffsets_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _rotationtypeandoffsets_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -43453,7 +43453,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[IntData]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _intdata_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _intdata_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -59658,7 +59658,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[NestedTypeArrayHkUint16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _nestedtypearrayhkuint16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _nestedtypearrayhkuint16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -61503,7 +61503,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[NestedTypeArrayHkUint16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _nestedtypearrayhkuint16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _nestedtypearrayhkuint16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -63330,7 +63330,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[NestedTypeArrayHkUint16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _nestedtypearrayhkuint16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _nestedtypearrayhkuint16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -65747,7 +65747,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[NestedTypeArrayHkUint16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _nestedtypearrayhkuint16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _nestedtypearrayhkuint16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -66980,7 +66980,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[NestedTypeArrayHkUint16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _nestedtypearrayhkuint16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _nestedtypearrayhkuint16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -98827,7 +98827,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Voxels]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _voxels_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _voxels_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -103174,7 +103174,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[SharedVerticesIndex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _sharedverticesindex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _sharedverticesindex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -103950,7 +103950,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[SharedVerticesIndex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _sharedverticesindex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _sharedverticesindex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -104111,7 +104111,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Map]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _map_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _map_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -108693,7 +108693,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Storage]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _storage_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _storage_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -108711,7 +108711,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[ShapeTags]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _shapetags_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _shapetags_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -109240,7 +109240,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[SharedVerticesIndex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _sharedverticesindex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _sharedverticesindex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -116033,7 +116033,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[PrimaryKeyToIndex]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _primarykeytoindex_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _primarykeytoindex_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -116051,7 +116051,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[ValueAndSecondaryKeys]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _valueandsecondarykeys_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _valueandsecondarykeys_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -126507,7 +126507,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Materials16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _materials16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _materials16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -126863,7 +126863,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Vertices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _vertices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _vertices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -126881,7 +126881,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Indices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _indices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _indices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -126899,7 +126899,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[StripLengths]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _striplengths_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _striplengths_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -126917,7 +126917,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -127017,7 +127017,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Vertices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _vertices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _vertices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -127053,7 +127053,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[FaceOffsets]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _faceoffsets_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _faceoffsets_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -127252,7 +127252,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Storage]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _storage_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _storage_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -129453,7 +129453,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[VertexIndices]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _vertexindices_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _vertexindices_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -131880,7 +131880,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -132596,7 +132596,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -136844,7 +136844,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -147635,7 +147635,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -147911,7 +147911,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Indices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _indices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _indices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -147997,7 +147997,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[MaterialIndices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _materialindices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _materialindices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -148113,7 +148113,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[MaterialIndices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _materialindices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _materialindices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -148265,7 +148265,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -148413,7 +148413,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Indices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _indices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _indices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -148485,7 +148485,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[MaterialIndices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _materialindices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _materialindices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -149281,7 +149281,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[WeldingInfo]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _weldinginfo_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _weldinginfo_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -154405,7 +154405,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Indices16]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _indices16_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _indices16_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If
@@ -157651,7 +157651,7 @@ Namespace Havok.Canon.Objects
                     Dim h = _r.[Uint16Data]
                     If h IsNot Nothing AndAlso h.DataRelativeOffset >= 0 Then
                         For i = 0 To h.Count - 1
-                            _uint16data_c.Add(CInt(CUShort(g.ReadInt16(h.DataRelativeOffset + (i * 2)))))
+                            _uint16data_c.Add((CInt(g.ReadInt16(h.DataRelativeOffset + (i * 2))) And &HFFFF))
                         Next
                     End If
                 End If

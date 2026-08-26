@@ -319,15 +319,16 @@ Public NotInheritable Class BehaviorClipEnumerator
             ' tampoco miraba `hkaLosslessCompressedAnimation`, y para esos archivos `Leido` quedaba en
             ' False. Se conserva tal cual para no cambiar en silencio que clips reportan crop ignorado.
             ' ⛔ La animacion sale de `hkaAnimationContainer.animations`, no del primer bloque serializado.
-            Dim ao = g.BloquesDelContenedor("animations", {"hkaSplineCompressedAnimation"}).FirstOrDefault(Function(x) x.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase))
-            If ao IsNot Nothing Then
-                Dim an = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Read(g, ao)
-                If an IsNot Nothing Then
-                    d.Frames = an.NumFrames
-                    d.DuracionDeFrame = CDbl(an.FrameDuration)
-                    d.Duracion = CDbl(an.Duration)
-                    d.Leido = True
-                End If
+            ' ⛔ LA CLASE LA RESUELVE `Leer(Of T)`, que deriva el nombre del tipo generado. Aca estaba
+            ' escrito a mano: el literal en el filtro mas el `.Read` al lado.
+            Dim an = g.BloquesDelContenedor(HkxObjectGraph_Class.CampoDelContenedor.Animations, {"hkaSplineCompressedAnimation"}).
+                         Select(Function(x) Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation)(g, x)).
+                         FirstOrDefault(Function(x) x IsNot Nothing)
+            If an IsNot Nothing Then
+                d.Frames = an.NumFrames
+                d.DuracionDeFrame = CDbl(an.FrameDuration)
+                d.Duracion = CDbl(an.Duration)
+                d.Leido = True
             End If
         Catch
         End Try
@@ -546,11 +547,6 @@ Public NotInheritable Class BehaviorClipEnumerator
         Return DirName(animPath)
     End Function
 
-    ''' <summary>Skeleton .hkx con el que se interpreta un clip. Si el clip es del PROPIO actor del NPC (su actor-root
-    ''' == <paramref name="actorRoot"/>) devuelve el skeleton de la RAZA/GÉNERO (<paramref name="raceSkel"/>, resuelto
-    ''' del rigName del character del gender — SSE = skeleton_female.hkx). Los clips REUSADOS de otro actor
-    ''' (cross-actor, ej. SuperMutant→death humano) usan el skeleton genérico de SU actor de origen. En FO4 esto es
-    ''' no-op (raceSkel resuelve al MISMO archivo que el genérico, un único skeleton por actor sin split de género).</summary>
     ''' <summary>True si el clip rebota en vez de loopear. ⛔ Se normaliza porque la clave del dedup tiene que
     ''' separar por lo que el consumidor REALMENTE hace: en la app los modos 0, 1 y 2 se reproducen los tres en
     ''' loop (decisión del usuario: que un SINGLE_PLAY loopee es deliberado), así que meterlos crudos en la
@@ -592,6 +588,11 @@ Public NotInheritable Class BehaviorClipEnumerator
                              "|", If(esPingPong, "pp", "lp"))
     End Function
 
+    ''' <summary>Skeleton .hkx con el que se interpreta un clip. Si el clip es del PROPIO actor del NPC (su actor-root
+    ''' == <paramref name="actorRoot"/>) devuelve el skeleton de la RAZA/GÉNERO (<paramref name="raceSkel"/>, resuelto
+    ''' del rigName del character del gender — SSE = skeleton_female.hkx). Los clips REUSADOS de otro actor
+    ''' (cross-actor, ej. SuperMutant→death humano) usan el skeleton genérico de SU actor de origen. En FO4 esto es
+    ''' no-op (raceSkel resuelve al MISMO archivo que el genérico, un único skeleton por actor sin split de género).</summary>
     Private Shared Function SourceSkelForAnim(animFile As String, actorRoot As String, raceSkel As String) As String
         Dim src = ActorRootOfAnim(animFile)
         If Not String.IsNullOrWhiteSpace(raceSkel) AndAlso

@@ -1513,7 +1513,7 @@ Public Class PreviewControl
     ''' conviene- pero si el punto elegido cae sobre el borde de la silueta, sobre una costura o sobre el filo de
     ''' una sombra, el parche mezcla piel con fondo o con penumbra y el promedio deja de representar al color que
     ''' el usuario quiso elegir. La dispersion permite AVISARLO en vez de comparar dos numeros envenenados.</para>
-    ''' <para>Un parche de piel plana da tipicamente &lt; 10; arriba de ~25 casi siempre hay un borde adentro.</para></summary>
+    ''' <para>Un parche de piel plana da tipicamente &lt; 10; arriba de ~25 casi siempre hay un borde adentro.</para>
     ''' <para><paramref name="wantImage"/> agrega la IMAGEN del parche (los pixeles crudos, sin escalar) para
     ''' poder MOSTRAR la muestra en vez de un color plano. Es opt-in porque aloca un Bitmap por llamada y el
     ''' lazo del auto-calc muestrea cientos de veces: ahi se pide sin imagen y no se aloca nada. El caller es
@@ -2606,7 +2606,7 @@ Public Class PreviewModel
             ''' del fold bajo la clave del COMPLEXION —que es COMPARTIDA entre shapes y entre NPCs de la misma
             ''' raza— hace que dos cabezas con el mismo complexion en un PreviewModel compartan el face-paint.
             ''' Es la MISMA ley que ya cumple el facetint.</para>
-            ''' <para>⚠ï¸ ES UNA CLAVE (String), NO un Texture_ID, a proposito: guardar el id crudo lo dejaria
+            ''' <para>⚠️ ES UNA CLAVE (String), NO un Texture_ID, a proposito: guardar el id crudo lo dejaria
             ''' COLGADO si alguien limpia el diccionario sin reconstruir este MaterialData, y samplear una
             ''' textura ya borrada da basura. Por clave, un diccionario limpio devuelve 0 y se cae solo al
             ''' complexion real.</para>
@@ -3323,7 +3323,7 @@ Public Class PreviewModel
         ' zapeados dejan de estar referenciados. Se reconstruye solo cuando ApplyMorphPlan re-toco la mascara o
         ' cambio el toggle: ApplyMorphPlan es el unico escritor de VertexMask=-1, asi que el flag no puede
         ' quedar rancio.
-        ' ⚠ï¸ SkinnedGeometry es Structure: 'geom' es una COPIA del campo, asi que el clear de ZapTopologyDirty
+        ' ⚠️ SkinnedGeometry es Structure: 'geom' es una COPIA del campo, asi que el clear de ZapTopologyDirty
         ' hay que escribirlo al campo, no a la copia local. Leer por 'geom' esta bien (los arrays son
         ' referencias).
         Private Sub EnsureZapIndexBuffer()

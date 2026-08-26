@@ -23,7 +23,6 @@ Imports System.Windows.Forms
 Public Class HkxAnimationPlayer
     Private ReadOnly _session As HkxPoseImportSession
     Private ReadOnly _clock As New Stopwatch()
-    Private ReadOnly _poseCache As New Dictionary(Of Integer, Poses_class)
     Private _startFrame As Integer = 0
 ''' <summary>Primer frame REPRODUCIBLE: el motor no muestra el tramo que recorta
 ''' hkbClipGenerator::cropStartAmountLocalTime.</summary>
@@ -57,7 +56,6 @@ Public Class HkxAnimationPlayer
             Dim v = If(String.IsNullOrWhiteSpace(value), "HKX Pose", value.Trim())
             If String.Equals(v, _poseName, StringComparison.Ordinal) Then Return
             _poseName = v
-            _poseCache.Clear()
         End Set
     End Property
 
@@ -157,17 +155,12 @@ Public Class HkxAnimationPlayer
         Return CInt(CLng(r.lo) + off)
     End Function
 
-    ''' <summary>Pose para un frame, cacheada por el player (session + <see cref="PoseName"/> fijos).
-    ''' Nothing si no hay sesión o el build falla.</summary>
+    ''' <summary>La pose de ese frame. ⛔ SIN CACHE PROPIA: `HkxPoseImportSession.BuildPose` ya
+    ''' memoiza, y por (frame, nombre). Aca habia una SEGUNDA cache sobre la misma llamada, con otra
+    ''' clave — y por eso una devolvia la pose renombrada y la otra la vieja.</summary>
     Public Function PoseForFrame(frame As Integer) As Poses_class
         If _session Is Nothing Then Return Nothing
-        Dim f = ClampFrame(frame)
-        Dim cached As Poses_class = Nothing
-        If _poseCache.TryGetValue(f, cached) Then Return cached
-        Dim result = _session.BuildPose(f, _poseName, collectDiagnostics:=False)
-        Dim pose As Poses_class = result?.Pose
-        If pose IsNot Nothing Then _poseCache(f) = pose
-        Return pose
+        Return _session.BuildPose(ClampFrame(frame), _poseName, collectDiagnostics:=False)?.Pose
     End Function
 
     ' ─────────────────────────────────────────────────────────────────────────────────────────
@@ -273,15 +266,6 @@ Public Class HkxAnimationPlayer
         Return (lo, hi)
     End Function
 
-''' <summary>Acota la reproduccion al tramo que el hkbClipGenerator declara. TODA la aritmetica vive
-''' aca: el llamador pasa SEGUNDOS y no divide nunca.
-''' <para>⛔ La validez se decide en SEGUNDOS, ANTES de dividir. Si se decidiera despues (comparando
-''' primerFrame contra ultimoFrame) el redondeo podria fabricar un rango de 1 frame donde el clip no
-''' tiene ninguno. Medido: los 38 clips de FO4 cuyo crop deja el rango vacio caen los 38 por esta guarda.</para>
-''' <para>⛔ NaN: `cropStart >= dur - cropEnd` es False para NaN por IEEE-754, y Math.Min/Max PROPAGAN
-''' NaN, asi que el clamp posterior no lo atraparia y CInt(NaN) tira OverflowException — fuera de todo
-''' Try, al elegir un clip. Por eso los dos crops se chequean explicitamente. Medido: 0 casos en los
-''' dos juegos (28.954 valores), asi que esto es seguro para MODS, no arreglo de un caso vivo.</para></summary>
 ''' <summary>LA ley del crop, en UN solo lugar: dado lo que declara el hkbClipGenerator y lo que trae
 ''' el archivo de animacion, decide si el recorte se puede honrar y cual es el rango que queda.
 ''' <para>⛔ La usan DOS consumidores y por eso vive suelta: <see cref="SetPlayableRange"/> (que aplica

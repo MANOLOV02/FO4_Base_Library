@@ -66,23 +66,18 @@ Public Partial Class HkxObjectGraph_Class
         End Get
     End Property
 
-    Private ReadOnly Property ArrayHeaderSizeValue As Integer
-        Get
-            Return PointerSizeValue + 8
-        End Get
-    End Property
-
-    Private ReadOnly Property BaseObjectFieldOffset As Integer
-        Get
-            Return PointerSizeValue * 2
-        End Get
-    End Property
-
     Public Sub New(packfile As HkxPackfile_Class)
         If IsNothing(packfile) Then Throw New ArgumentNullException(NameOf(packfile))
         ' `Header` es un Structure: `IsNothing` sobre un tipo por valor da SIEMPRE False y el guard
         ' quedaba mudo. `IsValid` es la pregunta de verdad: hay grafo y hay tabla para ese juego.
-        If Not packfile.Header.IsValid Then Throw New InvalidOperationException("The HKX packfile has not been parsed.")
+        ' ⛔ LA PREGUNTA ES `Raw.IsValid`, NO `Is Nothing`. `HkObj_*.ReadAt` solo devuelve Nothing si
+        ' el grafo es Nothing o el offset es negativo, y `Parse` siempre le pasa un grafo recien
+        ' construido y 0: `Header Is Nothing` era un guard que no podia dispararse nunca. `IsValid`
+        ' pregunta lo que importa — hay grafo Y hay tabla para ese juego — y da False justo en el caso
+        ' que hay que ver: un packfile sin tabla de reflexion (Skyrim32).
+        If packfile.Header Is Nothing OrElse Not packfile.Header.Raw.IsValid Then
+            Throw New InvalidOperationException("The HKX packfile has not been parsed, or there is no reflection table for its format.")
+        End If
 
         Me.Packfile = packfile
         Me.ContentsSection = packfile.GetSection(packfile.Header.ContentsSectionIndex)
@@ -116,15 +111,20 @@ Public Partial Class HkxObjectGraph_Class
     End Sub
 
     Private Sub BuildIndices()
-        For Each fixup In Packfile.LocalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex)
+        ' ⛔ UN SOLO BARRIDO POR LISTA. Antes se filtraba cuatro veces sobre las dos listas completas:
+        ' aca por el diccionario y otra vez adentro de `BuildSortedFixupIndices`.
+        Dim sec = Packfile.Header.ContentsSectionIndex
+        Dim locales = Packfile.LocalFixups.Where(Function(pf) pf.SectionIndex = sec).ToList()
+        Dim globales = Packfile.GlobalFixups.Where(Function(pf) pf.SectionIndex = sec).ToList()
+        For Each fixup In locales
             _localFixupsBySource.TryAdd(fixup.SourceRelativeOffset, fixup)
         Next
-
-        For Each fixup In Packfile.GlobalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex)
+        For Each fixup In globales
             _globalFixupsBySource.TryAdd(fixup.SourceRelativeOffset, fixup)
         Next
 
-        BuildSortedFixupIndices()
+        OrdenarFixups(locales, Function(x) x.SourceRelativeOffset, _localFixupsSorted, _localFixupSourcesSorted)
+        OrdenarFixups(globales, Function(x) x.SourceRelativeOffset, _globalFixupsSorted, _globalFixupSourcesSorted)
 
         Dim dataRelativeEnd = ContentsSection.DataEndAbsolute - ContentsSection.AbsoluteDataStart
         Dim orderedVirtualFixups = Packfile.VirtualFixups.
@@ -142,9 +142,6 @@ Public Partial Class HkxObjectGraph_Class
             Dim obj As New HkxVirtualObjectGraph_Class With {
                 .SectionIndex = fixup.SectionIndex,
                 .RelativeOffset = fixup.ObjectRelativeOffset,
-                .AbsoluteOffset = ContentsSection.AbsoluteDataStart + fixup.ObjectRelativeOffset,
-                .ClassNameSectionIndex = fixup.ClassNameSectionIndex,
-                .ClassNameRelativeOffset = fixup.ClassNameRelativeOffset,
                 .ClassName = If(classEntry?.Name, String.Empty),
                 .Size = size
             }
@@ -162,36 +159,27 @@ Public Partial Class HkxObjectGraph_Class
         Next
     End Sub
 
-    ' Índice ordenado que consumen GetLocalFixupsInRange / GetGlobalFixupsInRange. El desempate
-    ' por índice de enumeración original es OBLIGATORIO: sin él el orden dentro de un rango deja
-    ' de ser estable y los parsers que leen "el primer fixup del rango" cambian de resultado.
-    Private Sub BuildSortedFixupIndices()
-        Dim localList = Packfile.LocalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).ToList()
-        Dim localIndices = Enumerable.Range(0, localList.Count).ToArray()
-        Array.Sort(localIndices, Function(left, right)
-                                     Dim c = localList(left).SourceRelativeOffset.CompareTo(localList(right).SourceRelativeOffset)
-                                     If c <> 0 Then Return c
-                                     Return left.CompareTo(right)
-                                 End Function)
-        _localFixupsSorted = New HkxLocalFixupEntry_Class(localList.Count - 1) {}
-        _localFixupSourcesSorted = New Integer(localList.Count - 1) {}
-        For i = 0 To localIndices.Length - 1
-            _localFixupsSorted(i) = localList(localIndices(i))
-            _localFixupSourcesSorted(i) = _localFixupsSorted(i).SourceRelativeOffset
-        Next
-
-        Dim globalList = Packfile.GlobalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).ToList()
-        Dim globalIndices = Enumerable.Range(0, globalList.Count).ToArray()
-        Array.Sort(globalIndices, Function(left, right)
-                                      Dim c = globalList(left).SourceRelativeOffset.CompareTo(globalList(right).SourceRelativeOffset)
-                                      If c <> 0 Then Return c
-                                      Return left.CompareTo(right)
-                                  End Function)
-        _globalFixupsSorted = New HkxGlobalFixupEntry_Class(globalList.Count - 1) {}
-        _globalFixupSourcesSorted = New Integer(globalList.Count - 1) {}
-        For i = 0 To globalIndices.Length - 1
-            _globalFixupsSorted(i) = globalList(globalIndices(i))
-            _globalFixupSourcesSorted(i) = _globalFixupsSorted(i).SourceRelativeOffset
+    ''' <summary>
+    ''' ⛔ EL ORDENADO DE FIXUPS, UNA SOLA VEZ. Estaban los dos bloques escritos verbatim (local y
+    ''' global), 13 lineas cada uno.
+    ''' <para>El desempate por indice de enumeracion original es OBLIGATORIO: sin el, el orden dentro
+    ''' de un rango deja de ser estable y los parsers que leen "el primer fixup del rango" cambian de
+    ''' resultado entre corridas.</para>
+    ''' </summary>
+    Private Shared Sub OrdenarFixups(Of T)(lista As List(Of T), clave As Func(Of T, Integer),
+                                           ByRef ordenados As T(), ByRef fuentes As Integer())
+        Dim n = lista.Count
+        Dim idx = Enumerable.Range(0, n).ToArray()
+        Array.Sort(idx, Function(a, c)
+                            Dim d = clave(lista(a)).CompareTo(clave(lista(c)))
+                            If d <> 0 Then Return d
+                            Return a.CompareTo(c)
+                        End Function)
+        ordenados = New T(n - 1) {}
+        fuentes = New Integer(n - 1) {}
+        For i = 0 To n - 1
+            ordenados(i) = lista(idx(i))
+            fuentes(i) = clave(ordenados(i))
         Next
     End Sub
 
@@ -224,6 +212,19 @@ Public Partial Class HkxObjectGraph_Class
         Return Enumerable.Empty(Of HkxVirtualObjectGraph_Class)()
     End Function
 
+    ''' <summary>Los arreglos que declara `hkaAnimationContainer`. ⛔ ENUM, NO STRING: el despacho
+    ''' por string tenia un `Case Else : n = 0` que hacia caer un campo mal escrito al barrido por
+    ''' clase EN SILENCIO — o sea al orden de los bloques, que es la moneda al aire que el doc de
+    ''' <see cref="Esqueletos"/> condena. Un valor que no existe ahora no compila.</summary>
+    Public Enum CampoDelContenedor
+        Animations = 0
+        Bindings = 1
+        ''' <summary>⛔ El tercer arreglo del contenedor. `Esqueletos()` tenia su propia copia del
+        ''' recorrido — contenedor primero, barrido por clase despues — con `.Read` en vez de
+        ''' `Leer(Of T)`. Es el mismo campo del mismo objeto: entra aca.</summary>
+        Skeletons = 2
+    End Enum
+
     ''' <summary>
     ''' ⛔⛔ LOS BLOQUES QUE EL CONTENEDOR DECLARA EN UN ARREGLO, EN SU ORDEN.
     ''' <para>`hkaAnimationContainer` declara `skeletons`, `animations` y `bindings`. Sacar
@@ -235,28 +236,35 @@ Public Partial Class HkxObjectGraph_Class
     ''' <para>Si el archivo no trae contenedor se cae al barrido por clase — ausencia conocida
     ''' del archivo, no una preferencia.</para>
     ''' </summary>
-    Public Function BloquesDelContenedor(campo As String, claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
+    Public Function BloquesDelContenedor(campo As CampoDelContenedor, claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
         Dim r As New List(Of HkxVirtualObjectGraph_Class)
         For Each c In GetObjectsByClassName("hkaAnimationContainer")
-            Dim cont = Havok.Canon.Objects.HkObj_HkaAnimationContainer.Read(Me, c)
+            Dim cont = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaAnimationContainer)(Me, c)
             If cont Is Nothing Then Continue For
-            Dim n = 0
+            ' ⛔ EL `Case Else` TIRA. Un valor de enum sin arreglo detras es un error del llamador, y
+            ' devolver 0 lo mandaba al barrido por clase como si el archivo no trajera contenedor.
+            Dim n As Integer
+            Dim refDe As Func(Of Integer, HkxVirtualObjectGraph_Class)
             Select Case campo
-                Case "animations" : n = cont.Raw.AnimationsCount
-                Case "bindings" : n = cont.Raw.BindingsCount
-                Case Else : n = 0
+                Case CampoDelContenedor.Animations
+                    n = cont.Raw.AnimationsCount : refDe = AddressOf cont.Raw.AnimationsRef
+                Case CampoDelContenedor.Bindings
+                    n = cont.Raw.BindingsCount : refDe = AddressOf cont.Raw.BindingsRef
+                Case CampoDelContenedor.Skeletons
+                    n = cont.Raw.SkeletonsCount : refDe = AddressOf cont.Raw.SkeletonsRef
+                Case Else
+                    Throw New ArgumentOutOfRangeException(NameOf(campo), campo,
+                        "`hkaAnimationContainer` no declara ese arreglo.")
             End Select
             For i = 0 To n - 1
-                Dim b As HkxVirtualObjectGraph_Class = Nothing
-                Select Case campo
-                    Case "animations" : b = cont.Raw.AnimationsRef(i)
-                    Case "bindings" : b = cont.Raw.BindingsRef(i)
-                End Select
+                Dim b = refDe(i)
                 If b IsNot Nothing Then r.Add(b)
             Next
         Next
         If r.Count > 0 Then Return r
 
+        ' ⛔ AUSENCIA CONOCIDA DEL ARCHIVO, no una preferencia: sin contenedor no hay orden declarado
+        ' y lo unico que queda es el barrido por clase.
         For Each cn In claseSuelta
             r.AddRange(GetObjectsByClassName(cn).OrderBy(Function(x) x.RelativeOffset))
         Next
@@ -273,23 +281,77 @@ Public Partial Class HkxObjectGraph_Class
     ''' <para>Si el archivo no trae contenedor —pasa en los `.hkx` de esqueleto suelto, que son
     ''' un `hkaSkeleton` y nada mas— se cae al barrido por clase, que es lo que habia. Esa
     ''' rama es una AUSENCIA CONOCIDA del archivo, no una preferencia.</para>
+    ''' <para>⛔ EL RECORRIDO ES <see cref="BloquesDelContenedor"/>, NO UNA COPIA. Aca habia el
+    ''' mismo bucle —contenedor primero, barrido por clase si no hay— escrito una segunda vez, y con
+    ''' `.Read` directo en vez de `Leer(Of T)`.</para>
     ''' </summary>
     Public Function Esqueletos() As List(Of Havok.Canon.Objects.HkObj_HkaSkeleton)
-        Dim r As New List(Of Havok.Canon.Objects.HkObj_HkaSkeleton)
-        For Each c In GetObjectsByClassName("hkaAnimationContainer")
-            Dim cont = Havok.Canon.Objects.HkObj_HkaAnimationContainer.Read(Me, c)
-            If cont Is Nothing OrElse cont.Skeletons Is Nothing Then Continue For
-            For Each s In cont.Skeletons
-                If s IsNot Nothing Then r.Add(s)
-            Next
-        Next
-        If r.Count > 0 Then Return r
+        ' ⛔ EL TIPO LO DECLARA EL CAMPO, NO EL BLOQUE — por eso `.Read` y no `Leer(Of T)`.
+        ' `hkaAnimationContainer.skeletons` esta declarado `array of hkaSkeleton` en la reflexion: el
+        ' archivo YA dijo que son esqueletos, y no hay ninguna subclase que resolver. Volver a
+        ' preguntarle el `ClassName` al bloque solo puede PERDER: un `.hkx` cuya seccion
+        ' `__classnames__` corte antes de esa entrada deja `ClassName = ""` (ParseClassNames sale por
+        ' padding o por `signature = &HFFFFFFFF`) y la lista saldria VACIA sin que nada falle.
+        ' En el respaldo por clase la situacion es la inversa —ahi el `ClassName` es COMO se encontro
+        ' el bloque—, y el mismo `.Read` sirve para las dos ramas.
+        Return BloquesDelContenedor(CampoDelContenedor.Skeletons, {"hkaSkeleton"}).
+            Select(Function(b) Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, b)).
+            Where(Function(s) s IsNot Nothing).ToList()
+    End Function
 
-        For Each o In GetObjectsByClassName("hkaSkeleton")
-            Dim s = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, o)
-            If s IsNot Nothing Then r.Add(s)
-        Next
-        Return r
+    ''' <summary>
+    ''' ⛔ EL PREDICADO «este es el de RAGDOLL», UNA SOLA VEZ. Medido sobre los 48 esqueletos del
+    ''' juego: el de ragdoll SIEMPRE lleva 'Ragdoll' en el nombre y hay exactamente uno que no.
+    ''' Un esqueleto sin nombre NO es ragdoll (es el caso del `.hkx` de esqueleto suelto).
+    ''' </summary>
+    Public Shared Function EsRagdoll(s As Havok.Canon.Objects.HkObj_HkaSkeleton) As Boolean
+        Return s IsNot Nothing AndAlso EsRagdoll(s.Name)
+    End Function
+
+    ''' <summary>Idem, cuando el consumidor ya solo tiene el nombre.</summary>
+    Public Shared Function EsRagdoll(nombre As String) As Boolean
+        If String.IsNullOrEmpty(nombre) Then Return False
+        Return nombre.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) >= 0
+    End Function
+
+    ''' <summary>
+    ''' Los esqueletos declarados que se pueden USAR: con huesos y con una pose de referencia que los
+    ''' cubra. Uno con `referencePose` mas corta que `bones` no permite componer una world: es un
+    ''' archivo roto, no una variante.
+    ''' </summary>
+    Public Function EsqueletosUsables() As List(Of Havok.Canon.Objects.HkObj_HkaSkeleton)
+        Return Esqueletos().Where(Function(s) s IsNot Nothing AndAlso
+                                              s.Bones IsNot Nothing AndAlso s.Bones.Count > 0 AndAlso
+                                              s.ParentIndices IsNot Nothing AndAlso
+                                              s.ReferencePose IsNot Nothing AndAlso
+                                              s.ReferencePose.Count >= s.Bones.Count).ToList()
+    End Function
+
+    ''' <summary>
+    ''' ⛔⛔ EL ESQUELETO DE ANIMACION DEL ARCHIVO. UNA SOLA LEY EN TODO EL ARBOL.
+    ''' <para>Un `skeleton.hkx` de FO4 declara DOS: el de animacion y el de RAGDOLL. El de ragdoll
+    ''' SIEMPRE lleva 'Ragdoll' en el nombre — medido sobre los 48 esqueletos del juego
+    ''' ('Ragdoll_NPC COM', 'Ragdoll_COM'...) — y hay exactamente UNO que no lo lleva, cuyo nombre si
+    ''' varia ('Root', 'Root [Root]', 'Dogmeat_Root'). La regla EXACTA es esa, no el conteo de huesos.</para>
+    ''' <para>Sale de <see cref="Esqueletos"/>, o sea del orden que DECLARA el contenedor. Las SEIS
+    ''' copias que habia partian de `GetObjectsByClassName("hkaSkeleton")`, que es el orden en que
+    ''' quedaron serializados los bloques: con dos esqueletos, eso es tirar una moneda.</para>
+    ''' <param name="preferido">Desempate opcional del consumidor — p.ej. "su root existe en el NIF
+    ''' vivo". Si ninguno lo cumple, cae a la regla del nombre.</param>
+    ''' </summary>
+    Public Function EsqueletoDeAnimacion(Optional preferido As Func(Of Havok.Canon.Objects.HkObj_HkaSkeleton, Boolean) = Nothing) _
+            As Havok.Canon.Objects.HkObj_HkaSkeleton
+        Dim usables = EsqueletosUsables()
+        If usables.Count = 0 Then Return Nothing
+        If preferido IsNot Nothing Then
+            Dim p = usables.FirstOrDefault(preferido)
+            If p IsNot Nothing Then Return p
+        End If
+        ' ⛔ SIN RESPALDO AL RAGDOLL. Si el archivo no declara ninguno que no sea ragdoll, la
+        ' respuesta es "no hay esqueleto de animacion" — devolver el ragdoll hace que el llamador
+        ' mergee huesos de ragdoll en el esqueleto vivo creyendo que son los de animacion. De los
+        ' consumidores que esta ley reemplazo, UNO SOLO tenia ese respaldo; los otros cortaban.
+        Return usables.FirstOrDefault(Function(s) Not EsRagdoll(s))
     End Function
 
     ''' <summary>El esqueleto del archivo: el PRIMERO QUE EL CONTENEDOR DECLARA, no el primer
@@ -313,30 +375,24 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     Public Function GetLocalFixupsInRange(relativeOffset As Integer, byteCount As Integer) As List(Of HkxLocalFixupEntry_Class)
-        Dim result As New List(Of HkxLocalFixupEntry_Class)
-        If byteCount <= 0 Then Return result
-
-        Dim rangeEnd = relativeOffset + byteCount
-        Dim start = LowerBound(_localFixupSourcesSorted, relativeOffset)
-        For i = start To _localFixupSourcesSorted.Length - 1
-            If _localFixupSourcesSorted(i) >= rangeEnd Then Exit For
-            result.Add(_localFixupsSorted(i))
-        Next
-
-        Return result
+        Return FixupsEnRango(_localFixupsSorted, _localFixupSourcesSorted, relativeOffset, byteCount)
     End Function
 
     Public Function GetGlobalFixupsInRange(relativeOffset As Integer, byteCount As Integer) As List(Of HkxGlobalFixupEntry_Class)
-        Dim result As New List(Of HkxGlobalFixupEntry_Class)
-        If byteCount <= 0 Then Return result
+        Return FixupsEnRango(_globalFixupsSorted, _globalFixupSourcesSorted, relativeOffset, byteCount)
+    End Function
 
+    ''' <summary>Los fixups cuyo origen cae en [offset, offset+bytes). Un solo cuerpo: los dos de
+    ''' arriba eran verbatim.</summary>
+    Private Shared Function FixupsEnRango(Of T)(ordenados As T(), fuentes As Integer(),
+                                                relativeOffset As Integer, byteCount As Integer) As List(Of T)
+        Dim result As New List(Of T)
+        If byteCount <= 0 OrElse fuentes Is Nothing Then Return result
         Dim rangeEnd = relativeOffset + byteCount
-        Dim start = LowerBound(_globalFixupSourcesSorted, relativeOffset)
-        For i = start To _globalFixupSourcesSorted.Length - 1
-            If _globalFixupSourcesSorted(i) >= rangeEnd Then Exit For
-            result.Add(_globalFixupsSorted(i))
+        For i = LowerBound(fuentes, relativeOffset) To fuentes.Length - 1
+            If fuentes(i) >= rangeEnd Then Exit For
+            result.Add(ordenados(i))
         Next
-
         Return result
     End Function
 
@@ -407,39 +463,10 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ReadArrayHeader(fieldRelativeOffset As Integer) As HkxObjectArrayHeader_Class
         Dim pointer = ResolveLocalPointer(fieldRelativeOffset)
         Return New HkxObjectArrayHeader_Class With {
-            .FieldRelativeOffset = fieldRelativeOffset,
             .DataRelativeOffset = If(pointer, -1),
             .Count = ReadInt32(fieldRelativeOffset + PointerSizeValue),
             .CapacityAndFlags = ReadInt32(fieldRelativeOffset + PointerSizeValue + 4)
         }
-    End Function
-
-    Public Function ReadStructureOffsets(fieldRelativeOffset As Integer, itemSize As Integer) As List(Of Integer)
-        Dim result As New List(Of Integer)
-        Dim header = ReadArrayHeader(fieldRelativeOffset)
-        If itemSize <= 0 OrElse header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
-
-        For i = 0 To header.Count - 1
-            result.Add(header.DataRelativeOffset + (i * itemSize))
-        Next
-
-        Return result
-    End Function
-
-    ''' <summary>
-    ''' Resuelve un array de punteros a partir de su CABECERA. Es la forma que consume el lector
-    ''' tipado generado: sus propiedades de array devuelven la cabecera, no un offset, justamente
-    ''' para que ningun consumidor tenga que volver a calcular una posicion a mano.
-    ''' </summary>
-    Public Function ReadObjectReferenceArray(header As HkxObjectArrayHeader_Class) As List(Of HkxVirtualObjectGraph_Class)
-        Dim result As New List(Of HkxVirtualObjectGraph_Class)
-        If header Is Nothing OrElse header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
-        Dim stride = PointerSizeValue
-        For i = 0 To header.Count - 1
-            Dim obj = ResolveGlobalObject(header.DataRelativeOffset + (i * stride))
-            If Not IsNothing(obj) Then result.Add(obj)
-        Next
-        Return result
     End Function
 
     Public Function ReadObjectReferenceArray(fieldRelativeOffset As Integer) As List(Of HkxVirtualObjectGraph_Class)
@@ -456,82 +483,12 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    Public Function ReadByteArray(fieldRelativeOffset As Integer) As Byte()
-        Dim header = ReadArrayHeader(fieldRelativeOffset)
-        If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return Array.Empty(Of Byte)()
-        Return ReadBytes(header.DataRelativeOffset, header.Count)
-    End Function
-
     Private Sub EnsureReadable(relativeOffset As Integer, byteCount As Integer)
         Dim dataRelativeEnd = _fin - _ancla
         If relativeOffset < 0 OrElse byteCount < 0 OrElse relativeOffset + byteCount > dataRelativeEnd Then
             Throw New InvalidDataException($"Requested HKX range is out of bounds: offset=0x{relativeOffset:X} size={byteCount}.")
         End If
     End Sub
-
-    ' floatSlots: hkArray<hkStringPtr> — canales float nombrados a los que se bindean float-tracks de animación
-    ' (drivers faciales / additive / IK). NO son regiones de body-weight.
-    Private Function ReadFloatSlotNames(source As HkxVirtualObjectGraph_Class, fieldOffset As Integer) As List(Of String)
-        Dim result As New List(Of String)
-        For Each entryOffset In ReadStructureOffsets(source.RelativeOffset + fieldOffset, PointerSizeValue)
-            result.Add(ResolveLocalString(entryOffset))
-        Next
-        Return result
-    End Function
-
-    ''' <summary>Envuelve una cabecera de array ya resuelta por el lector generado. Toma la
-    ''' CABECERA y no un offset a proposito: si tomara un offset, el llamador tendria que volver a
-    ''' calcularlo y el numero volveria a vivir fuera de la tabla.</summary>
-    Private Function CreateArrayField(header As HkxObjectArrayHeader_Class) As HkxObjectArrayField_Class
-        Return New HkxObjectArrayField_Class With {
-            .Header = header
-        }
-    End Function
-
-    Private Function CreateArrayField(source As HkxVirtualObjectGraph_Class, fieldOffset As Integer) As HkxObjectArrayField_Class
-        Return New HkxObjectArrayField_Class With {
-            .Header = ReadArrayHeader(source.RelativeOffset + fieldOffset)
-        }
-    End Function
-
-    ' -------------------------------------------------------------------------
-    ' De acá en adelante: offsets HCL determinados empíricamente con
-    ' DumpStructuralAnalysis sobre NIFs reales de FO4 64-bit, NO contra el SDK de Havok.
-    ' Cada función documenta el archivo con el que se verificó su layout.
-    ' -------------------------------------------------------------------------
-
-
-    ''' <summary>
-    ''' ⛔ NAVEGACION DEL GRAFO SOBRE NODOS DE BEHAVIOR — lo unico que quedaba vivo de
-    ''' `HkxBehaviorGraphParser.vb`, que se borro.
-    '''
-    ''' <para>Ese archivo era un PARSER: leia campos de clases `hkb*` con offsets escritos a mano.
-    ''' De eso no quedo nada — cada campo lo da el objeto generado. Lo que si quedo son dos
-    ''' preguntas que NO son de un campo sino del GRAFO, y por eso viven aca, con las demas
-    ''' primitivas: "que clips alcanza este generador siguiendo sus referencias" y "que strings
-    ''' referencia este objeto". Ninguna de las dos la puede contestar la reflexion: no son
-    ''' campos, son recorridos.</para>
-    ''' </summary>
-    ' Lee un hkArray<hkStringPtr> (cada elemento = puntero a string, stride = PointerSizeValue).
-    ''' <summary>Strings del array, a partir de su CABECERA (lo que devuelve el lector generado).</summary>
-    Private Function ReadStringPtrArray(header As HkxObjectArrayHeader_Class) As List(Of String)
-        Dim result As New List(Of String)
-        If header Is Nothing OrElse header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
-        For i = 0 To header.Count - 1
-            result.Add(ResolveLocalString(header.DataRelativeOffset + (i * PointerSizeValue)))
-        Next
-        Return result
-    End Function
-
-    Private Function ReadStringPtrArray(fieldRelativeOffset As Integer) As List(Of String)
-        Dim result As New List(Of String)
-        Dim header = ReadArrayHeader(fieldRelativeOffset)
-        If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
-        For i = 0 To header.Count - 1
-            result.Add(ResolveLocalString(header.DataRelativeOffset + (i * PointerSizeValue)))
-        Next
-        Return result
-    End Function
 
     ' Todas las strings ASCII imprimibles referenciadas por local-fixups dentro del objeto.
     ''' <summary>
@@ -556,30 +513,13 @@ Public Partial Class HkxObjectGraph_Class
         Return True
     End Function
 
-    Private Shared Function LooksLikeAnimationFile(s As String) As Boolean
-        If String.IsNullOrEmpty(s) Then Return False
-        Dim lc = s.ToLowerInvariant()
-        Return (lc.EndsWith(".hkt") OrElse lc.EndsWith(".hkx")) AndAlso lc.Contains("animation")
-    End Function
-
-    ''' <summary>Resuelve el objeto referenciado por el puntero que vive EN un offset de source exacto
-    ''' (lectura de campo por offset). Devuelve Nothing si no hay fixup global ahí (puntero null). El
-    ''' puntero ocupa 8 bytes, así que se busca el fixup cuyo SourceRelativeOffset == el offset pedido
-    ''' dentro de un rango de 8.</summary>
-    Private Function ResolveGlobalRefAt(sourceRelativeOffset As Integer) As HkxVirtualObjectGraph_Class
-        For Each gf In GetGlobalFixupsInRange(sourceRelativeOffset, 8)
-            If gf.SourceRelativeOffset = sourceRelativeOffset Then Return GetObject(gf.TargetRelativeOffset)
-        Next
-        Return Nothing
-    End Function
-
 
     ''' <summary>El `name` de CUALQUIER nodo de behavior. Va por el lector tipado de la clase
     ''' BASE `hkbNode` a proposito: esto corre sobre bloques de cualquier clase derivada, incluidas
     ''' las `BS*` de Bethesda, y el objeto `HkObj_*` existe por clase CONCRETA.</summary>
     Public Function ReadNodeName(obj As HkxVirtualObjectGraph_Class) As String
         If IsNothing(obj) Then Return ""
-        Return If(New Havok.Canon.Typed.Hk_HkbNode(Me, obj).Name, String.Empty)
+        Return If(Havok.Canon.Objects.HkObj_HkbNode.Read(Me, obj)?.Name, String.Empty)
     End Function
     ''' <summary>Resumen "qué reproduce" un generador, recursando los wrappers (Fase 3a) hasta los
     ''' clips/behaviors/gamebryo reales. Sigue refs cuya clase sea generador; SM anidada = hoja "sm:".</summary>
@@ -589,39 +529,59 @@ Public Partial Class HkxObjectGraph_Class
         CollectGeneratorLeaves(gen, leaves, New HashSet(Of Integer), 0)
         If leaves.Count = 0 Then Return gen.ClassName & " '" & ReadNodeName(gen) & "'"
         Dim distinct = leaves.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
-        If distinct.Count = 1 AndAlso gen.ClassName.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then Return distinct(0)
+        ' ⛔ SIN LITERAL: "¿este bloque declara `hkbClipGenerator`?" es exactamente lo que contesta
+        ' `Leer(Of T)`, que deriva el nombre del tipo con la regla del generador.
+        ' ⛔ CORTOCIRCUITADO: `AndAlso` no evalua la derecha si la izquierda es False. Estaba en un
+        ' `Dim` de arriba, asi que la lectura reflexiva corria y se tiraba en todo generador con mas
+        ' de una hoja distinta — que es el caso comun de un blender o un selector.
+        If distinct.Count = 1 AndAlso
+           Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbClipGenerator)(Me, gen) IsNot Nothing Then Return distinct(0)
         Return gen.ClassName & " → [" & String.Join(", ", distinct) & "]"
     End Function
 
-    ' Recolecta las hojas (clip/behavior/gamebryo/sm) alcanzables siguiendo refs de generador.
+    ''' <summary>
+    ''' Las hojas (clip/behavior/gamebryo/sm) alcanzables siguiendo refs de generador.
+    ''' <para>⛔ SIN UN SOLO NOMBRE DE CLASE A MANO. Cada rama era `cn.Equals("...")` + `.Read()`, o
+    ''' sea <see cref="Havok.Canon.HavokConstraintSets.Leer">Leer(Of T)</see> escrito a mano cuatro
+    ''' veces: el nombre lo deriva el generador del propio tipo. Si el bloque no declara esa clase,
+    ''' `Leer` devuelve Nothing y se prueba la siguiente; si ninguna matchea es un envoltorio
+    ''' (modifier/blender/child/selector/poseMatching/layer/…) y se siguen sus refs.</para>
+    ''' <para>⛔ Y la rama de Bethesda estaba MAL: leia `BGSGamebryoSequenceGenerator` con el objeto de
+    ''' `hkbBehaviorReferenceGenerator` "porque no esta en la reflexion". MEDIDO: SI esta, en las dos
+    ''' tablas (`BGSGamebryoSequenceGenerator|hkbGenerator|…|pSequence,88,cstring` en FO4, `…,48,…` en
+    ''' SSE), y el generador emitio `HkObj_BGSGamebryoSequenceGenerator`. El campo que se leia caia en
+    ''' el mismo offset por herencia de `hkbGenerator`, pero declarado `stringptr` y no `cstring`.</para>
+    ''' </summary>
     Private Sub CollectGeneratorLeaves(gen As HkxVirtualObjectGraph_Class, leaves As List(Of String), visited As HashSet(Of Integer), depth As Integer)
         If IsNothing(gen) OrElse depth > 8 OrElse Not visited.Add(gen.RelativeOffset) Then Return
-        Dim cn = If(gen.ClassName, "")
-        If cn.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then
-            ' ⛔ DEL LECTOR GENERADO: `hkbClipGenerator.animationName` sale por nombre.
-            Dim c1 = Havok.Canon.Objects.HkObj_HkbClipGenerator.Read(Me, gen)
-            leaves.Add("clip:" & If(c1 Is Nothing, "", If(c1.AnimationName, "")))
-        ElseIf cn.Equals("hkbBehaviorReferenceGenerator", StringComparison.OrdinalIgnoreCase) Then
-            Dim b1 = Havok.Canon.Objects.HkObj_HkbBehaviorReferenceGenerator.Read(Me, gen)
-            leaves.Add("behavior:" & If(b1 Is Nothing, "", If(b1.BehaviorName, "")))
-        ElseIf cn.Equals("BGSGamebryoSequenceGenerator", StringComparison.OrdinalIgnoreCase) Then
-            ' ⛔ `BGSGamebryoSequenceGenerator` es de Bethesda y NO esta en la reflexion de Havok;
-            ' se lee con el mismo offset que el behaviorReference porque comparte el layout del
-            ' generador base. Sigue siendo un offset a mano y por eso queda dicho aca.
-            Dim g1 As New Havok.Canon.Typed.Hk_HkbBehaviorReferenceGenerator(Me, gen)
-            leaves.Add("gamebryo:" & If(g1.IsValid, g1.BehaviorName, ""))
-        ElseIf cn.Equals("hkbStateMachine", StringComparison.OrdinalIgnoreCase) Then
-            Dim s1 = Havok.Canon.Objects.HkObj_HkbStateMachine.Read(Me, gen)
-            leaves.Add("sm:" & If(s1 Is Nothing, "", If(s1.Name, "")))   ' SM anidada: no expandir
-        Else
-            ' wrapper (modifier/blender/child/selector/poseMatching/layer/…): seguir refs de generador.
-            For Each gf In GetGlobalFixupsInRange(gen.RelativeOffset, gen.Size)
-                Dim tgt = GetObject(gf.TargetRelativeOffset)
-                If tgt IsNot Nothing AndAlso IsGeneratorClass(tgt.ClassName) Then
-                    CollectGeneratorLeaves(tgt, leaves, visited, depth + 1)
-                End If
-            Next
+
+        Dim clip = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbClipGenerator)(Me, gen)
+        If clip IsNot Nothing Then
+            leaves.Add("clip:" & If(clip.AnimationName, ""))
+            Return
         End If
+        Dim beh = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbBehaviorReferenceGenerator)(Me, gen)
+        If beh IsNot Nothing Then
+            leaves.Add("behavior:" & If(beh.BehaviorName, ""))
+            Return
+        End If
+        Dim seq = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_BGSGamebryoSequenceGenerator)(Me, gen)
+        If seq IsNot Nothing Then
+            leaves.Add("gamebryo:" & If(seq.PSequence, ""))
+            Return
+        End If
+        Dim sm = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbStateMachine)(Me, gen)
+        If sm IsNot Nothing Then
+            leaves.Add("sm:" & If(sm.Name, ""))   ' SM anidada: no expandir
+            Return
+        End If
+
+        For Each gf In GetGlobalFixupsInRange(gen.RelativeOffset, gen.Size)
+            Dim tgt = GetObject(gf.TargetRelativeOffset)
+            If tgt IsNot Nothing AndAlso IsGeneratorClass(tgt.ClassName) Then
+                CollectGeneratorLeaves(tgt, leaves, visited, depth + 1)
+            End If
+        Next
     End Sub
 
     ''' <summary>
@@ -645,21 +605,13 @@ End Class
 Public Class HkxVirtualObjectGraph_Class
     Public Property SectionIndex As Integer
     Public Property RelativeOffset As Integer
-    Public Property AbsoluteOffset As Integer
-    Public Property ClassNameSectionIndex As Integer
-    Public Property ClassNameRelativeOffset As Integer
     Public Property ClassName As String
     Public Property Size As Integer
 End Class
 
 Public Class HkxObjectArrayHeader_Class
-    Public Property FieldRelativeOffset As Integer
     Public Property DataRelativeOffset As Integer
     Public Property Count As Integer
     Public Property CapacityAndFlags As Integer
 End Class
 
-Public Class HkxObjectArrayField_Class
-    Public Property Header As HkxObjectArrayHeader_Class
-
-End Class

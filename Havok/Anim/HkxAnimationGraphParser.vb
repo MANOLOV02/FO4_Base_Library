@@ -6,7 +6,7 @@ Imports System.IO
 Imports System.Linq
 Imports System.Numerics
 
-Public Partial Class HkxObjectGraph_Class
+Partial Public Class HkxObjectGraph_Class
     Private Enum HkxSplineTrackValueType_Enum
         Identity = 0
         StaticValue = 1
@@ -73,7 +73,7 @@ Public Partial Class HkxObjectGraph_Class
 
         ' ⛔ EL ORDEN LO DECLARA `hkaAnimationContainer.bindings`. Ordenar por `RelativeOffset` es
         ' usar el orden en que el serializador dejo los bloques, que no es una ley del formato.
-        For Each obj In BloquesDelContenedor("bindings", {"hkaAnimationBinding"})
+        For Each obj In BloquesDelContenedor(HkxObjectGraph_Class.CampoDelContenedor.Bindings, {"hkaAnimationBinding"})
             Dim binding = Havok.Canon.Objects.HkObj_HkaAnimationBinding.Read(Me, obj)
             If Not IsNothing(binding) Then result.Add(binding)
         Next
@@ -81,6 +81,11 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
+
+    ''' <summary>Los clips que NO se pudieron descomprimir en la ultima llamada a
+    ''' `Animaciones()`, con su clase y el motivo. Un clip roto es un DATO del archivo: si se
+    ''' lo traga el parser, el llamador ve 'este .hkx no tiene animaciones' y no es cierto.</summary>
+    Public ReadOnly Property AnimacionesFallidas As New List(Of String)
 
     ''' <summary>
     ''' ⛔ LAS ANIMACIONES DEL ARCHIVO, SEA CUAL SEA LA COMPRESION.
@@ -94,11 +99,6 @@ Public Partial Class HkxObjectGraph_Class
     ''' es lo que el archivo declara: los bindings apuntan a su animacion por referencia, sin
     ''' importar como este comprimida.</para>
     ''' </summary>
-    ''' <summary>Los clips que NO se pudieron descomprimir en la ultima llamada a
-    ''' `Animaciones()`, con su clase y el motivo. Un clip roto es un DATO del archivo: si se
-    ''' lo traga el parser, el llamador ve 'este .hkx no tiene animaciones' y no es cierto.</summary>
-    Public ReadOnly Property AnimacionesFallidas As New List(Of String)
-
     Public Function Animaciones() As List(Of HkxAnimacionDescomprimida_Class)
         Dim r As New List(Of HkxAnimacionDescomprimida_Class)
         AnimacionesFallidas.Clear()
@@ -108,7 +108,7 @@ Public Partial Class HkxObjectGraph_Class
         ' ademas ponia TODAS las spline antes que TODAS las lossless, un orden que el archivo
         ' no dice en ningun lado. La subclase concreta la sigue diciendo el nombre de clase
         ' del bloque, que es lo unico que la declara.
-        For Each obj In BloquesDelContenedor("animations",
+        For Each obj In BloquesDelContenedor(HkxObjectGraph_Class.CampoDelContenedor.Animations,
                                             {"hkaSplineCompressedAnimation", "hkaLosslessCompressedAnimation"})
             ' ⛔⛔ UN CLIP ROTO NO SE LLEVA PUESTOS A LOS DEMAS.
             ' Sin esta guarda, si el clip #2 del archivo tira, se pierden TODOS los del archivo y el
@@ -116,11 +116,10 @@ Public Partial Class HkxObjectGraph_Class
             ' 6.117 de SSE terminaban asi. El que falla queda ANOTADO, no tragado.
             Dim a As HkxAnimacionDescomprimida_Class = Nothing
             Try
-                If obj.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
-                    a = ParseAnimation(obj)
-                ElseIf obj.ClassName.Equals("hkaLosslessCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then
-                    a = ParseLosslessAnimation(obj)
-                End If
+                ' ⛔ SIN LITERALES: cada `Parse*` ya devuelve Nothing si el bloque declara otra clase,
+                ' porque su guarda es `Leer(Of T)` — la misma resolucion por nombre que el resto del arbol.
+                a = ParseAnimation(obj)
+                If a Is Nothing Then a = ParseLosslessAnimation(obj)
             Catch ex As Exception
                 AnimacionesFallidas.Add($"{obj.ClassName} @0x{obj.RelativeOffset:X}: {ex.GetType().Name}: {ex.Message}")
                 If Logger.Enabled Then Logger.LogLazy(Function() $"[ANIM-FALLO] {obj.ClassName} @0x{obj.RelativeOffset:X}: {ex.Message}")
@@ -148,10 +147,10 @@ Public Partial Class HkxObjectGraph_Class
             sueltos.Add(binding)
         Next
 
-        ''' ⛔ El fallback POSICIONAL solo cuando es INEQUIVOCO: exactamente una animacion sin
-        ''' binding y exactamente un binding sin animacion. Grapar N con N por orden de enumeracion
-        ''' cruzaria tracks con huesos en silencio en cualquier archivo donde el ref-match era el
-        ''' mapeo real, asi que se deja `Binding = Nothing` y se loguea en vez de adivinar.
+        ' ⛔ El fallback POSICIONAL solo cuando es INEQUIVOCO: exactamente una animacion sin
+        ' binding y exactamente un binding sin animacion. Grapar N con N por orden de enumeracion
+        ' cruzaria tracks con huesos en silencio en cualquier archivo donde el ref-match era el
+        ' mapeo real, asi que se deja `Binding = Nothing` y se loguea en vez de adivinar.
         Dim sinBinding = r.Where(Function(a) a.Binding Is Nothing).ToList()
         If sueltos.Count = 1 AndAlso sinBinding.Count = 1 Then
             sinBinding(0).Binding = sueltos(0)
@@ -164,7 +163,8 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     Public Function ParseAnimation(source As HkxVirtualObjectGraph_Class) As HkxAnimacionDescomprimida_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hkaSplineCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        ' ⛔ EL GUARDA POR NOMBRE Y LA LECTURA SON LA MISMA LLAMADA (mas abajo, `Leer(Of T)`).
+        If IsNothing(source) Then Return Nothing
 
         ' ⛔⛔ LOS DIECIOCHO OFFSETS SE DERIVABAN A MANO, sumando `BaseObjectFieldOffset`,
         ' `PointerSizeValue` y `ArrayHeaderSizeValue`, con un `AlignValue` en el medio. La reflexion
@@ -174,8 +174,11 @@ Public Partial Class HkxObjectGraph_Class
         '     hkaSplineCompressedAnimation{ numFrames +0x38 . numBlocks +0x3C . maxFramesPerBlock +0x40
         '        . maskAndQuantizationSize +0x44 . frameDuration +0x50 . blockOffsets +0x58
         '        . floatBlockOffsets +0x68 . transformOffsets +0x78 . floatOffsets +0x88 . data +0x98 }
-        Dim hkr As New Havok.Canon.Typed.Hk_HkaSplineCompressedAnimation(Me, source)
-        If Not hkr.IsValid Then Return Nothing
+        ' ⛔ EL OBJETO, NO EL LECTOR CRUDO. `Hk_*.XxxItem(i)` devuelve la DIRECCION del elemento y el
+        ' objeto el VALOR: de esa confusion salio el bug que dejaba 15.060 animaciones sin
+        ' descomprimir. Mientras quede un sitio con el crudo teniendo el objeto, puede volver.
+        Dim hkr = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation)(Me, source)
+        If hkr Is Nothing Then Return Nothing
 
         ' `maxFramesPerBlock` y `maskAndQuantizationSize` son de este parseo y no salen de aca:
         ' quedan como locales en vez de campos que nadie mas lee.
@@ -202,12 +205,21 @@ Public Partial Class HkxObjectGraph_Class
         ' `hkr.BlockOffsetsItem(i)` devolvia la DIRECCION del elemento, no su valor, y esto lo
         ' sumaba como si fuera el dato: `blockOffsets(0)` daba 0xED0 donde el bloque arranca en 0.
         ' `HkObj_*.BlockOffsets` ya entrega la lista LEIDA — es la capa que existe para esto.
-        Dim objAnim = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Read(Me, source)
-        Dim blockOffsets = If(objAnim?.BlockOffsets, New List(Of UInteger))
-        Dim splineBlob = ReadByteArray(hkr.Data.FieldRelativeOffset)
+        Dim blockOffsets = If(hkr.BlockOffsets, New List(Of UInteger))
+        ' ⛔ EL BLOB LO ENTREGA EL OBJETO. `hkr.Data` es el `array<uint8>` ya leido; antes esto le
+        ' pedia la cabecera al lector crudo y volvia a leer los bytes por su cuenta.
+        ' ⛔ UNA COPIA DE BLOQUE, Y SIGUE SIENDO CANONICO. `HkObj_*.Data` es `List(Of Integer)` y
+        ' el generador la arma BYTE POR BYTE con un `ReadByte` (y su chequeo de rango) por byte;
+        ' despues el `Select(CByte)` la copiaba otra vez. Sobre las 21.186 animaciones del corpus
+        ' eso son millones de llamadas y ~5x de memoria transitoria.
+        ' El origen y el largo NO se escriben a mano: salen de la capa TIPADA (`DataItemOffset(0)`
+        ' y `DataCount`), que es la misma tabla de reflexion. Lo unico que cambia es que la copia
+        ' se hace de una.
+        Dim nDatos = hkr.Raw.DataCount
+        Dim splineBlob = If(nDatos > 0, Me.ReadBytes(hkr.Raw.DataItemOffset(0), nDatos), Array.Empty(Of Byte)())
 
         ' ⛔ `transformOffsets` LO DECLARA LA REFLEXION Y NADIE LO LEIA.
-        Dim transformOffsets = If(objAnim?.TransformOffsets, New List(Of UInteger))
+        Dim transformOffsets = If(hkr.TransformOffsets, New List(Of UInteger))
 
         If (result.NumFrames > 0 OrElse result.Animacion.NumberOfTransformTracks > 0 OrElse result.NumBlocks > 0) AndAlso (splineBlob.Length = 0 OrElse blockOffsets.Count = 0) Then
             Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has no spline payload.")
@@ -281,42 +293,40 @@ Public Partial Class HkxObjectGraph_Class
             Dim offset = blockStart
             ' ⛔ EL FALLO TIENE QUE DECIR DONDE ESTABA. `blob offset 0x101F` solo no alcanza para
             ' saber si el problema es el bloque, el track o el tamano de la mascara.
-            Dim ctx = Function() $"blk={blockIndex}/{numBlocks} start=0x{blockStart:X} mq={maskAndQuantSize} " &
+            ' ⛔ EL INDICE SE COPIA A UN LOCAL: la variable de iteracion la comparte todo el bucle,
+            ' asi que la lambda del contexto imprimiria el ULTIMO bloque, no el que fallo (BC42324).
+            Dim blockIdx = blockIndex
+            Dim ctx = Function() $"blk={blockIdx}/{numBlocks} start=0x{blockStart:X} mq={maskAndQuantSize} " &
                                 $"tracks={numTracks} frames={framesInBlock}/{numFrames} blob={blob.Length} " &
                                 $"maxFPB={maxFramesPerBlock} blkOff=[{String.Join(",", blockOffsets.Select(Function(x) "0x" & x.ToString("X")))}]"
             Try
-                ' ⛔⛔ EL BLOQUE DE MASCARAS ES DE LARGO VARIABLE. Leido de `Fallout4.exe`
-                ' (descompresor 0x1419B1780): hay UN byte de cuantizacion por track, y despues un
-                ' byte de banderas por componente PERO SOLO SI su cuantizacion es una de las que
-                ' declara el enum. Si no, el motor no lo consume:
-                '     pos  ∉ {BITS8, BITS16} -> `jne 0x1419B1A22`, sin `inc rdi`
-                '     rot  > UNCOMPRESSED    -> `ja  0x1419B1B95`, sin `inc rdi`
-                '     esc  ∉ {BITS8, BITS16} -> `jne 0x1419B1C11`, sin `inc rdi`
-                ' O sea entre 1 y 4 bytes por track. Esto leia CUATRO siempre, asi que en cuanto
-                ' un track salteaba un byte, las banderas de todos los siguientes quedaban
-                ' corridas. El corpus de FO4 trae el byte 0x07 (pos=3, salteado) en 2 de los 4
-                ' tracks-bloque de su unica animacion spline: el defecto estaba VIVO.
-            ' ⛔⛔ CUATRO BYTES POR TRACK — LO DICE EL ARCHIVO.
-            ' `maskAndQuantizationSize` vale EXACTAMENTE `numTracks * 4` (medido: 332 con 83 tracks), y
-            ' el hexdump del blob muestra el bloque en el offset 0 con grupos de cuatro:
-            '     45 00 00 00 | 45 70 F0 00 | 45 00 04 00 | 45 07 F0 00 | ...
-            ' Hubo una vuelta en que esto se leyo de largo VARIABLE, por el `inc rdi` condicional del
-            ' motor (0x1419B1A1F / 0x1419B1B92 / 0x1419B1C0E). El archivo dice otra cosa y el archivo
-            ' gana: ese `inc` no esta recorriendo este bloque.
-            EnsureBlobReadable(blob, offset, 4 * numTracks, "Track mask block")
-            For trackIndex = 0 To numTracks - 1
-                Dim packedMask = blob(offset)
-                masks(trackIndex).PosQuant = CByte(packedMask And &H3)
-                masks(trackIndex).RotQuant = CByte((packedMask >> 2) And &HF)
-                masks(trackIndex).ScaleQuant = CByte((packedMask >> 6) And &H3)
-                masks(trackIndex).PosFlags = blob(offset + 1)
-                masks(trackIndex).RotFlags = blob(offset + 2)
-                masks(trackIndex).ScaleFlags = blob(offset + 3)
-                Contar(destino.RotQuantUsados, CInt(masks(trackIndex).RotQuant))
-                Contar(destino.PosQuantUsados, CInt(masks(trackIndex).PosQuant))
-                Contar(destino.ScaleQuantUsados, CInt(masks(trackIndex).ScaleQuant))
-                offset += 4
-            Next
+                ' ⛔⛔ CUATRO BYTES POR TRACK, Y AHORA CON LA CITA LITERAL.
+                ' `SkyrimSE.exe` recorre el bloque de mascaras en 0x140C4C950..0x140C4C9F5 leyendo `[rdi]`,
+                ' `[rdi+1]`, `[rdi+2]` y `[rdi+3]`, y avanza `lea rdi, [rdi + 4]` en 0x140C4C9ED SIN
+                ' NINGUNA CONDICION. Los campos son los mismos que se decodifican abajo:
+                '     `and ecx, 3`       (pos)    0x140C53963
+                '     `shr ecx, 2 / and ecx, 0xF` (rot) 0x140C4C996 / 0x140C4C9A1
+                '     `shr ebx, 6`       (escala) 0x140C4C9DA
+                ' Y el archivo dice lo mismo: `maskAndQuantizationSize` vale EXACTAMENTE `numTracks * 4`
+                ' (medido: 332 con 83 tracks), y el hexdump del blob muestra grupos de cuatro:
+                '     45 00 00 00 | 45 70 F0 00 | 45 00 04 00 | 45 07 F0 00 | ...
+                ' ⚠️ Hubo una vuelta en que esto se leyo de largo VARIABLE, deduciendolo del `inc rdi`
+                ' condicional de Fallout4 (0x1419B1A1F / 0x1419B1B92 / 0x1419B1C0E). Ese `inc` NO recorre
+                ' este bloque: leer el desensamblado no reemplaza a medir el archivo.
+                EnsureBlobReadable(blob, offset, 4 * numTracks, "Track mask block")
+                For trackIndex = 0 To numTracks - 1
+                    Dim packedMask = blob(offset)
+                    masks(trackIndex).PosQuant = CByte(packedMask And &H3)
+                    masks(trackIndex).RotQuant = CByte((packedMask >> 2) And &HF)
+                    masks(trackIndex).ScaleQuant = CByte((packedMask >> 6) And &H3)
+                    masks(trackIndex).PosFlags = blob(offset + 1)
+                    masks(trackIndex).RotFlags = blob(offset + 2)
+                    masks(trackIndex).ScaleFlags = blob(offset + 3)
+                    Contar(destino.RotQuantUsados, CInt(masks(trackIndex).RotQuant))
+                    Contar(destino.PosQuantUsados, CInt(masks(trackIndex).PosQuant))
+                    Contar(destino.ScaleQuantUsados, CInt(masks(trackIndex).ScaleQuant))
+                    offset += 4
+                Next
 
                 offset = blockStart + maskAndQuantSize
 
@@ -438,12 +448,12 @@ Public Partial Class HkxObjectGraph_Class
                         quaternionControlPoints.Clear()
                         For itemIndex = 0 To numItems
                             Dim consumed = 0
-                            Dim quat = ReadQuaternion(quaternionFormat, blob, offset, blob.Length - offset, consumed)
+                            Dim quat = ReadQuaternion(quaternionFormat, blob, offset, consumed)
                             offset += consumed
 
                             If quaternionControlPoints.Count > 0 AndAlso Quaternion.Dot(quat, quaternionControlPoints(quaternionControlPoints.Count - 1)) < 0.0F Then
                                 quat = Quaternion.Negate(quat)
-                        End If
+                            End If
 
                             quaternionControlPoints.Add(quat)
                         Next
@@ -452,13 +462,13 @@ Public Partial Class HkxObjectGraph_Class
                             Dim time = CSng(frameInBlock)
                             Dim span = FindKnotSpan(degree, time, quaternionControlPoints.Count, knots)
                             Dim quat = EvalBSplineQuaternion(span, degree, time, knots, quaternionControlPoints)
-                            NormalizeQuaternion(quat)
+                            NormalizarBlend(quat)
                             rotationFrames(frameInBlock) = quat
                         Next
                     ElseIf rotationType = HkxSplineTrackValueType_Enum.StaticValue Then
                         offset = AlignValue(offset, quaternionAlignment)
                         Dim consumed = 0
-                        Dim quat = ReadQuaternion(quaternionFormat, blob, offset, blob.Length - offset, consumed)
+                        Dim quat = ReadQuaternion(quaternionFormat, blob, offset, consumed)
                         offset += consumed
 
                         For frameInBlock = 0 To framesInBlock - 1
@@ -654,21 +664,6 @@ Public Partial Class HkxObjectGraph_Class
     ''' </summary>
     Private Shared ReadOnly RotQ As IReadOnlyDictionary(Of String, Integer) = CargarEnum("RotationQuantization")
 
-    ''' <summary>`ScalarQuantization` de la reflexion: `BITS8=0 . BITS16=1`. Es la que usan
-    ''' la posicion y la escala, y el motor SALTEA el componente si el valor no es ninguno
-    ''' de esos dos (`cmp ecx,1 / jne` en 0x1419B19B0 y 0x1419B1B9E).</summary>
-    Private Shared ReadOnly EscQ As IReadOnlyDictionary(Of String, Integer) = CargarEnum("ScalarQuantization")
-
-    ''' <summary>El valor mas alto que declara un enum. El motor compara contra el
-    ''' (`cmp r15d,5 / ja` en 0x1419B1A26, y 5 es UNCOMPRESSED), asi que sale de la tabla.</summary>
-    Private Shared Function MaximoDe(e As IReadOnlyDictionary(Of String, Integer)) As Integer
-        Dim m = -1
-        For Each kv In e
-            If kv.Value > m Then m = kv.Value
-        Next
-        Return m
-    End Function
-
     Private Shared Function CargarEnum(E As String) As IReadOnlyDictionary(Of String, Integer)
         Const C As String = "hkaSplineCompressedAnimationTrackCompressionParams"
         Dim a = Havok.Canon.HavokLayout.FO4.EnumValues(C, E)
@@ -691,53 +686,71 @@ Public Partial Class HkxObjectGraph_Class
         Return a
     End Function
 
-    ''' <summary>Cuantos bytes ocupa cada formato en el flujo. NO lo declara la reflexion:
-    ''' el enum dice QUE formatos hay, no cuanto miden. Los cuatro anchos salen del propio
-    ''' nombre (32/40/48 bits, y UNCOMPRESSED = cuatro floats).</summary>
+    ''' <summary>
+    ''' ⛔⛔ CUANTOS BYTES CONSUME CADA FORMATO. ES OTRA TABLA DEL MOTOR, NO UNA DERIVACION DEL NOMBRE.
+    ''' <para>`SkyrimSE.exe` la guarda en <c>0x141A15D78</c>: <c>{ 4, 5, 6, 3, 2, 16 }</c>, leida en
+    ''' <c>0x140C4DCE1</c> (<c>movsxd rax,[rsi+rbx*4+0x1a15d78] / add [rdi],rax</c>).</para>
+    ''' <para>`Fallout4.exe` los tiene literales DOCE veces — seis en la rama estatica
+    ''' (<c>add qword ptr [rdi], N</c> en 0x1419B429A, 0x1419B3B2F, 0x1419B3CA9, 0x1419B3E1F,
+    ''' 0x1419B3F99, 0x1419B411A) y seis en la de puntos de control (<c>add rdi, N</c> en
+    ''' 0x1419B463E, 0x1419B432E, 0x1419B43CE, 0x1419B445E, 0x1419B44FE, 0x1419B459E).</para>
+    ''' </summary>
     Private Shared Function AnchoDe(nombre As String) As Integer
         Select Case nombre
             Case "POLAR32" : Return 4
             Case "THREECOMP40" : Return 5
             Case "THREECOMP48" : Return 6
-            Case "THREECOMP24" : Return 3      ' `add qword ptr [rdi], 3` en 0x1419B3E1F
-            Case "STRAIGHT16" : Return 2       ' `add qword ptr [rdi], 2` en 0x1419B3F99
+            Case "THREECOMP24" : Return 3
+            Case "STRAIGHT16" : Return 2
             Case "UNCOMPRESSED" : Return 16
             Case Else : Return 0
         End Select
     End Function
 
-    Private Shared Function ReadQuaternion(format As Integer, data As Byte(), offset As Integer, available As Integer, ByRef consumed As Integer) As Quaternion
-        ' ⛔ EL HUECO, NOMBRADO. El binario declara SEIS formatos y aca se leen CUATRO:
-        ' `THREECOMP24` (3) y `STRAIGHT16` (4) estan declarados y no tienen lector. Antes
-        ' caian en un `Case Else` mudo que los leia como THREECOMP40 — o sea, basura
-        ' silenciosa. Ahora se dice cual es y se sigue leyendo como antes, que es el
-        ' comportamiento medido; si algun dia el corpus trae uno, el log lo va a decir.
+    Private Shared Function ReadQuaternion(format As Integer, data As Byte(), offset As Integer, ByRef consumed As Integer) As Quaternion
+        ' ⛔ LOS SEIS FORMATOS QUE DECLARA EL ENUM TIENEN LECTOR. Hubo una epoca en que faltaban
+        ' `THREECOMP24` y `STRAIGHT16` y caian en un `Case Else` mudo que los leia como THREECOMP40
+        ' — basura silenciosa. Ya no: los seis se despachan por su valor declarado, y un valor que el
+        ' enum NO declara no se lee (ver el final de la funcion).
         If format = RotQ("POLAR32") Then
             consumed = AnchoDe("POLAR32")
-            Return Read32BitQuaternion(data, offset, available)
+            Return Read32BitQuaternion(data, offset)
         ElseIf format = RotQ("THREECOMP40") Then
             consumed = AnchoDe("THREECOMP40")
-            Return Read40BitQuaternion(data, offset, available)
+            Return Read40BitQuaternion(data, offset)
         ElseIf format = RotQ("THREECOMP48") Then
             consumed = AnchoDe("THREECOMP48")
-            Return Read48BitQuaternion(data, offset, available)
+            Return Read48BitQuaternion(data, offset)
         ElseIf format = RotQ("THREECOMP24") Then
             consumed = AnchoDe("THREECOMP24")
-            Return Read24BitQuaternion(data, offset, available)
+            Return Read24BitQuaternion(data, offset)
         ElseIf format = RotQ("STRAIGHT16") Then
             consumed = AnchoDe("STRAIGHT16")
-            Return Read16BitQuaternion(data, offset, available)
+            Return Read16BitQuaternion(data, offset)
         ElseIf format = RotQ("UNCOMPRESSED") Then
             consumed = AnchoDe("UNCOMPRESSED")
-            Return ReadUncompressedQuaternion(data, offset, available)
+            Return ReadUncompressedQuaternion(data, offset)
         End If
 
-        If Logger.Enabled Then
-            Dim nombre = RotQ.FirstOrDefault(Function(kv) kv.Value = format).Key
-            Logger.LogLazy(Function() $"[ANIM-ROTQ] formato {format} ({If(nombre, "no declarado")}) sin lector: se lee como THREECOMP40")
-        End If
-        consumed = AnchoDe("THREECOMP40")
-        Return Read40BitQuaternion(data, offset, available)
+        ' ⛔⛔ EL MOTOR NO LEE NADA CON UN FORMATO QUE EL ENUM NO DECLARA.
+        ' `cmp r15d, 5 / ja 0x1419B1B95` (0x1419B1A22, Fallout4.exe): no decodifica, NO avanza el
+        ' puntero, ni siquiera consume el byte de banderas de rotacion.
+        ' Leerlo como THREECOMP40 era una REGLA MIA: metia cinco bytes de basura y, peor, corria el
+        ' offset — todo lo que venia despues en ese track quedaba desalineado.
+        ' ⛔ NO SE PUEDE SEGUIR COMO SI NADA. El motor no lee nada, pero tampoco sigue leyendo la
+        ' pista: dejar el offset quieto hace que los puntos de control siguientes salgan todos del
+        ' mismo lugar y que la pista de escala quede desalineada, SIN una sola excepcion que lo
+        ' delate.
+        ' ⛔ LO QUE PASA DESPUES, DICHO CON PRECISION: el `Try` por bloque NO saltea el bloque —
+        ' RELANZA con el contexto (`blk=.. start=.. mq=..`), la excepcion sube por
+        ' `DecompressSplineAnimation` y `ParseAnimation`, y la agarra `Animaciones()`, que descarta
+        ' LA ANIMACION ENTERA y la cuenta en `AnimacionesFallidas`. Los otros clips del archivo
+        ' siguen. Es lo correcto: una pista que no se puede leer no da una animacion a medias.
+        Dim nombre = RotQ.FirstOrDefault(Function(kv) kv.Value = format).Key
+        consumed = 0
+        Throw New InvalidDataException(
+            $"RotationQuantization {format} ({If(nombre, "no declarado por el enum")}) no tiene lector: " &
+            "el motor sale sin consumir nada (`cmp r15d, 5 / ja`, 0x1419B1A22) y este bloque no se puede seguir leyendo.")
     End Function
 
     ''' <summary>
@@ -761,7 +774,7 @@ Public Partial Class HkxObjectGraph_Class
     ''' del bit 7 del tercer byte (`test r9b,r9b` / `jns`).</item>
     ''' </list>
     ''' </summary>
-    Private Shared Function Read24BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+    Private Shared Function Read24BitQuaternion(data As Byte(), offset As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 3, "24-bit quaternion")
 
         Dim b0 = CInt(data(offset))
@@ -797,7 +810,7 @@ Public Partial Class HkxObjectGraph_Class
         v(faltante) = w
 
         Dim result As New Quaternion With {.X = v(0), .Y = v(1), .Z = v(2), .W = v(3)}
-        NormalizeQuaternion(result)
+        ' ⛔ THREECOMP24 NO normaliza: FO4 0x141A474D0 tiene UNA sola raiz — la de reponer la componente ausente — y va derecho al store 0x141A475D4 / `ret` 0x141A475DC. SSE 0x140C53230 idem (`sqrtss` 0x140C53381, store 0x140C53398, `ret` 0x140C533A8).
         Return result
     End Function
 
@@ -813,12 +826,15 @@ Public Partial Class HkxObjectGraph_Class
     ''' (`0.5*r*(3 - len2*r*r)`), que es normalizar aproximando. Aca se usa
     ''' `NormalizeQuaternion`, que normaliza EXACTO y ademas cubre el caso de magnitud ~0
     ''' (los cuatro carriles en 7) donde el `rsqrtps` del motor daria infinito.</para>
-    ''' <para>El lector avanza DOS bytes y lee desde un origen alineado a 2
-    ''' (`and rcx, &amp;HFFFFFFFFFFFFFFFE`).</para>
+    ''' <para>El lector avanza DOS bytes y lee desde un origen alineado a 2 HACIA ARRIBA:
+    ''' <c>inc rcx</c> (0x1419B3F82) y RECIEN DESPUES <c>and rcx, 0xFFFFFFFFFFFFFFFE</c>
+    ''' (0x1419B3F85). La cita anterior omitia el <c>inc</c> y describia el redondeo al reves.</para>
     ''' </summary>
-    Private Shared Function Read16BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
-        ' El origen se alinea a 2, como hace `0x1419B3F85`.
-        Dim o = offset And Not 1
+    Private Shared Function Read16BitQuaternion(data As Byte(), offset As Integer) As Quaternion
+        ' ⛔ HACIA ARRIBA, como el motor: `inc rcx` (0x1419B3F82) y despues `and rcx, ~1`
+        ' (0x1419B3F85). Estaba escrito `offset And Not 1`, que redondea hacia ABAJO. Hoy da igual
+        ' porque el llamador ya hizo `AlignValue(offset, 2)`, pero la ley estaba invertida.
+        Dim o = (offset + 1) And Not 1
         EnsureBlobReadable(data, o, 2, "16-bit quaternion")
 
         Dim b0 = CInt(data(o))
@@ -833,24 +849,37 @@ Public Partial Class HkxObjectGraph_Class
             .Z = (CSng(carril(2)) - Sesgo16) * Paso16,
             .W = (CSng(carril(3)) - Sesgo16) * Paso16
         }
-        NormalizeQuaternion(result)
+        NormalizarStraight16(result)
         Return result
     End Function
 
-    Private Shared Function Read32BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+    Private Shared Function Read32BitQuaternion(data As Byte(), offset As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 4, "32-bit quaternion")
 
+        ' ⛔⛔ LAS CONSTANTES SON LAS DEL MOTOR Y EN EL ORDEN DEL MOTOR.
+        ' `PI/4` y `PI/2/511` NO EXISTEN como literal en ninguno de los dos .exe: eran una fusion
+        ' algebraica mia, correcta en Double y con OTRO redondeo en Single. El motor multiplica paso
+        ' a paso, en Single, por constantes que si estan en el pool del codec:
+        '     1/1023 = 0x3A802008 @0x141A162AC   `mulss xmm0, ...`   0x140C5340D
+        '     1/511  = 0x3B004020 @0x141A162B0   `mulss xmm11, ...`  0x140C53450
+        '     0.5    = 0x3F000000 @0x141B5BDF4                       0x140C5345D
+        '     PI     = 0x40490FDB @0x141B5BE44   (3.14159274)        0x140C53462
+        ' Y divide por `2*phi` (`mulss xmm2, 2` @0x140C53448, `divss xmm8, xmm2` @0x140C53477).
+        Const InvMil23 As Single = 0.0009775171F   ' 0x3A802008
+        Const Inv511 As Single = 0.00195694715F      ' 0x3B004020
+        Const PiMotor As Single = 3.14159274F        ' 0x40490FDB
+
         Dim compressed = BitConverter.ToUInt32(data, offset)
-        Dim radiusMask = (1UI << 10) - 1UI
-        Dim radius = CSng((compressed >> 18) And radiusMask) / CSng(radiusMask)
+        Dim radius = CSng((compressed >> 18) And &H3FFUI) * InvMil23
         radius = 1.0F - (radius * radius)
 
         Dim phiTheta = CSng(compressed And &H3FFFFUI)
         Dim phi = MathF.Floor(MathF.Sqrt(phiTheta))
         Dim theta As Single = 0.0F
         If phi > 0.0F Then
-            theta = CSng((Math.PI / 4.0) * ((phiTheta - (phi * phi)) / phi))
-            phi = CSng((Math.PI / 2.0 / 511.0) * phi)
+            theta = (phiTheta - (phi * phi)) / (2.0F * phi)
+            theta = theta * 0.5F * PiMotor
+            phi = phi * Inv511 * 0.5F * PiMotor
         End If
 
         Dim magnitude = MathF.Sqrt(Math.Max(0.0F, 1.0F - (radius * radius)))
@@ -867,14 +896,17 @@ Public Partial Class HkxObjectGraph_Class
         If (compressed And signMasks(2)) <> 0UI Then result.Z = -result.Z
         If (compressed And signMasks(3)) <> 0UI Then result.W = -result.W
 
-        NormalizeQuaternion(result)
+        ' ⛔ POLAR32 NO normaliza: SSE 0x140C53544 retorna sin tocar el resultado.
         Return result
     End Function
 
-    Private Shared Function Read40BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+    Private Shared Function Read40BitQuaternion(data As Byte(), offset As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 5, "40-bit quaternion")
 
-        Const Fractal As Single = 0.000345436F
+        ' ⛔ LA CONSTANTE DEL MOTOR, BIT A BIT. Vive en el pool del codec: `0x14271B618` (FO4) y
+        ' `0x141A162A8` (SSE), bits `0x39B51B97`. Lo que habia escrito compilaba a `0x39B51BA3` — 12
+        ' ULP de diferencia. El reciproco tambien esta, en `0x14271B62C` / `0x141A162CC` (2894.89526).
+        Const Fractal As Single = 0.000345435663F
         Dim raw As ULong = 0UL
         For byteIndex = 0 To 4
             raw = raw Or (CULng(data(offset + byteIndex)) << (byteIndex * 8))
@@ -883,8 +915,10 @@ Public Partial Class HkxObjectGraph_Class
         Dim a = CUInt(raw And &HFFFUL)
         Dim b = CUInt((raw >> 12) And &HFFFUL)
         Dim c = CUInt((raw >> 24) And &HFFFUL)
-        ' Bias is the 11-bit mask (1<<11)-1 = 2047, per HavokLib hka_spline_decompressor.cpp
-        ' (constexpr uint64 mask = (1 << 11) - 1; ... IVector4A16(tmpVal) - mask).
+        ' ⛔ EL SESGO 2047 SALE DE LOS DOS .exe, NO DE UNA LIBRERIA DE TERCEROS. SkyrimSE lo tiene
+        ' como literal entero: `sub eax, 0x7ff` en 0x140C5365C, 0x140C53684 y 0x140C536A2. Fallout4
+        ' lo hace vectorizado: `movss xmm4,[0x14262DD20]` (=2047) y `subps xmm6,xmm4` en 0x141A47A26,
+        ' con la version entera del pool en 0x14271B660. La cita a HavokLib sobraba.
         Dim x = (CSng(a) - 2047.0F) * Fractal
         Dim y = (CSng(b) - 2047.0F) * Fractal
         Dim z = (CSng(c) - 2047.0F) * Fractal
@@ -904,14 +938,17 @@ Public Partial Class HkxObjectGraph_Class
                 result = New Quaternion With {.X = x, .Y = y, .Z = z, .W = w}
         End Select
 
-        NormalizeQuaternion(result)
+        ' ⛔ THREECOMP40 NO normaliza: FO4 0x141A47910, unica raiz en 0x141A47A6D (reponer la componente ausente); las cuatro salidas son `movups [rdx], xmm6` + `ret` (0x141A47AD4/AF5/B10/B2B). SSE 0x140C53580 idem (`sqrtss` 0x140C536FC, `ret` 0x140C53721).
         Return result
     End Function
 
-    Private Shared Function Read48BitQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+    Private Shared Function Read48BitQuaternion(data As Byte(), offset As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 6, "48-bit quaternion")
 
-        Const Fractal As Single = 0.000043161F
+        ' ⛔ LA CONSTANTE DEL MOTOR, BIT A BIT: `0x14271B610` (FO4) / `0x141A162A0` (SSE), bits
+        ' `0x383507C7`. Lo que habia escrito compilaba a `0x383507C5` — 2 ULP. El reciproco esta en
+        ' `0x14271B634` (23169.0605).
+        Const Fractal As Single = 0.000043161006F
         Dim mask = (1UI << 15) - 1UI
         Dim half = mask >> 1
         Dim xRaw = BitConverter.ToUInt16(data, offset)
@@ -938,11 +975,11 @@ Public Partial Class HkxObjectGraph_Class
                 result = New Quaternion With {.X = x, .Y = y, .Z = z, .W = w}
         End Select
 
-        NormalizeQuaternion(result)
+        ' ⛔ THREECOMP48 NO normaliza: FO4 0x141A47B40, unica raiz en 0x141A47C14; store 0x141A47C4D, `ret` 0x141A47C55. SSE 0x140C53730 idem (`sqrtss` 0x140C53889, `ret` 0x140C538B5).
         Return result
     End Function
 
-    Private Shared Function ReadUncompressedQuaternion(data As Byte(), offset As Integer, available As Integer) As Quaternion
+    Private Shared Function ReadUncompressedQuaternion(data As Byte(), offset As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 16, "Uncompressed quaternion")
 
         Dim result As New Quaternion With {
@@ -952,44 +989,112 @@ Public Partial Class HkxObjectGraph_Class
             .W = BitConverter.ToSingle(data, offset + 12)
         }
 
-        NormalizeQuaternion(result)
+        ' ⛔ UNCOMPRESSED NO normaliza: es una copia cruda de 16 bytes. FO4 0x141A47C60 (`movups xmm0,[rcx]` / `movups [rdx],xmm0` / `ret`), SSE 0x140C538C0 (cuatro `mov dword`).
         Return result
     End Function
 
-    ' ⛔ POR QUE ESTO NO ES `Quaternion.Normalize`. La de la BCL divide por la magnitud sin
-    ' mirar: con un cuaternion de magnitud ~0 devuelve NaN y el NaN se propaga por toda la
-    ' pose. Esta devuelve la IDENTIDAD en ese caso. No son la misma funcion, y la diferencia
-    ' esta justo en el caso degenerado que un clip comprimido puede traer.
-    Private Shared Sub NormalizeQuaternion(ByRef value As Quaternion)
-        Dim magnitude = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z) + (value.W * value.W))
-        If magnitude < 1.0E-10F Then
-            value.X = 0.0F
-            value.Y = 0.0F
-            value.Z = 0.0F
-            value.W = 1.0F
+    ''' <summary>
+    ''' ⛔⛔ LA NORMALIZACION DEL CIERRE DE UN BLEND. `hkQsTransform::blendNormalize` — FO4
+    ''' <c>0x141594D20</c> y su copia RUNTIME en el subsistema de animacion <c>0x1419C0204</c>
+    ''' (cuerpo <c>0x1419C0670</c>..<c>0x1419C07F9</c>), verificadas instruccion por instruccion como
+    ''' la misma funcion.
+    ''' <code>
+    '''     movaps  xmm5, [0x142F3C760]   ; HK_REAL_EPSILON x4 = 1.1920929e-07 (0x34000000)
+    '''     rsqrtps xmm1, xmm3
+    '''     cmpltps xmm3, xmm5            ; lengthSquared &lt; eps ?          0x1419C0794
+    '''     andps   xmm3, [0x142F3C730]   ; [0,0,0,1]                     0x1419C07A8
+    '''     andnps  xmm0, xmm2 / orps xmm0, xmm3
+    ''' </code>
+    ''' <para>La comparacion es sobre <b>lengthSquared</b> — no sobre la magnitud — con
+    ''' <c>&lt;</c> estricto, y el neutro es la identidad. Antes esto era un umbral de <c>1e-10</c>
+    ''' sobre la MAGNITUD (o sea <c>1e-20</c> en lengthSquared, 10^13 por debajo del punto donde el
+    ''' motor decide) y se llamaba desde SIETE sitios, de los cuales cinco no llevan nada.</para>
+    ''' <para>Este es el UNICO sitio del codec donde el motor normaliza con guarda: la evaluacion del
+    ''' B-spline es una acumulacion ponderada de puntos de control, que es exactamente lo que
+    ''' `blendNormalize` cierra.</para>
+    ''' </summary>
+    Private Shared Sub NormalizarBlend(ByRef value As Quaternion)
+        Const EpsMotor As Single = 0.00000011920929F   ' 0x34000000, @0x142F3C760
+        Dim lengthSq = (value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z) + (value.W * value.W)
+        If lengthSq < EpsMotor Then
+            value.X = 0.0F : value.Y = 0.0F : value.Z = 0.0F : value.W = 1.0F
             Return
         End If
-
-        Dim inverse = 1.0F / magnitude
+        Dim inverse = 1.0F / MathF.Sqrt(lengthSq)
         value.X *= inverse
         value.Y *= inverse
         value.Z *= inverse
         value.W *= inverse
     End Sub
 
+    ''' <summary>
+    ''' ⛔⛔ LA NORMALIZACION DE SALIDA DE STRAIGHT16, Y DE NINGUN OTRO CODEC.
+    ''' <para>FO4 <c>0x141A47430</c> normaliza en <c>0x141A474A0</c> con <c>rsqrtps</c> mas UNA pasada
+    ''' de Newton-Raphson (constantes <c>3</c> @<c>0x142629510</c> y <c>0.5</c> @<c>0x142629520</c>) y
+    ''' <b>sin una sola comparacion</b>: con lengthSquared 0 el motor de Fallout devuelve NaN.</para>
+    ''' <para>⚠️ HUECO DECLARADO — LOS DOS JUEGOS NO COINCIDEN. SkyrimSE si guarda, y con otro neutro:
+    ''' <c>cmpeqss lengthSq, 0.0</c> exacto en <c>0x140C531E1</c> y el resultado es el cuaternion
+    ''' <b>CERO</b> (<c>andnps</c>/<c>mulps</c> en 0x140C53210/17), no la identidad. Aca se toma la
+    ''' guarda de Skyrim porque un NaN envenena la pose entera, y se ANOTA cada vez que dispara: si
+    ''' el corpus nunca la ejerce, la divergencia entre los dos motores no se puede observar.</para>
+    ''' </summary>
+    Private Shared Sub NormalizarStraight16(ByRef value As Quaternion)
+        Dim lengthSq = (value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z) + (value.W * value.W)
+        If lengthSq = 0.0F Then
+            ' ⛔ INTERLOCKED PORQUE ES UN `Shared`, no por un paralelismo que hoy no existe: el
+            ' barrido es un `For Each` secuencial (medido: no hay un solo `Parallel.`/`AsParallel` en
+            ' `FO4_Base_Library/Havok/`). Un `+= 1` sobre un campo compartido es leer-modificar-escribir
+            ' y lo que se pierde es la unica evidencia de que la divergencia FO4/SSE se ejerce; que sea
+            ' exacto no puede depender de quien lo llame.
+            Threading.Interlocked.Increment(_straight16Degenerados)
+            value.X = 0.0F : value.Y = 0.0F : value.Z = 0.0F : value.W = 0.0F
+            Return
+        End If
+        Dim inverse = 1.0F / MathF.Sqrt(lengthSq)
+        value.X *= inverse
+        value.Y *= inverse
+        value.Z *= inverse
+        value.W *= inverse
+    End Sub
+
+    ''' <summary>Cuantas veces disparo la guarda de STRAIGHT16 donde los dos motores difieren.
+    ''' Mientras sea 0, la divergencia FO4/SSE no es observable en el corpus.
+    ''' <para>⛔ PUBLIC PORQUE QUIEN LA MIRA ESTA EN OTRO ENSAMBLADO. Era `Friend` y no tenia UN SOLO
+    ''' lector en todo el arbol: `NormalizarStraight16` promete que la divergencia "se ANOTA cada vez
+    ''' que dispara" y nadie podia leer la anotacion. La imprime `--hkxsweep`.</para>
+    ''' <para>⛔ EL `Set` EXISTE PARA PODER PONERLO EN CERO. Sin el, dos modos en la misma invocacion
+    ''' (`--clothengine` y despues `--hkxsweep`) arrastran la cuenta del anterior y el numero impreso
+    ''' no es el del barrido que se acaba de correr.</para></summary>
+    Public Shared Property Straight16Degenerados As Integer
+        Get
+            Return Threading.Volatile.Read(_straight16Degenerados)
+        End Get
+        Set(value As Integer)
+            Threading.Interlocked.Exchange(_straight16Degenerados, value)
+        End Set
+    End Property
+    Private Shared _straight16Degenerados As Integer
+
+
+    ''' <summary>
+    ''' ⛔⛔ LA ALINEACION DEL PUNTERO ANTES DE LEER UNA ROTACION. ES UNA TABLA DEL MOTOR.
+    ''' <para>`SkyrimSE.exe` la guarda COMO DATO en <c>0x141A15D60</c>, indexada por el valor del
+    ''' enum: <c>{ 4, 1, 2, 1, 2, 4 }</c>. El lector la usa en <c>0x140C4DCB6</c>:
+    ''' <c>mov eax,[rsi+rbx*4+0x1a15d60] / dec eax / not eax / add rcx,[rdi] / and rcx,rax</c>.</para>
+    ''' <para>`Fallout4.exe` no tiene tabla: le hizo unroll a las seis ramas, y ahi estan los mismos
+    ''' seis valores como literales — POLAR32 <c>add rcx,3 / and rcx,~3</c> (0x1419B4282/86),
+    ''' THREECOMP40 y THREECOMP24 SIN `and` (0x1419B3B1B, 0x1419B3E0B), THREECOMP48 y STRAIGHT16
+    ''' <c>inc rcx / and rcx,~1</c> (0x1419B3C92/95, 0x1419B3F82/85), UNCOMPRESSED como POLAR32
+    ''' (0x1419B4102/06). Y otra vez, identico, en los seis lectores de puntos de control.</para>
+    ''' <para>El nombre sale del enum declarado, no de un entero pelado: los valores estan en la
+    ''' reflexion de los dos .exe (FO4 items @0x1426CCE40, SSE @0x141A0A550).</para>
+    ''' </summary>
     Private Shared Function GetQuaternionAlignment(format As Integer) As Integer
-        Select Case format
-            Case 0
-                Return 4
-            Case 1, 3
-                Return 1
-            Case 2, 4
-                Return 2
-            Case 5
-                Return 4
-            Case Else
-                Return 1
-        End Select
+        If format = RotQ("POLAR32") OrElse format = RotQ("UNCOMPRESSED") Then Return 4
+        If format = RotQ("THREECOMP48") OrElse format = RotQ("STRAIGHT16") Then Return 2
+        If format = RotQ("THREECOMP40") OrElse format = RotQ("THREECOMP24") Then Return 1
+        ' Un formato que el enum no declara: el motor no lo lee, asi que no hay que alinear nada.
+        Return 1
     End Function
 
     Private Shared Function FindKnotSpan(degree As Integer, value As Single, numControlPoints As Integer, knots As List(Of Single)) As Integer
@@ -1114,41 +1219,16 @@ Public Partial Class HkxObjectGraph_Class
     ''' Eran las dos mitades de lo MISMO (descomprimir una animacion) repartidas en dos archivos,
     ''' y el unico miembro publico del segundo tenia CERO llamadores fuera del primero.
     ''' </summary>
-
     Private Enum LosslessTrackType_Enum
         Identity = 0
         StaticVal = 1
         Dynamic = 2
     End Enum
 
-    ' Memoiza esqueletos parseados por RelativeOffset del origen, para que ParseSkeletonMapper no
-    ' re-parsee el mismo esqueleto completo una vez por mapper. Es equivalente porque ParseSkeleton
-    ' es función pura de su objeto de origen.
-    Private ReadOnly _parsedSkeletonCache As New Dictionary(Of Integer, Havok.Canon.Objects.HkObj_HkaSkeleton)
-
-    Private Function ParseSkeletonMemoized(source As HkxVirtualObjectGraph_Class) As Havok.Canon.Objects.HkObj_HkaSkeleton
-        If IsNothing(source) Then Return Nothing
-        Dim cached As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing
-        If _parsedSkeletonCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
-        Dim parsed = Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, source)
-        _parsedSkeletonCache(source.RelativeOffset) = parsed
-        Return parsed
-    End Function
-
-    ' hkArray slot size dentro del objeto (ptr + count(4) + capFlags(4)) = ArrayHeaderSizeValue.
-    Private ReadOnly Property LosslessArraysBaseOffset As Integer
-        Get
-            ' = annotationTracksOffset + ArrayHeaderSizeValue (mismo cálculo de base que el parser spline).
-            Dim baseField = BaseObjectFieldOffset
-            Dim extractedMotionOffset = baseField + 16
-            Dim annotationTracksOffset = extractedMotionOffset + PointerSizeValue
-            Return annotationTracksOffset + ArrayHeaderSizeValue
-        End Get
-    End Property
-
     ''' <summary>Decodifica un hkaLosslessCompressedAnimation a TRS por (frame, track).</summary>
     Public Function ParseLosslessAnimation(source As HkxVirtualObjectGraph_Class) As HkxAnimacionDescomprimida_Class
-        If IsNothing(source) OrElse Not source.ClassName.Equals("hkaLosslessCompressedAnimation", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        ' ⛔ IDEM: el guarda por nombre lo hace `Leer(Of T)`.
+        If IsNothing(source) Then Return Nothing
 
         ' ⛔⛔ TODO EL HEADER, DEL LECTOR GENERADO. Antes los once campos salian de ARITMETICA
         ' sobre dos constantes de la app (`BaseObjectFieldOffset`, `LosslessArraysBaseOffset`) mas el
@@ -1165,7 +1245,7 @@ Public Partial Class HkxObjectGraph_Class
         ' despues las recorria a mano con el stride escrito aca (8 / 2 / 4 / 16). El objeto
         ' materializa los nueve arrays con el layout de la reflexion.
         Dim rel = source.RelativeOffset
-        Dim lo = Havok.Canon.Objects.HkObj_HkaLosslessCompressedAnimation.Read(Me, source)
+        Dim lo = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaLosslessCompressedAnimation)(Me, source)
         If lo Is Nothing Then Return Nothing
 
         Dim duration = lo.Duration

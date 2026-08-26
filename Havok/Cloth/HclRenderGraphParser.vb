@@ -3,8 +3,10 @@ Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' Operadores de render/skin del HKX de tela. Lo llama HclClothPackageParser; el consumidor
-' final es Wardrobe_Manager/PhysicsWeightCollapseHelper (no la ruta del render).
+' Operadores de render/skin del HKX de tela. Lo llama HclClothPackageParser.
+' ⛔ SI ESTA EN LA RUTA DEL RENDER: `HavokClothSimulation` consume `HclSkinVertice_Class` y
+' `HclObjectSpaceSkinQuantizedVectorGraph_Class` para skinnear la malla de referencia, y esa sim
+' corre desde `Render.vb` dentro de su `#If DEBUG`. La cabecera decia lo contrario.
 '
 ' ⛔ TODO CAMPO DECLARADO SALE DEL OBJETO GENERADO. No hay un solo offset escrito aca: los
 ' `hclObjectSpaceSkinPNOperator`, `hclObjectSpaceDeformer*` y `hclSimpleMeshBoneDeformOperator`
@@ -47,10 +49,9 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     ''' SIMD de los carriles y la dequantización `float(v &lt;&lt; 16) × bitcast_float(w &lt;&lt; 16)`.
     ''' </summary>
     Friend Shared Function ParseObjectSpaceSkinPNOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
-        If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
-        If Not source.ClassName.Equals("hclObjectSpaceSkinPNOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-
-        Dim o = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.Read(graph, source)
+        ' ⛔ EL GUARDA POR NOMBRE Y LA LECTURA SON LA MISMA LLAMADA. `Leer(Of T)` devuelve Nothing si
+        ' el bloque declara otra clase: el `ClassName.Equals("...")` de aca era literalmente su cuerpo.
+        Dim o = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator)(graph, source)
         If o Is Nothing OrElse o.ObjectSpaceDeformer Is Nothing Then Return Nothing
         Dim d = o.ObjectSpaceDeformer
 
@@ -120,36 +121,30 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     ''' array de pesos, porque con una sola influencia el peso es 1 por definición.
     ''' </summary>
     Private Shared Function SubconjuntosDeUnaInfluencia(bloques As List(Of Havok.Canon.Objects.HkObj_HclObjectSpaceDeformerOneBlendEntryBlock)) As List(Of HclSkinVertice_Class)
-        Dim result As New List(Of HclSkinVertice_Class)
-        If bloques Is Nothing Then Return result
-        For Each b In bloques
-            If b Is Nothing OrElse b.VertexIndices Is Nothing OrElse b.BoneIndices Is Nothing Then Continue For
-            If b.VertexIndices.Count < 16 OrElse b.BoneIndices.Count < 16 Then Continue For
-
-            For lane = 0 To 15
-                Dim v As New HclSkinVertice_Class With {
-                    .SlotIndex = lane,
-                    .VertexIndex = CUShort(b.VertexIndices(lane) And &HFFFF)}
-                v.TransformIndices.Add(CUShort(b.BoneIndices(lane) And &HFFFF))
-                v.WeightBytes.Add(CByte(255))
-                result.Add(v)
+        ' ⛔ EL DESENTRELAZADO ES `SubconjuntosDe`, NO UNA SEGUNDA COPIA. Lo unico propio del bloque
+        ' de UNA influencia es que no trae array de pesos — con una sola influencia el peso es 1 por
+        ' definicion — asi que se adapta con los 16 carriles en 255 y se usa la misma ley.
+        Dim adaptados As New List(Of BloquePesado)
+        If bloques IsNot Nothing Then
+            For Each b In bloques
+                If b Is Nothing OrElse b.VertexIndices Is Nothing OrElse b.BoneIndices Is Nothing Then Continue For
+                adaptados.Add(New BloquePesado(b.VertexIndices, b.BoneIndices, Enumerable.Repeat(255, 16).ToList()))
             Next
-        Next
-        Return result
+        End If
+        Return SubconjuntosDe(adaptados, 1)
     End Function
 
-    ''' <summary>
-
+    ''' <summary>Desempaqueta un `hclSimpleMeshBoneDeformOperator`: los pares hueso/triangulo y el
+    ''' bind de cada uno. Nothing si el bloque declara otra clase o no trae pares.</summary>
     Friend Shared Function ParseSimpleMeshBoneDeformOperator(graph As HkxObjectGraph_Class,
                                                              source As HkxVirtualObjectGraph_Class,
                                                              Optional skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing) As HclSimpleMeshBoneDeformOperatorGraph_Class
-        If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
-        If Not source.ClassName.Equals("hclSimpleMeshBoneDeformOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        ' ⛔ IDEM: el guarda por nombre lo hace `Leer(Of T)`, mas abajo.
 
         ' ⛔ TODO LO DECLARADO SALE DEL OBJETO GENERADO. `triangleBonePairs` es
         ' `boneOffset,0,uint16 ; triangleOffset,2,uint16` en la reflexion y `localBoneTransforms` es
         ' `array,matrix4`: los dos se leian a mano aca, byte por byte, con el mismo resultado.
-        Dim o = Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator.Read(graph, source)
+        Dim o = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator)(graph, source)
         If o Is Nothing OrElse o.TriangleBonePairs Is Nothing OrElse o.TriangleBonePairs.Count = 0 Then Return Nothing
 
         Dim result As New HclSimpleMeshBoneDeformOperatorGraph_Class With {.Operador = o}
@@ -171,15 +166,15 @@ Friend NotInheritable Class HclRenderGraphParser_Class
                 boneName = skeleton.Bones(boneIndex).Name
             End If
 
+            ' ⛔ SOLO LO DESEMPAQUETADO. Los cuatro `Packed*` eran copias crudas de
+            ' `par.BoneOffset` / `par.TriangleOffset` (y dos derivados de un `And` y un `Mod`), con un
+            ' solo consumidor: una linea de log. El dato crudo vive en `Operador`; duplicarlo aca es
+            ' exactamente lo que el doc de esta clase dice que no se hace.
             result.BoneMappings.Add(New HclSimpleMeshBoneDeformMapping_Class With {
                 .EntryIndex = i,
-                .PackedBoneValue = packedBone,
-                .PackedBoneFlags = packedBone And &H3F,
                 .BoneIndex = boneIndex,
                 .TriangleIndex = packedValue \ 6,
-                .PackedValueFlags = packedValue Mod 6,
                 .BoneName = boneName,
-                .PackedValue = packedValue,
                 .BindMatrix = If(i < binds.Count, binds(i), Nothing)
             })
         Next
@@ -212,15 +207,21 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     ''' diferencia, 1/1024 leido como 1/256), y con UNA sola alcanzaba para que el triangulo del
     ''' cloth-bone del ruedo quedara convertido en una astilla de 100 unidades y la pollera se abriera
     ''' en abanico.</para>
-    ''' <para>Las NORMALES son otra cosa: van con 32767 fijo (ver el llamador).</para>
+    ''' <para>⛔ LAS NORMALES VAN POR ACA TAMBIEN. El doc decia "van con 32767 fijo (ver el
+    ''' llamador)" y el llamador hace exactamente lo contrario desde que se midio el deformer: las
+    ''' unicas dos constantes que multiplican en `0x14193C5E0` son `65536.0` y `1/255`, y no hay
+    ''' ningun 32767 en el camino. El doc describia la ley vieja.</para>
     ''' </summary>
-    Private Shared Function PositionScaleFromW(values As IReadOnlyList(Of Short)) As Double
-        If values Is Nothing OrElse values.Count < 4 Then Return 256.0R
+    Private Shared Function PositionScaleFromW(values As IReadOnlyList(Of Short)) As Double?
+        ' ⛔ NOTHING, NO 256. El 256 es el mismo numero que el parrafo de arriba declara ADIVINADO:
+        ' reponerlo cuando el tag no sirve es decodificar con la escala de al lado, que es exactamente
+        ' el defecto que costo 24 particulas x4 en `Dress.nif` y una pollera abierta en abanico. Un
+        ' bloque cuyo tag no se puede leer NO se decodifica, y el vertice se cuenta como perdido.
+        If values Is Nothing OrElse values.Count < 4 Then Return Nothing
         ' El multiplicador que aplica el motor: bitcast_float(w << 16) escalado por el << 16 de los datos.
         Dim mul = CDbl(BitConverter.Int32BitsToSingle(CInt(values(3)) << 16)) * 65536.0R
-        ' `DecodeQuantizedVector3` DIVIDE, asi que se devuelve el reciproco. Un tag de cero (o
-        ' desnormalizado) daria una escala infinita: se cae al 256 historico antes que emitir infinitos.
-        If mul <= 0.0R OrElse Double.IsNaN(mul) OrElse Double.IsInfinity(mul) Then Return 256.0R
+        ' `DecodeQuantizedVector3` DIVIDE, asi que se devuelve el reciproco.
+        If mul <= 0.0R OrElse Double.IsNaN(mul) OrElse Double.IsInfinity(mul) Then Return Nothing
         Return 1.0R / mul
     End Function
 
@@ -267,6 +268,9 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             Logger.LogLazy(Function() "[CLOTH-WTAG] " & String.Join(",", wl))
         End If
 
+        ' Vertices que quedaron SIN DECODIFICAR porque el tag de escala del bloque no sirve. Se
+        ' cuentan en vez de decodificarse con la escala de al lado (ver `PositionScaleFromW`).
+        Dim sinEscala = 0, sinEscalaNormal = 0
         For iBloque = 0 To nBloques - 1
             Dim familia = If(iBloque < control.Count, control(iBloque) And &HFF, -1)
             If familia < 0 OrElse familia >= porFamilia.Count Then Continue For
@@ -286,13 +290,32 @@ Friend NotInheritable Class HclRenderGraphParser_Class
                 Dim carril = slot \ 2, par = slot Mod 2
                 Dim pos = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlot(local, carril, par)
                 Dim nor = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlot(local, carril + 8, par)
-                v.Position = DecodeQuantizedVector3(pos, PositionScaleFromW(pos), carril, par)
-                ''' ⛔⛔ LA NORMAL SE DECODIFICA COMO LA POSICION, NO CON UN 32767 INVENTADO.
-                ''' En el deformer que consume estos bloques (0x14193C5E0) las UNICAS dos constantes
-                ''' que multiplican son `65536.0` (0x14262BA50) y `1/255` (0x142492850): la primera
-                ''' es el `<< 16` del reinterpretado y la segunda la normalizacion de los PESOS. No
-                ''' hay ningun 32767 en el camino, asi que la normal comparte `PositionScaleFromW`.
-                v.Normal = DecodeQuantizedVector3(nor, PositionScaleFromW(nor), carril + 8, par)
+                ' ⛔ SIN ESCALA NO HAY VERTICE. Antes se caia al 256 "historico" y el vertice salia
+                ' decodificado con la escala equivocada; ahora se saltea y se cuenta.
+                ' ⛔ Y CADA UNA CON LA SUYA: el tag de la NORMAL no puede decidir si se decodifica la
+                ' POSICION. Estuvieron acopladas un rato (`Not escP.HasValue OrElse Not escN.HasValue`)
+                ' y eso descartaba el vertice ENTERO por un `w` de normal degenerado — el vertice
+                ' desaparecia del mapa de skin, la particula que lo usa se quedaba sin puente, y
+                ' `[CLOTH-ANCLASINMAPA]` acusaba a las anclas de un defecto de decodificacion.
+                Dim escP = PositionScaleFromW(pos)
+                Dim escN = PositionScaleFromW(nor)
+                If Not escP.HasValue Then
+                    sinEscala += 1
+                    Continue For
+                End If
+                v.Position = DecodeQuantizedVector3(pos, escP.Value, carril, par)
+                ' ⛔⛔ LA NORMAL SE DECODIFICA COMO LA POSICION, NO CON UN 32767 INVENTADO.
+                ' En el deformer que consume estos bloques (0x14193C5E0) las UNICAS dos constantes
+                ' que multiplican son `65536.0` (0x14262BA50) y `1/255` (0x142492850): la primera
+                ' es el `<< 16` del reinterpretado y la segunda la normalizacion de los PESOS. No
+                ' hay ningun 32767 en el camino, asi que la normal comparte `PositionScaleFromW`.
+                ' La normal se omite sola si su tag no sirve: el vertice sale con la posicion buena y
+                ' la normal en cero, que es lo que hacia antes de todo esto.
+                If escN.HasValue Then
+                    v.Normal = DecodeQuantizedVector3(nor, escN.Value, carril + 8, par)
+                Else
+                    sinEscalaNormal += 1
+                End If
                 result.Add(v)
             Next
         Next
@@ -306,7 +329,12 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             Dim h = String.Join(" ", hist.OrderBy(Function(kv) kv.Key).Select(Function(kv) $"tipo{kv.Key}x{kv.Value}"))
             Dim ultimos = String.Join(",", result.Skip(Math.Max(0, result.Count - 24)).Select(Function(x) x.VertexIndex.ToString()))
             Dim sv = source.Operador.ObjectSpaceDeformer.StartVertexIndex, ev = source.Operador.ObjectSpaceDeformer.EndVertexIndex
-            Dim nv = result.Count, nb = nBloques, nlb = bloques.Count
+            Dim nv = result.Count, nb = nBloques, nlb = bloques.Count, nse = sinEscala, nsn = sinEscalaNormal
+            If nse > 0 Then Logger.LogLazy(Function() $"[CLOTH-SKINBLK-SINESCALA] {nse} vertices sin decodificar: el tag `w` de POSICION no da una escala usable")
+            ' ⛔ OTRO TAG: son dos leyes distintas. "el vertice desaparecio del mapa de skin" y "el
+            ' vertice esta y su normal quedo en cero" no se pueden contar juntos — es la confusion que
+            ' el arreglo de arriba deshizo en el CODIGO y que compartir el tag rehacia en el LOG.
+            If nsn > 0 Then Logger.LogLazy(Function() $"[CLOTH-SKINBLK-SINESCALAN] {nsn} vertices con la NORMAL en cero: el tag `w` de normal no da una escala usable")
             Logger.LogLazy(Function() $"[CLOTH-SKINBLK-LAST] ultimos indices: {ultimos}")
             Logger.LogLazy(Function() $"[CLOTH-SKINBLK-RANGE] startVertexIndex={sv} endVertexIndex={ev}")
             Logger.LogLazy(Function() $"[CLOTH-SKINBLK] bloques={nb} localBlocks={nlb} vertices={nv} · controlBytes: {h}")
@@ -356,10 +384,13 @@ Public Class HclObjectSpaceSkinPNOperatorGraph_Class
     ''' <summary>Los vertices del skin, cada uno con su posicion, su normal y sus influencias.
     ''' Es lo que caminan TODOS los consumidores.</summary>
     Public ReadOnly Property Vertices As New List(Of HclSkinVertice_Class)
-    ''' <summary>Los carriles crudos de cada bloque local, para el volcado de la auditoria.</summary>
-
-    ''' <summary>Analisis del package parser: no sale del archivo.</summary>
+    ''' <summary>Cuantos vertices del skin quedaron cubiertos por el operador. Analisis del package
+    ''' parser: no sale del archivo. (El `&lt;summary&gt;` de "los carriles crudos" que estaba aca colgaba de
+    ''' `...LocalBlockLaneGraph_Class`, que se borro; la ley vive en <see cref="CarrilDe"/>.)</summary>
     Public Property CoveredVertexCount As Integer
+
+    ''' <summary>Los nombres de hueso que se pudieron resolver contra el esqueleto. Analisis del
+    ''' package parser: no sale del archivo.</summary>
     Public ReadOnly Property ResolvedBoneNames As New List(Of String)
 
     ''' <summary>
@@ -438,21 +469,21 @@ End Class
 ''' `triangleBonePairs` y `localBoneTransforms`. Aca solo esta el DESEMPAQUETADO de cada par — el
 ''' indice de hueso en los bits altos de `boneOffset` y el de triangulo en `triangleOffset \ 6` —
 ''' y el nombre resuelto contra el esqueleto, que no sale del archivo.</para>
+''' <para>El operador y lo UNICO que este parser agrega: los pares hueso/triangulo ya
+''' desempaquetados. `Operador` se expone tal cual — no se copia un solo campo suyo.</para>
 ''' </summary>
 Public Class HclSimpleMeshBoneDeformOperatorGraph_Class
     Public Property Operador As Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator
     Public Property BoneMappings As New List(Of HclSimpleMeshBoneDeformMapping_Class)
 End Class
 
+''' <summary>UN par hueso/triangulo YA DESEMPAQUETADO. ⛔ Nada de lo crudo se copia aca: los
+''' `boneOffset`/`triangleOffset` del archivo salen de `Operador.TriangleBonePairs(EntryIndex)`.</summary>
 Public Class HclSimpleMeshBoneDeformMapping_Class
     Public Property EntryIndex As Integer
-    Public Property PackedBoneValue As UShort
-    Public Property PackedBoneFlags As Integer
     Public Property BoneIndex As Integer
     Public Property TriangleIndex As Integer
-    Public Property PackedValueFlags As Integer
     Public Property BoneName As String
-    Public Property PackedValue As UShort
     Public Property BindMatrix As Single()
     Public Property ResolvedTriangle As HclTrianguloDeSim_Class
 End Class

@@ -96,8 +96,13 @@ Namespace Havok.Physics
         ''' <summary>`fMaxRootDistanceBeforeTeleport` (100 u). Más que eso ⇒ reponer, no simular.</summary>
         Public Shared Property MaxRootDistanceBeforeTeleport As Single = 100.0F
 
-        ''' <summary>`fMaxRootAngleBeforeTeleport` (π/2 rad).</summary>
-        Public Shared Property MaxRootAngleBeforeTeleport As Single = 1.5707963F
+        ''' <summary>`fMaxRootAngleBeforeTeleport` (π/2 rad).
+        ''' <para>⛔ ESCRITO COMO PI/2, QUE ES LO QUE ES: un literal decimal no deja ver de donde sale.
+        ''' MEDIDO: `CSng(Math.PI/2)` = 0x3FC90FDB = 1,5707963705, que es el Single MAS CERCANO a pi/2;
+        ''' el literal que habia (`1.5707963F` = 0x3FC90FDA = 1,5707962513) esta 1 ULP por debajo. La
+        ''' diferencia es 1,19e-7 rad sobre un umbral de teleport, o sea nada — pero el valor correcto
+        ''' es el de arriba y ahora se ve de donde sale.</para></summary>
+        Public Shared Property MaxRootAngleBeforeTeleport As Single = CSng(Math.PI / 2.0)
 
         ''' <summary>Colisión contra las cápsulas del cuerpo. Se puede apagar para aislar el efecto.</summary>
         Public Shared Property EnableCollision As Boolean = True
@@ -124,18 +129,6 @@ Namespace Havok.Physics
         ''' `adaptConstraintStiffness` Y `subSteps &gt; 1`.</para>
         ''' </summary>
         Public Shared Property EnableAdaptiveConstraints As Boolean = True
-
-        ''' <summary>Deja el estado de simulación limpio (todas las prendas vuelven a sembrar).</summary>
-        Public Shared Sub ResetAll()
-            HavokClothSimulation.ResetAll()
-        End Sub
-
-        Public Shared Function Describe() As String
-            If Not Enabled Then Return "física Havok: APAGADA"
-            Return $"física Havok: {Mode} · dt={FixedTimeStep:0.####} · substeps={If(SubstepOverride = 0, "authored", CStr(SubstepOverride))}" &
-                   $" · iters={If(SolveIterationOverride = 0, "authored", CStr(SolveIterationOverride))}" &
-                   $" · gravedad×{GravityScale:0.##} · colisión={EnableCollision} · correa={EnableLocalRange}"
-        End Function
     End Class
 
 End Namespace

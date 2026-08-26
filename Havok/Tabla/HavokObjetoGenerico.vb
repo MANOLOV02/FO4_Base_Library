@@ -37,7 +37,9 @@ Namespace Havok.Canon
             For Each t In GetType(HavokObjetoGenerico).Assembly.GetTypes()
                 If t.Namespace Is Nothing OrElse Not t.Namespace.EndsWith("Canon.Objects", StringComparison.Ordinal) Then Continue For
                 If Not t.Name.StartsWith("HkObj_", StringComparison.Ordinal) Then Continue For
-                d(t.Name.Substring(6)) = t
+                ' ⛔ LA REGLA DEL NOMBRE LA TIENE `HavokConstraintSets.NombreHavokDe`, no este archivo:
+                ' estaba escrita dos veces (aca `t.Name.Substring(6)`, alla la inversa completa).
+                d(Havok.Canon.HavokConstraintSets.NombreHavokDe(t)) = t
             Next
             Return d
         End Function
@@ -52,25 +54,35 @@ Namespace Havok.Canon
             Dim t As Type = Nothing
             If Not _porClase.TryGetValue(If(source.ClassName, String.Empty), t) Then Return Nothing
 
-            Dim mRead = t.GetMethod("Read", BindingFlags.Public Or BindingFlags.Static,
-                                    Nothing, {GetType(HkxObjectGraph_Class), GetType(HkxVirtualObjectGraph_Class)}, Nothing)
-            If mRead Is Nothing Then Return Nothing
-            Dim o = mRead.Invoke(Nothing, {graph, source})
+            ' ⛔ LA BUSQUEDA DEL `Read` GENERADO VIVE UNA SOLA VEZ, y esta memoizada por tipo:
+            ' `HavokConstraintSets.LeerPorTipo`. Aca habia un `GetMethod` POR LLAMADA, con la misma
+            ' comprobacion de nombre de clase escrita de nuevo.
+            Dim o = Havok.Canon.HavokConstraintSets.LeerPorTipo(t, graph, source)
             If o Is Nothing Then Return Nothing
 
             Dim r As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)
+            ' ⛔ LOS QUE TIRARON NO CUENTAN COMO LEIDOS. Antes el `Catch` anotaba `Nothing` y despues
+            ' `RegistrarLectura(r.Keys)` los incluia: el censo de cobertura se inflaba HACIA ARRIBA,
+            ' que es la unica direccion en la que un censo de cobertura no puede equivocarse. El campo
+            ' se sigue entregando en Nothing —un campo ilegible no puede tumbar el objeto entero— pero
+            ' se anota aparte y no entra a la cuenta.
+            Dim leidos As New List(Of String)
             For Each p In t.GetProperties(BindingFlags.Public Or BindingFlags.Instance)
                 ' `Raw`, `Graph` y `Source` son plomería del objeto, no campos de la clase Havok.
                 If p.Name = "Raw" OrElse p.Name = "Graph" OrElse p.Name = "Source" Then Continue For
                 If p.GetIndexParameters().Length > 0 Then Continue For
                 Try
                     r(p.Name) = p.GetValue(o)
+                    leidos.Add(p.Name)
                 Catch
-                    ' Un campo ilegible no puede tumbar la lectura del objeto entero: se deja
-                    ' anotado en Nothing y el barrido lo cuenta como campo presente pero sin valor.
                     r(p.Name) = Nothing
                 End Try
             Next
+            ' ⛔ LO LEIDO SE ANOTA. Este es el unico punto por el que pasa la capa de objetos entera,
+            ' asi que es el unico lugar desde el que el censo de cobertura puede ver lo que el
+            ' generado lee. Se registra DESPUES de leer, con los campos que de verdad se resolvieron.
+            Dim lay = HavokLayout.ForGraph(graph)
+            If lay IsNot Nothing Then lay.RegistrarLectura(source.ClassName, leidos)
             Return r
         End Function
 
