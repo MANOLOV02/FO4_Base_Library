@@ -95,7 +95,11 @@ Public NotInheritable Class HkxPackfileParser_Class
         End If
         result.Formato = FormatoDe(bytes)
         If result.Formato = HkxPackfileFormat_Enum.Unknown Then
-            Throw New HkxNoEsPackfileException(
+            ' ⛔ ESTO SI ES UN FALLO. El magic dice que ES un packfile Havok; lo que no sabemos es la
+            ' variante. Meterlo en `HkxNoEsPackfileException` lo sacaba del exit code del barrido bajo
+            ' el rotulo "no es un packfile", que es falso: un formato Havok que el lector no cubre es
+            ' exactamente lo que un barrido tiene que poder poner en rojo.
+            Throw New InvalidDataException(
                 $"Unsupported HKX variant: FileVersion={BitConverter.ToInt32(bytes, Off("hkPackfileHeader", "fileVersion"))}, " &
                 $"PointerSize={PointerSizeDe(bytes)}.")
         End If

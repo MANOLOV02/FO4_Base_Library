@@ -210,7 +210,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -520,7 +520,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -843,7 +843,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -1481,7 +1481,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -1708,7 +1708,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -2133,7 +2133,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -2415,7 +2415,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -2795,7 +2795,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -3060,7 +3060,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -3280,7 +3280,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -3995,7 +3995,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -4251,7 +4251,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -4534,7 +4534,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -4763,7 +4763,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -5091,7 +5091,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -5320,7 +5320,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -5745,7 +5745,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -6010,7 +6010,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -6320,7 +6320,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -6584,7 +6584,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -6889,7 +6889,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -7109,7 +7109,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -8095,7 +8095,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -8370,7 +8370,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -8723,7 +8723,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -8988,7 +8988,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -9261,7 +9261,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -9512,7 +9512,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -9747,7 +9747,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -10107,7 +10107,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -10327,7 +10327,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -11030,7 +11030,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -11286,7 +11286,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -11600,7 +11600,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -11945,7 +11945,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -12576,7 +12576,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _bendminlengths_c Is Nothing Then
                     _bendminlengths_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BendMinLengthsCount] - 1
                         _bendminlengths_c.Add(_r.[BendMinLengths](i))
                     Next
                 End If
@@ -12590,7 +12590,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stretchmaxlengths_c Is Nothing Then
                     _stretchmaxlengths_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StretchMaxLengthsCount] - 1
                         _stretchmaxlengths_c.Add(_r.[StretchMaxLengths](i))
                     Next
                 End If
@@ -12604,7 +12604,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stretchstiffnesses_c Is Nothing Then
                     _stretchstiffnesses_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StretchStiffnessesCount] - 1
                         _stretchstiffnesses_c.Add(_r.[StretchStiffnesses](i))
                     Next
                 End If
@@ -12618,7 +12618,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _bendstiffnesses_c Is Nothing Then
                     _bendstiffnesses_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BendStiffnessesCount] - 1
                         _bendstiffnesses_c.Add(_r.[BendStiffnesses](i))
                     Next
                 End If
@@ -12632,7 +12632,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _invmassesa_c Is Nothing Then
                     _invmassesa_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[InvMassesACount] - 1
                         _invmassesa_c.Add(_r.[InvMassesA](i))
                     Next
                 End If
@@ -12646,7 +12646,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _invmassesb_c Is Nothing Then
                     _invmassesb_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[InvMassesBCount] - 1
                         _invmassesb_c.Add(_r.[InvMassesB](i))
                     Next
                 End If
@@ -12660,7 +12660,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesa_c Is Nothing Then
                     _particlesa_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesACount] - 1
                         _particlesa_c.Add(_r.[ParticlesA](i))
                     Next
                 End If
@@ -12674,7 +12674,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesb_c Is Nothing Then
                     _particlesb_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesBCount] - 1
                         _particlesb_c.Add(_r.[ParticlesB](i))
                     Next
                 End If
@@ -13208,7 +13208,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _weightsa_c Is Nothing Then
                     _weightsa_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[WeightsACount] - 1
                         _weightsa_c.Add(_r.[WeightsA](i))
                     Next
                 End If
@@ -13222,7 +13222,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _weightsb_c Is Nothing Then
                     _weightsb_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[WeightsBCount] - 1
                         _weightsb_c.Add(_r.[WeightsB](i))
                     Next
                 End If
@@ -13236,7 +13236,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _weightsc_c Is Nothing Then
                     _weightsc_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[WeightsCCount] - 1
                         _weightsc_c.Add(_r.[WeightsC](i))
                     Next
                 End If
@@ -13250,7 +13250,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _weightsd_c Is Nothing Then
                     _weightsd_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[WeightsDCount] - 1
                         _weightsd_c.Add(_r.[WeightsD](i))
                     Next
                 End If
@@ -13264,7 +13264,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _bendstiffnesses_c Is Nothing Then
                     _bendstiffnesses_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BendStiffnessesCount] - 1
                         _bendstiffnesses_c.Add(_r.[BendStiffnesses](i))
                     Next
                 End If
@@ -13278,7 +13278,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _restcurvatures_c Is Nothing Then
                     _restcurvatures_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[RestCurvaturesCount] - 1
                         _restcurvatures_c.Add(_r.[RestCurvatures](i))
                     Next
                 End If
@@ -13292,7 +13292,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _invmassesa_c Is Nothing Then
                     _invmassesa_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[InvMassesACount] - 1
                         _invmassesa_c.Add(_r.[InvMassesA](i))
                     Next
                 End If
@@ -13306,7 +13306,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _invmassesb_c Is Nothing Then
                     _invmassesb_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[InvMassesBCount] - 1
                         _invmassesb_c.Add(_r.[InvMassesB](i))
                     Next
                 End If
@@ -13320,7 +13320,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _invmassesc_c Is Nothing Then
                     _invmassesc_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[InvMassesCCount] - 1
                         _invmassesc_c.Add(_r.[InvMassesC](i))
                     Next
                 End If
@@ -13334,7 +13334,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _invmassesd_c Is Nothing Then
                     _invmassesd_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[InvMassesDCount] - 1
                         _invmassesd_c.Add(_r.[InvMassesD](i))
                     Next
                 End If
@@ -13348,7 +13348,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesa_c Is Nothing Then
                     _particlesa_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesACount] - 1
                         _particlesa_c.Add(_r.[ParticlesA](i))
                     Next
                 End If
@@ -13362,7 +13362,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesb_c Is Nothing Then
                     _particlesb_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesBCount] - 1
                         _particlesb_c.Add(_r.[ParticlesB](i))
                     Next
                 End If
@@ -13376,7 +13376,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesc_c Is Nothing Then
                     _particlesc_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesCCount] - 1
                         _particlesc_c.Add(_r.[ParticlesC](i))
                     Next
                 End If
@@ -13390,7 +13390,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesd_c Is Nothing Then
                     _particlesd_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesDCount] - 1
                         _particlesd_c.Add(_r.[ParticlesD](i))
                     Next
                 End If
@@ -14181,7 +14181,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -14195,7 +14195,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -14209,7 +14209,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -14269,7 +14269,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14329,7 +14329,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14343,7 +14343,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -14403,7 +14403,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14417,7 +14417,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -14431,7 +14431,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -14491,7 +14491,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14505,7 +14505,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -14519,7 +14519,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -14533,7 +14533,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localbitangent_c Is Nothing Then
                     _localbitangent_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalBiTangentCount] - 1
                         _localbitangent_c.Add(_r.[LocalBiTangent](i))
                     Next
                 End If
@@ -14593,7 +14593,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14653,7 +14653,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14667,7 +14667,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -14727,7 +14727,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14741,7 +14741,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -14755,7 +14755,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -14815,7 +14815,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -14829,7 +14829,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -14843,7 +14843,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -14857,7 +14857,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localbitangent_c Is Nothing Then
                     _localbitangent_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalBiTangentCount] - 1
                         _localbitangent_c.Add(_r.[LocalBiTangent](i))
                     Next
                 End If
@@ -14917,7 +14917,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -14931,7 +14931,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -14991,7 +14991,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 5 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -15005,7 +15005,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 15 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -15019,7 +15019,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -15079,7 +15079,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -15093,7 +15093,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -16997,7 +16997,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _percomponentflags_c Is Nothing Then
                     _percomponentflags_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PerComponentFlagsCount] - 1
                         _percomponentflags_c.Add(_r.[PerComponentFlags](i))
                     Next
                 End If
@@ -18144,7 +18144,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _restlengths_c Is Nothing Then
                     _restlengths_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[RestLengthsCount] - 1
                         _restlengths_c.Add(_r.[RestLengths](i))
                     Next
                 End If
@@ -18158,7 +18158,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _compressionlengths_c Is Nothing Then
                     _compressionlengths_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[CompressionLengthsCount] - 1
                         _compressionlengths_c.Add(_r.[CompressionLengths](i))
                     Next
                 End If
@@ -18172,7 +18172,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stiffnessesa_c Is Nothing Then
                     _stiffnessesa_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StiffnessesACount] - 1
                         _stiffnessesa_c.Add(_r.[StiffnessesA](i))
                     Next
                 End If
@@ -18186,7 +18186,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stiffnessesb_c Is Nothing Then
                     _stiffnessesb_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StiffnessesBCount] - 1
                         _stiffnessesb_c.Add(_r.[StiffnessesB](i))
                     Next
                 End If
@@ -18200,7 +18200,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesa_c Is Nothing Then
                     _particlesa_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesACount] - 1
                         _particlesa_c.Add(_r.[ParticlesA](i))
                     Next
                 End If
@@ -18214,7 +18214,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesb_c Is Nothing Then
                     _particlesb_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesBCount] - 1
                         _particlesb_c.Add(_r.[ParticlesB](i))
                     Next
                 End If
@@ -18685,7 +18685,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _faces_c Is Nothing Then
                     _faces_c = New List(Of Integer)()
-                    For i = 0 To 6 - 1
+                    For i = 0 To _r.[FacesCount] - 1
                         _faces_c.Add(_r.[Faces](i))
                     Next
                 End If
@@ -20465,7 +20465,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -20479,7 +20479,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -20493,7 +20493,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneweights_c Is Nothing Then
                     _boneweights_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[BoneWeightsCount] - 1
                         _boneweights_c.Add(_r.[BoneWeights](i))
                     Next
                 End If
@@ -20553,7 +20553,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -20613,7 +20613,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -20627,7 +20627,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -20687,7 +20687,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -20701,7 +20701,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -20715,7 +20715,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -20775,7 +20775,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -20789,7 +20789,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -20803,7 +20803,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -20817,7 +20817,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localbitangent_c Is Nothing Then
                     _localbitangent_c = New List(Of Integer)()
-                    For i = 0 To 64 - 1
+                    For i = 0 To _r.[LocalBiTangentCount] - 1
                         _localbitangent_c.Add(_r.[LocalBiTangent](i))
                     Next
                 End If
@@ -20877,7 +20877,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -20937,7 +20937,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -20951,7 +20951,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -21011,7 +21011,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -21025,7 +21025,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -21039,7 +21039,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -21099,7 +21099,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localposition_c Is Nothing Then
                     _localposition_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalPositionCount] - 1
                         _localposition_c.Add(_r.[LocalPosition](i))
                     Next
                 End If
@@ -21113,7 +21113,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localnormal_c Is Nothing Then
                     _localnormal_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalNormalCount] - 1
                         _localnormal_c.Add(_r.[LocalNormal](i))
                     Next
                 End If
@@ -21127,7 +21127,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localtangent_c Is Nothing Then
                     _localtangent_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalTangentCount] - 1
                         _localtangent_c.Add(_r.[LocalTangent](i))
                     Next
                 End If
@@ -21141,7 +21141,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _localbitangent_c Is Nothing Then
                     _localbitangent_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[LocalBiTangentCount] - 1
                         _localbitangent_c.Add(_r.[LocalBiTangent](i))
                     Next
                 End If
@@ -21201,7 +21201,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -21215,7 +21215,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -21275,7 +21275,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -21289,7 +21289,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 48 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -21303,7 +21303,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneweights_c Is Nothing Then
                     _boneweights_c = New List(Of Integer)()
-                    For i = 0 To 48 - 1
+                    For i = 0 To _r.[BoneWeightsCount] - 1
                         _boneweights_c.Add(_r.[BoneWeights](i))
                     Next
                 End If
@@ -21363,7 +21363,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertexindices_c Is Nothing Then
                     _vertexindices_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[VertexIndicesCount] - 1
                         _vertexindices_c.Add(_r.[VertexIndices](i))
                     Next
                 End If
@@ -21377,7 +21377,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneindices_c Is Nothing Then
                     _boneindices_c = New List(Of Integer)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[BoneIndicesCount] - 1
                         _boneindices_c.Add(_r.[BoneIndices](i))
                     Next
                 End If
@@ -21391,7 +21391,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _boneweights_c Is Nothing Then
                     _boneweights_c = New List(Of Integer)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[BoneWeightsCount] - 1
                         _boneweights_c.Add(_r.[BoneWeights](i))
                     Next
                 End If
@@ -23533,7 +23533,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _elements_c Is Nothing Then
                     _elements_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[ElementsCount] - 1
                         _elements_c.Add(_r.[Elements](i))
                     Next
                 End If
@@ -26178,7 +26178,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _restlengths_c Is Nothing Then
                     _restlengths_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[RestLengthsCount] - 1
                         _restlengths_c.Add(_r.[RestLengths](i))
                     Next
                 End If
@@ -26192,7 +26192,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stiffnessesa_c Is Nothing Then
                     _stiffnessesa_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StiffnessesACount] - 1
                         _stiffnessesa_c.Add(_r.[StiffnessesA](i))
                     Next
                 End If
@@ -26206,7 +26206,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stiffnessesb_c Is Nothing Then
                     _stiffnessesb_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StiffnessesBCount] - 1
                         _stiffnessesb_c.Add(_r.[StiffnessesB](i))
                     Next
                 End If
@@ -26220,7 +26220,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesa_c Is Nothing Then
                     _particlesa_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesACount] - 1
                         _particlesa_c.Add(_r.[ParticlesA](i))
                     Next
                 End If
@@ -26234,7 +26234,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesb_c Is Nothing Then
                     _particlesb_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesBCount] - 1
                         _particlesb_c.Add(_r.[ParticlesB](i))
                     Next
                 End If
@@ -26868,7 +26868,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _restlengths_c Is Nothing Then
                     _restlengths_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[RestLengthsCount] - 1
                         _restlengths_c.Add(_r.[RestLengths](i))
                     Next
                 End If
@@ -26882,7 +26882,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stiffnesses_c Is Nothing Then
                     _stiffnesses_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StiffnessesCount] - 1
                         _stiffnesses_c.Add(_r.[Stiffnesses](i))
                     Next
                 End If
@@ -26896,7 +26896,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesa_c Is Nothing Then
                     _particlesa_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesACount] - 1
                         _particlesa_c.Add(_r.[ParticlesA](i))
                     Next
                 End If
@@ -26910,7 +26910,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particlesb_c Is Nothing Then
                     _particlesb_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticlesBCount] - 1
                         _particlesb_c.Add(_r.[ParticlesB](i))
                     Next
                 End If
@@ -27337,7 +27337,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _percomponentflags_c Is Nothing Then
                     _percomponentflags_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PerComponentFlagsCount] - 1
                         _percomponentflags_c.Add(_r.[PerComponentFlags](i))
                     Next
                 End If
@@ -28227,7 +28227,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _indices_c Is Nothing Then
                     _indices_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[IndicesCount] - 1
                         _indices_c.Add(_r.[Indices](i))
                     Next
                 End If
@@ -28683,7 +28683,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _framevector_c Is Nothing Then
                     _framevector_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[FrameVectorCount] - 1
                         _framevector_c.Add(_r.[FrameVector](i))
                     Next
                 End If
@@ -28697,7 +28697,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particleindex_c Is Nothing Then
                     _particleindex_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticleIndexCount] - 1
                         _particleindex_c.Add(_r.[ParticleIndex](i))
                     Next
                 End If
@@ -28711,7 +28711,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _stiffness_c Is Nothing Then
                     _stiffness_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[StiffnessCount] - 1
                         _stiffness_c.Add(_r.[Stiffness](i))
                     Next
                 End If
@@ -28844,7 +28844,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _framevector_c Is Nothing Then
                     _framevector_c = New List(Of Single())()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[FrameVectorCount] - 1
                         _framevector_c.Add(_r.[FrameVector](i))
                     Next
                 End If
@@ -28858,7 +28858,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _particleindex_c Is Nothing Then
                     _particleindex_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ParticleIndexCount] - 1
                         _particleindex_c.Add(_r.[ParticleIndex](i))
                     Next
                 End If
@@ -28872,7 +28872,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _weight_c Is Nothing Then
                     _weight_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[WeightCount] - 1
                         _weight_c.Add(_r.[Weight](i))
                     Next
                 End If
@@ -29069,7 +29069,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _min_c Is Nothing Then
                     _min_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MinCount] - 1
                         _min_c.Add(_r.[Min](i))
                     Next
                 End If
@@ -29092,7 +29092,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _max_c Is Nothing Then
                     _max_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MaxCount] - 1
                         _max_c.Add(_r.[Max](i))
                     Next
                 End If
@@ -29161,7 +29161,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _data_c Is Nothing Then
                     _data_c = New List(Of Integer)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[DataCount] - 1
                         _data_c.Add(_r.[Data](i))
                     Next
                 End If
@@ -29175,7 +29175,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _extras_c Is Nothing Then
                     _extras_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[ExtrasCount] - 1
                         _extras_c.Add(_r.[Extras](i))
                     Next
                 End If
@@ -29235,7 +29235,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _min_c Is Nothing Then
                     _min_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MinCount] - 1
                         _min_c.Add(_r.[Min](i))
                     Next
                 End If
@@ -29249,7 +29249,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _expansionmin_c Is Nothing Then
                     _expansionmin_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[ExpansionMinCount] - 1
                         _expansionmin_c.Add(_r.[ExpansionMin](i))
                     Next
                 End If
@@ -29272,7 +29272,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _max_c Is Nothing Then
                     _max_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MaxCount] - 1
                         _max_c.Add(_r.[Max](i))
                     Next
                 End If
@@ -29286,7 +29286,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _expansionmax_c Is Nothing Then
                     _expansionmax_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[ExpansionMaxCount] - 1
                         _expansionmax_c.Add(_r.[ExpansionMax](i))
                     Next
                 End If
@@ -30490,7 +30490,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _centerofmass_c Is Nothing Then
                     _centerofmass_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[CenterOfMassCount] - 1
                         _centerofmass_c.Add(_r.[CenterOfMass](i))
                     Next
                 End If
@@ -30504,7 +30504,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _inertia_c Is Nothing Then
                     _inertia_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[InertiaCount] - 1
                         _inertia_c.Add(_r.[Inertia](i))
                     Next
                 End If
@@ -30518,7 +30518,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _majoraxisspace_c Is Nothing Then
                     _majoraxisspace_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[MajorAxisSpaceCount] - 1
                         _majoraxisspace_c.Add(_r.[MajorAxisSpace](i))
                     Next
                 End If
@@ -31236,7 +31236,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _vertices_c Is Nothing Then
                     _vertices_c = New List(Of Single())()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[VerticesCount] - 1
                         _vertices_c.Add(_r.[Vertices](i))
                     Next
                 End If
@@ -31756,7 +31756,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _quad_c Is Nothing Then
                     _quad_c = New List(Of Single)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[QuadCount] - 1
                         _quad_c.Add(_r.[Quad](i))
                     Next
                 End If
@@ -33028,7 +33028,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _elementoffsets_c Is Nothing Then
                     _elementoffsets_c = New List(Of Integer)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[ElementOffsetsCount] - 1
                         _elementoffsets_c.Add(_r.[ElementOffsets](i))
                     Next
                 End If
@@ -34899,7 +34899,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _swepttransform_c Is Nothing Then
                     _swepttransform_c = New List(Of Single())()
-                    For i = 0 To 5 - 1
+                    For i = 0 To _r.[SweptTransformCount] - 1
                         _swepttransform_c.Add(_r.[SweptTransform](i))
                     Next
                 End If
@@ -35736,7 +35736,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _values_c Is Nothing Then
                     _values_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[ValuesCount] - 1
                         _values_c.Add(_r.[Values](i))
                     Next
                 End If
@@ -35796,7 +35796,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _values_c Is Nothing Then
                     _values_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[ValuesCount] - 1
                         _values_c.Add(_r.[Values](i))
                     Next
                 End If
@@ -35856,7 +35856,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _magic_c Is Nothing Then
                     _magic_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[MagicCount] - 1
                         _magic_c.Add(_r.[Magic](i))
                     Next
                 End If
@@ -35888,7 +35888,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _layoutrules_c Is Nothing Then
                     _layoutrules_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[LayoutRulesCount] - 1
                         _layoutrules_c.Add(_r.[LayoutRules](i))
                     Next
                 End If
@@ -35947,7 +35947,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _contentsversion_c Is Nothing Then
                     _contentsversion_c = New List(Of Integer)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[ContentsVersionCount] - 1
                         _contentsversion_c.Add(_r.[ContentsVersion](i))
                     Next
                 End If
@@ -36043,7 +36043,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _sectiontag_c Is Nothing Then
                     _sectiontag_c = New List(Of Integer)()
-                    For i = 0 To 19 - 1
+                    For i = 0 To _r.[SectionTagCount] - 1
                         _sectiontag_c.Add(_r.[SectionTag](i))
                     Next
                 End If
@@ -36129,7 +36129,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -38996,7 +38996,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _value_c Is Nothing Then
                     _value_c = New List(Of Integer)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[ValueCount] - 1
                         _value_c.Add(_r.[Value](i))
                     Next
                 End If
@@ -39618,7 +39618,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _data_c Is Nothing Then
                     _data_c = New List(Of UInteger)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[DataCount] - 1
                         _data_c.Add(_r.[Data](i))
                     Next
                 End If
@@ -40292,7 +40292,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -43467,7 +43467,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _intarrayoffsets_c Is Nothing Then
                     _intarrayoffsets_c = New List(Of Integer)()
-                    For i = 0 To 9 - 1
+                    For i = 0 To _r.[IntArrayOffsetsCount] - 1
                         _intarrayoffsets_c.Add(_r.[IntArrayOffsets](i))
                     Next
                 End If
@@ -43499,7 +43499,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _floatarrayoffsets_c Is Nothing Then
                     _floatarrayoffsets_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[FloatArrayOffsetsCount] - 1
                         _floatarrayoffsets_c.Add(_r.[FloatArrayOffsets](i))
                     Next
                 End If
@@ -45906,7 +45906,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -46172,7 +46172,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -46477,7 +46477,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -46853,7 +46853,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -47370,7 +47370,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -47914,7 +47914,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -49474,7 +49474,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -49905,7 +49905,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -50710,7 +50710,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -52904,7 +52904,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -55466,7 +55466,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -56429,7 +56429,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -57010,7 +57010,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -57438,7 +57438,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -57767,7 +57767,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -58132,7 +58132,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -58788,7 +58788,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -60633,7 +60633,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -62460,7 +62460,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -63843,7 +63843,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -64631,7 +64631,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -64877,7 +64877,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -66110,7 +66110,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -67318,7 +67318,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -67820,7 +67820,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -68330,7 +68330,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -68698,7 +68698,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -69076,7 +69076,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -69480,7 +69480,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -69901,7 +69901,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -70406,7 +70406,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -71495,7 +71495,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -72151,7 +72151,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -72420,7 +72420,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -73024,7 +73024,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _enabled_c Is Nothing Then
                     _enabled_c = New List(Of Single)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[EnabledCount] - 1
                         _enabled_c.Add(_r.[Enabled](i))
                     Next
                 End If
@@ -73217,7 +73217,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -74121,7 +74121,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -74860,7 +74860,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -75020,7 +75020,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _bonemask_c Is Nothing Then
                     _bonemask_c = New List(Of UInteger)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[BoneMaskCount] - 1
                         _bonemask_c.Add(_r.[BoneMask](i))
                     Next
                 End If
@@ -75508,7 +75508,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -76122,7 +76122,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -76394,7 +76394,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -76795,7 +76795,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -77124,7 +77124,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -77519,7 +77519,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -78102,7 +78102,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -78704,7 +78704,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -79449,7 +79449,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Boolean)()
-                    For i = 0 To 5 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -79642,7 +79642,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -80167,7 +80167,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -80741,7 +80741,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -81307,7 +81307,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -81820,7 +81820,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -82268,7 +82268,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -82753,7 +82753,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -83100,7 +83100,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -83333,7 +83333,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -83595,7 +83595,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -83831,7 +83831,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -84072,7 +84072,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -84300,7 +84300,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -85415,7 +85415,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -85895,7 +85895,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -86173,7 +86173,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -87133,7 +87133,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -87435,7 +87435,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -87963,7 +87963,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -88684,7 +88684,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -89557,7 +89557,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -90074,7 +90074,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -90470,7 +90470,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -90889,7 +90889,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -91222,7 +91222,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -91734,7 +91734,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -93099,7 +93099,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -93754,7 +93754,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -94111,7 +94111,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -96372,7 +96372,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -96747,7 +96747,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -97134,7 +97134,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -97420,7 +97420,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padmodifier_c Is Nothing Then
                     _padmodifier_c = New List(Of Boolean)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadModifierCount] - 1
                         _padmodifier_c.Add(_r.[PadModifier](i))
                     Next
                 End If
@@ -98791,7 +98791,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _range_c Is Nothing Then
                     _range_c = New List(Of Single)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[RangeCount] - 1
                         _range_c.Add(_r.[Range](i))
                     Next
                 End If
@@ -99247,7 +99247,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _children_c Is Nothing Then
                     _children_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[ChildrenCount] - 1
                         _children_c.Add(_r.[Children](i))
                     Next
                 End If
@@ -99316,7 +99316,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _min_c Is Nothing Then
                     _min_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MinCount] - 1
                         _min_c.Add(_r.[Min](i))
                     Next
                 End If
@@ -99339,7 +99339,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _max_c Is Nothing Then
                     _max_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MaxCount] - 1
                         _max_c.Add(_r.[Max](i))
                     Next
                 End If
@@ -99426,7 +99426,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _children_c Is Nothing Then
                     _children_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[ChildrenCount] - 1
                         _children_c.Add(_r.[Children](i))
                     Next
                 End If
@@ -99504,7 +99504,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _children_c Is Nothing Then
                     _children_c = New List(Of Long)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[ChildrenCount] - 1
                         _children_c.Add(_r.[Children](i))
                     Next
                 End If
@@ -99582,7 +99582,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _children_c Is Nothing Then
                     _children_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[ChildrenCount] - 1
                         _children_c.Add(_r.[Children](i))
                     Next
                 End If
@@ -99660,7 +99660,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _children_c Is Nothing Then
                     _children_c = New List(Of Long)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[ChildrenCount] - 1
                         _children_c.Add(_r.[Children](i))
                     Next
                 End If
@@ -102030,7 +102030,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _secondarybitmaps_c Is Nothing Then
                     _secondarybitmaps_c = New List(Of UInteger)()
-                    For i = 0 To 26 - 1
+                    For i = 0 To _r.[SecondaryBitmapsCount] - 1
                         _secondarybitmaps_c.Add(_r.[SecondaryBitmaps](i))
                     Next
                 End If
@@ -102044,7 +102044,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _freeblocks_c Is Nothing Then
                     _freeblocks_c = New List(Of UInteger)()
-                    For i = 0 To 832 - 1
+                    For i = 0 To _r.[FreeBlocksCount] - 1
                         _freeblocks_c.Add(_r.[FreeBlocks](i))
                     Next
                 End If
@@ -102140,7 +102140,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _secondarybitmaps_c Is Nothing Then
                     _secondarybitmaps_c = New List(Of UInteger)()
-                    For i = 0 To 26 - 1
+                    For i = 0 To _r.[SecondaryBitmapsCount] - 1
                         _secondarybitmaps_c.Add(_r.[SecondaryBitmaps](i))
                     Next
                 End If
@@ -102154,7 +102154,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _freeblocks_c Is Nothing Then
                     _freeblocks_c = New List(Of UInteger)()
-                    For i = 0 To 832 - 1
+                    For i = 0 To _r.[FreeBlocksCount] - 1
                         _freeblocks_c.Add(_r.[FreeBlocks](i))
                     Next
                 End If
@@ -102214,7 +102214,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _ieqn_c Is Nothing Then
                     _ieqn_c = New List(Of Long)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[IEqnCount] - 1
                         _ieqn_c.Add(_r.[IEqn](i))
                     Next
                 End If
@@ -102228,7 +102228,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deqn_c Is Nothing Then
                     _deqn_c = New List(Of Long)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[DEqnCount] - 1
                         _deqn_c.Add(_r.[DEqn](i))
                     Next
                 End If
@@ -102941,7 +102941,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _data_c Is Nothing Then
                     _data_c = New List(Of UInteger)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[DataCount] - 1
                         _data_c.Add(_r.[Data](i))
                     Next
                 End If
@@ -103234,7 +103234,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _indices_c Is Nothing Then
                     _indices_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[IndicesCount] - 1
                         _indices_c.Add(_r.[Indices](i))
                     Next
                 End If
@@ -103465,7 +103465,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _codecparms_c Is Nothing Then
                     _codecparms_c = New List(Of Single)()
-                    For i = 0 To 6 - 1
+                    For i = 0 To _r.[CodecParmsCount] - 1
                         _codecparms_c.Add(_r.[CodecParms](i))
                     Next
                 End If
@@ -104251,7 +104251,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _xyz_c Is Nothing Then
                     _xyz_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[XyzCount] - 1
                         _xyz_c.Add(_r.[Xyz](i))
                     Next
                 End If
@@ -104311,7 +104311,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _xyz_c Is Nothing Then
                     _xyz_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[XyzCount] - 1
                         _xyz_c.Add(_r.[Xyz](i))
                     Next
                 End If
@@ -104380,7 +104380,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _xyz_c Is Nothing Then
                     _xyz_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[XyzCount] - 1
                         _xyz_c.Add(_r.[Xyz](i))
                     Next
                 End If
@@ -104458,7 +104458,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _xyz_c Is Nothing Then
                     _xyz_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[XyzCount] - 1
                         _xyz_c.Add(_r.[Xyz](i))
                     Next
                 End If
@@ -106417,7 +106417,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _motiontobodyrotation_c Is Nothing Then
                     _motiontobodyrotation_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[MotionToBodyRotationCount] - 1
                         _motiontobodyrotation_c.Add(_r.[MotionToBodyRotation](i))
                     Next
                 End If
@@ -107033,7 +107033,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -111580,7 +111580,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _collisionlookuptable_c Is Nothing Then
                     _collisionlookuptable_c = New List(Of UInteger)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[CollisionLookupTableCount] - 1
                         _collisionlookuptable_c.Add(_r.[CollisionLookupTable](i))
                     Next
                 End If
@@ -111667,7 +111667,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _collisionlookuptable_c Is Nothing Then
                     _collisionlookuptable_c = New List(Of UInteger)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[CollisionLookupTableCount] - 1
                         _collisionlookuptable_c.Add(_r.[CollisionLookupTable](i))
                     Next
                 End If
@@ -112158,7 +112158,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _shapesmemorysizes_c Is Nothing Then
                     _shapesmemorysizes_c = New List(Of UInteger)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[ShapesMemorySizesCount] - 1
                         _shapesmemorysizes_c.Add(_r.[ShapesMemorySizes](i))
                     Next
                 End If
@@ -113403,7 +113403,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _inverseinertia_c Is Nothing Then
                     _inverseinertia_c = New List(Of Single)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[InverseInertiaCount] - 1
                         _inverseinertia_c.Add(_r.[InverseInertia](i))
                     Next
                 End If
@@ -113435,7 +113435,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _linearvelocitycage_c Is Nothing Then
                     _linearvelocitycage_c = New List(Of Single)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[LinearVelocityCageCount] - 1
                         _linearvelocitycage_c.Add(_r.[LinearVelocityCage](i))
                     Next
                 End If
@@ -115659,7 +115659,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 30 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -121057,7 +121057,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -121126,7 +121126,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 14 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -121540,7 +121540,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _data_c Is Nothing Then
                     _data_c = New List(Of Integer)()
-                    For i = 0 To 496 - 1
+                    For i = 0 To _r.[DataCount] - 1
                         _data_c.Add(_r.[Data](i))
                     Next
                 End If
@@ -121627,7 +121627,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -121732,7 +121732,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -121976,7 +121976,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -123191,7 +123191,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -123241,7 +123241,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -123255,7 +123255,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -123764,7 +123764,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -124704,7 +124704,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -124882,7 +124882,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -124932,7 +124932,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -124946,7 +124946,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -125940,7 +125940,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _min_c Is Nothing Then
                     _min_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MinCount] - 1
                         _min_c.Add(_r.[Min](i))
                     Next
                 End If
@@ -125954,7 +125954,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _expansionmin_c Is Nothing Then
                     _expansionmin_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[ExpansionMinCount] - 1
                         _expansionmin_c.Add(_r.[ExpansionMin](i))
                     Next
                 End If
@@ -125977,7 +125977,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _max_c Is Nothing Then
                     _max_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[MaxCount] - 1
                         _max_c.Add(_r.[Max](i))
                     Next
                 End If
@@ -125991,7 +125991,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _expansionmax_c Is Nothing Then
                     _expansionmax_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[ExpansionMaxCount] - 1
                         _expansionmax_c.Add(_r.[ExpansionMax](i))
                     Next
                 End If
@@ -126168,7 +126168,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -126191,7 +126191,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -126269,7 +126269,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -126292,7 +126292,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -127420,7 +127420,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -127498,7 +127498,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -127521,7 +127521,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -128117,7 +128117,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -128140,7 +128140,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -130055,7 +130055,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _point_c Is Nothing Then
                     _point_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PointCount] - 1
                         _point_c.Add(_r.[Point](i))
                     Next
                 End If
@@ -130707,7 +130707,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -130730,7 +130730,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -132628,7 +132628,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -132988,7 +132988,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -133038,7 +133038,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -133052,7 +133052,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -133648,7 +133648,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -133671,7 +133671,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -133694,7 +133694,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _collisiongroups_c Is Nothing Then
                     _collisiongroups_c = New List(Of UInteger)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[CollisionGroupsCount] - 1
                         _collisiongroups_c.Add(_r.[CollisionGroups](i))
                     Next
                 End If
@@ -133772,7 +133772,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -133795,7 +133795,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -133818,7 +133818,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _collisionlookuptable_c Is Nothing Then
                     _collisionlookuptable_c = New List(Of UInteger)()
-                    For i = 0 To 32 - 1
+                    For i = 0 To _r.[CollisionLookupTableCount] - 1
                         _collisionlookuptable_c.Add(_r.[CollisionLookupTable](i))
                     Next
                 End If
@@ -133832,7 +133832,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad256_c Is Nothing Then
                     _pad256_c = New List(Of Single())()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[Pad256Count] - 1
                         _pad256_c.Add(_r.[Pad256](i))
                     Next
                 End If
@@ -134359,7 +134359,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -134455,7 +134455,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -134505,7 +134505,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -134519,7 +134519,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -134936,7 +134936,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -135032,7 +135032,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -135128,7 +135128,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -135345,7 +135345,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -136024,7 +136024,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _enabledchildren_c Is Nothing Then
                     _enabledchildren_c = New List(Of UInteger)()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[EnabledChildrenCount] - 1
                         _enabledchildren_c.Add(_r.[EnabledChildren](i))
                     Next
                 End If
@@ -136338,7 +136338,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -136534,7 +136534,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -136584,7 +136584,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -136598,7 +136598,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -136876,7 +136876,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -137181,7 +137181,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -137657,7 +137657,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -137707,7 +137707,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -137721,7 +137721,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -138432,7 +138432,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -138717,7 +138717,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _spheres_c Is Nothing Then
                     _spheres_c = New List(Of Single())()
-                    For i = 0 To 8 - 1
+                    For i = 0 To _r.[SpheresCount] - 1
                         _spheres_c.Add(_r.[Spheres](i))
                     Next
                 End If
@@ -138863,7 +138863,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -138886,7 +138886,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -138964,7 +138964,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -139042,7 +139042,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _prepad_c Is Nothing Then
                     _prepad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PrepadCount] - 1
                         _prepad_c.Add(_r.[Prepad](i))
                     Next
                 End If
@@ -139065,7 +139065,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _postpad_c Is Nothing Then
                     _postpad_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PostpadCount] - 1
                         _postpad_c.Add(_r.[Postpad](i))
                     Next
                 End If
@@ -140171,7 +140171,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _transform_os_ks_c Is Nothing Then
                     _transform_os_ks_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[Transform_OS_KSCount] - 1
                         _transform_os_ks_c.Add(_r.[Transform_OS_KS](i))
                     Next
                 End If
@@ -141869,7 +141869,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -143784,7 +143784,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _nnentrydata_c Is Nothing Then
                     _nnentrydata_c = New List(Of Integer)()
-                    For i = 0 To 160 - 1
+                    For i = 0 To _r.[NnEntryDataCount] - 1
                         _nnentrydata_c.Add(_r.[NnEntryData](i))
                     Next
                 End If
@@ -143807,7 +143807,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _endiancheckbuffer_c Is Nothing Then
                     _endiancheckbuffer_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[EndianCheckBufferCount] - 1
                         _endiancheckbuffer_c.Add(_r.[EndianCheckBuffer](i))
                     Next
                 End If
@@ -145582,7 +145582,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _data_c Is Nothing Then
                     _data_c = New List(Of UInteger)()
-                    For i = 0 To 5 - 1
+                    For i = 0 To _r.[DataCount] - 1
                         _data_c.Add(_r.[Data](i))
                     Next
                 End If
@@ -146253,7 +146253,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -146367,7 +146367,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -146417,7 +146417,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -146431,7 +146431,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -146657,7 +146657,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad16_c Is Nothing Then
                     _pad16_c = New List(Of UInteger)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[Pad16Count] - 1
                         _pad16_c.Add(_r.[Pad16](i))
                     Next
                 End If
@@ -148297,7 +148297,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of Integer)()
-                    For i = 0 To 3 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -148771,7 +148771,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationnuminactiveframes_c Is Nothing Then
                     _deactivationnuminactiveframes_c = New List(Of Integer)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationNumInactiveFramesCount] - 1
                         _deactivationnuminactiveframes_c.Add(_r.[DeactivationNumInactiveFrames](i))
                     Next
                 End If
@@ -148821,7 +148821,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationrefposition_c Is Nothing Then
                     _deactivationrefposition_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefPositionCount] - 1
                         _deactivationrefposition_c.Add(_r.[DeactivationRefPosition](i))
                     Next
                 End If
@@ -148835,7 +148835,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _deactivationreforientation_c Is Nothing Then
                     _deactivationreforientation_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[DeactivationRefOrientationCount] - 1
                         _deactivationreforientation_c.Add(_r.[DeactivationRefOrientation](i))
                     Next
                 End If
@@ -149124,7 +149124,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -149670,7 +149670,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _padding_c Is Nothing Then
                     _padding_c = New List(Of Integer)()
-                    For i = 0 To 12 - 1
+                    For i = 0 To _r.[PaddingCount] - 1
                         _padding_c.Add(_r.[Padding](i))
                     Next
                 End If
@@ -150027,7 +150027,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _frictioncircleytab_c Is Nothing Then
                     _frictioncircleytab_c = New List(Of Single)()
-                    For i = 0 To 16 - 1
+                    For i = 0 To _r.[FrictionCircleYtabCount] - 1
                         _frictioncircleytab_c.Add(_r.[FrictionCircleYtab](i))
                     Next
                 End If
@@ -150516,7 +150516,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _pad_c Is Nothing Then
                     _pad_c = New List(Of UInteger)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[PadCount] - 1
                         _pad_c.Add(_r.[Pad](i))
                     Next
                 End If
@@ -150903,7 +150903,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _frictionimpulse_c Is Nothing Then
                     _frictionimpulse_c = New List(Of Single)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[FrictionImpulseCount] - 1
                         _frictionimpulse_c.Add(_r.[FrictionImpulse](i))
                     Next
                 End If
@@ -150917,7 +150917,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _slipimpulse_c Is Nothing Then
                     _slipimpulse_c = New List(Of Single)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[SlipImpulseCount] - 1
                         _slipimpulse_c.Add(_r.[SlipImpulse](i))
                     Next
                 End If
@@ -152281,7 +152281,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _broadphaseextents_c Is Nothing Then
                     _broadphaseextents_c = New List(Of Single())()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[BroadPhaseExtentsCount] - 1
                         _broadphaseextents_c.Add(_r.[BroadPhaseExtents](i))
                     Next
                 End If
@@ -154755,7 +154755,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _uvmapscale_c Is Nothing Then
                     _uvmapscale_c = New List(Of Single)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[UvMapScaleCount] - 1
                         _uvmapscale_c.Add(_r.[UvMapScale](i))
                     Next
                 End If
@@ -154769,7 +154769,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _uvmapoffset_c Is Nothing Then
                     _uvmapoffset_c = New List(Of Single)()
-                    For i = 0 To 2 - 1
+                    For i = 0 To _r.[UvMapOffsetCount] - 1
                         _uvmapoffset_c.Add(_r.[UvMapOffset](i))
                     Next
                 End If
@@ -157136,7 +157136,7 @@ Namespace Havok.Canon.Objects
             Get
                 If _filetype_c Is Nothing Then
                     _filetype_c = New List(Of Integer)()
-                    For i = 0 To 4 - 1
+                    For i = 0 To _r.[FileTypeCount] - 1
                         _filetype_c.Add(_r.[FileType](i))
                     Next
                 End If
