@@ -1316,6 +1316,9 @@ Public NotInheritable Class RaceMenuJslot
             For Each kv In _raw
                 Select Case kv.Key
                     Case "actor", "headParts", "faceTextures", "tintInfo", "morphs", "bodyMorphs", "overrides", "transforms", "skinOverrides" ' modeled — rebuilt below
+                        ' No action: estas claves ya se escribieron con su propia ley mas arriba;
+                        ' el `Case Else` es el que copia lo que no tiene ley propia.
+                        Exit Select
                     Case Else : root(kv.Key) = If(kv.Value Is Nothing, Nothing, JsonNode.Parse(kv.Value.ToJsonString()))
                 End Select
             Next

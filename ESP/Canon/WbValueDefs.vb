@@ -248,6 +248,7 @@ Namespace Canon
             Select Case IntType
                 Case WbIntType.i0
                     ' ancho 0: no ocupa bytes
+                    Exit Select
                 Case WbIntType.u8, WbIntType.s8
                     bw.Write(CByte(v And &HFFL))
                 Case WbIntType.u16, WbIntType.s16

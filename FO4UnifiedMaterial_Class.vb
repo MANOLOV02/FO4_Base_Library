@@ -422,6 +422,8 @@ Public Class FO4UnifiedMaterial_Class
                     ' ortogonales; los flags se editan por separado en el grid.
                     _NifShaderType = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -714,6 +716,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).SmoothSpecTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -846,6 +849,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).FlowTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -869,6 +873,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).DisplacementTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -892,6 +897,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).InnerLayerTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -915,6 +921,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).WrinklesTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -938,6 +945,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).DistanceFieldAlphaTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -988,6 +996,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).DisplacementTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1013,6 +1022,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).LightingTexture = value
                 Case GetType(BGEM)
                     ' No operation
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1363,6 +1373,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).EnvironmentMappingEye = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
 
@@ -1387,6 +1399,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).SpecularEnabled = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1409,6 +1423,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).ModelSpaceNormals = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1431,6 +1447,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).EmitEnabled = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1453,6 +1471,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).SubsurfaceLighting = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1474,6 +1494,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).BackLighting = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1495,6 +1517,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).BackLightPower = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1516,6 +1540,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).RimLighting = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1537,6 +1563,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).RimPower = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1581,6 +1609,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).Smoothness = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1603,6 +1633,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).SpecularColor = ColorToMaterialRgb(value)
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1649,6 +1681,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).SpecularMult = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1671,6 +1705,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).EmittanceMult = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1693,6 +1729,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).FresnelPower = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1715,6 +1753,8 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).SubsurfaceLightingRolloff = value
                 Case GetType(BGEM)
+                    ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
+                    Exit Select
             End Select
         End Set
     End Property
@@ -1741,6 +1781,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).RootMaterialPath = CorrectMaterialPath(value).StripPrefix(MaterialsPrefix)
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1767,6 +1808,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).PBR = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1793,6 +1835,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).CustomPorosity = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1819,6 +1862,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).PorosityValue = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1845,6 +1889,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).Hair = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1870,6 +1915,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).HairTintColor = ColorToMaterialRgb(value)
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1915,6 +1961,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).HairTintColor = ColorToMaterialRgb(value)
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1941,6 +1988,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).Tree = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1967,6 +2015,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).Facegen = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -1993,6 +2042,7 @@ Public Class FO4UnifiedMaterial_Class
                     CType(Underlying_Material, BGSM).SkinTint = value
                 Case GetType(BGEM)
                     ' No action
+                    Exit Select
                 Case Else
                     Throw New Exception
             End Select
@@ -2018,6 +2068,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).FalloffEnabled = value
                 Case Else
@@ -2044,6 +2095,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).FalloffColorEnabled = value
                 Case Else
@@ -2070,6 +2122,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).FalloffStartAngle = value
                 Case Else
@@ -2096,6 +2149,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).FalloffStopAngle = value
                 Case Else
@@ -2122,6 +2176,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).FalloffStartOpacity = value
                 Case Else
@@ -2148,6 +2203,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).FalloffStopOpacity = value
                 Case Else
@@ -2174,6 +2230,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).LightingInfluence = value
                 Case Else
@@ -2200,6 +2257,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).GrayscaleToPaletteAlpha = value
                 Case Else
@@ -2227,6 +2285,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     Dim bgem = CType(Underlying_Material, BGEM)
                     bgem.BaseColor = ColorToMaterialRgb(value)
@@ -2255,6 +2314,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).BaseColorScale = value
                 Case Else
@@ -2281,6 +2341,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).BloodEnabled = value
                 Case Else
@@ -2308,6 +2369,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).EffectLightingEnabled = value
                 Case Else
@@ -2334,6 +2396,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).SoftEnabled = value
                 Case Else
@@ -2360,6 +2423,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).SoftDepth = value
                 Case Else
@@ -2386,6 +2450,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     ' No action
+                    Exit Select
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).EffectPbrSpecular = value
                 Case Else

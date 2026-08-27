@@ -354,6 +354,27 @@ Public NotInheritable Class HkxPackfileParser_Class
     ''' `hasta`, y un `sourceOffset` de -1 como CENTINELA de relleno que corta la tabla.
     ''' <para>Las tres tablas del envoltorio (local, global, virtual) la comparten; lo unico que
     ''' cambia es la zancada y que campos lee cada una, y eso lo pone el llamador.</para>
+    ''' ⛔⛔ LA ZANCADA DE LAS TRES TABLAS DE FIXUPS: 8, 12 y 12, LEIDAS DEL BINARIO.
+    ''' <para>La reflexion NO las declara y no es un descuido: se grepearon las dos tablas —946
+    ''' clases de FO4 y 609 de SSE— y no hay una sola clase con `fixup` en el nombre. Las tablas son
+    ''' un detalle del serializador, no una clase registrada. Asi que la cita es la OTRA que el
+    ''' objetivo admite: una direccion del .exe.</para>
+    ''' <para>Los dos motores recorren las tres tablas con la MISMA forma: toman el largo del rango
+    ''' que declara `hkPackfileSectionHeader` —local `[0x1C]-[0x18]`, global `[0x20]-[0x1C]`,
+    ''' virtual `[0x24]-[0x20]`—, hacen `cdq / and edx,3 / add eax,edx / sar eax,2` (o sea CUENTAN
+    ''' `int32`, de donde sale que el destino este en `+4`) y avanzan el cursor:</para>
+    ''' <para><code>
+    ''' tabla     rango             Fallout4.exe                    SkyrimSE.exe                zancada
+    ''' local     [0x1C]-[0x18]     0x14142B620  add r9d,2 / r8,8   0x140C3D219  add r9d,2/r8,8    8
+    ''' global    [0x20]-[0x1C]     0x14142B580  add r10d,3/r8,0xC  0x140C3D1AB  add r9d,3/r8,0xC 12
+    ''' virtual   [0x24]-[0x20]     0x14142B690  add r10d,3/rsi,0xC 0x140C3CCCC  add esi,3/rbx,0xC 12
+    ''' </code></para>
+    ''' <para>La entrada local es `(source, destination)` = 2 x int32; la global y la virtual suman
+    ''' un tercer int32. El `-1` que corta el recorrido es el mismo centinela que el motor compara
+    ''' (`cmp eax, -1` en 0x14142B653).</para>
+    ''' <para>Y ademas queda corroborado sobre el corpus: `--stridecheck` verifica que 1.558.692
+    ''' fixups de 32.839 arrays caen EXACTAMENTE en `dataStart + i*stride + offsetDeUnPuntero`. Si la
+    ''' zancada estuviera mal, los offsets de origen se leerian corridos y no caeria ninguno.</para>
     ''' </summary>
     Private Shared Sub RecorrerTablaDeFixups(packfile As HkxPackfile_Class, desde As Integer, hasta As Integer,
                                              zancada As Integer, alta As Action(Of Integer, Integer))

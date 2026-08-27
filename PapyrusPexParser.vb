@@ -1,4 +1,4 @@
-Imports System.Text
+﻿Imports System.Text
 
 ''' <summary>
 ''' Minimal, faithful parser for compiled Papyrus scripts (<c>.pex</c>) — Skyrim / Skyrim SE flavour.
@@ -110,6 +110,7 @@ Public NotInheritable Class PapyrusPexParser
         Dim o As New Operand()
         Select Case t
             Case 0 ' null
+                Exit Select
             Case 1 ' identifier (variable/property name)
                 o.IsString = True : o.IsIdentifier = True : o.Str = strings(c.U16())
             Case 2 ' string literal

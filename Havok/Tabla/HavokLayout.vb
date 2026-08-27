@@ -47,18 +47,98 @@ Namespace Havok.Canon
         ''' <summary>Clase del struct/puntero apuntado. "" si no aplica.</summary>
         Public ReadOnly Property StructClassName As String
 
+        ''' <summary>
+        ''' ⛔ LOS `flags` QUE DECLARA LA REFLEXION (`hkClassMember` +0x1C).
+        ''' <para>La propia tabla declara sus nombres en `hkClassMember|FlagValues`:
+        ''' `FLAGS_NONE=0, ALIGN_8=128, ALIGN_16=256, NOT_OWNED=512, SERIALIZE_IGNORED=1024,
+        ''' ALIGN_32=2048, ALIGN_REAL=256`.</para>
+        ''' <para>El extractor los leia desde siempre y el emisor los tiraba, asi que el arbol no
+        ''' podia saber que un miembro esta marcado. Medido al ponerlos: 482 miembros en FO4 y 397
+        ''' en SSE traen `SERIALIZE_IGNORED`.</para>
+        ''' </summary>
+        Public ReadOnly Property Flags As Integer
+
+        ''' <summary>
+        ''' ⛔⛔ EL MOTOR DICE QUE ESTE MIEMBRO NO SE SERIALIZA (`SERIALIZE_IGNORED = 1024`).
+        ''' <para>Los 47 arreglos de FO4 y 27 de SSE cuyo SUBTIPO la reflexion no declara tienen
+        ''' TODOS este flag —`hkbBehaviorGraph.uniqueIdPool`, `hkbBindable.cachedBindables`...—.
+        ''' No es que no se sepa que hay adentro: es que no hay nada, porque el serializador no lo
+        ''' escribe. Contarlos como "datos que la app no lee" era contar un hueco que no existe.</para>
+        ''' </summary>
+        Public ReadOnly Property NoSeSerializa As Boolean
+            Get
+                Return (Flags And SERIALIZE_IGNORED) <> 0
+            End Get
+        End Property
+
+        ''' <summary>`hkClassMember|FlagValues|SERIALIZE_IGNORED=1024`, de la propia reflexion.</summary>
+        Public Const SERIALIZE_IGNORED As Integer = 1024
+
+        ''' <summary>
+        ''' ⛔⛔ LOS BYTES QUE EL MIEMBRO OCUPA EN SU PADRE (elemento x cantidad), 0 si no se declara.
+        ''' <para>La tabla decia DONDE empieza cada miembro y no hasta donde llega, asi que ningun
+        ''' consumidor podia decir que byte de un bloque cubre un miembro declarado y cual no cubre
+        ''' ninguno. El censo por byte lo suplia con el offset del miembro SIGUIENTE, que le adjudica
+        ''' a cada miembro el relleno que le sigue.</para>
+        ''' <para>Lo emite el generador con la MISMA ley que usan los lectores (`gentyped.FIXED` +
+        ''' `gentyped.ancho`, que para un struct cita el `objectSize` de la reflexion). Medido: los
+        ''' 4.016 miembros de FO4 y los 2.636 de SSE lo traen, ninguno queda en cero.</para>
+        ''' </summary>
+        Public ReadOnly Property Ancho As Integer
+
+        ''' <summary>
+        ''' ⛔⛔ EL ANCHO DE UN ELEMENTO, QUE NO ES EL DEL MIEMBRO.
+        ''' <para>Un `hkArray` ocupa 16 bytes en su padre —la cabecera— y sus elementos viven
+        ''' AFUERA, con el ancho de su subtipo. Quien quiera acotar la region de datos del arreglo
+        ''' necesita este numero; sin el tendria que volver a derivar la ley del ancho por su
+        ''' cuenta, que es exactamente la copia que se saco del gate.</para>
+        ''' <para>Medido: de los 566 arreglos de FO4, 47 NO traen ancho de elemento, y de los 379
+        ''' de SSE, 28. Y son exactamente los que el motor marca `SERIALIZE_IGNORED`: 47 de 47 y 28
+        ''' de 28, sin una excepcion: si la reflexion no declara el subtipo, el serializador no
+        ''' escribe nada, asi que ahi no hay bytes que caminar. El gate exige ESA direccion.</para>
+        ''' <para>⛔ La vuelta NO vale: 12 arreglos de FO4 y 32 de SSE declaran subtipo Y ademas
+        ''' traen `SERIALIZE_IGNORED`. El flag no implica que falte el subtipo.</para>
+        ''' </summary>
+        Public ReadOnly Property AnchoDeElemento As Integer
+
+        ''' <summary>
+        ''' ⛔⛔ LO QUE OCUPA UN ITEM DEL MIEMBRO, para caminar un arreglo C (`foo[4]`).
+        ''' <para>No confundir con <see cref="AnchoDeElemento"/>: para un `hkArray` este es el ancho
+        ''' de la CABECERA (16) y aquel el del subtipo. Uno camina el arreglo C dentro del padre; el
+        ''' otro, la region de datos que la cabecera apunta. Confundirlos daba paso 8 donde van 16.</para>
+        ''' <para>Sale de `Ancho`, que ya es `item x cantidad`: no hay una tercera ley.</para>
+        ''' </summary>
+        Public ReadOnly Property AnchoDeItem As Integer
+            Get
+                Return Ancho \ Math.Max(1, CArraySize)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' ⛔⛔ LOS BYTES A LOS QUE EL MOTOR DICE QUE ESTE MIEMBRO SE ALINEA, 0 si no lo declara.
+        ''' <para>Sale de los flags `ALIGN_*` de `hkClassMember` (+0x1C), por el bit prendido. Ver
+        ''' `AlineacionesDeclaradas`: el numero lo da el NOMBRE del flag y lo valida el `offset`.</para>
+        ''' </summary>
+        Public ReadOnly Property Alineacion As Integer
+
         Friend Sub New(name As String, offset As Integer, typeName As String,
-                       subTypeName As String, cArraySize As Integer, structClassName As String)
+                       subTypeName As String, cArraySize As Integer, structClassName As String,
+                       Optional flags As Integer = 0, Optional ancho As Integer = 0,
+                       Optional anchoDeElemento As Integer = 0, Optional alineacion As Integer = 0)
             _Name = name
             _Offset = offset
             _TypeName = typeName
             _SubTypeName = subTypeName
             _CArraySize = cArraySize
             _StructClassName = structClassName
+            _Flags = flags
+            _Ancho = ancho
+            _AnchoDeElemento = anchoDeElemento
+            _Alineacion = alineacion
         End Sub
 
         Friend Function Shifted(delta As Integer, path As String) As HavokMember
-            Return New HavokMember(path, Offset + delta, TypeName, SubTypeName, CArraySize, StructClassName)
+            Return New HavokMember(path, Offset + delta, TypeName, SubTypeName, CArraySize, StructClassName, Flags, Ancho, AnchoDeElemento, Alineacion)
         End Function
 
         Public Overrides Function ToString() As String
@@ -106,8 +186,16 @@ Namespace Havok.Canon
         Public ReadOnly Property Tag As String
         Public ReadOnly Property SourceSha256 As String
         Public ReadOnly Property SourceStamp As String
-        ''' <summary>La tabla describe el layout x64. Siempre 8.</summary>
-        Public ReadOnly Property PointerSize As Integer = 8
+        ''' <summary>
+        ''' ⛔⛔ NO ES EL ANCHO DE PUNTERO DEL ARCHIVO: es la EXPECTATIVA de este arbol.
+        ''' <para>El ancho real lo declara el archivo en `layoutRules[0]`, y lo expone
+        ''' `HkxObjectGraph_Class.AnchoDePuntero`. Quien lea bytes tiene que usar ESE, no este.</para>
+        ''' <para>Este 8 existe para UN solo consumidor: el gate, que coteja los anchos que emite
+        ''' el generador contra lo que dice el nombre de cada tipo, y necesita un numero escrito a
+        ''' mano para que la comparacion no sea contra si misma. Los dos formatos soportados
+        ''' (Fallout64 y Skyrim64) declaran 8; Skyrim32 declara 4 y NO esta soportado.</para>
+        ''' </summary>
+        Public ReadOnly Property PointerSizeEsperado As Integer = 8
         Public ReadOnly Property ClassCount As Integer
             Get
                 Return _classes.Count
@@ -119,17 +207,16 @@ Namespace Havok.Canon
             End Get
         End Property
 
-        Private Sub New(tag As String, sha As String, stamp As String, rows As String(), enums As String())
+        Private Sub New(tag As String, sha As String, stamp As String, rows As String(), enums As String(),
+                        memberFlagValues As String)
             _Tag = tag
             _SourceSha256 = sha
             _SourceStamp = stamp
             _sizes = HkSizes.Para(tag)
             _classes = New Dictionary(Of String, HavokClass)(StringComparer.OrdinalIgnoreCase)
-            For Each row In rows
-                Dim parsed = ParseRow(row)
-                If parsed IsNot Nothing Then _classes(parsed.Name) = parsed
-            Next
 
+            ' ⛔ LOS ENUMS SE PARSEAN PRIMERO. La alineacion de cada miembro sale de
+            ' `hkClassMember|FlagValues`, que es un enum: hay que tenerlo antes de leer las filas.
             ' clase|enum|nombre=valor,nombre=valor,...
             _enums = New Dictionary(Of String, IReadOnlyDictionary(Of String, Integer))(StringComparer.OrdinalIgnoreCase)
             For Each row In enums
@@ -144,9 +231,57 @@ Namespace Havok.Canon
                 Next
                 If items.Count > 0 Then _enums(p(0) & "|" & p(1)) = items
             Next
+
+            Dim alin = AlineacionesDeclaradas(memberFlagValues)
+            For Each row In rows
+                Dim parsed = ParseRow(row, alin)
+                If parsed IsNot Nothing Then _classes(parsed.Name) = parsed
+            Next
         End Sub
 
-        Private Shared Function ParseRow(row As String) As HavokClass
+        ''' <summary>
+        ''' ⛔⛔⛔ LA ALINEACION QUE DECLARA EL MOTOR, no una constante escrita aca.
+        ''' <para>`hkClassMember|FlagValues` declara `ALIGN_8=128`, `ALIGN_16=256`, `ALIGN_32=2048` y
+        ''' `ALIGN_REAL=256` — mismo valor que `ALIGN_16`, porque el vector de `hkReal` alinea a 16.
+        ''' El extractor los traia desde siempre y el emisor los ponia en la tabla; no los usaba
+        ''' NADIE.</para>
+        ''' <para>El numero de bytes sale del NOMBRE del flag. Que el nombre diga la verdad no se
+        ''' supone: lo prueba una columna INDEPENDIENTE de la misma reflexion —el `offset` de cada
+        ''' miembro—. Medido: los 56 miembros de FO4 y los 36 de SSE que traen uno de estos flags
+        ''' tienen el offset alineado a ese numero. 92 de 92, cero violaciones. El gate lo exige.</para>
+        ''' <para>⚠️ Y LO QUE NO SON: 56 y 36 miembros. Declaran la alineacion de un miembro DENTRO
+        ''' de su clase. NO explican el relleno entre bloques de la seccion de datos, que es otra
+        ''' cosa y sigue sin cita.</para>
+        ''' </summary>
+        Private Shared Function AlineacionesDeclaradas(memberFlagValues As String) As Dictionary(Of Integer, Integer)
+            Dim r As New Dictionary(Of Integer, Integer)
+            ' ⛔ EL ENUM LO EMITE EL GENERADOR (`MemberFlagValues`). Pedirselo a `EnumValues` obligaba a
+            ' escribir `"hkClassMember"` aca, que es el despacho por literal de clase que el gate prohibe.
+            If String.IsNullOrEmpty(memberFlagValues) Then Return r
+            For Each it In memberFlagValues.Split(","c)
+                Dim eq = it.LastIndexOf("="c)
+                If eq <= 0 Then Continue For
+                Dim nombre = it.Substring(0, eq).Trim()
+                Dim bit As Integer
+                If Not Integer.TryParse(it.Substring(eq + 1), bit) Then Continue For
+                If Not nombre.StartsWith("ALIGN_", StringComparison.OrdinalIgnoreCase) Then Continue For
+                Dim suf = nombre.Substring("ALIGN_".Length)
+                Dim bytes As Integer
+                If suf.Equals("REAL", StringComparison.OrdinalIgnoreCase) Then
+                    ' El vector de `hkReal` son 4 floats: 16 bytes. Mismo valor de bit que ALIGN_16.
+                    bytes = 16
+                ElseIf Not Integer.TryParse(suf, bytes) Then
+                    Continue For
+                End If
+                If bit <= 0 OrElse bytes <= 0 Then Continue For
+                Dim previo As Integer
+                If r.TryGetValue(bit, previo) AndAlso previo >= bytes Then Continue For
+                r(bit) = bytes
+            Next
+            Return r
+        End Function
+
+        Private Shared Function ParseRow(row As String, alineaciones As Dictionary(Of Integer, Integer)) As HavokClass
             If String.IsNullOrEmpty(row) Then Return Nothing
             Dim head = row.Split("|"c)
             If head.Length < 5 Then Return Nothing
@@ -165,7 +300,33 @@ Namespace Havok.Canon
                     Integer.TryParse(f(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, off)
                     Dim carr As Integer
                     Integer.TryParse(f(4), NumberStyles.Integer, CultureInfo.InvariantCulture, carr)
-                    members.Add(New HavokMember(f(0), off, f(2), f(3), carr, f(5)))
+                    ' ⛔ EL SEPTIMO CAMPO SON LOS `flags`, EN HEXA. Se lee con guarda de largo porque una
+                    ' tabla vieja no lo trae: ausente = 0, que es `FLAGS_NONE`.
+                    Dim flg As Integer
+                    If f.Length > 6 AndAlso f(6).Length > 0 Then
+                        Integer.TryParse(f(6), NumberStyles.HexNumber, CultureInfo.InvariantCulture, flg)
+                    End If
+                    ' ⛔ EL OCTAVO CAMPO ES EL ANCHO, EN HEXA. Misma guarda de largo que los flags:
+                    ' ausente = 0 = "la tabla no lo declara", que el consumidor tiene que distinguir de un
+                    ' ancho que de verdad vale 0.
+                    Dim anc As Integer
+                    If f.Length > 7 AndAlso f(7).Length > 0 Then
+                        Integer.TryParse(f(7), NumberStyles.HexNumber, CultureInfo.InvariantCulture, anc)
+                    End If
+                    ' El NOVENO campo es el ancho del ELEMENTO, tambien en hexa y con la misma guarda.
+                    Dim ael As Integer
+                    If f.Length > 8 AndAlso f(8).Length > 0 Then
+                        Integer.TryParse(f(8), NumberStyles.HexNumber, CultureInfo.InvariantCulture, ael)
+                    End If
+                    ' ⛔ LA ALINEACION SALE DE LOS FLAGS QUE EL MOTOR DECLARA, por el bit prendido.
+                    ' 0 = el miembro no declara ninguna.
+                    Dim alg = 0
+                    If alineaciones IsNot Nothing AndAlso flg <> 0 Then
+                        For Each kv In alineaciones
+                            If (flg And kv.Key) <> 0 AndAlso kv.Value > alg Then alg = kv.Value
+                        Next
+                    End If
+                    members.Add(New HavokMember(f(0), off, f(2), f(3), carr, f(5), flg, anc, ael, alg))
                 Next
             End If
             Return New HavokClass(head(0), head(1), size, ver, members)
@@ -435,14 +596,16 @@ Namespace Havok.Canon
                                        HavokLayoutData_FO4.SourceSha256,
                                        HavokLayoutData_FO4.SourceStamp,
                                        HavokLayoutData_FO4.Rows,
-                                       HavokLayoutData_FO4.Enums))
+                                       HavokLayoutData_FO4.Enums,
+                                       HavokLayoutData_FO4.MemberFlagValues))
 
         Private Shared ReadOnly _sse As New Lazy(Of HavokLayout)(
             Function() New HavokLayout("SSE",
                                        HavokLayoutData_SSE.SourceSha256,
                                        HavokLayoutData_SSE.SourceStamp,
                                        HavokLayoutData_SSE.Rows,
-                                       HavokLayoutData_SSE.Enums))
+                                       HavokLayoutData_SSE.Enums,
+                                       HavokLayoutData_SSE.MemberFlagValues))
 
         ''' <summary>Tabla de Fallout 4 (hk2014 x64).</summary>
         Public Shared ReadOnly Property FO4 As HavokLayout

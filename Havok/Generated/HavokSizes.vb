@@ -1,6 +1,6 @@
 ﻿' ================================================================================================
 '  GENERADO POR Tools/HavokLayoutGen/gentyped.py - NO EDITAR A MANO.
-'  Generado: 2026-08-26   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
+'  Generado: 2026-08-27   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
 '
 '  El TAMANO de cada clase, por juego. Ver `emitir_sizes` en el generador.
 ' ================================================================================================

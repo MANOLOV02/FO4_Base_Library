@@ -27,7 +27,7 @@ Public NotInheritable Class HkxObjectGraphParser_Class
     End Function
 End Class
 
-Public Partial Class HkxObjectGraph_Class
+Partial Public Class HkxObjectGraph_Class
     Public ReadOnly Property Packfile As HkxPackfile_Class
     Public ReadOnly Property ContentsSection As HkxPackfileSection_Class
     Public ReadOnly Property Objects As New List(Of HkxVirtualObjectGraph_Class)
@@ -52,6 +52,73 @@ Public Partial Class HkxObjectGraph_Class
     ' justo lo que el envoltorio produce. Con anclaje y formato propios esa circularidad no existe:
     ' el grafo de ARRANQUE se ancla en el byte 0 y `Hk_HkPackfileHeader` lee la cabecera como
     ' cualquier otra clase que la reflexion declara.
+    ''' <summary>
+    ''' ⛔⛔ EL CENSO POR BYTE, MARCADO POR EL PROPIO LECTOR.
+    ''' <para>La cobertura que habia contaba MIEMBROS DECLARADOS de las clases que aparecen. Eso
+    ''' deja afuera todo lo que nadie lee: el relleno entre miembros, los huecos entre bloques, las
+    ''' secciones que no son `__data__` y los bloques de clases que ningun `.exe` declara.</para>
+    ''' <para>⛔ NO SE TRANSCRIBE NINGUNA LEY DE ANCHOS. Se marca en `EnsureReadable`, que es el
+    ''' embudo por el que pasa TODA lectura declarando offset y largo, mas el recorrido de strings,
+    ''' que camina bytes por su cuenta. Lo que quede sin marcar es lo que nadie leyo.</para>
+    ''' <para>Apagado por defecto, como `HavokLayout.RecordCoverage`: prenderlo cuesta una marca
+    ''' por lectura sobre 148.354 objetos.</para>
+    ''' </summary>
+    Public Shared Property RegistrarBytes As Boolean = False
+
+    Private _tocados As Boolean()
+    Private _ranuras As Boolean()
+
+    ''' <summary>El byte del archivo en una posicion ABSOLUTA. Solo para el censo por byte.</summary>
+    Public Function RawEnAbsoluto(i As Integer) As Byte
+        If _bytes Is Nothing OrElse i < 0 OrElse i >= _bytes.Length Then Return 0
+        Return _bytes(i)
+    End Function
+
+    ''' <summary>Los bytes del ARCHIVO que alguna lectura toco, o Nothing si no se registro.</summary>
+    Public Function BytesTocados() As Boolean()
+        Return _tocados
+    End Function
+
+    ''' <summary>
+    ''' ⛔⛔ LAS RANURAS DE REUBICACION QUE EL LECTOR TOCO. Solo para el censo por byte.
+    ''' <para>Una ranura de puntero se escribe en CERO en el archivo y su valor lo pone el FIXUP
+    ''' al cargar. Ni el motor las lee: las parchea. Contarlas como "dato que la app no lee" es
+    ''' contar un hueco que no existe.</para>
+    ''' <para>Se marcan ACA y no en el instrumento porque el instrumento solo podia derivarlas de
+    ''' las tablas de fixups, y asi se le escapaban las dos mitades que importan: la ranura NULA
+    ''' (no tiene entrada en ninguna tabla) y la que vive adentro del elemento i de un arreglo.
+    ''' El lector pasa por TODAS, porque para eso las resuelve.</para>
+    ''' </summary>
+    Public Function BytesDeRanura() As Boolean()
+        Return _ranuras
+    End Function
+
+    ''' <summary>El largo del archivo entero, para poder dividir.</summary>
+    Public ReadOnly Property BytesTotales As Integer
+        Get
+            Return If(_bytes Is Nothing, 0, _bytes.Length)
+        End Get
+    End Property
+
+    ''' <summary>Una ranura de reubicacion de `PointerSize` bytes, en offset RELATIVO.</summary>
+    Private Sub MarcarRanura(relativeOffset As Integer)
+        If _ranuras Is Nothing Then Exit Sub
+        Dim i0 = Math.Max(0, _ancla + relativeOffset)
+        Dim i1 = Math.Min(_ancla + relativeOffset + PointerSizeValue, _ranuras.Length)
+        For i = i0 To i1 - 1
+            _ranuras(i) = True
+        Next
+    End Sub
+
+    Private Sub Marcar(absoluteStart As Integer, byteCount As Integer)
+        If _tocados Is Nothing OrElse byteCount <= 0 Then Exit Sub
+        Dim i0 = Math.Max(0, absoluteStart)
+        Dim i1 = Math.Min(absoluteStart + byteCount, _tocados.Length)
+        For i = i0 To i1 - 1
+            _tocados(i) = True
+        Next
+    End Sub
+
     Private ReadOnly _bytes As Byte()
     Private ReadOnly _ancla As Integer
     Private ReadOnly _fin As Integer
@@ -59,6 +126,13 @@ Public Partial Class HkxObjectGraph_Class
 
     ''' <summary>Que tabla de la reflexion aplica. Lo declara el propio formato del archivo.</summary>
     Public ReadOnly Property Formato As HkxPackfileFormat_Enum
+
+    ''' <summary>El ancho de puntero que declara el ARCHIVO en `layoutRules[0]`.</summary>
+    Public ReadOnly Property AnchoDePuntero As Integer
+        Get
+            Return _pointerSize
+        End Get
+    End Property
 
     Private ReadOnly Property PointerSizeValue As Integer
         Get
@@ -84,6 +158,10 @@ Public Partial Class HkxObjectGraph_Class
         If IsNothing(Me.ContentsSection) Then Throw New InvalidOperationException("The HKX contents section was not found.")
 
         _bytes = packfile.RawBytes
+        If RegistrarBytes AndAlso _bytes IsNot Nothing Then
+            ReDim _tocados(_bytes.Length - 1)
+            ReDim _ranuras(_bytes.Length - 1)
+        End If
         _ancla = ContentsSection.AbsoluteDataStart
         _fin = ContentsSection.DataEndAbsolute
         ' `pointerSize` es `layoutRules[0]`, y el formato lo derivo el envoltorio: ninguno de los dos
@@ -404,12 +482,16 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     Public Function ResolveLocalPointer(sourceRelativeOffset As Integer) As Integer?
+        ' ⛔ LA RANURA SE MARCA HAYA FIXUP O NO. Justamente la que NO lo tiene es la que el censo
+        ' no podia ver derivandola de la tabla, y es la mitad del faltante.
+        If _ranuras IsNot Nothing Then MarcarRanura(sourceRelativeOffset)
         Dim fixup As HkxLocalFixupEntry_Class = Nothing
         If Not TryGetLocalFixup(sourceRelativeOffset, fixup) Then Return Nothing
         Return fixup.DestinationRelativeOffset
     End Function
 
     Public Function ResolveGlobalObject(sourceRelativeOffset As Integer) As HkxVirtualObjectGraph_Class
+        If _ranuras IsNot Nothing Then MarcarRanura(sourceRelativeOffset)
         Dim fixup As HkxGlobalFixupEntry_Class = Nothing
         If Not TryGetGlobalFixup(sourceRelativeOffset, fixup) Then Return Nothing
         Return GetObject(fixup.TargetRelativeOffset)
@@ -430,6 +512,12 @@ Public Partial Class HkxObjectGraph_Class
             endOffset += 1
         End While
 
+        ' ⛔ ESTA NO PASA POR `EnsureReadable`: camina bytes hasta el NUL. Se marca el texto Y el
+        ' terminador, que tambien es parte del dato.
+        ' ⛔ EL `+ 1` ES EL TERMINADOR, Y SOLO EXISTE SI LO HUBO. Cuando la cadena llega al fin
+        ' de la seccion sin NUL, `endOffset` YA es `_fin` y sumarle uno marcaba como leido el primer byte
+        ' de la tabla de fixups, que no es dato.
+        Marcar(absoluteOffset, Math.Min(endOffset + 1, _fin) - absoluteOffset)
         Return Encoding.ASCII.GetString(_bytes, absoluteOffset, endOffset - absoluteOffset)
     End Function
 
@@ -495,6 +583,12 @@ Public Partial Class HkxObjectGraph_Class
         If relativeOffset < 0 OrElse byteCount < 0 OrElse relativeOffset + byteCount > dataRelativeEnd Then
             Throw New InvalidDataException($"Requested HKX range is out of bounds: offset=0x{relativeOffset:X} size={byteCount}.")
         End If
+        ' ⛔ EL EMBUDO. Toda lectura pasa por aca declarando offset y largo, asi que marcar aca es
+        ' marcar exactamente lo que se lee, sin repetir en ningun lado la ley de cuanto mide cada tipo.
+        ' ⛔⛔ LA GUARDA VA EN EL LLAMADOR. `Marcar` sale sola si `_tocados` es Nothing, pero esta es la
+        ' funcion por la que pasan TODAS las lecturas del parser: con la guarda adentro queda una llamada
+        ' por lectura en el camino normal, que es el de render y bake. Aca no queda ni eso.
+        If _tocados IsNot Nothing Then Marcar(_ancla + relativeOffset, byteCount)
     End Sub
 
     ' Todas las strings ASCII imprimibles referenciadas por local-fixups dentro del objeto.
