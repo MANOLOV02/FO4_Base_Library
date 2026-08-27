@@ -212,63 +212,70 @@ Public Partial Class HkxObjectGraph_Class
         Return Enumerable.Empty(Of HkxVirtualObjectGraph_Class)()
     End Function
 
-    ''' <summary>Los arreglos que declara `hkaAnimationContainer`. ⛔ ENUM, NO STRING: el despacho
-    ''' por string tenia un `Case Else : n = 0` que hacia caer un campo mal escrito al barrido por
-    ''' clase EN SILENCIO — o sea al orden de los bloques, que es la moneda al aire que el doc de
-    ''' <see cref="Esqueletos"/> condena. Un valor que no existe ahora no compila.</summary>
-    Public Enum CampoDelContenedor
-        Animations = 0
-        Bindings = 1
-        ''' <summary>⛔ El tercer arreglo del contenedor. `Esqueletos()` tenia su propia copia del
-        ''' recorrido — contenedor primero, barrido por clase despues — con `.Read` en vez de
-        ''' `Leer(Of T)`. Es el mismo campo del mismo objeto: entra aca.</summary>
-        Skeletons = 2
-    End Enum
-
+    ' ⛔ `Math.Max(0, ...)` NO ES DECORACION. `Raw.XCount` devuelve el `Count` CRUDO de la
+    ' cabecera del `hkArray` (`ReadArrayHeader` no lo acota; el unico sitio que lo guarda con
+    ' `<= 0` es `ReadObjectReferenceArray`). El bucle viejo `For i = 0 To n - 1` con `n` negativo
+    ' simplemente NO ITERABA y caia al respaldo por clase, que es lo que recupera los esqueletos
+    ' sueltos. `Enumerable.Range` valida el conteo AL CONSTRUIRSE y tira
+    ' `ArgumentOutOfRangeException` desde adentro de esta funcion, antes del respaldo: se llevaria
+    ' puestas TODAS las animaciones del archivo, y en `SkeletonInstance` el `Catch` devuelve 0 y el
+    ' bake sale con el esqueleto del NIF pelado. Es tolerancia que el reemplazo perdio.
     ''' <summary>
-    ''' ⛔⛔ LOS BLOQUES QUE EL CONTENEDOR DECLARA EN UN ARREGLO, EN SU ORDEN.
-    ''' <para>`hkaAnimationContainer` declara `skeletons`, `animations` y `bindings`. Sacar
-    ''' esas listas con `GetObjectsByClassName(...)` ordenado por `RelativeOffset` es usar el
-    ''' orden en que el serializador dejo los bloques, que no es una ley del formato.</para>
-    ''' <para>Devuelve el BLOQUE (`HkxVirtualObjectGraph_Class`) y no el objeto leido porque
-    ''' el arreglo es de la clase BASE: la subclase concreta la dice el nombre de clase del
-    ''' bloque, que es lo unico que la declara.</para>
-    ''' <para>Si el archivo no trae contenedor se cae al barrido por clase — ausencia conocida
-    ''' del archivo, no una preferencia.</para>
+    ''' ⛔⛔ LO QUE EL CONTENEDOR DECLARA, EN EL ORDEN EN QUE LO DECLARA.
+    ''' <para>`hkaAnimationContainer` declara `animations`, `bindings` y `skeletons`. El archivo DICE
+    ''' cuales son y en que orden; barrer el packfile por clase y quedarse con el primero es tirar una
+    ''' moneda cuando hay dos.</para>
+    ''' <para>⛔ SE ACOTA CON EL CONTEO QUE DECLARA LA CABECERA (`Raw.XCount` + `Raw.XRef(i)`), no con
+    ''' el largo de la lista materializada: la propiedad generada COMPACTA —descarta el que no pudo
+    ''' leer— asi que su `.Count` puede ser MENOR que lo que el archivo declara, y acotar con el corta
+    ''' la cola en silencio.</para>
+    ''' <para>⛔ DEVUELVE BLOQUES, NO OBJETOS. Los tres arreglos estan declarados con la clase BASE
+    ''' (`hkaAnimation`, `hkaSkeleton`) y el archivo pone la SUBCLASE: el `ClassName` del bloque es lo
+    ''' unico que la dice. Materializar aca a la clase base la perderia.</para>
+    ''' <para>⛔ HABIA UN `Select Case` SOBRE UN ENUM DE LA APP —`CampoDelContenedor.Animations`— para
+    ''' elegir cual de los tres leer: una etiqueta de la app en vez del miembro que declara el motor.
+    ''' Los tres miembros son ahora tres accesores con SU nombre, y esta ley vive UNA vez.</para>
     ''' </summary>
-    Public Function BloquesDelContenedor(campo As CampoDelContenedor, claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
+    Private Function DelContenedor(refs As Func(Of Havok.Canon.Objects.HkObj_HkaAnimationContainer, IEnumerable(Of HkxVirtualObjectGraph_Class)),
+                                   claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
         Dim r As New List(Of HkxVirtualObjectGraph_Class)
-        For Each c In GetObjectsByClassName("hkaAnimationContainer")
-            Dim cont = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaAnimationContainer)(Me, c)
+        For Each c In GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkaAnimationContainer.NombreDeClase)
+            Dim cont = Havok.Canon.Objects.HkObj_HkaAnimationContainer.Leer(Me, c)
             If cont Is Nothing Then Continue For
-            ' ⛔ EL `Case Else` TIRA. Un valor de enum sin arreglo detras es un error del llamador, y
-            ' devolver 0 lo mandaba al barrido por clase como si el archivo no trajera contenedor.
-            Dim n As Integer
-            Dim refDe As Func(Of Integer, HkxVirtualObjectGraph_Class)
-            Select Case campo
-                Case CampoDelContenedor.Animations
-                    n = cont.Raw.AnimationsCount : refDe = AddressOf cont.Raw.AnimationsRef
-                Case CampoDelContenedor.Bindings
-                    n = cont.Raw.BindingsCount : refDe = AddressOf cont.Raw.BindingsRef
-                Case CampoDelContenedor.Skeletons
-                    n = cont.Raw.SkeletonsCount : refDe = AddressOf cont.Raw.SkeletonsRef
-                Case Else
-                    Throw New ArgumentOutOfRangeException(NameOf(campo), campo,
-                        "`hkaAnimationContainer` no declara ese arreglo.")
-            End Select
-            For i = 0 To n - 1
-                Dim b = refDe(i)
+            For Each b In refs(cont)
                 If b IsNot Nothing Then r.Add(b)
             Next
         Next
         If r.Count > 0 Then Return r
 
-        ' ⛔ AUSENCIA CONOCIDA DEL ARCHIVO, no una preferencia: sin contenedor no hay orden declarado
-        ' y lo unico que queda es el barrido por clase.
+        ' ⛔ EL RESPALDO ES POR AUSENCIA DE RESULTADO, no por ausencia del contenedor. La
+        ' condicion es `r.Count > 0`, asi que tambien cae aca un archivo que SI trae contenedor pero
+        ' con ese arreglo VACIO. Es el comportamiento que el arbol tiene desde siempre y el que los
+        ' `.hkx` de esqueleto suelto necesitan —son un `hkaSkeleton` y nada mas, sin contenedor—,
+        ' pero decirlo como 'ausencia del contenedor' hace que el proximo lector descarte el otro
+        ' caso sin mirarlo.
         For Each cn In claseSuelta
             r.AddRange(GetObjectsByClassName(cn).OrderBy(Function(x) x.RelativeOffset))
         Next
         Return r
+    End Function
+
+    ''' <summary>Los bloques de `hkaAnimationContainer.animations`, o los sueltos si no hay contenedor.</summary>
+    Public Function AnimacionesDeclaradas(claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
+        Return DelContenedor(Function(c) Enumerable.Range(0, Math.Max(0, c.Raw.AnimationsCount)).
+                                                    Select(Function(i) c.Raw.AnimationsRef(i)), claseSuelta)
+    End Function
+
+    ''' <summary>Los bloques de `hkaAnimationContainer.bindings`, o los sueltos si no hay contenedor.</summary>
+    Public Function BindingsDeclarados(claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
+        Return DelContenedor(Function(c) Enumerable.Range(0, Math.Max(0, c.Raw.BindingsCount)).
+                                                    Select(Function(i) c.Raw.BindingsRef(i)), claseSuelta)
+    End Function
+
+    ''' <summary>Los bloques de `hkaAnimationContainer.skeletons`, o los sueltos si no hay contenedor.</summary>
+    Public Function EsqueletosDeclarados(claseSuelta As String()) As List(Of HkxVirtualObjectGraph_Class)
+        Return DelContenedor(Function(c) Enumerable.Range(0, Math.Max(0, c.Raw.SkeletonsCount)).
+                                                    Select(Function(i) c.Raw.SkeletonsRef(i)), claseSuelta)
     End Function
 
     ''' <summary>
@@ -281,7 +288,7 @@ Public Partial Class HkxObjectGraph_Class
     ''' <para>Si el archivo no trae contenedor —pasa en los `.hkx` de esqueleto suelto, que son
     ''' un `hkaSkeleton` y nada mas— se cae al barrido por clase, que es lo que habia. Esa
     ''' rama es una AUSENCIA CONOCIDA del archivo, no una preferencia.</para>
-    ''' <para>⛔ EL RECORRIDO ES <see cref="BloquesDelContenedor"/>, NO UNA COPIA. Aca habia el
+    ''' <para>⛔ EL RECORRIDO ES <see cref="EsqueletosDeclarados"/>, NO UNA COPIA. Aca habia el
     ''' mismo bucle —contenedor primero, barrido por clase si no hay— escrito una segunda vez, y con
     ''' `.Read` directo en vez de `Leer(Of T)`.</para>
     ''' </summary>
@@ -294,7 +301,7 @@ Public Partial Class HkxObjectGraph_Class
         ' padding o por `signature = &HFFFFFFFF`) y la lista saldria VACIA sin que nada falle.
         ' En el respaldo por clase la situacion es la inversa —ahi el `ClassName` es COMO se encontro
         ' el bloque—, y el mismo `.Read` sirve para las dos ramas.
-        Return BloquesDelContenedor(CampoDelContenedor.Skeletons, {"hkaSkeleton"}).
+        Return EsqueletosDeclarados({Havok.Canon.Objects.HkObj_HkaSkeleton.NombreDeClase}).
             Select(Function(b) Havok.Canon.Objects.HkObj_HkaSkeleton.Read(Me, b)).
             Where(Function(s) s IsNot Nothing).ToList()
     End Function
@@ -535,14 +542,14 @@ Public Partial Class HkxObjectGraph_Class
         ' `Dim` de arriba, asi que la lectura reflexiva corria y se tiraba en todo generador con mas
         ' de una hoja distinta — que es el caso comun de un blender o un selector.
         If distinct.Count = 1 AndAlso
-           Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbClipGenerator)(Me, gen) IsNot Nothing Then Return distinct(0)
+           Havok.Canon.Objects.HkObj_HkbClipGenerator.Leer(Me, gen) IsNot Nothing Then Return distinct(0)
         Return gen.ClassName & " → [" & String.Join(", ", distinct) & "]"
     End Function
 
     ''' <summary>
     ''' Las hojas (clip/behavior/gamebryo/sm) alcanzables siguiendo refs de generador.
     ''' <para>⛔ SIN UN SOLO NOMBRE DE CLASE A MANO. Cada rama era `cn.Equals("...")` + `.Read()`, o
-    ''' sea <see cref="Havok.Canon.HavokConstraintSets.Leer">Leer(Of T)</see> escrito a mano cuatro
+    ''' sea el `Leer` de cada clase generada escrito a mano cuatro
     ''' veces: el nombre lo deriva el generador del propio tipo. Si el bloque no declara esa clase,
     ''' `Leer` devuelve Nothing y se prueba la siguiente; si ninguna matchea es un envoltorio
     ''' (modifier/blender/child/selector/poseMatching/layer/…) y se siguen sus refs.</para>
@@ -555,22 +562,22 @@ Public Partial Class HkxObjectGraph_Class
     Private Sub CollectGeneratorLeaves(gen As HkxVirtualObjectGraph_Class, leaves As List(Of String), visited As HashSet(Of Integer), depth As Integer)
         If IsNothing(gen) OrElse depth > 8 OrElse Not visited.Add(gen.RelativeOffset) Then Return
 
-        Dim clip = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbClipGenerator)(Me, gen)
+        Dim clip = Havok.Canon.Objects.HkObj_HkbClipGenerator.Leer(Me, gen)
         If clip IsNot Nothing Then
             leaves.Add("clip:" & If(clip.AnimationName, ""))
             Return
         End If
-        Dim beh = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbBehaviorReferenceGenerator)(Me, gen)
+        Dim beh = Havok.Canon.Objects.HkObj_HkbBehaviorReferenceGenerator.Leer(Me, gen)
         If beh IsNot Nothing Then
             leaves.Add("behavior:" & If(beh.BehaviorName, ""))
             Return
         End If
-        Dim seq = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_BGSGamebryoSequenceGenerator)(Me, gen)
+        Dim seq = Havok.Canon.Objects.HkObj_BGSGamebryoSequenceGenerator.Leer(Me, gen)
         If seq IsNot Nothing Then
             leaves.Add("gamebryo:" & If(seq.PSequence, ""))
             Return
         End If
-        Dim sm = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkbStateMachine)(Me, gen)
+        Dim sm = Havok.Canon.Objects.HkObj_HkbStateMachine.Leer(Me, gen)
         If sm IsNot Nothing Then
             leaves.Add("sm:" & If(sm.Name, ""))   ' SM anidada: no expandir
             Return
@@ -597,7 +604,7 @@ Public Partial Class HkxObjectGraph_Class
     Private Function IsGeneratorClass(className As String) As Boolean
         Dim lay = Havok.Canon.HavokLayout.ForGraph(Me)
         If lay Is Nothing Then Return False
-        Return lay.DerivaDe(className, "hkbGenerator")
+        Return lay.DerivaDe(className, Havok.Canon.Objects.HkObj_HkbGenerator.NombreDeClase)
     End Function
 
 End Class

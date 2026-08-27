@@ -49,9 +49,11 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     ''' SIMD de los carriles y la dequantización `float(v &lt;&lt; 16) × bitcast_float(w &lt;&lt; 16)`.
     ''' </summary>
     Friend Shared Function ParseObjectSpaceSkinPNOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
-        ' ⛔ EL GUARDA POR NOMBRE Y LA LECTURA SON LA MISMA LLAMADA. `Leer(Of T)` devuelve Nothing si
-        ' el bloque declara otra clase: el `ClassName.Equals("...")` de aca era literalmente su cuerpo.
-        Dim o = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator)(graph, source)
+        ' ⛔ EL GUARDA POR NOMBRE Y LA LECTURA SON LA MISMA LLAMADA, Y LA HACE LA PROPIA CLASE.
+        ' `Leer` compara contra su `NombreDeClase` —emitido desde la reflexion del .exe— y acepta
+        ' tambien las subclases que la tabla declara. Antes esto pasaba por un generico que
+        ' resolvia el lector por REFLEXION a partir del `Type`.
+        Dim o = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.Leer(graph, source)
         If o Is Nothing OrElse o.ObjectSpaceDeformer Is Nothing Then Return Nothing
         Dim d = o.ObjectSpaceDeformer
 
@@ -139,12 +141,12 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     Friend Shared Function ParseSimpleMeshBoneDeformOperator(graph As HkxObjectGraph_Class,
                                                              source As HkxVirtualObjectGraph_Class,
                                                              Optional skeleton As Havok.Canon.Objects.HkObj_HkaSkeleton = Nothing) As HclSimpleMeshBoneDeformOperatorGraph_Class
-        ' ⛔ IDEM: el guarda por nombre lo hace `Leer(Of T)`, mas abajo.
+        ' ⛔ IDEM: el guarda por nombre lo hace `HkObj_*.Leer`, mas abajo.
 
         ' ⛔ TODO LO DECLARADO SALE DEL OBJETO GENERADO. `triangleBonePairs` es
         ' `boneOffset,0,uint16 ; triangleOffset,2,uint16` en la reflexion y `localBoneTransforms` es
         ' `array,matrix4`: los dos se leian a mano aca, byte por byte, con el mismo resultado.
-        Dim o = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator)(graph, source)
+        Dim o = Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator.Leer(graph, source)
         If o Is Nothing OrElse o.TriangleBonePairs Is Nothing OrElse o.TriangleBonePairs.Count = 0 Then Return Nothing
 
         Dim result As New HclSimpleMeshBoneDeformOperatorGraph_Class With {.Operador = o}

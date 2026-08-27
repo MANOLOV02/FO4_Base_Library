@@ -57,7 +57,7 @@ Public NotInheritable Class HkxPackfileParser_Class
     ''' barrido pueda clasificar miles de archivos»— pasan a tirar. Una pregunta sobre la TABLA se
     ''' contesta en el gate, no en el camino caliente del parser.</para>
     ''' </summary>
-    Private Shared ReadOnly HeaderFixedSize As Integer = Havok.Canon.HavokLayout.FO4.SizeOfClass("hkPackfileHeader")
+    Private Shared ReadOnly HeaderFixedSize As Integer = Havok.Canon.HavokLayout.FO4.SizeOfClass(Havok.Canon.Objects.HkObj_HkPackfileHeader.NombreDeClase)
     Public Const HavokMagic0 As UInteger = &H57E0E057UI
     Public Const HavokMagic1 As UInteger = &H10C0C010UI
 
@@ -100,7 +100,7 @@ Public NotInheritable Class HkxPackfileParser_Class
             ' el rotulo "no es un packfile", que es falso: un formato Havok que el lector no cubre es
             ' exactamente lo que un barrido tiene que poder poner en rojo.
             Throw New InvalidDataException(
-                $"Unsupported HKX variant: FileVersion={BitConverter.ToInt32(bytes, Off("hkPackfileHeader", "fileVersion"))}, " &
+                $"Unsupported HKX variant: FileVersion={BitConverter.ToInt32(bytes, Off(Havok.Canon.Objects.HkObj_HkPackfileHeader.NombreDeClase, "fileVersion"))}, " &
                 $"PointerSize={PointerSizeDe(bytes)}.")
         End If
         result.Grafo0 = New HkxObjectGraph_Class(bytes, result.Formato, PointerSizeDe(bytes))
@@ -150,13 +150,13 @@ Public NotInheritable Class HkxPackfileParser_Class
 
     ''' <summary>El ancho de puntero, que es `layoutRules[0]`. Se lee antes de elegir tabla.</summary>
     Private Shared Function PointerSizeDe(bytes As Byte()) As Integer
-        Return bytes(Off("hkPackfileHeader", "layoutRules"))
+        Return bytes(Off(Havok.Canon.Objects.HkObj_HkPackfileHeader.NombreDeClase, "layoutRules"))
     End Function
 
     ''' <summary>¿Los ocho bytes de arranque son el magic de un packfile Havok? El offset del campo lo
     ''' dice la tabla, no un literal.</summary>
     Public Shared Function EsPackfileHavok(bytes As Byte()) As Boolean
-        Const C As String = "hkPackfileHeader"
+        Const C As String = Havok.Canon.Objects.HkObj_HkPackfileHeader.NombreDeClase
         Dim o = Off(C, "magic")
         If bytes Is Nothing OrElse bytes.Length < o + 8 Then Return False
         Return BitConverter.ToUInt32(bytes, o) = HavokMagic0 AndAlso BitConverter.ToUInt32(bytes, o + 4) = HavokMagic1
@@ -171,7 +171,7 @@ Public NotInheritable Class HkxPackfileParser_Class
     ''' el resultado es el enum: no hay dos vocabularios.</para>
     ''' </summary>
     Public Shared Function FormatoDe(bytes As Byte()) As HkxPackfileFormat_Enum
-        Const C As String = "hkPackfileHeader"
+        Const C As String = Havok.Canon.Objects.HkObj_HkPackfileHeader.NombreDeClase
         If Not EsPackfileHavok(bytes) Then Return HkxPackfileFormat_Enum.Unknown
         Dim oV = Off(C, "fileVersion")
         If bytes.Length < oV + 4 Then Return HkxPackfileFormat_Enum.Unknown
@@ -223,7 +223,7 @@ Public NotInheritable Class HkxPackfileParser_Class
         ' como `int32` y nada mas: no hay ningun maximo que citar. Lo unico que se puede afirmar es
         ' que los encabezados TIENEN QUE ENTRAR — que es la misma condicion que `ReadSections` ya
         ' exige encabezado por encabezado, escrita una vez y por adelantado.
-        Dim shSize = Havok.Canon.HavokLayout.For(packfile.Formato).SizeOfClass("hkPackfileSectionHeader")
+        Dim shSize = Havok.Canon.HavokLayout.For(packfile.Formato).SizeOfClass(Havok.Canon.Objects.HkObj_HkPackfileSectionHeader.NombreDeClase)
         If h.NumSections <= 0 OrElse
            CLng(h.NumSections) * shSize > CLng(fileLength) - packfile.SectionHeadersAbsoluteOffset Then
             Throw New InvalidDataException(
@@ -240,7 +240,7 @@ Public NotInheritable Class HkxPackfileParser_Class
     ''' campo dos veces.</para>
     ''' </summary>
     Private Shared Sub ReadSections(packfile As HkxPackfile_Class, bytes As Byte(), fileLength As Integer)
-        Const C As String = "hkPackfileSectionHeader"
+        Const C As String = Havok.Canon.Objects.HkObj_HkPackfileSectionHeader.NombreDeClase
         ' ⛔ EL TAMANO DEL ENCABEZADO DE SECCION, DE LA TABLA. Era `0x40 en Fallout, 0x30 si no`
         ' escrito a mano; la reflexion lo dice: FO4 declara `pad,30,int32,,4` (0x40) y SSE termina
         ' en `endOffset,2C` (0x30). La tabla que corresponde la elige el formato del archivo.

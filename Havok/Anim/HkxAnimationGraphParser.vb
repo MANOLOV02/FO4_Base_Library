@@ -73,7 +73,7 @@ Partial Public Class HkxObjectGraph_Class
 
         ' ⛔ EL ORDEN LO DECLARA `hkaAnimationContainer.bindings`. Ordenar por `RelativeOffset` es
         ' usar el orden en que el serializador dejo los bloques, que no es una ley del formato.
-        For Each obj In BloquesDelContenedor(HkxObjectGraph_Class.CampoDelContenedor.Bindings, {"hkaAnimationBinding"})
+        For Each obj In BindingsDeclarados({Havok.Canon.Objects.HkObj_HkaAnimationBinding.NombreDeClase})
             Dim binding = Havok.Canon.Objects.HkObj_HkaAnimationBinding.Read(Me, obj)
             If Not IsNothing(binding) Then result.Add(binding)
         Next
@@ -108,8 +108,8 @@ Partial Public Class HkxObjectGraph_Class
         ' ademas ponia TODAS las spline antes que TODAS las lossless, un orden que el archivo
         ' no dice en ningun lado. La subclase concreta la sigue diciendo el nombre de clase
         ' del bloque, que es lo unico que la declara.
-        For Each obj In BloquesDelContenedor(HkxObjectGraph_Class.CampoDelContenedor.Animations,
-                                            {"hkaSplineCompressedAnimation", "hkaLosslessCompressedAnimation"})
+        For Each obj In AnimacionesDeclaradas(
+                                            {Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.NombreDeClase, Havok.Canon.Objects.HkObj_HkaLosslessCompressedAnimation.NombreDeClase})
             ' ⛔⛔ UN CLIP ROTO NO SE LLEVA PUESTOS A LOS DEMAS.
             ' Sin esta guarda, si el clip #2 del archivo tira, se pierden TODOS los del archivo y el
             ' llamador ve 'no tiene animaciones'. Medido sobre el corpus: 15.055 archivos de FO4 y
@@ -177,7 +177,7 @@ Partial Public Class HkxObjectGraph_Class
         ' ⛔ EL OBJETO, NO EL LECTOR CRUDO. `Hk_*.XxxItem(i)` devuelve la DIRECCION del elemento y el
         ' objeto el VALOR: de esa confusion salio el bug que dejaba 15.060 animaciones sin
         ' descomprimir. Mientras quede un sitio con el crudo teniendo el objeto, puede volver.
-        Dim hkr = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation)(Me, source)
+        Dim hkr = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Leer(Me, source)
         If hkr Is Nothing Then Return Nothing
 
         ' `maxFramesPerBlock` y `maskAndQuantizationSize` son de este parseo y no salen de aca:
@@ -665,7 +665,7 @@ Partial Public Class HkxObjectGraph_Class
     Private Shared ReadOnly RotQ As IReadOnlyDictionary(Of String, Integer) = CargarEnum("RotationQuantization")
 
     Private Shared Function CargarEnum(E As String) As IReadOnlyDictionary(Of String, Integer)
-        Const C As String = "hkaSplineCompressedAnimationTrackCompressionParams"
+        Const C As String = Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimationTrackCompressionParams.NombreDeClase
         Dim a = Havok.Canon.HavokLayout.FO4.EnumValues(C, E)
         Dim b = Havok.Canon.HavokLayout.SSE.EnumValues(C, E)
         If a Is Nothing Then
@@ -1245,7 +1245,7 @@ Partial Public Class HkxObjectGraph_Class
         ' despues las recorria a mano con el stride escrito aca (8 / 2 / 4 / 16). El objeto
         ' materializa los nueve arrays con el layout de la reflexion.
         Dim rel = source.RelativeOffset
-        Dim lo = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaLosslessCompressedAnimation)(Me, source)
+        Dim lo = Havok.Canon.Objects.HkObj_HkaLosslessCompressedAnimation.Leer(Me, source)
         If lo Is Nothing Then Return Nothing
 
         Dim duration = lo.Duration

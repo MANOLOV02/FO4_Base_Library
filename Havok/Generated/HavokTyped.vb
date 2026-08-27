@@ -24050,6 +24050,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_ElementsLayout) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [ElementsLayoutItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_ElementsLayout) < 0 Then Return -1
+            Return _o + _off(I_ElementsLayout) + (i * 4)
+        End Function
         Public ReadOnly Property [ElementsLayout](i As Integer) As Hk_HclBufferLayoutBufferElement
             Get
                 If _off Is Nothing OrElse _off(I_ElementsLayout) < 0 Then Return New Hk_HclBufferLayoutBufferElement(Nothing, 0)
@@ -24070,6 +24075,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Slots) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [SlotsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Slots) < 0 Then Return -1
+            Return _o + _off(I_Slots) + (i * 2)
+        End Function
         Public ReadOnly Property [Slots](i As Integer) As Hk_HclBufferLayoutSlot
             Get
                 If _off Is Nothing OrElse _off(I_Slots) < 0 Then Return New Hk_HclBufferLayoutSlot(Nothing, 0)
@@ -33548,6 +33558,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_SlotConversions) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [SlotConversionsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_SlotConversions) < 0 Then Return -1
+            Return _o + _off(I_SlotConversions) + (i * 7)
+        End Function
         Public ReadOnly Property [SlotConversions](i As Integer) As Hk_HclRuntimeConversionInfoSlotConversion
             Get
                 If _off Is Nothing OrElse _off(I_SlotConversions) < 0 Then Return New Hk_HclRuntimeConversionInfoSlotConversion(Nothing, 0)
@@ -33568,6 +33583,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_ElementConversions) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [ElementConversionsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_ElementConversions) < 0 Then Return -1
+            Return _o + _off(I_ElementConversions) + (i * 3)
+        End Function
         Public ReadOnly Property [ElementConversions](i As Integer) As Hk_HclRuntimeConversionInfoElementConversion
             Get
                 If _off Is Nothing OrElse _off(I_ElementConversions) < 0 Then Return New Hk_HclRuntimeConversionInfoElementConversion(Nothing, 0)
@@ -42850,6 +42870,24 @@ Namespace Havok.Canon.Typed
                 Return If(h Is Nothing OrElse h.DataRelativeOffset < 0, 0, h.Count)
             End Get
         End Property
+        ''' <summary>
+        ''' ⛔ LA DIRECCION DEL ELEMENTO i, NO SU VALOR. Se llamaba `[DeclaredEnums]Item` y eso
+        ''' invitaba a sumarlo como si fuera el dato: `blockOffsets.Add(hkr.BlockOffsetsItem(i))`
+        ''' daba 0xED0 donde el bloque arranca en 0. De los 527 accesores que se emitian,
+        ''' los dos unicos usos eran ese error.
+        ''' <para>El VALOR sale del objeto generado: `HkObj_*.[DeclaredEnums]` ya devuelve la lista
+        ''' leida. Esto queda para quien necesite la direccion.</para>
+        ''' </summary>
+        Public Function [DeclaredEnumsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_DeclaredEnums) < 0 Then Return -1
+            Dim h = _g.ReadArrayHeader(_o + _off(I_DeclaredEnums))
+            If h Is Nothing OrElse i < 0 OrElse i >= h.Count OrElse h.DataRelativeOffset < 0 Then Return -1
+            Return h.DataRelativeOffset + (i * 40)
+        End Function
+        ''' <summary>Lector del elemento i (struct embebido en el array).</summary>
+        Public Function [DeclaredEnumsAt](i As Integer) As Hk_HkClassEnum
+            Return New Hk_HkClassEnum(_g, [DeclaredEnumsItemOffset](i))
+        End Function
 
         Private Const I_DeclaredMembers As Integer = 5
         ''' <summary>`declaredMembers` simplearray&lt;struct&gt;</summary>
@@ -42955,17 +42993,17 @@ Namespace Havok.Canon.Typed
 
     End Structure
 
-    ''' <summary>`hkClassEnum` - 2 miembros (union de los dos juegos). padre=-</summary>
+    ''' <summary>`hkClassEnum` - 4 miembros (union de los dos juegos). padre=-</summary>
     Public Structure Hk_HkClassEnum
         Private ReadOnly _g As HkxObjectGraph_Class
         Private ReadOnly _o As Integer
         Private ReadOnly _off As Integer()
 
         ''' <summary>Offsets de FO4. -1 = el miembro no existe en ese juego.</summary>
-        Private Shared ReadOnly OFF_FO4 As Integer() = {0, 8}
+        Private Shared ReadOnly OFF_FO4 As Integer() = {0, 8, 24, 32}
         ''' <summary>Offsets de SSE. -1 = el miembro no existe en ese juego, o lo declara
         ''' con otra forma y el accesor emitido es el de FO4.</summary>
-        Private Shared ReadOnly OFF_SSE As Integer() = {0, 8}
+        Private Shared ReadOnly OFF_SSE As Integer() = {0, 8, 24, 32}
 
         Public Sub New(graph As HkxObjectGraph_Class, relativeOffset As Integer)
             _g = graph
@@ -43052,6 +43090,40 @@ Namespace Havok.Canon.Typed
         Public Function [ItemsAt](i As Integer) As Hk_HkClassEnumItem
             Return New Hk_HkClassEnumItem(_g, [ItemsItemOffset](i))
         End Function
+
+        Private Const I_Attributes As Integer = 2
+        ''' <summary>`attributes` pointer&lt;struct&gt;</summary>
+        Public ReadOnly Property [HasAttributes] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_Attributes) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [Attributes] As HkxVirtualObjectGraph_Class
+            Get
+                If _off Is Nothing OrElse _off(I_Attributes) < 0 Then Return Nothing
+                Return _g.ResolveGlobalObject(_o + _off(I_Attributes))
+            End Get
+        End Property
+        ''' <summary>Lector tipado del objeto apuntado por `attributes`.</summary>
+        Public ReadOnly Property [AttributesTyped] As Hk_HkCustomAttributes
+            Get
+                Return New Hk_HkCustomAttributes(_g, [Attributes])
+            End Get
+        End Property
+
+        Private Const I_Flags As Integer = 3
+        ''' <summary>`flags` flags&lt;uint32&gt;</summary>
+        Public ReadOnly Property [HasFlags] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_Flags) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [Flags] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_Flags) < 0 Then Return 0
+                Return _g.ReadInt32(_o + _off(I_Flags))
+            End Get
+        End Property
 
     End Structure
 
@@ -43218,6 +43290,12 @@ Namespace Havok.Canon.Typed
             Get
                 If _off Is Nothing OrElse _off(I_Enum) < 0 Then Return Nothing
                 Return _g.ResolveGlobalObject(_o + _off(I_Enum))
+            End Get
+        End Property
+        ''' <summary>Lector tipado del objeto apuntado por `enum`.</summary>
+        Public ReadOnly Property [EnumTyped] As Hk_HkClassEnum
+            Get
+                Return New Hk_HkClassEnum(_g, [Enum])
             End Get
         End Property
 
@@ -43764,7 +43842,7 @@ Namespace Havok.Canon.Typed
             If _off Is Nothing OrElse _off(I_Attributes) < 0 Then Return -1
             Dim h = _g.ReadArrayHeader(_o + _off(I_Attributes))
             If h Is Nothing OrElse i < 0 OrElse i >= h.Count OrElse h.DataRelativeOffset < 0 Then Return -1
-            Return h.DataRelativeOffset + (i * 16)
+            Return h.DataRelativeOffset + (i * 24)
         End Function
         ''' <summary>Lector del elemento i (struct embebido en el array).</summary>
         Public Function [AttributesAt](i As Integer) As Hk_HkCustomAttributesAttribute
@@ -44226,6 +44304,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Elements) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [ElementsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return -1
+            Return _o + _off(I_Elements) + (i * 2)
+        End Function
         Public ReadOnly Property [Elements](i As Integer) As Hk_HkFloat16
             Get
                 If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return New Hk_HkFloat16(Nothing, 0)
@@ -55912,6 +55995,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Elements) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [ElementsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return -1
+            Return _o + _off(I_Elements) + (i * 8)
+        End Function
         Public ReadOnly Property [Elements](i As Integer) As Hk_HkVertexFormatElement
             Get
                 If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return New Hk_HkVertexFormatElement(Nothing, 0)
@@ -78572,7 +78660,7 @@ Namespace Havok.Canon.Typed
             If _off Is Nothing OrElse _off(I_Echos) < 0 Then Return -1
             Dim h = _g.ReadArrayHeader(_o + _off(I_Echos))
             If h Is Nothing OrElse i < 0 OrElse i >= h.Count OrElse h.DataRelativeOffset < 0 Then Return -1
-            Return h.DataRelativeOffset + (i * 12)
+            Return h.DataRelativeOffset + (i * 16)
         End Function
         ''' <summary>Lector del elemento i (struct embebido en el array).</summary>
         Public Function [EchosAt](i As Integer) As Hk_HkbClipGeneratorEcho
@@ -106658,6 +106746,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_SyncPoints) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [SyncPointsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_SyncPoints) < 0 Then Return -1
+            Return _o + _off(I_SyncPoints) + (i * 8)
+        End Function
         Public ReadOnly Property [SyncPoints](i As Integer) As Hk_HkbGeneratorSyncInfoSyncPoint
             Get
                 If _off Is Nothing OrElse _off(I_SyncPoints) < 0 Then Return New Hk_HkbGeneratorSyncInfoSyncPoint(Nothing, 0)
@@ -106866,6 +106959,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_SyncPoints) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [SyncPointsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_SyncPoints) < 0 Then Return -1
+            Return _o + _off(I_SyncPoints) + (i * 8)
+        End Function
         Public ReadOnly Property [SyncPoints](i As Integer) As Hk_HkbGeneratorSyncInfoSyncPoint
             Get
                 If _off Is Nothing OrElse _off(I_SyncPoints) < 0 Then Return New Hk_HkbGeneratorSyncInfoSyncPoint(Nothing, 0)
@@ -125866,6 +125964,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Generators) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [GeneratorsItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Generators) < 0 Then Return -1
+            Return _o + _off(I_Generators) + (i * 16)
+        End Function
         Public ReadOnly Property [Generators](i As Integer) As Hk_HkbRadialSelectorGeneratorGeneratorInfo
             Get
                 If _off Is Nothing OrElse _off(I_Generators) < 0 Then Return New Hk_HkbRadialSelectorGeneratorGeneratorInfo(Nothing, 0)
@@ -150260,6 +150363,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Qualities) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [QualitiesItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Qualities) < 0 Then Return -1
+            Return _o + _off(I_Qualities) + (i * 16)
+        End Function
         Public ReadOnly Property [Qualities](i As Integer) As Hk_HknpBodyQuality
             Get
                 If _off Is Nothing OrElse _off(I_Qualities) < 0 Then Return New Hk_HknpBodyQuality(Nothing, 0)
@@ -150873,6 +150981,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Vertices](i As Integer) As Single()
+            Get
+                Dim p = [VerticesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
         Private Const I_Planes As Integer = 8
         ''' <summary>`planes` relarray&lt;vector4&gt;</summary>
@@ -150894,6 +151010,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Planes) + (CInt(_g.ReadInt16(_o + _off(I_Planes) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Planes](i As Integer) As Single()
+            Get
+                Dim p = [PlanesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
         Private Const I_Faces As Integer = 9
         ''' <summary>`faces` relarray&lt;struct&gt;</summary>
@@ -150914,6 +151038,10 @@ Namespace Havok.Canon.Typed
             Dim n = CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Faces) + (CInt(_g.ReadInt16(_o + _off(I_Faces) + 2)) And &HFFFF) + (i * 4)
+        End Function
+        ''' <summary>Lector del elemento i (struct en el relarray).</summary>
+        Public Function [FacesAt](i As Integer) As Hk_HknpConvexPolytopeShapeFace
+            Return New Hk_HknpConvexPolytopeShapeFace(_g, [FacesItemOffset](i))
         End Function
 
         Private Const I_Indices As Integer = 10
@@ -150936,6 +151064,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Indices) + (CInt(_g.ReadInt16(_o + _off(I_Indices) + 2)) And &HFFFF) + (i * 1)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Indices](i As Integer) As Integer
+            Get
+                Dim p = [IndicesItemOffset](i)
+                If p < 0 Then Return 0
+                Return CInt(_g.ReadByte(p))
+            End Get
+        End Property
 
         Private Const I_A As Integer = 11
         ''' <summary>`a` vector4</summary>
@@ -154573,6 +154709,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Vertices](i As Integer) As Single()
+            Get
+                Dim p = [VerticesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
         Private Const I_Planes As Integer = 8
         ''' <summary>`planes` relarray&lt;vector4&gt;</summary>
@@ -154594,6 +154738,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Planes) + (CInt(_g.ReadInt16(_o + _off(I_Planes) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Planes](i As Integer) As Single()
+            Get
+                Dim p = [PlanesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
         Private Const I_Faces As Integer = 9
         ''' <summary>`faces` relarray&lt;struct&gt;</summary>
@@ -154614,6 +154766,10 @@ Namespace Havok.Canon.Typed
             Dim n = CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Faces) + (CInt(_g.ReadInt16(_o + _off(I_Faces) + 2)) And &HFFFF) + (i * 4)
+        End Function
+        ''' <summary>Lector del elemento i (struct en el relarray).</summary>
+        Public Function [FacesAt](i As Integer) As Hk_HknpConvexPolytopeShapeFace
+            Return New Hk_HknpConvexPolytopeShapeFace(_g, [FacesItemOffset](i))
         End Function
 
         Private Const I_Indices As Integer = 10
@@ -154636,6 +154792,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Indices) + (CInt(_g.ReadInt16(_o + _off(I_Indices) + 2)) And &HFFFF) + (i * 1)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Indices](i As Integer) As Integer
+            Get
+                Dim p = [IndicesItemOffset](i)
+                If p < 0 Then Return 0
+                Return CInt(_g.ReadByte(p))
+            End Get
+        End Property
 
     End Structure
 
@@ -154895,6 +155059,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Vertices](i As Integer) As Single()
+            Get
+                Dim p = [VerticesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
     End Structure
 
@@ -155147,6 +155319,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Layers) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [LayersItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Layers) < 0 Then Return -1
+            Return _o + _off(I_Layers) + (i * 8)
+        End Function
         Public ReadOnly Property [Layers](i As Integer) As Hk_HknpBroadPhaseConfigLayer
             Get
                 If _off Is Nothing OrElse _off(I_Layers) < 0 Then Return New Hk_HknpBroadPhaseConfigLayer(Nothing, 0)
@@ -157493,6 +157670,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Infos) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [InfosItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Infos) < 0 Then Return -1
+            Return _o + _off(I_Infos) + (i * 8)
+        End Function
         Public ReadOnly Property [Infos](i As Integer) As Hk_HknpLodShapeLevelOfDetailInfo
             Get
                 If _off Is Nothing OrElse _off(I_Infos) < 0 Then Return New Hk_HknpLodShapeLevelOfDetailInfo(Nothing, 0)
@@ -162964,6 +163146,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Vertices](i As Integer) As Single()
+            Get
+                Dim p = [VerticesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
     End Structure
 
@@ -164045,6 +164235,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Vertices](i As Integer) As Single()
+            Get
+                Dim p = [VerticesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
         Private Const I_Planes As Integer = 8
         ''' <summary>`planes` relarray&lt;vector4&gt;</summary>
@@ -164066,6 +164264,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Planes) + (CInt(_g.ReadInt16(_o + _off(I_Planes) + 2)) And &HFFFF) + (i * 16)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Planes](i As Integer) As Single()
+            Get
+                Dim p = [PlanesItemOffset](i)
+                If p < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, p, 4)
+            End Get
+        End Property
 
         Private Const I_Faces As Integer = 9
         ''' <summary>`faces` relarray&lt;struct&gt;</summary>
@@ -164086,6 +164292,10 @@ Namespace Havok.Canon.Typed
             Dim n = CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Faces) + (CInt(_g.ReadInt16(_o + _off(I_Faces) + 2)) And &HFFFF) + (i * 4)
+        End Function
+        ''' <summary>Lector del elemento i (struct en el relarray).</summary>
+        Public Function [FacesAt](i As Integer) As Hk_HknpConvexPolytopeShapeFace
+            Return New Hk_HknpConvexPolytopeShapeFace(_g, [FacesItemOffset](i))
         End Function
 
         Private Const I_Indices As Integer = 10
@@ -164108,6 +164318,14 @@ Namespace Havok.Canon.Typed
             If i < 0 OrElse i >= n Then Return -1
             Return _o + _off(I_Indices) + (CInt(_g.ReadInt16(_o + _off(I_Indices) + 2)) And &HFFFF) + (i * 1)
         End Function
+        ''' <summary>El VALOR del elemento i.</summary>
+        Public ReadOnly Property [Indices](i As Integer) As Integer
+            Get
+                Dim p = [IndicesItemOffset](i)
+                If p < 0 Then Return 0
+                Return CInt(_g.ReadByte(p))
+            End Get
+        End Property
 
     End Structure
 
@@ -189740,7 +189958,7 @@ Namespace Havok.Canon.Typed
             If _off Is Nothing OrElse _off(I_ChildInfo) < 0 Then Return -1
             Dim h = _g.ReadArrayHeader(_o + _off(I_ChildInfo))
             If h Is Nothing OrElse i < 0 OrElse i >= h.Count OrElse h.DataRelativeOffset < 0 Then Return -1
-            Return h.DataRelativeOffset + (i * 24)
+            Return h.DataRelativeOffset + (i * 32)
         End Function
         ''' <summary>Lector del elemento i (struct embebido en el array).</summary>
         Public Function [ChildInfoAt](i As Integer) As Hk_HkpListShapeChildInfo
@@ -208139,17 +208357,17 @@ Namespace Havok.Canon.Typed
 
     End Structure
 
-    ''' <summary>`hkpTriangleShape` - 1 miembros (union de los dos juegos). padre=-</summary>
+    ''' <summary>`hkpTriangleShape` - 12 miembros (union de los dos juegos). padre=hkpConvexShape</summary>
     Public Structure Hk_HkpTriangleShape
         Private ReadOnly _g As HkxObjectGraph_Class
         Private ReadOnly _o As Integer
         Private ReadOnly _off As Integer()
 
         ''' <summary>Offsets de FO4. -1 = el miembro no existe en ese juego.</summary>
-        Private Shared ReadOnly OFF_FO4 As Integer() = {-1}
+        Private Shared ReadOnly OFF_FO4 As Integer() = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
         ''' <summary>Offsets de SSE. -1 = el miembro no existe en ese juego, o lo declara
         ''' con otra forma y el accesor emitido es el de FO4.</summary>
-        Private Shared ReadOnly OFF_SSE As Integer() = {0}
+        Private Shared ReadOnly OFF_SSE As Integer() = {8, 10, 16, 24, 32, 40, 42, 43, 48, 64, 80, 96}
 
         Public Sub New(graph As HkxObjectGraph_Class, relativeOffset As Integer)
             _g = graph
@@ -208180,6 +208398,174 @@ Namespace Havok.Canon.Typed
             Get
                 If _g Is Nothing OrElse _off Is Nothing Then Return -1
                 Return _o
+            End Get
+        End Property
+
+        Private Const I_MemSizeAndFlags As Integer = 0
+        ''' <summary>`memSizeAndFlags` uint16</summary>
+        Public ReadOnly Property [HasMemSizeAndFlags] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_MemSizeAndFlags) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [MemSizeAndFlags] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_MemSizeAndFlags) < 0 Then Return 0
+                Return (CInt(_g.ReadInt16(_o + _off(I_MemSizeAndFlags))) And &HFFFF)
+            End Get
+        End Property
+
+        Private Const I_ReferenceCount As Integer = 1
+        ''' <summary>`referenceCount` int16</summary>
+        Public ReadOnly Property [HasReferenceCount] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_ReferenceCount) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [ReferenceCount] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_ReferenceCount) < 0 Then Return 0
+                Return CInt(_g.ReadInt16(_o + _off(I_ReferenceCount)))
+            End Get
+        End Property
+
+        Private Const I_UserData As Integer = 2
+        ''' <summary>`userData` ulong</summary>
+        Public ReadOnly Property [HasUserData] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_UserData) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [UserData] As Long
+            Get
+                If _off Is Nothing OrElse _off(I_UserData) < 0 Then Return 0L
+                Return HkRead.Int64At(_g, _o + _off(I_UserData))
+            End Get
+        End Property
+
+        Private Const I_Type As Integer = 3
+        ''' <summary>`type` enum&lt;uint32&gt;</summary>
+        Public ReadOnly Property [HasType] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_Type) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [Type] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_Type) < 0 Then Return 0
+                Return _g.ReadInt32(_o + _off(I_Type))
+            End Get
+        End Property
+
+        Private Const I_Radius As Integer = 4
+        ''' <summary>`radius` real</summary>
+        Public ReadOnly Property [HasRadius] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_Radius) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [Radius] As Single
+            Get
+                If _off Is Nothing OrElse _off(I_Radius) < 0 Then Return 0.0F
+                Return _g.ReadSingle(_o + _off(I_Radius))
+            End Get
+        End Property
+
+        Private Const I_WeldingInfo As Integer = 5
+        ''' <summary>`weldingInfo` uint16</summary>
+        Public ReadOnly Property [HasWeldingInfo] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_WeldingInfo) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [WeldingInfo] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
+                Return (CInt(_g.ReadInt16(_o + _off(I_WeldingInfo))) And &HFFFF)
+            End Get
+        End Property
+
+        Private Const I_WeldingType As Integer = 6
+        ''' <summary>`weldingType` enum&lt;uint8&gt;</summary>
+        Public ReadOnly Property [HasWeldingType] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_WeldingType) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [WeldingType] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_WeldingType) < 0 Then Return 0
+                Return CInt(_g.ReadByte(_o + _off(I_WeldingType)))
+            End Get
+        End Property
+
+        Private Const I_IsExtruded As Integer = 7
+        ''' <summary>`isExtruded` uint8</summary>
+        Public ReadOnly Property [HasIsExtruded] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_IsExtruded) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [IsExtruded] As Integer
+            Get
+                If _off Is Nothing OrElse _off(I_IsExtruded) < 0 Then Return 0
+                Return CInt(_g.ReadByte(_o + _off(I_IsExtruded)))
+            End Get
+        End Property
+
+        Private Const I_VertexA As Integer = 8
+        ''' <summary>`vertexA` vector4</summary>
+        Public ReadOnly Property [HasVertexA] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_VertexA) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [VertexA] As Single()
+            Get
+                If _off Is Nothing OrElse _off(I_VertexA) < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, _o + _off(I_VertexA), 4)
+            End Get
+        End Property
+
+        Private Const I_VertexB As Integer = 9
+        ''' <summary>`vertexB` vector4</summary>
+        Public ReadOnly Property [HasVertexB] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_VertexB) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [VertexB] As Single()
+            Get
+                If _off Is Nothing OrElse _off(I_VertexB) < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, _o + _off(I_VertexB), 4)
+            End Get
+        End Property
+
+        Private Const I_VertexC As Integer = 10
+        ''' <summary>`vertexC` vector4</summary>
+        Public ReadOnly Property [HasVertexC] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_VertexC) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [VertexC] As Single()
+            Get
+                If _off Is Nothing OrElse _off(I_VertexC) < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, _o + _off(I_VertexC), 4)
+            End Get
+        End Property
+
+        Private Const I_Extrusion As Integer = 11
+        ''' <summary>`extrusion` vector4</summary>
+        Public ReadOnly Property [HasExtrusion] As Boolean
+            Get
+                Return _off IsNot Nothing AndAlso _off(I_Extrusion) >= 0
+            End Get
+        End Property
+        Public ReadOnly Property [Extrusion] As Single()
+            Get
+                If _off Is Nothing OrElse _off(I_Extrusion) < 0 Then Return Nothing
+                Return HkRead.FloatsAt(_g, _o + _off(I_Extrusion), 4)
             End Get
         End Property
 
@@ -208996,6 +209382,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_AxleDescr) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [AxleDescrItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_AxleDescr) < 0 Then Return -1
+            Return _o + _off(I_AxleDescr) + (i * 100)
+        End Function
         Public ReadOnly Property [AxleDescr](i As Integer) As Hk_HkpVehicleFrictionDescriptionAxisDescription
             Get
                 If _off Is Nothing OrElse _off(I_AxleDescr) < 0 Then Return New Hk_HkpVehicleFrictionDescriptionAxisDescription(Nothing, 0)
@@ -209254,6 +209645,11 @@ Namespace Havok.Canon.Typed
                 Return _off IsNot Nothing AndAlso _off(I_Axis) >= 0
             End Get
         End Property
+        ''' <summary>La DIRECCION del elemento i, no su valor.</summary>
+        Public Function [AxisItemOffset](i As Integer) As Integer
+            If _off Is Nothing OrElse _off(I_Axis) < 0 Then Return -1
+            Return _o + _off(I_Axis) + (i * 36)
+        End Function
         Public ReadOnly Property [Axis](i As Integer) As Hk_HkpVehicleFrictionStatusAxisStatus
             Get
                 If _off Is Nothing OrElse _off(I_Axis) < 0 Then Return New Hk_HkpVehicleFrictionStatusAxisStatus(Nothing, 0)

@@ -321,8 +321,8 @@ Public NotInheritable Class BehaviorClipEnumerator
             ' ⛔ La animacion sale de `hkaAnimationContainer.animations`, no del primer bloque serializado.
             ' ⛔ LA CLASE LA RESUELVE `Leer(Of T)`, que deriva el nombre del tipo generado. Aca estaba
             ' escrito a mano: el literal en el filtro mas el `.Read` al lado.
-            Dim an = g.BloquesDelContenedor(HkxObjectGraph_Class.CampoDelContenedor.Animations, {"hkaSplineCompressedAnimation"}).
-                         Select(Function(x) Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation)(g, x)).
+            Dim an = g.AnimacionesDeclaradas({Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.NombreDeClase}).
+                         Select(Function(x) Havok.Canon.Objects.HkObj_HkaSplineCompressedAnimation.Leer(g, x)).
                          FirstOrDefault(Function(x) x IsNot Nothing)
             If an IsNot Nothing Then
                 d.Frames = an.NumFrames
@@ -363,7 +363,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         ' (=2 en RotateRing*_Add/CrippledNoise/DialogueIdle_Long1; =0 en clips normales). Un offset roto
         ' del parser (saltaba 2 arrays en vez de 3) la leía mal y motivó un scan por NOMBRE de
         ' DynamicAnimationTaggingGenerator acá — ELIMINADO: el binding del archivo es la única fuente.
-        For Each obj In graph.GetObjectsByClassName("hkbClipGenerator")
+        For Each obj In graph.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkbClipGenerator.NombreDeClase)
             Dim cg = Havok.Canon.Objects.HkObj_HkbClipGenerator.Read(graph, obj)
             If IsNothing(cg) OrElse String.IsNullOrWhiteSpace(cg.AnimationName) Then Continue For
             Dim animFile = ResolveClipByExistence(cg.AnimationName, saptFolders, actorRoot, animSet)
@@ -396,7 +396,7 @@ Public NotInheritable Class BehaviorClipEnumerator
 
         ' Referencias a otros behaviors (relativas al actor del behavior referenciante), MISMO SAPT/Role/eje.
         Dim behRoot = ActorRootOfAnim(behFile)
-        For Each refObj In graph.GetObjectsByClassName("hkbBehaviorReferenceGenerator")
+        For Each refObj In graph.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkbBehaviorReferenceGenerator.NombreDeClase)
             ' ⛔ `hkbBehaviorReferenceGenerator.behaviorName` DEL LECTOR GENERADO. Antes salia de una
             ' tabla escrita a mano (FO4 +0x88 / SSE +0x48); ahora la elige el packfile. Sin esto el walk
             ' NO seguia las sub-behaviors de SSE (Weap/Magic/Locomotion/...) y la lista salia corta.
@@ -455,7 +455,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         If pb Is Nothing Then Return ""
         Try
             Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(pb))
-            For Each o In g.GetObjectsByClassName("hkbProjectStringData")
+            For Each o In g.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkbProjectStringData.NombreDeClase)
                 Dim psd = Havok.Canon.Objects.HkObj_HkbProjectStringData.Read(g, o)
                 If psd Is Nothing Then Continue For
                 For Each cf In psd.CharacterFilenames
@@ -464,7 +464,7 @@ Public NotInheritable Class BehaviorClipEnumerator
                     If cb Is Nothing Then cb = LoadFirstHkxCandidate(loadBehaviorHkx, cf)
                     If cb Is Nothing Then Continue For
                     Dim gc = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(cb))
-                    For Each co In gc.GetObjectsByClassName("hkbCharacterStringData")
+                    For Each co In gc.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkbCharacterStringData.NombreDeClase)
                         Dim csd = Havok.Canon.Objects.HkObj_HkbCharacterStringData.Read(gc, co)
                         If csd IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(csd.BehaviorFilename) Then Return NormHkx(CombineActor(actorRoot, csd.BehaviorFilename))
                     Next
@@ -508,7 +508,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         Dim charFiles As New List(Of String)
         Try
             Dim g = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(projBytes))
-            For Each o In g.GetObjectsByClassName("hkbProjectStringData")
+            For Each o In g.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkbProjectStringData.NombreDeClase)
                 Dim psd = Havok.Canon.Objects.HkObj_HkbProjectStringData.Read(g, o)
                 If psd IsNot Nothing Then charFiles.AddRange(psd.CharacterFilenames)
             Next
@@ -523,7 +523,7 @@ Public NotInheritable Class BehaviorClipEnumerator
             If charBytes Is Nothing Then Continue For
             Try
                 Dim gc = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(charBytes))
-                For Each o In gc.GetObjectsByClassName("hkbCharacterStringData")
+                For Each o In gc.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HkbCharacterStringData.NombreDeClase)
                     Dim csd = Havok.Canon.Objects.HkObj_HkbCharacterStringData.Read(gc, o)
                     If csd IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(csd.RigName) Then
                         Return NormHkx(CombineActor(actorRoot, csd.RigName))

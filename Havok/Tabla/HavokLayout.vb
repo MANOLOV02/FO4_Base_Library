@@ -101,8 +101,6 @@ Namespace Havok.Canon
         Private ReadOnly _classes As Dictionary(Of String, HavokClass)
         ''' <summary>Los tamanos que emitio el generador para ESTE juego. Ver `SizeOfClass`.</summary>
         Private ReadOnly _sizes As Dictionary(Of String, Integer)
-        ''' <summary>La derivacion PURA del ABI. Ver <see cref="SizeOfClassAbi"/>.</summary>
-        Private ReadOnly _abi As Dictionary(Of String, Integer)
         Private ReadOnly _flat As New ConcurrentDictionary(Of String, IReadOnlyDictionary(Of String, HavokMember))(StringComparer.OrdinalIgnoreCase)
 
         Public ReadOnly Property Tag As String
@@ -126,7 +124,6 @@ Namespace Havok.Canon
             _SourceSha256 = sha
             _SourceStamp = stamp
             _sizes = HkSizes.Para(tag)
-            _abi = HkSizes.AbiPara(tag)
             _classes = New Dictionary(Of String, HavokClass)(StringComparer.OrdinalIgnoreCase)
             For Each row In rows
                 Dim parsed = ParseRow(row)
@@ -307,28 +304,6 @@ Namespace Havok.Canon
         Public Shared Function AnchoDeTipo(tipo As String) As Integer
             Return HkSizes.AnchoDeTipo(tipo)
         End Function
-
-        ''' <summary>
-        ''' El tamano que da la REGLA DEL ABI x64 —ultimo miembro + su ancho, redondeado al
-        ''' alineamiento del struct— ejercida SIEMPRE, sin el atajo del `objectSize`.
-        ''' <para>⛔ EXISTE PARA PODER COTEJAR LA REGLA CONTRA EL BINARIO, y por ninguna otra razon:
-        ''' NO se usa para leer. `SizeOfClass` devuelve el `objectSize` que declara la reflexion cuando
-        ''' lo declara, asi que para esas clases la derivacion no se ejerce — y son justamente las
-        ''' unicas para las que el .exe tiene la respuesta. Comparar las dos es lo que hace que un
-        ''' error DENTRO de la derivacion pueda ponerse en rojo; sin esto el gate compara la
-        ''' derivacion contra si misma.</para>
-        ''' <para>MEDIDO: reproduce el `objectSize` declarado en 230 de 240 clases de FO4 y 129 de 138
-        ''' de SSE. Las que no, son clases con miembros finales que la reflexion NO declara
-        ''' (`hkDefaultMemoryTracker` declara 2 miembros de una clase de 248 bytes) — por eso el
-        ''' derivado es una COTA INFERIOR y nunca puede pasarse.</para>
-        ''' </summary>
-        Public Function SizeOfClassAbi(className As String) As Integer
-            If String.IsNullOrEmpty(className) Then Return 0
-            Dim n As Integer
-            If _abi IsNot Nothing AndAlso _abi.TryGetValue(className, n) Then Return n
-            Return 0
-        End Function
-
 
         ''' <summary>Offset absoluto del miembro (ruta con puntos), o -1 si la clase o el miembro no existen.</summary>
         Public Function Offset(className As String, memberPath As String) As Integer

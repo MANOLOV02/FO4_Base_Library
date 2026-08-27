@@ -3,7 +3,6 @@ Option Strict On
 Option Explicit On
 
 Imports System.Linq
-Imports System.Reflection
 
 Namespace Havok.Canon
 
@@ -21,7 +20,7 @@ Namespace Havok.Canon
     ''' verbatim, cada uno con su string, y `HavokClothSimulation.IngerirSets` tenía OCHO ramas más con
     ''' los mismos strings. Las dos listas YA habían divergido: el solver cubría
     ''' `hclCompressibleLinkConstraintSet` y este archivo no. Ahora el nombre Havok se DERIVA del tipo
-    ''' con la misma regla que aplica el generador (<see cref="NombreHavokDe"/>), así que no hay dos
+    ''' con la misma regla que aplica el generador (cada clase emite su `NombreDeClase`), así que no hay dos
     ''' listas que puedan quedar distintas.</para>
     ''' </summary>
     Public NotInheritable Class HavokConstraintSets
@@ -38,94 +37,36 @@ Namespace Havok.Canon
         End Enum
 
         ''' <summary>
-        ''' ⛔ EL NOMBRE HAVOK DE LA CLASE QUE LEE UN `HkObj_*`, DERIVADO — NO ESCRITO.
-        ''' `HkObj_HclStandardLinkConstraintSet` → `hclStandardLinkConstraintSet`: se saca el prefijo y
-        ''' se baja la inicial.
-        ''' <para>⚠️ LA MAYUSCULA DE LA PRIMERA LETRA NO ES RECUPERABLE. El generador sube la inicial al
-        ''' emitir, asi que las ~100 clases de Bethesda que YA empiezan con mayuscula
-        ''' (`BGSGamebryoSequenceGenerator`, `BSAlignBoneModifier`…) vuelven con la inicial minuscula.
-        ''' Por eso TODA comparacion contra esto es `OrdinalIgnoreCase`, y `HavokLayoutGate` verifica
-        ''' que la tabla no declare dos clases que difieran SOLO en mayusculas — que es la unica
-        ''' condicion bajo la cual esa comparacion podria confundir dos clases.</para>
+        ''' ⛔⛔ UN LECTOR CANONICO: EL NOMBRE QUE DECLARA EL .EXE Y EL `Leer` DE SU CLASE.
+        ''' <para>Las listas del solver eran `Type()`, y todo el que las recorria tenia que volver
+        ''' del `Type` al nombre Havok. Eso lo hacia `NombreHavokDe`, que lo derivaba del NOMBRE DEL
+        ''' TIPO —`t.Name.Substring(6)` y bajar la primera letra—: una SEGUNDA transcripcion de la
+        ''' regla del generador, con el mismo molde que ya dejo `SizeOfClass` y `SizeOfType`
+        ''' divergiendo en 227 clases de 946. Y `LeerPorTipo` buscaba el `Read` con `GetMethod`.</para>
+        ''' <para>Aca no queda nada que derivar: el nombre sale de `HkObj_X.NombreDeClase`, que el
+        ''' generador emite desde la reflexion, y el lector es `AddressOf HkObj_X.Leer`. Si la clase
+        ''' deja de existir, no compila.</para>
         ''' </summary>
-        Public Shared Function NombreHavokDe(t As Type) As String
-            If t Is Nothing Then Return String.Empty
-            Dim n = t.Name
-            If Not n.StartsWith("HkObj_", StringComparison.Ordinal) Then Return String.Empty
-            n = n.Substring(6)
-            If n.Length = 0 Then Return String.Empty
-            Return Char.ToLowerInvariant(n(0)) & n.Substring(1)
-        End Function
+        Public NotInheritable Class LectorDeClase
 
-        ''' <summary>
-        ''' El `Read(graph, source)` estático de cada `HkObj_*`, memoizado por tipo.
-        ''' <para>⛔ CONCURRENTE, NO `SyncLock`. `Leer`/`LeerPorTipo` se llaman hasta 8 veces por
-        ''' constraint set, 7 por operador y 4 por nodo de behavior, y el barrido HKX corre en
-        ''' paralelo sobre 17.511 archivos: un lock global por lectura serializa a todos los workers
-        ''' sobre un diccionario que, pasada la primera vuelta, ya no se escribe. Es el mismo remedio
-        ''' que `HkxPackfileParser._offVerificado`.</para>
-        ''' </summary>
-        Private Shared ReadOnly _lectores As New Concurrent.ConcurrentDictionary(Of Type, MethodInfo)
+            ''' <summary>El nombre que la reflexion del .exe le da a la clase.</summary>
+            Public ReadOnly Property Nombre As String
 
-        Private Shared Function LectorDe(t As Type) As MethodInfo
-            Return _lectores.GetOrAdd(t,
-                Function(k) k.GetMethod("Read", BindingFlags.Public Or BindingFlags.Static, Nothing,
-                                        {GetType(HkxObjectGraph_Class), GetType(HkxVirtualObjectGraph_Class)}, Nothing))
-        End Function
+            Private ReadOnly _leer As Func(Of HkxObjectGraph_Class, HkxVirtualObjectGraph_Class, Object)
 
-        ''' <summary>
-        ''' ⛔ LA MISMA LEY SIN GENERICO, para el lector por reflexion. Devuelve el objeto leido como
-        ''' `Object`, o Nothing si el bloque declara otra clase.
-        ''' <para>Existe para que `HavokObjetoGenerico` no tenga su PROPIO `GetMethod("Read")` ni su
-        ''' propia derivacion del nombre: la busqueda del `Read` generado y la regla `HkObj_` ↔ clase
-        ''' Havok viven una sola vez, acá.</para>
-        ''' </summary>
-        Public Shared Function LeerPorTipo(t As Type, graph As HkxObjectGraph_Class,
-                                           crudo As HkxVirtualObjectGraph_Class) As Object
-            If t Is Nothing Then Throw New ArgumentNullException(NameOf(t))
-            ' ⛔ UN `T` QUE NO SEA `HkObj_*` NO PUEDE DEVOLVER Nothing EN SILENCIO. Ese es exactamente
-            ' el modo de falla del `OfType`/`TryCast` mudo: la lista sale vacia y el build sigue verde.
-            Dim esperado = NombreHavokDe(t)
-            If esperado.Length = 0 Then
-                Throw New ArgumentException($"'{t.Name}' no es un objeto generado (`HkObj_*`): no hay clase Havok que resolver.")
-            End If
-            If graph Is Nothing OrElse crudo Is Nothing Then Return Nothing
-            If Not String.Equals(crudo.ClassName, esperado, StringComparison.OrdinalIgnoreCase) Then Return Nothing
-            ' ⛔ TIRA, NO DEVUELVE Nothing. Un `HkObj_*` sin `Read(graph, source)` publico es un
-            ' defecto del GENERADOR, y confundirlo con "el bloque declara otra clase" es el modo de
-            ' falla mudo que esta clase existe para matar: `ParseOperadorPorClase` haria desaparecer
-            ' el operador de la cadena y el log diria la causa equivocada.
-            Dim m = LectorDe(t)
-            If m Is Nothing Then
-                Throw New ArgumentException($"'{t.Name}' no expone `Read(graph, source)`: el generador no lo emitio.")
-            End If
-            Try
-                Return m.Invoke(Nothing, {graph, crudo})
-            Catch ex As Reflection.TargetInvocationException When ex.InnerException IsNot Nothing
-                ' ⛔ SIN ENVOLTORIO Y SIN PERDER EL ORIGEN. `Invoke` convierte cualquier fallo de
-                ' `Read` en `TargetInvocationException` y borra la causa. Y `Throw ex` a secas
-                ' RE-CAPTURA el stack: el trace arrancaria aca en vez de en el `Read` que fallo.
-                ' `ExceptionDispatchInfo` la relanza conservando el frame original.
-                Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw()
-                Return Nothing
-            End Try
-        End Function
+            Public Sub New(nombre As String, leer As Func(Of HkxObjectGraph_Class, HkxVirtualObjectGraph_Class, Object))
+                Me.Nombre = nombre
+                _leer = leer
+            End Sub
 
-        ''' <summary>
-        ''' ⛔ LA LEY: el bloque leído como <typeparamref name="T"/>, SÓLO si el bloque declara esa
-        ''' clase. Nothing si declara otra. Es lo único que hace la resolución por nombre en todo el
-        ''' árbol, y por eso no hay dos copias que puedan divergir.
-        ''' </summary>
-        Public Shared Function Leer(Of T As Class)(graph As HkxObjectGraph_Class,
-                                                   crudo As HkxVirtualObjectGraph_Class) As T
-            ' ⛔ EL CUERPO ES `LeerPorTipo`, NO UNA COPIA. Aca habia el mismo cuerpo escrito por segunda
-            ' vez —derivar el nombre, comparar `ClassName`, `LectorDe`, `Invoke`, `ExceptionDispatchInfo`—
-            ' adentro del archivo que se presenta como la unica copia de esa ley. Y ya habian DIVERGIDO:
-            ' con un `T` que no es `HkObj_*` esta tiraba y `LeerPorTipo` devolvia Nothing en silencio.
-            ' Esto NO es un envoltorio: es la firma TIPADA de la misma funcion — lo unico que agrega es
-            ' el `TryCast`, que es lo que el generico existe para dar.
-            Return TryCast(LeerPorTipo(GetType(T), graph, crudo), T)
-        End Function
+            ''' <summary>Lee el bloque si declara esa clase o deriva de ella; Nothing si no.</summary>
+            Public Function Leer(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As Object
+                If _leer Is Nothing Then Return Nothing
+                Return _leer(graph, source)
+            End Function
+
+        End Class
+
 
         ''' <summary>
         ''' Los bloques CRUDOS del arreglo que pide <paramref name="fuente"/>, en el ORDEN del archivo
@@ -222,18 +163,18 @@ Namespace Havok.Canon
         ''' arreglo. Reemplaza a los siete envoltorios copiados verbatim que había antes.
         ''' </summary>
         Public Shared Function SetsDe(Of T As Class)(sim As Havok.Canon.Objects.HkObj_HclSimClothData,
+                                                     lector As Func(Of HkxObjectGraph_Class, HkxVirtualObjectGraph_Class, T),
                                                      Optional fuente As Fuente = Fuente.Estaticos) _
                 As List(Of (Indice As Integer, Conjunto As T))
             Dim r As New List(Of (Indice As Integer, Conjunto As T))
-            ' ⛔ EL TIPO SE VALIDA ANTES DEL BUCLE. Estaba dentro de `Leer`, que solo corre por cada
-            ' elemento: con un sim-cloth de CERO sets, un `T` que no fuera `HkObj_*` devolvia lista
-            ' vacia SIN LANZAR — el mismo modo de falla mudo que esta clase existe para matar.
-            If NombreHavokDe(GetType(T)).Length = 0 Then
-                Throw New ArgumentException($"'{GetType(T).Name}' no es un objeto generado (`HkObj_*`): no hay clase Havok que resolver.")
-            End If
-            If sim Is Nothing Then Return r
+            ' ⛔ EL LECTOR LO TRAE EL CONSUMIDOR, NO SE RESUELVE POR REFLEXION. Aca habia una
+            ' validacion en ejecucion —`NombreHavokDe(GetType(T))`, que derivaba el nombre de la clase
+            ' Havok desde el NOMBRE DEL TIPO— y una lectura por `GetMethod`. Con `AddressOf
+            ' HkObj_X.Leer` no hay nada que derivar ni que validar: si la clase no existe, no compila,
+            ' y el modo de falla mudo que esa validacion venia a matar no puede ocurrir.
+            If sim Is Nothing OrElse lector Is Nothing Then Return r
             For Each e In Crudos(sim, fuente)
-                Dim o = Leer(Of T)(sim.Graph, e.Bloque)
+                Dim o = lector(sim.Graph, e.Bloque)
                 If o IsNot Nothing Then r.Add((e.Indice, o))
             Next
             Return r
@@ -251,7 +192,7 @@ Namespace Havok.Canon
         ''' copiado con el comentario "misma ley que SubclasesDeclaradas" encima.</para>
         ''' </summary>
         Public Shared Function SubclasesDeclaradas(lay As HavokLayout,
-                                                   Optional base As String = "hclConstraintSet") As List(Of String)
+                                                   Optional base As String = Havok.Canon.Objects.HkObj_HclConstraintSet.NombreDeClase) As List(Of String)
             Dim r As New List(Of String)
             If lay Is Nothing Then Return r
             For Each c In lay.ClassNames

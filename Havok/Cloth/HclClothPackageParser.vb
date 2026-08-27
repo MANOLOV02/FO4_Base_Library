@@ -45,13 +45,14 @@ Public NotInheritable Class HclClothPackageParser_Class
         ' por-sim. El objeto generado no lo necesita: NO copia el archivo, es una vista con la tabla
         ' de offsets ya resuelta y los campos memoizados al primer acceso. La identidad canonica
         ' sigue siendo el `RelativeOffset` del bloque, que el objeto expone en `Source`.
-        For Each obj In graph.GetObjectsByClassName("hclCollidable")
-            Dim c = Havok.Canon.Objects.HkObj_HclCollidable.Read(graph, obj)
-            If c IsNot Nothing Then result.Collidables.Add(c)
-        Next
+        ' ⛔ LA CLASE SE PIDE POR SI MISMA. Era `GetObjectsByClassName("hclCollidable")` con el
+        ' nombre escrito a mano, y despues un `Read` suelto por cada bloque. `Todos` es esas dos
+        ' cosas juntas, con el nombre que emite la reflexion del .exe.
+        result.Collidables.AddRange(Havok.Canon.Objects.HkObj_HclCollidable.Todos(graph))
 
 
-        For Each clothObject In graph.GetObjectsByClassName("hclClothData")
+        ' ⛔ SIN LITERAL: el nombre lo declara la clase generada.
+        For Each clothObject In graph.GetObjectsByClassName(Havok.Canon.Objects.HkObj_HclClothData.NombreDeClase)
             ' ⛔ EL ARBOL GENERADO, DIRECTO. `graph.ParseClothData` devolvia un DTO a mano que
             ' copiaba lo mismo. `HkObj_HclClothData` ya entrega `SimClothDatas`, `Operators`,
             ' `ClothStateDatas`, etc. como listas de objetos generados.
@@ -95,9 +96,9 @@ Public NotInheritable Class HclClothPackageParser_Class
                     Dim crudoB = clothData.Raw.BufferDefinitionsRef(iB)
                     ' ⛔ SIN LITERAL: `Leer(Of T)` devuelve Nothing si el bloque declara otra clase, asi que
                     ' la lectura y el "¿es un scratch?" son la MISMA pregunta.
-                    Dim scratch = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclScratchBufferDefinition)(graph, crudoB)
+                    Dim scratch = Havok.Canon.Objects.HkObj_HclScratchBufferDefinition.Leer(graph, crudoB)
                     Dim def_ = If(scratch IsNot Nothing, Nothing,
-                                  Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclBufferDefinition)(graph, crudoB))
+                                  Havok.Canon.Objects.HkObj_HclBufferDefinition.Leer(graph, crudoB))
                     clothConfig.BufferDefinitions.Add(def_)
                     clothConfig.ScratchBufferDefinitions.Add(scratch)
                 Next
@@ -208,16 +209,16 @@ Public NotInheritable Class HclClothPackageParser_Class
     End Sub
 
     ''' <summary>
-    ''' Los tipos generados que NO se entregan crudos porque van ENVUELTOS en una clase de analisis.
-    ''' <para>⛔ SE DERIVAN DE LA PROPIEDAD `Operador` DE CADA ENVOLTORIO, no se escriben: si el
-    ''' envoltorio cambia de tipo, esta lista cambia con el. Es la misma correspondencia que
-    ''' `HavokLayoutGate` usa para exigir que `EjecutarOperador` tenga una rama por cada tipo
-    ''' declarado.</para>
+    ''' Las clases que NO se entregan crudas porque van ENVUELTAS en una clase de analisis.
+    ''' <para>⛔ EL NOMBRE LO EMITE LA REFLEXION. Antes esto derivaba el `Type` de la propiedad
+    ''' `Operador` de cada envoltorio con `GetProperty("Operador").PropertyType` —reflexion sobre
+    ''' una propiedad buscada por su nombre en un string, que el compilador no verifica. Ahora se
+    ''' cita el `NombreDeClase` de la clase generada, que es el mismo dato sin intermediario.</para>
     ''' </summary>
-    Private Shared ReadOnly TiposQueNecesitanDecodificacion As Type() =
+    Private Shared ReadOnly ClasesQueNecesitanDecodificacion As String() =
         {
-            GetType(HclObjectSpaceSkinPNOperatorGraph_Class).GetProperty("Operador").PropertyType,
-            GetType(HclSimpleMeshBoneDeformOperatorGraph_Class).GetProperty("Operador").PropertyType
+            Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.NombreDeClase,
+            Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator.NombreDeClase
         }
 
     ''' <summary>
@@ -226,12 +227,12 @@ Public NotInheritable Class HclClothPackageParser_Class
     ''' <para>⛔ CERO LITERALES DE NOMBRE DE CLASE Y CERO SEGUNDA LISTA. Aca hubo primero un
     ''' `Select Case` con siete strings en minuscula y un normalizador propio; despues, cinco
     ''' `Leer(Of T)` escritos a mano, que es una lista paralela a
-    ''' <see cref="Havok.Physics.HavokClothSimulation.TiposDeOperadorQueEjecuta"/> con nada que las
-    ''' obligue a coincidir. Ahora manda esa lista: se recorre y se prueba `LeerPorTipo`, que deriva
+    ''' <see cref="Havok.Physics.HavokClothSimulation.OperadoresQueEjecuta"/> con nada que las
+    ''' obligue a coincidir. Ahora manda esa lista: se recorre y cada entrada lee con SU `Leer`, que
     ''' el nombre del tipo con la regla del generador.</para>
     ''' <para>Los DOS que llevan analisis propio (el entrelazado SIMD de los carriles, los pares
     ''' hueso/triangulo) se prueban ANTES, con su parser. Si ese parseo falla sobre un bloque que SI
-    ''' es de esa clase, el operador es un HUECO y se dice: <see cref="TiposQueNecesitanDecodificacion"/>
+    ''' es de esa clase, el operador es un HUECO y se dice: <see cref="ClasesQueNecesitanDecodificacion"/>
     ''' impide que el bucle lo entregue CRUDO. `EjecutarOperador` hoy SI tiene rama para el objeto
     ''' pelado —despacha por el tipo generado— pero sin lo decodificado no puede hacer el trabajo:
     ''' entregarlo igual lo dejaria sin ejecutar mientras `[CLOTH-CADENA]`,
@@ -255,15 +256,15 @@ Public NotInheritable Class HclClothPackageParser_Class
             Return deform.Operador
         End If
 
-        For Each t In Havok.Physics.HavokClothSimulation.TiposDeOperadorQueEjecuta
-            Dim o = Havok.Canon.HavokConstraintSets.LeerPorTipo(t, graph, op)
+        For Each lec In Havok.Physics.HavokClothSimulation.OperadoresQueEjecuta
+            Dim o = lec.Leer(graph, op)
             If o Is Nothing Then Continue For
             ' ⛔ LO QUE VA ENVUELTO NO SE ENTREGA CRUDO. Si el parseo del envoltorio fallo sobre un
             ' bloque que SI es de esa clase, el operador es un HUECO. Devolverlo crudo lo mete en la
             ' cadena, `EjecutarOperador` no tiene rama para el —despacha por el envoltorio— y el
             ' operador queda sin ejecutar mientras `[CLOTH-CADENA]`, `--clothcover` y el gate lo
             ' cuentan como implementado: tres instrumentos mintiendo a la vez.
-            If TiposQueNecesitanDecodificacion.Contains(t) Then Exit For
+            If ClasesQueNecesitanDecodificacion.Contains(lec.Nombre) Then Exit For
             Return o
         Next
 

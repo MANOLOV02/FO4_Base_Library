@@ -821,7 +821,7 @@ Namespace Havok.Physics
                 ' ⛔ SIN LITERAL Y SIN `.Raw` SUELTO: la resolucion por nombre es `HavokConstraintSets`
                 ' y el acceso al arreglo de punteros tambien. `Acciones` es la tercera fuente.
                 For Each e In Havok.Canon.HavokConstraintSets.Crudos(sim, Havok.Canon.HavokConstraintSets.Fuente.Acciones)
-                    Dim w = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclSimpleWindAction)(sim.Graph, e.Bloque)
+                    Dim w = Havok.Canon.Objects.HkObj_HclSimpleWindAction.Leer(sim.Graph, e.Bloque)
                     If w IsNot Nothing Then
                         st.Acciones.Add(w)
                     Else
@@ -1189,15 +1189,15 @@ Namespace Havok.Physics
         ''' <para>`--clothcover` tenia un diccionario a mano de siete strings, paralelo a las siete ramas
         ''' de `EjecutarOperador`. Nada obligaba a que coincidieran.</para>
         ''' </summary>
-        Public Shared ReadOnly Property TiposDeOperadorQueEjecuta As Type() =
+        Public Shared ReadOnly Property OperadoresQueEjecuta As Havok.Canon.HavokConstraintSets.LectorDeClase() =
             {
-                GetType(Havok.Canon.Objects.HkObj_HclSimulateOperator),
-                GetType(Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator),
-                GetType(Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator),
-                GetType(Havok.Canon.Objects.HkObj_HclMoveParticlesOperator),
-                GetType(Havok.Canon.Objects.HkObj_HclGatherAllVerticesOperator),
-                GetType(Havok.Canon.Objects.HkObj_HclCopyVerticesOperator),
-                GetType(Havok.Canon.Objects.HkObj_HclGatherSomeVerticesOperator)
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclSimulateOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclSimulateOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclSimpleMeshBoneDeformOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclMoveParticlesOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclMoveParticlesOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclGatherAllVerticesOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclGatherAllVerticesOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclCopyVerticesOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclCopyVerticesOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclGatherSomeVerticesOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclGatherSomeVerticesOperator.Leer)
             }
 
         ''' <summary>
@@ -1206,9 +1206,9 @@ Namespace Havok.Physics
         ''' viento. Un gate que dice que falta lo que esta hecho miente igual que uno que dice que esta
         ''' hecho lo que falta.</para>
         ''' </summary>
-        Public Shared ReadOnly Property TiposDeAccionQueAplica As Type() =
+        Public Shared ReadOnly Property AccionesQueAplica As Havok.Canon.HavokConstraintSets.LectorDeClase() =
             {
-                GetType(Havok.Canon.Objects.HkObj_HclSimpleWindAction)
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclSimpleWindAction.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclSimpleWindAction.Leer)
             }
 
         ''' <summary>
@@ -1216,18 +1216,19 @@ Namespace Havok.Physics
         ''' <para>No es una lista decorativa: `HavokLayoutGate` fase 5 la contrasta contra la lista CERRADA
         ''' que declara la reflexion (`HavokConstraintSets.SubclasesDeclaradas`). Un tipo que ya no exista
         ''' en la tabla, o una subclase nueva que aparezca, salen ahi — no en un barrido a mano.</para>
-        ''' <para>Los nombres NO se escriben: `HavokConstraintSets.NombreHavokDe` los deriva del tipo.</para>
+        ''' <para>Los nombres NO se escriben ni se derivan: cada clase generada emite su
+        ''' `NombreDeClase` desde la reflexion del .exe, y la lista lo cita.</para>
         ''' </summary>
-        Public Shared ReadOnly Property TiposDeSetQueIngiere As Type() =
+        Public Shared ReadOnly Property SetsQueIngiere As Havok.Canon.HavokConstraintSets.LectorDeClase() =
             {
-                GetType(Havok.Canon.Objects.HkObj_HclStandardLinkConstraintSet),
-                GetType(Havok.Canon.Objects.HkObj_HclStretchLinkConstraintSet),
-                GetType(Havok.Canon.Objects.HkObj_HclBonePlanesConstraintSet),
-                GetType(Havok.Canon.Objects.HkObj_HclBendLinkConstraintSet),
-                GetType(Havok.Canon.Objects.HkObj_HclCompressibleLinkConstraintSet),
-                GetType(Havok.Canon.Objects.HkObj_HclBendStiffnessConstraintSet),
-                GetType(Havok.Canon.Objects.HkObj_HclVolumeConstraintMx),
-                GetType(Havok.Canon.Objects.HkObj_HclLocalRangeConstraintSet)
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclStandardLinkConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclStandardLinkConstraintSet.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclStretchLinkConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclStretchLinkConstraintSet.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclBonePlanesConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclBonePlanesConstraintSet.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclBendLinkConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclBendLinkConstraintSet.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclCompressibleLinkConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclCompressibleLinkConstraintSet.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclBendStiffnessConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclBendStiffnessConstraintSet.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclVolumeConstraintMx.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclVolumeConstraintMx.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclLocalRangeConstraintSet.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclLocalRangeConstraintSet.Leer)
             }
 
         ''' <summary>
@@ -1254,14 +1255,14 @@ Namespace Havok.Physics
         End Function
 
         ''' <summary>
-        ''' ⛔ CADA SET AL ESTADO DEL SOLVER, RESUELTO POR <see cref="Havok.Canon.HavokConstraintSets.Leer">Leer(Of T)</see>.
+        ''' ⛔ CADA SET AL ESTADO DEL SOLVER, RESUELTO POR el `Leer` de cada clase generada.
         ''' <para>Ninguna rama escribe un nombre de clase: `Leer(Of T)` lo DERIVA del tipo con la regla
         ''' del generador y devuelve Nothing si el bloque declara otra. Antes cada rama tenia su literal
         ''' (`"hclStandardLinkConstraintSet"`, …) mas su `.Read` a mano, los mismos ocho literales
         ''' estaban tambien en `HavokConstraintSets`, y las dos listas YA habian divergido. Esto se
         ''' decia una vez POR RAMA, en ocho copias del mismo parrafo: va aca, una sola vez.</para>
         ''' <para>Las ramas son ocho porque ocho son los tipos de
-        ''' <see cref="TiposDeSetQueIngiere"/>, y `HavokLayoutGate` contrasta las dos cuentas.</para>
+        ''' <see cref="SetsQueIngiere"/>, y `HavokLayoutGate` contrasta las dos cuentas.</para>
         ''' </summary>
         Private Shared Sub IngerirSets(st As ClothSimState, graph As HkxObjectGraph_Class,
                                        crudos As List(Of (Indice As Integer, Bloque As HkxVirtualObjectGraph_Class)),
@@ -1278,7 +1279,7 @@ Namespace Havok.Physics
                 Dim crudo = e.Bloque
                 Dim cls = If(crudo.ClassName, String.Empty)
 
-                Dim oStandardLink = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclStandardLinkConstraintSet)(graph, crudo)
+                Dim oStandardLink = Havok.Canon.Objects.HkObj_HclStandardLinkConstraintSet.Leer(graph, crudo)
                 If oStandardLink IsNot Nothing Then
                     Dim ini = st.Links.Count
                     For Each l In oStandardLink.Links
@@ -1290,7 +1291,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oStretchLink = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclStretchLinkConstraintSet)(graph, crudo)
+                Dim oStretchLink = Havok.Canon.Objects.HkObj_HclStretchLinkConstraintSet.Leer(graph, crudo)
                 If oStretchLink IsNot Nothing Then
                     Dim ini = st.Stretch.Count
                     For Each l In oStretchLink.Links
@@ -1302,7 +1303,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oBonePlanes = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclBonePlanesConstraintSet)(graph, crudo)
+                Dim oBonePlanes = Havok.Canon.Objects.HkObj_HclBonePlanesConstraintSet.Leer(graph, crudo)
                 If oBonePlanes IsNot Nothing Then
                     Dim ini = st.BonePlanes.Count
                     For Each pl In oBonePlanes.BonePlanes
@@ -1337,7 +1338,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oBendLink = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclBendLinkConstraintSet)(graph, crudo)
+                Dim oBendLink = Havok.Canon.Objects.HkObj_HclBendLinkConstraintSet.Leer(graph, crudo)
                 If oBendLink IsNot Nothing Then
                     Dim ini = st.BendLinks.Count
                     For Each l In oBendLink.Links
@@ -1351,7 +1352,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oCompressibleLink = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclCompressibleLinkConstraintSet)(graph, crudo)
+                Dim oCompressibleLink = Havok.Canon.Objects.HkObj_HclCompressibleLinkConstraintSet.Leer(graph, crudo)
                 If oCompressibleLink IsNot Nothing Then
                     Dim ini = st.Compressible.Count
                     For Each l In oCompressibleLink.Links
@@ -1365,7 +1366,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oBendStiffness = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclBendStiffnessConstraintSet)(graph, crudo)
+                Dim oBendStiffness = Havok.Canon.Objects.HkObj_HclBendStiffnessConstraintSet.Leer(graph, crudo)
                 If oBendStiffness IsNot Nothing Then
                     ' ⛔ EL FLAG SE PROPAGA AL LINK. `useRestPoseConfig` elige entre DOS LEYES del
                     ' motor, no entre dos parametros: ver `SolveBend`. Las dos estan implementadas, pero
@@ -1393,7 +1394,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oVolumeMx = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclVolumeConstraintMx)(graph, crudo)
+                Dim oVolumeMx = Havok.Canon.Objects.HkObj_HclVolumeConstraintMx.Leer(graph, crudo)
                 If oVolumeMx IsNot Nothing Then
                     Dim iniV = st.Volumen.Count
                     ' Las cuatro clases `Mx` son `NotInheritable` sin base comun: lo unico que se
@@ -1424,7 +1425,7 @@ Namespace Havok.Physics
                     Continue For
                 End If
 
-                Dim oLocalRange = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclLocalRangeConstraintSet)(graph, crudo)
+                Dim oLocalRange = Havok.Canon.Objects.HkObj_HclLocalRangeConstraintSet.Leer(graph, crudo)
                 If oLocalRange IsNot Nothing Then
                     Dim iniLr = st.LocalRange.Count
                     For Each c In oLocalRange.LocalConstraints
@@ -1471,7 +1472,7 @@ Namespace Havok.Physics
                 ' fallo. Antes las dos decian "NO lo implementa", y el instrumento acusaba al set
                 ' equivocado.
                 Dim iq = idxSet, cq = cls
-                Dim implementada = TiposDeSetQueIngiere.Any(Function(t) String.Equals(Havok.Canon.HavokConstraintSets.NombreHavokDe(t), cq, StringComparison.OrdinalIgnoreCase))
+                Dim implementada = SetsQueIngiere.Any(Function(l) String.Equals(l.Nombre, cq, StringComparison.OrdinalIgnoreCase))
                 If implementada Then
                     Logger.LogLazy(Function() $"[CLOTH-SETHUECO] ⛔ el set [{iq}] es '{cq}', que este solver SI implementa, pero NO SE PUDO LEER: queda fuera del solve")
                 Else
@@ -2794,7 +2795,7 @@ Namespace Havok.Physics
             End If
             ' ⛔ NO ES CODIGO MUERTO: ES EL DETECTOR DE DERIVA ENTRE LAS DOS LISTAS.
             ' Hoy no se alcanza porque `ParseOperadorPorClase` solo puede devolver uno de los siete
-            ' tipos de `TiposDeOperadorQueEjecuta` y aca hay una rama para cada uno. Se alcanza EL DIA
+            ' tipos de `OperadoresQueEjecuta` y aca hay una rama para cada uno. Se alcanza EL DIA
             ' que se agregue un tipo a esa lista sin agregar su rama: el operador se parsea, no lo
             ' ejecuta nadie, y sin esto la cadena parece completa. `HavokLayoutGate` ademas contrasta
             ' la cantidad de ramas contra el largo de la lista, que es la version exigible de esto.
@@ -4856,7 +4857,7 @@ Namespace Havok.Physics
         '''     hclCapsuleShape        n=5   start +0x20 · end +0x30 · dir +0x40 · radius +0x50
         '''     hclTaperedCapsuleShape n=15  small +0x20 · big +0x30 · smallRadius +0x90 · bigRadius +0x94
         ''' <para>⛔ SIN NOMBRE DE CLASE A MANO: la subclase la resuelve
-        ''' <see cref="Havok.Canon.HavokConstraintSets.Leer">Leer(Of T)</see>, que deriva el nombre del
+        ''' el `Leer` de cada clase generada, que deriva el nombre del
         ''' tipo generado. Aca habia dos `cn.Equals("...")` + `.Read()`, que es esa misma ley a mano.</para>
         ''' <para>Devuelve 0 si salio bien, 1 si no hay forma, 2 si la forma no trae los dos extremos.</para>
         ''' </summary>
@@ -4864,11 +4865,11 @@ Namespace Havok.Physics
                                                         ByRef ea As Single(), ByRef eb As Single(),
                                                         ByRef rA As Single, ByRef rB As Single) As Integer
             If cd Is Nothing OrElse cd.Shape Is Nothing Then Return 1
-            Dim t = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclTaperedCapsuleShape)(cd.Graph, cd.Shape)
+            Dim t = Havok.Canon.Objects.HkObj_HclTaperedCapsuleShape.Leer(cd.Graph, cd.Shape)
             If t IsNot Nothing Then
                 ea = t.Small : eb = t.Big : rA = t.SmallRadius : rB = t.BigRadius
             Else
-                Dim c = Havok.Canon.HavokConstraintSets.Leer(Of Havok.Canon.Objects.HkObj_HclCapsuleShape)(cd.Graph, cd.Shape)
+                Dim c = Havok.Canon.Objects.HkObj_HclCapsuleShape.Leer(cd.Graph, cd.Shape)
                 If c Is Nothing Then Return 1
                 ea = c.Start : eb = c.End : rA = c.Radius : rB = c.Radius
             End If
