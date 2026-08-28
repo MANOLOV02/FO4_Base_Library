@@ -1,6 +1,6 @@
 ﻿' ================================================================================================
 '  GENERADO POR Tools/HavokLayoutGen/gentyped.py - NO EDITAR A MANO.
-'  Generado: 2026-08-27   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
+'  Generado: 2026-08-28   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
 '
 '  El TAMANO de cada clase, por juego. Ver `emitir_sizes` en el generador.
 ' ================================================================================================
@@ -1201,13 +1201,21 @@ Namespace Havok.Canon
         ''' <para>⛔ SE EMITE POR LA MISMA RAZON QUE LOS TAMANOS DE CLASE. `SizeOfType` estaba
         ''' transcrita a mano en VB, se borro al unificar, y el instrumento que coteja strides
         ''' termino escribiendo su propia version reducida (`16 para array, 8 para el resto`)
-        ''' adentro del gate. Una ley, un lugar.</para></summary>
+        ''' adentro del gate. Una ley, un lugar.</para>
+        ''' <para>⛔⛔ OJO, NO ES EL `size` DE LA `TypeTable` EMITIDA, y los dos numeros
+        ''' conviven en el mismo binario bajo la misma clave. Esta tabla es el resultado de
+        ''' `getMemberSize` (FO4 0x14142F160), o sea lo que el miembro OCUPA:
+        ''' `simplearray` = 12 y `homogeneousarray` = 20. La `TypeTable` es el registro CRUDO
+        ''' del motor, que para esos mismos dice 16 y 24. Quien quiera el espacio del miembro
+        ''' usa esta; quien quiera la alineacion declarada usa aquella.</para></summary>
         Private ReadOnly TIPOS As String() = {
             "array|10",
             "bool|1",
             "char|1",
             "cstring|8",
+            "functionpointer|8",
             "half|2",
+            "homogeneousarray|14",
             "int16|2",
             "int32|4",
             "int64|8",
@@ -1229,8 +1237,7 @@ Namespace Havok.Canon
             "uint8|1",
             "ulong|8",
             "variant|10",
-            "vector4|10",
-            "void|0"
+            "vector4|10"
         }
 
         Private ReadOnly _tipos As Dictionary(Of String, Integer) = CargarTipos()

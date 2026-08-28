@@ -40,11 +40,15 @@ Public Enum FaceTintSseTintSortKey
 End Enum
 
 ''' <summary>Claves de orden para los OVERLAYS de SSE (Face[Ovl], = análogo SSE de los SWAPS de FO4). El
-''' orden skee/RaceMenu = <see cref="SseOverlayCompositor.CompositeOrderKey"/> (el índice del nodo ascendente
-''' DENTRO de su pool, y el pool magic entero encima). Default = [Ovl_Index asc] = identidad = orden skee
-''' (byte-idéntico: los TRES callers de SortFaceOverlays —los dos composers CPU y el builder de capas GPU—
-''' filtran el pool magic ANTES, porque el magic no se
-''' pliega, así que para los datos que pasan por acá la clave coincide con el índice pelado).</summary>
+''' orden de DIBUJO de skee/RaceMenu = <see cref="SseOverlayCompositor.DrawOrderKey"/> = el INVERSO del de
+''' instalación (índice del nodo DESCENDENTE dentro de su pool, y el pool magic entero DEBAJO del normal).
+''' Default = [Ovl_Index asc] = identidad = ese orden de dibujo.
+''' <para>LA CLAVE ES LA QUE SE INVIRTIÓ, NO LA DIRECCIÓN DE LA REGLA: así <c>Ovl_Index asc</c> sigue
+''' significando "el orden del motor" y ningún <c>Setting_FaceTintSort_SSE</c> ya guardado en disco cambia de
+''' significado ni queda con el orden viejo.</para>
+''' <para>Los TRES callers de SortFaceOverlays —los dos composers CPU y el builder de capas GPU— filtran el
+''' pool magic ANTES, porque el magic no se pliega, así que para los datos que pasan por acá la clave es el
+''' índice pelado invertido.</para></summary>
 Public Enum FaceTintSseOverlaySortKey
     Ovl_Index = 0     ' índice del nodo dentro de su pool — DEFAULT, orden skee/RaceMenu
     Alpha = 1         ' opacidad (key8 / .Alpha)

@@ -60,19 +60,23 @@ Namespace Havok.Canon
 
         ''' <summary>
         ''' ⛔⛔ EL MOTOR DICE QUE ESTE MIEMBRO NO SE SERIALIZA (`SERIALIZE_IGNORED = 1024`).
-        ''' <para>Los 47 arreglos de FO4 y 27 de SSE cuyo SUBTIPO la reflexion no declara tienen
+        ''' <para>Los 47 arreglos de FO4 y 28 de SSE cuyo SUBTIPO la reflexion no declara tienen
         ''' TODOS este flag —`hkbBehaviorGraph.uniqueIdPool`, `hkbBindable.cachedBindables`...—.
         ''' No es que no se sepa que hay adentro: es que no hay nada, porque el serializador no lo
         ''' escribe. Contarlos como "datos que la app no lee" era contar un hueco que no existe.</para>
         ''' </summary>
         Public ReadOnly Property NoSeSerializa As Boolean
             Get
-                Return (Flags And SERIALIZE_IGNORED) <> 0
+                Return BitSerializeIgnored > 0 AndAlso (Flags And BitSerializeIgnored) <> 0
             End Get
         End Property
 
-        ''' <summary>`hkClassMember|FlagValues|SERIALIZE_IGNORED=1024`, de la propia reflexion.</summary>
-        Public Const SERIALIZE_IGNORED As Integer = 1024
+        ''' <summary>El bit que ESTE juego declara para `SERIALIZE_IGNORED`, o 0 si no lo declara.
+        ''' <para>⛔⛔ Salia de una constante escrita a mano (1024) al lado de la alineacion, que SI
+        ''' sale del enum emitido. Y los dos enums NO son iguales: FO4 declara `ALIGN_32` y `ALIGN_REAL`
+        ''' y SSE no. Si una actualizacion mueve el bit, la alineacion se actualiza sola y esto seguiria
+        ''' contestando por 1024.</para></summary>
+        Friend ReadOnly Property BitSerializeIgnored As Integer
 
         ''' <summary>
         ''' ⛔⛔ LOS BYTES QUE EL MIEMBRO OCUPA EN SU PADRE (elemento x cantidad), 0 si no se declara.
@@ -80,9 +84,11 @@ Namespace Havok.Canon
         ''' consumidor podia decir que byte de un bloque cubre un miembro declarado y cual no cubre
         ''' ninguno. El censo por byte lo suplia con el offset del miembro SIGUIENTE, que le adjudica
         ''' a cada miembro el relleno que le sigue.</para>
-        ''' <para>Lo emite el generador con la MISMA ley que usan los lectores (`gentyped.FIXED` +
-        ''' `gentyped.ancho`, que para un struct cita el `objectSize` de la reflexion). Medido: los
-        ''' 4.016 miembros de FO4 y los 2.636 de SSE lo traen, ninguno queda en cero.</para>
+        ''' <para>Lo emite el generador con `tipos.tamano`, que transcribe
+        ''' `hkStructureLayout::getMemberSize` (FO4 0x14142F160) rama por rama y consume la tabla de
+        ''' tipos que el motor trae adentro. NO es el `size` crudo de esa tabla: `simplearray` da 12 y
+        ''' la tabla dice 16; `enum` y `flags` dan el tamano del SUBTIPO. Medido: los 4.016 miembros de
+        ''' FO4 y los 2.636 de SSE lo traen, ninguno queda en cero.</para>
         ''' </summary>
         Public ReadOnly Property Ancho As Integer
 
@@ -115,16 +121,21 @@ Namespace Havok.Canon
         End Property
 
         ''' <summary>
-        ''' ⛔⛔ LOS BYTES A LOS QUE EL MOTOR DICE QUE ESTE MIEMBRO SE ALINEA, 0 si no lo declara.
-        ''' <para>Sale de los flags `ALIGN_*` de `hkClassMember` (+0x1C), por el bit prendido. Ver
-        ''' `AlineacionesDeclaradas`: el numero lo da el NOMBRE del flag y lo valida el `offset`.</para>
+        ''' ⛔⛔⛔ A QUE SE ALINEA ESTE MIEMBRO, CON LA LEY DEL MOTOR.
+        ''' <para>Es `max(alineacion del TIPO, alineacion de los FLAGS)` — ver `AlineacionDe`, que
+        ''' transcribe `hkStructureLayout::getMemberAlignment` (FO4 0x14142F360, SSE 0x140B2F580).
+        ''' La del tipo sale de la tabla que el motor trae adentro; la de los flags, del enum
+        ''' `hkClassMember|FlagValues`, por igualdad y no por el bit mas alto prendido.</para>
+        ''' <para>0 = la reflexion no alcanza para determinarla: `struct` (haria falta la clase
+        ''' entera) e `inplacearray` (el motor deja el registro en -1).</para>
         ''' </summary>
         Public ReadOnly Property Alineacion As Integer
 
         Friend Sub New(name As String, offset As Integer, typeName As String,
                        subTypeName As String, cArraySize As Integer, structClassName As String,
                        Optional flags As Integer = 0, Optional ancho As Integer = 0,
-                       Optional anchoDeElemento As Integer = 0, Optional alineacion As Integer = 0)
+                       Optional anchoDeElemento As Integer = 0, Optional alineacion As Integer = 0,
+                       Optional bitSerializeIgnored As Integer = 0)
             _Name = name
             _Offset = offset
             _TypeName = typeName
@@ -135,10 +146,11 @@ Namespace Havok.Canon
             _Ancho = ancho
             _AnchoDeElemento = anchoDeElemento
             _Alineacion = alineacion
+            _BitSerializeIgnored = bitSerializeIgnored
         End Sub
 
         Friend Function Shifted(delta As Integer, path As String) As HavokMember
-            Return New HavokMember(path, Offset + delta, TypeName, SubTypeName, CArraySize, StructClassName, Flags, Ancho, AnchoDeElemento, Alineacion)
+            Return New HavokMember(path, Offset + delta, TypeName, SubTypeName, CArraySize, StructClassName, Flags, Ancho, AnchoDeElemento, Alineacion, BitSerializeIgnored)
         End Function
 
         Public Overrides Function ToString() As String
@@ -207,16 +219,52 @@ Namespace Havok.Canon
             End Get
         End Property
 
+        ''' <summary>
+        ''' ⛔⛔⛔ UNA TABLA QUE NO SALE DEL .exe DEL JUEGO, PARA UN INSTRUMENTO DE `Tools/`.
+        ''' <para>El `CreationKit.exe` declara con la MISMA reflexion las clases que el .exe del juego
+        ''' no declara —las `hcl*SetupObject` que el compilador de cloth emite offline— y el censo por
+        ''' byte necesita esa tabla para decir que byte de esos bloques cubre un miembro declarado.
+        ''' Es una pregunta distinta de "que lee la app": el motor SALTEA esos bloques (FO4
+        ''' 0x14142B7B1, Skyrim 0x140B2E6C0) y la libreria replica al motor, asi que la tabla del CK
+        ''' vive en `Tools/HkxLoadOrderAudit/Generated/` y NO viaja adentro de este binario.</para>
+        ''' <para>Lo unico que aporta esta fabrica es el PARSEO, que ya vive aca: sin ella el
+        ''' instrumento tendria que escribir una segunda copia de `ParseRow`, de la ley de alineacion
+        ''' y del aplanado de herencia. No se llama desde ningun punto de la libreria, y el gate lo
+        ''' EXIGE.</para>
+        ''' <para>⛔⛔ LOS TAMANOS LOS TIENE QUE TRAER EL LLAMADOR, YA EMITIDOS. Aca se
+        ''' sacaban del `objectSize` de las propias filas, con el argumento de que es "el mismo numero
+        ''' de la misma fuente". No lo es: <see cref="HkSizes"/> ademas DERIVA el tamano de las clases
+        ''' que declaran `objectSize` 0 con la regla del compilador de C++, y son 68 de las 674 del CK
+        ''' de Skyrim y 3 de las 1105 del de Fallout. Con eso `SizeOfClass` —el mismo metodo publico—
+        ''' contestaba un numero derivado o un 0 segun que fabrica hubiera armado la instancia: DOS
+        ''' leyes. El generador emite ahora la tabla del CK con la MISMA funcion
+        ''' (`gentyped.emitir_sizes` -> `HkSizesCK`), y esto solo la recibe.</para>
+        ''' </summary>
+        Public Shared Function Externa(tag As String, sha As String, stamp As String, rows As String(),
+                                       enums As String(), memberFlagValues As String,
+                                       typeTable As String,
+                                       sizes As Dictionary(Of String, Integer)) As HavokLayout
+            If sizes Is Nothing Then
+                Throw New ArgumentNullException(NameOf(sizes),
+                    "una tabla externa sin tamanos emitidos haria que `SizeOfClass` contestara con " &
+                    "otra ley que la del juego. Ver `HkSizesCK`.")
+            End If
+            Return New HavokLayout(tag, sha, stamp, rows, enums, memberFlagValues, typeTable, sizes)
+        End Function
+
         Private Sub New(tag As String, sha As String, stamp As String, rows As String(), enums As String(),
-                        memberFlagValues As String)
+                        memberFlagValues As String, typeTable As String,
+                        sizes As Dictionary(Of String, Integer))
             _Tag = tag
             _SourceSha256 = sha
             _SourceStamp = stamp
-            _sizes = HkSizes.Para(tag)
+            _sizes = sizes
             _classes = New Dictionary(Of String, HavokClass)(StringComparer.OrdinalIgnoreCase)
 
-            ' ⛔ LOS ENUMS SE PARSEAN PRIMERO. La alineacion de cada miembro sale de
-            ' `hkClassMember|FlagValues`, que es un enum: hay que tenerlo antes de leer las filas.
+            ' ⛔ LOS ENUMS SE PARSEAN PRIMERO por orden, no por dependencia: la alineacion y el bit de
+            ' `SERIALIZE_IGNORED` salen de `memberFlagValues`, que el generador emite APARTE y llega por
+            ' parametro. El orden se deja asi para que las dos cosas que describen a un miembro esten
+            ' resueltas antes de construirlo.
             ' clase|enum|nombre=valor,nombre=valor,...
             _enums = New Dictionary(Of String, IReadOnlyDictionary(Of String, Integer))(StringComparer.OrdinalIgnoreCase)
             For Each row In enums
@@ -232,56 +280,169 @@ Namespace Havok.Canon
                 If items.Count > 0 Then _enums(p(0) & "|" & p(1)) = items
             Next
 
-            Dim alin = AlineacionesDeclaradas(memberFlagValues)
+            ' ⛔⛔⛔ LA ALINEACION DEL TIPO SALE DE LA TABLA DEL MOTOR, y es lo que
+            ' `getMemberAlignment` usa ANTES de mirar los flags. Ver `AlineacionDe`.
+            _tipos = LeerTypeTable(typeTable)
+            Dim alin = LeyDeAlineacion(memberFlagValues)
+            ' ⛔⛔ IZADO, IGUAL QUE SU HERMANO DE ARRIBA. Se recalculaba por FILA: 946 veces
+            ' en FO4 y 609 en SSE, spliteando el mismo string, mientras `AlineacionesDeclaradas` ya salia
+            ' del bucle. Mismo dato, dos politicas, en lineas contiguas.
+            Dim bitSI = BitDeSerializeIgnored(memberFlagValues)
             For Each row In rows
-                Dim parsed = ParseRow(row, alin)
+                Dim parsed = ParseRow(row, alin, bitSI)
                 If parsed IsNot Nothing Then _classes(parsed.Name) = parsed
             Next
+
         End Sub
 
+        ''' <summary>`tipo -> (size, align)` de la tabla que el MOTOR trae adentro. Ver `TypeTable`
+        ''' en la tabla generada: la localiza el generador sin recibir direcciones.</summary>
+        Private ReadOnly _tipos As Dictionary(Of String, (Size As Integer, Align As Integer))
+
+        ''' <summary>`nombre=size:align,...` tal como lo emite el generador.</summary>
+        Private Shared Function LeerTypeTable(s As String) As Dictionary(Of String, (Size As Integer, Align As Integer))
+            Dim r As New Dictionary(Of String, (Size As Integer, Align As Integer))(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrEmpty(s) Then Return r
+            For Each it In s.Split(","c)
+                Dim eq = it.IndexOf("="c)
+                If eq <= 0 Then Continue For
+                Dim dp = it.IndexOf(":"c, eq + 1)
+                If dp <= eq Then Continue For
+                Dim sz As Integer, al As Integer
+                If Not Integer.TryParse(it.Substring(eq + 1, dp - eq - 1), sz) Then Continue For
+                If Not Integer.TryParse(it.Substring(dp + 1), al) Then Continue For
+                r(it.Substring(0, eq)) = (sz, al)
+            Next
+            Return r
+        End Function
+
         ''' <summary>
-        ''' ⛔⛔⛔ LA ALINEACION QUE DECLARA EL MOTOR, no una constante escrita aca.
-        ''' <para>`hkClassMember|FlagValues` declara `ALIGN_8=128`, `ALIGN_16=256`, `ALIGN_32=2048` y
-        ''' `ALIGN_REAL=256` — mismo valor que `ALIGN_16`, porque el vector de `hkReal` alinea a 16.
-        ''' El extractor los traia desde siempre y el emisor los ponia en la tabla; no los usaba
-        ''' NADIE.</para>
-        ''' <para>El numero de bytes sale del NOMBRE del flag. Que el nombre diga la verdad no se
-        ''' supone: lo prueba una columna INDEPENDIENTE de la misma reflexion —el `offset` de cada
-        ''' miembro—. Medido: los 56 miembros de FO4 y los 36 de SSE que traen uno de estos flags
-        ''' tienen el offset alineado a ese numero. 92 de 92, cero violaciones. El gate lo exige.</para>
-        ''' <para>⚠️ Y LO QUE NO SON: 56 y 36 miembros. Declaran la alineacion de un miembro DENTRO
-        ''' de su clase. NO explican el relleno entre bloques de la seccion de datos, que es otra
-        ''' cosa y sigue sin cita.</para>
+        ''' ⛔⛔⛔ LA LEY DE ALINEACION ES DEL MOTOR, Y ES POR IGUALDAD, NO POR MAXIMO.
+        ''' <para><c>hkStructureLayout::getMemberAlignment</c> —FO4 0x14142F360, SSE 0x140B2F580—
+        ''' enmascara los flags del miembro (<c>hkClassMember</c>+0x1C) y compara el resultado por
+        ''' IGUALDAD: FO4 0x14142F434 <c>and ecx,0x980</c> y despues ==0x800 da 32, ==0x100 da 16, otro
+        ''' no-cero da 8; SSE 0x140B2F654 <c>and ecx,0x180</c>, ==0x100 da 16, otro no-cero da 8.
+        ''' La usa <c>computeMemberOffsets</c> (FO4 0x14142F4B0, SSE 0x140B2F6C0) para correr el offset
+        ''' de cada miembro, con <c>idiv</c> —FO4 0x14142F6A7, SSE 0x140B2F8C4— y no con mascara de
+        ''' bits, que es donde estuve buscando el relleno del .hkx y por eso no aparecia.</para>
+        ''' <para>LA MASCARA NO SE HARDCODEA: es el OR de los bits que el propio enum declara con
+        ''' nombre <c>ALIGN_*</c>. FO4 128|256|2048 = 0x980, el mismo inmediato de 0x14142F434; SSE
+        ''' 128|256 = 0x180, el mismo de 0x140B2F654. Sale de la reflexion Y coincide con el binario.</para>
+        ''' <para>Yo tomaba el MAXIMO de los bits prendidos. Es distinto: con <c>ALIGN_16</c> y
+        ''' <c>ALIGN_8</c> a la vez, <c>v = 0x180</c> no es 0x800 ni 0x100, asi que el motor contesta 8
+        ''' y yo contestaba 16. Medido sobre las tablas de hoy no cambia nada —ningun miembro prende
+        ''' mas de uno: FO4 50 con solo 0x100 y 6 con solo 0x80, SSE 36 con solo 0x100, 0 divergencias
+        ''' sobre 4.007 y 2.629 miembros—. Se cambia igual: lo que valia era una coincidencia del
+        ''' corpus, no la ley.</para>
+        ''' <para>QUE EL NOMBRE DIGA LA VERDAD NO SE SUPONE: lo prueba una columna INDEPENDIENTE de
+        ''' la misma reflexion —el `offset` de cada miembro—. Medido: los 56 miembros de FO4 y los 36
+        ''' de SSE que traen uno de estos flags tienen el offset alineado a ese numero. 92 de 92, cero
+        ''' violaciones. Y desde abajo tambien: por cada alineacion declarada existe al menos un
+        ''' miembro que la cumple y NO cumple el doble —2 con 8 que no cumplen 16, 16 con 16 que no
+        ''' cumplen 32—, asi que un mapa a la mitad no pasaria. El gate exige las dos cosas.</para>
+        ''' <para><c>ALIGN_REAL</c> no se interpreta: declara EL MISMO BIT que <c>ALIGN_16</c> (256) y
+        ''' ningun dato los distingue. Al motor tampoco le importa: mira el bit, no el nombre.</para>
         ''' </summary>
-        Private Shared Function AlineacionesDeclaradas(memberFlagValues As String) As Dictionary(Of Integer, Integer)
-            Dim r As New Dictionary(Of Integer, Integer)
-            ' ⛔ EL ENUM LO EMITE EL GENERADOR (`MemberFlagValues`). Pedirselo a `EnumValues` obligaba a
-            ' escribir `"hkClassMember"` aca, que es el despacho por literal de clase que el gate prohibe.
-            If String.IsNullOrEmpty(memberFlagValues) Then Return r
+        Private Shared Function LeyDeAlineacion(memberFlagValues As String) As (Mascara As Integer, Bit32 As Integer, Bit16 As Integer)
+            Dim mascara = 0, b32 = 0, b16 = 0
+            If String.IsNullOrEmpty(memberFlagValues) Then Return (0, 0, 0)
             For Each it In memberFlagValues.Split(","c)
                 Dim eq = it.LastIndexOf("="c)
                 If eq <= 0 Then Continue For
                 Dim nombre = it.Substring(0, eq).Trim()
                 Dim bit As Integer
-                If Not Integer.TryParse(it.Substring(eq + 1), bit) Then Continue For
+                If Not Integer.TryParse(it.Substring(eq + 1), bit) OrElse bit <= 0 Then Continue For
                 If Not nombre.StartsWith("ALIGN_", StringComparison.OrdinalIgnoreCase) Then Continue For
-                Dim suf = nombre.Substring("ALIGN_".Length)
-                Dim bytes As Integer
-                If suf.Equals("REAL", StringComparison.OrdinalIgnoreCase) Then
-                    ' El vector de `hkReal` son 4 floats: 16 bytes. Mismo valor de bit que ALIGN_16.
-                    bytes = 16
-                ElseIf Not Integer.TryParse(suf, bytes) Then
-                    Continue For
-                End If
-                If bit <= 0 OrElse bytes <= 0 Then Continue For
-                Dim previo As Integer
-                If r.TryGetValue(bit, previo) AndAlso previo >= bytes Then Continue For
-                r(bit) = bytes
+                mascara = mascara Or bit
+                If String.Equals(nombre, "ALIGN_32", StringComparison.OrdinalIgnoreCase) Then b32 = bit
+                If String.Equals(nombre, "ALIGN_16", StringComparison.OrdinalIgnoreCase) Then b16 = bit
             Next
-            Return r
+            Return (mascara, b32, b16)
         End Function
 
-        Private Shared Function ParseRow(row As String, alineaciones As Dictionary(Of Integer, Integer)) As HavokClass
+        ''' <summary>
+        ''' ⛔⛔⛔ LA ALINEACION DE UN MIEMBRO: LA DEL TIPO, Y DESPUES EL MAXIMO CON LA DE LOS FLAGS.
+        ''' <para>Estuvo mal de dos maneras, las dos mias: la calculaba SOLO para los miembros con un
+        ''' flag `ALIGN_*` (56 en FO4, 36 en SSE) cuando el motor le da alineacion a TODOS; y trataba
+        ''' la etapa de flags como un reemplazo cuando es un MAXIMO — FO4 0x14142F44A y 0x14142F468,
+        ''' SSE 0x140B2F66F: `cmp eax,ebx` + `cmovg ebx,eax`, con `ebx` = alineacion del tipo. Un
+        ''' miembro con `ALIGN_8` sobre un tipo que alinea a 16 queda en 16.</para>
+        ''' <para>Las ramas de `getMemberAlignment` (FO4 0x14142F360 / SSE 0x140B2F580): `zero` se
+        ''' resuelve por el subtipo (0x14142F3B2); la familia de punteros —`pointer`,
+        ''' `functionpointer`, `array`, `simplearray`, `homogeneousarray`, `variant`, `cstring`,
+        ''' `ulong`, `stringptr`— alinea a `ptrSize` (0x14142F3AE); `enum` y `flags` por el subtipo;
+        ''' `struct` es el maximo de sus miembros (0x14142F3C2), que aca NO se resuelve —haria falta
+        ''' la clase entera y este parser va fila por fila— y se devuelve 0, que es "no determinada";
+        ''' `inplacearray` deja `ebx` en -1 y tampoco se determina; el resto sale de `record[t].align`
+        ''' de la tabla del motor.</para>
+        ''' </summary>
+        Private Function AlineacionDe(tipo As String, sub_ As String, flags As Integer,
+                                      ley As (Mascara As Integer, Bit32 As Integer, Bit16 As Integer)) As Integer
+            Dim a = AlineacionDelTipo(tipo, sub_)
+            Dim fa = 0
+            If ley.Mascara <> 0 Then
+                Dim v = flags And ley.Mascara
+                If v <> 0 Then
+                    If ley.Bit32 <> 0 AndAlso v = ley.Bit32 Then
+                        fa = 32
+                    ElseIf ley.Bit16 <> 0 AndAlso v = ley.Bit16 Then
+                        fa = 16
+                    Else
+                        fa = 8
+                    End If
+                End If
+            End If
+            Return Math.Max(a, fa)
+        End Function
+
+        ''' <summary>La alineacion que la tabla del MOTOR le da a un tipo, para que un gate pueda
+        ''' preguntarle por uno NOMBRADO. Sin esto, vaciar la `TypeTable` no ponia nada en rojo.</summary>
+        Public Function AlineacionDeTipoParaGate(tipo As String) As Integer
+            Return AlineacionDelTipo(tipo, "")
+        End Function
+
+        ''' <summary>La alineacion que le da el TIPO, 0 si la reflexion no alcanza. Ver `AlineacionDe`.
+        ''' <para>⛔⛔⛔ SALE ENTERA DE LA TABLA DEL MOTOR. Aca habia ademas una lista escrita a
+        ''' mano de nueve nombres —`pointer`, `functionpointer`, `array`, `simplearray`,
+        ''' `homogeneousarray`, `variant`, `cstring`, `ulong`, `stringptr`— que contestaban
+        ''' `PointerSizeEsperado`. Es la rama de `getMemberAlignment` en FO4 `0x14142F3AE`, y el
+        ''' generador ya la tenia transcrita en `tipos.T_ALIN_PTR` con esa misma cita — pero MUERTA,
+        ''' sin un solo consumidor. Dos copias de una ley, y la que tenia la cita era la que no
+        ''' corria.</para>
+        ''' <para>Sobra: MEDIDO en los dos binarios, esos nueve tipos declaran `align = 8` en la
+        ''' propia tabla del motor, que es el `ptrSize` de x64. No hace falta la rama; alcanza con
+        ''' leer la tabla. `HavokLayoutGate` lo EXIGE nombre por nombre, asi que si algun dia
+        ''' dejaran de coincidir se pone en rojo en vez de contestar distinto en silencio. (Un
+        ''' layout de 32 bits los separaria, y por eso Skyrim32 no esta soportado — lo dice
+        ''' <see cref="PointerSizeEsperado"/>.)</para>
+        ''' <para>`-1` en la tabla del motor —`void`, `zero`, `inplacearray`, `enum`, `struct`,
+        ''' `flags`— significa "no la determina el tipo": `zero`/`enum`/`flags` se resuelven por el
+        ''' SUBTIPO antes de mirar, y `struct`/`inplacearray` necesitan la clase entera. Sale 0, que
+        ''' es lo que `AlineacionDe` interpreta como no determinada.</para></summary>
+        Private Function AlineacionDelTipo(tipo As String, sub_ As String) As Integer
+            Dim t = (tipo + "").ToLowerInvariant()
+            If t = "zero" OrElse t = "enum" OrElse t = "flags" Then t = (sub_ + "").ToLowerInvariant()
+            If t.Length = 0 Then Return 0
+            Dim v As (Size As Integer, Align As Integer) = Nothing
+            If _tipos IsNot Nothing AndAlso _tipos.TryGetValue(t, v) AndAlso v.Align > 0 Then Return v.Align
+            Return 0
+        End Function
+
+        ''' <summary>El bit que el juego declara para `SERIALIZE_IGNORED`, del mismo enum emitido.</summary>
+        Private Shared Function BitDeSerializeIgnored(memberFlagValues As String) As Integer
+            If String.IsNullOrEmpty(memberFlagValues) Then Return 0
+            For Each it In memberFlagValues.Split(","c)
+                Dim eq = it.LastIndexOf("="c)
+                If eq <= 0 Then Continue For
+                If Not it.Substring(0, eq).Trim().Equals("SERIALIZE_IGNORED", StringComparison.OrdinalIgnoreCase) Then Continue For
+                Dim v As Integer
+                If Integer.TryParse(it.Substring(eq + 1), v) Then Return v
+            Next
+            Return 0
+        End Function
+
+        Private Function ParseRow(row As String, alineaciones As (Mascara As Integer, Bit32 As Integer, Bit16 As Integer),
+                                         bitSI As Integer) As HavokClass
             If String.IsNullOrEmpty(row) Then Return Nothing
             Dim head = row.Split("|"c)
             If head.Length < 5 Then Return Nothing
@@ -296,37 +457,41 @@ Namespace Havok.Canon
                     If part.Length = 0 Then Continue For
                     Dim f = part.Split(","c)
                     If f.Length < 6 Then Continue For
-                    Dim off As Integer
+                    ' ⛔⛔⛔ CON INICIALIZADOR, SIEMPRE. En VB un `Dim` sin inicializador
+                    ' adentro de un bucle NO vuelve a cero en cada vuelta: la variable es del METODO y
+                    ' conserva el valor de la iteracion anterior. Con los campos que se leen bajo guarda
+                    ' —`flags`, `ancho`, `anchoElem`— eso hacia que un miembro cuyo campo viene VACIO
+                    ' heredara el valor del miembro ANTERIOR.
+                    ' MEDIDO: `BSCyclicBlendTransitionGenerator.sortedChildren` es `array` sin subtipo, o
+                    ' sea que la tabla no declara su ancho de elemento, y contestaba 8 — el de
+                    ' `pTransitionBlenderGeneratorsA`, el miembro de justo antes, que es `array<pointer>`.
+                    ' Estuvo tapado mientras el generador emitia un `0` explicito, porque la guarda nunca
+                    ' se salteaba; al emitir "no declarado" quedo a la vista.
+                    Dim off As Integer = 0
                     Integer.TryParse(f(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, off)
-                    Dim carr As Integer
+                    Dim carr As Integer = 0
                     Integer.TryParse(f(4), NumberStyles.Integer, CultureInfo.InvariantCulture, carr)
                     ' ⛔ EL SEPTIMO CAMPO SON LOS `flags`, EN HEXA. Se lee con guarda de largo porque una
                     ' tabla vieja no lo trae: ausente = 0, que es `FLAGS_NONE`.
-                    Dim flg As Integer
+                    Dim flg As Integer = 0
                     If f.Length > 6 AndAlso f(6).Length > 0 Then
                         Integer.TryParse(f(6), NumberStyles.HexNumber, CultureInfo.InvariantCulture, flg)
                     End If
                     ' ⛔ EL OCTAVO CAMPO ES EL ANCHO, EN HEXA. Misma guarda de largo que los flags:
                     ' ausente = 0 = "la tabla no lo declara", que el consumidor tiene que distinguir de un
                     ' ancho que de verdad vale 0.
-                    Dim anc As Integer
+                    Dim anc As Integer = 0
                     If f.Length > 7 AndAlso f(7).Length > 0 Then
                         Integer.TryParse(f(7), NumberStyles.HexNumber, CultureInfo.InvariantCulture, anc)
                     End If
                     ' El NOVENO campo es el ancho del ELEMENTO, tambien en hexa y con la misma guarda.
-                    Dim ael As Integer
+                    Dim ael As Integer = 0
                     If f.Length > 8 AndAlso f(8).Length > 0 Then
                         Integer.TryParse(f(8), NumberStyles.HexNumber, CultureInfo.InvariantCulture, ael)
                     End If
-                    ' ⛔ LA ALINEACION SALE DE LOS FLAGS QUE EL MOTOR DECLARA, por el bit prendido.
-                    ' 0 = el miembro no declara ninguna.
-                    Dim alg = 0
-                    If alineaciones IsNot Nothing AndAlso flg <> 0 Then
-                        For Each kv In alineaciones
-                            If (flg And kv.Key) <> 0 AndAlso kv.Value > alg Then alg = kv.Value
-                        Next
-                    End If
-                    members.Add(New HavokMember(f(0), off, f(2), f(3), carr, f(5), flg, anc, ael, alg))
+                    ' La alineacion, con la ley del motor. Ver `LeyDeAlineacion`.
+                    Dim alg = AlineacionDe(f(2), f(3), flg, alineaciones)
+                    members.Add(New HavokMember(f(0), off, f(2), f(3), carr, f(5), flg, anc, ael, alg, bitSI))
                 Next
             End If
             Return New HavokClass(head(0), head(1), size, ver, members)
@@ -597,7 +762,9 @@ Namespace Havok.Canon
                                        HavokLayoutData_FO4.SourceStamp,
                                        HavokLayoutData_FO4.Rows,
                                        HavokLayoutData_FO4.Enums,
-                                       HavokLayoutData_FO4.MemberFlagValues))
+                                       HavokLayoutData_FO4.MemberFlagValues,
+                                       HavokLayoutData_FO4.TypeTable,
+                                       HkSizes.Para("FO4")))
 
         Private Shared ReadOnly _sse As New Lazy(Of HavokLayout)(
             Function() New HavokLayout("SSE",
@@ -605,7 +772,9 @@ Namespace Havok.Canon
                                        HavokLayoutData_SSE.SourceStamp,
                                        HavokLayoutData_SSE.Rows,
                                        HavokLayoutData_SSE.Enums,
-                                       HavokLayoutData_SSE.MemberFlagValues))
+                                       HavokLayoutData_SSE.MemberFlagValues,
+                                       HavokLayoutData_SSE.TypeTable,
+                                       HkSizes.Para("SSE")))
 
         ''' <summary>Tabla de Fallout 4 (hk2014 x64).</summary>
         Public Shared ReadOnly Property FO4 As HavokLayout

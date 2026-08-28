@@ -381,14 +381,17 @@ Public Module SseOverlayCompositor
 
     ''' <summary>Orden configurable de los overlays Face[Ovl] (= análogo SSE de los SWAPS de FO4:
     ''' <c>Setting_FaceTintSort_SSE.SwapRules</c>, claves <see cref="FaceTintSseOverlaySortKey"/>). DEFAULT =
-    ''' <c>[Ovl_Index asc]</c> = orden skee (Ovl0 abajo→OvlN arriba, OverlayInterface for i=0..N) = IDENTIDAD ⇒
-    ''' byte-idéntico. Tiebreak final por posición original ⇒ claves iguales preservan el orden skee. Recibe la lista
-    ''' YA filtrada (los dos callers filtran por DiffusePath vs NormalPath). Reordenar DESVÍA de skee (elección del usuario).</summary>
+    ''' <c>[Ovl_Index asc]</c> = el orden de DIBUJO de skee (<see cref="DrawOrderKey"/>: Ovl0 ARRIBA, OvlN abajo).
+    ''' Tiebreak final por posición original ⇒ claves iguales preservan ese orden. Recibe la lista YA filtrada
+    ''' (los dos callers filtran por DiffusePath vs NormalPath). Reordenar DESVÍA de skee (elección del usuario).
+    ''' <para>LA INVERSIÓN VA EN LA CLAVE, NO EN LA DIRECCIÓN DE LA REGLA (ver <see cref="SseOverlayKey"/>): así
+    ''' <c>Ovl_Index asc</c> sigue significando "el orden del motor" y ningún <c>Setting_FaceTintSort_SSE</c> ya
+    ''' guardado en disco cambia de significado ni se queda con el orden viejo.</para></summary>
     Public Function SortFaceOverlays(list As List(Of RaceMenuJslot.JslotOverlayNode)) As List(Of RaceMenuJslot.JslotOverlayNode)
         If list Is Nothing OrElse list.Count <= 1 Then Return list
         Dim cfg = Config_App.Current?.Setting_FaceTintSort_SSE
         Dim rules = If(cfg IsNot Nothing, cfg.SwapRules, Nothing)
-        If rules Is Nothing OrElse rules.Count = 0 Then Return list.OrderBy(Function(o) CompositeOrderKey(o.NodeName)).ToList()
+        If rules Is Nothing OrElse rules.Count = 0 Then Return OrderForDraw(list)
         Dim items As New List(Of (Ov As RaceMenuJslot.JslotOverlayNode, Pos As Integer))
         For i = 0 To list.Count - 1 : items.Add((list(i), i)) : Next
         items.Sort(Function(a, b)
@@ -397,7 +400,12 @@ Public Module SseOverlayCompositor
                            If r.Descending Then c = -c
                            If c <> 0 Then Return c
                        Next
-                       Return a.Pos.CompareTo(b.Pos)   ' tiebreak estable = orden de entrada (post-skee OrderBy del default)
+                       ' Tiebreak estable = orden de ENTRADA de la lista, que en esta rama NO está pre-ordenada
+                       ' por la clave del motor (eso pasa sólo en la rama del default, arriba). O sea: si las
+                       ' reglas del usuario empatan en TODAS sus claves, lo que decide es la posición cruda en el
+                       ' carrier. Inalcanzable con dato real —el nombre de nodo es único, así que Ovl_Index no
+                       ' puede empatar— pero queda dicho para el día que se agregue una clave no inyectiva.
+                       Return a.Pos.CompareTo(b.Pos)
                    End Function)
         Return items.Select(Function(x) x.Ov).ToList()
     End Function
@@ -406,7 +414,7 @@ Public Module SseOverlayCompositor
         Select Case CType(key, FaceTintSseOverlaySortKey)
             Case FaceTintSseOverlaySortKey.Alpha : Return If(ov.HasAlpha, ov.Alpha, 1.0)
             Case FaceTintSseOverlaySortKey.Has_Tint : Return If(ov.HasTint, 1.0, 0.0)
-            Case Else : Return CompositeOrderKey(ov.NodeName)   ' Ovl_Index (default) = orden skee (pool primario, y encima el magic)
+            Case Else : Return DrawOrderKey(ov.NodeName)   ' Ovl_Index (default) = orden de DIBUJO de skee, asc = abajo→arriba
         End Select
     End Function
 
@@ -416,11 +424,12 @@ Public Module SseOverlayCompositor
         If acc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
         Dim npix = w * h
         Dim any = False
-        ' ORDEN = skee: por ÍNDICE DE NODO Ovl{n} ASCENDENTE (Ovl0 abajo → OvlN arriba). skee instala
-        ' `for i=0..N` + AttachChild ⇒ Ovl0 se dibuja primero (abajo) y OvlN último (arriba); el topmost gana en
-        ' solapes. NO por posición en la lista (el jslot puede venir en cualquier orden). Ver OverlayInterface.cpp.
+        ' ORDEN = el de DIBUJO de skee (SseOverlayCompositor.DrawOrderKey), que es el INVERSO del de instalación:
+        ' Ovl0 ARRIBA → OvlN abajo. Se compone de abajo hacia arriba, así que el topmost va ÚLTIMO y gana en los
+        ' solapes. NO por posición en la lista (el jslot puede venir en cualquier orden). Ver DrawOrderKey para de
+        ' dónde sale la inversión (cita del enganche + medición in-game).
         Dim faceOrdered = SortFaceOverlays(overlays.
-            Where(Function(o) IsFoldableFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
+            Where(Function(o) IsFoldableFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden de DIBUJO de skee (DrawOrderKey)
         For Each ov In faceOrdered
             ' Predicado ÚNICO con el gate (HasBakeableFaceOverlays) ⇒ no pueden discrepar. Va ANTES del decode:
             ' una capa invisible no justifica leer su textura.
@@ -741,7 +750,7 @@ Public Module SseOverlayCompositor
         ' cubre el otro caso, el que el gate NO puede saber sin tocar disco: declarado pero ilegible = ERROR.
         Dim faceOrdered = SortFaceOverlays(overlays.
             Where(Function(o) IsFoldableFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath) AndAlso
-                              Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
+                              Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden de DIBUJO de skee (DrawOrderKey)
         For Each ov In faceOrdered
             ' Predicado ÚNICO con el gate (HasFaceOverlayNormals), y ANTES del decode. Ver ComposeFaceOverlaysIntoDiffuse.
             If Not OverlayIsVisible(ov) Then Continue For
@@ -887,14 +896,20 @@ Public Module SseOverlayCompositor
         Return IsFaceOverlay(ov) AndAlso Not IsSpellOverlay(ov)
     End Function
 
-    ''' <summary>EL ORDEN DE COMPOSICIÓN DE skee, como clave única y ordenable.
-    ''' <para><c>SetupOverlay</c> corre el loop del pool PRIMARIO completo y DESPUÉS el del secundario
-    ''' (OverlayInterface.cpp:659-668), y cada <c>InstallOverlay</c> termina en <c>AttachChild</c> (:257) ⇒ el
-    ''' orden de dibujo es: <b>TODOS los <c>[Ovl]</c> ascendentes, y encima TODOS los <c>[SOvl]</c>
-    ''' ascendentes</b>. NO es un único índice compartido.</para>
+    ''' <summary>EL ORDEN DE INSTALACIÓN DE skee, como clave única y ordenable. NO es el orden de DIBUJO
+    ''' — para eso está <see cref="DrawOrderKey"/>, y la diferencia entre las dos es el punto de esta nota.
+    ''' <para>LO QUE LA FUENTE SOSTIENE, y nada más: <c>SetupOverlay</c> corre el loop del pool PRIMARIO
+    ''' completo y DESPUÉS el del secundario (OverlayInterface.cpp:659-668), y cada <c>InstallOverlay</c>
+    ''' termina en <c>AttachChild(newShape, false)</c> (:257) ⇒ el orden en que los nodos se ENGANCHAN al
+    ''' árbol es: <b>TODOS los <c>[Ovl]</c> ascendentes, y después TODOS los <c>[SOvl]</c> ascendentes</b>.
+    ''' NO es un único índice compartido.</para>
+    ''' <para>⛔ ACÁ ESTUVO EL DEFECTO Y NO ERA LA CITA, ERA EL PASO SIGUIENTE: esta función decía "⇒ el orden
+    ''' de dibujo es", y ese <i>⇒</i> no sale de ninguna fuente. Quién dibuja primero entre hermanos COPLANARES
+    ''' lo decide el acumulador del motor, que ni skee ni f4ee tocan (no hay un solo <c>reverse</c>/<c>rbegin</c>
+    ''' en los dos plugins). Enganchar ≠ dibujar. Ver <see cref="DrawOrderKey"/>.</para>
     ''' <para>Ordenar por <see cref="ParseOvlIndex"/> a secas —que saltea la <c>S</c>— empataba
-    ''' <c>[SOvl0]</c> con <c>[Ovl0]</c> y podía dejar el spell DEBAJO de <c>[Ovl1]</c>. Con el offset, el pool
-    ''' magic siempre queda arriba, que es lo que hace el motor.</para>
+    ''' <c>[SOvl0]</c> con <c>[Ovl0]</c>. Con el offset, el pool magic queda entero de un lado de la
+    ''' clave, que es lo que hace el motor al instalarlos.</para>
     ''' <para>EL OFFSET NO PUEDE SER "UN NÚMERO QUE ALCANCE" (p.ej. 1000 porque "skee clampea todo contador a
     ''' 0x7F"): eso confunde lo que el MOTOR instancia con lo que el DATO puede traer — el decoder del
     ''' <c>.jslot</c> acepta <c>\[S?Ovl\d+\]</c> SIN TECHO (un preset importado puede traer un <c>[SOvl40]</c>), así
@@ -920,6 +935,39 @@ Public Module SseOverlayCompositor
     ''' final" ⇒ colisión de dominios (el valor que significa "no tiene índice" pasa a ser un índice válido). Con
     ''' <c>MaxValue \ 2</c> el tope del magic queda en MaxValue-2 y el centinela es inalcanzable.</para></summary>
     Private ReadOnly PoolOrderOffset As Integer = Integer.MaxValue \ 2
+
+    ''' <summary>EL ORDEN DE DIBUJO de skee = el INVERSO del de instalación (<see cref="CompositeOrderKey"/>).
+    ''' Ascendente = de ABAJO hacia ARRIBA: el de clave más baja se dibuja primero y el último gana en los solapes.
+    ''' <para><b>DE DÓNDE SALE.</b> La CITA (OverlayInterface.cpp:659-668 y :257) da el orden en que skee ENGANCHA
+    ''' los nodos: <c>[Ovl0]…[OvlN]</c> y después <c>[SOvl0]…[SOvlM]</c>. La MEDICIÓN es un reporte in-game
+    ''' (2026-08-28) que dice que lo que se ve ENCIMA es el PRIMER nodo enganchado, o sea que el motor dibuja los
+    ''' hermanos coplanares al revés del enganche. Las dos cosas juntas dan esta clave. NO hay cita del binario
+    ''' para el paso enganche→dibujo: eso vive en el acumulador del motor y no está leído. Si algún día se lee y
+    ''' dice otra cosa, lo que cambia es ESTA función y nada más — es el único lugar donde la app afirma quién
+    ''' queda arriba.</para>
+    ''' <para><b>CONSECUENCIA QUE NO ES UN CASO ESPECIAL:</b> como la inversión es del orden TOTAL, el pool magic
+    ''' —que se engancha ÚLTIMO— se dibuja PRIMERO, o sea que queda DEBAJO de todo el pool normal. Antes la app
+    ''' lo ponía encima; sale de la misma aritmética, sin excepción escrita a mano.</para>
+    ''' <para><c>Integer.MaxValue - k</c> con <c>k</c> ∈ [0, MaxValue] cae en [0, MaxValue]: no puede desbordar
+    ''' (y VB chequea overflow por default, dentro de un <c>OrderBy</c> en un Task de background). El centinela
+    ''' "sin índice" (MaxValue) mapea a 0 = se dibuja primero = queda al fondo, que es donde un nodo ajeno molesta
+    ''' menos.</para></summary>
+    Public Function DrawOrderKey(nodeName As String) As Integer
+        Return Integer.MaxValue - CompositeOrderKey(nodeName)
+    End Function
+
+    ''' <summary>LA ÚNICA implementación del orden de dibujo: devuelve los overlays de ABAJO hacia ARRIBA
+    ''' (<see cref="DrawOrderKey"/> ascendente). La usan el pliegue (CPU diffuse, CPU normales y GPU, todos vía
+    ''' <see cref="SortFaceOverlays"/>) y el decal vivo del render, así que render y bake NO PUEDEN discrepar.
+    ''' <para>Tolera elementos <c>Nothing</c> en la lista: el camino del render recibe el carrier CRUDO del preset
+    ''' (que puede traerlos) y filtra recién adentro del loop. Un nulo cae al centinela ⇒ al fondo.</para>
+    ''' <para><c>OrderBy</c> es estable, así que claves iguales conservan el orden de entrada. Con dato real no
+    ''' hay empates: el decoder del <c>.jslot</c> exige <c>^(Body|Hands|Feet|Face) \[S?Ovl\d+\]$</c> y no puede
+    ''' haber dos nodos con el mismo nombre.</para></summary>
+    Public Function OrderForDraw(list As IEnumerable(Of RaceMenuJslot.JslotOverlayNode)) As List(Of RaceMenuJslot.JslotOverlayNode)
+        If list Is Nothing Then Return New List(Of RaceMenuJslot.JslotOverlayNode)()
+        Return list.OrderBy(Function(o) DrawOrderKey(If(o IsNot Nothing, o.NodeName, Nothing))).ToList()
+    End Function
 
     ''' <summary>The FACE overlays the FOLD owns — node filter only, no texture requirement.
     ''' Callers pass THIS to the composers; each composer then keeps what it can actually consume (the diffuse

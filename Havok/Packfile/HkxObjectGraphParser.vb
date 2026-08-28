@@ -93,14 +93,13 @@ Partial Public Class HkxObjectGraph_Class
         Return _ranuras
     End Function
 
-    ''' <summary>El largo del archivo entero, para poder dividir.</summary>
-    Public ReadOnly Property BytesTotales As Integer
-        Get
-            Return If(_bytes Is Nothing, 0, _bytes.Length)
-        End Get
-    End Property
-
-    ''' <summary>Una ranura de reubicacion de `PointerSize` bytes, en offset RELATIVO.</summary>
+    ''' <summary>
+    ''' Una ranura de reubicacion de `PointerSize` bytes, en offset RELATIVO.
+    ''' <para>⛔⛔⛔ LA GUARDA VA TAMBIEN EN EL LLAMADOR. El marcado es INSTRUMENTACION,
+    ''' no una ley del formato: el codigo que la app distribuye no tiene que pagar una llamada por
+    ''' cada resolucion para que un modo de auditoria pueda contar bytes. La de adentro queda como
+    ''' red, no como unica.</para>
+    ''' </summary>
     Private Sub MarcarRanura(relativeOffset As Integer)
         If _ranuras Is Nothing Then Exit Sub
         Dim i0 = Math.Max(0, _ancla + relativeOffset)
@@ -109,6 +108,23 @@ Partial Public Class HkxObjectGraph_Class
             _ranuras(i) = True
         Next
     End Sub
+
+    ''' <summary>
+    ''' ⛔⛔⛔ LA LEY DE `hkRelArray`, EN UN SOLO LUGAR.
+    ''' <para>`hkRelArray` es `uint16 size` + `uint16 offset RELATIVO al propio campo`, y sus datos
+    ''' viven AFUERA del objeto. Esa ley estaba escrita dos veces: en el lector que emite
+    ''' `gentyped.py` y, transcrita a mano, en el censo por byte. Dos copias de la misma ley es lo
+    ''' que la regla 2 prohibe, y ademas arreglar una y no la otra no movia ningun numero.</para>
+    ''' <para>El offset que devuelve es RELATIVO, igual que el de `ReadArrayHeader`.</para>
+    ''' </summary>
+    Public Function RelArrayCount(campoRel As Integer) As Integer
+        Return CInt(ReadInt16(campoRel)) And &HFFFF
+    End Function
+
+    ''' <summary>Donde arrancan los datos de un `hkRelArray`, relativo. Ver `RelArrayCount`.</summary>
+    Public Function RelArrayDataRel(campoRel As Integer) As Integer
+        Return campoRel + (CInt(ReadInt16(campoRel + 2)) And &HFFFF)
+    End Function
 
     Private Sub Marcar(absoluteStart As Integer, byteCount As Integer)
         If _tocados Is Nothing OrElse byteCount <= 0 Then Exit Sub
@@ -517,7 +533,9 @@ Partial Public Class HkxObjectGraph_Class
         ' ⛔ EL `+ 1` ES EL TERMINADOR, Y SOLO EXISTE SI LO HUBO. Cuando la cadena llega al fin
         ' de la seccion sin NUL, `endOffset` YA es `_fin` y sumarle uno marcaba como leido el primer byte
         ' de la tabla de fixups, que no es dato.
-        Marcar(absoluteOffset, Math.Min(endOffset + 1, _fin) - absoluteOffset)
+        ' ⛔ MISMA GUARDA EN EL LLAMADOR que en `EnsureReadable`: la regla estaba escrita en dos
+        ' formas dentro del mismo archivo, que es el drift que la regla busca evitar.
+        If _tocados IsNot Nothing Then Marcar(absoluteOffset, Math.Min(endOffset + 1, _fin) - absoluteOffset)
         Return Encoding.ASCII.GetString(_bytes, absoluteOffset, endOffset - absoluteOffset)
     End Function
 
@@ -585,9 +603,12 @@ Partial Public Class HkxObjectGraph_Class
         End If
         ' ⛔ EL EMBUDO. Toda lectura pasa por aca declarando offset y largo, asi que marcar aca es
         ' marcar exactamente lo que se lee, sin repetir en ningun lado la ley de cuanto mide cada tipo.
-        ' ⛔⛔ LA GUARDA VA EN EL LLAMADOR. `Marcar` sale sola si `_tocados` es Nothing, pero esta es la
-        ' funcion por la que pasan TODAS las lecturas del parser: con la guarda adentro queda una llamada
-        ' por lectura en el camino normal, que es el de render y bake. Aca no queda ni eso.
+        ' ⛔⛔⛔ LA GUARDA VA EN EL LLAMADOR, Y ESTA ES LA RAZON.
+        ' `Marcar` sale sola si `_tocados` es Nothing, pero esta funcion es el EMBUDO por el que pasan
+        ' TODAS las lecturas del parser: tambien las del camino de render y de bake, donde el marcado
+        ' esta apagado. Con la guarda solo adentro queda una llamada por lectura, para nada.
+        ' Lo saque una vez con el argumento de "una ley en un solo lugar" y esta mal: el marcado es
+        ' instrumentacion, no una ley del formato, y el codigo que se distribuye no paga por el.
         If _tocados IsNot Nothing Then Marcar(_ancla + relativeOffset, byteCount)
     End Sub
 

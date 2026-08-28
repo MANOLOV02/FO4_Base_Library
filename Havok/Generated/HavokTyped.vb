@@ -1,6 +1,6 @@
 ﻿' ================================================================================================
 '  GENERADO POR Tools/HavokLayoutGen/gentyped.py - NO EDITAR A MANO.
-'  Generado: 2026-08-27   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
+'  Generado: 2026-08-28   Fuentes: HavokLayout_FO4.vb + HavokLayout_SSE.vb
 '
 '  Un lector tipado por clase, con UNA sola API para los dos juegos: el offset sale de un
 '  Integer() elegido una vez al construir, segun lo que el packfile DECLARA. Ver el
@@ -201,6 +201,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -475,6 +476,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Events) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -687,6 +689,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -1157,6 +1160,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -2103,6 +2107,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -2413,6 +2418,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -2647,6 +2653,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildrenA) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -2817,6 +2824,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -3041,6 +3049,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -3427,6 +3436,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -3763,6 +3773,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PTransitionBlenderGeneratorsAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PTransitionBlenderGeneratorsA) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -3805,6 +3816,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SortedChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SortedChildren) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -4031,6 +4043,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -4417,6 +4430,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -4733,6 +4747,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -5537,6 +5552,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneChainIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneChainIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -5833,6 +5849,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -6207,6 +6224,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -6625,6 +6643,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -6957,6 +6976,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -7447,6 +7467,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -7777,6 +7798,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -7983,6 +8005,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StateDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StateData) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -8365,6 +8388,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -8751,6 +8775,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -9207,6 +9232,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -9463,6 +9489,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneChainIndexAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneChainIndexA) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -9605,6 +9632,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -10047,6 +10075,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -10363,6 +10392,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -10655,6 +10685,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BonesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bones) < 0 Then Return 0
                 Return If(_off Is OFF_SSE, 64, 528)
             End Get
         End Property
@@ -10701,6 +10732,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EyeBonesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EyeBones) < 0 Then Return 0
                 Return If(_off Is OFF_SSE, 64, 528)
             End Get
         End Property
@@ -11885,6 +11917,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -12241,6 +12274,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -12527,6 +12561,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneOffsetAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneOffsetA) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -12569,6 +12604,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneIndexAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneIndexA) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -12795,6 +12831,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -13183,6 +13220,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -13469,6 +13507,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RagdollRigidBodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RagdollRigidBodies) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -13597,6 +13636,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -13943,6 +13983,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -14273,6 +14314,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -14701,6 +14743,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ParentOfBone0ToCOMIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ParentOfBone0ToCOMIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -14829,6 +14872,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -15145,6 +15189,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -15641,6 +15686,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -16125,6 +16171,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -16499,6 +16546,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -16941,6 +16989,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -17409,6 +17458,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -17785,6 +17835,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerParticleDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerParticleData) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -18049,6 +18100,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Links) < 0 Then Return 0
                 Return 20
             End Get
         End Property
@@ -18313,6 +18365,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BatchesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Batches) < 0 Then Return 0
                 Return 448
             End Get
         End Property
@@ -18359,6 +18412,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SinglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Singles) < 0 Then Return 0
                 Return 28
             End Get
         End Property
@@ -18857,6 +18911,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Links) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -19191,6 +19246,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BatchesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Batches) < 0 Then Return 0
                 Return 768
             End Get
         End Property
@@ -19237,6 +19293,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SinglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Singles) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -19953,6 +20010,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BlendEntries) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -20245,6 +20303,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BonePlanesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BonePlanes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -20453,6 +20512,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FourBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FourBlendEntries) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -20499,6 +20559,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ThreeBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ThreeBlendEntries) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -20545,6 +20606,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TwoBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TwoBlendEntries) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -20591,6 +20653,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OneBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OneBlendEntries) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -20633,6 +20696,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ControlBytesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ControlBytes) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -22083,6 +22147,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -22271,6 +22336,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -22333,6 +22399,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNs) < 0 Then Return 0
                 Return 384
             End Get
         End Property
@@ -22379,6 +22446,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -22551,6 +22619,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -22613,6 +22682,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTBs) < 0 Then Return 0
                 Return 640
             End Get
         End Property
@@ -22659,6 +22729,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTBs) < 0 Then Return 0
                 Return 1024
             End Get
         End Property
@@ -22831,6 +22902,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -22893,6 +22965,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -22939,6 +23012,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTs) < 0 Then Return 0
                 Return 768
             End Get
         End Property
@@ -23111,6 +23185,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -23173,6 +23248,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -23219,6 +23295,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -23349,6 +23426,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -23523,6 +23601,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -23613,6 +23692,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNs) < 0 Then Return 0
                 Return 384
             End Get
         End Property
@@ -23659,6 +23739,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -23789,6 +23870,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -23879,6 +23961,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTBs) < 0 Then Return 0
                 Return 640
             End Get
         End Property
@@ -23925,6 +24008,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTBs) < 0 Then Return 0
                 Return 1024
             End Get
         End Property
@@ -24055,6 +24139,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -24145,6 +24230,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -24191,6 +24277,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTs) < 0 Then Return 0
                 Return 768
             End Get
         End Property
@@ -24321,6 +24408,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -24411,6 +24499,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -24457,6 +24546,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -25239,6 +25329,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CollidablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Collidables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25291,6 +25382,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ClothDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ClothDatas) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25417,6 +25509,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SimClothDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SimClothDatas) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25469,6 +25562,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BufferDefinitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BufferDefinitions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25521,6 +25615,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSetDefinitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSetDefinitions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25573,6 +25668,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OperatorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Operators) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25625,6 +25721,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ClothStateDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ClothStateDatas) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25677,6 +25774,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Actions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -25807,6 +25905,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OperatorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Operators) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -25853,6 +25952,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UsedBuffersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UsedBuffers) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -25899,6 +25999,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UsedTransformSetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UsedTransformSets) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -25941,6 +26042,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UsedSimClothsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UsedSimCloths) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -26419,6 +26521,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Links) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -26669,6 +26772,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BatchesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Batches) < 0 Then Return 0
                 Return 320
             End Get
         End Property
@@ -26715,6 +26819,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SinglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Singles) < 0 Then Return 0
                 Return 20
             End Get
         End Property
@@ -27215,6 +27320,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TetrahedraGridPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TetrahedraGrid) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -27257,6 +27363,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GridCellsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_GridCells) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -27299,6 +27406,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TetrahedraEquationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TetrahedraEquations) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -27543,6 +27651,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [HeightsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Heights) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -27707,6 +27816,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PlaneEquationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PlaneEquations) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -28067,6 +28177,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexInputFromVertexOutputPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexInputFromVertexOutput) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -28257,6 +28368,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexPairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexPairs) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -28639,6 +28751,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalConstraintsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalConstraints) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -28973,6 +29086,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleBonePairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleBonePairs) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -29015,6 +29129,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleBoneStartForBonePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleBoneStartForBone) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -29233,6 +29348,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -29279,6 +29395,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleVertexPairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleVertexPairs) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -29321,6 +29438,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleVertexStartForVertexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleVertexStartForVertex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -29655,6 +29773,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexParticlePairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexParticlePairs) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -29849,6 +29968,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FourBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FourBlendEntries) < 0 Then Return 0
                 Return 224
             End Get
         End Property
@@ -29895,6 +30015,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ThreeBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ThreeBlendEntries) < 0 Then Return 0
                 Return 176
             End Get
         End Property
@@ -29941,6 +30062,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TwoBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TwoBlendEntries) < 0 Then Return 0
                 Return 128
             End Get
         End Property
@@ -29987,6 +30109,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OneBlendEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OneBlendEntries) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -30029,6 +30152,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ControlBytesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ControlBytes) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -31479,6 +31603,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -31521,6 +31646,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFromMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFromMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -31709,6 +31835,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -31751,6 +31878,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFromMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFromMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -31813,6 +31941,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -31859,6 +31988,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -32031,6 +32161,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -32073,6 +32204,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFromMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFromMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -32135,6 +32267,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTBs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -32181,6 +32314,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTBs) < 0 Then Return 0
                 Return 1024
             End Get
         End Property
@@ -32353,6 +32487,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -32395,6 +32530,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFromMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFromMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -32457,6 +32593,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTs) < 0 Then Return 0
                 Return 384
             End Get
         End Property
@@ -32503,6 +32640,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTs) < 0 Then Return 0
                 Return 768
             End Get
         End Property
@@ -32675,6 +32813,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InputTrianglesSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InputTrianglesSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -32717,6 +32856,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFromMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFromMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -32779,6 +32919,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPs) < 0 Then Return 0
                 Return 128
             End Get
         End Property
@@ -32825,6 +32966,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -32955,6 +33097,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -32997,6 +33140,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -33171,6 +33315,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -33213,6 +33358,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -33303,6 +33449,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -33349,6 +33496,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -33479,6 +33627,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -33521,6 +33670,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -33611,6 +33761,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTBs) < 0 Then Return 0
                 Return 512
             End Get
         End Property
@@ -33657,6 +33808,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTBsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTBs) < 0 Then Return 0
                 Return 1024
             End Get
         End Property
@@ -33787,6 +33939,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -33829,6 +33982,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -33919,6 +34073,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPNTs) < 0 Then Return 0
                 Return 384
             End Get
         End Property
@@ -33965,6 +34120,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPNTsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPNTs) < 0 Then Return 0
                 Return 768
             End Get
         End Property
@@ -34095,6 +34251,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -34137,6 +34294,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformSubsetPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformSubset) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -34227,6 +34385,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalPs) < 0 Then Return 0
                 Return 128
             End Get
         End Property
@@ -34273,6 +34432,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalUnpackedPsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalUnpackedPs) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -35089,6 +35249,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -35305,6 +35466,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -35571,6 +35733,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ParticleDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ParticleDatas) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -35613,6 +35776,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FixedParticlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FixedParticles) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -35655,6 +35819,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -35697,6 +35862,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFlipsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFlips) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -35779,6 +35945,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerInstanceCollidablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerInstanceCollidables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -35831,6 +35998,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticConstraintSetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticConstraintSets) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -35883,6 +36051,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AntiPinchConstraintSetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AntiPinchConstraintSets) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -35935,6 +36104,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SimClothPosesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SimClothPoses) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -35987,6 +36157,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Actions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -36029,6 +36200,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticCollisionMasksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticCollisionMasks) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -36071,6 +36243,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerParticlePinchDetectionEnabledFlagsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerParticlePinchDetectionEnabledFlags) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -36117,6 +36290,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CollidablePinchingDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CollidablePinchingDatas) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -36423,6 +36597,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformIndices) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -36465,6 +36640,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Offsets) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -37171,6 +37347,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PositionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Positions) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -37333,6 +37510,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleBonePairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleBonePairs) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -37375,6 +37553,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalBoneTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalBoneTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -37779,6 +37958,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintExecutionPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintExecution) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -37927,6 +38107,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneInfluencesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneInfluences) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -37969,6 +38150,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneInfluenceStartPerVertexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneInfluenceStartPerVertex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -38011,6 +38193,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -38053,6 +38236,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UsedBoneGroupIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UsedBoneGroupIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -38519,6 +38703,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Links) < 0 Then Return 0
                 Return 12
             End Get
         End Property
@@ -38755,6 +38940,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BatchesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Batches) < 0 Then Return 0
                 Return 256
             End Get
         End Property
@@ -38801,6 +38987,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SinglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Singles) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -39251,6 +39438,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticPositionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticPositions) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -39293,6 +39481,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticNormalsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticNormals) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -39335,6 +39524,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticTangentsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticTangents) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -39377,6 +39567,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticBiTangentsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticBiTangents) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -39419,6 +39610,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -39553,6 +39745,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Links) < 0 Then Return 0
                 Return 12
             End Get
         End Property
@@ -39789,6 +39982,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BatchesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Batches) < 0 Then Return 0
                 Return 192
             End Get
         End Property
@@ -39835,6 +40029,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SinglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Singles) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -40561,6 +40756,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerComponentTransformTrackersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerComponentTransformTrackers) < 0 Then Return 0
                 Return 72
             End Get
         End Property
@@ -40789,6 +40985,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerParticleDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerParticleData) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -41105,6 +41302,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertToNormalIDPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertToNormalID) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -41147,6 +41345,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFlipsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFlips) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -41189,6 +41388,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceVertices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -41231,6 +41431,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TangentEdgeCosAnglePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TangentEdgeCosAngle) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -41273,6 +41474,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TangentEdgeSinAnglePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TangentEdgeSinAngle) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -41315,6 +41517,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BiTangentFlipPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BiTangentFlip) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -41519,6 +41722,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InvolvedTrianglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InvolvedTriangles) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -41561,6 +41765,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InvolvedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InvolvedVertices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -41603,6 +41808,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelectionVertexToInvolvedVertexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelectionVertexToInvolvedVertex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -41645,6 +41851,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InvolvedVertexToNormalIDPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InvolvedVertexToNormalID) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -41687,6 +41894,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriangleFlipsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TriangleFlips) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -41729,6 +41937,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceVertices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -41771,6 +41980,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TangentEdgeCosAnglePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TangentEdgeCosAngle) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -41813,6 +42023,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TangentEdgeSinAnglePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TangentEdgeSinAngle) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -41855,6 +42066,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BiTangentFlipPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BiTangentFlip) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -42125,6 +42337,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FrameDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FrameDatas) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -42171,6 +42384,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ApplyDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ApplyDatas) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -42481,6 +42695,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FrameBatchDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FrameBatchDatas) < 0 Then Return 0
                 Return 352
             End Get
         End Property
@@ -42527,6 +42742,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FrameSingleDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FrameSingleDatas) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -42573,6 +42789,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ApplyBatchDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ApplyBatchDatas) < 0 Then Return 0
                 Return 352
             End Get
         End Property
@@ -42619,6 +42836,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ApplySingleDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ApplySingleDatas) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -43901,6 +44119,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WordsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Words) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -44127,6 +44346,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WordsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Words) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -44341,6 +44561,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DeclaredEnumsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DeclaredEnums) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -44387,6 +44608,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DeclaredMembersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DeclaredMembers) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -44555,6 +44777,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ItemsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Items) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -45319,6 +45542,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Attributes) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -45955,6 +46179,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElementsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -46061,6 +46286,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElementsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -46167,6 +46393,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElementsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elements) < 0 Then Return 0
                 Return 128
             End Get
         End Property
@@ -46283,6 +46510,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -46329,6 +46557,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TrianglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Triangles) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -46687,6 +46916,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MatricesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Matrices) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -46729,6 +46959,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InverseMatricesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InverseMatrices) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -46771,6 +47002,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MatricesOrderPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MatricesOrder) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -46813,6 +47045,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MatricesNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MatricesNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -46859,6 +47092,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IndexMappingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IndexMappings) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -47465,6 +47699,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexBuffersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexBuffers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -47605,6 +47840,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TexturesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Textures) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -47809,6 +48045,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sections) < 0 Then Return 0
                 Return 56
             End Get
         End Property
@@ -47851,6 +48088,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -47893,6 +48131,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -48209,6 +48448,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -48417,6 +48657,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MemoryPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Memory) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -48633,6 +48874,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ResourceHandlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ResourceHandles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -48685,6 +48927,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Children) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -48853,6 +49096,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_References) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -49149,6 +49393,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MappingPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Mapping) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -50047,6 +50292,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ColorPairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ColorPairs) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -50399,6 +50645,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Map) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -51076,6 +51323,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LockedElementsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LockedElements) < 0 Then Return 0
                 Return 7
             End Get
         End Property
@@ -51142,6 +51390,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElementInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ElementInfos) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -51188,6 +51437,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexBufferInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexBufferInfos) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -51734,6 +51984,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WordsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Words) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -52888,6 +53139,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Entries) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -53486,6 +53738,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NamedVariantsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NamedVariants) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -53778,6 +54031,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElemPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elem) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -53880,6 +54134,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElemPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elem) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -53982,6 +54237,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElemPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elem) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -54088,6 +54344,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElemPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elem) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -54190,6 +54447,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElemPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elem) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -54292,6 +54550,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ElemPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Elem) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -54432,6 +54691,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Children) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -54786,6 +55046,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WorldFromBoneTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WorldFromBoneTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -54828,6 +55089,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -55322,6 +55584,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BonesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bones) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -55364,6 +55627,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalFromRootTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalFromRootTransforms) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -55540,6 +55804,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BonesBufferPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BonesBuffer) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -55586,6 +55851,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneSetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneSets) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -55632,6 +55898,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneSectionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneSections) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -55678,6 +55945,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Parts) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -56184,6 +56452,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AllocationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Allocations) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -56230,6 +56499,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BlocksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Blocks) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -56272,6 +56542,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RefsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Refs) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -56314,6 +56585,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TypeNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TypeNames) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -56356,6 +56628,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TraceTextPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TraceText) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -56398,6 +56671,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TraceAddrsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TraceAddrs) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -56440,6 +56714,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TraceParentsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TraceParents) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -57062,6 +57337,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoolVariableInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoolVariableInfo) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -57108,6 +57384,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntVariableInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IntVariableInfo) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -57154,6 +57431,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RealVariableInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RealVariableInfo) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -57200,6 +57478,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Vector4VariableInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vector4VariableInfo) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -57256,6 +57535,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoolIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoolIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -57298,6 +57578,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IntIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -57340,6 +57621,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RealIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RealIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -57382,6 +57664,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Vector4IndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vector4Indices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -58229,6 +58512,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceFrameSamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceFrameSamples) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -58541,6 +58825,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -58705,6 +58990,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformTrackToBoneIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformTrackToBoneIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -58747,6 +59033,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatTrackToFloatSlotIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FloatTrackToFloatSlotIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -58789,6 +59076,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PartitionIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PartitionIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -58943,6 +59231,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SkeletonsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Skeletons) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -58995,6 +59284,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Animations) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -59047,6 +59337,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BindingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bindings) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -59099,6 +59390,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttachmentsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Attachments) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -59151,6 +59443,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SkinsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Skins) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -59281,6 +59574,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PreviewColorPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PreviewColor) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -59415,6 +59709,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Annotations) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -59885,6 +60180,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceFrameSamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceFrameSamples) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -60071,6 +60367,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceFrameSamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceFrameSamples) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -60187,6 +60484,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NamePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Name) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -60229,6 +60527,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NameStrikePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NameStrike) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -60271,6 +60570,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NameLiftPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NameLift) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -60313,6 +60613,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NameLockPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NameLock) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -60355,6 +60656,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NameUnlockPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NameUnlock) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -60397,6 +60699,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MinPosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MinPos) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -60439,6 +60742,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaxPosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaxPos) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -60481,6 +60785,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MinVelPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MinVel) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -60523,6 +60828,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaxVelPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaxVel) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -60565,6 +60871,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AllBonesDownPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AllBonesDown) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -60607,6 +60914,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnyBonesDownPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnyBonesDown) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -60789,6 +61097,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PreviewInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PreviewInfo) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -60999,6 +61308,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -61041,6 +61351,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Transforms) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -61083,6 +61394,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Floats) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -61553,6 +61865,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -61595,6 +61908,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DynamicTranslationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DynamicTranslations) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -61637,6 +61951,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticTranslationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticTranslations) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -61679,6 +61994,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TranslationTypeAndOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TranslationTypeAndOffsets) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -61721,6 +62037,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DynamicRotationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DynamicRotations) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -61763,6 +62080,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticRotationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticRotations) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -61805,6 +62123,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RotationTypeAndOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RotationTypeAndOffsets) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -61847,6 +62166,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DynamicScalesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DynamicScales) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -61889,6 +62209,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StaticScalesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StaticScales) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -61931,6 +62252,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ScaleTypeAndOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ScaleTypeAndOffsets) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -61973,6 +62295,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Floats) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -62161,6 +62484,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MappingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Mappings) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -62203,6 +62527,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneFromSkinMeshTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneFromSkinMeshTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -62319,6 +62644,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MappingPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Mapping) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -62477,6 +62803,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceFrameSamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceFrameSamples) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -62519,6 +62846,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ParameterValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ParameterValues) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -62561,6 +62889,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ParameterTypesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ParameterTypes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -62719,6 +63048,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceFrameSamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceFrameSamples) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -62901,6 +63231,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -62943,6 +63274,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CompressedDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CompressedData) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -62985,6 +63317,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IntData) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -63047,6 +63380,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FloatData) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -63491,6 +63825,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -63533,6 +63868,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -63817,6 +64153,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidBodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidBodies) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -63869,6 +64206,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Constraints) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -63911,6 +64249,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneToRigidBodyMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneToRigidBodyMap) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -64113,6 +64452,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -64249,6 +64589,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ParentIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ParentIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -64295,6 +64636,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BonesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bones) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -64337,6 +64679,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencePosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencePose) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -64379,6 +64722,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferenceFloatsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferenceFloats) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -64421,6 +64765,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatSlotsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FloatSlots) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -64467,6 +64812,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LocalFramesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LocalFrames) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -64513,6 +64859,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PartitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Partitions) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -64853,6 +65200,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PartitionMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PartitionMap) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -64899,6 +65247,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SimpleMappingPartitionRangesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SimpleMappingPartitionRanges) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -64945,6 +65294,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChainMappingPartitionRangesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChainMappingPartitionRanges) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -64991,6 +65341,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SimpleMappingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SimpleMappings) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -65037,6 +65388,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChainMappingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChainMappings) < 0 Then Return 0
                 Return 112
             End Get
         End Property
@@ -65079,6 +65431,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UnmappedBonesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UnmappedBones) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -65683,6 +66036,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnnotationTracks) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -65823,6 +66177,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BlockOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BlockOffsets) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -65865,6 +66220,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatBlockOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FloatBlockOffsets) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -65907,6 +66263,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransformOffsets) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -65949,6 +66306,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FloatOffsets) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -65991,6 +66349,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -66843,6 +67202,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -67271,6 +67631,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -67559,6 +67920,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AssetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Assets) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -67689,6 +68051,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AssetNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AssetNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -67817,6 +68180,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -68527,6 +68891,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -68719,6 +69084,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AssignmentsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Assignments) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -68979,6 +69345,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelfTransitionNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelfTransitionNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69123,6 +69490,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ExternalEventIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ExternalEventIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -69293,6 +69661,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69511,6 +69880,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UniqueIdPoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UniqueIdPool) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69567,6 +69937,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MirroredExternalIdMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MirroredExternalIdMap) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69823,6 +70194,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RecentlyCreatedClonesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RecentlyCreatedClones) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69893,6 +70265,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntermediateOutputSizesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IntermediateOutputSizes) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69941,6 +70314,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [JobsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Jobs) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -69989,6 +70363,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AllPartitionMemoryPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AllPartitionMemory) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -70031,6 +70406,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalToRootVariableIdMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalToRootVariableIdMap) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -70073,6 +70449,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalToCharacterCharacterPropertyIdMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalToCharacterCharacterPropertyIdMap) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -70115,6 +70492,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalToRootAttributeIdMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalToRootAttributeIdMap) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -70413,6 +70791,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeDefaultsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeDefaults) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -70459,6 +70838,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariableInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VariableInfos) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -70505,6 +70885,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPropertyInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPropertyInfos) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -70551,6 +70932,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventInfos) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -70597,6 +70979,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariableBoundsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VariableBounds) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -70711,6 +71094,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WordMinVariableValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WordMinVariableValues) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -70757,6 +71141,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WordMaxVariableValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WordMaxVariableValues) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -70869,6 +71254,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodeInternalStateInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NodeInternalStateInfos) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -71063,6 +71449,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AuxiliaryNodeInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AuxiliaryNodeInfo) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -71105,6 +71492,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveEventIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveEventIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -71147,6 +71535,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveVariableIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveVariableIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -71277,6 +71666,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -71319,6 +71709,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -71361,6 +71752,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariableNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VariableNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -71403,6 +71795,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPropertyNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPropertyNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -71571,6 +71964,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IdToNamePairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IdToNamePairs) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -71829,6 +72223,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -72189,6 +72584,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -72419,6 +72815,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -72731,6 +73128,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Children) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -72773,6 +73171,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenInternalStatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildrenInternalStates) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -72815,6 +73214,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SortedChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SortedChildren) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -73069,6 +73469,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -73373,6 +73774,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenInternalStatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildrenInternalStates) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -73415,6 +73817,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SortedChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SortedChildren) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -73655,6 +74058,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -74111,6 +74515,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPoseAtBeginningOfTransitionPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPoseAtBeginningOfTransition) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -74437,6 +74842,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPoseAtBeginningOfTransitionPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPoseAtBeginningOfTransition) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -74691,6 +75097,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -74761,6 +75168,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -74917,6 +75325,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -74987,6 +75396,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneWeightsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneWeights) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -75121,6 +75531,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Samples) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -75455,6 +75866,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CameraVariableFloatNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CameraVariableFloatNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -75497,6 +75909,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CameraFloatValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CameraFloatValues) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -75539,6 +75952,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CameraVariableVectorNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CameraVariableVectorNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -75581,6 +75995,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CameraVectorValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CameraVectorValues) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -75693,6 +76108,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NearbyCharactersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NearbyCharacters) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -76011,6 +76427,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneAttachmentsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneAttachments) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -76179,6 +76596,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PoseLocalPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PoseLocal) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -76427,6 +76845,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PoseModelSpacePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PoseModelSpace) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -76829,6 +77248,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -77665,6 +78085,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPropertyInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPropertyInfos) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -77707,6 +78128,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NumBonesPerLodPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NumBonesPerLod) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -77869,6 +78291,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneAttachmentBoneIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneAttachmentBoneIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -77911,6 +78334,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneAttachmentTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneAttachmentTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -78449,6 +78873,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RetargetingSkeletonMappersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RetargetingSkeletonMappers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -78743,6 +79168,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DeformableSkinsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DeformableSkins) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -78785,6 +79211,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidSkinsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidSkins) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -78957,6 +79384,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PoseModelSpacePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PoseModelSpace) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -78999,6 +79427,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidAttachmentTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidAttachmentTransforms) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -79133,6 +79562,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SkinNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SkinNames) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -79179,6 +79609,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneAttachmentNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneAttachmentNames) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -79225,6 +79656,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimationBundleNameDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnimationBundleNameData) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -79271,6 +79703,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimationBundleFilenameDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnimationBundleFilenameData) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -79313,6 +79746,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPropertyNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPropertyNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79355,6 +79789,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RetargetingSkeletonMapperFilenamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RetargetingSkeletonMapperFilenames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79397,6 +79832,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LodNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LodNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79439,6 +79875,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MirroredSyncPointSubstringsAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MirroredSyncPointSubstringsA) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79481,6 +79918,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MirroredSyncPointSubstringsBPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MirroredSyncPointSubstringsB) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79607,6 +80045,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LuaFilesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LuaFiles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79677,6 +80116,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DeformableSkinNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DeformableSkinNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79719,6 +80159,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidSkinNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidSkinNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79761,6 +80202,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimationNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnimationNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79803,6 +80245,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimationFilenamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnimationFilenames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -79979,6 +80422,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DeformableSkinIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DeformableSkinIds) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -80021,6 +80465,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidSkinIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidSkinIds) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -80063,6 +80508,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ExternalEventIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ExternalEventIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -80115,6 +80561,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AuxiliaryInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AuxiliaryInfo) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -80157,6 +80604,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveEventIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveEventIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -80199,6 +80647,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveVariableIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveVariableIds) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -80441,6 +80890,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PoseModelSpacePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PoseModelSpace) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -80483,6 +80933,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidAttachmentTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidAttachmentTransforms) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -80639,6 +81090,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -81031,6 +81483,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnimDatas) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -81157,6 +81610,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EchosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Echos) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -81533,6 +81987,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EchosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Echos) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -81897,6 +82352,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TriggersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Triggers) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -82053,6 +82509,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -82589,6 +83046,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RpnPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Rpn) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -82631,6 +83089,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ExpressionToRpnIndexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ExpressionToRpnIndex) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -82889,6 +83348,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -83503,6 +83963,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -83963,6 +84424,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -84479,6 +84941,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -85257,6 +85720,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -86455,6 +86919,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -86497,6 +86962,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -86539,6 +87005,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayCStringPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayCString) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -86581,6 +87048,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkStringPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkStringPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -86623,6 +87091,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -86665,6 +87134,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -86707,6 +87177,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -86749,6 +87220,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -86791,6 +87263,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -86833,6 +87306,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -86875,6 +87349,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkRealPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkReal) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -86927,6 +87402,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -86979,6 +87455,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -87031,6 +87508,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -87083,6 +87561,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -87135,6 +87614,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -87187,6 +87667,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -87249,6 +87730,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayStructPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayStruct) < 0 Then Return 0
                 Return 704
             End Get
         End Property
@@ -88229,6 +88711,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -89427,6 +89910,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -89469,6 +89953,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -89511,6 +89996,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayCStringPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayCString) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -89553,6 +90039,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkStringPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkStringPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -89595,6 +90082,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -89637,6 +90125,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -89679,6 +90168,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -89721,6 +90211,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -89763,6 +90254,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -89805,6 +90297,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -89847,6 +90340,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkRealPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkReal) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -89899,6 +90393,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -89951,6 +90446,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -90003,6 +90499,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -90055,6 +90552,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -90107,6 +90605,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -90159,6 +90658,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -90221,6 +90721,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayStructPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayStruct) < 0 Then Return 0
                 Return 704
             End Get
         End Property
@@ -91173,6 +91674,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -92371,6 +92873,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -92413,6 +92916,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -92455,6 +92959,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayCStringPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayCString) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -92497,6 +93002,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkStringPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkStringPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -92539,6 +93045,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -92581,6 +93088,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -92623,6 +93131,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -92665,6 +93174,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -92707,6 +93217,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -92749,6 +93260,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -92791,6 +93303,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkRealPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkReal) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -92843,6 +93356,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -92895,6 +93409,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -92947,6 +93462,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -92999,6 +93515,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -93051,6 +93568,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -93103,6 +93621,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -93165,6 +93684,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayStructPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayStruct) < 0 Then Return 0
                 Return 704
             End Get
         End Property
@@ -93501,6 +94021,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -94665,6 +95186,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -95011,6 +95533,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96209,6 +96732,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -96251,6 +96775,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -96293,6 +96818,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayCStringPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayCString) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96335,6 +96861,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkStringPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkStringPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96377,6 +96904,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -96419,6 +96947,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -96461,6 +96990,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -96503,6 +97033,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -96545,6 +97076,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -96587,6 +97119,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -96629,6 +97162,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkRealPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkReal) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -96681,6 +97215,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96733,6 +97268,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96785,6 +97321,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96837,6 +97374,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96889,6 +97427,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -96941,6 +97480,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -97003,6 +97543,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayStructPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayStruct) < 0 Then Return 0
                 Return 704
             End Get
         End Property
@@ -97131,6 +97672,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -98329,6 +98871,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -98371,6 +98914,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkBoolPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkBool) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -98413,6 +98957,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayCStringPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayCString) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -98455,6 +99000,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkStringPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkStringPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -98497,6 +99043,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -98539,6 +99086,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -98581,6 +99129,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkInt32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkInt32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -98623,6 +99172,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -98665,6 +99215,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -98707,6 +99258,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkUint32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkUint32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -98749,6 +99301,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkRealPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkReal) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -98801,6 +99354,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -98853,6 +99407,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbGeneratorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbGeneratorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -98905,6 +99460,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -98957,6 +99513,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbModifierRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbModifierRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -99009,6 +99566,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -99061,6 +99619,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NestedTypeArrayHkbCustomIdSelectorRefPtrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NestedTypeArrayHkbCustomIdSelectorRefPtr) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -99189,6 +99748,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -99941,6 +100501,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -100657,6 +101218,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -101165,6 +101727,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -101683,6 +102246,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -102263,6 +102827,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -102485,6 +103050,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalExpressionsDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalExpressionsData) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -102707,6 +103273,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalExpressionsDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalExpressionsData) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -102863,6 +103430,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -103529,6 +104097,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -104155,6 +104724,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PayloadsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Payloads) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -104617,6 +105187,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventData) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -104751,6 +105322,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Events) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -104983,6 +105555,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -105219,6 +105792,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WasActiveInPreviousFramePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WasActiveInPreviousFrame) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -105363,6 +105937,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WasActiveInPreviousFramePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WasActiveInPreviousFrame) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -105743,6 +106318,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ExpressionsDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ExpressionsData) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -105899,6 +106475,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -106271,6 +106848,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -106727,6 +107305,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPoseAtBeginningOfTransitionPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPoseAtBeginningOfTransition) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -106913,6 +107492,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Pose) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -106955,6 +107535,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AdditivePosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AdditivePose) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -106997,6 +107578,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneWeightsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneWeights) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -107215,6 +107797,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Pose) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -107257,6 +107840,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AdditivePosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AdditivePose) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -107299,6 +107883,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneWeightsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneWeights) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -107565,6 +108150,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -107773,6 +108359,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LegsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Legs) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -108081,6 +108668,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LegsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Legs) < 0 Then Return 0
                 Return If(_off Is OFF_SSE, 96, 80)
             End Get
         End Property
@@ -108889,6 +109477,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -109097,6 +109686,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LegsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Legs) < 0 Then Return 0
                 Return If(_off Is OFF_SSE, 160, 144)
             End Get
         End Property
@@ -109339,6 +109929,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalLegDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalLegData) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -109981,6 +110572,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -110881,6 +111473,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -111769,6 +112362,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -112147,6 +112741,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -112719,6 +113314,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -113179,6 +113775,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -113729,6 +114326,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -113921,6 +114519,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [HandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Hands) < 0 Then Return 0
                 Return 112
             End Get
         End Property
@@ -114159,6 +114758,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [HandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Hands) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -114571,6 +115171,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -114763,6 +115364,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [HandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Hands) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -114819,6 +115421,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InternalHandDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InternalHandData) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -115401,6 +116004,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -115857,6 +116461,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterPoseAtBeginningOfTransitionPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterPoseAtBeginningOfTransition) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -116205,6 +116810,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Samples) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -116449,6 +117055,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -116757,6 +117364,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -116955,6 +117563,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [JigglerGroupsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_JigglerGroups) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -117011,6 +117620,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CurrentVelocitiesWSPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CurrentVelocitiesWS) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -117053,6 +117663,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CurrentPositionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CurrentPositions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -117183,6 +117794,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CurrentVelocitiesWSPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CurrentVelocitiesWS) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -117225,6 +117837,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CurrentPositionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CurrentPositions) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -117595,6 +118208,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -117787,6 +118401,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [KeyframeInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_KeyframeInfo) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -118079,6 +118694,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -118387,6 +119003,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -118601,6 +119218,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LayersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Layers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -118685,6 +119303,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LayerInternalStatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LayerInternalStates) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -118819,6 +119438,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LayerInternalStatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LayerInternalStates) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -119079,6 +119699,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -119121,6 +119742,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariableNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VariableNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -119277,6 +119899,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -120003,6 +120626,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -120217,6 +120841,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GeneratorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Generators) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -120355,6 +120980,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveTransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveTransitions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -120531,6 +121157,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveTransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveTransitions) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -120687,6 +121314,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -120985,6 +121613,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransitionEffectsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransitionEffects) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -121351,6 +121980,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -121669,6 +122299,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BonePairMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BonePairMap) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -121711,6 +122342,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PartitionPairMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PartitionPairMap) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -121867,6 +122499,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -122183,6 +122816,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -122555,6 +123189,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -122753,6 +123388,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ModifiersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Modifiers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -122923,6 +123559,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -123259,6 +123896,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -123575,6 +124213,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -124471,6 +125110,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -124997,6 +125637,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -125239,6 +125880,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GeneratorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Generators) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -125339,6 +125981,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ClipDurationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ClipDurations) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -125699,6 +126342,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -126063,6 +126707,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -126375,6 +127020,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Children) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -126417,6 +127063,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenInternalStatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildrenInternalStates) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -126459,6 +127106,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SortedChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SortedChildren) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -127107,6 +127755,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoredPosesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StoredPoses) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -127257,6 +127906,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Pose) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -127529,6 +128179,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -127931,6 +128582,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -128345,6 +128997,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnimationFilenamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AnimationFilenames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -128387,6 +129040,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BehaviorFilenamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BehaviorFilenames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -128429,6 +129083,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CharacterFilenamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CharacterFilenames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -128471,6 +129126,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -128719,6 +129375,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -129615,6 +130272,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -129803,6 +130461,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GeneratorPairsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_GeneratorPairs) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -130558,6 +131217,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SamplesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Samples) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -130876,6 +131536,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -131306,6 +131967,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -131588,6 +132250,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -132118,6 +132781,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -132666,6 +133330,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -133130,6 +133795,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -133352,6 +134018,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RangesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Ranges) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -133862,6 +134529,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134060,6 +134728,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventSequencedDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventSequencedData) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134112,6 +134781,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RealVariableSequencedDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RealVariableSequencedData) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134164,6 +134834,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoolVariableSequencedDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoolVariableSequencedData) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134216,6 +134887,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntVariableSequencedDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IntVariableSequencedData) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134334,6 +135006,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleEventsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleEvents) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134376,6 +135049,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleRealsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleReals) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134418,6 +135092,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleBoolsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleBools) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134460,6 +135135,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleIntsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleInts) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134632,6 +135308,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleEventsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleEvents) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -134674,6 +135351,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleRealsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleReals) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -134716,6 +135394,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleBoolsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleBools) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -134758,6 +135437,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NextSampleIntsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NextSampleInts) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -134916,6 +135596,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -134958,6 +135639,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariableNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VariableNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -135240,6 +135922,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencedBehaviorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencedBehaviors) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -135990,6 +136673,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -136836,6 +137520,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -137038,6 +137723,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StateIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StateIds) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -137308,6 +137994,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -137726,6 +138413,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_States) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -137802,6 +138490,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveTransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveTransitions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -137844,6 +138533,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransitionFlagsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransitionFlags) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -137886,6 +138576,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WildcardTransitionFlagsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WildcardTransitionFlags) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -137928,6 +138619,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DelayedTransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DelayedTransitions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -138466,6 +139158,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Events) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -138600,6 +139293,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveTransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveTransitions) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -138642,6 +139336,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransitionFlagsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TransitionFlags) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -138684,6 +139379,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WildcardTransitionFlagsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WildcardTransitionFlags) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -138730,6 +139426,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DelayedTransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DelayedTransitions) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -139164,6 +139861,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -139244,6 +139942,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -139832,6 +140531,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransitionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Transitions) < 0 Then Return 0
                 Return 72
             End Get
         End Property
@@ -140526,6 +141226,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -141034,6 +141735,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -141564,6 +142266,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -141980,6 +142683,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CachedBindablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CachedBindables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -142266,6 +142970,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneChainIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneChainIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -142308,6 +143013,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ParentBoneIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ParentBoneIndices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -142456,6 +143162,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BindingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bindings) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -143046,6 +143753,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WordVariableValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WordVariableValues) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -143088,6 +143796,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [QuadVariableValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_QuadVariableValues) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -143140,6 +143849,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariantVariableValuesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VariantVariableValues) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143504,6 +144214,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NewRbHandlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NewRbHandles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143546,6 +144257,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NewConstraintHandlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NewConstraintHandles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143588,6 +144300,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencedRbHandlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencedRbHandles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143630,6 +144343,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencedConstraintHandlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencedConstraintHandles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143678,6 +144392,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencedBodiesLocalFramesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencedBodiesLocalFrames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143814,6 +144529,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ScaledObjectsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ScaledObjects) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -143862,6 +144578,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidBodyHandlesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidBodyHandles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -144180,6 +144897,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -144222,6 +144940,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VoxelsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Voxels) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -145292,6 +146011,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -145398,6 +146118,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -145504,6 +146225,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -145610,6 +146332,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -145716,6 +146439,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -145864,6 +146588,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -146012,6 +146737,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -146160,6 +146886,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -146308,6 +147035,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -146414,6 +147142,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -146520,6 +147249,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -146626,6 +147356,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -146732,6 +147463,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -146838,6 +147570,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -146944,6 +147677,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -147050,6 +147784,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -147156,6 +147891,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -147304,6 +148040,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -147452,6 +148189,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -147600,6 +148338,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -147952,6 +148691,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GeomSourcesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_GeomSources) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -148396,6 +149136,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PlanesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -148526,6 +149267,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -148682,6 +149424,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -149200,6 +149943,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 28
             End Get
         End Property
@@ -149560,6 +150304,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 112
             End Get
         End Property
@@ -149896,6 +150641,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -150000,6 +150746,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sections) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -150046,6 +150793,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PrimitivesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Primitives) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -150088,6 +150836,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SharedVerticesIndexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SharedVerticesIndex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -150424,6 +151173,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -150980,6 +151730,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -151084,6 +151835,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sections) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -151130,6 +151882,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PrimitivesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Primitives) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -151172,6 +151925,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SharedVerticesIndexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SharedVerticesIndex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -151214,6 +151968,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PackedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PackedVertices) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -151256,6 +152011,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SharedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SharedVertices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -151302,6 +152058,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PrimitiveDataRunsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PrimitiveDataRuns) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -151434,6 +152191,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PvsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Pvs) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -151476,6 +152234,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Map) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -151522,6 +152281,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BlocksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Blocks) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -152084,6 +152844,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -152192,6 +152953,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -152300,6 +153062,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -152408,6 +153171,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -152516,6 +153280,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -152608,6 +153373,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -152700,6 +153466,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -152792,6 +153559,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -152884,6 +153652,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -152976,6 +153745,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -153068,6 +153838,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -153160,6 +153931,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -153252,6 +154024,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -153360,6 +154133,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -153468,6 +154242,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -153576,6 +154351,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -153782,6 +154558,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BodyIdsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BodyIds) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -153976,6 +154753,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialAPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialA) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -154126,6 +154904,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -155785,15 +156564,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [VerticesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Vertices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [VerticesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Vertices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Vertices)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Vertices](i As Integer) As Single()
@@ -155814,15 +156593,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [PlanesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Planes))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Planes))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [PlanesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Planes))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Planes))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Planes) + (CInt(_g.ReadInt16(_o + _off(I_Planes) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Planes)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Planes](i As Integer) As Single()
@@ -155843,15 +156622,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [FacesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Faces) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Faces))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [FacesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Faces) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Faces))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Faces) + (CInt(_g.ReadInt16(_o + _off(I_Faces) + 2)) And &HFFFF) + (i * 4)
+            Return _g.RelArrayDataRel(_o + _off(I_Faces)) + (i * 4)
         End Function
         ''' <summary>Lector del elemento i (struct en el relarray).</summary>
         Public Function [FacesAt](i As Integer) As Hk_HknpConvexPolytopeShapeFace
@@ -155868,15 +156647,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [IndicesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Indices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Indices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [IndicesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Indices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Indices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Indices) + (CInt(_g.ReadInt16(_o + _off(I_Indices) + 2)) And &HFFFF) + (i * 1)
+            Return _g.RelArrayDataRel(_o + _off(I_Indices)) + (i * 1)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Indices](i As Integer) As Integer
@@ -157365,6 +158144,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InstanceMasksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InstanceMasks) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -157407,6 +158187,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FilterPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Filter) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -157819,6 +158600,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -157861,6 +158643,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ShapeTagsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ShapeTags) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -158363,6 +159146,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FilterPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Filter) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -158455,6 +159239,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 5
             End Get
         End Property
@@ -158559,6 +159344,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sections) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -158605,6 +159391,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PrimitivesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Primitives) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -158647,6 +159434,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SharedVerticesIndexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SharedVerticesIndex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -158689,6 +159477,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PackedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PackedVertices) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -158731,6 +159520,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SharedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SharedVertices) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -158777,6 +159567,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PrimitiveDataRunsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PrimitiveDataRuns) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -159585,15 +160376,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [VerticesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Vertices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [VerticesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Vertices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Vertices)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Vertices](i As Integer) As Single()
@@ -159614,15 +160405,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [PlanesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Planes))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Planes))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [PlanesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Planes))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Planes))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Planes) + (CInt(_g.ReadInt16(_o + _off(I_Planes) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Planes)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Planes](i As Integer) As Single()
@@ -159643,15 +160434,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [FacesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Faces) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Faces))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [FacesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Faces) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Faces))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Faces) + (CInt(_g.ReadInt16(_o + _off(I_Faces) + 2)) And &HFFFF) + (i * 4)
+            Return _g.RelArrayDataRel(_o + _off(I_Faces)) + (i * 4)
         End Function
         ''' <summary>Lector del elemento i (struct en el relarray).</summary>
         Public Function [FacesAt](i As Integer) As Hk_HknpConvexPolytopeShapeFace
@@ -159668,15 +160459,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [IndicesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Indices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Indices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [IndicesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Indices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Indices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Indices) + (CInt(_g.ReadInt16(_o + _off(I_Indices) + 2)) And &HFFFF) + (i * 1)
+            Return _g.RelArrayDataRel(_o + _off(I_Indices)) + (i * 1)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Indices](i As Integer) As Integer
@@ -159935,15 +160726,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [VerticesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Vertices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [VerticesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Vertices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Vertices)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Vertices](i As Integer) As Single()
@@ -161087,6 +161878,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -161679,6 +162471,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -163876,6 +164669,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Entries) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -163968,6 +164762,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CoarseTreeDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CoarseTreeData) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -164098,6 +164893,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MinMaxDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MinMaxData) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -165362,6 +166158,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SystemDatasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SystemDatas) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -165488,6 +166285,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -165534,6 +166332,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MotionPropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MotionProperties) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -165580,6 +166379,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MotionCinfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MotionCinfos) < 0 Then Return 0
                 Return 112
             End Get
         End Property
@@ -165626,6 +166426,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BodyCinfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BodyCinfos) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -165672,6 +166473,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintCinfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintCinfos) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -165724,6 +166526,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencedObjectsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencedObjects) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -165888,6 +166691,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -165992,6 +166796,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ProjectilesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Projectiles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -166112,6 +166917,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -166158,6 +166964,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MotionPropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MotionProperties) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -166204,6 +167011,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MotionCinfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MotionCinfos) < 0 Then Return 0
                 Return 112
             End Get
         End Property
@@ -166250,6 +167058,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BodyCinfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BodyCinfos) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -166296,6 +167105,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintCinfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintCinfos) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -166348,6 +167158,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ReferencedObjectsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ReferencedObjects) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -166424,6 +167235,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneToBodyMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneToBodyMap) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -167954,6 +168766,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PrimaryKeyToIndexPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PrimaryKeyToIndex) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -167996,6 +168809,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ValueAndSecondaryKeysPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ValueAndSecondaryKeys) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -168160,15 +168974,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [VerticesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Vertices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [VerticesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Vertices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Vertices)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Vertices](i As Integer) As Single()
@@ -168893,6 +169707,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InstanceMasksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InstanceMasks) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -168935,6 +169750,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FilterPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Filter) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -169027,6 +169843,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Nodes) < 0 Then Return 0
                 Return 6
             End Get
         End Property
@@ -169267,15 +170084,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [VerticesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Vertices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [VerticesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Vertices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Vertices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Vertices) + (CInt(_g.ReadInt16(_o + _off(I_Vertices) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Vertices)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Vertices](i As Integer) As Single()
@@ -169296,15 +170113,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [PlanesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Planes))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Planes))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [PlanesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Planes) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Planes))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Planes))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Planes) + (CInt(_g.ReadInt16(_o + _off(I_Planes) + 2)) And &HFFFF) + (i * 16)
+            Return _g.RelArrayDataRel(_o + _off(I_Planes)) + (i * 16)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Planes](i As Integer) As Single()
@@ -169325,15 +170142,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [FacesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Faces) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Faces))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [FacesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Faces) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Faces))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Faces))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Faces) + (CInt(_g.ReadInt16(_o + _off(I_Faces) + 2)) And &HFFFF) + (i * 4)
+            Return _g.RelArrayDataRel(_o + _off(I_Faces)) + (i * 4)
         End Function
         ''' <summary>Lector del elemento i (struct en el relarray).</summary>
         Public Function [FacesAt](i As Integer) As Hk_HknpConvexPolytopeShapeFace
@@ -169350,15 +170167,15 @@ Namespace Havok.Canon.Typed
         Public ReadOnly Property [IndicesCount] As Integer
             Get
                 If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return 0
-                Return CInt(_g.ReadInt16(_o + _off(I_Indices))) And &HFFFF
+                Return _g.RelArrayCount(_o + _off(I_Indices))
             End Get
         End Property
         ''' <summary>La DIRECCION del elemento i, no su valor. Ver el otro accesor.</summary>
         Public Function [IndicesItemOffset](i As Integer) As Integer
             If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return -1
-            Dim n = CInt(_g.ReadInt16(_o + _off(I_Indices))) And &HFFFF
+            Dim n = _g.RelArrayCount(_o + _off(I_Indices))
             If i < 0 OrElse i >= n Then Return -1
-            Return _o + _off(I_Indices) + (CInt(_g.ReadInt16(_o + _off(I_Indices) + 2)) And &HFFFF) + (i * 1)
+            Return _g.RelArrayDataRel(_o + _off(I_Indices)) + (i * 1)
         End Function
         ''' <summary>El VALOR del elemento i.</summary>
         Public ReadOnly Property [Indices](i As Integer) As Integer
@@ -169579,6 +170396,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TyremarksWheelPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TyremarksWheel) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -169713,6 +170531,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TyremarkPointsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TyremarkPoints) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -170223,6 +171042,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelParamsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelParams) < 0 Then Return 0
                 Return 40
             End Get
         End Property
@@ -170265,6 +171085,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NumWheelsPerAxlePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NumWheelsPerAxle) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -170847,6 +171668,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelBrakingPropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelBrakingProperties) < 0 Then Return 0
                 Return 12
             End Get
         End Property
@@ -171279,6 +172101,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DoesWheelSteerPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DoesWheelSteer) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -171385,6 +172208,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelParamsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelParams) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -171431,6 +172255,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelSpringParamsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelSpringParams) < 0 Then Return 0
                 Return 12
             End Get
         End Property
@@ -171691,6 +172516,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GearsRatioPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_GearsRatio) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -171733,6 +172559,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelsTorqueRatioPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelsTorqueRatio) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -172499,6 +173326,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelsInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelsInfo) < 0 Then Return 0
                 Return 192
             End Get
         End Property
@@ -172577,6 +173405,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IsFixedPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IsFixed) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -172703,6 +173532,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelsSteeringAnglePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelsSteeringAngle) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -173207,6 +174037,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelStatesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelStates) < 0 Then Return 0
                 Return 128
             End Get
         End Property
@@ -173627,6 +174458,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WheelParamsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WheelParams) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -174661,6 +175493,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bodies) < 0 Then Return 0
                 Return 144
             End Get
         End Property
@@ -174703,6 +175536,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BodyNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BodyNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -174749,6 +175583,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MotionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Motions) < 0 Then Return 0
                 Return 128
             End Get
         End Property
@@ -174795,6 +175630,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Constraints) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -175163,6 +175999,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -175225,6 +176062,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlapListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlapListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -175273,6 +176111,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhantomListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -175337,6 +176176,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlappingCollidablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlappingCollidables) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -176555,6 +177395,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EntitiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Entities) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -176931,6 +177772,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -177179,6 +178021,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Infos) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -178994,6 +179837,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -179056,6 +179900,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlapListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlapListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -179104,6 +179949,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhantomListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -179162,6 +180008,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CollisionDetailsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CollisionDetails) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -181893,6 +182740,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CollisionFiltersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CollisionFilters) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -182163,6 +183011,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -182205,6 +183054,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Materials16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -182247,6 +183097,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Materials8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -182289,6 +183140,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Transforms) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -182331,6 +183183,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BigVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BigVertices) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -182377,6 +183230,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BigTrianglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BigTriangles) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -182423,6 +183277,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChunksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Chunks) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -182469,6 +183324,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConvexPiecesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConvexPieces) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -182601,6 +183457,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NamedMaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NamedMaterials) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -182847,6 +183704,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -182889,6 +183747,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -182931,6 +183790,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StripLengthsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_StripLengths) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -182973,6 +183833,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -183117,6 +183978,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -183159,6 +184021,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FaceVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FaceVertices) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -183201,6 +184064,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FaceOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FaceOffsets) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -183499,6 +184363,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -184343,6 +185208,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChainedEntitiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChainedEntities) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -185529,6 +186395,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildShapesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildShapes) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -185645,6 +186512,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConvexPieceStreamPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConvexPieceStream) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -185687,6 +186555,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConvexPieceOffsetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConvexPieceOffsets) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -185729,6 +186598,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConvexPieceSingleTrianglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConvexPieceSingleTriangles) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -186427,6 +187297,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexIndices) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -186469,6 +187340,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NumVerticesPerFacePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NumVerticesPerFace) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -186659,6 +187531,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RotatedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RotatedVertices) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -186743,6 +187616,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PlaneEquationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PlaneEquations) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -188148,6 +189022,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DisabledEntitiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DisabledEntities) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -188274,6 +189149,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidBodyBindingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidBodyBindings) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -188326,6 +189202,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhysicsSystemBindingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhysicsSystemBindings) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -188452,6 +189329,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BindingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bindings) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -188794,6 +189672,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -188976,6 +189855,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintsSlavePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintsSlave) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -189018,6 +189898,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintRuntimePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintRuntime) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -189722,6 +190603,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TrianglesSubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TrianglesSubparts) < 0 Then Return 0
                 Return 160
             End Get
         End Property
@@ -189768,6 +190650,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ShapesSubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ShapesSubparts) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -189810,6 +190693,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -190090,6 +190974,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildShapesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildShapes) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -190792,6 +191677,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Subparts) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -190834,6 +191720,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -191046,6 +191933,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -191743,6 +192631,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -191785,6 +192674,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CommandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Commands) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -191833,6 +192723,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ModifiersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Modifiers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -191885,6 +192776,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MotorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Motors) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -192151,6 +193043,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -192199,6 +193092,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [GrabbedBodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_GrabbedBodies) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -195029,6 +195923,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PointsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Points) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -195071,6 +195966,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DistancePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Distance) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -195343,6 +196239,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CollisionEntriesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CollisionEntries) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -195519,6 +196416,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildInfo) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -196636,6 +197534,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Subparts) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -196678,6 +197577,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -197450,6 +198350,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -198241,6 +199142,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -198649,6 +199551,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ApplyCallbacksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ApplyCallbacks) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -198939,6 +199842,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RaysPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Rays) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -199998,6 +200902,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -200060,6 +200965,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlapListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlapListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200108,6 +201014,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhantomListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200356,6 +201263,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SystemsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Systems) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200482,6 +201390,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidBodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidBodies) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200534,6 +201443,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Constraints) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200586,6 +201496,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Actions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200638,6 +201549,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Phantoms) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200806,6 +201718,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RigidBodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RigidBodies) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200858,6 +201771,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Constraints) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200910,6 +201824,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Actions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -200962,6 +201877,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Phantoms) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -201056,6 +201972,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ContactsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Contacts) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -201923,6 +202840,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Infos) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -202277,6 +203195,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Links) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -202323,6 +203242,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TargetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Targets) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -202375,6 +203295,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChainsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Chains) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -202989,6 +203910,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Listeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -203079,6 +204001,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ProjectilesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Projectiles) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -204779,6 +205702,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [RemoveInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_RemoveInfo) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -205193,6 +206117,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -205375,6 +206300,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintsSlavePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintsSlave) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -205417,6 +206343,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintRuntimePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintRuntime) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -206257,6 +207184,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesStreamPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PropertiesStream) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -206303,6 +207231,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ContactPointsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ContactPoints) < 0 Then Return 0
                 Return 32
             End Get
         End Property
@@ -206345,6 +207274,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CpIdMgrPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CpIdMgr) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -206629,6 +207559,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MarkersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Markers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -206749,6 +207680,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Transforms) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -206927,6 +207859,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sectors) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -206979,6 +207912,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SubTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SubTracks) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -207105,6 +208039,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sectors) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -207157,6 +208092,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SubTracksPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SubTracks) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -208045,6 +208981,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildShapeNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildShapeNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -208087,6 +209024,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildTransformsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ChildTransforms) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -208369,6 +209307,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -208431,6 +209370,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlapListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlapListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -208479,6 +209419,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhantomListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -209073,6 +210014,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -209135,6 +210077,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlapListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlapListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -209183,6 +210126,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhantomListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -209245,6 +210189,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CollisionDetailsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_CollisionDetails) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -210928,6 +211873,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Infos) < 0 Then Return 0
                 Return 48
             End Get
         End Property
@@ -211606,6 +212552,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TrianglesSubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_TrianglesSubparts) < 0 Then Return 0
                 Return 160
             End Get
         End Property
@@ -211652,6 +212599,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ShapesSubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ShapesSubparts) < 0 Then Return 0
                 Return 96
             End Get
         End Property
@@ -211694,6 +212642,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -211816,6 +212765,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MeshstoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Meshstorage) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -211868,6 +212818,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ShapestoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Shapestorage) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -212086,6 +213037,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -212128,6 +213080,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices8Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices8) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -212170,6 +213123,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -212212,6 +213166,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -212254,6 +213209,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialIndices) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -212300,6 +213256,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -212346,6 +213303,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NamedMaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NamedMaterials) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -212388,6 +213346,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialIndices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialIndices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -212504,6 +213463,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialIndices) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -212550,6 +213510,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -212592,6 +213553,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialIndices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialIndices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -212796,6 +213758,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SubpartsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Subparts) < 0 Then Return 0
                 Return 80
             End Get
         End Property
@@ -212838,6 +213801,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -212938,6 +213902,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -213054,6 +214019,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vertices) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -213096,6 +214062,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -213138,6 +214105,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -213180,6 +214148,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialIndicesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialIndices) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -213222,6 +214191,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -213264,6 +214234,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialIndices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_MaterialIndices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -213534,6 +214505,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StoragePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Storage) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -214381,6 +215353,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WeldingInfoPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WeldingInfo) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -214735,6 +215708,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [OverlappingBodiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_OverlappingBodies) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -214781,6 +215755,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EventQueuePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EventQueue) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -217345,6 +218320,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActiveSimulationIslandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActiveSimulationIslands) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -217393,6 +218369,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InactiveSimulationIslandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InactiveSimulationIslands) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -217441,6 +218418,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DirtySimulationIslandsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_DirtySimulationIslands) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218265,6 +219243,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Phantoms) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218313,6 +219292,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ActionListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ActionListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218361,6 +219341,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [EntityListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_EntityListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218409,6 +219390,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PhantomListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PhantomListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218457,6 +219439,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ConstraintListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ConstraintListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218505,6 +219488,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WorldDeletionListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WorldDeletionListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218553,6 +219537,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IslandActivationListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IslandActivationListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218601,6 +219586,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WorldPostSimulationListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WorldPostSimulationListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218649,6 +219635,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WorldPostIntegrateListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WorldPostIntegrateListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218697,6 +219684,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WorldPostCollideListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WorldPostCollideListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218745,6 +219733,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IslandPostIntegrateListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IslandPostIntegrateListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218793,6 +219782,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IslandPostCollideListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IslandPostCollideListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218841,6 +219831,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ContactListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ContactListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218889,6 +219880,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ContactImpulseLimitBreachedListenersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ContactImpulseLimitBreachedListeners) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -218937,6 +219929,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [WorldExtensionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_WorldExtensions) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -220174,6 +221167,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -220384,6 +221378,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Floats) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -220528,6 +221523,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MatricesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Matrices) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -220672,6 +221668,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [QuaternionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Quaternions) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -220802,6 +221799,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VectorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Vectors) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -221030,6 +222028,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Attributes) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -221136,6 +222135,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeGroupsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeGroups) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -221452,6 +222452,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelectedEdgesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelectedEdges) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -221558,6 +222559,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ItemsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Items) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -221780,6 +222782,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VariablesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Variables) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -221970,6 +222973,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices16Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices16) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -222012,6 +223016,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Indices32Paso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Indices32) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -222318,6 +223323,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeGroupsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeGroups) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -222378,6 +223384,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StagesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Stages) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -222486,6 +223493,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SubMaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SubMaterials) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -222676,6 +223684,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PropertiesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Properties) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -222848,6 +223857,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -223108,6 +224118,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -223234,6 +224245,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ShadersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Shaders) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -223440,6 +224452,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SectionsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Sections) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -223492,6 +224505,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UserChannelInfosPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UserChannelInfos) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -223652,6 +224666,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IndexBuffersPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_IndexBuffers) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -223724,6 +224739,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [UserChannelsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_UserChannels) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -223776,6 +224792,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexAnimationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexAnimations) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -223818,6 +224835,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LinearKeyFrameHintsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_LinearKeyFrameHints) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -223864,6 +224882,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoneMatrixMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BoneMatrixMap) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -223998,6 +225017,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeGroupsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeGroups) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -224174,6 +225194,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeGroupsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeGroups) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -224250,6 +225271,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [KeyFramesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_KeyFrames) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -224302,6 +225324,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ChildrenPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Children) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -224348,6 +225371,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AnnotationsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Annotations) < 0 Then Return 0
                 Return 16
             End Get
         End Property
@@ -224570,6 +225594,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [AttributeGroupsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_AttributeGroups) < 0 Then Return 0
                 Return 24
             End Get
         End Property
@@ -224622,6 +225647,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelectedNodesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelectedNodes) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -224824,6 +225850,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelectionSetsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelectionSets) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -224876,6 +225903,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [CamerasPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Cameras) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -224928,6 +225956,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [LightsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Lights) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -224980,6 +226009,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MeshesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Meshes) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -225032,6 +226062,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [MaterialsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Materials) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -225084,6 +226115,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [InplaceTexturesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_InplaceTextures) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -225136,6 +226168,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ExternalTexturesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ExternalTextures) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -225188,6 +226221,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SkinBindingsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SkinBindings) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -225338,6 +226372,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [NodeNamesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_NodeNames) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -225380,6 +226415,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BindPosePaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_BindPose) < 0 Then Return 0
                 Return 64
             End Get
         End Property
@@ -225496,6 +226532,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [BoolsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Bools) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -225538,6 +226575,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TimesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Times) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -225668,6 +226706,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Ints) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -225710,6 +226749,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TimesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Times) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -225860,6 +226900,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [IntsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Ints) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -225902,6 +226943,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TimesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Times) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -226032,6 +227074,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [StringsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Strings) < 0 Then Return 0
                 Return 8
             End Get
         End Property
@@ -226074,6 +227117,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [TimesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Times) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -226354,6 +227398,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -226498,6 +227543,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelectedTrianglesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelectedTriangles) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -226630,6 +227676,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VertexIndexMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VertexIndexMap) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -226676,6 +227723,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [ComponentMapPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_ComponentMap) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -226972,6 +228020,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [VectorDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_VectorData) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -227014,6 +228063,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [FloatDataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_FloatData) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -227056,6 +228106,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Uint32DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Uint32Data) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -227098,6 +228149,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Uint16DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Uint16Data) < 0 Then Return 0
                 Return 2
             End Get
         End Property
@@ -227140,6 +228192,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [Uint8DataPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Uint8Data) < 0 Then Return 0
                 Return 1
             End Get
         End Property
@@ -227316,6 +228369,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [DeclsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_Decls) < 0 Then Return 0
                 Return If(_off Is OFF_SSE, 16, 24)
             End Get
         End Property
@@ -227562,6 +228616,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerVertexFloatsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerVertexFloats) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -227692,6 +228747,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerVertexIntsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerVertexInts) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -227808,6 +228864,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [SelectedVerticesPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_SelectedVertices) < 0 Then Return 0
                 Return 4
             End Get
         End Property
@@ -227924,6 +228981,7 @@ Namespace Havok.Canon.Typed
         ''' <summary>El paso entre elementos del array, con la misma ley que `ItemOffset`.</summary>
         Public ReadOnly Property [PerVertexVectorsPaso] As Integer
             Get
+                If _off Is Nothing OrElse _off(I_PerVertexVectors) < 0 Then Return 0
                 Return 16
             End Get
         End Property
