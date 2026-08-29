@@ -1598,31 +1598,68 @@ void main(void)
 
 //====================DEBUG MODE==========================
 if (DebugMode > 0.0) {
-    // Calculamos en view-space las tres direcciones TBN
-    vec3 dbgTangent  = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
-    vec3 dbgBitangent= normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
-    vec3 dbgNormal   = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
+    // OJO: LAS VISTAS SON MODEL-SPACE AWARE, Y NO ES UN ADORNO. En una shape MSN `mv_tbn` es
+    // DEGENERADA -- lo dice el propio camino iluminado de este fragment, unas lineas mas arriba:
+    // `Arranca neutra (en shapes MSN mv_tbn es degenerada -> se usa la matriz objeto->vista)`.
+    // La version anterior de este bloque derivaba las TRES direcciones de `mv_tbn` sin mirar
+    // `bModelSpace` y llevaba escrito `no MSN in FO4`, que es FALSO: este mismo fragment declara
+    // `uniform bool bModelSpace` y `in mat3 v_msnMatrix`, y su camino iluminado se bifurca con ellos.
+    // O sea que sobre una cabeza o un cuerpo _msn las vistas dibujaban una matriz basura y el modo 4
+    // reportaba un `error de TBN` calculado sobre esa basura.
+    // LA LEY SE COPIA DEL CAMINO ILUMINADO DE ESTE MISMO SHADER, no se inventa una para el debug.
+    vec3 dbgNormal;
+    if (bModelSpace) {
+        // EN MSN LA NORMAL DE LA GEOMETRIA ES LA DEL MAPA, no la semilla. Lo dice el camino iluminado
+        // de este mismo fragment, que en esta rama hace `geoNormal = normal` con la razon escrita al
+        // lado: la semilla `v_msnMatrix * (0,0,1)` es el eje +Z del OBJETO, o sea una direccion
+        // CONSTANTE por shape -- dibujarla pinta la cabeza entera de un color plano que no dice nada
+        // del fragmento. El mapa guarda la normal de objeto (no una perturbacion tangente), asi que
+        // decodificarlo ES leer la normal de la geometria.
+        // Se muestrea texNormal y NO se reusa `normalMap`: esa variable arranca en vec4(0.0) y solo se
+        // llena dentro de la rama de iluminacion, asi que con bLightEnabled apagado saldria negra.
+        if (bShowTexture && bNormalMap) {
+            dbgNormal = normalize(v_msnMatrix * (texture(texNormal, uv).rbg * 2.0 - 1.0));
+        } else {
+            dbgNormal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
+        }
+    } else {
+        dbgNormal = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
+    }
 
-
-    // Mapeo de -1..1 a 0..1 para visualizar en color
-    dbgNormal    = dbgNormal    * 0.5 + 0.5;
-    dbgTangent   = dbgTangent   * 0.5 + 0.5;
-    dbgBitangent = dbgBitangent * 0.5 + 0.5;
+    // Gris plano = `esta vista NO APLICA a esta shape`. Tangente, bitangente y error de TBN solo
+    // existen si hay base tangente; en model-space no la hay. Pintar gris es lo unico honesto:
+    // dibujar `mv_tbn` degenerada seria inventar un dato, y dejar pasar el render iluminado haria
+    // creer que la shape esta sana. Ademas se lee de una: las piezas _msn saltan a la vista.
+    vec4 noAplica = vec4(0.5, 0.5, 0.5, 1.0);
 
     if (abs(DebugMode - 1.0) < 0.5) {
-        // Modo 1: normales
-        fragColor = vec4(dbgNormal, 1.0);
+        // Modo 1: la normal GEOMETRICA (la semilla del camino iluminado), en espacio de vista.
+        // No lleva el normal map: para eso estan los modos 5 (mapa crudo) y el render normal.
+        fragColor = vec4(dbgNormal * 0.5 + 0.5, 1.0);
     }
     else if (abs(DebugMode - 2.0) < 0.5) {
-        // Modo 2: tangentes
-        fragColor = vec4(dbgTangent, 1.0);
+        // Modo 2: tangentes. Solo en tangent-space.
+        if (bModelSpace) {
+            fragColor = noAplica;
+        } else {
+            fragColor = vec4(normalize(mv_tbn * vec3(1.0, 0.0, 0.0)) * 0.5 + 0.5, 1.0);
+        }
     }
     else if (abs(DebugMode - 3.0) < 0.5) {
-        // Modo 3: bitangentes
-        fragColor = vec4(dbgBitangent, 1.0);
+        // Modo 3: bitangentes. Solo en tangent-space.
+        if (bModelSpace) {
+            fragColor = noAplica;
+        } else {
+            fragColor = vec4(normalize(mv_tbn * vec3(0.0, 1.0, 0.0)) * 0.5 + 0.5, 1.0);
+        }
     }
     else if (abs(DebugMode - 4.0) < 0.5) {
-        // Modo 4: TBN error comparison (no MSN in FO4)
+        // Modo 4: error de TBN. NO APLICA en model-space: ahi no hay TBN que comparar -- la normal
+        // sale del mapa por v_msnMatrix y `mv_tbn` es degenerada.
+        if (bModelSpace) {
+            fragColor = noAplica;
+            return;
+        }
         vec3 Tm = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
         vec3 Bm = normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
         vec3 Nm = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
@@ -1668,6 +1705,18 @@ if (DebugMode > 0.0) {
 
         fragColor = vec4(bad, good, hvis, 1.0);
         return;
+    }
+    else if (abs(DebugMode - 5.0) < 0.5) {
+        // Modo 5: EL NORMAL MAP CRUDO, tal cual lo devuelve el sampler. Sin decodificar (nada de
+        // *2-1), sin reconstruir Z y sin pasar por la TBN: se ve el contenido del archivo, que es
+        // justo lo que hace falta para distinguir la textura esta mal de la TBN esta mal.
+        // Sin textura de normales se dibuja el plano neutro (0.5, 0.5, 1.0), que es lo que un normal
+        // map tangent-space trae donde la superficie no se desvia.
+        if (bShowTexture && bNormalMap) {
+            fragColor = vec4(texture(texNormal, uv).rgb, 1.0);
+        } else {
+            fragColor = vec4(0.5, 0.5, 1.0, 1.0);
+        }
     }
 }
 //===================END DEBUG MODE=======================
@@ -2942,100 +2991,126 @@ void main(void)
 
 //====================DEBUG MODE==========================
 if (DebugMode > 0.0) {
+    // MISMA ESTRUCTURA QUE EL BLOQUE DE Fragment_FO4, y la ley de cada rama copiada del camino
+    // ILUMINADO DE ESTE fragment -- que no es igual al de FO4 y por eso no se puede compartir el
+    // texto: en tangent-space SSE NO reconstruye el canal azul (usa los tres canales del mapa tal
+    // cual) y FO4 si lo reconstruye. Ver los dos `if (bShowTexture && bNormalMap)` de cada fragment.
     vec3 dbgNormal;
-    vec3 dbgTangent;
-    vec3 dbgBitangent;
-
     if (bModelSpace) {
-        // MSN: decode texture normal and transform via v_msnMatrix
-        vec3 msnN = normalize(normalMap.rbg * 2.0 - 1.0);
-        dbgNormal = normalize(v_msnMatrix * msnN);
-        dbgTangent  = normalize(v_msnMatrix * vec3(1.0, 0.0, 0.0));
-        dbgBitangent= normalize(v_msnMatrix * vec3(0.0, 1.0, 0.0));
+        // EN MSN LA NORMAL DE LA GEOMETRIA ES LA DEL MAPA, no la semilla. Lo dice el camino iluminado
+        // de este mismo fragment, que en esta rama hace `geoNormal = normal` con la razon escrita al
+        // lado: la semilla `v_msnMatrix * (0,0,1)` es el eje +Z del OBJETO, o sea una direccion
+        // CONSTANTE por shape -- dibujarla pinta la cabeza entera de un color plano que no dice nada
+        // del fragmento. El mapa guarda la normal de objeto (no una perturbacion tangente), asi que
+        // decodificarlo ES leer la normal de la geometria.
+        // Se muestrea texNormal y NO se reusa `normalMap`: esa variable arranca en vec4(0.0) y solo se
+        // llena dentro de la rama de iluminacion, asi que con bLightEnabled apagado saldria negra.
+        if (bShowTexture && bNormalMap) {
+            dbgNormal = normalize(v_msnMatrix * (texture(texNormal, uv).rbg * 2.0 - 1.0));
+        } else {
+            dbgNormal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
+        }
     } else {
-        dbgTangent  = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
-        dbgBitangent= normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
-        dbgNormal   = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
+        dbgNormal = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
     }
 
-    // Mapeo de -1..1 a 0..1 para visualizar en color
-    dbgNormal    = dbgNormal    * 0.5 + 0.5;
-    dbgTangent   = dbgTangent   * 0.5 + 0.5;
-    dbgBitangent = dbgBitangent * 0.5 + 0.5;
+    // Gris plano = `esta vista NO APLICA a esta shape`. Ver el bloque gemelo de FO4.
+    // OJO: la version anterior SI dibujaba algo en model-space, y las tres cosas que dibujaba estaban
+    // mal. Tangente y bitangente salian de `v_msnMatrix * X/Y`, que son los EJES DEL OBJETO llevados a
+    // vista -- no una base tangente, que en MSN no se usa. Y el modo 4 comparaba la normal del mapa
+    // contra el eje +Z del objeto y llamaba `error de TBN` a esa diferencia, que es grande en toda la
+    // malla POR DISENO (para eso existe el mapa). O sea: rojo por todos lados y ninguna conclusion.
+    vec4 noAplica = vec4(0.5, 0.5, 0.5, 1.0);
 
     if (abs(DebugMode - 1.0) < 0.5) {
-        // Modo 1: normales (MSN or TBN based on bModelSpace)
-        fragColor = vec4(dbgNormal, 1.0);
+        // Modo 1: la normal GEOMETRICA (la semilla del camino iluminado), en espacio de vista.
+        // ANTES en MSN esta vista decodificaba `normalMap`, con dos problemas: mezclaba `normal de la
+        // geometria` con `normal del mapa` segun la shape -- dos cantidades distintas bajo un mismo
+        // nombre -- y leia una variable que arranca en vec4(0.0) y solo se llena dentro de la rama de
+        // iluminacion, asi que con bLightEnabled apagado la vista salia negra.
+        fragColor = vec4(dbgNormal * 0.5 + 0.5, 1.0);
     }
     else if (abs(DebugMode - 2.0) < 0.5) {
-        // Modo 2: tangentes
-        fragColor = vec4(dbgTangent, 1.0);
+        // Modo 2: tangentes. Solo en tangent-space.
+        if (bModelSpace) {
+            fragColor = noAplica;
+        } else {
+            fragColor = vec4(normalize(mv_tbn * vec3(1.0, 0.0, 0.0)) * 0.5 + 0.5, 1.0);
+        }
     }
     else if (abs(DebugMode - 3.0) < 0.5) {
-        // Modo 3: bitangentes
-        fragColor = vec4(dbgBitangent, 1.0);
+        // Modo 3: bitangentes. Solo en tangent-space.
+        if (bModelSpace) {
+            fragColor = noAplica;
+        } else {
+            fragColor = vec4(normalize(mv_tbn * vec3(0.0, 1.0, 0.0)) * 0.5 + 0.5, 1.0);
+        }
     }
     else if (abs(DebugMode - 4.0) < 0.5) {
+        // Modo 4: error de TBN. NO APLICA en model-space: ahi no hay TBN que comparar.
         if (bModelSpace) {
-            // Modo 4 MSN: compare textured normal vs untextured (v_msnMatrix * Z-up)
-            vec3 msnN = normalize(normalMap.rbg * 2.0 - 1.0);
-            vec3 nA = normalize(v_msnMatrix * msnN);
-            vec3 nB = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
-
-            float errN = 0.5 * length(nA - nB);
-            float E = clamp(errN, 0.0, 1.0);
-            float good = 1.0 - smoothstep(0.0, 0.15, E);
-            float bad  = smoothstep(0.0, 0.15, E);
-
-            fragColor = vec4(bad, good, 0.5, 1.0);
-        } else {
-            // Modo 4 TBN: error comparison between mv_tbn and Gram-Schmidt corrected TBN
-            vec3 Tm = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
-            vec3 Bm = normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
-            vec3 Nm = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
-
-            vec3 Tgs = normalize(Tm - Nm * dot(Nm, Tm));
-            vec3 Bx  = normalize(cross(Nm, Tgs));
-            float h  = sign(dot(Bm, Bx));
-            mat3 tbn_fixed = mat3(Tgs, Bx * h, Nm);
-
-            vec3 n_ts = vec3(0.0, 0.0, 1.0);
-            vec3 nA;
-            vec3 nB;
-            if (bShowTexture && bNormalMap) {
-                vec3 nm = texture(texNormal, uv).rgb * 2.0 - 1.0;
-                nm.z = sqrt(max(FLT_EPSILON, 1.0 - dot(nm.xy, nm.xy)));
-                n_ts = nm;
-                nA = normalize(mv_tbn   * n_ts);
-                nB = normalize(tbn_fixed * n_ts);
-            } else {
-                nA = normalize(mv_tbn   * n_ts);
-                nB = normalize(tbn_fixed * n_ts);
-            }
-
-            float errN = 0.5 * length(nA - nB);
-
-            float IA = max(dot(nA, lightFrontal), 0.0)
-                     + max(dot(nA, lightDirectional0), 0.0)
-                     + max(dot(nA, lightDirectional1), 0.0)
-                     + max(dot(nA, lightDirectional2), 0.0);
-
-            float IB = max(dot(nB, lightFrontal), 0.0)
-                     + max(dot(nB, lightDirectional0), 0.0)
-                     + max(dot(nB, lightDirectional1), 0.0)
-                     + max(dot(nB, lightDirectional2), 0.0);
-
-            float errL = abs(IA - IB);
-
-            float E = clamp(max(errN, errL), 0.0, 1.0);
-
-            float good = 1.0 - smoothstep(0.0, 0.15, E);
-            float bad  = smoothstep(0.0, 0.15, E);
-            float hvis = h * 0.5 + 0.5;
-
-            fragColor = vec4(bad, good, hvis, 1.0);
+            fragColor = noAplica;
+            return;
         }
+        // Modo 4 TBN: error comparison between mv_tbn and Gram-Schmidt corrected TBN
+        vec3 Tm = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
+        vec3 Bm = normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
+        vec3 Nm = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
+
+        vec3 Tgs = normalize(Tm - Nm * dot(Nm, Tm));
+        vec3 Bx  = normalize(cross(Nm, Tgs));
+        float h  = sign(dot(Bm, Bx));
+        mat3 tbn_fixed = mat3(Tgs, Bx * h, Nm);
+
+        vec3 n_ts = vec3(0.0, 0.0, 1.0);
+        vec3 nA;
+        vec3 nB;
+        if (bShowTexture && bNormalMap) {
+            // SIN reconstruir el azul: asi decodifica el camino iluminado de SSE (a diferencia de
+            // FO4, que si lo reconstruye). Antes esta rama hacia el sqrt de FO4 y por lo tanto
+            // media el error sobre una normal que este juego nunca calcula.
+            n_ts = texture(texNormal, uv).rgb * 2.0 - 1.0;
+        }
+        nA = normalize(mv_tbn    * n_ts);
+        nB = normalize(tbn_fixed * n_ts);
+
+        float errN = 0.5 * length(nA - nB);
+
+        float IA = max(dot(nA, lightFrontal), 0.0)
+                 + max(dot(nA, lightDirectional0), 0.0)
+                 + max(dot(nA, lightDirectional1), 0.0)
+                 + max(dot(nA, lightDirectional2), 0.0);
+
+        float IB = max(dot(nB, lightFrontal), 0.0)
+                 + max(dot(nB, lightDirectional0), 0.0)
+                 + max(dot(nB, lightDirectional1), 0.0)
+                 + max(dot(nB, lightDirectional2), 0.0);
+
+        float errL = abs(IA - IB);
+
+        float E = clamp(max(errN, errL), 0.0, 1.0);
+
+        float good = 1.0 - smoothstep(0.0, 0.15, E);
+        float bad  = smoothstep(0.0, 0.15, E);
+        float hvis = h * 0.5 + 0.5;
+
+        fragColor = vec4(bad, good, hvis, 1.0);
         return;
+    }
+    else if (abs(DebugMode - 5.0) < 0.5) {
+        // Modo 5: EL NORMAL MAP CRUDO, tal cual lo devuelve el sampler. Sin decodificar (nada de
+        // *2-1), sin el swizzle .rbg del model-space y sin pasar por la TBN ni por v_msnMatrix: se ve
+        // el contenido del archivo. Sirve igual para las dos familias de SSE, y ademas es la forma de
+        // ver de un vistazo cual es cual: un normal map tangent-space es azulado (Z domina) y uno
+        // model-space es multicolor.
+        // OJO: se muestrea texNormal y NO se reusa `normalMap`: esa variable arranca en vec4(0.0) y solo
+        // se llena adentro de la rama de iluminacion, asi que con bLightEnabled apagado esta vista
+        // habria salido NEGRA sin que nada lo dijera.
+        if (bShowTexture && bNormalMap) {
+            fragColor = vec4(texture(texNormal, uv).rgb, 1.0);
+        } else {
+            fragColor = vec4(0.5, 0.5, 1.0, 1.0);
+        }
     }
 }
 //===================END DEBUG MODE=======================
@@ -3642,6 +3717,30 @@ Public Class Shadow_Depth_Shader_SSE
     End Sub
 End Class
 
+''' <summary>Las vistas de depuracion del fragment shader. Cada valor es el numero que el bloque
+''' <c>DEBUG MODE</c> compara adentro del GLSL, en los DOS juegos: <c>Fragment_FO4</c> (linea del
+''' <c>if (DebugMode &gt; 0.0)</c>) y <c>Fragment_SSE</c>.
+''' <para>⛔ LOS NUMEROS SON EL CONTRATO CON EL GLSL. El uniform <c>DebugMode</c> es un <c>float</c> y el
+''' shader decide con <c>abs(DebugMode - N) &lt; 0.5</c>: renumerar o reordenar este enum cambia lo que
+''' dibuja cada opcion, sin error de compilacion y sin que nada falle. Agregar una vista nueva son DOS
+''' ramas de GLSL —una en cada fragment— mas el item del combo en <c>LightRigForm</c>.</para></summary>
+Public Enum ShaderDebugView
+    ''' <summary>Render normal. Es el UNICO valor con el que el bloque de debug no corre: el GLSL entra
+    ''' con <c>if (DebugMode &gt; 0.0)</c>.</summary>
+    None = 0
+    ''' <summary>La normal interpolada, en espacio de vista, mapeada de -1..1 a RGB.</summary>
+    Normals = 1
+    ''' <summary>La tangente, en espacio de vista, mapeada a RGB.</summary>
+    Tangents = 2
+    ''' <summary>La bitangente, en espacio de vista, mapeada a RGB.</summary>
+    Bitangents = 3
+    ''' <summary>Rojo/verde = cuanto difiere la TBN del NIF de una TBN re-ortogonalizada por
+    ''' Gram-Schmidt; azul = el signo de la handedness.</summary>
+    TbnError = 4
+    ''' <summary>La textura de normales CRUDA, tal cual se muestrea.</summary>
+    NormalMap = 5
+End Enum
+
 Public MustInherit Class Shader_Base_Class
     Implements IDisposable
 
@@ -3730,7 +3829,28 @@ Public MustInherit Class Shader_Base_Class
         Return loc
     End Function
 
-    Public Debugmode As Integer = 0
+    ''' <summary>LA VISTA DE DEPURACION DEL SHADER: UNA SOLA PARA TODO EL PROCESO Y PARA LOS DOS JUEGOS.
+    ''' La sube <c>PreviewControl.ApplyMaterial</c> al uniform <c>DebugMode</c> y la elige el usuario en el
+    ''' combo "Shader debug view" de la pestana Rendering de <c>LightRigForm</c>.
+    ''' <para>⛔ <c>Shared</c> A PROPOSITO, Y ESO ARREGLA UN DEFECTO. Antes era un campo de INSTANCIA
+    ''' (<c>Public Debugmode As Integer</c>) y el unico que lo escribia —el atajo F1..F5 de Wardrobe
+    ''' Manager, y solo bajo <c>#If DEBUG</c>— lo hacia sobre <c>CurrentShader</c>, o sea sobre el programa
+    ''' del JUEGO ACTIVO. Como <c>Shader_Class_Fo4</c> y <c>Shader_Class_SSE</c> son dos instancias
+    ''' distintas, cada una con su propio campo, cambiar de juego dejaba la vista atras sin decir nada.
+    ''' Compartida, la eleccion vale para los dos, que es lo que el combo promete.</para>
+    ''' <para>NO SE PERSISTE, y es deliberado: no vive en <c>Config_App</c> ni en ningun archivo. Arranca
+    ''' en <see cref="ShaderDebugView.None"/> en cada corrida y el boton "Reset rendering to defaults" la
+    ''' devuelve a None. Es una ayuda de inspeccion, no un ajuste del usuario.</para>
+    ''' <para>ALCANCE, MEDIDO Y NO SUPUESTO. El unico que lee esto es <c>ApplyMaterial</c>, o sea el pase
+    ''' ILUMINADO del preview, y <c>RenderScene</c> —su unico camino de entrada— no se llama desde ningun
+    ''' camino de bake. EL BAKE NO PASA POR ACA: <c>BakeAllRunner</c> crea un <c>PreviewControl</c> solo
+    ''' para tener contexto GL, le PARA el <c>RenderTimer</c> ("no queremos renders del control") y compone
+    ''' contra FBOs con los shaders propios de <c>FaceTintCompositor</c>, que no tienen este uniform. Lo
+    ''' que SI la ve es <c>CaptureBitmap</c> —los dos "Save render screenshot" y la captura opcional del
+    ''' wizard de FOMOD—, y eso es correcto: las tres capturan lo que la pantalla esta mostrando.</para>
+    ''' </summary>
+    Public Shared Property DebugView As ShaderDebugView = ShaderDebugView.None
+
     Public Shared Function Color_to_Vector(color As Color) As Vector3
         Return New Vector3(color.R / 255.0F, color.G / 255.0F, color.B / 255.0F)
     End Function

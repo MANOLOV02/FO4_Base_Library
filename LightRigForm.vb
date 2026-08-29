@@ -338,6 +338,63 @@ Partial Public Class LightRigForm
         cmbFloorColor.Rellena()
         cmbFloorColor.SelectedColor = Config_App.Current.RenderGridColor()
         ActualizarHabilitadoPiso()
+
+        CargarVistaDebug()
+    End Sub
+
+    ''' <summary>Las vistas de depuracion que ofrece el combo. <c>Vista</c> es el valor que viaja al
+    ''' uniform <c>DebugMode</c>; <c>Etiqueta</c> es lo que se lee en el combo y <c>Detalle</c> lo que se
+    ''' explica debajo.
+    ''' <para>LA TABLA ES LA LISTA CERRADA: se recorre para llenar el combo y para volver del indice al
+    ''' valor, asi que agregar una vista es agregar UNA fila aca (mas sus dos ramas de GLSL). No hay
+    ''' ningun otro lugar donde este escrito el orden.</para>
+    ''' <para>⛔ NO SE INDEXA POR POSICION. <c>SelectedIndex</c> se traduce por esta tabla y nunca se
+    ''' castea directo a <see cref="ShaderDebugView"/>: hoy los valores 0..5 coinciden con las posiciones
+    ''' 0..5, y ese castigo silencioso —el cast que anda de casualidad— es justo lo que se rompe la primera
+    ''' vez que alguien reordene la tabla o saque una fila.</para></summary>
+    Private Shared ReadOnly VistasDebug As (Vista As ShaderDebugView, Etiqueta As String, Detalle As String)() = {
+        (ShaderDebugView.None, "None -- normal render",
+         "The regular lit render. The shader's debug block does not run at all."),
+        (ShaderDebugView.Normals, "Normals -- geometric normal as RGB",
+         "The geometric normal in view space, mapped from -1..1 to RGB -- the same one the lit render shades with. Tangent-space shapes show the interpolated vertex normal, without the normal map. Model-space (_msn) shapes show the map decoded through the object-to-view matrix, because there the map IS the geometry normal."),
+        (ShaderDebugView.Tangents, "Tangents -- texture U direction as RGB",
+         "The tangent (texture U direction) in view space, as RGB. Colours that jump or band across a seam mean the tangent basis is inconsistent there, which is what makes lighting break along it. Model-space shapes read FLAT GREY: they have no tangent basis."),
+        (ShaderDebugView.Bitangents, "Bitangents -- texture V direction as RGB",
+         "The bitangent (texture V direction) in view space, as RGB. Read it next to the tangents: one that does not turn with its tangent is a mirrored or broken UV island. Model-space shapes read FLAT GREY -- no tangent basis."),
+        (ShaderDebugView.TbnError, "TBN error -- green OK, red broken, grey N/A",
+         "Compares the TBN the NIF ships against one re-orthogonalized with Gram-Schmidt. Green = they agree, red = they diverge (in the normal or in the light it produces); blue carries the handedness, so mirrored pieces read differently. Model-space shapes read FLAT GREY: there is no TBN to check."),
+        (ShaderDebugView.NormalMap, "Normal map -- raw texture, not decoded",
+         "The normal map exactly as sampled -- not decoded, no rebuilt Z, never run through the TBN. Fallout 4 reads OLIVE: its blue channel carries no Z and the lit render rebuilds it from red and green. Skyrim stores and uses blue, so it reads blue. Model-space maps are multicoloured; flat LILAC = the shape has no normal map.")}
+
+    ''' <summary>Modelo -&gt; UI del combo de depuracion. El valor NO sale de <c>Config_App</c> —no se
+    ''' persiste— sino de <see cref="Shader_Base_Class.DebugView"/>, que vive lo que vive el proceso: por
+    ''' eso el combo tiene que MOSTRAR lo que ya esta puesto y no reponer None cada vez que se abre el
+    ''' dialogo. Reponer None aca dejaria el combo diciendo una cosa y el render dibujando otra.</summary>
+    Private Sub CargarVistaDebug()
+        If cmbDebugView.Items.Count = 0 Then
+            For Each v In VistasDebug
+                cmbDebugView.Items.Add(v.Etiqueta)
+            Next
+        End If
+        Dim actual = Shader_Base_Class.DebugView
+        Dim idx = Array.FindIndex(VistasDebug, Function(v) v.Vista = actual)
+        ' Un valor que no este en la tabla no puede pasar (el unico que escribe la propiedad es este
+        ' combo), pero si pasara, mostrar None es mentir sobre lo que el render esta haciendo. Se REPONE
+        ' None de verdad, y asi el combo y el shader vuelven a decir lo mismo.
+        If idx < 0 Then
+            Shader_Base_Class.DebugView = ShaderDebugView.None
+            idx = 0
+        End If
+        cmbDebugView.SelectedIndex = idx
+        ActualizarDetalleVistaDebug()
+    End Sub
+
+    ''' <summary>El texto de abajo del combo: dice QUE SE VE en la vista elegida. Es la explicacion que
+    ''' pidio el usuario, y va al lado del control en vez de escondida en un tooltip porque estas vistas
+    ''' se leen mirando el render y el cartel a la vez.</summary>
+    Private Sub ActualizarDetalleVistaDebug()
+        Dim i = cmbDebugView.SelectedIndex
+        lblDebugViewHelp.Text = If(i >= 0 AndAlso i < VistasDebug.Length, VistasDebug(i).Detalle, String.Empty)
     End Sub
 
     ''' <summary>Un valor fuera del rango del control tira ArgumentOutOfRangeException y DEJA A MEDIAS
@@ -375,11 +432,19 @@ Partial Public Class LightRigForm
         Config_App.Current.Settings_Camara = Config_App.Default_CameraSettings
         Config_App.Current.Settings_RenderGrid = Config_App.Default_RenderGrid_Settings
         Config_App.Current.Setting_RenderGridColor = Color.FromKnownColor(KnownColor.LightGray).Name
+        ' La vista de depuracion tambien vuelve a su default, que es None. No se toca Config_App porque
+        ' esta no se persiste: el default se repone sobre la propiedad misma (ver Shader_Base_Class).
+        ' Se escribe ACA y no adentro de `CargarPestanaRender`: ese metodo es modelo -> UI y lo llaman
+        ' tambien las aperturas normales del dialogo, donde reponer None borraria la eleccion del usuario
+        ' con solo abrir el dialogo por otra cosa.
+        Shader_Base_Class.DebugView = ShaderDebugView.None
 
         _preventchanges = True
         CargarPestanaRender()
         _preventchanges = False
         VolcarRenderEnModelo()
+        ' `VolcarRenderEnModelo` levanta RenderSettingsChanged (recarga de geometria) y eso ya repinta,
+        ' asi que la vista de depuracion vuelta a None se ve sin un evento extra.
     End Sub
 
     ''' <summary>Los controles de la grilla no hacen nada con la grilla apagada. Wardrobe Manager tenia
@@ -598,6 +663,23 @@ Partial Public Class LightRigForm
             AddHandler nud.ValueChanged, Sub(sender, e) VolcarRenderEnModelo()
         Next
         AddHandler cmbFloorColor.SelectedIndexChanged, Sub(sender, e) VolcarRenderEnModelo()
+
+        ' ⛔ NO VA POR `VolcarRenderEnModelo`, Y NO ES UN DESCUIDO. Ese metodo termina levantando
+        ' `RenderSettingsChanged`, que en los tres hosts significa RECARGAR la geometria
+        ' (`ApplyRenderSettingsFromConfig`, y en Nif Explorer ademas `RenderShapes`). La vista de
+        ' depuracion es UN UNIFORM: no toca normales, ni welding, ni skinning, ni un solo vertice. Pasarla
+        ' por ahi costaba una recarga completa del proyecto en pantalla por cada cambio del combo, para
+        ' que despues el frame subiera un float distinto. Levanta `LightsChanged`, que es exactamente
+        ' "repinta", que es todo lo que hace falta.
+        ' Y por lo mismo NO se escribe en Config_App: no se persiste (ver Shader_Base_Class.DebugView).
+        AddHandler cmbDebugView.SelectedIndexChanged, Sub(sender, e)
+                                                         ActualizarDetalleVistaDebug()
+                                                         If _preventchanges Then Return
+                                                         Dim i = cmbDebugView.SelectedIndex
+                                                         If i < 0 OrElse i >= VistasDebug.Length Then Return
+                                                         Shader_Base_Class.DebugView = VistasDebug(i).Vista
+                                                         RaiseEvent LightsChanged()
+                                                     End Sub
 
         AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
         AddHandler cmbPreset.SelectedIndexChanged, Sub(sender, e) ActualizarTooltipPreset()

@@ -131,6 +131,10 @@ Partial Class LightRigForm
         nudFloorStep = New NumericUpDownCultura()
         lblFloorColor = New Label()
         cmbFloorColor = New ColorComboBox()
+        grpShaderDebug = New GroupBox()
+        lblDebugView = New Label()
+        cmbDebugView = New ComboBox()
+        lblDebugViewHelp = New Label()
         btnResetRender = New Button()
         ToolTip1 = New ToolTip(components)
         grpKey.SuspendLayout()
@@ -155,6 +159,7 @@ Partial Class LightRigForm
         grpFloor.SuspendLayout()
         CType(nudFloorSize, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudFloorStep, ComponentModel.ISupportInitialize).BeginInit()
+        grpShaderDebug.SuspendLayout()
         SuspendLayout()
         ' 
         ' grpKey
@@ -1021,6 +1026,7 @@ Partial Class LightRigForm
         TabRender.Controls.Add(grpSkin)
         TabRender.Controls.Add(grpCamera)
         TabRender.Controls.Add(grpFloor)
+        TabRender.Controls.Add(grpShaderDebug)
         TabRender.Controls.Add(btnResetRender)
         TabRender.ImageKey = "Thumbnail"
         TabRender.Location = New Point(4, 24)
@@ -1428,19 +1434,56 @@ Partial Class LightRigForm
         cmbFloorColor.Size = New Size(290, 24)
         cmbFloorColor.TabIndex = 3
         ToolTip1.SetToolTip(cmbFloorColor, "Tint of the recessed grout between tiles.")
-        ' 
+        '
+        ' grpShaderDebug
+        '
+        grpShaderDebug.Controls.Add(lblDebugView)
+        grpShaderDebug.Controls.Add(cmbDebugView)
+        grpShaderDebug.Controls.Add(lblDebugViewHelp)
+        grpShaderDebug.Location = New Point(440, 282)
+        grpShaderDebug.Name = "grpShaderDebug"
+        grpShaderDebug.Size = New Size(418, 152)
+        grpShaderDebug.TabIndex = 5
+        grpShaderDebug.TabStop = False
+        grpShaderDebug.Text = "Shader debug view"
+        '
+        ' lblDebugView
+        '
+        lblDebugView.AutoSize = True
+        lblDebugView.Location = New Point(11, 26)
+        lblDebugView.Name = "lblDebugView"
+        lblDebugView.Size = New Size(33, 15)
+        lblDebugView.TabIndex = 0
+        lblDebugView.Text = "View:"
+        '
+        ' cmbDebugView
+        '
+        cmbDebugView.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbDebugView.Location = New Point(56, 22)
+        cmbDebugView.Name = "cmbDebugView"
+        cmbDebugView.Size = New Size(350, 23)
+        cmbDebugView.TabIndex = 1
+        ToolTip1.SetToolTip(cmbDebugView, "Replace the lit render with a diagnostic view of what the shader is working with. Applies to both games. It is not saved: it returns to None when the app restarts and when you reset this tab.")
+        '
+        ' lblDebugViewHelp
+        '
+        lblDebugViewHelp.Location = New Point(11, 52)
+        lblDebugViewHelp.Name = "lblDebugViewHelp"
+        lblDebugViewHelp.Size = New Size(395, 90)
+        lblDebugViewHelp.TabIndex = 2
+        '
         ' btnResetRender
-        ' 
+        '
         btnResetRender.ImageAlign = ContentAlignment.MiddleRight
         btnResetRender.ImageKey = "AgtReload"
         btnResetRender.ImageList = IconsSmall
-        btnResetRender.Location = New Point(440, 282)
+        btnResetRender.Location = New Point(440, 442)
         btnResetRender.Name = "btnResetRender"
         btnResetRender.Size = New Size(418, 27)
-        btnResetRender.TabIndex = 5
+        btnResetRender.TabIndex = 6
         btnResetRender.Text = "Reset rendering to defaults"
         btnResetRender.TextImageRelation = TextImageRelation.ImageBeforeText
-        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera and floor -- to its default. Lights and shadows are on the other tab and are not touched.")
+        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera, floor and the shader debug view -- to its default. Lights and shadows are on the other tab and are not touched.")
         btnResetRender.UseVisualStyleBackColor = True
         ' 
         ' LightRigForm
@@ -1489,6 +1532,8 @@ Partial Class LightRigForm
         grpCamera.PerformLayout()
         grpFloor.ResumeLayout(False)
         grpFloor.PerformLayout()
+        grpShaderDebug.ResumeLayout(False)
+        grpShaderDebug.PerformLayout()
         CType(nudFloorSize, ComponentModel.ISupportInitialize).EndInit()
         CType(nudFloorStep, ComponentModel.ISupportInitialize).EndInit()
         ResumeLayout(False)
@@ -1574,6 +1619,10 @@ Partial Class LightRigForm
     Friend WithEvents nudFloorStep As NumericUpDownCultura
     Friend WithEvents lblFloorColor As Label
     Friend WithEvents cmbFloorColor As ColorComboBox
+    Friend WithEvents grpShaderDebug As GroupBox
+    Friend WithEvents lblDebugView As Label
+    Friend WithEvents cmbDebugView As ComboBox
+    Friend WithEvents lblDebugViewHelp As Label
     Friend WithEvents grpShadows As GroupBox
     Friend WithEvents chkShadows As CheckBox
     Friend WithEvents chkCastKey As CheckBox

@@ -141,9 +141,16 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         Dim shapeName = ResolveShapeDisplayName(shape, nifShape)
 
         Try
+            ' El indice es la POSICION del hueso en `Bones`, que es la misma que indexa
+            ' `ReferencePose` y `ParentIndices`. Por eso se toma ANTES del filtro: hasta la 1.5.6 lo
+            ' traia el propio hueso (`ReadSkeletonBones`: `.Index = i`, asignado al parsear), asi que
+            ' descartar un hueso sin nombre NO corria el indice de los que venian despues. Calcularlo
+            ' despues del `Where` los corre, y cada hueso inyectado se llevaria la referencePose de
+            ' otro. MEDIDO con `--clothbind` sobre las 990 prendas del corpus: 0 archivos y 0 huesos
+            ' sin nombre, o sea que hoy el filtro no descarta nada y esto no puede cambiar una salida.
             Dim hkxBoneLookup = skeleton.Bones.
-                Where(Function(bone) bone IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(bone.Name)).
                 Select(Function(bone, idx) New With {.Bone = bone, .Index = idx}).
+                Where(Function(x) x.Bone IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(x.Bone.Name)).
                 GroupBy(Function(x) x.Bone.Name.Trim(), StringComparer.OrdinalIgnoreCase).
                 ToDictionary(Function(group) group.Key,
                              Function(group) group.First().Index,
@@ -303,6 +310,18 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
                                           index As Integer, nombre As String, shapeName As String)
         If Not Logger.Enabled OrElse vivo Is Nothing Then Exit Sub
         If skeleton Is Nothing OrElse skeleton.ReferencePose Is Nothing OrElse index >= skeleton.ReferencePose.Count Then Exit Sub
+        ' ⛔ UN LOCAL SOLO ES COMPARABLE CON OTRO LOCAL DEL MISMO PADRE. `referencePose(i)` esta
+        ' expresado en el marco del padre que declara `ParentIndices(i)`, y `OriginalLocaLTransform`
+        ' en el del padre del hueso VIVO. Si no son el mismo hueso, restarlos da un numero que no
+        ' significa nada — y este aviso lo estaba dando: MEDIDO sobre `Vivacity.nif`, cuyo hkaSkeleton
+        ' trae 201 huesos y declara el padre de 'Head' en el indice 119 ('Neck'), salia con
+        ' dAng=48,49 en una prenda que se ve BIEN. Sin esta guarda el aviso es una alarma falsa.
+        If skeleton.ParentIndices Is Nothing OrElse index >= skeleton.ParentIndices.Count Then Exit Sub
+        Dim padreIdx = CInt(skeleton.ParentIndices(index))
+        If padreIdx < 0 OrElse skeleton.Bones Is Nothing OrElse padreIdx >= skeleton.Bones.Count Then Exit Sub
+        Dim padreHkx = If(skeleton.Bones(padreIdx).Name, "").Trim()
+        Dim padreVivo = If(vivo.Parent Is Nothing, "", If(vivo.Parent.BoneName, "")).Trim()
+        If Not String.Equals(padreHkx, padreVivo, StringComparison.OrdinalIgnoreCase) Then Exit Sub
         Dim hkx = HkxTransformConventionHelper.ToTransform(skeleton.ReferencePose(index))
         Dim viv = vivo.OriginalLocaLTransform
         If hkx Is Nothing OrElse viv Is Nothing Then Exit Sub

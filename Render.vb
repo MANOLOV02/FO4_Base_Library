@@ -4695,8 +4695,11 @@ Public Class PreviewModel
             '
 
             ' === DebugMode ===
-
-            shader.SetFloat("DebugMode", shader.Debugmode)
+            ' La vista de depuracion es UNA sola para el proceso y para los dos juegos: se lee de la
+            ' propiedad Shared, NO del shader que toco dibujar. Ver Shader_Base_Class.DebugView, que
+            ' explica por que dejo de ser un campo de instancia. Con None (el default y el unico estado
+            ' en el que arranca la app) el GLSL ni entra al bloque: `if (DebugMode > 0.0)`.
+            shader.SetFloat("DebugMode", CSng(Shader_Base_Class.DebugView))
 
             ' Alpha global
             shader.SetFloat("alpha", materialBase.Alpha)
