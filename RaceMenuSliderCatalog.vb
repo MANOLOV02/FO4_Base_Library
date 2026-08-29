@@ -245,6 +245,84 @@ Public Class RaceMenuSliderCatalog
         Return def
     End Function
 
+    ''' <summary>The bounds and step skee64 hands the RaceSex menu for one extended slider.</summary>
+    Public Structure SliderBounds
+        Public Min As Double
+        Public Max As Double
+        Public Interval As Double
+    End Structure
+
+    ''' <summary>The two <c>[FaceGen]</c> knobs of <c>skee64.ini</c> that size an extended slider:
+    ''' <c>g_sliderMultiplier</c> and <c>g_sliderInterval</c> (main.cpp:156-157, :842-850).
+    ''' <para>⛔ VIAJAN JUNTOS Y EN UN TIPO, NO COMO DOS <c>Double</c> SUELTOS, y eso es el punto. Con la firma
+    ''' <c>BoundsOf(def, multiplier, interval)</c> escribir <c>BoundsOf(def, interval, multiplier)</c> COMPILA:
+    ''' con el ini de fábrica el usuario vería sliders de ±0,01 con paso 1, y ningún gate puede verlo porque el
+    ''' testigo pasa sus propios literales y el editor los suyos — las dos mitades del cableado nunca se
+    ''' encuentran. Con un tipo, ese error deja de compilar.</para></summary>
+    Public Structure SliderKnobs
+        Public Multiplier As Double
+        Public Interval As Double
+        Public Sub New(multiplier As Double, interval As Double)
+            Me.Multiplier = multiplier
+            Me.Interval = interval
+        End Sub
+    End Structure
+
+    ''' <summary>Transcription of skee64 <c>FaceMorphInterface::LoadSliders</c> (FaceMorphInterface.cpp:1317-1354),
+    ''' the ONLY place the extended sliders get their range. Three laws, all cited, none derived:
+    ''' <list type="number">
+    ''' <item>:1318-1319 — a bound is ∓1 only when its morph NAME is non-empty, else 0. ("None" was already
+    ''' normalised to "" at :945-948, which is what the catalog stores.) There is NO special case for
+    ''' "both empty": that slider legitimately comes out <c>[0,0]</c> and the menu cannot move it.</item>
+    ''' <item>:1320-1322 + :1354 — for a plain Slider both bounds are multiplied by
+    ''' <c>g_sliderMultiplier</c> and the step is <c>g_sliderInterval</c>. This is the whole reason a RaceMenu
+    ''' face slider reaches past ±1 in game, and why |v|&gt;1 is a value the engine CONSUMES rather than
+    ''' tolerates: skee64 splits it into <c>count</c> applications at 1.0 plus the remainder
+    ''' (:1155-1163, :1235-1241, SKEEHooks.cpp:751-767).</item>
+    ''' <item>:1324-1329 — Preset: <c>[0, presetCount]</c>, step 1, and the multipliers are RESET to 1.0.</item>
+    ''' </list>
+    ''' <para>⛔ The multiplier widens the RANGE ONLY. The stored value is passed to the menu untouched
+    ''' (:1315 reads it from the ValueSet and :1354 forwards it), so it must never be scaled on the way in
+    ''' or out — see the .jslot round-trip, which has no clamp anywhere (PresetInterface.cpp:448-456/1068-1073).</para>
+    ''' <para>⚠️ HUECO DECLARADO — <see cref="SliderType.HeadPart"/>. skee64 le da <c>[0, headPartList-&gt;size()]</c>
+    ''' con paso 1 y multiplicador 1.0 (:1330-1346), y ese tamaño sale de la lista de head parts que el JUEGO
+    ''' tiene cargada, no del catálogo. Acá no se modela y la rama no existe: la app resuelve las head parts por
+    ''' su propio editor, y la pestaña de sliders las filtra antes de llegar (<c>Type &lt;&gt; HeadPart</c>). Se
+    ''' devuelve <c>[0,0]</c>, que es además lo que emite skee64 cuando <c>GetPartList</c> no encuentra lista
+    ''' (:1344-1345). Escribir la rama completa sin llamador de producto sería superficie que sólo usa el test y
+    ''' que igual viaja en el binario que se distribuye.</para></summary>
+    Public Shared Function BoundsOf(def As SliderDef, knobs As SliderKnobs) As SliderBounds
+        Dim b As SliderBounds
+        If def Is Nothing Then Return b
+        Select Case def.Type
+            Case SliderType.Preset
+                b.Min = 0.0R : b.Max = def.PresetCount : b.Interval = 1.0R
+            Case SliderType.HeadPart
+                b.Min = 0.0R : b.Max = 0.0R : b.Interval = 1.0R
+            Case Else
+                b.Min = If(String.IsNullOrEmpty(def.LowerBound), 0.0R, -1.0R) * knobs.Multiplier
+                b.Max = If(String.IsNullOrEmpty(def.UpperBound), 0.0R, 1.0R) * knobs.Multiplier
+                b.Interval = knobs.Interval
+        End Select
+        Return b
+    End Function
+
+    ''' <summary>The WIDEST window a Slider can get: the case where both bound morphs are declared, i.e.
+    ''' <c>∓1 × multiplier</c>. It goes through <see cref="BoundsOf"/> instead of recomputing
+    ''' <c>∓multiplier</c> so the law stays in one place.
+    ''' <para>⛔ ESTO NO ES UNA LEY DEL MOTOR, ES UNA DECISIÓN DE LA APP, y hay que leerlo así. Es para los
+    ''' morphs custom que un preset trae y cuya definición de slider NO está instalada — y para ésos skee64 no
+    ''' dibuja NINGUNA fila ni aplica NADA: <c>GetSlider</c> devuelve null y el <c>if(slider)</c> los saltea sin
+    ''' <c>else</c> (FaceMorphInterface.cpp:1137 y :1216), y al abrir el RaceSex menu encima los BORRA del
+    ''' ValueSet (:1286-1306). O sea que no hay ancho canónico que copiar: la app elige mostrarlos igual —para
+    ''' que no deformen la cara siendo invisibles e ineditables— y les da el ancho más grande que skee64 le da a
+    ''' un Slider. La cita de arriba sostiene de dónde sale ESE número, no que corresponda dibujarlo.</para>
+    ''' <para>Los dos nombres de bound son marcadores: <see cref="BoundsOf"/> sólo los prueba por vacío
+    ''' (:1318-1319 compara contra ""), nunca los resuelve contra un .tri.</para></summary>
+    Public Shared Function WidestSliderBounds(knobs As SliderKnobs) As SliderBounds
+        Return BoundsOf(New SliderDef With {.Type = SliderType.Slider, .LowerBound = "?", .UpperBound = "?"}, knobs)
+    End Function
+
     Public Function HasAny() As Boolean
         Return _maleByRace.Count > 0 OrElse _femaleByRace.Count > 0
     End Function

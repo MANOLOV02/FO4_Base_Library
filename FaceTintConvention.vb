@@ -372,11 +372,24 @@ Public Module FaceTintConvention
             ' regiones de swap 35%→55% de CK sin regresión full-face. (WorkingSpace=G22 es inerte: el swap es
             ' Replace, que cancela el ws.) El path EXACTO del swap quedó inconcluso en el RE — no hay pre-pass
             ' byte-space separado en el FaceTint bake; Srgb es el best-fit vs CK, ajustable en la UI/config.
+            ' OutputSpace de este bucket = Linear. NO porque se haya medido que el swap SALGA en Linear:
+            ' es que ese campo NO SE LEE EN NINGUN CAMINO, y su unico efecto era disparar el aviso de
+            ' NoteSwapAccumMismatch en cada bake de FO4. Se lo pone en el valor que el acumulador de verdad
+            ' usa, para que el config deje de afirmar algo que no ocurre. MEDIDO los DOS lados (2026-08-28):
+            '   CPU: FaceTintCpuCompositor lo declara textual "ARGUMENTO MUERTO ACA, a proposito" -ComposeOne
+            '        solo lo usaria para derivar asp y abajo se le pasa accSpace explicito-.
+            '   GL : se sube como uniform uOutputSpace, pero la rama del swap del shader (uMode==1) NO lo lee:
+            '        usa uSrcSpace/uWorkingSpace/uCompositeSpace/uAccumSpace. Las otras pasadas lo reescriben.
+            ' Quedo sin consumidor el 2026-07-30, cuando el acumulador del swap paso a gobernarlo el bucket del
+            ' CANAL (es UN buffer que cruza swaps y tints y no puede vivir en dos espacios). No mueve un pixel.
+            ' OJO: un config YA GUARDADO conserva su valor; esto solo aplica a configs nuevos.
+            ' Y NO responde si la ley del 2026-07-30 es la correcta contra el CK: eso sigue SIN MEDIR, y no se
+            ' puede medir tocando este campo, justamente porque esta muerto.
             Swap = New FaceTintBucketConvention With {
                 .WorkingSpace = FaceTintWorkingSpace.G22,
                 .CompositeSpace = FaceTintWorkingSpace.Linear,
                 .SrcSpace = FaceTintWorkingSpace.Srgb,
-                .OutputSpace = FaceTintWorkingSpace.G22,
+                .OutputSpace = FaceTintWorkingSpace.Linear,
                 .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
