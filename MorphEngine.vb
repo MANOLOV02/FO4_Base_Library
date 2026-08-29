@@ -27,7 +27,7 @@ Public Class MorphChannel
     ''' <para><b>Inclusive en ±1</b>: <c>jb</c>/<c>ja</c> saltan sólo ESTRICTAMENTE fuera. NaN aborta también
     ''' (comiss deja CF=1 en unordered ⇒ el <c>jb</c> se toma).</para>
     ''' <para>False SÓLO para los canales de RaceMenu (skee64), que NO usan el applier del motor sino su
-    ''' propio <c>TRIFile::Apply</c> (SKSE64Plugins-master\skee64\FaceMorphInterface.cpp:216-246, :1115-1119;
+    ''' propio <c>TRIFile::Apply</c> (Script extenders, Racemenu y Looksmenu\SKSE64Plugins\skee64\FaceMorphInterface.cpp:216-246, :1115-1119;
     ''' SKEEHooks.cpp:736-741), SIN validación de rango — y que además tienen una descomposición DELIBERADA
     ''' para |v|&gt;1 (FaceMorphInterface.cpp:1156-1163 parte 2.5 en 1.0+1.0+0.5 preservando la magnitud).
     ''' Descartarlos revertiría ese mecanismo a propósito diseñado para saltarse el límite.</para></summary>

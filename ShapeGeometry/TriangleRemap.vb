@@ -10,7 +10,7 @@
 ''' shape reference so the adapter can read the donor's segments/LODs and append them with
 ''' the right offset.
 '''
-''' Convention follows BodySlide-and-Outfit-Studio's Geometry.cpp BSSubIndexTriShape::
+''' Convention follows 3rd party references/BodySlide-and-Outfit-Studio's Geometry.cpp BSSubIndexTriShape::
 ''' notifyVerticesDelete — count survivors per old-segment range, then realign cumulative
 ''' StartIndex.
 ''' </summary>

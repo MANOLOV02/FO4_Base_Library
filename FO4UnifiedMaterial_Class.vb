@@ -377,7 +377,9 @@ Public Class FO4UnifiedMaterial_Class
     ' Env mask path for BGSM — NIF texture set slot 5. Not serialized in the .bgsm binary
     ' (BGSM has no envmapMaskTexture field; path lives only in the NIF texture set).
     ' Evidence: BodySlide MaterialFile.cpp:91-113 (BGSM binary has 9 strings, none for envmask),
-    ' PreviewWindow.cpp:434-449 (BodySlide never assigns texFiles[5] from BGSM).
+    ' OutfitProject.cpp:2436-2450 (BodySlide never assigns texFiles[5] from BGSM;
+    ' solo la rama BGEM lo hace, :2449). Re-anclado 2026-08-29: el bloque se mudo desde
+    ' PreviewWindow.cpp, que upstream refactorizo de ~450 a 99 lineas.
     ' Roundtrip across .bgsm Save/Load is preserved via a sidecar `.bgsm.json` written next
     ' to the .bgsm — see Save_To_Bgsm and Deserialize(Diccionario,...).
     Private _EnvmapMaskPath As String = ""
@@ -4246,7 +4248,7 @@ Public Class FO4UnifiedMaterial_Class
 
         mat.DiffuseTexture = texset.Textures(textset_dDiffuseTexture).Content
         mat.NormalTexture = texset.Textures(textset_NormalTexture).Content
-        ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, PreviewWindow.cpp:439, fo4_default.frag:15).
+        ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, OutfitProject.cpp:2440, fo4_default.frag:15).
         ' SSE legacy kept on DisplacementTexture until evidence says otherwise.
         If isSkyrim Then
             mat.DisplacementTexture = texset.Textures(textset_DisplacementTexture).Content
@@ -4298,7 +4300,7 @@ Public Class FO4UnifiedMaterial_Class
 
         texset.Textures(textset_dDiffuseTexture).Content = mat.DiffuseTexture
         texset.Textures(textset_NormalTexture).Content = mat.NormalTexture
-        ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, PreviewWindow.cpp:439, fo4_default.frag:15).
+        ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, OutfitProject.cpp:2440, fo4_default.frag:15).
         ' SSE legacy kept on DisplacementTexture until evidence says otherwise.
         If isSkyrim Then
             texset.Textures(textset_DisplacementTexture).Content = mat.DisplacementTexture

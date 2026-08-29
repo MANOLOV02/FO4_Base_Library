@@ -10,7 +10,7 @@ Public Module PluginConstants
     Public Const FLAG_LOCALIZED As UInteger = &H80UI
     ''' <summary><b>0x00100000</b> — el bit de "update" que lee el motor con VRESL.
     ''' <para>⛔ ACÁ DECÍA <c>&amp;H100</c> Y ERA EL BIT EQUIVOCADO, no sólo un valor sin uso.
-    ''' SYNC: <c>TES5Edit\Core\wbInterface.pas:20425-20432</c>
+    ''' SYNC: <c>3rd party references\TES5Edit\Core\wbInterface.pas:20426-20433</c>
     ''' <code>
     ''' function TwbMainRecordStructFlags.IsUpdate: Boolean;
     ''' begin
@@ -21,7 +21,7 @@ Public Module PluginConstants
     ''' </code>
     ''' O sea: con VRESL es <c>$00100000</c>, y el <c>$200</c> es la rama de <b>Starfield</b>. Fuera de
     ''' Starfield, <c>$200</c> es justamente <see cref="FLAG_ESL"/> (<c>IsLight</c>,
-    ''' <c>wbInterface.pas:20414-20421</c>). El <c>$100</c> no es ninguno de los dos: es
+    ''' <c>wbInterface.pas:20415-20422</c>). El <c>$100</c> no es ninguno de los dos: es
     ''' <c>IsLight</c> <b>en Starfield</b>.</para>
     ''' <para>Alcance HOY: <b>0 casos</b> — ningún rig del usuario es VR, así que
     ''' <c>UpdateIsSupported</c> devuelve False y la rama no se toca. Es una corrección de ley, no de

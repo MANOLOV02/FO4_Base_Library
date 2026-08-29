@@ -212,7 +212,7 @@ Namespace Canon
             ' ⛔ LA VERSIÓN ARRANCA EN LA DEL JUEGO, NO EN 0. Un `UShort` nace en 0, y con FormVersion 0
             ' TODO decider `wbFromVersion(N, …)` elige la rama de CERO bytes: un record CREADO por la app
             ' sale sin los campos que el juego sí trae.
-            ' SYNC: xEdit hace exactamente esto al crear un record —`wbImplementation.pas:10129-10136`:
+            ' SYNC: xEdit hace exactamente esto al crear un record —`wbImplementation.pas:10145-10152`:
             '     gmFO4, gmFO4VR               : BasePtr.mrsVersion^ := 131;
             '     gmSSE, gmTES5VR, gmEnderalSE : BasePtr.mrsVersion^ := 44;
             ' y después materializa todos los miembros `Required` (`:10220-10224`).
@@ -227,7 +227,7 @@ Namespace Canon
         End Sub
 
         ''' <summary>Form Version que estampa el CK/xEdit al crear un record nuevo, por juego.
-        ''' SYNC: <c>wbImplementation.pas:10129-10136</c>.</summary>
+        ''' SYNC: <c>wbImplementation.pas:10145-10152</c>.</summary>
         Public Shared Function VersionPorDefecto(game As WbGame) As UShort
             Select Case game
                 Case WbGame.Fallout4 : Return 131US

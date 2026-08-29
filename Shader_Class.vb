@@ -440,7 +440,7 @@ void main(void)
 /*
  * BodySlide and Outfit Studio
  * Shaders by jonwd7 and ousnius
- * https://github.com/ousnius/BodySlide-and-Outfit-Studio
+ * https://github.com/ousnius/3rd party references/BodySlide-and-Outfit-Studio
  * http://www.niftools.org/
  * Modified By Manolo For WardrobeManager
  */
@@ -2095,7 +2095,7 @@ void main(void)
 /*
  * BodySlide and Outfit Studio
  * Shaders by jonwd7 and ousnius
- * https://github.com/ousnius/BodySlide-and-Outfit-Studio
+ * https://github.com/ousnius/3rd party references/BodySlide-and-Outfit-Studio
  * http://www.niftools.org/
  * Modified By Manolo For WardrobeManager
  */

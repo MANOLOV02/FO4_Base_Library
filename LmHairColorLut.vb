@@ -12,7 +12,7 @@ Imports System.Text.Json
 ''' que comparten fila se renderizan idénticos: el mod "512 Standalone Hair Colors" tiene 512 CLFM
 ''' con sólo 16 valores de fila distintos (32 LUTs × 16 filas) — el discriminador es la LUT, no la fila.</para>
 '''
-''' <para>FIEL A f4ee (F4SEPlugins-master/f4ee/CharGenInterface.cpp):</para>
+''' <para>FIEL A f4ee (Script extenders, Racemenu y Looksmenu/F4SEPlugins/f4ee/CharGenInterface.cpp):</para>
 ''' <list type="bullet">
 ''' <item><c>LoadHairColorMods</c> (:637) — un <c>haircolors.json</c> por plugin cargado, en load order.
 '''   NO hay carpeta <c>Loose\</c> (a diferencia de Overlays/Skin).</item>

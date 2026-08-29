@@ -12,7 +12,7 @@ Imports System.Xml.Linq
 '''
 ''' <para>⛔ Y el XML liga la física <b>POR NOMBRE DE SHAPE</b>: <c>&lt;per-vertex-shape name="X"&gt;</c> y
 ''' <c>&lt;per-triangle-shape name="X"&gt;</c> (los dos únicos tags que nombran shapes; verificado en el
-''' fuente de referencia, <c>BodySlide-and-Outfit-Studio\src\physics\SystemBuilder.cpp:434</c> y
+''' fuente de referencia, <c>3rd party references\BodySlide-and-Outfit-Studio\src\physics\SystemBuilder.cpp:434</c> y
 ''' <c>:441</c>). Si alguien RENOMBRA la shape y no el tag, el motor carga el XML, no encuentra la shape,
 ''' y la física queda muerta <b>sin un solo error</b>. Para eso está
 ''' <see cref="NombresDeShape"/>.</para></summary>
