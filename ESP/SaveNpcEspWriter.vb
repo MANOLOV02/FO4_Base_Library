@@ -66,6 +66,31 @@ Public Module SaveNpcEspWriter
         Public BaseSourcePluginName As String = ""
     End Class
 
+    ''' <summary>⛔ LA LEY DE ESTAS SEIS CLASES, en un solo lugar.
+    ''' <para><b>El cuerpo del record sale de <see cref="OtftRecordEntry.Record"/> y de ningun otro
+    ''' lado.</b> Todo campo que NO sea Record / FormID / OriginalVcs1 / OriginalVcs2 / IsOverride /
+    ''' IsNpcList es INDICE DE LA APLICACION y no llega al archivo: alimenta la clausura de borradores,
+    ''' la deduplicacion de identificadores o el reuso de color, nada mas.</para>
+    ''' <para>Se aprendio caro: cuando la emision paso a salir del arbol, los productores de OTFT
+    ''' quedaron sin migrar y siguieron llenando los campos viejos. El atuendo no llegaba al .esp —un
+    ''' GRUP de 24 bytes, cero records, con el NPC_ apuntandole igual— y el guardado decia que habia
+    ''' salido bien. El campo se veia vivo porque OTROS lo leian, sin ser el emisor.</para>
+    ''' <para>⚠️ El censo que decidio cuales quedaban se hizo con el COMPILADOR (cada campo convertido
+    ''' en <c>WriteOnly Property</c>, con lo que toda LECTURA pasa a ser error), no con grep: los
+    ''' nombres se repiten entre la ficha y el arbol —y <c>ChanceNone</c> esta declarado dos veces en
+    ''' este mismo archivo—, asi que ninguna busqueda por texto los distingue. Ese instrumento sirve
+    ''' mientras <c>Option Infer</c> siga en <c>On</c> (default del SDK): con Off, los <c>Dim x = ...</c>
+    ''' pasan a <c>Object</c>, sus accesos son late-bound y el compilador deja de verlos.</para>
+    ''' <para><b>Leyes que vivian en los helpers borrados y no tienen otro lugar:</b></para>
+    ''' <list type="bullet">
+    ''' <item>LVLM (Max Count) solo esta declarado para Fallout 4 en LVLI/LVLN; Skyrim no trae ese
+    '''   subrecord.</item>
+    ''' <item>LVLG (Use Global), LVSG (Epic Loot Chance), ONAM (Override Name) y LLKC (Filter Keywords)
+    '''   son de Fallout 4. En Skyrim, Use Global existe con otro nombre de propiedad; los otros tres
+    '''   NO tienen equivalente.</item>
+    ''' <item>Los bytes de MODS (generic model de una LVLN) llevan un FormID de MSWP que hay que
+    '''   remapear al emitir.</item>
+    ''' </list></summary>
     ''' <summary>One OTFT (outfit) record to write into the same plugin as the NPC override(s).
     ''' Authored in the Edit Outfit "Create" tab. Two flavours:
     '''   • NEW (IsOverride=False): a brand-new outfit owned by this plugin. <see cref="FormID"/> is
@@ -79,6 +104,23 @@ Public Module SaveNpcEspWriter
     Public Class OtftRecordEntry
         ''' <summary>El record a grabar. De acá sale todo el cuerpo.</summary>
         Public Record As Canon.CanonView
+
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
+        ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
+        ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
+        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
+        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
+        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            Me.Record = record
+        End Sub
 
         ''' <summary>New: provisional sentinel (0xFF…). Override: the existing OTFT's real global FormID.</summary>
         Public FormID As UInteger
@@ -108,39 +150,32 @@ Public Module SaveNpcEspWriter
         ''' deduplicado de NPC ya nivelados, etc.); si se tocan tienen que escribirse tambien acá.</summary>
         Public Record As Canon.CanonView
 
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
+        ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
+        ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
+        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
+        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
+        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            Me.Record = record
+        End Sub
+
         ''' <summary>NEW: provisional sentinel (0xFF…), rewritten to the real self-index FormID by the writer.
         ''' OVERRIDE: the existing LVLI's real global FormID (master-remapped on emit), e.g. an LVLI authored in
         ''' a prior save and re-preserved when updating the same plugin.</summary>
         Public FormID As UInteger
         Public EditorID As String = ""
-        ''' <summary>OBND raw 12 bytes (6×s16). Set from <see cref="LVLI_Data.ObjectBoundsRaw"/> on preserve-existing
-        ''' overrides so the writer preserves the source-LVLI's bounds verbatim. NEW drafts leave it Nothing →
-        ''' writer emits 12 zero bytes (still valid per spec).</summary>
-        Public ObjectBoundsRaw As Byte() = Nothing
-        ''' <summary>LVLD — whole-list chance of yielding nothing (0-100).</summary>
-        Public ChanceNone As Byte
-        ''' <summary>LVLM — Max Count (0 = unlimited).</summary>
-        Public MaxCount As Byte
-        ''' <summary>LVLF — packed flag byte (0x01 all-levels, 0x02 each-in-count, 0x04 use-all).</summary>
-        Public Flags As Byte
         Public Entries As New List(Of LvliEntryData)
         ''' <summary>True = override an existing LVLI (keep its real FormID + EditorID). False = brand-new
         ''' (draft) list assigned a self-index FormID.</summary>
         Public IsOverride As Boolean
-        ''' <summary>LVLG — Use Global, FormID [GLOB]. Optional.
-        ''' Set together with <see cref="UseGlobalFormID"/> on preserve-existing overrides.</summary>
-        Public HasUseGlobal As Boolean
-        Public UseGlobalFormID As UInteger
-        ''' <summary>LLKC — Filter Keyword Chances. Re-emitted
-        ''' on preserve-existing overrides. NEW drafts authored in-app leave this empty.</summary>
-        Public FilterKeywords As New List(Of LvliFilterKeywordData)
-        ''' <summary>LVSG — Epic Loot Chance, FormID [GLOB]. Optional.</summary>
-        Public HasEpicLootChance As Boolean
-        Public EpicLootChanceFormID As UInteger
-        ''' <summary>ONAM — Override Name, translatable lstring.
-        ''' Emitted via the central translatable encoder so users with non-ASCII locales keep characters.</summary>
-        Public HasOverrideName As Boolean
-        Public OverrideName As String = ""
         ''' <summary>VCS1/VCS2 preserved from the source record on preserve-existing overrides. See
         ''' <see cref="OtftRecordEntry.OriginalVcs1"/> for rationale.</summary>
         Public OriginalVcs1 As UInteger
@@ -151,13 +186,6 @@ Public Module SaveNpcEspWriter
         ''' LVSG/ONAM; LVLI lleva LVSG+ONAM y NO model. Cada LVLO de una LVLN referencia un NPC_/LVLN
         ''' FormID. En este writer, LVLN va antes que LVLI en el orden de emision de los GRUP.</summary>
         Public IsNpcList As Boolean = False
-        ''' <summary>LVLN-only generic model subrecords (MODL/MODT/MODC/MODS/MODF),
-        ''' preserved verbatim in source order for byte-equivalent round-trip.
-        ''' This is the real divergence between the LVLN and LVLI bodies: LVLN's tail is a model, LVLI's is
-        ''' LVSG+ONAM. The MODS bytes hold the GLOBAL Material Swap FormID ([MSWP]),
-        ''' remapped on emit; every other model subrecord is FormID-free. Empty for LVLI and for typical
-        ''' leveled-NPC lists (which carry no model).</summary>
-        Public ModelSubrecords As New List(Of (Signature As String, Data As Byte()))
     End Class
 
     ''' <summary>One LVLO entry inside an <see cref="LvliRecordEntry"/>. The reference is an ARMO (real),
@@ -178,11 +206,6 @@ Public Module SaveNpcEspWriter
         Public CoedItemCondition As Single
     End Class
 
-    ''' <summary>One LLKC filter-keyword chance pair re-emitted on preserve-existing LVLI overrides.</summary>
-    Public Class LvliFilterKeywordData
-        Public KeywordFormID As UInteger
-        Public Chance As UInteger
-    End Class
 
     ''' <summary>One MSWP (Material Swap) record to write into the plugin. NEW-only in this task:
     ''' <see cref="FormID"/> is the caller's PROVISIONAL sentinel (high byte 0xFF), assigned a real
@@ -196,23 +219,30 @@ Public Module SaveNpcEspWriter
         ''' secuencia de llamadas escrita a mano.</summary>
         Public Record As Canon.CanonView
 
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
+        ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
+        ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
+        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
+        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
+        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            Me.Record = record
+        End Sub
+
         ''' <summary>NEW: provisional sentinel (0xFF…). OVERRIDE (not implemented here): the existing
         ''' MSWP's real global FormID.</summary>
         Public FormID As UInteger
         Public EditorID As String = ""
-        ''' <summary>FNAM 'Tree Folder' (ZSTRING, first FNAM). Optional —
-        ''' emitted only when non-empty.</summary>
-        Public TreeFolder As String = ""
-        Public Substitutions As New List(Of Canon.IMswp_MaterialSubstitutions)
         Public IsOverride As Boolean = False
         Public OriginalVcs1 As UInteger = 0UI
         Public OriginalVcs2 As UShort = 0US
-        ''' <summary>The original parsed source record (required when <see cref="IsOverride"/>=True). On
-        ''' override the record's own FormID = the real GLOBAL FormID (caller sets <see cref="FormID"/>);
-        ''' header flags/Version come from <c>SourceRecord.Header</c>. MSWP has no body FormIDs and a simple
-        ''' body, so its override just re-emits the entry with the source flags/Version — no subrecord merge
-        ''' (every owned field already holds the final desired state).</summary>
-        Public SourceRecord As PluginRecord = Nothing
     End Class
 
     ''' <summary>Un record CLFM (Color) a escribir: es el vehiculo de persistencia del tinte de pelo absoluto
@@ -234,32 +264,28 @@ Public Module SaveNpcEspWriter
         ''' <c>NpcOverrideSaver.MaterializeSseHairColors</c>; si se tocan tienen que escribirse tambien acá.</summary>
         Public Record As Canon.CanonView
 
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
+        ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
+        ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
+        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
+        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
+        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            Me.Record = record
+        End Sub
+
         ''' <summary>NEW: provisional sentinel (0xFF…). OVERRIDE: the existing CLFM's real global FormID.</summary>
         Public FormID As UInteger
         Public EditorID As String = ""
-        ''' <summary>FULL — optional display name, the string the CK / our own editor combo show
-        ''' instead of the EditorID. NEW entries author it here (see NpcOverrideSaver.MaterializeSseHairColors:
-        ''' "NPC Manager custom hair color #RRGGBB"); empty = no FULL emitted.
-        ''' ENCODING: emitted with <c>EncodeTranslatable</c> (FULL is a
-        ''' translatable lstring — NOT the cp1252 General encoder that EDID uses),
-        ''' and that encoder has an ExceptionFallback, so an authored name MUST be ASCII-only: this record is
-        ''' not covered by the Phase 2b encoding-conflict pre-check (that one walks NPC_ FULL/SHRT/ATTX), and a
-        ''' character the chosen codepage can't represent would throw mid-write instead of being reported.</summary>
-        Public FullName As String = ""
-        ''' <summary>OVERRIDE-only: the source FULL subrecord's payload copied VERBATIM (NUL included), so a
-        ''' re-save round-trips the name byte-exactly instead of decoding it with the source plugin's encoding
-        ''' and re-encoding it with the current global Translatable — a lossy step that could also throw
-        ''' mid-write for a name authored under another codepage. Same reasoning as CNAM/FNAM being copied from
-        ''' the bytes in the preservation sweep. Nothing = source had no FULL. Wins over <see cref="FullName"/>.</summary>
-        Public FullNameRaw As Byte() = Nothing
         ''' <summary>Packed 0xRRGGBB. Emitted to CNAM as bytes R,G,B then <see cref="ColorAlpha"/>.</summary>
         Public ColorRgb As Integer
-        ''' <summary>CNAM's 4th byte. Default 0 = what all 178 vanilla Skyrim.esm CLFM carry (measured).
-        ''' Preserved verbatim from the source record on OVERRIDE entries.</summary>
-        Public ColorAlpha As Byte = 0
-        ''' <summary>FNAM. Skyrim: 'Playable' bool (1 on all 15 vanilla hair colours). FO4: a flag field.
-        ''' Emitted verbatim as u32 either way.</summary>
-        Public Flags As UInteger = 1UI
         Public IsOverride As Boolean = False
         ''' <summary>VCS1/VCS2 preserved from the source record on OVERRIDE entries. See
         ''' <see cref="OtftRecordEntry.OriginalVcs1"/>.</summary>
@@ -278,48 +304,28 @@ Public Module SaveNpcEspWriter
         ''' reproducirlo alcanza sin un camino de preservación aparte.</summary>
         Public Record As Canon.CanonView
 
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
+        ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
+        ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
+        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
+        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
+        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            Me.Record = record
+        End Sub
+
         Public FormID As UInteger
         Public EditorID As String = ""
-        Public SlotMask As UInteger                 ' BOD2 (u32)
-        Public RaceFormID As UInteger               ' RNAM
-        Public FootstepSetFormID As UInteger        ' SNDD (FSTS)
-        Public ArtObjectFormID As UInteger          ' ONAM (ARTO) — owned optional
-        Public MaleFPMaterialSwapFormID As UInteger   ' MO4S (MSWP) — owned optional
-        Public FemaleFPMaterialSwapFormID As UInteger ' MO5S (MSWP) — owned optional
-        Public MalePriority As Byte = 0
-        Public FemalePriority As Byte = 0
-        Public MaleWeightSliderFlags As Byte = 0
-        Public FemaleWeightSliderFlags As Byte = 0
-        Public DetectionSoundValue As Byte = 0
-        Public WeaponAdjust As Single = 0.0F
-        Public MaleMeshPath As String = ""          ' MOD2
-        Public FemaleMeshPath As String = ""        ' MOD3
-        Public MaleFPMeshPath As String = ""        ' MOD4
-        Public FemaleFPMeshPath As String = ""      ' MOD5
-        Public MaleModelFlags As Byte = 0           ' MO2F
-        Public FemaleModelFlags As Byte = 0         ' MO3F
-        Public MaleFPModelFlags As Byte = 0         ' MO4F
-        Public FemaleFPModelFlags As Byte = 0       ' MO5F
-        Public MaleColorRemapIndex As Single? = Nothing   ' MO2C
-        Public FemaleColorRemapIndex As Single? = Nothing ' MO3C
-        Public MaleSkinTextureFormID As UInteger    ' NAM0 (TXST)
-        Public FemaleSkinTextureFormID As UInteger  ' NAM1 (TXST)
-        Public MaleSkinTextureSwapListFormID As UInteger   ' NAM2 (FLST)
-        Public FemaleSkinTextureSwapListFormID As UInteger ' NAM3 (FLST)
-        Public MaleMaterialSwapFormID As UInteger   ' MO2S (MSWP)
-        Public FemaleMaterialSwapFormID As UInteger ' MO3S (MSWP)
-        Public AdditionalRaces As New List(Of UInteger)   ' MODL array (RACE)
-        Public BoneScaleData As New List(Of ARMA_BoneScaleGender)  ' BSMP/BSMB/BSMS
-        Public NoUnderarmorScaling As Boolean = False   ' header flag bit 6
-        Public HasSculptData As Boolean = False         ' header flag bit 9
-        Public HiRes1stPersonOnly As Boolean = False    ' header flag bit 30
         Public IsOverride As Boolean = False
         Public OriginalVcs1 As UInteger = 0UI
         Public OriginalVcs2 As UShort = 0US
-        ''' <summary>El record fuente sin abrir, para auditoría. En un OVERRIDE la cabecera (flags y
-        ''' versión) y los campos no tocados por el usuario salen del árbol de <see cref="Record"/>
-        ''' —que se abrió leyendo esta misma fuente—, no de este campo.</summary>
-        Public SourceRecord As PluginRecord = Nothing
     End Class
 
     ''' <summary>One ARMO (Armor) record to write. NEW: <see cref="FormID"/> es el centinela
@@ -331,57 +337,28 @@ Public Module SaveNpcEspWriter
         ''' reproducirlo alcanza sin un camino de preservación aparte.</summary>
         Public Record As Canon.CanonView
 
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
+        ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
+        ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
+        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
+        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
+        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            Me.Record = record
+        End Sub
+
         Public FormID As UInteger
         Public EditorID As String = ""
-        Public FullName As String = ""              ' FULL (optional)
-        Public SlotMask As UInteger                 ' BOD2
-        Public RaceFormID As UInteger               ' RNAM
-        Public InstanceNamingFormID As UInteger     ' INRD (INNR)
-        Public EnchantmentFormID As UInteger        ' EITM (ENCH) — owned optional
-        Public PatternFormID As UInteger            ' PTRN (TRNS) — owned optional
-        Public EquipTypeFormID As UInteger          ' ETYP (EQUP) — owned optional
-        Public PickupSoundFormID As UInteger        ' YNAM (SNDR) — owned optional
-        Public DropSoundFormID As UInteger          ' ZNAM (SNDR) — owned optional
-        Public AlternateBlockMaterialFormID As UInteger ' BAMT (MATT) — owned optional
-        Public Description As String = ""           ' DESC (translatable) — owned optional
-        ''' <summary>Si el DESC tiene que emitirse. Se copia de <c>ARMO_Data.HasDescription</c> (presencia en
-        ''' el record fuente), NO de que el texto sea no vacío: en un master localizado el id puede resolver a
-        ''' "" y el subrecord igual está. Ponerlo en False es la forma de decir "sacá la descripción".</summary>
-        Public HasDescription As Boolean = False
-        Public NonPlayable As Boolean = False       ' header flag bit 2 — owned
-        ''' <summary>OBND — Object Bounds 6×i16 min/max XYZ (required, always emitted).</summary>
-        Public ObndX1 As Short
-        Public ObndY1 As Short
-        Public ObndZ1 As Short
-        Public ObndX2 As Short
-        Public ObndY2 As Short
-        Public ObndZ2 As Short
-        ''' <summary>DAMA — Damage Type Array / Resistances (owned, omit block when empty).</summary>
-        Public DamageResistances As New List(Of ARMO_DamageResist)
-        Public TemplateArmorFormID As UInteger      ' TNAM (ARMO)
-        Public ArmorAddons As New List(Of ARMO_AddonEntry)   ' Models: INDX + ArmaFormID
-        Public KeywordFormIDs As New List(Of UInteger)       ' KWDA
-        Public AttachParentSlotFormIDs As New List(Of UInteger)  ' APPR (KYWD)
-        Public MaleWorldModelPath As String = ""    ' MOD2 (robots)
-        Public FemaleWorldModelPath As String = ""  ' MOD4
-        Public MaleMaterialSwapFormID As UInteger   ' MO2S at ARMO level (MSWP)
-        Public FemaleMaterialSwapFormID As UInteger ' MO4S at ARMO level (MSWP)
-        Public Value As Integer = 0                 ' DATA Value (s32)
-        Public Weight As Single = 0.0F              ' DATA Weight
-        Public Health As UInteger = 0UI             ' DATA Health
-        Public ArmorRating As UShort = 0US          ' FNAM (FO4)
-        ''' <summary>SKYRIM ONLY — DNAM 'Armor Rating' (s32, wire value = rating×100).
-        ''' Distinct from the FO4 <see cref="ArmorRating"/> (u16 in FNAM); Skyrim has no FNAM. 0 for FO4 entries.</summary>
-        Public SkyrimArmorRating As Integer = 0
-        Public BaseAddonIndex As UShort = 0US       ' FNAM (0 = load addon group 0)
-        Public StaggerRating As Byte = 0            ' FNAM
         Public IsOverride As Boolean = False
         Public OriginalVcs1 As UInteger = 0UI
         Public OriginalVcs2 As UShort = 0US
-        ''' <summary>El record fuente sin abrir, para auditoría. En un OVERRIDE la cabecera (flags y
-        ''' versión) y los campos no tocados por el usuario salen del árbol de <see cref="Record"/>
-        ''' —que se abrió leyendo esta misma fuente—, no de este campo.</summary>
-        Public SourceRecord As PluginRecord = Nothing
     End Class
 
     ''' <summary>Result of a save operation.</summary>
