@@ -1076,7 +1076,11 @@ Public Module SaveNpcEspWriter
                 "NpcOverrideEntry sin record: el cuerpo de un NPC_ ES su arbol. Sin el no hay nada que grabar.")
         End If
         Dim vista = TryCast(entry.Npc.Record, Canon.CanonView)
-        If vista Is Nothing Then Return Array.Empty(Of Byte)()
+        If vista Is Nothing Then
+            Throw New InvalidOperationException(
+                $"NPC_ {entry.Npc.FormID:X8}: el record no es un arbol canonico " &
+                $"({entry.Npc.Record.GetType().Name}). Devolver vacio aca hacia desaparecer el NPC del plugin sin error.")
+        End If
         Return SerializarRecord(vista, entry.Npc.FormID, remapper, game,
                                 entry.OriginalHeader.VCS1, entry.OriginalHeader.VCS2, selfIdxDestino, avisos)
     End Function
@@ -1089,8 +1093,15 @@ Public Module SaveNpcEspWriter
                                            remapper As SaveNpcEspWriter.FormIdRemapper,
                                            selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
         If npc Is Nothing Then Return Array.Empty(Of Byte)()
+        ' `npc.Record` puede ser Nothing: la propiedad se declara sin inicializador (RecordParsers.vb:80)
+        ' y aca no hay un throw previo que lo cubra como en SerializeNpcRecord. Nombrarlo sin esta guarda
+        ' cambiaba un vacio mudo por un NullReferenceException sin mensaje.
         Dim vista = TryCast(npc.Record, Canon.CanonView)
-        If vista Is Nothing Then Return Array.Empty(Of Byte)()
+        If vista Is Nothing Then
+            Dim tipoRec As String = If(npc.Record Is Nothing, "Nothing", npc.Record.GetType().Name)
+            Throw New InvalidOperationException(
+                $"NPC_ {npc.FormID:X8}: el record no es un arbol canonico ({tipoRec}).")
+        End If
         Dim traducir As Func(Of UInteger, UInteger) = Nothing
         If remapper IsNot Nothing Then traducir = Function(x) remapper(x)
         ' ⛔ El parametro `avisos` estaba DECLARADO y sin cablear: un arnes que pasara su lista se
@@ -1116,7 +1127,11 @@ Public Module SaveNpcEspWriter
             origen = Canon.CanonRecords.NpcNuevo(JuegoCanonico(game))
         End If
         Dim vista = TryCast(origen, Canon.CanonView)
-        If vista Is Nothing Then Return Array.Empty(Of Byte)()
+        If vista Is Nothing Then
+            Throw New InvalidOperationException(
+                $"NPC_ nuevo (provisional {entry.ProvisionalFormID:X8}): el record no es un arbol canonico " &
+                $"({origen.GetType().Name}).")
+        End If
         Return SerializarRecord(vista, entry.ProvisionalFormID, remapper, game, 0UI, CUShort(0), selfIdxDestino, avisos)
     End Function
 
@@ -1465,14 +1480,38 @@ Public Module SaveNpcEspWriter
                                      vcs1 As UInteger,
                                      vcs2 As UShort,
                                      selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
-        If vista Is Nothing OrElse vista.Node Is Nothing Then Return Array.Empty(Of Byte)()
-        If vista.Context Is Nothing Then Return Array.Empty(Of Byte)()
+        ' ⛔ NO devolver vacio. Un cuerpo de cero bytes no es "no habia nada que grabar": es un record que
+        ' DESAPARECE del archivo dejando colgada toda referencia a el, y el GRUP se arma igual con su
+        ' cabecera, asi que el plugin queda valido y nadie se entera. Fue exactamente lo que paso con OTFT:
+        ' la entry viajaba sin arbol y el atuendo no llegaba al disco (medido 2026-08-29 sobre el .esp).
+        If vista Is Nothing OrElse vista.Node Is Nothing Then
+            Throw New InvalidOperationException(
+                "SerializarRecord sin arbol: el cuerpo de un record ES su arbol. Sin el no hay nada que grabar.")
+        End If
+        If vista.Context Is Nothing Then
+            Throw New InvalidOperationException(
+                "SerializarRecord sin contexto: de ahi salen la firma del record, sus banderas y la version de formulario.")
+        End If
 
         Dim traducir As Func(Of UInteger, UInteger) = Nothing
         If remapper IsNot Nothing Then traducir = Function(x) remapper(x)
 
         Dim hallazgos As New List(Of Canon.WbFinding)
         Dim cuerpo = Canon.CanonEscritura.Cuerpo(vista, traducir, selfIdxDestino, SALIDA_LOCALIZADA, hallazgos)
+        ' GATE. Con el arbol presente el cuerpo todavia puede salir vacio: `WbReader.CreateNew` siembra
+        ' SOLO los miembros Required (WbReader.vb:149-151, igual que xEdit) y hay records que no declaran
+        ' NINGUNO -OTFT en los dos juegos y MSWP en FO4-, asi que un `*Nuevo(game)` que nadie llena da un
+        ' arbol de cero hijos y `EmitBody` devuelve cero bytes. De ahi sale un record de 24 bytes de
+        ' cabecera y cuerpo NULO: un archivo valido al que le falta un record.
+        ' Medido sobre los dos corpus instalados -175 plugins, 40.084 records de las 8 firmas que emite
+        ' este writer, descomprimiendo los COMPRESSED-: CERO tienen cuerpo de 0 bytes. O sea que este gate
+        ' no puede rechazar nada que exista de verdad, y lo unico que puede atajar es que el arbol haya
+        ' perdido su contenido en el camino.
+        If cuerpo Is Nothing OrElse cuerpo.Length = 0 Then
+            Throw New InvalidOperationException(
+                $"{vista.Context.RecordSignature} {formID:X8} '{vista.Context.EditorId}': el cuerpo salio de " &
+                "0 bytes. Un record vacio desaparece del archivo sin error y deja colgada toda referencia a el.")
+        End If
         VolcarAvisos(hallazgos, vista.Context.FormID, avisos)
         Dim idDestino = If(remapper Is Nothing, formID, remapper(formID))
         ' Las banderas salen del CONTEXTO del record y de ningun otro lado: ahi las dejo la lectura
