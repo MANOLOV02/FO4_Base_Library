@@ -205,6 +205,149 @@ Public NotInheritable Class GamePathsResolver
         Return IdentifyExe(ConfiguredExePath()).ExeVariant = GameVariant.VR
     End Function
 
+    ' ==========================================================================================
+    ' Qué ejecutar para arrancar el juego
+    ' ==========================================================================================
+
+    ''' <summary>El loader del script extender de cada exe canónico. Tabla PARALELA a
+    ''' <see cref="CanonicalExes"/>: misma clave (juego, variante), un nombre por fila.
+    ''' <para>Los dos nombres planos ya estaban documentados en esta clase — <see cref="IdentifyExe"/>
+    ''' existe justamente porque el usuario puede apuntar la config a <c>f4se_loader.exe</c> o
+    ''' <c>skse64_loader.exe</c>. Los dos de VR salen de las distribuciones oficiales de F4SEVR y SKSEVR,
+    ''' que mantienen el mismo patrón <c>&lt;extender&gt;_loader.exe</c>.</para>
+    ''' <para>⛔ NO se busca "algo que termine en <c>_loader.exe</c>" dentro de la carpeta: eso es un barrido
+    ''' y esta clase no barre disco (ver el encabezado). Es UN <see cref="File.Exists"/> contra un nombre
+    ''' armado, igual que todo lo demás acá.</para></summary>
+    Private Shared ReadOnly ScriptExtenderLoaders As (Game As Config_App.Game_Enum, ExeVariant As GameVariant, Loader As String)() = {
+        (Config_App.Game_Enum.Fallout4, GameVariant.Flat, "f4se_loader.exe"),
+        (Config_App.Game_Enum.Fallout4, GameVariant.VR, "f4sevr_loader.exe"),
+        (Config_App.Game_Enum.Skyrim, GameVariant.Flat, "skse64_loader.exe"),
+        (Config_App.Game_Enum.Skyrim, GameVariant.VR, "sksevr_loader.exe")
+    }
+
+    ''' <summary>Qué ejecutar, desde dónde, y cómo llamarlo en la UI. Lo produce
+    ''' <see cref="ResolveLaunchTarget"/>.</summary>
+    Public NotInheritable Class LaunchTarget
+        ''' <summary>Ruta COMPLETA del ejecutable a arrancar. "" cuando <see cref="Problem"/> dice por qué no.</summary>
+        Public Property ExePath As String = ""
+        Public Property Game As Config_App.Game_Enum
+        Public Property ExeVariant As GameVariant = GameVariant.Unknown
+
+        ''' <summary>True cuando lo que se va a arrancar es el loader del script extender y no el juego
+        ''' pelado. Lo consume la UI para el rótulo y el log.</summary>
+        Public Property IsScriptExtender As Boolean = False
+
+        ''' <summary>Texto en inglés, para el usuario, explicando qué falta. "" cuando hay target.</summary>
+        Public Property Problem As String = ""
+
+        Public ReadOnly Property CanLaunch As Boolean
+            Get
+                Return Problem = "" AndAlso ExePath <> ""
+            End Get
+        End Property
+
+        ''' <summary>Carpeta del ejecutable elegido: el <c>WorkingDirectory</c> con el que hay que arrancarlo.
+        ''' Sale del exe y no de la config, porque el exe elegido puede no ser el configurado.</summary>
+        Public ReadOnly Property WorkingDirectory As String
+            Get
+                If ExePath = "" Then Return ""
+                Return If(Path.GetDirectoryName(ExePath), "")
+            End Get
+        End Property
+
+        ''' <summary>Nombre corto para el rótulo del botón ("F4SE", "Skyrim SE", …). Con variante
+        ''' <see cref="GameVariant.Unknown"/> no se inventa nada: se muestra el nombre del archivo, que es
+        ''' lo único que se sabe con certeza.</summary>
+        Public ReadOnly Property DisplayName As String
+            Get
+                If ExePath = "" Then Return "game"
+                If ExeVariant = GameVariant.Unknown Then Return Path.GetFileNameWithoutExtension(ExePath)
+                Dim vr = (ExeVariant = GameVariant.VR)
+                If IsScriptExtender Then
+                    If Game = Config_App.Game_Enum.Skyrim Then Return If(vr, "SKSEVR", "SKSE64")
+                    Return If(vr, "F4SEVR", "F4SE")
+                End If
+                If Game = Config_App.Game_Enum.Skyrim Then Return If(vr, "Skyrim VR", "Skyrim SE")
+                Return If(vr, "Fallout 4 VR", "Fallout 4")
+            End Get
+        End Property
+    End Class
+
+    ''' <summary>Qué hay que ejecutar para arrancar el juego configurado, con el script extender PRIMERO.
+    ''' Nunca tira excepción: todo problema vuelve como <see cref="LaunchTarget.Problem"/>.
+    '''
+    ''' <para><b>La cascada</b>, sobre la carpeta del exe configurado y sólo sobre ella:
+    ''' <list type="number">
+    ''' <item>el loader del script extender de esa (juego, variante) — 1 <see cref="File.Exists"/>;</item>
+    ''' <item>el exe canónico de esa (juego, variante) — 1 <see cref="File.Exists"/>;</item>
+    ''' <item>lo que el usuario configuró, tal cual.</item>
+    ''' </list>
+    ''' El paso 3 es el que cubre una instalación que no reconocemos: si <see cref="IdentifyExe"/> no pudo
+    ''' establecer la variante (ningún exe canónico en la carpeta) no hay tabla que consultar, y lo honesto
+    ''' es arrancar lo que el usuario eligió en vez de adivinar.</para>
+    '''
+    ''' <para>El paso 1 gana INCLUSO si la config apunta al exe pelado del juego: el pedido es
+    ''' "extender primero". Y si la config ya apunta al loader, el paso 1 encuentra ese mismo archivo.</para>
+    '''
+    ''' <para>NO memoizado, a diferencia de <see cref="Resolve"/>: esto lo llama un botón (una vez al abrir
+    ''' la ventana y una por clic), no el resolvedor de FormIDs. Cachearlo sólo lograría que instalar el
+    ''' script extender con la app abierta no se notara hasta reiniciarla.</para></summary>
+    Public Shared Function ResolveLaunchTarget() As LaunchTarget
+        Dim configured = ConfiguredExePath()
+        If String.IsNullOrWhiteSpace(configured) Then
+            Return New LaunchTarget With {.Problem = "The game executable is not configured."}
+        End If
+
+        Dim dir As String
+        Try
+            dir = Path.GetDirectoryName(configured)
+        Catch
+            dir = ""
+        End Try
+        If String.IsNullOrEmpty(dir) Then
+            Return New LaunchTarget With {.Problem = $"The configured game executable has no folder: '{configured}'."}
+        End If
+
+        Dim id = IdentifyExe(configured)
+        If id.ExeVariant <> GameVariant.Unknown Then
+            For Each l In ScriptExtenderLoaders
+                If l.Game <> id.Game OrElse l.ExeVariant <> id.ExeVariant Then Continue For
+                Dim loaderPath = Path.Combine(dir, l.Loader)
+                If File.Exists(loaderPath) Then
+                    Return New LaunchTarget With {
+                        .ExePath = loaderPath, .Game = id.Game, .ExeVariant = id.ExeVariant, .IsScriptExtender = True}
+                End If
+                Exit For   ' la clave es única: si esta fila no acertó, ninguna otra puede
+            Next
+
+            For Each c In CanonicalExes
+                If c.Game <> id.Game OrElse c.ExeVariant <> id.ExeVariant Then Continue For
+                Dim gameExe = Path.Combine(dir, c.Name)
+                If File.Exists(gameExe) Then
+                    Return New LaunchTarget With {.ExePath = gameExe, .Game = id.Game, .ExeVariant = id.ExeVariant}
+                End If
+                Exit For
+            Next
+        End If
+
+        If File.Exists(configured) Then
+            Return New LaunchTarget With {
+                .ExePath = configured,
+                .Game = id.Game,
+                .ExeVariant = id.ExeVariant,
+                .IsScriptExtender = IsKnownLoaderName(Path.GetFileName(configured))}
+        End If
+
+        Return New LaunchTarget With {.Problem = $"The configured game executable does not exist: '{configured}'."}
+    End Function
+
+    Private Shared Function IsKnownLoaderName(fileName As String) As Boolean
+        For Each l In ScriptExtenderLoaders
+            If String.Equals(fileName, l.Loader, StringComparison.OrdinalIgnoreCase) Then Return True
+        Next
+        Return False
+    End Function
+
     ''' <summary>Instalación empaquetada de Microsoft Store / Game Pass. Ahí el juego escribe bajo
     ''' <c>%LOCALAPPDATA%\Packages\&lt;PFN&gt;\LocalCache\Local\…</c>, y el <c>&lt;PFN&gt;</c> no se puede
     ''' obtener sin enumerar. Se DETECTA para poder decirlo en el mensaje, pero no se adivina: cae en el

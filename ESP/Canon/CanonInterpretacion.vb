@@ -154,9 +154,37 @@ Namespace Canon
             Return (txst.BanderasDe() And 2US) <> 0US
         End Function
 
+        ''' <summary>Escribe una REFERENCIA OPCIONAL, o SACA el campo si quedó sin valor. Es LA ley del
+        ''' volcado de un editor, y vive acá — no repetida en cada campo ni en cada formulario.
+        ''' <para>⛔ «Sin valor» NO se graba como un 0. Un subrecord de referencia presente apuntando a
+        ''' nada no es un estado del formato —xEdit lo marca «Found a NULL reference»— y no existe en el
+        ''' ecosistema: medido sobre 175 plugins y 3.482.830 records, CERO referencias nulas en
+        ''' ARMA/ARMO/NPC_/RACE/HDPT, y las 30 bajas de una referencia opcional son 30 POR OMISIÓN.</para>
+        ''' <para>Los tres casos salen de la MISMA línea, apoyada en dos propiedades del motor: leer un
+        ''' campo AUSENTE devuelve 0, y quitar uno que no está es un no-op. Entonces: campo ausente + caja
+        ''' vacía ⇒ sigue ausente · campo con valor + caja vacía ⇒ se saca · caja con valor ⇒ se escribe.
+        ''' Antes se escribía SIEMPRE, y por eso un ARMA salía del editor con hasta DIEZ referencias nulas
+        ''' que nadie había tocado.</para>
+        ''' <para>⛔ NO va para campos REQUERIDOS de hecho, como el <c>RNAM</c> de ARMA/ARMO: está en 5.825
+        ''' de 5.825 y no declara NULL, así que una caja vacía ahí no es «borrar» sino entrada inválida, y
+        ''' eso lo ataja la validación del editor.</para></summary>
+        Public Sub PonerReferenciaOpcional(nuevo As UInteger, poner As Action(Of UInteger), quitar As Action)
+            If nuevo = 0UI Then quitar() Else poner(nuevo)
+        End Sub
+
         '======================================================================================
         ' Plantilla de cuerpo (armadura)
         '======================================================================================
+
+        ''' <summary>Cuál de las dos ramas de la unión trajo ESTE record: la de Skyrim (BODT) o la
+        ''' común (BOD2). Es LA pregunta de la unión, y vive acá una sola vez porque la contestan los
+        ''' dos lados —leer el slot mask y escribirlo—: escrita dos veces, el día que una cambie la otra
+        ''' queda vieja y nadie se entera.
+        ''' <para>El esquema declara `Wb.RUnion("Biped Body Template", BOD2, BODT)`: el record trae UNA
+        ''' de las dos, nunca las dos, y guardan el mismo campo en el mismo offset.</para></summary>
+        Private Function UsaRamaBodt(vista As CanonView, presenteBod2 As Boolean, presenteBodt As Boolean) As Boolean
+            Return vista IsNot Nothing AndAlso Not presenteBod2 AndAlso presenteBodt
+        End Function
 
         ''' <summary>El slot mask (First Person Flags) de la plantilla de cuerpo. En Fallout 4
         ''' siempre sale de BOD2; en Skyrim el record trae BOD2 O BODT —nunca las dos—, y las dos
@@ -164,9 +192,10 @@ Namespace Canon
         ''' trajo el record en vez de asumir siempre BOD2.</summary>
         <Extension>
         Public Function SlotMaskDe(armo As IArmo) As UInteger
+            If armo Is Nothing Then Return 0UI
             Dim sse = TryCast(armo, ArmoSSE)
-            If sse IsNot Nothing AndAlso Not armo.BipedBodyTemplateFirstPersonFlagsPresente _
-                    AndAlso sse.BodyTemplateFirstPersonFlagsPresente Then
+            If sse IsNot Nothing AndAlso UsaRamaBodt(sse, armo.BipedBodyTemplateFirstPersonFlagsPresente,
+                                                    sse.BodyTemplateFirstPersonFlagsPresente) Then
                 Return sse.BodyTemplateFirstPersonFlags
             End If
             Return armo.BipedBodyTemplateFirstPersonFlags
@@ -175,13 +204,51 @@ Namespace Canon
         ''' <summary>Mismo caso que <see cref="SlotMaskDe(IArmo)"/> pero para ARMA.</summary>
         <Extension>
         Public Function SlotMaskDe(arma As IArma) As UInteger
+            If arma Is Nothing Then Return 0UI
             Dim sse = TryCast(arma, ArmaSSE)
-            If sse IsNot Nothing AndAlso Not arma.BipedBodyTemplateFirstPersonFlagsPresente _
-                    AndAlso sse.BodyTemplateFirstPersonFlagsPresente Then
+            If sse IsNot Nothing AndAlso UsaRamaBodt(sse, arma.BipedBodyTemplateFirstPersonFlagsPresente,
+                                                    sse.BodyTemplateFirstPersonFlagsPresente) Then
                 Return sse.BodyTemplateFirstPersonFlags
             End If
             Return arma.BipedBodyTemplateFirstPersonFlags
         End Function
+
+        ''' <summary>Escribe el slot mask EN LA RAMA QUE EL RECORD TRAE. Gemelo exacto de
+        ''' <see cref="SlotMaskDe(IArmo)"/>, y por eso los dos preguntan por <c>UsaRamaBodt</c>.
+        ''' <para>⛔ Escribir siempre en BOD2 NO es equivalente. Sobre un record que trae BODT, el
+        ''' setter de BOD2 crea la rama nueva sin sacar la vieja —<c>WbEdit</c> acierta el miembro por
+        ''' la firma de una de las ramas y <c>WbRUnionDef.CreateRequired</c> devuelve siempre
+        ''' <c>Members(0)</c>, o sea BOD2—, y el árbol queda con LAS DOS. Al releerlo, BODT consume la
+        ''' unión, BOD2 agota el cursor de miembros y <b>todo lo que sigue cae en passthrough</b>
+        ''' (<c>WbReader</c>): raza, prioridades, modelos, NAM0-3, SNDD y ONAM. Ese record además ya no
+        ''' se puede volver a guardar, porque cada passthrough hace tirar al emisor.</para>
+        ''' <para>No es un caso raro: medido sobre <c>Skyrim.esm</c> + 3 DLC, <b>BODT está en 916 de
+        ''' 1.083 ARMA (85 %)</b>. En ARMO manda la otra rama —BOD2 en 3.669 de 3.679—, así que la
+        ''' respuesta tampoco es "por juego": la decide el record.</para></summary>
+        <Extension>
+        Public Sub PonerSlotMaskEn(armo As IArmo, valor As UInteger)
+            If armo Is Nothing Then Return
+            Dim sse = TryCast(armo, ArmoSSE)
+            If sse IsNot Nothing AndAlso UsaRamaBodt(sse, armo.BipedBodyTemplateFirstPersonFlagsPresente,
+                                                    sse.BodyTemplateFirstPersonFlagsPresente) Then
+                sse.BodyTemplateFirstPersonFlags = valor
+                Return
+            End If
+            armo.BipedBodyTemplateFirstPersonFlags = valor
+        End Sub
+
+        ''' <summary>Mismo caso que <see cref="PonerSlotMaskEn(IArmo, UInteger)"/> pero para ARMA.</summary>
+        <Extension>
+        Public Sub PonerSlotMaskEn(arma As IArma, valor As UInteger)
+            If arma Is Nothing Then Return
+            Dim sse = TryCast(arma, ArmaSSE)
+            If sse IsNot Nothing AndAlso UsaRamaBodt(sse, arma.BipedBodyTemplateFirstPersonFlagsPresente,
+                                                    sse.BodyTemplateFirstPersonFlagsPresente) Then
+                sse.BodyTemplateFirstPersonFlags = valor
+                Return
+            End If
+            arma.BipedBodyTemplateFirstPersonFlags = valor
+        End Sub
 
 
         ''' <summary>Los complementos de armadura que declara este ARMO, en orden.
@@ -761,6 +828,21 @@ Namespace Canon
             Return salida
         End Function
 
+        ''' <summary>La piel (WNAM → ARMO) que declara este RACE, o 0 si no declara ninguna o la raza no
+        ''' resolvió. Gemelo de <see cref="DefaultFaceTextureDe"/>, con la misma guarda.
+        ''' <para>Existe para que «cuál es la piel de una raza» viva en UN lugar. Estaba escrita a pelo
+        ''' en dos sitios del resolvedor de estado, las dos veces SIN guarda de raza nula — y ahí no hace
+        ''' falta, porque por ese camino la raza nunca lo es. El camino de ESCRITURA sí puede tenerla
+        ''' nula, así que copiar cualquiera de esas dos versiones habría llevado justo la que no
+        ''' necesitaba guarda al único lugar que sí la necesita.</para>
+        ''' <para>⛔ Que devuelva 0 NO significa «escribí 0»: significa que no hay piel que nombrar, y
+        ''' entonces el subrecord no va. Ver la ley del cero en el diseño.</para></summary>
+        <Extension>
+        Public Function SkinDe(race As IRace) As UInteger
+            If race Is Nothing Then Return 0UI
+            Return race.Skin
+        End Function
+
         ''' <summary>Textura de cara por defecto que declara este RACE para el género pedido
         ''' (DFTM/DFTF). Los dos juegos lo declaran, cada uno con su propio nombre de campo
         ''' generado.</summary>
@@ -1079,7 +1161,14 @@ Namespace Canon
             ' que compilaba y andaba hasta que alguien la leía.
             Dim v = TryCast(rec, CanonRecordView)
             If v Is Nothing OrElse v.Node Is Nothing Then Return Nothing
-            Return TryCast(CanonRecords.Reenvolver(v, v.Node.Clonar()), T)
+            ' CONTEXTO PROPIO, no el del original. Las banderas de cabecera (RecordFlags, FormVersion,
+            ' FormID, EditorId) viven en el contexto y NO en el árbol, así que clonar sólo el árbol
+            ' dejaba a la copia y al original compartiéndolas: una copia es para editarla sin tocar el
+            ' original, y con el contexto compartido eso no se cumplía. Se veía como que tildar una
+            ' bandera en el editor y después CANCELAR la dejaba puesta igual — el snapshot al que se
+            ' revierte era el mismo objeto que se había modificado.
+            If v.Context Is Nothing Then Return Nothing
+            Return TryCast(CanonRecords.Reenvolver(v, v.Node.Clonar(), v.Context.Clonar()), T)
         End Function
 
         ''' <summary>Cuantos bytes de CUERPO ocupa ese subrecord al emitirse, sumando las repeticiones.
@@ -1162,15 +1251,40 @@ Namespace Canon
             Next
         End Sub
 
-        ''' <summary>Dos records tienen el mismo contenido si producen los mismos bytes.
+        ''' <summary>Dos records tienen el mismo contenido si producen los mismos bytes Y tienen la
+        ''' misma cabecera.
         ''' <para>Comparar campo por campo obliga a acordarse de cada campo, y el que se olvida es justo
         ''' el que después aparece como "editado sin haberlo tocado". Los bytes no se olvidan de
-        ''' ninguno.</para></summary>
+        ''' ninguno.</para>
+        ''' <para>⛔ Pero el CUERPO no es todo el record: las banderas de cabecera y la Form Version
+        ''' viven en el <see cref="WbContext"/>, no en el árbol, así que comparar sólo los bytes
+        ''' emitidos las dejaba afuera. Consecuencia medida: abrir un override, tildar SÓLO una bandera
+        ''' de cabecera —«No Underarmor Scaling», «Has Sculpt Data», «Non-Playable»— y aceptar daba
+        ''' <c>IsModified = False</c>, y el guardado saltea el record por no estar sucio: el cambio se
+        ''' perdía sin un solo aviso.</para>
+        ''' <para>La comparación de <c>FormVersion</c> además EVITA UNA EXCEPCIÓN, no sólo afina la
+        ''' respuesta: sin ella, dos árboles con versiones distintas no dan «distinto» — hacen tirar a
+        ''' <see cref="WbWriter.EmitBody"/>, que rechaza emitir un árbol parseado con una versión que no
+        ''' es la del contexto. Medido quitándola: <c>InvalidOperationException</c> en la primera
+        ''' comparación.</para></summary>
         <Extension>
         Public Function MismoContenido(Of T As Class)(a As T, b As T) As Boolean
             Dim va = TryCast(a, CanonView), vb = TryCast(b, CanonView)
             If va Is Nothing OrElse vb Is Nothing Then Return va Is vb
             If va.Node Is Nothing OrElse vb.Node Is Nothing Then Return va.Node Is vb.Node
+            ' TIRA, no devuelve True. Con los dos contextos nulos, "Return va.Context Is vb.Context"
+            ' habría dicho «mismo contenido» de dos records CUALESQUIERA sin mirarles el árbol, y de ahí
+            ' sale IsModified=False y un record que el guardado saltea. Un contexto nulo no es un estado
+            ' válido de una vista de record —las banderas y la FormVersion viven ahí— y `Copia` ya lo
+            ' trata así. Hoy es inalcanzable: toda vista nace en las fábricas generadas, que siempre
+            ' arman contexto. Si mañana deja de serlo, que se vea.
+            If va.Context Is Nothing OrElse vb.Context Is Nothing Then
+                Throw New InvalidOperationException(
+                    "MismoContenido sin contexto: las banderas de cabecera y la Form Version viven ahí, " &
+                    "así que sin contexto la comparación no puede ser correcta.")
+            End If
+            If va.Context.RecordFlags <> vb.Context.RecordFlags Then Return False
+            If va.Context.FormVersion <> vb.Context.FormVersion Then Return False
             ' Se compara con el contexto de COMPARACIÓN y no con el de lectura: acá no hay archivo
             ' destino, así que cada campo sale como el nodo lo guarda. Con el de lectura, un record de
             ' un master localizado en el que alguien ya editó un texto hacía TIRAR al emisor —"el

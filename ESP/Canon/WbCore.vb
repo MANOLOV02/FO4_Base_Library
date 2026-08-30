@@ -279,6 +279,27 @@ Namespace Canon
             Return c
         End Function
 
+        ''' <summary>Un contexto PROPIO con el mismo estado, para editar una copia del record sin que
+        ''' los cambios se le peguen al original.
+        ''' <para>⛔ Hace falta porque las banderas de cabecera —<see cref="RecordFlags"/>,
+        ''' <see cref="FormVersion"/>, <see cref="FormID"/>, <see cref="EditorId"/>— viven en el
+        ''' CONTEXTO y no en el árbol. Clonar el árbol y reusar el contexto deja la copia y el original
+        ''' compartiéndolas: tildar «Has Sculpt Data» en el editor y después CANCELAR dejaba la bandera
+        ''' puesta en el record real para toda la sesión, y el guardado la escribía
+        ''' (SaveNpcEspWriter lee <c>Context.RecordFlags</c>).</para>
+        ''' <para>Delega en <see cref="ParaEscritura"/> a propósito: la lista de qué campos componen un
+        ''' contexto está escrita UNA vez. Una segunda copia de esa lista se queda vieja el día que se
+        ''' agregue un campo, y nadie se entera.</para>
+        ''' <para>⛔ Los <see cref="Findings"/> se COPIAN, no se estrenan ni se comparten. Son lo que
+        ''' encontró el PARSEO, y la copia tiene el mismo árbol parseado: estrenar la lista deja a la
+        ''' copia diciendo que el record vino limpio —y quien pregunte "¿este record traía algo que el
+        ''' esquema no supo ubicar?" recibe siempre que no—. Compartirla es el mismo defecto que este
+        ''' método vino a arreglar, una casilla más abajo: dos dueños sobre un objeto mutable.</para></summary>
+        Public Function Clonar() As WbContext
+            Return ParaEscritura(DestinoLocalizado, ResolverTextoLocalizado,
+                                 New List(Of WbFinding)(Findings))
+        End Function
+
         Private Sub New(game As WbGame, hallazgos As List(Of WbFinding))
             _Game = game
             _findings = hallazgos
