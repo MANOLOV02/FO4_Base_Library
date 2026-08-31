@@ -106,6 +106,48 @@ Public Module EquipResolver
     ' FOOTPRINT — un solo recorrido de los armatures de un ARMO
     ' ════════════════════════════════════════════════════════════════════════════════════════════════
 
+    ''' <summary>De dónde sale la malla que se dibuja para un armature.</summary>
+    Public Enum FuenteDeMalla
+        ''' <summary>Ni la ARMA ni el ARMO declaran malla: no se dibuja nada.</summary>
+        Ninguna = 0
+        ''' <summary>La declara la ARMA (el caso normal de una armadura humanoide).</summary>
+        Arma = 1
+        ''' <summary>La ARMA no la declara y sale del WORLD MODEL del ARMO — el patrón de los robots.</summary>
+        Armo = 2
+    End Enum
+
+    ''' <summary>DÓNDE está la malla de este armature para este género, y cuál es. ÉSTA es la ley, y
+    ''' está UNA sola vez: la usan el colector para dibujar y <see cref="BuildFootprint"/> para clasificar.
+    ''' <para>⛔ Antes estaba escrita DOS veces con criterios distintos: `BuildFootprint` miraba sólo la
+    ''' ARMA, y el colector caía al world model del ARMO. Divergen exactamente en el patrón de los
+    ''' robots —malla en el ARMO, ARMA sin malla propia—, y nada garantizaba que siguieran de acuerdo:
+    ''' el comentario de abajo avisaba de la diferencia, pero avisar no es garantizar.</para>
+    ''' <para>Devuelve la FUENTE, no un sí/no, porque los consumidores preguntan cosas distintas sobre la
+    ''' misma respuesta: el render dibuja si la fuente no es <c>Ninguna</c>; el gate de oclusión del bake
+    ''' sólo ocluye si es <c>Arma</c>. Así la diferencia entre los dos es una LECTURA declarada y no dos
+    ''' implementaciones que se desincronizan.</para>
+    ''' <para>El orden —género pedido, el otro género, y recién después el ARMO— es el del colector, que
+    ''' es el que dibuja.</para></summary>
+    Public Function ResolverMalla(arma As Canon.IArma, armo As Canon.IArmo,
+                                  isFemale As Boolean) As (Ruta As String, Fuente As FuenteDeMalla)
+        If arma IsNot Nothing Then
+            Dim deLaArma = If(isFemale, arma.FemaleModelFilename, arma.MaleModelFilename)
+            If deLaArma = "" Then
+                deLaArma = If(arma.MaleModelFilename <> "", arma.MaleModelFilename, arma.FemaleModelFilename)
+            End If
+            If deLaArma <> "" Then Return (deLaArma, FuenteDeMalla.Arma)
+        End If
+        If armo IsNot Nothing Then
+            Dim delArmo = If(isFemale, armo.WorldModelModelFilename2, armo.WorldModelModelFilename)
+            If delArmo = "" Then
+                delArmo = If(armo.WorldModelModelFilename <> "",
+                             armo.WorldModelModelFilename, armo.WorldModelModelFilename2)
+            End If
+            If delArmo <> "" Then Return (delArmo, FuenteDeMalla.Armo)
+        End If
+        Return ("", FuenteDeMalla.Ninguna)
+    End Function
+
     ''' <summary>Resultado por armature del recorrido único. El render lo consume para NO volver a decidir
     ''' slots por su cuenta: itera esta lista en vez de <c>armo.ArmorAddons</c> y sigue resolviendo por su
     ''' lado lo que es suyo (mallas, material swaps, facebones, bone scale).</summary>
@@ -117,8 +159,13 @@ Public Module EquipResolver
         ''' <summary>La ARMA matchea la raza (RaceFormID o AdditionalRaces, con el redirect RNAM ya
         ''' resuelto por el caller en <see cref="EquipContext.EffectiveArmorRaces"/>).</summary>
         Public RaceOk As Boolean
-        ''' <summary>Hay malla para el género pedido (con el fallback al otro género que hace el render).</summary>
+        ''' <summary>Hay malla para el género pedido EN LA ARMA. Es exactamente <c>Fuente = Arma</c>, y se
+        ''' conserva porque de él sale <see cref="ArmoFootprint.Valid"/>, que SÍ es lo que lee el gate de
+        ''' oclusión del bake. Fuera de este módulo no lo lee nadie.</summary>
         Public HasGenderMesh As Boolean
+        ''' <summary>De dónde sale la malla de este armature. La respuesta ÚNICA, de
+        ''' <see cref="ResolverMalla"/>; las dos lecturas de abajo salen de acá.</summary>
+        Public Fuente As FuenteDeMalla
     End Class
 
     ''' <summary>Footprint completo de un ARMO para una (raza, género). Producido por UN recorrido.</summary>
@@ -137,10 +184,23 @@ Public Module EquipResolver
         ''' pelo/barba con footprints válidos, porque las máscaras de abajo caen a un fallback de display
         ''' cuando no hay ningún addon aplicable y ocluir con eso tapa pelo que el motor no tapa.</summary>
         Public Valid As Boolean
+
         ''' <summary>Descartado por el gate de power-armor (pieza de PA sobre una raza que no es de PA).
         ''' El render no lo colecta, así que tampoco compite.</summary>
         Public PowerArmorRejected As Boolean
         Public Addons As New List(Of ArmaFootprint)
+
+        ''' <summary>La lectura del RENDER: algún armature matchea la raza y hay malla, venga de la ARMA o
+        ''' del WORLD MODEL del ARMO. Es lo que decide si el colector emite candidato.
+        ''' <para>Se DERIVA de <see cref="ArmaFootprint.Fuente"/> en vez de guardarse: así no puede quedar
+        ''' desincronizada de <see cref="Valid"/>, que es la otra lectura de la misma respuesta.</para>
+        ''' <para>⚠️ LÍMITE: el colector además emite geometría por chunk-mount de OMOD antes de mirar los
+        ''' armatures. Eso no se deriva de acá, así que esto es un SUBCONJUNTO de lo que dibuja.</para></summary>
+        Public ReadOnly Property DibujaAlgunArmature As Boolean
+            Get
+                Return Addons.Any(Function(a) a.RaceOk AndAlso a.Fuente <> FuenteDeMalla.Ninguna)
+            End Get
+        End Property
 
     End Class
 
@@ -237,9 +297,10 @@ Public Module EquipResolver
             recordSlot = recordSlot Or af.GeometryMask
 
             af.RaceOk = ArmaMatchesRace(arma, ctx.RaceFormID, ctx.EffectiveArmorRaces)
-            Dim genderMesh = If(ctx.IsFemale, arma.FemaleModelFilename, arma.MaleModelFilename)
-            If genderMesh = "" Then genderMesh = If(arma.MaleModelFilename <> "", arma.MaleModelFilename, arma.FemaleModelFilename)
-            af.HasGenderMesh = (genderMesh <> "")
+            ' ⛔ La malla la resuelve la LEY, no una copia local. `HasGenderMesh` es exactamente
+            ' «la fuente es la ARMA», que es lo que pedía el criterio anterior.
+            af.Fuente = ResolverMalla(arma, armo, ctx.IsFemale).Fuente
+            af.HasGenderMesh = (af.Fuente = FuenteDeMalla.Arma)
 
             If af.RaceOk AndAlso af.HasGenderMesh Then
                 fp.Valid = True

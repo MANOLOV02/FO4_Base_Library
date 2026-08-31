@@ -1102,6 +1102,15 @@ Public Module SaveNpcEspWriter
             ' Las banderas de cabecera quedan en cero y la version de formulario tambien, que es lo que
             ' el envoltorio interpreta como "la del juego".
             origen = Canon.CanonRecords.NpcNuevo(JuegoCanonico(game))
+            ' ⛔ La fábrica devuelve Nothing si el esquema no declara el record, y la guarda de abajo
+            ' no alcanza: su MENSAJE hace `origen.GetType().Name`, o sea que con un Nothing revienta
+            ' armando la excepción que vino a explicar el problema. Acá no puede usarse la ley de la
+            ' app (`Borradores`): la librería no depende de ella, así que va escrita, y declarada.
+            If origen Is Nothing Then
+                Throw New InvalidOperationException(
+                    $"NPC_ nuevo (provisional {entry.ProvisionalFormID:X8}): el formato de {game} no " &
+                    "declara NPC_, asi que no hay record del que partir.")
+            End If
         End If
         Dim vista = TryCast(origen, Canon.CanonView)
         If vista Is Nothing Then
@@ -1287,11 +1296,26 @@ Public Module SaveNpcEspWriter
         End Using
     End Function
 
-    ''' <summary>True if a FormID is a provisional draft sentinel (high byte 0xFF). Such FormIDs are not
-    ''' resolvable to any loaded master (max real index 0xFD, ESL prefix 0xFE) — they resolve only through
-    ''' draftRemap. Mirrors the app-side OutfitDraft.IsDraftFormID, kept local so the library has no app dep.</summary>
+    ''' <summary>Byte alto del identificador provisional de un borrador sin guardar.
+    ''' <para>⛔ Vive ACÁ, en la librería, y no en la app: estaba escrito en los dos lados —una vez
+    ''' como máscara y otra como <c>(formID &gt;&gt; 24) And &amp;HFF</c>— y había que moverlos juntos, que es
+    ''' drift garantizado sobre un valor que decide QUÉ FormID se reindexa al guardar. La dirección
+    ''' app→librería sí es legal: NPC Manager ya referencia esta librería, así que
+    ''' <c>Borradores.FormIdAltoDeBorrador</c> consume ÉSTE.</para>
+    ''' <para>⚠️ LÍMITE: un <c>Const</c> cruza ensamblados POR VALOR, o sea que el literal queda igual
+    ''' horneado en el ensamblado de la app en tiempo de compilación. La copia existe, sólo que ahora la
+    ''' hace el compilador y no una persona. Preciso: hay DOS declaraciones `Const` —ésta y la de
+    ''' `Borradores`, derivada de ésta—; lo que existe una sola vez es el LITERAL. Reemplazar la DLL sin
+    ''' recompilar la app los dejaría divergentes sin un error — no ocurre porque los dos ensamblados se
+    ''' distribuyen construidos juntos. Cerrarlo del todo pediría un <c>Shared ReadOnly</c>, que cuesta un
+    ''' acceso a campo en un camino que corre por cada FormID del guardado.</para>
+    ''' <para>0xFF nunca es un índice de master real —el tope son 0xFD, y 0xFE es el prefijo ESL—, así
+    ''' que no puede chocar con un record cargado y sólo resuelve por <c>draftRemap</c>.</para></summary>
+    Public Const FormIdAltoDeBorrador As UInteger = &HFF000000UI
+
+    ''' <summary>True if a FormID is a provisional draft sentinel. Una sola ley, un solo valor.</summary>
     Private Function IsProvisionalDraftFormID(formID As UInteger) As Boolean
-        Return ((formID >> 24) And &HFFUI) = &HFFUI
+        Return (formID And FormIdAltoDeBorrador) = FormIdAltoDeBorrador
     End Function
 
     Private Function BuildGrup(label As String, recordBuffers As List(Of Byte())) As Byte()

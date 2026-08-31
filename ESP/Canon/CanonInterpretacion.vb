@@ -172,6 +172,30 @@ Namespace Canon
             If nuevo = 0UI Then quitar() Else poner(nuevo)
         End Sub
 
+        ''' <summary>La ley para una referencia REQUERIDA: se escribe si trae valor, y una caja vacía NO
+        ''' borra nada — es entrada inválida, que ataja la validación del editor.
+        ''' <para>⛔ Es la EXCEPCIÓN declarada de <see cref="PonerReferenciaOpcional"/>, y vive acá por lo
+        ''' mismo que su hermana: estaba escrita a mano en CUATRO sitios —los dos editores de ARMA/ARMO,
+        ''' el de NPC_ y el aplicador de overrides— con el comentario duplicado en cada uno. El quinto
+        ''' campo requerido se copiaba igual.</para>
+        ''' <para>Quién es requerido lo dice el formato, no esta función: <c>RNAM</c> de ARMA/ARMO está en
+        ''' 5.825 de 5.825 y no declara NULL, y el de <c>NPC_</c> xEdit lo marca <c>.SetRequired</c> en los
+        ''' dos juegos (wbDefinitionsFO4.pas:10370, wbDefinitionsTES5.pas:8355).</para></summary>
+        Public Sub PonerReferenciaRequerida(nuevo As UInteger, poner As Action(Of UInteger))
+            If nuevo <> 0UI Then poner(nuevo)
+        End Sub
+
+        ''' <summary>La MISMA ley cuando el «sin valor» se borra sacando el subrecord entero por su firma.
+        ''' <para>⛔ Estaba escrita DOS veces más, byte a byte, como `EscribirReferenciaOSacar` en
+        ''' <c>NpcEditor_Form</c> y en <c>NpcRecordOverrideApplier</c> — una tercera copia de la ley que el
+        ''' gate de escrituras sueltas no podía ver, porque barría sólo los archivos con portador. Es la
+        ''' misma decisión («cero significa NINGUNO, no una referencia a cero») con otro mecanismo de
+        ''' borrado, así que va como una especialización de la ley y no como su gemela.</para></summary>
+        Public Sub PonerReferenciaOSacarSubrecord(Of T As Class)(destino As T, nuevo As UInteger,
+                                                                 firma As String, poner As Action(Of UInteger))
+            PonerReferenciaOpcional(nuevo, poner, Sub() QuitarSubrecord(destino, firma))
+        End Sub
+
         '======================================================================================
         ' Plantilla de cuerpo (armadura)
         '======================================================================================
