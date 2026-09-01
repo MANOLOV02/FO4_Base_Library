@@ -469,15 +469,41 @@ Public Class Nifcontent_Class_Manolo
         Next
     End Sub
 
+    ''' <summary>Escribe el NIF ENCIMA del que ya está. SIN copia de seguridad: éste es el camino de la
+    ''' SALIDA REGENERABLE — el horneado escribe uno por NPC (miles por corrida) y el build de Wardrobe
+    ''' Manager uno por peso por prenda. Para el guardado de un proyecto desde un editor, que es dato del
+    ''' usuario, está <see cref="Save_As_Manolo_ConCopia"/>.</summary>
     Public Sub Save_As_Manolo(Filename As String, Overwrite As Boolean)
         If IO.File.Exists(Filename) AndAlso Overwrite = False Then
             If MsgBox("NIF File already exists, replace?", vbYesNo, "Warning") = MsgBoxResult.No Then
                 Exit Sub
             End If
         End If
-        If MyBase.Save(Filename) <> 0 Then
-            Throw New Exception("Error saving NIF")
+        ' ⛔ El chequeo del codigo de retorno va ADENTRO del cuerpo. Afuera, el helper daria la escritura
+        ' por buena (no hubo excepcion), borraria la copia, y recien despues saldria el Throw: NIF
+        ' truncado y sin respaldo.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+            Filename,
+            Sub(fs)
+                If MyBase.Save(fs) <> 0 Then Throw New Exception("Error saving NIF")
+            End Sub)
+    End Sub
+
+    ''' <summary>Igual, pero con copia previa y restauración automática: el guardado de un proyecto desde
+    ''' el editor, o una exportación a una ruta que eligió el usuario. NO se usa en horneado ni en build.</summary>
+    Public Sub Save_As_Manolo_ConCopia(Filename As String, Overwrite As Boolean)
+        If IO.File.Exists(Filename) AndAlso Overwrite = False Then
+            If MsgBox("NIF File already exists, replace?", vbYesNo, "Warning") = MsgBoxResult.No Then
+                Exit Sub
+            End If
         End If
+        ' Ver Save_As_Manolo: el codigo de retorno se mira ADENTRO del cuerpo para que la restauracion
+        ' automatica de GuardarConCopia se entere.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(
+            Filename,
+            Sub(fs)
+                If MyBase.Save(fs) <> 0 Then Throw New Exception("Error saving NIF")
+            End Sub)
     End Sub
 
     ''' <summary>Serialize the NIF to a byte array (in-memory save) — used by headless bakes/compares that

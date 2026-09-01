@@ -347,10 +347,15 @@ Public NotInheritable Class LoadOrderActivator
         Return result
     End Function
 
-    ''' <summary>Backup (.npcm.bak) → write a temp file next to the target → atomic replace. Returns False and
-    ''' fills <paramref name="res"/> on failure, leaving the original file untouched.</summary>
+    ''' <summary>Backup (.npcm.bak) → escritura EN EL LUGAR sobre el archivo que ya esta. Devuelve False y
+    ''' llena <paramref name="res"/> ante un fallo.
+    ''' <para>⛔ NO es atomica y NO deja el original intacto ante un fallo: por eso el Catch restaura desde
+    ''' el respaldo. El `.tmp` + `File.Replace` que habia aca si era atomico, pero `ReplaceFileW` no esta
+    ''' entre las funciones que virtualiza el VFS de Mod Organizer, asi que escribia el Plugins.txt REAL en
+    ''' vez del que MO2 le presenta al perfil.</para></summary>
     Private Shared Function WriteEntries(filePath As String, entries As List(Of Entry), shape As FileShape,
                                          ByRef backupPath As String, res As Result) As Boolean
+        Dim respaldoOk As Boolean = False
         Try
             Dim sb As New StringBuilder()
             For i = 0 To entries.Count - 1
@@ -364,27 +369,47 @@ Public NotInheritable Class LoadOrderActivator
             If File.Exists(filePath) Then
                 backupPath = filePath & ".npcm.bak"
                 File.Copy(filePath, backupPath, True)
+                ' ⛔ La bandera se levanta DESPUES del Copy. `backupPath` se asigna antes, y esta clase
+                ' nunca borra el .npcm.bak, asi que si el Copy falla el archivo que queda en disco es el
+                ' de una activacion ANTERIOR: restaurarlo pisaria el Plugins.txt bueno con uno viejo.
+                respaldoOk = True
             End If
 
             ' UTF8Encoding(False): the framework's Encoding.UTF8 emits a BOM, which would be prepended to the
             ' first entry's name and hide it from the engine. A BOM the file already had is reproduced instead.
             Dim payload = New UTF8Encoding(False).GetBytes(sb.ToString())
-            Dim tmp = filePath & ".npcm.tmp"
-            Using fs As New FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None)
-                If shape.HadBom Then fs.Write(New Byte() {&HEF, &HBB, &HBF}, 0, 3)
-                fs.Write(payload, 0, payload.Length)
-                fs.Flush(True)
-            End Using
 
-            If File.Exists(filePath) Then
-                File.Replace(tmp, filePath, Nothing, True)
-            Else
-                File.Move(tmp, filePath)
-            End If
+            ' Se escribe ENCIMA del archivo que ya está. ⛔ NO volver al `.npcm.tmp` + `File.Replace`:
+            ' `ReplaceFileW` no está entre las funciones que virtualiza el VFS de Mod Organizer, así que
+            ' escribía el Plugins.txt REAL en vez del que MO2 le presenta al perfil.
+            ' Acá NO se usa `GuardarConCopia`: este método ya hace su propio respaldo unas líneas arriba
+            ' (`backupPath`), y ése tiene otra vida — sobrevive a la escritura porque lo consume el
+            ' rollback del verify de `Activate`, que corre DESPUÉS de que la escritura salió bien. Dos
+            ' respaldos del mismo archivo serían dos leyes.
+            BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+                filePath,
+                Sub(fs)
+                    If shape.HadBom Then fs.Write(New Byte() {&HEF, &HBB, &HBF}, 0, 3)
+                    fs.Write(payload, 0, payload.Length)
+                End Sub)
             Return True
         Catch ex As Exception
+            ' La escritura en el lugar puede dejar el archivo a medias (no es atómica): si hay respaldo,
+            ' se restaura acá. Sin esto, un fallo a mitad dejaba al usuario sin orden de carga y el
+            ' rollback de `Activate` no corre, porque sólo cubre el camino en que la escritura SALIÓ BIEN.
+            If respaldoOk AndAlso File.Exists(backupPath) Then
+                Try
+                    File.Copy(backupPath, filePath, True)
+                Catch
+                    ' Best-effort: si tampoco se puede restaurar, el respaldo queda en disco y el mensaje
+                    ' de abajo lo nombra.
+                End Try
+            End If
             res.Kind = OutcomeKind.Failed
-            res.Summary = "Plugins.txt could not be written: " & ex.Message
+            res.Summary = "Plugins.txt could not be written: " & ex.Message &
+                          If(respaldoOk,
+                             " (a backup of the previous contents is at " & Path.GetFileName(backupPath) & ")",
+                             "")
             Return False
         End Try
     End Function

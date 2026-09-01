@@ -1356,10 +1356,14 @@ Public Class FilesDictionary_class
             Directory.CreateDirectory(dir)
         End If
 
-        Dim temp = cachePath & ".tmp"
-        Try
-            Using fs As FileStream = File.Create(temp)
-                Using bw As New BinaryWriter(fs, Encoding.UTF8, leaveOpen:=False)
+        ' Se escribe ENCIMA del .cac que ya está. Sin copia previa y sin temporal: el caché es
+        ' regenerable por definición, y un archivo cortado lo detecta `TryLoadArchiveIndex` (valida
+        ' magic, versión, tamaño, mtime y counts) y vuelve a indexar. Es la misma ley que el resto del
+        ' árbol — el `.tmp` + `File.Replace` que había acá era el único que quedaba con esa forma.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+            cachePath,
+            Sub(fs)
+                Using bw As New BinaryWriter(fs, Encoding.UTF8, leaveOpen:=True)
                     bw.Write(CacheMagic)
                     bw.Write(CacheFormatVersion)
                     bw.Write(archiveSize)
@@ -1374,20 +1378,7 @@ Public Class FilesDictionary_class
                         WriteUtf8String(bw, e.FullPath)
                     Next
                 End Using
-            End Using
-
-            If File.Exists(cachePath) Then
-                File.Replace(temp, cachePath, Nothing, ignoreMetadataErrors:=True)
-            Else
-                File.Move(temp, cachePath)
-            End If
-        Catch
-            Try
-                If File.Exists(temp) Then File.Delete(temp)
-            Catch
-            End Try
-            Throw
-        End Try
+            End Sub)
     End Sub
 
     ''' <summary>Borra los <c>.cac</c> del juego ACTIVO que ya no corresponden a ningún archive escaneado.

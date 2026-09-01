@@ -1003,39 +1003,35 @@ Public Module SaveNpcEspWriter
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
-        ' Step 7: escritura atómica — .tmp y después File.Replace (ver el bloque de abajo; NO es un rename
-        ' a secas, que dejaba una ventana sin archivo).
+        ' Step 7: se escribe ENCIMA del .esp que ya está, con copia previa.
+        '
+        ' ⛔ NO volver al `.tmp` + `File.Replace` que había acá: `ReplaceFileW` no está entre las
+        ' funciones que virtualiza el VFS de Mod Organizer, así que su rename interno corre contra el
+        ' disco real y el plugin termina en el `Data` del juego, FUERA del mod que lo aporta — y en
+        ' Vortex corta el hardlink, con lo que el mod se queda con la versión vieja. Un `Delete`+`Move`
+        ' tampoco sirve: el borrado saca el archivo del árbol virtual y lo que se escriba después es un
+        ' archivo nuevo, que cae en la carpeta `overwrite`.
+        ' Sobrescribir en el lugar es lo único que cae adentro del mod en los dos gestores.
+        '
+        ' Lo que se pierde y es deliberado: esto NO es atómico y no tolera un lector que no comparta
+        ' escritura (xEdit con el plugin cargado). La red es la copia que hace `GuardarConCopia`, que
+        ' restaura sola si la escritura falla. Derivación y mediciones:
+        ' nota de memoria 10-stack-escritura-bajo-mo2-y-vortex.
         ' ====================================================================
-        Dim outDir = Path.GetDirectoryName(outputPath)
-        If Not String.IsNullOrEmpty(outDir) AndAlso Not Directory.Exists(outDir) Then
-            Directory.CreateDirectory(outDir)
-        End If
-
-        Dim tmpPath = outputPath & ".tmp"
-        Using fs As FileStream = File.Create(tmpPath)
-            fs.Write(tes4Bytes, 0, tes4Bytes.Length)
-            ' Canonical referenced-first GRUP order: CLFM → MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_ (Step 5).
-            If grupClfmBytes.Length > 0 Then fs.Write(grupClfmBytes, 0, grupClfmBytes.Length)
-            If grupMswpBytes.Length > 0 Then fs.Write(grupMswpBytes, 0, grupMswpBytes.Length)
-            If grupArmaBytes.Length > 0 Then fs.Write(grupArmaBytes, 0, grupArmaBytes.Length)
-            If grupArmoBytes.Length > 0 Then fs.Write(grupArmoBytes, 0, grupArmoBytes.Length)
-            If grupOtftBytes.Length > 0 Then fs.Write(grupOtftBytes, 0, grupOtftBytes.Length)
-            If grupLvlnBytes.Length > 0 Then fs.Write(grupLvlnBytes, 0, grupLvlnBytes.Length)
-            If grupLvliBytes.Length > 0 Then fs.Write(grupLvliBytes, 0, grupLvliBytes.Length)
-            fs.Write(grupNpcBytes, 0, grupNpcBytes.Length)
-        End Using
-
-        ' `Delete` + `Move` NO es atómico y el docstring de arriba afirmaba que sí: entre las dos llamadas el
-        ' plugin NO EXISTE. Si el Delete sale bien y el Move falla (un handle con FILE_SHARE_DELETE de un
-        ' antivirus o del mod manager deja el borrado pendiente, un corte), el usuario se queda SIN el .esp y con
-        ' un .esp.tmp al lado — después de haber guardado 300 NPC.
-        ' `File.Replace` es el primitivo correcto y ya se usaba en este árbol (LoadOrderActivator.WriteEntries); exige
-        ' que el destino exista, así que el Move queda para el caso "archivo nuevo".
-        If File.Exists(outputPath) Then
-            File.Replace(tmpPath, outputPath, Nothing, ignoreMetadataErrors:=True)
-        Else
-            File.Move(tmpPath, outputPath)
-        End If
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(
+            outputPath,
+            Sub(fs)
+                fs.Write(tes4Bytes, 0, tes4Bytes.Length)
+                ' Canonical referenced-first GRUP order: CLFM → MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_ (Step 5).
+                If grupClfmBytes.Length > 0 Then fs.Write(grupClfmBytes, 0, grupClfmBytes.Length)
+                If grupMswpBytes.Length > 0 Then fs.Write(grupMswpBytes, 0, grupMswpBytes.Length)
+                If grupArmaBytes.Length > 0 Then fs.Write(grupArmaBytes, 0, grupArmaBytes.Length)
+                If grupArmoBytes.Length > 0 Then fs.Write(grupArmoBytes, 0, grupArmoBytes.Length)
+                If grupOtftBytes.Length > 0 Then fs.Write(grupOtftBytes, 0, grupOtftBytes.Length)
+                If grupLvlnBytes.Length > 0 Then fs.Write(grupLvlnBytes, 0, grupLvlnBytes.Length)
+                If grupLvliBytes.Length > 0 Then fs.Write(grupLvliBytes, 0, grupLvliBytes.Length)
+                fs.Write(grupNpcBytes, 0, grupNpcBytes.Length)
+            End Sub)
 
         Return result
     End Function
