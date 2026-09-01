@@ -218,8 +218,14 @@ Public Module EquipResolver
         Public ArmoResolver As Func(Of UInteger, Canon.IArmo)
         Public ArmaResolver As Func(Of UInteger, Canon.IArma)
         ''' <summary>Gate de power-armor del caller (necesita el catálogo de keywords, que es suyo).
-        ''' Nothing ⇒ sin gate.</summary>
-        Public IsPowerArmorArmo As Func(Of UInteger, Boolean)
+        ''' Nothing ⇒ sin gate.
+        ''' <para>⛔ Recibe la VISTA, no el FormID. Lee <c>KWDA</c>, que se hereda en los dos juegos
+        ''' (SSE <c>+0x1D8</c>, FO4 <c>+0x208</c>), asi que con el FormID el caller lo resolvia por su
+        ''' cuenta y podia resolverlo distinto: dentro de <c>CollectArmoCandidates</c> la linea que
+        ''' pregunta «existe esta prenda» contestaba sobre el HIJO mientras la que dibuja usaba la
+        ''' EFECTIVA. Dos respuestas a la misma pregunta en la misma funcion, y la que decide si la
+        ''' prenda existe era la equivocada.</para></summary>
+        Public IsPowerArmorArmo As Func(Of UInteger, Canon.IArmo, Boolean)
         Public IsPowerArmorRace As Boolean
 
         Friend Function Armo(fid As UInteger) As Canon.IArmo
@@ -256,15 +262,23 @@ Public Module EquipResolver
         Dim fp As New ArmoFootprint With {.ArmoFormID = armoFid}
         If armoFid = 0UI OrElse ctx Is Nothing Then Return fp
 
+        ' ⛔ El ARMO se abre PRIMERO, y el descarte de power-armor va DESPUES: el gate necesita la
+        ' vista para leer `KWDA`, que es un campo heredado.
+        ' El estado observable no cambia, y no es una opinion: `PowerArmorRejected` tiene UN solo lector
+        ' -el bucle de borradores de `MainForm`- y para llegar al caso nuevo harian falta
+        ' `IsPowerArmorArmo = True` y `ctx.Armo = Nothing` A LA VEZ. Imposible: el gate solo da True si
+        ' el ARMO abrio, y `CanonHerencia.ArmoEfectivo` TIRA si la materializacion falla en vez de
+        ' devolver Nothing. Si alguien instala un predicado que NO abra el ARMO -el campo es publico-,
+        ' el caso del gate se pone rojo y la decision vuelve a la mesa con sujeto.
+        Dim armo = ctx.Armo(armoFid)
+        If armo Is Nothing Then Return fp
+
         If ctx.IsPowerArmorArmo IsNot Nothing AndAlso Not ctx.IsPowerArmorRace Then
-            If ctx.IsPowerArmorArmo(armoFid) Then
+            If ctx.IsPowerArmorArmo(armoFid, armo) Then
                 fp.PowerArmorRejected = True
                 Return fp
             End If
         End If
-
-        Dim armo = ctx.Armo(armoFid)
-        If armo Is Nothing Then Return fp
 
         Dim mascaraDelArmo = armo.SlotMaskDe()
         fp.EquipMask = mascaraDelArmo

@@ -252,6 +252,18 @@ Namespace Canon
         ''' valer. Quien quiera lo del escritor pasa <paramref name="hallazgos"/> y se lo lleva.</para></summary>
         ''' <param name="hallazgos">Dónde deja el emisor lo que encuentre. Nothing = una lista propia que
         ''' se descarta con el contexto.</param>
+        ''' <summary>Esta vista NO es lo que dice el archivo: es lo que el MOTOR va a usar, con la
+        ''' herencia de <c>ARMO.TNAM</c> ya aplicada (<see cref="CanonHerencia.ArmoEfectivo"/>).
+        ''' <para>⛔ Es MIEMBRO de <see cref="ParaEscritura"/> a proposito, para que la hereden
+        ''' <see cref="Clonar"/> y <see cref="ParaComparar"/>. Puesta afuera se perderia en la PRIMERA
+        ''' copia — y el saver COPIA antes de escribir (<c>NpcOverrideSaver</c>), o sea que la guarda
+        ''' desapareceria exactamente en el camino que protege.</para>
+        ''' <para>Para que sirve: la efectiva es un <c>CanonView</c> escribible e INDISTINGUIBLE de la
+        ''' cruda por el tipo. Si le llega al escritor, se emite el record del HIJO con los <c>MODL</c>
+        ''' del TERMINAL, con los FormID plegados contra la lista de masters del hijo. Bytes del ESP, en
+        ''' silencio. Que lo impida una guarda, no la disciplina.</para></summary>
+        Public Property EsVistaEfectiva As Boolean
+
         Public Function ParaEscritura(destinoLocalizado As Boolean?,
                                       resolverTexto As Func(Of WbNode, String),
                                       Optional hallazgos As List(Of WbFinding) = Nothing) As WbContext
@@ -266,7 +278,8 @@ Namespace Canon
                 .AllowPendingSubrecords = AllowPendingSubrecords,
                 .ResolveSignature = ResolveSignature,
                 .DestinoLocalizado = destinoLocalizado,
-                .ResolverTextoLocalizado = resolverTexto
+                .ResolverTextoLocalizado = resolverTexto,
+                .EsVistaEfectiva = EsVistaEfectiva
             }
             Return w
         End Function

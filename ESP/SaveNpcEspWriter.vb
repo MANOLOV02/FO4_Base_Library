@@ -351,6 +351,19 @@ Public Module SaveNpcEspWriter
                 Throw New ArgumentNullException(NameOf(record),
                     "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
             End If
+            ' ⛔ GUARDA: la vista EFECTIVA no se escribe NUNCA. Es un `CanonView` escribible e
+            ' INDISTINGUIBLE de la cruda por el tipo, asi que nada impedia pasarla — y emitir el record
+            ' del HIJO con los `MODL` del TERMINAL pliega esos FormID contra la lista de masters del
+            ' hijo. Bytes del ESP, en silencio. La marca vive en `WbContext` y es MIEMBRO de
+            ' `ParaEscritura`, asi que sobrevive a `Clonar()` y a `ParaComparar()`: el saver COPIA antes
+            ' de escribir, y una marca puesta afuera se perdia en la PRIMERA copia.
+            Dim vistaRec = TryCast(record, Canon.CanonRecordView)
+            If vistaRec IsNot Nothing AndAlso vistaRec.Context IsNot Nothing AndAlso vistaRec.Context.EsVistaEfectiva Then
+                Throw New InvalidOperationException(
+                    "ArmoRecordEntry: llego una vista EFECTIVA (la herencia de ARMO.TNAM ya aplicada). " &
+                    "Al ESP se escribe la CRUDA: lo que dice el archivo, no lo que el motor va a usar. " &
+                    "Ver Canon.CanonHerencia.")
+            End If
             Me.Record = record
         End Sub
 
