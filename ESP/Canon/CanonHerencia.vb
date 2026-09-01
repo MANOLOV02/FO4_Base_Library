@@ -212,7 +212,22 @@ Namespace Canon
         ''' <c>armorAddons.count = 0</c> <b>incondicionalmente</b> (<c>0x14027E578</c>) y recién después
         ''' mira cuántos tiene el template (<c>0x14027E57B</c>). Terminal sin armatures ⇒ el hijo queda
         ''' con CERO, no conserva los suyos. La «optimización» de no tocar el miembro cuando el terminal
-        ''' no lo trae es un defecto, y tiene su caso.</para></summary>
+        ''' no lo trae es un defecto, y tiene su caso.</para>
+        ''' <para>⛔ El injerto va en la POSICIÓN QUE DECLARA LA DEF, por
+        ''' <see cref="WbEdit.InsertarEnPosicionDeclarada"/> — la misma ley que usa
+        ''' <c>EnsureSubrecord</c>, no una segunda copia. Appendear al final producía un árbol que se
+        ''' emite (<c>WbWriter.EmitBody</c> recorre en orden) y NO se puede volver a leer: el cursor de
+        ''' miembros de <see cref="WbReader"/> es monótono y ARMO no es <c>AllowUnordered</c>, así que
+        ''' todo lo que cae después de <c>TNAM</c>/<c>APPR</c> —en Skyrim, después de <c>DATA</c>— se va a
+        ''' <c>WbPassthroughDef</c>. El clon perdía armatures, slots, keywords y raza al recargar, y
+        ''' re-guardarlo TIRA.</para>
+        ''' <para>⛔ Y cada injerto se ESTAMPA con la Form Version del TERMINAL. Las ramas de unión que
+        ''' dependen de la versión —<c>DAMA</c> mide 8 bytes hasta la 151 y 12 desde la 152
+        ''' (<c>WbSchemaGen_FO4.vb:328</c>), <c>MO2T</c>/<c>MO4T</c>— quedaron FIJADAS al parsear el
+        ''' terminal (<c>WbValueDefs.vb:1111-1129</c>), y el record se emite con la versión del HIJO. Sin
+        ''' el estampado, la guarda de <c>EmitBody</c> no ve nada: el <c>ParsedFormVersion</c> lo pone
+        ''' sólo la raíz (<c>WbReader.vb:55</c>), y la raíz acá es la del hijo. Con el estampado, un par
+        ''' de versiones distintas no se puede emitir en silencio.</para></summary>
         Private Function Materializar(hijo As IArmo, terminal As IArmo) As IArmo
             Dim vh = TryCast(hijo, CanonRecordView)
             Dim vt = TryCast(terminal, CanonRecordView)
@@ -222,6 +237,10 @@ Namespace Canon
 
             Dim juego = clon.Context.Game
             Dim heredados = MiembrosHeredados(juego)
+            ' El mismo idiom que `CanonInterpretacion.CopiarSubrecord`: la posición sale de la
+            ' declaración del record, y la declaración se pide por (juego, firma).
+            Dim def = WbSchema.Get(juego, clon.Context.RecordSignature)
+            If def Is Nothing Then Return Nothing
 
             For i = clon.Node.Children.Count - 1 To 0 Step -1
                 Dim h = clon.Node.Children(i)
@@ -229,7 +248,9 @@ Namespace Canon
             Next
             For Each h In vt.Node.Children
                 If h.Def IsNot Nothing AndAlso heredados.Contains(h.Def.Name) Then
-                    clon.Node.InsertarHijo(clon.Node.Children.Count, h.Clonar())
+                    Dim injerto = h.Clonar()
+                    injerto.ParsedFormVersion = vt.Node.ParsedFormVersion
+                    WbEdit.InsertarEnPosicionDeclarada(clon.Node, def, injerto)
                 End If
             Next
 

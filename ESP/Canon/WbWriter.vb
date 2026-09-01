@@ -40,15 +40,7 @@ Namespace Canon
         ''' <summary>Emite el cuerpo del record: la secuencia de subrecords, sin el header de 24
         ''' bytes. Es lo que se compara contra los bytes de la fuente para C2.</summary>
         Public Shared Function EmitBody(root As WbNode, ctx As WbContext) As Byte()
-            ' La Form Version con la que se PARSEÓ eligió las ramas de unión que dependen de ella.
-            ' Emitir con otra deja los bytes de campos como MODT o DAMA en un formato que el header
-            ' del record desmiente, y nada más lo notaría.
-            If root.ParsedFormVersion >= 0 AndAlso CInt(ctx.FormVersion) <> root.ParsedFormVersion Then
-                Throw New InvalidOperationException(
-                    $"EmitBody: el árbol se parseó con Form Version {root.ParsedFormVersion} y se está " &
-                    $"emitiendo con {CInt(ctx.FormVersion)}. Las ramas de unión ya quedaron fijadas por la " &
-                    "versión de origen; cambiarla al emitir produce bytes que el header contradice.")
-            End If
+            ExigirVersionUnica(root, ctx)
             SyncCounters(root)
             Using ms As New MemoryStream()
                 Using bw As New BinaryWriter(ms)
@@ -59,6 +51,36 @@ Namespace Canon
                 Return ms.ToArray()
             End Using
         End Function
+
+        ''' <summary>Un árbol se emite con UNA Form Version: la que fijó sus ramas de unión.
+        '''
+        ''' <para>La Form Version con la que se PARSEÓ eligió las ramas que dependen de ella. Emitir con
+        ''' otra deja los bytes de campos como <c>MODT</c> o <c>DAMA</c> en un formato que el header del
+        ''' record desmiente, y nada más lo notaría.</para>
+        '''
+        ''' <para>⛔ Mira TODOS los nodos estampados, no sólo la raíz. Al parsear, el estampado lo lleva
+        ''' únicamente la raíz (<c>WbReader.vb:55</c>), así que mirar la raíz alcanzaba… hasta que
+        ''' apareció el segundo productor de árboles: <c>CanonHerencia.Materializar</c> injerta en el
+        ''' árbol del HIJO miembros del TERMINAL, con sus ramas ya fijadas por la versión del terminal, y
+        ''' estampa cada injerto. Un ARMO hijo en 131 con un terminal en 152 emitía un <c>DAMA</c> de 12
+        ''' bytes por entrada bajo un header que declara 131 — exactamente el caso que esta guarda
+        ''' existe para impedir, entrando por la única puerta que no vigilaba.</para>
+        ''' <para>Cubre además el derivado: si el usuario AGREGA una resistencia sobre un <c>DAMA</c>
+        ''' injertado, <c>WbEdit.AgregarElemento</c> crea el elemento con la versión del contexto (la del
+        ''' hijo) y quedaría una entrada de 8 bytes entre otras de 12. El nodo <c>DAMA</c> sigue
+        ''' estampado, así que el record no sale igual.</para></summary>
+        Private Shared Sub ExigirVersionUnica(node As WbNode, ctx As WbContext)
+            If node.ParsedFormVersion >= 0 AndAlso CInt(ctx.FormVersion) <> node.ParsedFormVersion Then
+                Dim quien = If(node.Parent Is Nothing, "el árbol", $"el miembro '{node.Path}'")
+                Throw New InvalidOperationException(
+                    $"EmitBody: {quien} se parseó con Form Version {node.ParsedFormVersion} y se está " &
+                    $"emitiendo con {CInt(ctx.FormVersion)}. Las ramas de unión ya quedaron fijadas por la " &
+                    "versión de origen; cambiarla al emitir produce bytes que el header contradice.")
+            End If
+            For Each c In node.Children
+                ExigirVersionUnica(c, ctx)
+            Next
+        End Sub
 
         ''' <summary>Escribe un subrecord con su header de 6 bytes (firma + tamaño u16).
         ''' <para>Si el cuerpo no entra en un u16 se antepone un <c>XXXX</c> con el tamaño real en

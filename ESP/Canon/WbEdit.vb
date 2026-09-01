@@ -375,30 +375,56 @@
             Next
             If memberIdx < 0 Then Return Nothing
 
-            Dim node = def.Members(memberIdx).CreateRequired(ctx)
-            node.Parent = root
+            Return InsertarEnPosicionDeclarada(root, def, def.Members(memberIdx).CreateRequired(ctx))
+        End Function
 
-            ' Insertar delante del primer hijo cuyo miembro venga DESPUÉS en la declaración.
+        ''' <summary>Mete un nodo YA ARMADO en la posición que su declaración le asigna entre los hijos
+        ''' de la raíz: delante del primer hijo cuyo miembro venga DESPUÉS en <c>WbRecordDef.Members</c>.
+        ''' Devuelve el mismo nodo.
+        '''
+        ''' <para>Es la mitad reusable de <see cref="EnsureSubrecord"/>. Se extrajo porque hay un segundo
+        ''' dueño que NO puede direccionar por firma: <c>CanonHerencia.Materializar</c> injerta los
+        ''' miembros del TERMINAL, y su llave es <c>Def.Name</c> —los armatures, el modelo masculino y las
+        ''' keywords cuelgan de contenedores SIN firma (<c>Models</c>/<c>Armature</c>, <c>Male</c>,
+        ''' <c>Keywords</c>)—. Injertaba al final, y el final es el lugar equivocado: la DEF de ARMO
+        ''' declara <c>TNAM</c> y <c>APPR</c> DESPUÉS de todo lo heredado
+        ''' (<c>wbDefinitionsFO4.pas:5840-5842</c>), y en Skyrim <c>DATA</c> del hijo va después de
+        ''' <c>Armature</c>/<c>Keywords</c>/<c>DESC</c> (<c>wbDefinitionsTES5.pas:4085-4090</c>). Al releer
+        ''' esa salida, el cursor de miembros de <see cref="WbReader"/> —MONÓTONO, y ARMO no es
+        ''' <c>AllowUnordered</c>— manda a <c>WbPassthroughDef</c> todo lo que viene después
+        ''' (<c>WbReader.vb:85-90</c>): la armadura pierde armatures, slots, keywords y raza al recargar, y
+        ''' re-guardarla TIRA (<c>WbReader.vb:192-204</c>).</para>
+        '''
+        ''' <para>⛔ TIRA si el nodo no corresponde a ningún miembro del record, y TIRA si no puede ubicar
+        ''' a un hijo que ya está. Lo segundo es la misma falla ruidosa de siempre y por el mismo motivo:
+        ''' si no se sabe dónde está parado lo que ya hay, tampoco se sabe dónde va lo nuevo, y tratar "no
+        ''' lo encontré" como "va al final" deja el record corrupto en silencio. En un ARMO de Skyrim sin
+        ''' <c>DESC</c>, el <c>DESC</c> terminaba en la posición 2 (<c>EDID DESC BODT RNAM DATA DNAM</c>) y
+        ''' al releer esa salida se descartaban BODT, RNAM, DATA y DNAM.</para></summary>
+        Public Function InsertarEnPosicionDeclarada(root As WbNode, def As WbRecordDef, nodo As WbNode) As WbNode
+            Dim memberIdx = MemberIndexOf(def, nodo)
+            If memberIdx < 0 Then
+                Throw New InvalidOperationException(
+                    $"InsertarEnPosicionDeclarada: el nodo '{If(nodo.Signature, nodo.Def?.Name)}' no " &
+                    $"corresponde a ningún miembro de {def.Signature}, así que no tiene posición declarada.")
+            End If
+
             Dim insertAt = root.Children.Count
             For c = 0 To root.Children.Count - 1
                 Dim idx = MemberIndexOf(def, root.Children(c))
                 If idx < 0 Then
-                    ' Falla ruidosa a propósito. Si no se sabe a qué miembro corresponde un hijo
-                    ' que ya está, tampoco se sabe dónde va el nuevo: tratar "no lo encontré" como
-                    ' "va al final" INSERTA EL SUBRECORD EN EL LUGAR EQUIVOCADO y el record sale
-                    ' corrupto, porque al releerlo se descarta todo lo que venga fuera de orden.
-                    ' Un fallback silencioso sobre datos derivados es peor que cortar.
                     Throw New InvalidOperationException(
-                        $"EnsureSubrecord({sig}): no puedo ubicar el subrecord '{root.Children(c).Signature}' " &
-                        $"en los miembros de {def.Signature}; insertar a ciegas corrompería el record.")
+                        $"InsertarEnPosicionDeclarada({If(nodo.Signature, nodo.Def?.Name)}): no puedo ubicar " &
+                        $"el subrecord '{root.Children(c).Signature}' en los miembros de {def.Signature}; " &
+                        "insertar a ciegas corrompería el record.")
                 End If
                 If idx > memberIdx Then
                     insertAt = c
                     Exit For
                 End If
             Next
-            root.InsertarHijo(insertAt, node)
-            Return node
+            root.InsertarHijo(insertAt, nodo)
+            Return nodo
         End Function
 
         ''' <summary>Índice del miembro del record al que corresponde un hijo de la raíz, o -1.

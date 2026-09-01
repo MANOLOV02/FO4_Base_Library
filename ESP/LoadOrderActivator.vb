@@ -262,15 +262,27 @@ Public NotInheritable Class LoadOrderActivator
 
             ' Read back from disk and re-check the invariant we just wrote. A mismatch means something ate the
             ' write (AV, sync client, VFS); restoring the backup is preferable to leaving a half-applied order.
-            Dim verifyShape As New FileShape()
-            Dim written = ReadEntries(pluginsTxt, verifyShape)
-            Dim vIdx = IndexOfPlugin(written, pluginName)
-            If vIdx < 0 OrElse Not written(vIdx).Active OrElse vIdx < LastIndexOfAny(written, blocking) Then
-                If backup IsNot Nothing AndAlso File.Exists(backup) Then File.Copy(backup, pluginsTxt, True)
+            If Not VerificaEnDisco(pluginsTxt, pluginName, blocking, sinMarcadores:=False) Then
+                ' Se restaura desde el respaldo de ESTA corrida (`backup`), que es el unico del que
+                ' sabemos que contenido tiene: son los bytes de antes de esta escritura. Un `.npcm.bak`
+                ' heredado de una caida anterior NO se usa acá y no se toca — es de otra version.
+                Dim volvio = RestaurarDesdeRespaldo(pluginsTxt, backup)
                 res.Kind = OutcomeKind.Failed
-                res.Summary = "Plugins.txt did not verify after the write; the previous contents were restored."
+                res.Summary = "Plugins.txt did not verify after the write; " &
+                              If(volvio, "the previous contents were restored.",
+                                 "and the previous contents could NOT be restored automatically" &
+                                 If(String.IsNullOrEmpty(backup), ".",
+                                    " — they are in " & Path.GetFileName(backup) & "."))
+                res.BackupPath = If(volvio, "", If(backup, ""))
                 Return res
             End If
+
+            ' ⛔ PUNTO DE CONFIRMACION. Recien acá la escritura está verificada contra el disco, y recien
+            ' acá el respaldo deja de hacer falta. Es el mismo instante que el `Borrar(copia)` de
+            ' `GuardarConCopia`, corrido hasta después del verify — que es exactamente por qué este
+            ' método no puede usar `GuardarConCopia` y sí puede compartir su ley.
+            ConfirmarRespaldo(backup)
+            res.BackupPath = ""
 
             ' loadorder.txt is NOT read by the engine, but LOOT/Vortex and this app's own
             ' PluginManager.ReadActiveLoadOrder use it as the ordering source — leaving it stale would make the
@@ -333,26 +345,139 @@ Public NotInheritable Class LoadOrderActivator
         End If
 
         For Each line In lines
-            Dim e As New Entry With {.Raw = line}
-            Dim t = line.Trim()
-            If t.Length > 0 AndAlso Not t.StartsWith("#") AndAlso Not t.StartsWith(";") Then
-                If t.StartsWith("*") Then
-                    e.Active = True
-                    t = t.Substring(1).Trim()
-                End If
-                If t.Length > 0 Then e.Name = t
-            End If
-            result.Add(e)
+            result.Add(ParsearLinea(line))
         Next
         Return result
     End Function
+
+    ''' <summary>Una linea fisica → <see cref="Entry"/>. ESTA es la ley del formato de linea y vive acá
+    ''' sola: `#` y `;` abren comentario, `*` marca activo, y lo que queda (recortado) es el nombre.
+    ''' <para>Se extrajo de <see cref="ReadEntries"/> para poder PREGUNTARLE al parser —en vez de repetir
+    ''' su regla— si un nombre de plugin sobrevive a la ida y vuelta por una linea. Repetir la regla es
+    ''' justo lo que deja dos verdades cuando una de las dos cambia.</para></summary>
+    Private Shared Function ParsearLinea(line As String) As Entry
+        Dim e As New Entry With {.Raw = line}
+        Dim t = line.Trim()
+        If t.Length > 0 AndAlso Not t.StartsWith("#") AndAlso Not t.StartsWith(";") Then
+            If t.StartsWith("*") Then
+                e.Active = True
+                t = t.Substring(1).Trim()
+            End If
+            If t.Length > 0 Then e.Name = t
+        End If
+        Return e
+    End Function
+
+    ''' <summary>Lee un archivo de orden y lo deja listo para razonar sobre POSICION.
+    ''' <para><paramref name="sinMarcadores"/> describe EL FORMATO DEL ARCHIVO, no una accion:
+    ''' `loadorder.txt` lista todos los plugins sin el `*` de activacion, asi que sin normalizar
+    ''' <c>Active</c> todas sus lineas saldrian inactivas — y <see cref="LastIndexOfAny"/>, que filtra por
+    ''' activas, devolveria -1 y toda comparacion de posicion contra los masters no mediria NADA.</para></summary>
+    Private Shared Function LeerParaOrden(filePath As String, shape As FileShape,
+                                          sinMarcadores As Boolean) As List(Of Entry)
+        Dim entries = ReadEntries(filePath, shape)
+        If sinMarcadores Then
+            For Each e In entries
+                If e.IsPlugin Then e.Active = True
+            Next
+        End If
+        Return entries
+    End Function
+
+    ''' <summary>Relee <paramref name="filePath"/> DEL DISCO y vuelve a comprobar la invariante que la
+    ''' escritura prometia dejar. Una sola implementacion para los dos archivos.
+    ''' <para>⛔ NO compara bytes a proposito: otro proceso puede tocar lineas ajenas legitimamente. Lo
+    ''' que se afirma es lo que la operacion prometio, y son tres cosas: nuestro plugin (1) esta, (2) esta
+    ''' activo y (3) esta en o despues del ultimo master que lo bloquea. En un archivo sin marcadores la
+    ''' (2) es cierta por construccion —ese formato no puede violarla— y se deja igual: la ley es una, y
+    ''' lo que cambia es lo que el formato puede expresar, no lo que se exige.</para></summary>
+    Private Shared Function VerificaEnDisco(filePath As String, pluginName As String,
+                                            blocking As List(Of String), sinMarcadores As Boolean) As Boolean
+        Dim verifyShape As New FileShape()
+        Dim written = LeerParaOrden(filePath, verifyShape, sinMarcadores)
+        Dim vIdx = IndexOfPlugin(written, pluginName)
+        If vIdx < 0 Then Return False
+        If Not written(vIdx).Active Then Return False
+        If vIdx < LastIndexOfAny(written, blocking) Then Return False
+        Return True
+    End Function
+
+    ''' <summary>Devuelve <paramref name="filePath"/> al contenido que tenia antes de ESTA corrida, desde
+    ''' el respaldo que ESTA corrida tomo. True si el archivo volvio.
+    ''' <para>⛔ UNA SOLA LEY DE RESTAURACION, tres call sites (el Catch de <see cref="WriteEntries"/>, el
+    ''' verify de <see cref="Activate"/> y el del espejo). Si la restauracion sale bien, el archivo en
+    ''' disco y el respaldo tienen los mismos bytes: el respaldo queda PROBADO REDUNDANTE y se confirma
+    ''' —igual que el `Borrar(copia)` de `GuardarConCopia`—. Si no se pudo restaurar, se queda: es lo
+    ''' unico que le queda al usuario, y el mensaje del llamador lo nombra.</para></summary>
+    Private Shared Function RestaurarDesdeRespaldo(filePath As String, backupPath As String) As Boolean
+        If String.IsNullOrEmpty(backupPath) OrElse Not File.Exists(backupPath) Then Return False
+        Try
+            File.Copy(backupPath, filePath, True)
+        Catch
+            Return False
+        End Try
+        ConfirmarRespaldo(backupPath)
+        Return True
+    End Function
+
+    ''' <summary>Por que una linea que contiene SOLO el nombre del plugin no se relee como ese plugin, o
+    ''' "" si se relee bien. Es la causa raiz del unico modo de falla del espejo que podemos nombrar.
+    ''' <para>⛔ No repite la regla del formato: le PREGUNTA a <see cref="ParsearLinea"/>. Y el caracter
+    ''' culpable sale del dato, no de una lista escrita a mano acá.</para>
+    ''' <para>Pasa de verdad: `loadorder.txt` no lleva el `*` de activacion, asi que un plugin llamado
+    ''' `#Patch.esp` o `;Fix.esp` —prefijos que los autores usan para forzar orden— se escribe como una
+    ''' linea que vuelve a leerse como COMENTARIO. En `Plugins.txt` el mismo nombre sobrevive, porque ahi
+    ''' la linea empieza con `*`. El formato no tiene escape: no hay forma de representarlo.</para></summary>
+    Private Shared Function MotivoNoRepresentableSinMarcador(pluginName As String) As String
+        If ParsearLinea(pluginName).Name = pluginName Then Return ""
+        Dim primero = pluginName.Substring(0, 1)
+        Return $"loadorder.txt could not be updated: the plugin name '{pluginName}' starts with '{primero}'," &
+               " which that file's format reads as the start of a comment, so the entry would be invisible" &
+               " to the tools that use it (LOOT, Vortex). loadorder.txt was restored to its previous" &
+               " contents. Plugins.txt was updated correctly and the game will load the plugin — only" &
+               $" those tools may show the old position. Rename the plugin so it does not start with '{primero}'" &
+               " if you want them to show it correctly."
+    End Function
+
+    ''' <summary>Sufijo del respaldo. Los slots son `.npcm.bak`, `.npcm.bak2`, `.npcm.bak3`… y el nombre
+    ''' libre lo decide <c>EscrituraEnElLugar.PrimerSlotLibre</c>, que es donde vive esa ley.</summary>
+    Private Const SufijoRespaldo As String = ".npcm.bak"
+
+    ''' <summary>El respaldo cumplio su vida: la escritura quedo CONFIRMADA y el archivo en disco es el
+    ''' bueno, asi que el respaldo se borra.
+    ''' <para>⛔ ESTO NO ES LIMPIEZA COSMETICA: es lo que le da sentido a la prueba de "heredado" en
+    ''' <see cref="WriteEntries"/>. Mientras un `.npcm.bak` solo se creara y nunca se borrara, su
+    ''' presencia no significaba nada (siempre estaba) y no habia forma de distinguir un Plugins.txt
+    ''' bueno de uno que quedo a medias sin inventar una heuristica sobre el texto. Con el borrado al
+    ''' confirmar, la presencia del archivo ES la señal: <b>hay respaldo ⟺ la ultima escritura nunca se
+    ''' confirmo</b>.</para>
+    ''' <para>Lo que se pierde y se dice: hasta 1.4.1 el `.npcm.bak` quedaba en disco para siempre y
+    ''' servia de "deshacer la activacion" a mano. Nadie lo documentaba ni lo ofrecia en la UI, y
+    ''' <c>Result.BackupPath</c> no lo lee ningun consumidor.</para></summary>
+    Private Shared Sub ConfirmarRespaldo(backupPath As String)
+        If String.IsNullOrEmpty(backupPath) Then Return
+        BorrarSilencioso(backupPath)
+    End Sub
+
+    Private Shared Sub BorrarSilencioso(ruta As String)
+        If String.IsNullOrEmpty(ruta) Then Return
+        Try
+            File.Delete(ruta)
+        Catch
+            ' Best-effort: un respaldo huerfano no rompe nada — la proxima corrida lo trata como heredado.
+        End Try
+    End Sub
 
     ''' <summary>Backup (.npcm.bak) → escritura EN EL LUGAR sobre el archivo que ya esta. Devuelve False y
     ''' llena <paramref name="res"/> ante un fallo.
     ''' <para>⛔ NO es atomica y NO deja el original intacto ante un fallo: por eso el Catch restaura desde
     ''' el respaldo. El `.tmp` + `File.Replace` que habia aca si era atomico, pero `ReplaceFileW` no esta
     ''' entre las funciones que virtualiza el VFS de Mod Organizer, asi que escribia el Plugins.txt REAL en
-    ''' vez del que MO2 le presenta al perfil.</para></summary>
+    ''' vez del que MO2 le presenta al perfil.</para>
+    ''' <para>⛔ EL LLAMADOR TIENE QUE CONFIRMAR. Este metodo deja el respaldo VIVO a proposito; quien
+    ''' llama es responsable de <see cref="ConfirmarRespaldo"/> cuando la escritura quedo verificada. Si
+    ''' no lo hace, el respaldo queda en disco y la proxima corrida lo trata como heredado — que es el
+    ''' lado seguro del error, pero deja un archivo de mas.</para></summary>
     Private Shared Function WriteEntries(filePath As String, entries As List(Of Entry), shape As FileShape,
                                          ByRef backupPath As String, res As Result) As Boolean
         Dim respaldoOk As Boolean = False
@@ -367,12 +492,39 @@ Public NotInheritable Class LoadOrderActivator
             If Not Directory.Exists(dir) Then Directory.CreateDirectory(dir)
 
             If File.Exists(filePath) Then
-                backupPath = filePath & ".npcm.bak"
-                File.Copy(filePath, backupPath, True)
-                ' ⛔ La bandera se levanta DESPUES del Copy. `backupPath` se asigna antes, y esta clase
-                ' nunca borra el .npcm.bak, asi que si el Copy falla el archivo que queda en disco es el
-                ' de una activacion ANTERIOR: restaurarlo pisaria el Plugins.txt bueno con uno viejo.
-                respaldoOk = True
+                ' ⛔ EL RESPALDO HEREDADO NO SE PISA — y esto NO es una heuristica sobre el texto.
+                ' Con el borrado al confirmar (`ConfirmarRespaldo`), que haya un `.npcm.bak` en disco
+                ' significa una sola cosa: la corrida anterior NUNCA confirmo su escritura. O sea que el
+                ' Plugins.txt que estamos por copiar es el que quedo de esa corrida — puede estar a
+                ' medias (la escritura en el lugar no es atomica y el texto plano parsea igual) — y el
+                ' `.npcm.bak` es la unica version buena que le queda al usuario. Pisarlo con el
+                ' degradado destruia el respaldo justo cuando hacia falta, y el verify no lo veia.
+                ' El nombre lo decide la MISMA ley que la copia de GuardarConCopia; vive en un solo lado.
+                backupPath = BSA_BA2_Library_DLL.EscrituraEnElLugar.PrimerSlotLibre(filePath, SufijoRespaldo)
+                Try
+                    File.Copy(filePath, backupPath, True)
+                    ' ⛔ EXISTIR NO ES ESTAR COMPLETA. `File.Copy` puede dejar el respaldo a medias
+                    ' (disco lleno, error de I/O) y lo que queda PARECE un respaldo. Restaurar desde uno
+                    ' truncado es destruir la orden de carga con cara de rescate. Se compara el tamano.
+                    respaldoOk = (New FileInfo(backupPath).Length = New FileInfo(filePath).Length)
+                    If Not respaldoOk Then BorrarSilencioso(backupPath)
+                Catch
+                    respaldoOk = False
+                    BorrarSilencioso(backupPath)
+                End Try
+
+                ' ⛔ SIN RED NO SE TRUNCA. Misma ley que `GuardarConCopia`: si hay contenido que perder y
+                ' no se pudo respaldar, NO se toca el original. Antes se escribia igual con
+                ' `respaldoOk = False`, y un corte a mitad dejaba al usuario sin orden de carga y sin
+                ' nada para volver. Es un guard que no escribe nada, o sea Skipped, no Failed.
+                If Not respaldoOk Then
+                    backupPath = Nothing
+                    res.Kind = OutcomeKind.Skipped
+                    res.Summary = $"'{Path.GetFileName(filePath)}' was NOT modified: its backup could not" &
+                                  " be created. Free up disk space or close whatever is holding that file," &
+                                  " then try again."
+                    Return False
+                End If
             End If
 
             ' UTF8Encoding(False): the framework's Encoding.UTF8 emits a BOM, which would be prepended to the
@@ -384,30 +536,34 @@ Public NotInheritable Class LoadOrderActivator
             ' escribía el Plugins.txt REAL en vez del que MO2 le presenta al perfil.
             ' Acá NO se usa `GuardarConCopia`: este método ya hace su propio respaldo unas líneas arriba
             ' (`backupPath`), y ése tiene otra vida — sobrevive a la escritura porque lo consume el
-            ' rollback del verify de `Activate`, que corre DESPUÉS de que la escritura salió bien. Dos
-            ' respaldos del mismo archivo serían dos leyes.
+            ' rollback del verify de `Activate`, que corre DESPUÉS de que la escritura salió bien.
+            ' ⛔ Eso justifica dos ARTEFACTOS, no dos LEYES. La ley es una sola y es la de
+            ' `GuardarConCopia`: «un respaldo existe exactamente mientras el archivo que protege NO está
+            ' confirmado; se toma antes de escribir, no se pisa si ya había uno, y se borra en el
+            ' instante en que la escritura queda confirmada». Lo único que cambia entre los dos es DÓNDE
+            ' está ese instante — acá es el verify de relectura (`ConfirmarRespaldo`), no el retorno.
+            ' `sincronizar:=True`: esto es dato del usuario. El costo medido (+2,66 ms para un archivo
+            ' del tamaño de Plugins.txt) se paga UNA vez por activación.
             BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
                 filePath,
                 Sub(fs)
                     If shape.HadBom Then fs.Write(New Byte() {&HEF, &HBB, &HBF}, 0, 3)
                     fs.Write(payload, 0, payload.Length)
-                End Sub)
+                End Sub,
+                sincronizar:=True)
             Return True
         Catch ex As Exception
             ' La escritura en el lugar puede dejar el archivo a medias (no es atómica): si hay respaldo,
             ' se restaura acá. Sin esto, un fallo a mitad dejaba al usuario sin orden de carga y el
             ' rollback de `Activate` no corre, porque sólo cubre el camino en que la escritura SALIÓ BIEN.
-            If respaldoOk AndAlso File.Exists(backupPath) Then
-                Try
-                    File.Copy(backupPath, filePath, True)
-                Catch
-                    ' Best-effort: si tampoco se puede restaurar, el respaldo queda en disco y el mensaje
-                    ' de abajo lo nombra.
-                End Try
-            End If
+            ' Misma ley de restauracion que el verify de `Activate` y el del espejo — una funcion, tres
+            ' call sites. Si vuelve, el respaldo esta probado redundante y se confirma; si no, se queda en
+            ' disco (es lo unico que le queda al usuario), el mensaje lo nombra y la proxima corrida lo
+            ' trata como HEREDADO y no lo pisa.
+            Dim restaurado As Boolean = respaldoOk AndAlso RestaurarDesdeRespaldo(filePath, backupPath)
             res.Kind = OutcomeKind.Failed
             res.Summary = "Plugins.txt could not be written: " & ex.Message &
-                          If(respaldoOk,
+                          If(respaldoOk AndAlso Not restaurado,
                              " (a backup of the previous contents is at " & Path.GetFileName(backupPath) & ")",
                              "")
             Return False
@@ -591,13 +747,12 @@ Public NotInheritable Class LoadOrderActivator
                 Return "loadorder.txt is read-only, so only Plugins.txt was updated."
             End If
 
-            Dim shape As New FileShape()
-            Dim entries = ReadEntries(loPath, shape)
             ' loadorder.txt lists every plugin without activation markers, so an entry there is 'present'
-            ' regardless of the `*` this class sets in Plugins.txt.
-            For Each e In entries
-                If e.IsPlugin Then e.Active = True
-            Next
+            ' regardless of the `*` this class sets in Plugins.txt. La normalizacion vive en LeerParaOrden,
+            ' que es la MISMA puerta por la que relee el verify de mas abajo: si el escritor y el verify
+            ' leyeran distinto, el verify estaria midiendo otro archivo que el que se escribio.
+            Dim shape As New FileShape()
+            Dim entries = LeerParaOrden(loPath, shape, sinMarcadores:=True)
 
             Dim idx = IndexOfPlugin(entries, pluginName)
             Dim ourEntry As Entry
@@ -617,6 +772,32 @@ Public NotInheritable Class LoadOrderActivator
             If Not WriteEntries(loPath, entries, shape, backup, throwaway) Then
                 Return "Plugins.txt was updated, but loadorder.txt could not be: " & throwaway.Summary
             End If
+            ' ⛔ MISMO VERIFY QUE Plugins.txt, y por eso mismo punto de confirmación. Antes acá se
+            ' confirmaba apenas `WriteEntries` volvía sin tirar, así que cualquier cosa que dejara el
+            ' archivo degradado se llevaba el respaldo puesta y en silencio. La única diferencia con
+            ' `Activate` es `sinMarcadores`, que describe el FORMATO — la ley es la misma función.
+            If Not VerificaEnDisco(loPath, pluginName, blocking, sinMarcadores:=True) Then
+                Dim volvio = RestaurarDesdeRespaldo(loPath, backup)
+                ' Se nombra la CAUSA cuando la sabemos. El único modo de falla que este método puede
+                ' explicar es que el nombre no sobreviva la ida y vuelta por una línea sin marcador, y
+                ' eso se lo pregunta al parser, no a una regla repetida acá.
+                Dim causa = MotivoNoRepresentableSinMarcador(pluginName)
+                If causa <> "" Then
+                    Return causa & If(volvio, "",
+                                      " (the previous contents could NOT be restored automatically" &
+                                      If(String.IsNullOrEmpty(backup), ".",
+                                         " — they are in " & Path.GetFileName(backup) & ".") & ")")
+                End If
+                Return "Plugins.txt was updated, but loadorder.txt did not verify after the write" &
+                       If(volvio, " and was restored to its previous contents.",
+                          " and could NOT be restored automatically" &
+                          If(String.IsNullOrEmpty(backup), ".",
+                             " — the previous contents are in " & Path.GetFileName(backup) & "."))
+            End If
+
+            ' Sin este llamado el respaldo del espejo quedaría en disco para siempre y la corrida
+            ' siguiente lo trataría como heredado, acumulando un `.npcm.bak2`, `.bak3`… por activación.
+            ConfirmarRespaldo(backup)
             Return ""
         Catch ex As Exception
             Return "Plugins.txt was updated, but loadorder.txt could not be: " & ex.Message

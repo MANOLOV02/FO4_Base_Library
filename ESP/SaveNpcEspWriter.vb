@@ -1028,8 +1028,8 @@ Public Module SaveNpcEspWriter
         '
         ' Lo que se pierde y es deliberado: esto NO es atómico y no tolera un lector que no comparta
         ' escritura (xEdit con el plugin cargado). La red es la copia que hace `GuardarConCopia`, que
-        ' restaura sola si la escritura falla. Derivación y mediciones:
-        ' nota de memoria 10-stack-escritura-bajo-mo2-y-vortex.
+        ' restaura sola si la escritura falla. La base de la afirmación sobre MO2/Vortex y su estado de
+        ' verificación viven en UN solo lugar: la cabecera de EscrituraEnElLugar (Ba2_Bsa_Library).
         ' ====================================================================
         BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(
             outputPath,
