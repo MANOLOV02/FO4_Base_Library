@@ -369,14 +369,27 @@ Public Class DictionaryPicker_Control
                 If sd.ShowDialog = DialogResult.OK Then
                     Dim cloneLoc As FilesDictionary_class.File_Location = Nothing
                     If Not FilesDictionary_class.Dictionary.TryGetValue(SelectedKey, cloneLoc) Then Throw New Exception("Key no longer exists in dictionary")
-                    File.WriteAllBytes(sd.FileName, cloneLoc.GetBytes())
+                    ' ⛔ NI `File.WriteAllBytes` (pide CREATE_ALWAYS: sobre un destino OCULTO da
+                    ' ACCESS_DENIED, y bajo Mod Organizer / Vortex un archivo nuevo rompe el VFS y el
+                    ' hardlink) NI `Escribir`: esto es UN archivo por click del usuario, a una ruta que
+                    ' el eligio, y el diálogo trae `OverwritePrompt = True` — o sea que el destino puede
+                    ' ser un archivo suyo que ya existe. `dir` cuelga de `Config_App.Current.DataPath`
+                    ' (ver arriba), asi que el destino vive bajo el gestor de mods. Mismo reparto que
+                    ' `FO4UnifiedMaterial_Class.Save_To_Bgsm`: la red la pone `GuardarConCopia`.
+                    Dim clonedBytes = cloneLoc.GetBytes()
+                    BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(
+                        sd.FileName, Sub(fs) fs.Write(clonedBytes, 0, clonedBytes.Length))
                     RaiseEvent Cloned(sd.FileName)
                 Else
                     If Creado Then IO.Directory.Delete(dir)
                 End If
             End Using
         Catch ex As Exception
-            MsgBox("Error cloning archive", vbCritical, "Error")
+            ' ⛔ EL MOTIVO VA EN EL CARTEL. Antes decia sólo "Error cloning archive" y tiraba `ex` a la
+            ' basura: ahora este camino pasa por `GuardarConCopia`, que falla A PROPOSITO con un mensaje
+            ' accionable cuando no pudo respaldar el destino ("free up disk space or close whatever is
+            ' holding that file"). Esconderlo dejaba al usuario sin la unica frase que le dice que hacer.
+            MsgBox("Could not clone the archive:" & vbCrLf & vbCrLf & ex.Message, vbCritical, "Error")
         End Try
     End Sub
 End Class

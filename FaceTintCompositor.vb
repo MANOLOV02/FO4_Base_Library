@@ -418,9 +418,17 @@ Public Module FaceTintCompositor
         hdr(14) = CByte(h And &HFF) : hdr(15) = CByte((h >> 8) And &HFF)
         hdr(16) = 32                                ' bpp (BGRA, alpha preserved)
         hdr(17) = &H28                              ' top-left origin (0x20) + 8 alpha bits (0x08)
-        Using fs = System.IO.File.Create(path)
-            fs.Write(hdr, 0, 18) : fs.Write(bgra, 0, w * h * 4)
-        End Using
+        ' ⛔ NO `File.Create`: es CREATE_ALWAYS, o sea ACCESS_DENIED sobre un destino OCULTO y archivo
+        ' NUEVO bajo MO2/Vortex (rompe VFS y hardlink). Estos TGA caen bajo el Data del juego —
+        ' `BakeOutputRoot.Current()`, que por defecto es `Config_App.Current.DataPath`. La ley vive en
+        ' `Ba2_Bsa_Library\EscrituraEnElLugar.vb`. `Escribir` y no `GuardarConCopia`: es salida del
+        ' HORNEADO, uno por NPC y miles por corrida, y se rehornea. El cuerpo escribe y NO cierra.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+            path,
+            Sub(fs)
+                fs.Write(hdr, 0, 18)
+                fs.Write(bgra, 0, w * h * 4)
+            End Sub)
     End Sub
 
 

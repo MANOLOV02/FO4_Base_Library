@@ -4513,18 +4513,65 @@ Public Class FO4UnifiedMaterial_Class
         End Try
     End Sub
 
+    ''' <summary>Serializa un material .bgsm/.bgem al stream que abrió <c>EscrituraEnElLugar</c>, SIN
+    ''' cerrarlo. ⛔ ESTA ES LA UNICA CASA DE ESTA LEY: vive acá, en la librería base, porque la usan los
+    ''' DOS caminos que escriben materiales — el guardado del editor (<see cref="Save_To_Bgsm"/> /
+    ''' <see cref="Save_To_Bgem"/>, acá al lado) y el clone de Wardrobe Manager
+    ''' (<c>Clone_Materials_class.CommitMaterialJobs</c>, que no puede tener la suya porque entonces
+    ''' habría dos). WM referencia esta librería; al revés no se puede.
+    ''' <para>⛔ POR QUÉ NO SE LLAMA A <c>BaseMaterialFile.Save(FileStream)</c>, que sería lo obvio. Ese
+    ''' método es de MaterialLib (árbol de un tercero, <c>Material-Editor-master</c>) y hace:</para>
+    ''' <code>using BinaryWriter writer = new(file);   // BaseMaterialFile.cs:312 — sin leaveOpen</code>
+    ''' <para>o sea CIERRA el FileStream que no es suyo. Medido: después de <c>material.Save(fs)</c>,
+    ''' <c>fs.CanWrite = False</c>. Es el mismo defecto que se llevó puesta la app en
+    ''' <c>OSD_Class.Save_As</c>. Con la guarda del contrato en <c>EscribirNucleo</c> (que exige que el
+    ''' cuerpo escriba y NO cierre) pasaría a tirar en CADA guardado de material.</para>
+    ''' <para>⛔ NO se arregla en MaterialLib: es un tercero, y actualizarlo mueve las citas de todo el
+    ''' que lo referencia. Se entra por <c>Serialize(BinaryWriter)</c>, que es público y es exactamente lo
+    ''' que <c>Save</c> hace adentro — sin el <c>using</c> que cierra.</para>
+    ''' <para>⛔ SEGUNDO DEFECTO QUE ESTO CIERRA: <c>Save</c> devuelve <c>Boolean</c> y se traga la
+    ''' excepción (<c>catch { return false; }</c>, BaseMaterialFile.cs:310-323), y los llamadores
+    ''' DESCARTABAN ese retorno — una serialización fallida dejaba el destino truncado y reportaba éxito.
+    ''' Llamando a <c>Serialize</c> derecho, la excepción sale y la ley de escritura hace lo suyo. Es la
+    ''' misma razón por la que <c>NifContent_Class.Save_As_Manolo</c> mira el código de retorno ADENTRO
+    ''' del cuerpo.</para></summary>
+    Public Shared Sub SerializarMaterial(material As BaseMaterialFile, fs As Stream)
+        If material Is Nothing Then Throw New ArgumentNullException(NameOf(material))
+        If fs Is Nothing Then Throw New ArgumentNullException(NameOf(fs))
+        ' `UTF8Encoding(False, True)` es EXACTAMENTE lo que construye `New BinaryWriter(stream)` de un
+        ' parámetro — que es lo que usaba `Save` —, así que los bytes emitidos no se mueven. NO se pone
+        ' `Encoding.UTF8`: ése lleva preámbulo BOM y fallback de reemplazo en vez de tirar, o sea otra
+        ' política ante un string inválido.
+        Using w As New BinaryWriter(fs, New System.Text.UTF8Encoding(False, True), leaveOpen:=True)
+            material.Serialize(w)
+            w.Flush()
+        End Using
+    End Sub
+
     ''' <summary>Serialize the underlying BGSM to disk and write a `.bgsm.json` sidecar
     ''' next to it carrying the envmapMaskTexture path (which the BGSM binary cannot
     ''' persist). If _EnvmapMaskPath is empty, no sidecar is written and any existing
-    ''' loose sidecar is removed so stale state doesn't survive.</summary>
+    ''' loose sidecar is removed so stale state doesn't survive.
+    ''' <para>⛔ VA POR <c>GuardarConCopia</c>, NO POR <c>Escribir</c>, y el motivo es el LLAMADOR (censo:
+    ''' los dos únicos son <c>Editor_Form.ButtonMatSave_Click</c> y <c>ButtonMatSaveAs_Click</c>): es un
+    ''' archivo por click del usuario, a una ruta que él eligió, y pisa un suelto YA INSTALADO bajo el
+    ''' Data del juego (<c>Directorios.Fallout4data</c> = <c>Config_App.Current.FO4EDataPath</c>) que
+    ''' esta app no produjo y no puede regenerar. Es el mismo reparto que ya aplica
+    ''' <c>NifContent_Class.Save_As_Manolo_ConCopia</c> frente a <c>Save_As_Manolo</c>. El camino
+    ''' REGENERABLE de materiales es el clone (<c>WriteMaterialJob</c> → <c>Escribir</c>), y por eso la
+    ''' palabra "materiales" en el docstring de <c>Escribir</c> se refiere a AQUEL, no a éste.</para>
+    ''' <para>⛔ Y NO <c>File.Open(FileMode.Create)</c>, que es lo que había: CREATE_ALWAYS sobre un
+    ''' destino con FILE_ATTRIBUTE_HIDDEN devuelve ERROR_ACCESS_DENIED (medido: las tres primitivas
+    ''' —<c>File.Open(Create)</c>, <c>WriteAllText</c>, <c>WriteAllBytes</c>— tiran
+    ''' <c>UnauthorizedAccessException</c>; <c>OpenOrCreate</c>+<c>SetLength(0)</c> escribe y CONSERVA el
+    ''' atributo), y bajo Mod Organizer / Vortex un archivo nuevo o borrado rompe el VFS y el hardlink.
+    ''' Ver la cabecera de <c>EscrituraEnElLugar</c>, que es la única casa de esa ley.</para></summary>
     Public Sub Save_To_Bgsm(filePath As String)
         Dim bgsm = TryCast(Underlying_Material, BGSM)
         If bgsm Is Nothing Then
             Throw New InvalidOperationException("Save_To_Bgsm: Underlying_Material is not a BGSM (" & Underlying_Material?.GetType().Name & ")")
         End If
-        Using stream = File.Open(filePath, FileMode.Create)
-            bgsm.Save(stream)
-        End Using
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) SerializarMaterial(bgsm, fs))
         ' Sidecar carries fields the v2 binary cannot persist: the runtime envmap-mask path
         ' (NIF slot 5, FO4) plus the Skyrim-container (option (b)) flow (slot 5) / lighting
         ' (slot 6) textures. Each key is written only when non-empty.
@@ -4534,18 +4581,29 @@ Public Class FO4UnifiedMaterial_Class
     End Sub
 
     ''' <summary>Serialize the underlying BGEM to disk. BGEM has a native envmapMaskTexture
-    ''' field, so no sidecar is required — mirrors Save_To_Bgsm for symmetry.</summary>
+    ''' field, so no sidecar is required — mirrors Save_To_Bgsm for symmetry (misma ley de escritura y
+    ''' mismo motivo: ver <see cref="Save_To_Bgsm"/>).</summary>
     Public Sub Save_To_Bgem(filePath As String)
         Dim bgem = TryCast(Underlying_Material, BGEM)
         If bgem Is Nothing Then
             Throw New InvalidOperationException("Save_To_Bgem: Underlying_Material is not a BGEM (" & Underlying_Material?.GetType().Name & ")")
         End If
-        Using stream = File.Open(filePath, FileMode.Create)
-            bgem.Save(stream)
-        End Using
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) SerializarMaterial(bgem, fs))
         ClearDirty()
     End Sub
 
+    ''' <summary>⛔ EL SIDECAR VA POR LA MISMA LEY QUE EL .bgsm, y eso es deliberado: son las DOS MITADES
+    ''' DE UN ARTEFACTO. Si el binario tuviera red y el sidecar no, un guardado que falla a la mitad
+    ''' dejaría el .bgsm restaurado (viejo) al lado de un .json nuevo — un par inconsistente que ningún
+    ''' lector puede detectar, porque cada archivo por separado se ve válido.
+    ''' <para>⛔ Y NO <c>File.WriteAllText</c>, que es lo que había: pide CREATE_ALWAYS igual que el
+    ''' <c>File.Open(FileMode.Create)</c> del binario, y sobre un destino OCULTO devuelve ACCESS_DENIED
+    ''' (medido). El sidecar vive AL LADO del material, o sea en el mismo Data bajo gestor de mods.</para>
+    ''' <para>⚠️ HUECO DECLARADO, y se dice en vez de taparlo: el <c>File.Delete</c> de abajo —borrar un
+    ''' sidecar que quedó sin contenido— NO pasa por la ley y NO está medido contra usvfs. La cabecera de
+    ''' <c>EscrituraEnElLugar</c> prohíbe el Delete+Create (que rompe VFS y hardlink), no el Delete solo;
+    ''' qué hace MO2 con un <c>DeleteFile</c> sobre un archivo del mod no está medido en este árbol. Se
+    ''' deja como está hasta que alguien lo mida, y la medición va ACÁ.</para></summary>
     Private Shared Sub WriteMaterialSidecar(materialPath As String, envmapMask As String, flowTexture As String, lightingTexture As String)
         Dim sidecarPath = materialPath & ".json"
         Dim payload As New Dictionary(Of String, String)
@@ -4562,7 +4620,10 @@ Public Class FO4UnifiedMaterial_Class
             Return
         End If
         Dim opts = New JsonSerializerOptions With {.WriteIndented = True}
-        File.WriteAllText(sidecarPath, JsonSerializer.Serialize(payload, opts))
+        ' Los bytes se arman ENTEROS antes de tocar el disco: si el serializador tirara, el destino no se
+        ' llegó a abrir y queda intacto. (`EscribirNucleo` trunca ANTES de correr el cuerpo.)
+        Dim bytes = Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, opts))
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(sidecarPath, Sub(fs) fs.Write(bytes, 0, bytes.Length))
     End Sub
 
     ' MaterialLib stores BGSM/BGEM colors as RGB-only uint values: 0x00RRGGBB.

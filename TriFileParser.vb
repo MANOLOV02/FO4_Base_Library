@@ -521,9 +521,16 @@ Public Module TriFileWriter
             ' Una SOLA implementación del formato, en BuildTriBytes: duplicar acá el header y las dos
             ' WriteSection deja a los tests validando una copia distinta de la que corre en el build.
             ' Se serializa a memoria y recién ahí se toca el disco, así que un throw de los límites del
-            ' formato no deja un .tri truncado (FileMode.Create trunca antes de escribir).
+            ' formato no deja un .tri truncado: el destino ni se abre. Esa propiedad SE MANTIENE con la
+            ' ley de escritura, que trunca (`SetLength(0)`) recién después de abrir y justo antes de
+            ' correr el cuerpo — para cuando eso pasa, `payload` ya está entero.
+            ' ⛔ NO `File.WriteAllBytes`: pide CREATE_ALWAYS ⇒ ACCESS_DENIED sobre un destino OCULTO, y
+            ' archivo NUEVO bajo MO2/Vortex. Estos .tri caen bajo el Data del juego (el build de Wardrobe
+            ' Manager los pone en `Directorios.Fallout4data`). La ley vive en
+            ' `Ba2_Bsa_Library\EscrituraEnElLugar.vb`. `Escribir` porque es salida del BUILD: se regenera.
             Dim payload = BuildTriBytes(tri)
-            File.WriteAllBytes(fileName, payload)
+            BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+                fileName, Sub(fs) fs.Write(payload, 0, payload.Length))
         Catch ex As Exception
             ' Un .tri que no se escribio deja al NIF con un BODYTRI apuntando a nada. El caller
             ' DEBE propagar el False; aca solo queda el rastro de la causa real, que si no se

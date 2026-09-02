@@ -427,14 +427,17 @@ Public NotInheritable Class LoadOrderActivator
     ''' <para>Pasa de verdad: `loadorder.txt` no lleva el `*` de activacion, asi que un plugin llamado
     ''' `#Patch.esp` o `;Fix.esp` —prefijos que los autores usan para forzar orden— se escribe como una
     ''' linea que vuelve a leerse como COMENTARIO. En `Plugins.txt` el mismo nombre sobrevive, porque ahi
-    ''' la linea empieza con `*`. El formato no tiene escape: no hay forma de representarlo.</para></summary>
+    ''' la linea empieza con `*`. El formato no tiene escape: no hay forma de representarlo.</para>
+    ''' <para>⛔ Es PURA y se contesta con el NOMBRE solo: no abre el archivo, no mira el disco. Por eso el
+    ''' espejo la consulta ANTES de escribir y no despues del verify en rojo — el texto dice "was left
+    ''' untouched" porque ahora es literal: no se respalda, no se sobrescribe y no se restaura.</para></summary>
     Private Shared Function MotivoNoRepresentableSinMarcador(pluginName As String) As String
         If ParsearLinea(pluginName).Name = pluginName Then Return ""
         Dim primero = pluginName.Substring(0, 1)
         Return $"loadorder.txt could not be updated: the plugin name '{pluginName}' starts with '{primero}'," &
                " which that file's format reads as the start of a comment, so the entry would be invisible" &
-               " to the tools that use it (LOOT, Vortex). loadorder.txt was restored to its previous" &
-               " contents. Plugins.txt was updated correctly and the game will load the plugin — only" &
+               " to the tools that use it (LOOT, Vortex). loadorder.txt was left untouched. Plugins.txt was" &
+               " updated correctly and the game will load the plugin — only" &
                $" those tools may show the old position. Rename the plugin so it does not start with '{primero}'" &
                " if you want them to show it correctly."
     End Function
@@ -747,6 +750,26 @@ Public NotInheritable Class LoadOrderActivator
                 Return "loadorder.txt is read-only, so only Plugins.txt was updated."
             End If
 
+            ' ⛔ SE PREGUNTA ANTES DE ABRIR EL ARCHIVO. Esto se consultaba DESPUES del verify en rojo, o
+            ' sea despues de respaldar, sobrescribir y restaurar. El resultado observable ya era correcto
+            ' —el archivo volvia byte a byte y el aviso nombraba la causa—, pero el trabajo se hacia y se
+            ' deshacia por una condicion sabida de antemano: `MotivoNoRepresentableSinMarcador` es PURA,
+            ' sale de `ParsearLinea` sobre el NOMBRE, y no mira el archivo.
+            ' Lo que se gana no es velocidad: (1) entre la escritura y la restauracion el loadorder.txt EN
+            ' DISCO quedaba degradado —la entrada releida como COMENTARIO— y ahi lo puede leer LOOT, Vortex
+            ' o MO2; (2) `RestaurarDesdeRespaldo` puede fallar, y el mensaje de mas abajo existe justo para
+            ' ese caso; (3) la respuesta ya no depende de poder LEER el archivo, que es lo correcto porque
+            ' la causa no esta en el archivo. Con un plugin `#Patch.esp` o `;Fix.esp` —legales en NTFS y
+            ' usados a proposito para forzar orden— esa ventana se abria en CADA activacion.
+            ' ⛔ VA ACA, antes de `LeerParaOrden`, y no despues del `idx = desired`: para exactamente los
+            ' nombres que este predicado caza, `IndexOfPlugin` NUNCA los encuentra —la linea vuelve como
+            ' comentario, sin Name— asi que `idx` es -1 siempre y `idx = desired` no puede darse. O sea que
+            ' adelantarlo no se saltea ninguna decision; lo unico que cambia es que ya no hace falta que el
+            ' archivo se pueda abrir para poder contestar. Queda DESPUES del test de solo-lectura para no
+            ' cambiar cual de los dos avisos gana cuando valen los dos.
+            Dim causaPrevia = MotivoNoRepresentableSinMarcador(pluginName)
+            If causaPrevia <> "" Then Return causaPrevia
+
             ' loadorder.txt lists every plugin without activation markers, so an entry there is 'present'
             ' regardless of the `*` this class sets in Plugins.txt. La normalizacion vive en LeerParaOrden,
             ' que es la MISMA puerta por la que relee el verify de mas abajo: si el escritor y el verify
@@ -778,16 +801,12 @@ Public NotInheritable Class LoadOrderActivator
             ' `Activate` es `sinMarcadores`, que describe el FORMATO — la ley es la misma función.
             If Not VerificaEnDisco(loPath, pluginName, blocking, sinMarcadores:=True) Then
                 Dim volvio = RestaurarDesdeRespaldo(loPath, backup)
-                ' Se nombra la CAUSA cuando la sabemos. El único modo de falla que este método puede
-                ' explicar es que el nombre no sobreviva la ida y vuelta por una línea sin marcador, y
-                ' eso se lo pregunta al parser, no a una regla repetida acá.
-                Dim causa = MotivoNoRepresentableSinMarcador(pluginName)
-                If causa <> "" Then
-                    Return causa & If(volvio, "",
-                                      " (the previous contents could NOT be restored automatically" &
-                                      If(String.IsNullOrEmpty(backup), ".",
-                                         " — they are in " & Path.GetFileName(backup) & ".") & ")")
-                End If
+                ' ⛔ ACÁ YA NO SE NOMBRA NINGUNA CAUSA, y no es un olvido. El único modo de falla que este
+                ' método sabía explicar —el nombre que no sobrevive una línea sin marcador— se pregunta
+                ' AHORA ANTES de escribir (ver `causaPrevia` arriba), así que llegar hasta acá en rojo
+                ' significa, por construcción, una causa que NO conocemos: otro proceso tocó el archivo
+                ' entre la escritura y la relectura, o el disco mintió. Repetir la pregunta acá dejaba una
+                ' rama que ya no puede dar True, y una rama muerta miente sobre lo que el código sabe.
                 Return "Plugins.txt was updated, but loadorder.txt did not verify after the write" &
                        If(volvio, " and was restored to its previous contents.",
                           " and could NOT be restored automatically" &

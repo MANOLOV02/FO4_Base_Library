@@ -6,11 +6,28 @@ Public Module JsonConfigIO
     Private ReadOnly SaveOptions As New System.Text.Json.JsonSerializerOptions With {.WriteIndented = True}
 
     ''' <summary>Serializa instance a filePath (indentado). Ante error avisa "Error saving {appLabel}"
-    ''' por el camino que corresponda al proceso (ver <see cref="Avisar"/>).</summary>
+    ''' por el camino que corresponda al proceso (ver <see cref="Avisar"/>).
+    ''' <para>⛔ POR QUE ESTE SITIO ENTRA A LA LEY DE ESCRITURA AUNQUE SU DESTINO NO VIVA BAJO UN GESTOR DE
+    ''' MODS. Censo de llamadores: los tres (<c>Config_Class</c>, <c>WM_Config</c>, <c>NPC_Config</c>)
+    ''' pasan <c>Path.Combine(Application.StartupPath, "*.json")</c> — el bin del proceso, NO el Data del
+    ''' juego. O sea que la mitad VFS/hardlink de la ley no aplica: no hay mod que virtualizar.</para>
+    ''' <para>Pero la OTRA mitad si, y en cualquier disco: <c>File.WriteAllText</c> pide CREATE_ALWAYS, y
+    ''' CREATE_ALWAYS sobre un destino con FILE_ATTRIBUTE_HIDDEN devuelve ERROR_ACCESS_DENIED (medido: las
+    ''' tres primitivas —<c>File.Open(Create)</c>, <c>WriteAllText</c>, <c>WriteAllBytes</c>— tiran
+    ''' <c>UnauthorizedAccessException</c>; <c>OpenOrCreate</c>+<c>SetLength(0)</c> escribe y CONSERVA el
+    ''' atributo). El atributo oculto lo dejan los sincronizadores, y el arbol de esta app vive bajo
+    ''' OneDrive: un <c>config.json</c> oculto hacia que la configuracion dejara de guardarse con un
+    ''' aviso y nada mas.</para>
+    ''' <para>⛔ <c>Escribir</c> y NO <c>GuardarConCopia</c>: no hay VFS que respetar, y sembrar
+    ''' <c>.npcm.prev</c> al lado del ejecutable en cada guardado de opciones seria basura en una carpeta
+    ''' que no es del usuario. Los bytes emitidos NO se mueven: <c>Encoding.UTF8.GetBytes</c> no emite
+    ''' preambulo, que es exactamente lo que hacia <c>File.WriteAllText</c>.</para></summary>
     Public Sub Save(Of T)(instance As T, filePath As String, appLabel As String)
         Try
             Dim jsonString As String = System.Text.Json.JsonSerializer.Serialize(instance, SaveOptions)
-            System.IO.File.WriteAllText(filePath, jsonString)
+            Dim bytes = System.Text.Encoding.UTF8.GetBytes(jsonString)
+            BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+                filePath, Sub(fs) fs.Write(bytes, 0, bytes.Length))
         Catch ex As Exception
             Avisar("Error saving " & appLabel & ": " & ex.Message)
         End Try

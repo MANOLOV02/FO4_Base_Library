@@ -143,18 +143,32 @@ Public Module PluginWriter
                 Directory.CreateDirectory(outDir)
             End If
 
-            Using fs As FileStream = File.Create(outputPath)
-                Using bw As New BinaryWriter(fs)
-                    bw.Write(Encoding.ASCII.GetBytes("TES4"))                       ' 4 — Signature
-                    bw.Write(CUInt(bodyBytes.Length))                               ' 4 — DataSize
-                    bw.Write(FLAG_ESM Or FLAG_ESL)                                  ' 4 — Flags (light master)
-                    bw.Write(0UI)                                                   ' 4 — FormID (always 0 for TES4)
-                    bw.Write(0UI)                                                   ' 4 — VCS1
-                    bw.Write(recordVersion)                                         ' 2 — Version
-                    bw.Write(0US)                                                   ' 2 — VCS2
-                    bw.Write(bodyBytes)
-                End Using
-            End Using
+            ' ⛔ NO `File.Create` (CREATE_ALWAYS ⇒ ACCESS_DENIED sobre un destino OCULTO, y archivo NUEVO
+            ' bajo MO2/Vortex, que rompe VFS y hardlink). Y `GuardarConCopia`, no `Escribir`: el destino
+            ' es `Path.Combine(req.OutputDir, baseName & ".esp")` con `OutputDir` = el Data del juego
+            ' (`Config_App.Current.FO4EDataPath`) en los dos llamadores reales (WM_PackUnpack y
+            ' NpcFaceGenPacker) — o sea que esto puede caer encima de un .esp del usuario que tenga el
+            ' mismo nombre base. Un PLUGIN es dato del usuario: la clase lo dice en la lista de
+            ' `GuardarConCopia`, y `SaveNpcEspWriter` ya escribe el suyo por ahi. Son unos pocos por
+            ' corrida del packager, no miles: el costo medido (+2,66 a +4,53 ms) no mueve la aguja.
+            ' ⛔⛔ `leaveOpen:=True` NO ES OPCIONAL: el cuerpo que recibe `EscrituraEnElLugar` escribe y NO
+            ' cierra — el `New BinaryWriter(fs)` que habia aca cerraba el FileStream ajeno y la guarda del
+            ' contrato lo habria matado en cada corrida. Es el mismo defecto de `OSD_Class.Save_As`.
+            BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(
+                outputPath,
+                Sub(fs)
+                    Using bw As New BinaryWriter(fs, New System.Text.UTF8Encoding(False, True), leaveOpen:=True)
+                        bw.Write(Encoding.ASCII.GetBytes("TES4"))                   ' 4 — Signature
+                        bw.Write(CUInt(bodyBytes.Length))                           ' 4 — DataSize
+                        bw.Write(FLAG_ESM Or FLAG_ESL)                              ' 4 — Flags (light master)
+                        bw.Write(0UI)                                               ' 4 — FormID (always 0 for TES4)
+                        bw.Write(0UI)                                               ' 4 — VCS1
+                        bw.Write(recordVersion)                                     ' 2 — Version
+                        bw.Write(0US)                                               ' 2 — VCS2
+                        bw.Write(bodyBytes)
+                        bw.Flush()
+                    End Using
+                End Sub)
         End Using
     End Sub
 

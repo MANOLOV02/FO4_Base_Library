@@ -195,7 +195,19 @@ Public Module EquipResolver
         ''' <para>Se DERIVA de <see cref="ArmaFootprint.Fuente"/> en vez de guardarse: así no puede quedar
         ''' desincronizada de <see cref="Valid"/>, que es la otra lectura de la misma respuesta.</para>
         ''' <para>⚠️ LÍMITE: el colector además emite geometría por chunk-mount de OMOD antes de mirar los
-        ''' armatures. Eso no se deriva de acá, así que esto es un SUBCONJUNTO de lo que dibuja.</para></summary>
+        ''' armatures. Eso no se deriva de acá, así que esto es un SUBCONJUNTO de lo que dibuja.</para>
+        '''
+        ''' <para>⛔ <b>API pública SIN CONSUMIDORES, y se conserva a propósito.</b> Hoy no la llama nadie:
+        ''' quedó como la DEFINICIÓN de ese subconjunto, y dos casos de <c>Tools\OutfitDraftSaveGate</c>
+        ''' —<b>C14</b> sobre <c>OutfitPicker_Form.BuildEquipUnits</c> y <b>C15</b> sobre
+        ''' <c>AplicaAEsteNpc</c>— <b>prohíben su NOMBRE</b> en el texto de esos dos miembros
+        ''' (<c>codigo.Contains("DibujaAlgunArmature")</c>). No comparan contra ella: le vetan la vuelta.
+        ''' El motivo es el LÍMITE de arriba — <b>sirve para AFIRMAR, nunca para DESCARTAR</b>: como filtro
+        ''' se come prendas que la ventana principal sí dibuja, porque no ve el carril de chunk-mount.</para>
+        ''' <para>⚠️ Y que quede dicho con precisión, porque la redacción anterior de esta nota era falsa:
+        ''' <b>borrar esta propiedad NO rompería C14 ni C15</b>. Seguirían en verde, buscando un texto que ya
+        ''' no podría aparecer. Se conserva porque es la definición que esos casos citan en su mensaje de
+        ''' error, no porque ellos la ejecuten.</para></summary>
         Public ReadOnly Property DibujaAlgunArmature As Boolean
             Get
                 Return Addons.Any(Function(a) a.RaceOk AndAlso a.Fuente <> FuenteDeMalla.Ninguna)
@@ -386,10 +398,6 @@ Public Module EquipResolver
         Public OcclusionMask As UInteger
         Public Tag As Object
 
-        Public Shared Function FromFootprint(fp As ArmoFootprint, order As Integer, Optional tag As Object = Nothing) As EquipItem
-            Return New EquipItem With {.ArmoFormID = fp.ArmoFormID, .Order = order, .EquipMask = fp.EquipMask,
-                                       .GeometryMask = fp.GeometryMask, .OcclusionMask = fp.OcclusionMask, .Tag = tag}
-        End Function
     End Class
 
     ''' <summary>Reglas que NO son del motor y por eso se piden explícitamente.</summary>

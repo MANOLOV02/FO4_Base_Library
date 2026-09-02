@@ -400,7 +400,50 @@
         ''' si no se sabe dónde está parado lo que ya hay, tampoco se sabe dónde va lo nuevo, y tratar "no
         ''' lo encontré" como "va al final" deja el record corrupto en silencio. En un ARMO de Skyrim sin
         ''' <c>DESC</c>, el <c>DESC</c> terminaba en la posición 2 (<c>EDID DESC BODT RNAM DATA DNAM</c>) y
-        ''' al releer esa salida se descartaban BODT, RNAM, DATA y DNAM.</para></summary>
+        ''' al releer esa salida se descartaban BODT, RNAM, DATA y DNAM.</para>
+        '''
+        ''' <para>⛔ CON UNA EXCEPCIÓN, Y ES DE CAUSA CONOCIDA: un <see cref="WbPassthroughDef"/> NO es un
+        ''' hijo que no se pudo identificar — es un hijo que <b>por construcción</b> no tiene miembro. El
+        ''' lector fabrica su def en el acto (<c>WbReader.vb:68</c>, <c>:77</c>, <c>:88</c>) y esa instancia
+        ''' no está ni puede estar en <c>def.Members</c>, así que <see cref="MemberIndexOf"/> —que compara
+        ''' por REFERENCIA— da −1 siempre. Se lo SALTEA: no dice nada sobre dónde va el nuevo, exactamente
+        ''' igual que hace <see cref="PosicionDe"/>, el gemelo de este bucle, desde que existe.</para>
+        '''
+        ''' <para><b>Por qué saltearlo y no tirar</b>, con cita de las dos autoridades:</para>
+        ''' <list type="number">
+        ''' <item><b>xEdit</b> (<c>TwbMainRecord.DoInit</c>, <c>wbImplementation.pas:10545-10580</c> y
+        ''' <c>:10640-10660</c>): un subrecord inesperado o fuera de orden se REPORTA
+        ''' (<c>wbProgressCallback('Error: record … contains unexpected (or out of order) subrecord …')</c>),
+        ''' marca <c>FoundError</c> y hace <c>Inc(CurrentRecPos); Continue;</c> — el elemento QUEDA en
+        ''' <c>cntElements</c>, sin Def y sin SortOrder, y <b>el resto del record se procesa normal. No
+        ''' tira y no aborta el record.</b></item>
+        ''' <item><b>El motor</b>: la rama de herencia copia un conjunto CERRADO de componentes
+        ''' (<c>Fallout4.exe 0x1404626A0</c>, rama viva <c>0x14046276F</c>–<c>0x1404628D5</c>, 13;
+        ''' <c>SkyrimSE.exe 0x14027E780</c>, <c>0x14027E837</c>–<c>0x14027E95E</c>, 12 — la tabla está en
+        ''' <see cref="CanonHerencia.MiembrosHeredados"/>). Un subrecord que el esquema no declara no está
+        ''' en ese conjunto: <b>ni se hereda ni puede impedir la copia</b>. No hace falta dirección nueva;
+        ''' la lista cerrada ya citada lo resuelve.</item>
+        ''' <item><b>El lector, acá</b>: ya declara al passthrough un HALLAZGO reportado que "se conserva
+        ''' sin interpretar" (<c>WbReader.vb:23-24</c> y <c>:156-163</c>), no un fatal.</item>
+        ''' </list>
+        '''
+        ''' <para>Qué NO cambia: el guardado. <c>WbPassthroughDef.Emit</c> (<c>WbReader.vb:192-204</c>)
+        ''' sigue tirando salvo <c>AllowPendingSubrecords</c>, así que un record con un passthrough sigue
+        ''' siendo INEMITIBLE. Lo que se destraba es la LECTURA — el render y el bake, que llegan acá por
+        ''' <c>CanonHerencia.Materializar</c> y no atrapan nada
+        ''' (<c>NpcMeshCollector:389</c>, <c>NpcMaterialResolver:373</c>).</para>
+        '''
+        ''' <para>El orden declarado se preserva y es demostrable: <c>insertAt</c> pasa a ser el índice del
+        ''' primer hijo IDENTIFICABLE cuyo miembro viene después. Los passthrough anteriores quedan antes
+        ''' del injerto y los posteriores después, y entre miembros declarados no cambia nada. Con
+        ''' <c>[EDID(0), ZZZZ(−1), BOD2(8)]</c> e injerto del miembro 5 queda
+        ''' <c>[EDID, ZZZZ, nuevo, BOD2]</c>.</para>
+        '''
+        ''' <para><b>Medido</b> (2026-09-01, gate <c>OutfitDraftSaveGate</c>, M1): ARMO con un hijo de
+        ''' primer nivel que la DEF no ubica = <b>0 de 1.067</b> en el orden de carga de FO4 (71 plugins) y
+        ''' <b>0 de 4.222</b> en el de SSE (98 plugins). O sea que el throw no era alcanzable sobre los
+        ''' datos del usuario: esto es para los plugins de TERCEROS, que es a quienes se distribuye la
+        ''' app.</para></summary>
         Public Function InsertarEnPosicionDeclarada(root As WbNode, def As WbRecordDef, nodo As WbNode) As WbNode
             Dim memberIdx = MemberIndexOf(def, nodo)
             If memberIdx < 0 Then
@@ -411,6 +454,10 @@
 
             Dim insertAt = root.Children.Count
             For c = 0 To root.Children.Count - 1
+                ' ⛔ El passthrough se saltea ANTES de preguntar el índice: su −1 no es una falla de
+                ' identificación, es su definición. Preguntarlo primero y después distinguir la causa
+                ' dejaría las dos cosas leyéndose como la misma.
+                If TypeOf root.Children(c).Def Is WbPassthroughDef Then Continue For
                 Dim idx = MemberIndexOf(def, root.Children(c))
                 If idx < 0 Then
                     Throw New InvalidOperationException(

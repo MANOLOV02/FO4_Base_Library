@@ -474,6 +474,35 @@ Public Class FilesDictionary_class
     ' Key: archive file name (matches File_Location.BA2File). Value: unused (used as a set).
     Private Shared ReadOnly _registeredArchives As New ConcurrentDictionary(Of String, Byte)(StringComparer.OrdinalIgnoreCase)
 
+    ''' <summary>El <c>SourceOrder</c> con el que se montó CADA archive, por nombre de archivo, se haya
+    ''' montado en el scan o en runtime. Se escribe en <see cref="ProcessBa2File"/>, que es el único
+    ''' camino de montaje, y se borra al desmontar.
+    ''' <para>⛔⛔ POR QUÉ HACE FALTA, y el defecto que cierra. La prioridad de un archive sólo se podía
+    ''' recuperar mirando las entradas del diccionario — y el diccionario expone únicamente al GANADOR de
+    ''' cada ruta. Un archive cuyas rutas están TODAS sombreadas por otro no aparece en ningún lado, así
+    ''' que quien desmontaba y volvía a montar (el Pack y el Unpack de Wardrobe Manager) no tenía con qué
+    ''' restaurar su orden y caía en el default
+    ''' <see cref="ArchiveSourceOrder_RuntimeRegistered"/> — que le gana a TODO archive de plugin. O sea
+    ''' que un archive PERDEDOR pasaba a GANADOR sin que cambiara un solo byte en disco, y después del
+    ''' Pack la app leía los assets del otro archive. `BuildArchivePriority` construye el mapa pero es
+    ''' transitorio: se descarta al terminar el scan.</para>
+    ''' <para>Se guarda al MONTAR y no se deriva de las entradas: es el único lugar donde el dato existe
+    ''' para los archives totalmente sombreados, que son justamente el caso.</para></summary>
+    Private Shared ReadOnly _ordenPorArchive As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>El <c>SourceOrder</c> con el que está montado el archive <paramref name="archiveFileName"/>
+    ''' (nombre de archivo, como <see cref="File_Location.BA2File"/>), o False si no está montado.
+    ''' <para>API MÍNIMA Y DE SOLO LECTURA, a propósito: lo que el llamador necesita es poder volver a
+    ''' montar con la MISMA prioridad después de un desmontaje deliberado. No expone el mapa ni deja
+    ''' mutarlo — cambiar una prioridad a mano es reordenar el load order por la ventana de atrás.</para>
+    ''' <para>Cubre los archives SOMBREADOS, que es su razón de ser: no se deriva del diccionario, se
+    ''' registra al montar.</para></summary>
+    Public Shared Function TryGetArchiveSourceOrder(archiveFileName As String, ByRef sourceOrder As Integer) As Boolean
+        sourceOrder = 0
+        If String.IsNullOrEmpty(archiveFileName) Then Return False
+        Return _ordenPorArchive.TryGetValue(archiveFileName, sourceOrder)
+    End Function
+
     ''' <summary>
     ''' SourceOrder for archives mounted via RegisterArchive after the initial scan.
     ''' Higher than any value assigned by BuildArchivePriority but lower than Integer.MaxValue
@@ -1480,6 +1509,10 @@ Public Class FilesDictionary_class
                     _dictionary = value
                 End If
                 _overriddenEntries.Clear()
+                ' Reemplazar el diccionario ENTERO es tirar todos los montajes: los ordenes anotados
+                ' describen archives que ya no estan montados y quedarian contestando por un estado
+                ' anterior. El re-scan los vuelve a anotar al montar cada uno.
+                _ordenPorArchive.Clear()
                 RebuildSearchIndexesFromDictionary()
             End SyncLock
         End Set
@@ -1836,7 +1869,15 @@ Public Class FilesDictionary_class
                                                             End Sub)
 
             Try
-                ProcessBa2File(absolutePath, sourceOrder, noopProgress, added)
+                ' ⛔ EL FALLO SE CONSUME. `ProcessBa2File` NO propaga (el scan necesita que no lo haga):
+                ' devuelve la causa. Sin este chequeo el `Catch` de abajo —el rollback— no se disparaba
+                ' NUNCA, y un archive que reventaba a mitad quedaba montado PARCIAL y marcado como
+                ' registrado, con el reintento bloqueado por el guard de idempotencia.
+                Dim fallaMontaje = ProcessBa2File(absolutePath, sourceOrder, noopProgress, added)
+                If fallaMontaje IsNot Nothing Then
+                    Throw New IOException(
+                        $"No se pudo montar '{archiveFileName}': {fallaMontaje.Message}", fallaMontaje)
+                End If
 
                 ' Index only the keys touched by this archive instead of rebuilding the entire search index.
                 For Each key In added
@@ -1959,6 +2000,10 @@ Public Class FilesDictionary_class
         ' queda DESMONTADO y marcado como no registrado, con el intento de montaje perdido en silencio.
         Dim removedFlag As Byte = 0
         _registeredArchives.TryRemove(archiveFileName, removedFlag)
+        ' Y el orden anotado se va con el montaje: dejarlo vivo haria que `TryGetArchiveSourceOrder`
+        ' contestara por un archive DESMONTADO, que es afirmar sobre algo que ya no esta.
+        Dim ordenQuitado As Integer = 0
+        _ordenPorArchive.TryRemove(archiveFileName, ordenQuitado)
         Return entradasPurgadas
     End Function
 
@@ -2115,6 +2160,21 @@ Public Class FilesDictionary_class
             SyncLock _overriddenEntriesLock
                 Dictionary.Clear()
                 _overriddenEntries.Clear()
+                ' ⛔ Y EL MAPA DE ORDENES TAMBIEN, POR LA MISMA RAZON Y BAJO EL MISMO CANDADO. El re-scan
+                ' tira TODOS los montajes: un orden que sobreviva describe un archive que ya no esta
+                ' montado. El `Clear` estaba solo en el setter de `Dictionary` —cuyo unico llamador es un
+                ' gate—, asi que por ESTA puerta (la que usan de verdad WM Pack y el packer de FaceGen)
+                ' el invariante que declara `_ordenPorArchive` era falso: un archive que despues del
+                ' re-scan se decide NO remontar seguia contestando su orden viejo.
+                _ordenPorArchive.Clear()
+                ' ⛔ Y `_registeredArchives` TAMBIÉN, por el MISMO argumento: el re-scan tira todos los
+                ' montajes. Esta asimetría era PREEXISTENTE y quedó a la vista al agregar el mapa de
+                ' órdenes al lado. Lo que dejaba: un archive montado en runtime antes del re-scan seguía
+                ' con su flag puesto, así que un `RegisterArchive` posterior salía por el guard de
+                ' idempotencia SIN MONTAR NADA — el archive quedaba fuera del diccionario para el resto
+                ' de la sesión, en silencio y sin camino de reintento. Es el mismo modo de falla que el
+                ' rollback de `RegisterArchive` existe para evitar, por la puerta del re-scan.
+                _registeredArchives.Clear()
                 ClearSearchIndexes()
             End SyncLock
 
@@ -2543,13 +2603,31 @@ Public Class FilesDictionary_class
 
         Return result
     End Function
-    Private Shared Sub ProcessBa2File(ba2 As String,
-                                      sourceOrder As Integer,
-                                      progress As IProgress(Of (String, Integer, Integer)),
-                                      Optional addedKeys As ConcurrentBag(Of String) = Nothing)
+    ''' <summary>Monta un archive en el diccionario. Devuelve <c>Nothing</c> si salió bien, o la excepción
+    ''' que lo hizo fallar.
+    ''' <para>⛔⛔ DEVUELVE EL FALLO EN VEZ DE TRAGARLO, y esto no es estilo: el <c>Catch</c> de abajo
+    ''' anotaba en <c>_scanErrors</c> y volvía NORMALMENTE, así que <see cref="RegisterArchive"/> —que
+    ''' envuelve esta llamada en un Try para hacer ROLLBACK— creía siempre que el montaje había salido
+    ''' bien. Un archive que revienta DESPUÉS de publicar entradas (truncado, corrupto, un fallo de
+    ''' lectura a mitad) quedaba montado A MEDIAS y marcado como registrado; el segundo intento salía por
+    ''' el guard de idempotencia de <c>_registeredArchives</c> sin hacer nada, o sea que el estado parcial
+    ''' no tenía camino de reintento y el Pack/Unpack reportaba éxito con assets faltantes o mezclados.
+    ''' El rollback estaba escrito y era correcto — simplemente no se disparaba nunca.</para>
+    ''' <para>⛔ POR QUÉ NO SE PROPAGA A SECAS: los DOS caminos tienen leyes distintas y las dos son
+    ''' correctas. El SCAN (<c>Fill_DictionaryAsync</c>) itera decenas de archives y un .ba2 podrido no
+    ''' puede abortarlo: sus fallos se acumulan en <c>_scanErrors</c> y el barrido sigue — esa conducta no
+    ''' se toca. El montaje en RUNTIME es UNO solo y pedido por el usuario: ahí el fallo tiene que ser
+    ''' ruidoso. Devolviendo la causa, cada llamador aplica la suya y NINGUNO se queda sin enterarse.
+    ''' Y el remonte de <c>WM_PackUnpack.RemontarConservados</c> depende de que RegisterArchive falle
+    ''' ruidoso para poder listar el archive en `fallaron`: con el trago, contaba como remontado.</para></summary>
+    Private Shared Function ProcessBa2File(ba2 As String,
+                                           sourceOrder As Integer,
+                                           progress As IProgress(Of (String, Integer, Integer)),
+                                           Optional addedKeys As ConcurrentBag(Of String) = Nothing) As Exception
         ' Declared at method scope with a safe default so the Finally can attribute this archive's
         ' bytes even if the FileInfo below throws (vanished file). Assigned once we have the FileInfo.
         Dim ba2Size As Long = 0
+        Dim falla As Exception = Nothing
         Try
             ' Se internea el nombre del BA2: queda guardado en muchísimas instancias de File_Location.
             Dim ba2FileName = String.Intern(Path.GetFileName(ba2))
@@ -2587,9 +2665,16 @@ Public Class FilesDictionary_class
                     AddEntryResolvingConflict(standardized, entry)
                     addedKeys?.Add(standardized)
                 Next
+                ' ⛔ EL ORDEN SE ANOTA AL **TERMINAR** EL MONTAJE, nunca al empezar. Anotarlo en la primera
+                ' línea hacía que un archive que reventaba a mitad quedara ANOTADO sin estar montado, y
+                ' `TryGetArchiveSourceOrder` contestaba por él — contra su propio contrato, que promete
+                ' responder sólo por archives MONTADOS. En `RegisterArchive` el rollback lo sacaba; el
+                ' SCAN no tiene rollback, así que la única forma de que la anotación sea verdad en los dos
+                ' caminos es hacerla cuando el montaje ya salió bien. Ver `_ordenPorArchive`.
+                _ordenPorArchive(ba2FileName) = sourceOrder
                 _scanReport.Enqueue((ba2FileName, True))
                 Interlocked.Increment(_archivesFromCache)
-                Return
+                Return Nothing   ' cache hit: montaje completo y sin fallo
             End If
 
             ' Cache miss: open the archive, filter entries by SupportedExtensions,
@@ -2628,6 +2713,10 @@ Public Class FilesDictionary_class
                     Next
                 End Using
             End Using
+            ' El montaje ya publicó TODAS sus entradas: recién acá la anotación es verdad. (Ver el ⛔ de
+            ' la rama de cache-hit: anotar al empezar hacía mentir a TryGetArchiveSourceOrder sobre un
+            ' archive que reventaba a mitad, porque el scan no tiene rollback.)
+            _ordenPorArchive(ba2FileName) = sourceOrder
             _scanReport.Enqueue((ba2FileName, False))
             Interlocked.Increment(_archivesReindexed)
 
@@ -2640,6 +2729,9 @@ Public Class FilesDictionary_class
             End If
 
         Catch ex As Exception
+            ' Se sigue anotando para el SCAN (que acumula y no aborta) Y se devuelve para el montaje en
+            ' RUNTIME (que tiene que fallar ruidoso y hacer rollback). Ver el ⛔ de la cabecera.
+            falla = ex
             _scanErrors.Enqueue("Error processing BA2 " & ba2 & ": " & ex.Message)
             Logger.LogLazy(Function() "[FilesDictionary] ProcessBa2File error: " & ex.ToString())
         Finally
@@ -2653,7 +2745,8 @@ Public Class FilesDictionary_class
                 _archiveByteProgress.Report((bd, _archiveBytesTotal))
             End If
         End Try
-    End Sub
+        Return falla
+    End Function
 
     Public Shared Function EnumerateFilesWithSymlinkSupport(root As String, pattern As String, Recursive As Boolean) As IEnumerable(Of String)
         Dim spl() As String = {pattern}

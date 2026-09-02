@@ -10,7 +10,13 @@ Imports FO4_Base_Library.Canon.CanonInterpretacion
 ' local) → se arma la MAST list nueva (el master del juego siempre primero, después todo plugin que sea
 ' dueño de algún FormID referenciado, ordenados por load order) → con eso se arma el remapper
 ' (global → (nuevo índice MAST << 24) | ObjectID) → se serializa cada NPC_ con ese remapper, se envuelven
-' en un GRUP y se emite el TES4. La escritura es atómica: .tmp + fsync + rename.
+' en un GRUP y se emite el TES4.
+'
+' ⛔ LA ESCRITURA NO ES ATOMICA y NO es `.tmp` + fsync + rename — esta linea lo afirmaba y el propio
+' archivo la desmiente 1.000 lineas mas abajo (ver el comentario de Step 7 y el `GuardarConCopia` que
+' lo sigue). Es escritura EN EL LUGAR con copia previa VERIFICADA, y la garantia —con el motivo por el
+' que no puede ser atomica bajo MO2/Vortex— vive en UN solo lugar: la cabecera de
+' `BSA_BA2_Library_DLL.EscrituraEnElLugar`. No se repite aca.
 '
 ' Al actualizar un plugin existente, los records ajenos se re-emiten VERBATIM, pero sus FormID y los
 ' embebidos dentro de ellos se remapean contra la MAST list NUEVA — que es justamente lo que hace
@@ -334,8 +340,16 @@ Public Module SaveNpcEspWriter
     Public Class ArmoRecordEntry
         ''' <summary>El record a grabar. De acá sale todo el cuerpo y la cabecera y, en un OVERRIDE,
         ''' los campos que el usuario no tocó: el árbol viene de leer la fuente, así que
-        ''' reproducirlo alcanza sin un camino de preservación aparte.</summary>
-        Public Record As Canon.CanonView
+        ''' reproducirlo alcanza sin un camino de preservación aparte.
+        ''' <para>⛔ ReadOnly, y ACÁ SÍ (no en las otras fichas): la guarda de vista EFECTIVA del
+        ''' constructor es lo ÚNICO que separa la vista materializada del .esp, y con un campo público
+        ''' escribible se eludía con un <c>.Record = efectiva</c> después de construir. Una guarda que se
+        ''' puede rodear por la puerta de al lado no es una guarda. Medido al cerrarlo: CERO asignaciones
+        ''' externas — los seis sitios que construyen esta ficha (<c>NpcOverrideSaver:1617</c> y
+        ''' <c>:1804</c>, <c>ArmoArmaSseRoundtripProbe:161</c>, <c>LStringDestinoProbe:180</c>,
+        ''' <c>OutfitDraftSaveGate:6271</c> y <c>:6926</c>) pasan el árbol por el constructor y su
+        ''' <c>With</c> sólo toca FormID/EditorID/IsOverride/VCS.</para></summary>
+        Public ReadOnly Property Record As Canon.CanonView
 
         ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
         ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
@@ -343,9 +357,12 @@ Public Module SaveNpcEspWriter
         ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29 -un GRUP de
         ''' 24 bytes con el NPC_ apuntandole igual- y compilaba perfecto, porque hasta entonces
         ''' <see cref="Record"/> era un campo mas que arrancaba vacio y olvidarse era legal.
-        ''' <para>El campo sigue siendo escribible a proposito: el merge de un OVERRIDE reemplaza el arbol
-        ''' de una ficha YA armada (NpcOverrideSaver, fases 2c y 2d). Lo que esta prohibido es CREARLA sin
-        ''' arbol, que es el defecto que se comio el atuendo.</para></summary>
+        ''' <para>⛔ ACÁ NO HAY MERGE DE OVERRIDE. Este párrafo decía que el campo "sigue siendo escribible
+        ''' a proposito" por las fases 2c y 2d de <c>NpcOverrideSaver</c>, y era una cita COPIADA de
+        ''' <see cref="OtftRecordEntry"/> / <see cref="LvliRecordEntry"/>, que son las dos que sí se
+        ''' reasignan (<c>NpcOverrideSaver:722</c> y <c>:851</c>). Ninguna fase reasigna el árbol de un
+        ''' ARMO: la justificación apuntaba a algo que no pasa, y era lo que sostenía el hueco.</para>
+        ''' </summary>
         Public Sub New(record As Canon.CanonView)
             If record Is Nothing Then
                 Throw New ArgumentNullException(NameOf(record),
@@ -364,7 +381,9 @@ Public Module SaveNpcEspWriter
                     "Al ESP se escribe la CRUDA: lo que dice el archivo, no lo que el motor va a usar. " &
                     "Ver Canon.CanonHerencia.")
             End If
-            Me.Record = record
+            ' Al campo de respaldo de la propiedad ReadOnly: el constructor es el UNICO lugar donde el
+            ' arbol se fija, y por eso la guarda de arriba no se puede eludir despues de construir.
+            _Record = record
         End Sub
 
         Public FormID As UInteger
@@ -1311,16 +1330,25 @@ Public Module SaveNpcEspWriter
     ''' drift garantizado sobre un valor que decide QUÉ FormID se reindexa al guardar. La dirección
     ''' app→librería sí es legal: NPC Manager ya referencia esta librería, así que
     ''' <c>Borradores.FormIdAltoDeBorrador</c> consume ÉSTE.</para>
-    ''' <para>⚠️ LÍMITE: un <c>Const</c> cruza ensamblados POR VALOR, o sea que el literal queda igual
-    ''' horneado en el ensamblado de la app en tiempo de compilación. La copia existe, sólo que ahora la
-    ''' hace el compilador y no una persona. Preciso: hay DOS declaraciones `Const` —ésta y la de
-    ''' `Borradores`, derivada de ésta—; lo que existe una sola vez es el LITERAL. Reemplazar la DLL sin
-    ''' recompilar la app los dejaría divergentes sin un error — no ocurre porque los dos ensamblados se
-    ''' distribuyen construidos juntos. Cerrarlo del todo pediría un <c>Shared ReadOnly</c>, que cuesta un
-    ''' acceso a campo en un camino que corre por cada FormID del guardado.</para>
+    ''' <para>⛔ <b><c>ReadOnly</c> y NO <c>Const</c>, y eso es la mitad del punto.</b> Un <c>Const</c>
+    ''' cruza ensamblados POR VALOR: el literal queda horneado en el ensamblado de la app en tiempo de
+    ''' compilación, así que la copia seguía existiendo —sólo que la hacía el compilador y no una
+    ''' persona— y reemplazar esta DLL sin recompilar la app los dejaba divergentes sin un solo error.
+    ''' Con el campo, el valor se LEE en tiempo de ejecución y la declaración de acá es la única que hay.
+    ''' <c>Borradores.FormIdAltoDeBorrador</c>, que deriva de ésta, es <c>ReadOnly</c> por lo mismo: si
+    ''' cualquiera de las dos vuelve a ser <c>Const</c>, la cadena entera se re-hornea y el drift vuelve.
+    ''' <para>⛔ <b>ACÁ SE PISÓ UNA DECISIÓN ANTERIOR, y el criterio queda escrito para que no se
+    ''' re-litigue de memoria.</b> La versión previa de esta nota declaraba el límite y lo dejaba ABIERTO a
+    ''' propósito, con este motivo: «cerrarlo del todo pediría un <c>Shared ReadOnly</c>, que cuesta un
+    ''' acceso a campo en un camino que corre por cada FormID del guardado». <b>Ese costo nunca se midió</b>
+    ''' —es un argumento, no una medición, y son tres llamadores: <see cref="IsProvisionalDraftFormID"/> y
+    ''' los dos del descubrimiento—, mientras que el defecto del otro lado <b>sí está medido como clase</b>
+    ''' en este árbol: dos listas que hay que mover juntas derivan, y ya derivaron acá (los cuatro material
+    ''' swap del ARMA que el censo cubría a medias). Un costo supuesto no le gana a un riesgo medido. Si
+    ''' alguien mide que el acceso a campo pesa, el número manda y esto se revisa — pero con el número.</para>
     ''' <para>0xFF nunca es un índice de master real —el tope son 0xFD, y 0xFE es el prefijo ESL—, así
     ''' que no puede chocar con un record cargado y sólo resuelve por <c>draftRemap</c>.</para></summary>
-    Public Const FormIdAltoDeBorrador As UInteger = &HFF000000UI
+    Public ReadOnly FormIdAltoDeBorrador As UInteger = &HFF000000UI
 
     ''' <summary>True if a FormID is a provisional draft sentinel. Una sola ley, un solo valor.</summary>
     Private Function IsProvisionalDraftFormID(formID As UInteger) As Boolean

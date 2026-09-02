@@ -68,7 +68,26 @@ Namespace Canon
         ''' <para>Cubre además el derivado: si el usuario AGREGA una resistencia sobre un <c>DAMA</c>
         ''' injertado, <c>WbEdit.AgregarElemento</c> crea el elemento con la versión del contexto (la del
         ''' hijo) y quedaría una entrada de 8 bytes entre otras de 12. El nodo <c>DAMA</c> sigue
-        ''' estampado, así que el record no sale igual.</para></summary>
+        ''' estampado, así que el record no sale igual.</para>
+        '''
+        ''' <para><b>LO QUE CUESTA, medido</b> (2026-09-01, <c>OutfitDraftSaveGate</c>, M3/M3b). Esta guarda
+        ''' pasó de O(1) —mirar la raíz— a O(nodos), y corre en CADA <c>EmitBody</c>; además
+        ''' <c>CanonInterpretacion.MismoContenido</c> llama a <c>EmitBody</c> DOS VECES por comparación
+        ''' (<c>CanonInterpretacion.vb:1388-1389</c>), que es lo que hace la UI para saber si un record
+        ''' está sucio. Se midió sobre los árboles CAROS, que son los <c>NPC_</c> (VMAD + facciones +
+        ''' paquetes + tintes) y no los ARMO:</para>
+        ''' <list type="bullet">
+        ''' <item><b>SSE</b>: 7.205 <c>NPC_</c>, 1.899.806 nodos (264 por record) ⇒ <b>0,01503 ms</b> por
+        ''' árbol; <c>MismoContenido</c> paga <b>0,03005 ms</b> por comparación.</item>
+        ''' <item><b>FO4</b>: 4.473 <c>NPC_</c>, 1.880.983 nodos (421 por record) ⇒ <b>0,02881 ms</b> por
+        ''' árbol; <c>MismoContenido</c> paga <b>0,05762 ms</b> por comparación.</item>
+        ''' <item>ARMO, para comparar: 0,00509 ms (SSE, 4.222) y 0,02767 ms (FO4, 1.067).</item>
+        ''' </list>
+        ''' <para>O sea: 30 a 58 microsegundos por comparación de NPC_, encima de un <c>EmitBody</c>
+        ''' completo que ya se pagaba dos veces. ⛔ Por eso NO se cambió por una bandera "el árbol tiene
+        ''' versiones mezcladas" mantenida en los dos puntos que estampan: eso sería O(1) pero agrega una
+        ''' SEGUNDA VERDAD que se puede quedar vieja, y esta guarda no puede. No se paga esa deuda por
+        ''' 30 µs. Si algún día el número duele, el canje está escrito acá y la decisión es del usuario.</para></summary>
         Private Shared Sub ExigirVersionUnica(node As WbNode, ctx As WbContext)
             If node.ParsedFormVersion >= 0 AndAlso CInt(ctx.FormVersion) <> node.ParsedFormVersion Then
                 Dim quien = If(node.Parent Is Nothing, "el árbol", $"el miembro '{node.Path}'")

@@ -1172,82 +1172,81 @@ Namespace Canon
         ' Copiar y comparar records
         '======================================================================================
 
-        ''' <summary>Una copia independiente del record, para editar sin tocar el original.
-        ''' <para>Vale para CUALQUIER record: copiar es clonar el árbol y volver a envolverlo, y eso no
-        ''' depende del tipo. Escribir una versión por record obligaba a acordarse de agregar la suya
-        ''' cada vez que se migra uno nuevo, y la que falta no se nota hasta que alguien edita.</para></summary>
-
         ''' <summary>⛔ MUDADO desde `ArmoEditor_Form`: el RENDER, el BAKE y la resolucion de la PIEL
         ''' leian los armatures desde un formulario de WinForms —`NpcMeshCollector`, `FaceGenBuilder`,
         ''' `NpcMaterialResolver`—, y la libreria no puede llamar al proyecto de UI. Por eso la ley no
         ''' podia vivir en un solo lugar: su primitiva estaba del lado equivocado.
         ''' <para>Medido antes de mudar: en `FO4_Base_Library` NO existia ningun escritor de armatures
         ''' (grep de `Agregar/QuitarArmature|Models`, sin `Generated/`: cero).</para></summary>
-    ''' <summary>El modelo de addons (INDX + referencia a la ARMA) es distinto por juego: FO4 =
-    ''' índice y
-    ''' referencia separados (Models); Skyrim = un array de referencias sin índice explícito
-    ''' (Armature, el
-    ''' índice ES la posición). No hay un campo compartido para "la lista de addons".</summary>
-    Public Function LeerComplementos(rec As IArmo) As List(Of ARMO_AddonEntry)
-        Dim result As New List(Of ARMO_AddonEntry)
-        Dim fo4 = TryCast(rec, ArmoFO4)
-        If fo4 IsNot Nothing Then
-            For Each m In fo4.Models
-                result.Add(New ARMO_AddonEntry With {.AddonIndex = m.ModelAddonIndex,
-                           .ArmaFormID = m.ModelArmorAddon})
-            Next
+        ''' <summary>El modelo de addons (INDX + referencia a la ARMA) es distinto por juego: FO4 =
+        ''' índice y
+        ''' referencia separados (Models); Skyrim = un array de referencias sin índice explícito
+        ''' (Armature, el
+        ''' índice ES la posición). No hay un campo compartido para "la lista de addons".</summary>
+        Public Function LeerComplementos(rec As IArmo) As List(Of ARMO_AddonEntry)
+            Dim result As New List(Of ARMO_AddonEntry)
+            Dim fo4 = TryCast(rec, ArmoFO4)
+            If fo4 IsNot Nothing Then
+                For Each m In fo4.Models
+                    result.Add(New ARMO_AddonEntry With {.AddonIndex = m.ModelAddonIndex,
+                               .ArmaFormID = m.ModelArmorAddon})
+                Next
+                Return result
+            End If
+            Dim sse = TryCast(rec, ArmoSSE)
+            If sse IsNot Nothing Then
+                Dim idx As UShort = 0US
+                For Each m In sse.Armature
+                    result.Add(New ARMO_AddonEntry With {.AddonIndex = idx,
+                               .ArmaFormID = m.ModelFilename})
+                    idx += 1US
+                Next
+            End If
             Return result
-        End If
-        Dim sse = TryCast(rec, ArmoSSE)
-        If sse IsNot Nothing Then
-            Dim idx As UShort = 0US
-            For Each m In sse.Armature
-                result.Add(New ARMO_AddonEntry With {.AddonIndex = idx,
-                           .ArmaFormID = m.ModelFilename})
-                idx += 1US
-            Next
-        End If
-        Return result
-    End Function
+        End Function
 
-    Public Sub EscribirComplementos(rec As IArmo, addons As IEnumerable(Of ARMO_AddonEntry))
-        Dim fo4 = TryCast(rec, ArmoFO4)
-        If fo4 IsNot Nothing Then
-            While fo4.Models.Count > 0
-                If Not fo4.QuitarModels(0) Then Exit While
-            End While
-            If addons IsNot Nothing Then
-                For Each ad In addons
-                    Dim m = fo4.AgregarModels()
-                    If m Is Nothing Then Continue For
-                    m.ModelAddonIndex = ad.AddonIndex
-                    m.ModelArmorAddon = ad.ArmaFormID
-                Next
+        Public Sub EscribirComplementos(rec As IArmo, addons As IEnumerable(Of ARMO_AddonEntry))
+            Dim fo4 = TryCast(rec, ArmoFO4)
+            If fo4 IsNot Nothing Then
+                While fo4.Models.Count > 0
+                    If Not fo4.QuitarModels(0) Then Exit While
+                End While
+                If addons IsNot Nothing Then
+                    For Each ad In addons
+                        Dim m = fo4.AgregarModels()
+                        If m Is Nothing Then Continue For
+                        m.ModelAddonIndex = ad.AddonIndex
+                        m.ModelArmorAddon = ad.ArmaFormID
+                    Next
+                End If
+                Return
             End If
-            Return
-        End If
-        Dim sse = TryCast(rec, ArmoSSE)
-        If sse IsNot Nothing Then
-            While sse.Armature.Count > 0
-                If Not sse.QuitarArmature(0) Then Exit While
-            End While
-            If addons IsNot Nothing Then
-                ' ⛔ Skyrim NO tiene índice propio: el orden en el array ES el índice, y el `AddonIndex`
-                ' que trae la entrada lo SINTETIZÓ `LeerComplementos` desde la posición al abrir. Ordenar por él
-                ' deshacía en silencio lo que el usuario acababa de hacer: `MoveAddon` del editor intercambia las
-                ' posiciones pero el índice viaja CON la fila, así que el `OrderBy` restauraba el orden
-                ' viejo y el ESP salía con el armature como estaba — sin un aviso. Y una fila agregada
-                ' nace con índice 0, o sea que saltaba al principio sin importar dónde se la veía.
-                ' El orden de la LISTA es la respuesta: es lo que el usuario ve y armó. La rama de FO4 ya
-                ' emite así — ahí el INDX sí es un campo real del archivo y viaja con su entrada.
-                For Each ad In addons
-                    Dim m = sse.AgregarArmature()
-                    If m IsNot Nothing Then m.ModelFilename = ad.ArmaFormID
-                Next
+            Dim sse = TryCast(rec, ArmoSSE)
+            If sse IsNot Nothing Then
+                While sse.Armature.Count > 0
+                    If Not sse.QuitarArmature(0) Then Exit While
+                End While
+                If addons IsNot Nothing Then
+                    ' ⛔ Skyrim NO tiene índice propio: el orden en el array ES el índice, y el `AddonIndex`
+                    ' que trae la entrada lo SINTETIZÓ `LeerComplementos` desde la posición al abrir. Ordenar por él
+                    ' deshacía en silencio lo que el usuario acababa de hacer: `MoveAddon` del editor intercambia las
+                    ' posiciones pero el índice viaja CON la fila, así que el `OrderBy` restauraba el orden
+                    ' viejo y el ESP salía con el armature como estaba — sin un aviso. Y una fila agregada
+                    ' nace con índice 0, o sea que saltaba al principio sin importar dónde se la veía.
+                    ' El orden de la LISTA es la respuesta: es lo que el usuario ve y armó. La rama de FO4 ya
+                    ' emite así — ahí el INDX sí es un campo real del archivo y viaja con su entrada.
+                    For Each ad In addons
+                        Dim m = sse.AgregarArmature()
+                        If m IsNot Nothing Then m.ModelFilename = ad.ArmaFormID
+                    Next
+                End If
             End If
-        End If
-    End Sub
+        End Sub
 
+        ''' <summary>Una copia independiente del record, para editar sin tocar el original.
+        ''' <para>Vale para CUALQUIER record: copiar es clonar el árbol y volver a envolverlo, y eso no
+        ''' depende del tipo. Escribir una versión por record obligaba a acordarse de agregar la suya
+        ''' cada vez que se migra uno nuevo, y la que falta no se nota hasta que alguien edita.</para></summary>
         <Extension>
         Public Function Copia(Of T As Class)(rec As T) As T
             ' CanonRecordView y no CanonView: Reenvolver decide la clase por la FIRMA del record,

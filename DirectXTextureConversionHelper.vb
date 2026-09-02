@@ -119,7 +119,13 @@ Public Module DirectXTextureConversionHelper
             Directory.CreateDirectory(directoryPath)
         End If
 
-        File.WriteAllBytes(outputFilePath, ddsBytes)
+        ' ⛔ NO `File.WriteAllBytes`: pide CREATE_ALWAYS y sobre un destino OCULTO da ACCESS_DENIED, y un
+        ' archivo nuevo rompe el VFS de MO2 / el hardlink de Vortex. La ley vive en
+        ' `Ba2_Bsa_Library\EscrituraEnElLugar.vb` y no se repite aca. `Escribir` (sin red) y no
+        ' `GuardarConCopia` porque esto es SALIDA REGENERABLE — una textura convertida se vuelve a
+        ' convertir del origen, que no se toca.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+            outputFilePath, Sub(fs) fs.Write(ddsBytes, 0, ddsBytes.Length))
     End Sub
 
     ''' <summary>Encodea un buffer BGRA8 a un DDS completo (header + payload).
@@ -202,7 +208,13 @@ Public Module DirectXTextureConversionHelper
             Directory.CreateDirectory(directoryPath)
         End If
 
-        File.WriteAllBytes(outputFilePath, ddsBytes)
+        ' ⛔ NO `File.WriteAllBytes`: pide CREATE_ALWAYS y sobre un destino OCULTO da ACCESS_DENIED, y un
+        ' archivo nuevo rompe el VFS de MO2 / el hardlink de Vortex. La ley vive en
+        ' `Ba2_Bsa_Library\EscrituraEnElLugar.vb` y no se repite aca. `Escribir` (sin red) y no
+        ' `GuardarConCopia` porque esto es SALIDA REGENERABLE — una textura convertida se vuelve a
+        ' convertir del origen, que no se toca.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+            outputFilePath, Sub(fs) fs.Write(ddsBytes, 0, ddsBytes.Length))
     End Sub
     Public Function DdsBytesToDdsBytes(
         sourceDdsBytes As Byte(),
@@ -244,7 +256,13 @@ Public Module DirectXTextureConversionHelper
             Directory.CreateDirectory(directoryPath)
         End If
 
-        File.WriteAllBytes(outputFilePath, ddsBytes)
+        ' ⛔ NO `File.WriteAllBytes`: pide CREATE_ALWAYS y sobre un destino OCULTO da ACCESS_DENIED, y un
+        ' archivo nuevo rompe el VFS de MO2 / el hardlink de Vortex. La ley vive en
+        ' `Ba2_Bsa_Library\EscrituraEnElLugar.vb` y no se repite aca. `Escribir` (sin red) y no
+        ' `GuardarConCopia` porque esto es SALIDA REGENERABLE — una textura convertida se vuelve a
+        ' convertir del origen, que no se toca.
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+            outputFilePath, Sub(fs) fs.Write(ddsBytes, 0, ddsBytes.Length))
     End Sub
 
     Public Sub ConvertDdsFileToDds(
