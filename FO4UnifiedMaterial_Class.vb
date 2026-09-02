@@ -4571,11 +4571,22 @@ Public Class FO4UnifiedMaterial_Class
         If bgsm Is Nothing Then
             Throw New InvalidOperationException("Save_To_Bgsm: Underlying_Material is not a BGSM (" & Underlying_Material?.GetType().Name & ")")
         End If
-        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) SerializarMaterial(bgsm, fs))
-        ' Sidecar carries fields the v2 binary cannot persist: the runtime envmap-mask path
-        ' (NIF slot 5, FO4) plus the Skyrim-container (option (b)) flow (slot 5) / lighting
-        ' (slot 6) textures. Each key is written only when non-empty.
-        WriteMaterialSidecar(filePath, _EnvmapMaskPath, bgsm.FlowTexture, bgsm.LightingTexture)
+        ' ⛔ EL .bgsm Y SU SIDECAR SON UN LOTE DE DOS, NO DOS GUARDADOS SEGUIDOS. El docstring de
+        ' `WriteMaterialSidecar` ya nombraba el dano exacto -el .bgsm restaurado (viejo) al lado de un
+        ' .json nuevo, un par inconsistente que ningun lector puede detectar- y creia cerrarlo haciendo
+        ' que los dos fueran por la misma ley. NO alcanzaba: `GuardarConCopia` restaura CADA archivo
+        ' por su cuenta, asi que el binario podia quedar CONFIRMADO y el sidecar fallar despues. El par
+        ' mixto seguia siendo posible, y es el peor modo porque cada mitad se ve valida por separado.
+        ' Con el lote, si CUALQUIERA de las dos etapas falla se restauran las anteriores en orden
+        ' inverso: el par queda CONSISTENTE-VIEJO y el estado mixto deja de existir.
+        Using lote = BSA_BA2_Library_DLL.EscrituraEnElLugar.NuevoLote()
+            lote.Guardar(filePath, Sub(fs) SerializarMaterial(bgsm, fs))
+            ' Sidecar carries fields the v2 binary cannot persist: the runtime envmap-mask path
+            ' (NIF slot 5, FO4) plus the Skyrim-container (option (b)) flow (slot 5) / lighting
+            ' (slot 6) textures. Each key is written only when non-empty.
+            WriteMaterialSidecar(filePath, _EnvmapMaskPath, bgsm.FlowTexture, bgsm.LightingTexture, lote)
+            lote.Confirmar()
+        End Using
         ' Just persisted to disk → state in memory matches the file → clean.
         ClearDirty()
     End Sub
@@ -4604,7 +4615,9 @@ Public Class FO4UnifiedMaterial_Class
     ''' <c>EscrituraEnElLugar</c> prohíbe el Delete+Create (que rompe VFS y hardlink), no el Delete solo;
     ''' qué hace MO2 con un <c>DeleteFile</c> sobre un archivo del mod no está medido en este árbol. Se
     ''' deja como está hasta que alguien lo mida, y la medición va ACÁ.</para></summary>
-    Private Shared Sub WriteMaterialSidecar(materialPath As String, envmapMask As String, flowTexture As String, lightingTexture As String)
+    Private Shared Sub WriteMaterialSidecar(materialPath As String, envmapMask As String, flowTexture As String,
+                                            lightingTexture As String,
+                                            lote As BSA_BA2_Library_DLL.EscrituraEnElLugar.LoteConCopias)
         Dim sidecarPath = materialPath & ".json"
         Dim payload As New Dictionary(Of String, String)
         If Not String.IsNullOrEmpty(envmapMask) Then payload("envmapMaskTexture") = envmapMask
@@ -4612,18 +4625,26 @@ Public Class FO4UnifiedMaterial_Class
         If Not String.IsNullOrEmpty(lightingTexture) Then payload("lightingTexture") = lightingTexture
         If payload.Count = 0 Then
             ' Nothing to persist — remove a previous sidecar so we don't leak stale state.
-            Try
-                If File.Exists(sidecarPath) Then File.Delete(sidecarPath)
-            Catch
-                ' Best-effort delete; ignore.
-            End Try
+            ' ⛔⛔ BORRADO COMO ETAPA DEL LOTE, y el `Catch` tragon SE FUE. Era un `File.Delete` crudo con
+            ' `Catch: ignore`: dos agujeros a la vez. (1) SIN VUELTA — si una etapa posterior del lote
+            ' fallaba, el `.bgsm` volvia a su version anterior y este sidecar quedaba borrado igual, o sea
+            ' el par material+sidecar terminaba MEZCLADO, que es justo lo que el lote existe para impedir.
+            ' (2) MUDO — un borrado que no se puede hacer (archivo tomado, solo lectura) se tragaba, y el
+            ' sidecar rancio sobrevivia diciendo cosas que el material ya no dice; el propio docstring de
+            ' este metodo lo declaraba "hueco".
+            ' Ahora `BorrarDelLote` respalda antes de borrar y el rollback lo recrea con sus atributos; sin
+            ' lote sigue siendo best-effort, que es la conducta que tenia.
+            ' ⚠️ La nota usvfs se conserva: bajo MO2 el borrado lo ve el VFS, no hay que hacer nada especial.
+            BSA_BA2_Library_DLL.EscrituraEnElLugar.BorrarDelLote(sidecarPath, lote)
             Return
         End If
         Dim opts = New JsonSerializerOptions With {.WriteIndented = True}
         ' Los bytes se arman ENTEROS antes de tocar el disco: si el serializador tirara, el destino no se
         ' llegó a abrir y queda intacto. (`EscribirNucleo` trunca ANTES de correr el cuerpo.)
         Dim bytes = Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, opts))
-        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(sidecarPath, Sub(fs) fs.Write(bytes, 0, bytes.Length))
+        ' ⛔ ETAPA DEL LOTE, no un guardado propio: si esta escritura falla, el lote deshace el .bgsm
+        ' que ya se escribio y el par queda consistente-viejo. Ver el ⛔ de `Save_To_Bgsm`.
+        lote.Guardar(sidecarPath, Sub(fs) fs.Write(bytes, 0, bytes.Length))
     End Sub
 
     ' MaterialLib stores BGSM/BGEM colors as RGB-only uint values: 0x00RRGGBB.

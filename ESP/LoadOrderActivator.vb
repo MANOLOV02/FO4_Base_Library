@@ -412,6 +412,29 @@ Public NotInheritable Class LoadOrderActivator
     Private Shared Function RestaurarDesdeRespaldo(filePath As String, backupPath As String) As Boolean
         If String.IsNullOrEmpty(backupPath) OrElse Not File.Exists(backupPath) Then Return False
         Try
+            ' ⛔⛔ ESTE `File.Copy` FUNCIONA SOBRE UN DESTINO OCULTO, PERO POR UNA COINCIDENCIA — y la
+            ' coincidencia es fragil, asi que queda anotada y GATEADA (caso 28 de LoadOrderActivatorProbe).
+            '
+            ' La ley real, MEDIDA en net8.0.30 sobre `File.Copy(origen -> destino EXISTENTE, True)`:
+            '     origen Normal -> destino OCULTO ....... UnauthorizedAccessException
+            '     origen OCULTO -> destino OCULTO ....... OK
+            '     cualquiera    -> destino SOLO-LECTURA . UnauthorizedAccessException
+            ' O sea que CREATE_ALWAYS no falla por el atributo del destino sino por la DISCREPANCIA: la
+            ' copia lleva los atributos del ORIGEN, y si no incluyen el oculto que el destino ya tiene,
+            ' el kernel niega. (El SOLO-LECTURA no se alcanza acá: `Activate` lo rechaza antes — caso 07.)
+            '
+            ' Acá el origen es `backupPath`, que se creo unas lineas arriba con
+            ' `File.Copy(filePath, backupPath, True)` — y `File.Copy` PROPAGA los atributos, asi que el
+            ' respaldo de un Plugins.txt oculto es TAMBIEN oculto. Origen oculto -> destino oculto = OK.
+            '
+            ' ⛔ LO QUE ROMPERIA ESTO, y por eso hay un gate: ponerle `LimpiarAtributos(backupPath)` al
+            ' respaldo. Es exactamente lo que hace `GuardarConCopia` con su `.npcm.prev` (para que el
+            ' usuario VEA la copia y para poder borrarla), y es la ley de la casa para los respaldos. El
+            ' dia que alguien la aplique acá "por consistencia", el respaldo queda limpio, la
+            ' restauracion pasa a ser Normal->OCULTO y DEJA DE FUNCIONAR en silencio: el `Catch` de abajo
+            ' devuelve False y el usuario se queda con el archivo degradado. Si ese dia llega, la salida
+            ' NO es volver a discutir esto: es enrutar la restauracion por
+            ' `EscrituraEnElLugar.VolcarEncima`, que escribe con OpenOrCreate y no depende del atributo.
             File.Copy(backupPath, filePath, True)
         Catch
             Return False
@@ -567,7 +590,9 @@ Public NotInheritable Class LoadOrderActivator
             res.Kind = OutcomeKind.Failed
             res.Summary = "Plugins.txt could not be written: " & ex.Message &
                           If(respaldoOk AndAlso Not restaurado,
-                             " (a backup of the previous contents is at " & Path.GetFileName(backupPath) & ")",
+                             " (a backup of the previous contents is at " & Path.GetFileName(backupPath) &
+                             " — if you cannot see it, the original was hidden and the backup inherited that:" &
+                             " enable ""Show hidden items"" in Explorer)",
                              "")
             Return False
         End Try

@@ -4783,9 +4783,19 @@ Public Class PreviewModel
             Return v
         End Function
 
-        ' Sin consumidor fuera de este ensamblado (única referencia: su propia declaración).
+        ''' <summary>Exporta la malla a un OBJ. ⛔ HOY NO TIENE CONSUMIDOR fuera de este ensamblado (única
+        ''' referencia: su propia declaración), y aun así se migró a la ley de escritura en vez de dejarle
+        ''' un comentario: el día que alguien la cablee, el defecto ya no está. Un `StreamWriter(ruta)`
+        ''' pide CREATE_ALWAYS —ACCESS_DENIED sobre un destino OCULTO, y un archivo nuevo rompe el VFS de
+        ''' MO2 / el hardlink de Vortex—. La ley vive en `Ba2_Bsa_Library\EscrituraEnElLugar.vb`.
+        ''' <para>`Escribir` y no `GuardarConCopia`: un OBJ exportado es salida REGENERABLE (se vuelve a
+        ''' exportar de la malla, que no se toca).</para>
+        ''' <para>Se serializa a memoria y se vuelca el buffer, en vez de envolver el stream del cuerpo en
+        ''' un `StreamWriter`: así la trampa del `leaveOpen` que documenta la ley ni se presenta.</para>
+        ''' </summary>
         Friend Sub ExportMeshToOBJ(rutaArchivo As String)
-            Using sw As New StreamWriter(rutaArchivo, False, Encoding.UTF8)
+            Using msObj As New MemoryStream()
+                Using sw As New StreamWriter(msObj, New UTF8Encoding(False), 1024, leaveOpen:=True)
 
                 sw.WriteLine("# Exportado por ExportMeshToOBJ")
                 sw.WriteLine("# Shape: " & MeshData.ShapeName)
@@ -4841,6 +4851,10 @@ Public Class PreviewModel
                     sw.WriteLine("f " & f1 & " " & f2 & " " & f3)
                 Next
 
+                End Using
+                Dim objBytes = msObj.ToArray()
+                BSA_BA2_Library_DLL.EscrituraEnElLugar.Escribir(
+                    rutaArchivo, Sub(fs) fs.Write(objBytes, 0, objBytes.Length))
             End Using
         End Sub
 

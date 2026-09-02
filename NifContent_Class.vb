@@ -491,7 +491,13 @@ Public Class Nifcontent_Class_Manolo
 
     ''' <summary>Igual, pero con copia previa y restauración automática: el guardado de un proyecto desde
     ''' el editor, o una exportación a una ruta que eligió el usuario. NO se usa en horneado ni en build.</summary>
-    Public Sub Save_As_Manolo_ConCopia(Filename As String, Overwrite As Boolean)
+    ''' <summary><paramref name="lote"/> OPCIONAL: cuando este NIF es una ETAPA del guardado de un proyecto
+    ''' de Wardrobe Manager (`.osd` + `.nif` + `.hht` + `.xml` de SMP + `.osp`), la copia de seguridad no se
+    ''' borra al terminar ESTE archivo sino al confirmarse el conjunto — asi un fallo en una etapa posterior
+    ''' puede devolver tambien a esta. Con <c>Nothing</c> (el default) la conducta es EXACTAMENTE la de
+    ''' antes: <c>GuardarConCopia</c> a secas. Ver <c>EscrituraEnElLugar.NuevoLote</c>.</summary>
+    Public Sub Save_As_Manolo_ConCopia(Filename As String, Overwrite As Boolean,
+                                       Optional lote As BSA_BA2_Library_DLL.EscrituraEnElLugar.LoteConCopias = Nothing)
         If IO.File.Exists(Filename) AndAlso Overwrite = False Then
             If MsgBox("NIF File already exists, replace?", vbYesNo, "Warning") = MsgBoxResult.No Then
                 Exit Sub
@@ -503,7 +509,8 @@ Public Class Nifcontent_Class_Manolo
             Filename,
             Sub(fs)
                 If MyBase.Save(fs) <> 0 Then Throw New Exception("Error saving NIF")
-            End Sub)
+            End Sub,
+            lote)
     End Sub
 
     ''' <summary>Serialize the NIF to a byte array (in-memory save) — used by headless bakes/compares that
