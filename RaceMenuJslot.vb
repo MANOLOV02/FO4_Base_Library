@@ -26,6 +26,11 @@ Public NotInheritable Class RaceMenuJslot
         Public Property FormId As UInteger
         Public Property FormIdentifier As String
         Public Property Type As Integer
+        ''' <summary>El elemento traía la key <c>formIdentifier</c> (aunque sea vacía o <c>null</c>). Es la rama
+        ''' que toma skee64 al leer: <c>if (part.isMember("formIdentifier"))</c> → <c>asString</c> →
+        ''' <c>GetFormFromIdentifier</c>, y SÓLO si no está prueba <c>formId</c> (PresetInterface.cpp:979-1010).
+        ''' Un identificador presente pero irresoluble deja la parte SIN resolver, no cae al <c>formId</c>.</summary>
+        Public Property HadFormIdentifier As Boolean
     End Class
 
     ''' <summary>La tabla <c>mods</c> del archivo decodificada: <b>partial index del load order del AUTOR</b>
@@ -163,13 +168,12 @@ Public NotInheritable Class RaceMenuJslot
     ''' <summary>True when the loaded actor block carried a hairColor key (0 is a valid black override, so a plain
     ''' <see cref="HairColor"/>=0 is ambiguous without this).</summary>
     Public Property HadHairColor As Boolean
-    ''' <summary>True cuando el <c>.jslot</c> traía la key <c>actor.weight</c>. GEMELO de
-    ''' <see cref="HadHairColor"/> y por la MISMA razón, que a este campo no se le había aplicado.
-    ''' <para>Sin esto, un preset que NO trae <c>weight</c> le pisaba el peso del NPC con <b>0</b>:
-    ''' <c>GetDbl(Nothing)</c> devuelve 0.0, el mapper asignaba <c>SseWeight</c> incondicionalmente y
-    ''' <c>Save</c> emitía la key siempre. Encontrado probando en el juego: "body weight 0 también".</para></summary>
-    Public Property HadWeight As Boolean
     Public Property HeadTexture As String
+    ''' <summary><c>actor.weight</c> del archivo, o 0 si el bloque <c>actor</c> no está o no trae la key: es lo
+    ''' que hace el motor (<c>PresetData()</c> arranca en <c>weight = 0</c>, PresetInterface.cpp:891-896; el bloque
+    ''' <c>actor</c> :1017-1024 sólo lo pisa si está; <c>ApplyPresetData</c> :177 lo escribe al NPC SIN gate).
+    ''' Un preset sin peso deja al actor en 0 in-game — no hay flag de presencia porque el motor no lo tiene
+    ''' (decisión D-Weight SSE: canónico).</summary>
     Public Property Weight As Double
     Public Property HeadParts As New List(Of JslotHeadPart)
     Public Property FaceTextures As New List(Of JslotFaceTexture)
@@ -391,12 +395,12 @@ Public NotInheritable Class RaceMenuJslot
             Dim ro = TryCast(Raw, JsonObject)
             If ro Is Nothing Then Return False
             Dim outKeys As New JsonArray()
-            For Each k In AsArray(ro("keys"))
+            For Each k In Jsoncpp.Valores(ro("keys"))
                 Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
                 Dim keep As New JsonArray()
-                For Each v In AsArray(ko("values"))
+                For Each v In Jsoncpp.Valores(ko("values"))
                     Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-                    Dim vk = GetInt(vo("key"))
+                    Dim vk = GetKey(vo("key"))
                     If vk = 30 OrElse vk = 31 OrElse vk = 32 Then Continue For
                     keep.Add(JsonNode.Parse(vo.ToJsonString()))
                 Next
@@ -419,11 +423,11 @@ Public NotInheritable Class RaceMenuJslot
             If Raw Is Nothing Then Return False
             Dim ro = TryCast(Raw, JsonObject)
             If ro Is Nothing Then Return False
-            For Each k In AsArray(ro("keys"))
+            For Each k In Jsoncpp.Valores(ro("keys"))
                 Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
-                For Each v In AsArray(ko("values"))
+                For Each v In Jsoncpp.Valores(ko("values"))
                     Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-                    Dim vk = GetInt(vo("key"))
+                    Dim vk = GetKey(vo("key"))
                     If vk <> 30 AndAlso vk <> 31 AndAlso vk <> 32 Then Return True
                 Next
             Next
@@ -535,9 +539,9 @@ Public NotInheritable Class RaceMenuJslot
     ''' <summary>¿Esta capa aporta algun value TRS (30/31/32)? Una que sólo trae, por ejemplo, un
     ''' <c>NodeDestination</c> (key 40) no se compone y no hay nada que neutralizar.</summary>
     Private Shared Function LayerHasTrs(layer As JsonObject) As Boolean
-        For Each v In AsArray(layer("values"))
+        For Each v In Jsoncpp.Valores(layer("values"))
             Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-            Dim vk = GetInt(vo("key"))
+            Dim vk = GetKey(vo("key"))
             If vk = 30 OrElse vk = 31 OrElse vk = 32 Then Return True
         Next
         Return False
@@ -580,9 +584,9 @@ Public NotInheritable Class RaceMenuJslot
                 Continue For
             End If
             Dim keep As New JsonArray()
-            For Each v In AsArray(ko("values"))
+            For Each v In Jsoncpp.Valores(ko("values"))
                 Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-                Dim vk = GetInt(vo("key"))
+                Dim vk = GetKey(vo("key"))
                 If vk = 30 OrElse vk = 31 OrElse vk = 32 Then Continue For
                 keep.Add(JsonNode.Parse(vo.ToJsonString()))
             Next
@@ -653,9 +657,9 @@ Public NotInheritable Class RaceMenuJslot
         Dim ours = OurTransformLayer(keys, create:=False)
         If ours Is Nothing Then Return Nothing
         Dim found As JsonObject = Nothing
-        For Each v In AsArray(ours("values"))
+        For Each v In Jsoncpp.Valores(ours("values"))
             Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-            If GetInt(vo("key")) = key AndAlso (index < 0 OrElse GetInt(vo("index")) = index) Then found = vo
+            If GetKey(vo("key")) = key AndAlso (index < 0 OrElse GetIndex(vo("index")) = index) Then found = vo
         Next
         Return found
     End Function
@@ -746,12 +750,16 @@ Public NotInheritable Class RaceMenuJslot
     ''' siempre el número sin signo que escribió la versión anterior de esta app, y el preset seguiría sin cargar.
     ''' Un solo re-guardado repara el archivo.</para>
     ''' <para>Aplica a TODO tipo 3, no sólo a la key 7: skee lee cada uno con <c>asInt()</c>, así que cualquiera
-    ''' por encima de Int32.MaxValue tiene el mismo final.</para></summary>
+    ''' por encima de Int32.MaxValue tiene el mismo final.</para>
+    ''' <para>Desde que <see cref="Load"/> rechaza el archivo igual que el motor (<see cref="RechazaComoElMotor"/>:
+    ''' un tipo-3 fuera de Int32 hace LANZAR a <c>asInt</c>, json_value.cpp:631-651), un <c>Raw</c> cargado de disco
+    ''' ya no puede traer ese valor: el reparo sólo alcanza a un <c>Raw</c> armado en memoria. Medido 03-sep sobre los
+    ''' 39 .jslot del corpus: 0 values tipo-3 por encima de Int32.MaxValue, o sea ningún archivo real pierde la carga.</para></summary>
     Private Shared Sub NormalizeSignedIntValues(vals As JsonArray)
         If vals Is Nothing Then Return
         For Each v In vals
             Dim vo = TryCast(v, JsonObject)
-            If vo Is Nothing OrElse GetInt(vo("type")) <> 3 Then Continue For
+            If vo Is Nothing OrElse GetTipo(vo("type")) <> 3 Then Continue For
             Dim jv = TryCast(vo("data"), JsonValue)
             If jv Is Nothing Then Continue For
             Dim raw As ULong
@@ -772,7 +780,7 @@ Public NotInheritable Class RaceMenuJslot
             ' Empty texture path → remove any existing element for this slot so we don't emit an empty override.
             For i = vals.Count - 1 To 0 Step -1
                 Dim vo = TryCast(vals(i), JsonObject)
-                If vo IsNot Nothing AndAlso GetInt(vo("key")) = key AndAlso GetInt(vo("type")) = vtype AndAlso GetInt(vo("index")) = index Then vals.RemoveAt(i)
+                If vo IsNot Nothing AndAlso GetKey(vo("key")) = key AndAlso GetTipo(vo("type")) = vtype AndAlso GetIndex(vo("index")) = index Then vals.RemoveAt(i)
             Next
             Return
         End If
@@ -781,7 +789,7 @@ Public NotInheritable Class RaceMenuJslot
         For Each v In vals
             Dim vo = TryCast(v, JsonObject)
             If vo Is Nothing Then Continue For
-            If GetInt(vo("key")) = key AndAlso GetInt(vo("type")) = vtype AndAlso GetInt(vo("index")) = index Then
+            If GetKey(vo("key")) = key AndAlso GetTipo(vo("type")) = vtype AndAlso GetIndex(vo("index")) = index Then
                 vo("data") = jval
                 Return
             End If
@@ -895,115 +903,209 @@ Public NotInheritable Class RaceMenuJslot
     ''' inject it into a preset that lacked it.</summary>
     Private _hadOverrides As Boolean
 
+    ''' <summary>Lee un .jslot con la ley de <c>LoadJsonPreset</c> (skee64 PresetInterface.cpp:898-1249) sobre
+    ''' jsoncpp. Primero se decide si el motor ACEPTA el archivo (<see cref="RechazaComoElMotor"/>: un chequeo de
+    ''' cabecera fallido o cualquier conversión que en jsoncpp lanzaría ⇒ el archivo ENTERO se rechaza, no hay
+    ''' try/catch en :898-1249) y recién después se decodifica, con las mismas conversiones (<see cref="Jsoncpp"/>),
+    ''' lo que el motor deja en <c>PresetData</c>. Devuelve <c>Nothing</c> cuando el motor devolvería
+    ''' <c>loadError</c>. transforms/overrides/skinOverrides se decodifican más abajo con el modelo propio; su
+    ''' aceptación la decide igual el predicado.</summary>
     Public Shared Function Load(bytes As Byte()) As RaceMenuJslot
         If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
+        ' BOM UTF-8: jsoncpp no lo salta (json_reader.cpp no lo contempla en ningún lado) ⇒ el primer token no es
+        ' JSON ⇒ `reader.parse` falla ⇒ loadError (:918-922). System.Text.Json SÍ lo saltaría; por eso se rechaza acá.
+        If bytes.Length >= 3 AndAlso bytes(0) = &HEF AndAlso bytes(1) = &HBB AndAlso bytes(2) = &HBF Then Return Nothing
         Dim node As JsonNode
-        Using ms As New IO.MemoryStream(bytes)
-            node = JsonNode.Parse(ms)
-        End Using
+        Try
+            Using ms As New IO.MemoryStream(bytes)
+                ' `Json::Reader reader` = Features::all() (json_reader.cpp:29-32) = allowComments ⇒ los comentarios se
+                ' saltan; la coma final sigue siendo error (:413-425: el `}` llega con `name` no vacío ⇒ `break` ⇒
+                ' :453 addErrorAndRecover), igual que el default de System.Text.Json.
+                node = JsonNode.Parse(ms, Nothing, New JsonDocumentOptions With {.CommentHandling = JsonCommentHandling.Skip})
+            End Using
+        Catch ex As JsonException
+            Return Nothing
+        End Try
         Dim root = TryCast(node, JsonObject)
+        ' HUECO: con raíz no-objeto (array/escalar) el motor lanza en `root["version"]` (json_value.cpp:970-994,
+        ' operator[] no-const sobre un valor que no es objeto ni null): mismo resultado, archivo rechazado.
         If root Is Nothing Then Return Nothing
+        If RechazaComoElMotor(root) Then Return Nothing
+        Dim ok As Boolean = True   ' de acá en más ninguna conversión puede fallar: RechazaComoElMotor las probó TODAS
         Dim j As New RaceMenuJslot() With {._raw = root}
+        ' actor (:1017-1024): sólo si es objeto y no está vacío.
         Dim actor = TryCast(root("actor"), JsonObject)
-        If actor IsNot Nothing Then
-            j.HairColor = GetInt(actor("hairColor"))
-            j.HadHairColor = actor("hairColor") IsNot Nothing   ' present-vs-absent (0 is a legit black override)
-            j.HeadTexture = GetStr(actor("headTexture"))
-            j.Weight = GetDbl(actor("weight"))
-            j.HadWeight = actor("weight") IsNot Nothing   ' presencia, igual que hairColor (0 es un peso legítimo)
+        If actor IsNot Nothing AndAlso actor.Count > 0 Then
+            j.Weight = Jsoncpp.AsFloat(actor("weight"), ok)                  ' `presetData->weight = ...asFloat()` (:1019), float; ausente ⇒ 0
+            j.HairColor = Int32Bits(Jsoncpp.AsUInt(actor("hairColor"), ok))  ' `hairColor = ...asUInt()` (:1020), UInt32
+            j.HadHairColor = actor.ContainsKey("hairColor")                  ' present-vs-absent (0 is a legit black override)
+            j.HeadTexture = If(actor.ContainsKey("headTexture"), Jsoncpp.AsString(actor("headTexture"), ok), "")   ' :1021-1023
         End If
-        ' Tabla `mods` (partial index del AUTOR → nombre). Se decodifica para poder traducir los
-        ' headParts[].formId de un .jslot viejo sin identifier; el nodo sigue emitiéndose verbatim.
-        For Each md In AsArray(root("mods"))
-            Dim o = TryCast(md, JsonObject) : If o Is Nothing Then Continue For
-            Dim mname = GetStr(o("name"))
-            If String.IsNullOrEmpty(mname) Then Continue For
-            Dim mkey = CUInt(GetLong(o("index")) And &HFFFFFFFFL)
-            If Not j.ModIndexToName.ContainsKey(mkey) Then j.ModIndexToName(mkey) = mname
-        Next
-        For Each hp In AsArray(root("headParts"))
-            Dim o = TryCast(hp, JsonObject) : If o Is Nothing Then Continue For
-            ' formId is an unsigned 32-bit FormID; GetInt overflows (→ 0) on anything ≥ 0x80000000, which is
-            ' every FormID from a plugin at load-order index ≥ 0x80. Read it as a Long.
-            j.HeadParts.Add(New JslotHeadPart With {.FormId = CUInt(GetLong(o("formId")) And &HFFFFFFFFL), .FormIdentifier = GetStr(o("formIdentifier")), .Type = GetInt(o("type"))})
-        Next
-        For Each ft In AsArray(root("faceTextures"))
-            Dim o = TryCast(ft, JsonObject) : If o Is Nothing Then Continue For
-            j.FaceTextures.Add(New JslotFaceTexture With {.Index = GetInt(o("index")), .Texture = GetStr(o("texture"))})
-        Next
-        For Each ti In AsArray(root("tintInfo"))
-            Dim o = TryCast(ti, JsonObject) : If o Is Nothing Then Continue For
-            j.TintInfo.Add(New JslotTint With {.Color = CUInt(GetLong(o("color")) And &HFFFFFFFFL), .Index = GetInt(o("index")), .Texture = GetStr(o("texture"))})
-        Next
-        Dim morphs = TryCast(root("morphs"), JsonObject)
-        If morphs IsNot Nothing Then
-            Dim def = TryCast(morphs("default"), JsonObject)
-            If def IsNot Nothing Then
-                For Each mv In AsArray(def("morphs"))
-                    j.SliderMorphs.Add(CSng(GetDbl(mv)))
+        ' Tabla `mods` (:957-967): sólo si `type()==arrayValue`. `modList.emplace(index, name)` ⇒ el PRIMER índice
+        ' gana, y un nombre vacío ocupa el slot igual (después `LookupModByName("")` falla y el head part queda
+        ' sin resolver, :992-1011). Se decodifica para traducir los headParts[].formId de un .jslot viejo sin
+        ' identifier; el nodo sigue emitiéndose verbatim.
+        Dim modsArr = TryCast(root("mods"), JsonArray)
+        If modsArr IsNot Nothing Then
+            For Each md In modsArr
+                Dim mkey = Jsoncpp.AsUInt(Jsoncpp.Miembro(md, "index", ok), ok)
+                Dim mname = Jsoncpp.AsString(Jsoncpp.Miembro(md, "name", ok), ok)
+                If Not j.ModIndexToName.ContainsKey(mkey) Then j.ModIndexToName(mkey) = mname
+            Next
+        End If
+        ' headParts (:976-1015): sólo si array no vacío. La rama la decide `isMember("formIdentifier")` — la
+        ' PRESENCIA de la key, no su valor —; si no está, `isMember("formId")`; si tampoco, el elemento se ignora
+        ' (un elemento `null` cae acá: isMember sobre null es false).
+        Dim hpArr = TryCast(root("headParts"), JsonArray)
+        If hpArr IsNot Nothing Then
+            For Each hp In hpArr
+                Dim o = TryCast(hp, JsonObject)
+                If o Is Nothing Then Continue For
+                If o.ContainsKey("formIdentifier") Then
+                    ' formId/type no los lee el motor en esta rama (:979-987); se conservan laxos para re-emitir.
+                    ' formId es un FormID de 32 bits sin signo: leerlo como Long para no desbordar ≥ 0x80000000.
+                    j.HeadParts.Add(New JslotHeadPart With {
+                        .HadFormIdentifier = True,
+                        .FormIdentifier = Jsoncpp.AsString(o("formIdentifier"), ok),
+                        .FormId = CUInt(GetLong(o("formId")) And &HFFFFFFFFL),
+                        .Type = GetInt(o("type"))})
+                ElseIf o.ContainsKey("formId") Then
+                    ' `UInt8 partType = part["type"].asUInt()` (:989) · `UInt32 formId = part["formId"].asUInt()` (:990)
+                    j.HeadParts.Add(New JslotHeadPart With {
+                        .HadFormIdentifier = False,
+                        .FormIdentifier = "",
+                        .FormId = Jsoncpp.AsUInt(o("formId"), ok),
+                        .Type = CInt(Jsoncpp.AsUInt(o("type"), ok) And &HFFUI)})
+                End If
+            Next
+        End If
+        ' faceTextures (:1038-1046) y tintInfo (:1027-1036): sólo si array no vacío. Un elemento `null` se lee
+        ' igual (operator[] no-const sobre null lo vuelve objeto y cada campo nace null ⇒ 0 / "") y SE AGREGA.
+        Dim ftArr = TryCast(root("faceTextures"), JsonArray)
+        If ftArr IsNot Nothing Then
+            For Each ft In ftArr
+                j.FaceTextures.Add(New JslotFaceTexture With {
+                    .Index = CInt(Jsoncpp.AsUInt(Jsoncpp.Miembro(ft, "index", ok), ok) And &HFFUI),   ' `UInt8 index` (PresetInterface.h:37, :1042)
+                    .Texture = Jsoncpp.AsString(Jsoncpp.Miembro(ft, "texture", ok), ok)})
+            Next
+        End If
+        Dim tiArr = TryCast(root("tintInfo"), JsonArray)
+        If tiArr IsNot Nothing Then
+            For Each ti In tiArr
+                j.TintInfo.Add(New JslotTint With {
+                    .Color = Jsoncpp.AsUInt(Jsoncpp.Miembro(ti, "color", ok), ok),               ' UInt32 (:1031)
+                    .Index = Int32Bits(Jsoncpp.AsUInt(Jsoncpp.Miembro(ti, "index", ok), ok)),    ' UInt32 (:1032)
+                    .Texture = Jsoncpp.AsString(Jsoncpp.Miembro(ti, "texture", ok), ok)})
+            Next
+        End If
+        ' morphs (:1048-1111): `!morphs.empty()` — null, `{}` o `[]` se saltea entero.
+        Dim morphs = root("morphs")
+        If Not Jsoncpp.Empty(morphs) Then
+            Dim def = Jsoncpp.Miembro(morphs, "default", ok)
+            If Not Jsoncpp.Empty(def) Then
+                ' presets (:1052-1059): range-for (array ⇒ elementos; objeto ⇒ valores en orden strcmp), cada uno
+                ' asUInt; y 255 se reescribe como -1 (0xFFFFFFFF) ANTES de guardarlo (:1055-1056).
+                j._morphsPresetsRaw = Jsoncpp.Miembro(def, "presets", ok)
+                For Each pval In Jsoncpp.Valores(j._morphsPresetsRaw)
+                    Dim v = Jsoncpp.AsUInt(pval, ok)
+                    If v = 255UI Then v = &HFFFFFFFFUI
+                    j.NamaPresets.Add(v)
                 Next
-                j._morphsPresetsRaw = def("presets")
-                For Each pval In AsArray(def("presets"))
-                    j.NamaPresets.Add(CUInt(GetLong(pval) And &HFFFFFFFFL))
+                For Each mv In Jsoncpp.Valores(Jsoncpp.Miembro(def, "morphs", ok))   ' :1061-1064
+                    j.SliderMorphs.Add(Jsoncpp.AsFloat(mv, ok))
                 Next
             End If
-            For Each cm In AsArray(morphs("custom"))
-                Dim o = TryCast(cm, JsonObject) : If o Is Nothing Then Continue For
-                j.CustomMorphs.Add(New JslotCustomMorph With {.Name = GetStr(o("name")), .Value = GetDbl(o("value"))})
-            Next
-            ' El formato del sculpt tiene DOS variantes y la decide la PRESENCIA de `sculptDivisor`:
-            '   presente  → los deltas son ENTEROS y se dividen por él  (skee PresetInterface.cpp:1094-1097)
-            '   ausente   → `multiplier = -1` y los deltas son FLOATS directos           (:1099-1102)
-            ' Leerlos siempre con GetInt truncaba a 0 los de la variante float, o sea que el sculpt entero se
-            ' perdía — y encima el Save inyectaba un `sculptDivisor`, dejando el archivo diciendo que esos ceros
-            ' eran enteros escalados. Doble daño sobre un preset ajeno.
-            ' Al escribir SIEMPRE emitimos la variante con divisor, que es la única que produce el propio motor
-            ' (`root["morphs"]["sculptDivisor"] = VERTEX_MULTIPLIER`, :694), así que normalizar al leer es canónico.
-            Dim sculptIsFloatForm As Boolean = (morphs("sculptDivisor") Is Nothing)
-            If Not sculptIsFloatForm Then j.SculptDivisor = Math.Max(1, GetInt(morphs("sculptDivisor")))
-            For Each sp In AsArray(morphs("sculpt"))
-                Dim o = TryCast(sp, JsonObject) : If o Is Nothing Then Continue For
-                Dim part As New JslotSculptPart
-                If o("host") IsNot Nothing Then part.Host = GetStr(o("host"))
-                part.HadVertices = o("vertices") IsNot Nothing
-                If part.HadVertices Then part.Vertices = GetLong(o("vertices"))
-                part.HadData = o("data") IsNot Nothing
-                For Each row In AsArray(o("data"))
-                    Dim arr = TryCast(row, JsonArray) : If arr Is Nothing OrElse arr.Count < 4 Then Continue For
-                    part.Indices.Add(GetInt(arr(0)))
-                    If sculptIsFloatForm Then
-                        ' Delta en unidades de mundo → al entero escalado que usa el resto del modelo.
-                        part.Dx.Add(CInt(Math.Round(GetDbl(arr(1)) * j.SculptDivisor)))
-                        part.Dy.Add(CInt(Math.Round(GetDbl(arr(2)) * j.SculptDivisor)))
-                        part.Dz.Add(CInt(Math.Round(GetDbl(arr(3)) * j.SculptDivisor)))
-                    Else
-                        part.Dx.Add(GetInt(arr(1))) : part.Dy.Add(GetInt(arr(2))) : part.Dz.Add(GetInt(arr(3)))
-                    End If
+            ' custom (:1066-1074): range-for; un elemento null da {"", 0} y se agrega igual.
+            Dim customMorphs = Jsoncpp.Miembro(morphs, "custom", ok)
+            If Not Jsoncpp.Empty(customMorphs) Then
+                For Each cm In Jsoncpp.Valores(customMorphs)
+                    j.CustomMorphs.Add(New JslotCustomMorph With {
+                        .Name = Jsoncpp.AsString(Jsoncpp.Miembro(cm, "name", ok), ok),
+                        .Value = Jsoncpp.AsFloat(Jsoncpp.Miembro(cm, "value", ok), ok)})
                 Next
-                j.Sculpt.Add(part)
-            Next
+            End If
+            ' sculpt (:1076-1110). `multiplier = -1`; si `sculptDivisor` no está vacío, `multiplier = asInt()`. La
+            ' variante la decide `multiplier > 0` (:1094): >0 ⇒ deltas ENTEROS divididos por él (:1095-1097);
+            ' ≤0 (ausente, null, 0 o negativo) ⇒ deltas FLOAT directos (:1099-1102). Al escribir SIEMPRE emitimos la
+            ' variante con divisor, que es la única que produce el propio motor (`sculptDivisor = VERTEX_MULTIPLIER`,
+            ' :694), así que normalizar la forma float al entero escalado del modelo es canónico.
+            Dim multiplier As Integer = -1
+            Dim sculptMult = Jsoncpp.Miembro(morphs, "sculptDivisor", ok)
+            If Not Jsoncpp.Empty(sculptMult) Then multiplier = Jsoncpp.AsInt(sculptMult, ok)
+            Dim sculptIsFloatForm As Boolean = (multiplier <= 0)
+            If Not sculptIsFloatForm Then j.SculptDivisor = multiplier
+            Dim sculptData = Jsoncpp.Miembro(morphs, "sculpt", ok)
+            If Not Jsoncpp.Empty(sculptData) Then
+                For Each sp In Jsoncpp.Valores(sculptData)
+                    Dim part As New JslotSculptPart With {.Host = Jsoncpp.AsString(Jsoncpp.Miembro(sp, "host", ok), ok)}   ' :1086
+                    ' `vertices` no lo lee el motor; se conserva laxo para re-emitir el bloque como venía.
+                    Dim o = TryCast(sp, JsonObject)
+                    part.HadVertices = o IsNot Nothing AndAlso o("vertices") IsNot Nothing
+                    If part.HadVertices Then part.Vertices = GetLong(o("vertices"))
+                    Dim data = Jsoncpp.Miembro(sp, "data", ok)
+                    part.HadData = data IsNot Nothing
+                    ' Cada fila (:1090-1105): `UInt16 index = row[0].asUInt()`; deltas de row[1..3] — una fila null o
+                    ' corta lee ceros, no se saltea —; `force_insert` (FaceMorphInterface.h:205-213) DESCARTA la fila
+                    ' si |x|,|y|,|z| < VERTEX_THRESHOLD (0.00001, :199) y con índice repetido PISA la anterior.
+                    Dim posPorIndice As New Dictionary(Of Integer, Integer)
+                    For Each row In Jsoncpp.Valores(data)
+                        Dim index = CInt(Jsoncpp.AsUInt(Jsoncpp.Elemento(row, 0, ok), ok) And &HFFFFUI)
+                        Dim x, y, z As Single
+                        Dim dx, dy, dz As Integer
+                        If sculptIsFloatForm Then
+                            x = Jsoncpp.AsFloat(Jsoncpp.Elemento(row, 1, ok), ok)
+                            y = Jsoncpp.AsFloat(Jsoncpp.Elemento(row, 2, ok), ok)
+                            z = Jsoncpp.AsFloat(Jsoncpp.Elemento(row, 3, ok), ok)
+                            ' Delta en unidades de mundo → al entero escalado que usa el resto del modelo.
+                            dx = CInt(Math.Round(CDbl(x) * j.SculptDivisor))
+                            dy = CInt(Math.Round(CDbl(y) * j.SculptDivisor))
+                            dz = CInt(Math.Round(CDbl(z) * j.SculptDivisor))
+                        Else
+                            dx = Jsoncpp.AsInt(Jsoncpp.Elemento(row, 1, ok), ok)
+                            dy = Jsoncpp.AsInt(Jsoncpp.Elemento(row, 2, ok), ok)
+                            dz = Jsoncpp.AsInt(Jsoncpp.Elemento(row, 3, ok), ok)
+                            x = CSng(dx) / CSng(multiplier) : y = CSng(dy) / CSng(multiplier) : z = CSng(dz) / CSng(multiplier)
+                        End If
+                        If Math.Abs(x) < 0.00001 AndAlso Math.Abs(y) < 0.00001 AndAlso Math.Abs(z) < 0.00001 Then Continue For
+                        Dim pos As Integer
+                        If posPorIndice.TryGetValue(index, pos) Then
+                            part.Dx(pos) = dx : part.Dy(pos) = dy : part.Dz(pos) = dz
+                        Else
+                            posPorIndice(index) = part.Indices.Count
+                            part.Indices.Add(index) : part.Dx.Add(dx) : part.Dy.Add(dy) : part.Dz.Add(dz)
+                        End If
+                    Next
+                    j.Sculpt.Add(part)
+                Next
+            End If
         End If
-        ' bodyMorphs — top-level array [{ name, keys:[{key,value}, …] }] (RaceMenu/BodySlide sliders).
-        If root("bodyMorphs") IsNot Nothing Then
-            j._hadBodyMorphs = True
-            For Each bm In AsArray(root("bodyMorphs"))
-                Dim o = TryCast(bm, JsonObject) : If o Is Nothing Then Continue For
-                Dim entry As New JslotBodyMorph With {.Name = GetStr(o("name"))}
-                ' Forma LEGACY `{name, value}` (sin `keys`). El motor la lee y la mapea a una key llamada
-                ' "RSMLegacy": `presetData->bodyMorphData[name]["RSMLegacy"] = value`
-                ' (skee64 PresetInterface.cpp:1215-1221), y la lee ADEMÁS de `keys`, no en vez de.
-                ' Mirar sólo `keys` hace que el Save reconstruya `{name, keys:[]}` y el morph DESAPAREZCA.
-                ' Adoptarla como una key más es exactamente lo que hace el motor, y de paso la
-                ' normaliza a la forma moderna sin cambiar lo que rinde (el motor SUMA las keys de un morph).
-                Dim legacyValue = o("value")
-                If legacyValue IsNot Nothing Then
-                    entry.Keys.Add(New JslotBodyMorphKey With {.Key = SkeeLegacyMorphKey, .Value = CSng(GetDbl(legacyValue))})
-                End If
-                For Each k In AsArray(o("keys"))
-                    Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
-                    entry.Keys.Add(New JslotBodyMorphKey With {.Key = GetStr(ko("key")), .Value = CSng(GetDbl(ko("value")))})
+        ' bodyMorphs (:1211-1246): `!bodyMorphs.empty()`. Por elemento: `name` asString; la forma LEGACY `value`
+        ' (si no está vacío ⇒ asFloat ⇒ key "RSMLegacy", :1217-1222) y ADEMÁS `keys` (:1225-1244), cada una `key`
+        ' asString + `value` asFloat. Todo va a `bodyMorphData[name][key]`, dos unordered_map de SKEEFixedString
+        ' (PresetInterface.h:59) cuya igualdad es `_stricmp` (StringTable.h:28-37): un morph repetido se FUNDE con el
+        ' anterior y una key repetida PISA su valor; un morph que no recibe ninguna key no existe en el mapa.
+        ' HUECO: la key que termina en .esp/.esm/.esl de un mod NO activo el motor la saltea (:1232-1240); acá no
+        ' hay load order — se conserva y lo decide quien consume.
+        If root("bodyMorphs") IsNot Nothing Then j._hadBodyMorphs = True
+        Dim bodyMorphs = root("bodyMorphs")
+        If Not Jsoncpp.Empty(bodyMorphs) Then
+            For Each bm In Jsoncpp.Valores(bodyMorphs)
+                Dim name = Jsoncpp.AsString(Jsoncpp.Miembro(bm, "name", ok), ok)
+                Dim entry As JslotBodyMorph = Nothing
+                For Each e In j.BodyMorphs
+                    If IgualStricmp(e.Name, name) Then entry = e : Exit For
                 Next
-                j.BodyMorphs.Add(entry)
+                Dim nuevo = entry Is Nothing
+                If nuevo Then entry = New JslotBodyMorph With {.Name = name}
+                Dim keyless = Jsoncpp.Miembro(bm, "value", ok)
+                If Not Jsoncpp.Empty(keyless) Then PonerKey(entry, SkeeLegacyMorphKey, Jsoncpp.AsFloat(keyless, ok))
+                Dim values = Jsoncpp.Miembro(bm, "keys", ok)
+                If Not Jsoncpp.Empty(values) Then
+                    For Each kv In Jsoncpp.Valores(values)
+                        PonerKey(entry, Jsoncpp.AsString(Jsoncpp.Miembro(kv, "key", ok), ok), Jsoncpp.AsFloat(Jsoncpp.Miembro(kv, "value", ok), ok))
+                    Next
+                End If
+                If nuevo AndAlso entry.Keys.Count > 0 Then j.BodyMorphs.Add(entry)
             Next
         End If
         ' overrides — top-level array [{ node, values:[{key,type,index,data}, …] }]. Overlay nodes
@@ -1011,7 +1113,7 @@ Public NotInheritable Class RaceMenuJslot
         ' is kept verbatim so a load→save cycle preserves it (§3.1).
         If root("overrides") IsNot Nothing Then
             j._hadOverrides = True
-            For Each ov In AsArray(root("overrides"))
+            For Each ov In Jsoncpp.Valores(root("overrides"))
                 Dim o = TryCast(ov, JsonObject) : If o Is Nothing Then Continue For
                 Dim nodeName = GetStr(o("node"))
                 If IsOverlayNodeName(nodeName) Then
@@ -1028,7 +1130,7 @@ Public NotInheritable Class RaceMenuJslot
         ' so Save re-emits any UNmodeled key (e.g. node-destination key 40) byte-faithfully.
         If root("transforms") IsNot Nothing Then
             j._hadTransforms = True
-            For Each tr In AsArray(root("transforms"))
+            For Each tr In Jsoncpp.Valores(root("transforms"))
                 Dim o = TryCast(tr, JsonObject) : If o Is Nothing Then Continue For
                 ' LOS ELEMENTOS firstPerson=True NO SE LEEN NI SE EMITEN. Son el 3D de PRIMERA PERSONA (los
                 ' brazos que ve el jugador desde sus propios ojos): un NPC no tiene ese arbol, y nuestro apply-script
@@ -1037,11 +1139,8 @@ Public NotInheritable Class RaceMenuJslot
                 ' modelo con dos entradas del MISMO NodeName: la UI muestra una, `SetNodeScale` (FirstOrDefault
                 ' por nombre) edita una, y la otra queda con el valor del autor — una edicion aplicada a medias
                 ' sin decirlo.
-                Dim isFirstPerson As Boolean = False
-                Dim fpNode = o("firstPerson")
-                If fpNode IsNot Nothing Then
-                    Try : isFirstPerson = fpNode.GetValue(Of Boolean)() : Catch : isFirstPerson = False : End Try
-                End If
+                ' `xForm["firstPerson"].asBool()` (:1116; asBool :780-795: null false, número ≠ 0 true).
+                Dim isFirstPerson As Boolean = Jsoncpp.AsBool(o("firstPerson"), ok)
                 ' SE SALTEAN AL MODELAR PERO **SÍ SE RE-EMITEN**. ⛔ NO borrarlos porque "un NPC no tiene primera
                 ' persona": es la misma razón que la key 40 — no modelar algo no da derecho a destruirlo, la regla
                 ' es POR COMPONENTE. No afectan al NPC, pero si alguien carga este preset sobre su propio
@@ -1069,7 +1168,7 @@ Public NotInheritable Class RaceMenuJslot
                 ' ⛔ NO acumular suma/máximo de escalas "para el scaleMode": el scaleMode POR NODO es INERTE (el
                 ' motor lo busca en (33,-1) y todo se guarda en (33,0)), así que no hay ninguna rama que elegir.
                 ' Lo que gobierna es el `iScaleMode` GLOBAL del jugador, y para eso no sirve acumular acá.
-                For Each k In AsArray(o("keys"))
+                For Each k In Jsoncpp.Valores(o("keys"))
                     Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
                     ' SE REGISTRA EL NOMBRE de toda capa AJENA que aporte TRS: es lo que el apply-script va a
                     ' neutralizar con identidad para que su aporte no se sume a nuestro total. Ver CollapsedLayerNames.
@@ -1105,35 +1204,52 @@ Public NotInheritable Class RaceMenuJslot
                     ' se PERSISTIA en el archivo: paso de defecto de display a corrupcion.
                     Dim lRot() As Single = {1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F}
                     Dim lHasRot As Boolean = False
-                    For Each v In AsArray(ko("values"))
+                    For Each v In Jsoncpp.Valores(ko("values"))
                         Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-                        Dim vkey = GetInt(vo("key"))
-                        Dim vidx = GetInt(vo("index"))
+                        Dim vkey = GetKey(vo("key"))
+                        Dim vidx = GetIndex(vo("index"))
+                        Dim vtype = GetTipo(vo("type"))
+                        ' EL FLOAT QUE COMPONE EL MOTOR. El loader escribe `data` según `type` (:1129-1142) y la
+                        ' composición lee `it->data.f` del MISMO union SIN mirar el tipo (NiTransformInterface.cpp
+                        ' :772/:777/:787/:797-837): con type 4 es el asFloat; con type 3 son los BITS del asInt
+                        ' reinterpretados como float. Con type 5 `data.b` escribe UN byte y los otros 3 quedan sin
+                        ' inicializar (`OverrideVariant()` no toca `data`, OverrideVariant.h:16); con type 2 y el
+                        ' resto `data` no se escribe. HUECO: ahí el motor lee memoria sin inicializar — no hay
+                        ' valor que replicar, así que el value no aporta al modelo (y queda en Raw para re-emitirse).
+                        Dim tieneFloat As Boolean = (vtype = 4 OrElse vtype = 3)
+                        Dim f As Single = 0.0F
+                        If vtype = 4 Then
+                            f = GetFloat(vo("data"))
+                        ElseIf vtype = 3 Then
+                            f = BitConverter.Int32BitsToSingle(GetInt(vo("data")))
+                        End If
                         Select Case vkey
                             Case 30
                                 ' SOLO EL INDICE 0. El motor busca la escala con `value.index = 0` explicito
                                 ' (NiTransformInterface.cpp:784), asi que un key-30 en otro indice NO lo aplica.
                                 ' Contarlo daba una escala que el juego no usa.
-                                If vidx = 0 Then
-                                    lScale = CSng(GetDbl(vo("data"))) : nt.HasScale = True
+                                If vidx = 0 AndAlso tieneFloat Then
+                                    lScale = f : nt.HasScale = True
                                 End If
                             Case 31
-                                Dim d = CSng(GetDbl(vo("data")))
-                                Select Case vidx
-                                    Case 0 : lPosX = d
-                                    Case 1 : lPosY = d
-                                    Case 2 : lPosZ = d
-                                End Select
-                                ' Solo 0/1/2 prenden HasPosition: un key-31 en indice >=3 o -1 no aporta componente, y
-                                ' prenderlo hacia que el encode APPENDEARA tres values en 0.0 al archivo ajeno.
-                                If vidx >= 0 AndAlso vidx <= 2 Then nt.HasPosition = True
+                                If tieneFloat Then
+                                    Select Case vidx
+                                        Case 0 : lPosX = f
+                                        Case 1 : lPosY = f
+                                        Case 2 : lPosZ = f
+                                    End Select
+                                    ' Solo 0/1/2 prenden HasPosition: un key-31 en indice >=3 o -1 no aporta componente, y
+                                    ' prenderlo hacia que el encode APPENDEARA tres values en 0.0 al archivo ajeno.
+                                    If vidx >= 0 AndAlso vidx <= 2 Then nt.HasPosition = True
+                                End If
                             Case 32
-                                If vidx >= 0 AndAlso vidx <= 8 Then
-                                    lRot(vidx) = CSng(GetDbl(vo("data")))
+                                If vidx >= 0 AndAlso vidx <= 8 AndAlso tieneFloat Then
+                                    lRot(vidx) = f
                                     lHasRot = True : anyRot = True
                                 End If
                             Case 33
                                 ' El motor toma el scaleMode de UNA capa (`scaleModes.rbegin()`, :666), no lo combina.
+                                ' (Inerte in-game — ver más abajo —; se conserva para la UI y el sidecar.)
                                 nt.ScaleMode = GetInt(vo("data")) : nt.HasScaleMode = True
                         End Select
                     Next
@@ -1187,7 +1303,7 @@ Public NotInheritable Class RaceMenuJslot
         ' overlays) and keep the full element in Raw for round-trip.
         If root("skinOverrides") IsNot Nothing Then
             j._hadSkinOverrides = True
-            For Each so In AsArray(root("skinOverrides"))
+            For Each so In Jsoncpp.Valores(root("skinOverrides"))
                 Dim o = TryCast(so, JsonObject) : If o Is Nothing Then Continue For
                 ' LOS DE PRIMERA PERSONA SE SALTEAN, IGUAL QUE EN transforms. No mirar `firstPerson` acá tiene
                 ' tres consecuencias:
@@ -1199,31 +1315,33 @@ Public NotInheritable Class RaceMenuJslot
                 '      (`AddSkinOverride*(self, …, false, …)`), o sea archivo ≠ ESP en el mismo array.
                 ' Ningún preset del corpus instalado tiene un skin override de primera persona (0 de 41), así que
                 ' esto está razonado en el código y no medido sobre datos reales.
-                Dim soFp = o("firstPerson")
-                If soFp IsNot Nothing Then
-                    Dim isFp As Boolean = False
-                    Try : isFp = soFp.GetValue(Of Boolean)() : Catch : isFp = False : End Try
-                    If isFp Then
-                        ' Se GUARDA antes de saltearlo: no se modela, pero tiene que volver a salir.
-                        j._firstPersonSkinRaw.Add(JsonNode.Parse(o.ToJsonString()))
-                        Continue For
-                    End If
+                ' `skinData["firstPerson"].asBool()` (:1182).
+                If Jsoncpp.AsBool(o("firstPerson"), ok) Then
+                    ' Se GUARDA antes de saltearlo: no se modela, pero tiene que volver a salir.
+                    j._firstPersonSkinRaw.Add(JsonNode.Parse(o.ToJsonString()))
+                    Continue For
                 End If
-                Dim sk As New JslotSkinOverride With {.SlotMask = CUInt(GetLong(o("slotMask")) And &HFFFFFFFFL), .DiffusePath = "", .NormalPath = "", .Raw = JsonNode.Parse(o.ToJsonString())}
-                For Each v In AsArray(o("values"))
+                ' `UInt32 slotMask = skinData["slotMask"].asUInt()` (:1183).
+                Dim sk As New JslotSkinOverride With {.SlotMask = GetUInt(o("slotMask")), .DiffusePath = "", .NormalPath = "", .Raw = JsonNode.Parse(o.ToJsonString())}
+                For Each v In Jsoncpp.Valores(o("values"))
                     Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-                    Dim key = GetInt(vo("key")), vtype = GetInt(vo("type")), index = GetInt(vo("index"))
-                    If key = 9 AndAlso vtype = 2 Then
+                    Dim key = GetKey(vo("key")), vtype = GetTipo(vo("type")), index = GetIndex(vo("index"))
+                    If key = 9 Then
                         ' Every kParam_ShaderTexture slot, not just diffuse/normal (skee replaces each in place).
-                        Dim path = GetStr(vo("data"))
+                        ' El shader lo saca con `UnpackValue<SKEEFixedString>` (OverrideVariant.cpp:217-231): SÓLO type 2
+                        ' da la string; cualquier otro tipo da "" — y con "" el slot igual se pisa (ShaderUtilities.cpp
+                        ' :298-313, índice 0..8 = BSTextureSet::kNumTextures, GameObjects.h:324).
+                        If index < 0 OrElse index >= 9 Then Continue For
+                        Dim path = If(vtype = 2, GetStr(vo("data")), "")
                         sk.Slots(index) = path
                         If index = 0 Then sk.DiffusePath = path
                         If index = 1 Then sk.NormalPath = path
-                    ElseIf key = 8 AndAlso vtype = 4 Then
-                        sk.Alpha = CSng(GetDbl(vo("data"))) : sk.HasAlpha = True
+                    ElseIf key = 8 Then
+                        sk.Alpha = AlphaDelShader(vtype, vo("data")) : sk.HasAlpha = True
                         sk.AlphaIndex = index   ' se re-emite EN SU índice; ver JslotOverlayNode.TintIndex
-                    ElseIf key = 7 AndAlso vtype = 3 Then
-                        Dim u As UInteger = CUInt(GetLong(vo("data")) And &HFFFFFFFFL)
+                    ElseIf key = 7 Then
+                        ' `UnpackValue<NiColor>` (OverrideVariant.cpp:249-265): type 3 ⇒ rgb de `data.u`; otro ⇒ 0,0,0.
+                        Dim u As UInteger = If(vtype = 3, CUInt(CLng(GetInt(vo("data"))) And &HFFFFFFFFL), 0UI)
                         sk.TintA = ((u >> 24) And &HFF) / 255.0F : sk.TintR = ((u >> 16) And &HFF) / 255.0F
                         sk.TintG = ((u >> 8) And &HFF) / 255.0F : sk.TintB = (u And &HFF) / 255.0F
                         sk.HasTint = True
@@ -1265,40 +1383,43 @@ Public NotInheritable Class RaceMenuJslot
             System.Text.RegularExpressions.RegexOptions.IgnoreCase)
     End Function
 
-    ''' <summary>Decode one overlay <c>values</c> array per the §3.1 table. Recognized entries:
-    '''   {key:9,type:2,index:0}=diffuse · {key:9,type:2,index:1}=normal · {key:7,type:3,index:-1}=tint
-    ''' (signed 0xAARRGGBB). Unrecognized entries are ignored (e.g. TextureSet key 6, Alpha key 8).</summary>
+    ''' <summary>Decode one overlay <c>values</c> array. Modeled entries: key 9 index 0/1 = diffuse/normal ·
+    ''' key 7 = tint (signed 0xAARRGGBB) · key 8 = alpha. El TIPO no filtra la key: el motor guarda el
+    ''' OverrideVariant tal cual (PresetInterface.cpp:1157-1172) y es el shader el que lo desempaqueta por tipo
+    ''' con <c>UnpackValue</c> (OverrideVariant.cpp), así que un tipo "raro" no hace desaparecer la key: le da el
+    ''' valor degenerado que el shader le daría. Unrecognized entries are ignored (e.g. TextureSet key 6).</summary>
     Private Shared Function DecodeOverlayNode(nodeName As String, valuesNode As JsonNode) As JslotOverlayNode
         Dim node As New JslotOverlayNode With {.NodeName = nodeName, .DiffusePath = "", .NormalPath = ""}
         ' Keep the whole values array so Save re-emits any UNMODELED entry (texture slots >=2, key 6, keys 0-5).
         If valuesNode IsNot Nothing Then node.RawValues = JsonNode.Parse(valuesNode.ToJsonString())
-        For Each v In AsArray(valuesNode)
+        For Each v In Jsoncpp.Valores(valuesNode)
             Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-            Dim key = GetInt(vo("key"))
-            Dim vtype = GetInt(vo("type"))
-            Dim index = GetInt(vo("index"))
-            If key = 9 AndAlso vtype = 2 Then
-                ' Texture slot (string). index 0 = diffuse, 1 = normal.
-                Dim path = GetStr(vo("data"))
+            Dim key = GetKey(vo("key")), vtype = GetTipo(vo("type")), index = GetIndex(vo("index"))
+            If key = 9 Then
+                ' `UnpackValue<SKEEFixedString>` (OverrideVariant.cpp:217-231): SÓLO type 2 da la string; cualquier
+                ' otro tipo da "" — y con "" el slot igual se pisa (ShaderUtilities.cpp:298-313, índice 0..8 =
+                ' BSTextureSet::kNumTextures, GameObjects.h:324). index 0 = diffuse, 1 = normal.
+                If index < 0 OrElse index >= 9 Then Continue For
+                Dim path = If(vtype = 2, GetStr(vo("data")), "")
                 If index = 0 Then
                     node.DiffusePath = path
                 ElseIf index = 1 Then
                     node.NormalPath = path
                 End If
-            ElseIf key = 7 AndAlso vtype = 3 Then
-                ' TintColor (signed 0xAARRGGBB int). Decode via the unsigned bit pattern.
-                Dim u As UInteger = CUInt(GetLong(vo("data")) And &HFFFFFFFFL)
+            ElseIf key = 7 Then
+                ' `UnpackValue<NiColor>` (OverrideVariant.cpp:249-265): type 3 ⇒ rgb de `data.u`; otro ⇒ 0,0,0.
+                Dim u As UInteger = If(vtype = 3, CUInt(CLng(GetInt(vo("data"))) And &HFFFFFFFFL), 0UI)
                 node.TintA = ((u >> 24) And &HFF) / 255.0F
                 node.TintR = ((u >> 16) And &HFF) / 255.0F
                 node.TintG = ((u >> 8) And &HFF) / 255.0F
                 node.TintB = (u And &HFF) / 255.0F
                 node.HasTint = True
                 node.TintIndex = index   ' se re-emite EN SU índice; ver JslotOverlayNode.TintIndex
-            ElseIf key = 8 AndAlso vtype = 4 Then
+            ElseIf key = 8 Then
                 ' kParam_ShaderAlpha (OverrideVariant.h:41) — the overlay's opacity, distinct from the tint
                 ' colour's alpha byte. Modeled (not ignored) so Save re-emits it instead of silently
                 ' resetting every authored overlay to fully opaque.
-                node.Alpha = CSng(GetDbl(vo("data")))
+                node.Alpha = AlphaDelShader(vtype, vo("data"))
                 node.HasAlpha = True
                 node.AlphaIndex = index   ' idem: sin esto el Save apendaba un segundo alpha en index -1
             End If
@@ -1358,29 +1479,30 @@ Public NotInheritable Class RaceMenuJslot
         ' aplica incondicionalmente (`npc->weight = presetData->weight`, :174). Su propio escritor la emite
         ' siempre (:672), o sea que un preset SIN la key no es una forma válida del formato: en RaceMenu deja el
         ' peso en 0. Omitirla no "preserva", adelgaza al actor.
-        ' ⛔ NO gatearlo por HadWeight: ese gate (no inyectar `weight: 0` en un preset que nunca la tuvo) sirve
-        ' para un round-trip VERBATIM, que esta app no hace — el único camino de guardado es
+        ' ⛔ NO gatearlo por presencia en el archivo leído: ese gate (no inyectar `weight: 0` en un preset que nunca
+        ' la tuvo) serviría para un round-trip VERBATIM, que esta app no hace — el único camino de guardado es
         ' `MainForm.BuildPresetFromState`, que siempre setea SseWeight (fallback 100.0F).
         actor("weight") = Weight
         root("actor") = actor
         Dim hpArr As New JsonArray()
-        ' La key `formIdentifier` se emite SÓLO si tiene contenido, y no es una preferencia: es la única
-        ' forma que el LECTOR canónico sabe leer.
+        ' La key `formIdentifier` se emite si tiene contenido O si el ARCHIVO LEÍDO la traía (HadFormIdentifier,
+        ' aunque fuera "" o null). Las dos mitades salen del mismo hecho del motor:
         '   · skee ramifica por PRESENCIA, no por valor: `if (part.isMember("formIdentifier"))`
-        '     (PresetInterface.cpp:979). Con la key presente pero vacía cae en `GetFormFromIdentifier("")`,
-        '     que falla, y el head part se DESCARTA — dejando además INALCANZABLE su propio fallback por
-        '     `formId` (:988-1002).
-        '   · skee tampoco produce nunca una key vacía: su exportador sólo mete en la lista los head parts
-        '     cuyo mod resolvió (`GetModInfoByFormID`, :357-364) antes de escribir el par formId/
-        '     formIdentifier (:415-416). O sea que "entrada sin identifier" existe en el formato SÓLO como
-        '     la forma legacy `{formId, type}` — que es justamente la que :988 sabe resolver por tabla.
-        ' ⇒ Omitir la key hace que una entrada que no pudimos resolver round-trippee EXACTAMENTE como la
-        ' forma que el motor sabe leer, en vez de una que le hace descartar el head part.
+        '     (PresetInterface.cpp:979). Con la key presente pero vacía cae en `GetFormFromIdentifier("")`
+        '     (FileUtils.cpp:202-206: sin '|' ⇒ LookupFormByEditorID("") ⇒ nullptr), y el head part se
+        '     DESCARTA — dejando además INALCANZABLE su propio fallback por `formId` (:988-1010).
+        '   · skee nunca produce una key vacía: su exportador sólo mete en la lista los head parts cuyo mod
+        '     resolvió (`GetModInfoByFormID`, :357-364) antes de escribir el par formId/formIdentifier (:415-416).
+        ' ⇒ Una entrada que el lector clasificó como NO resuelta se re-emite VERBATIM (decisión del usuario 24-ago:
+        ' preservar, no inventar), y verbatim incluye la forma: si traía la key vacía, sale con la key vacía, para
+        ' que el motor la siga DESCARTANDO como antes. Omitirla la convertía en la forma legacy `{formId, type}`,
+        ' que :988 SÍ resuelve por tabla — un round-trip por esta app volvía VIVO un head part que el archivo
+        ' original no aplicaba. Una entrada que la app resolvió sale con identifier lleno (ToJslot), como siempre.
         ' El ORDEN de las keys se conserva (formId, formIdentifier, type) para que un preset con identifier
         ' salga byte-idéntico al original: reordenar mueve bytes en TODOS los archivos del usuario sin ganar nada.
         For Each hp In HeadParts
             Dim hpObj As New JsonObject From {{"formId", hp.FormId}}
-            If Not String.IsNullOrEmpty(hp.FormIdentifier) Then hpObj("formIdentifier") = hp.FormIdentifier
+            If hp.HadFormIdentifier OrElse Not String.IsNullOrEmpty(hp.FormIdentifier) Then hpObj("formIdentifier") = If(hp.FormIdentifier, "")
             hpObj("type") = hp.Type
             hpArr.Add(hpObj)
         Next
@@ -1488,7 +1610,7 @@ Public NotInheritable Class RaceMenuJslot
                 Dim raw = TryCast(If(nt.Raw Is Nothing, BuildTransformRaw(nt), JsonNode.Parse(nt.Raw.ToJsonString())), JsonObject)
                 If raw Is Nothing Then Continue For
                 Dim keys = TryCast(raw("keys"), JsonArray)
-                If keys Is Nothing Then keys = New JsonArray() : raw("keys") = keys
+                If keys Is Nothing Then keys = ArrayComoElMotor(raw("keys")) : raw("keys") = keys
                 ' SE ESCRIBE **UNA** CAPA: la nuestra, con el TRS ya compuesto. De las capas ajenas se
                 ' conservan solo los values de keys que NO son TRS (p.ej. 40 = node-destination), porque esas no
                 ' entran en la composicion y tirarlas perderia comportamiento que no modelamos.
@@ -1559,7 +1681,8 @@ Public NotInheritable Class RaceMenuJslot
                     raw = New JsonObject From {{"firstPerson", False}, {"slotMask", CLng(sk.SlotMask)}, {"values", New JsonArray()}}
                 End If
                 Dim vals = TryCast(raw("values"), JsonArray)
-                If vals Is Nothing Then vals = New JsonArray() : raw("values") = vals
+                ' Forma objeto ⇒ el recorrido por valores del motor (:1186), como array; ausente/escalar ⇒ vacío.
+                If vals Is Nothing Then vals = ArrayComoElMotor(raw("values")) : raw("values") = vals
                 ' Repara los tipo-3 sin signo que dejó una versión anterior de esta app ANTES de parchear lo
                 ' modelado, así también se sanea el tint que llega por la rama verbatim (checkbox destildado).
                 NormalizeSignedIntValues(vals)
@@ -1598,8 +1721,14 @@ Public NotInheritable Class RaceMenuJslot
 
     ' skee64 preset header constants (PresetInterface.cpp:300-301). signature = MACRO_SWAP32('SKSE') =
     ' 0x45534B53; verified against every real RaceMenu-authored .jslot (version.signature == 1163086675).
-    Private Const PresetSignature As Long = 1163086675L
-    Private Const PresetFormatVersion As Integer = 3
+    ' Públicas porque son la cabecera MÍNIMA que `Load` exige (:925-946): un .jslot sintético de un probe la necesita.
+    Public Const PresetSignature As Long = 1163086675L
+    Public Const PresetFormatVersion As Integer = 3
+    ''' <summary>La cabecera mínima que <c>LoadJsonPreset</c> exige (:925-954), como miembros JSON listos para
+    ''' concatenar dentro de un objeto raíz: <c>version{signature,formatVersion}</c> + un <c>modNames</c> no vacío.
+    ''' Para los .jslot sintéticos de los probes; un archivo sin esto <see cref="Load"/> lo rechaza como el motor.</summary>
+    Public Shared ReadOnly CabeceraMinimaJson As String =
+        """version"":{""signature"":" & PresetSignature & ",""formatVersion"":" & PresetFormatVersion & "},""modNames"":[""Skyrim.esm""]"
 
     ''' <summary>Guarantee the three header nodes skee64's <c>LoadJsonPreset</c> validates before it will load a
     ''' preset (PresetInterface.cpp:925-954): a non-empty <c>version</c> whose <c>signature</c> == kSignature and
@@ -1696,9 +1825,9 @@ Public NotInheritable Class RaceMenuJslot
         ' Start from the ORIGINAL values array when we have it (RawValues) so unmodeled entries (texture slots >=2,
         ' key 6 TextureSet, keys 0-5) and the original ordering survive; else build fresh. Then patch the modeled
         ' keys: tint (7), alpha (8), diffuse (9/0), normal (9/1) — adding, updating or removing each in place.
-        Dim valuesArr As JsonArray = TryCast(If(ov.RawValues Is Nothing, Nothing, JsonNode.Parse(ov.RawValues.ToJsonString())), JsonArray)
-        Dim fresh = valuesArr Is Nothing
-        If fresh Then valuesArr = New JsonArray()
+        ' Clon del `values` original como ARRAY: si vino en forma objeto, el motor lo recorrió por valores
+        ' (PresetInterface.cpp:1155) y se re-emite ese recorrido, no un array vacío.
+        Dim valuesArr As JsonArray = If(ov.RawValues Is Nothing, New JsonArray(), ArrayComoElMotor(ov.RawValues))
         ' Mismo saneo que en skinOverrides: un tipo-3 sin signo heredado de una versión anterior se repara aunque
         ' la key no se re-emita desde el modelo. Ver SignedTintValue.
         NormalizeSignedIntValues(valuesArr)
@@ -1742,7 +1871,7 @@ Public NotInheritable Class RaceMenuJslot
                                   If(vtype = 4, JsonValue.Create(CDbl(data)), JsonValue.Create(CInt(data))))
         For Each v In vals
             Dim vo = TryCast(v, JsonObject) : If vo Is Nothing Then Continue For
-            If GetInt(vo("key")) = key AndAlso GetInt(vo("index")) = index Then
+            If GetKey(vo("key")) = key AndAlso GetIndex(vo("index")) = index Then
                 vo("type") = vtype : vo("data") = jval : Return
             End If
         Next
@@ -1754,7 +1883,7 @@ Public NotInheritable Class RaceMenuJslot
     Private Shared Sub RemoveOverlayKey(vals As JsonArray, key As Integer, index As Integer?)
         For i = vals.Count - 1 To 0 Step -1
             Dim vo = TryCast(vals(i), JsonObject) : If vo Is Nothing Then Continue For
-            If GetInt(vo("key")) = key AndAlso (Not index.HasValue OrElse GetInt(vo("index")) = index.Value) Then vals.RemoveAt(i)
+            If GetKey(vo("key")) = key AndAlso (Not index.HasValue OrElse GetIndex(vo("index")) = index.Value) Then vals.RemoveAt(i)
         Next
     End Sub
 
@@ -1764,20 +1893,305 @@ Public NotInheritable Class RaceMenuJslot
     End Function
 
     ' ---- JSON helpers (null-safe scalar reads) ----
-    Private Shared Function AsArray(n As JsonNode) As JsonArray
-        Return If(TryCast(n, JsonArray), New JsonArray())
+    ' ===================================================================================================
+    ' ¿El motor acepta el archivo? — transcripción de LoadJsonPreset (skee64 PresetInterface.cpp:925-1246)
+    ' ===================================================================================================
+
+    ''' <summary>Replica el <c>throw std::runtime_error</c> de <c>JSON_FAIL_MESSAGE</c> (jsoncpp json/assertions.h:19,
+    ''' JSON_USE_EXCEPTION=1 en json/config.h:33): toda conversión inválida sube hasta el caller de
+    ''' <c>LoadJsonPreset</c>, que no tiene try/catch (:898-1249) ⇒ el archivo entero queda rechazado.</summary>
+    Private NotInheritable Class LanzaJsoncpp
+        Inherits Exception
+    End Class
+
+    ''' <summary><c>LoadJsonPreset</c> (:925-1246) reducido a su resultado: ¿el motor devuelve <c>loadError</c> para
+    ''' este archivo? Recorre los MISMOS nodos con las MISMAS conversiones jsoncpp y en el MISMO orden; cada
+    ''' conversión que en jsoncpp lanzaría, acá lanza <see cref="LanzaJsoncpp"/>. No decodifica: sólo decide.
+    ''' Los <c>modList.find</c> / <c>LookupModByName</c> / <c>LookupFormByID</c> / <c>GetFormFromIdentifier</c> no
+    ''' se modelan porque ninguno cambia <c>loadError</c>: sólo deciden qué head part queda (eso es del mapper).</summary>
+    Private Shared Function RechazaComoElMotor(root As JsonObject) As Boolean
+        Try
+            Dim version = Idx(root, "version")                                          ' :925
+            If Jsoncpp.Empty(version) Then Return True                                  ' :926-930
+            If UIntJ(Idx(version, "signature")) <> PresetSignature Then Return True     ' :932-938
+            If UIntJ(Idx(version, "formatVersion")) <= 0UI Then Return True            ' :940-946 (kVersion_Invalid = 0, :303)
+            Dim mods = Idx(root, "mods")                                                ' :948
+            Dim modNames = Idx(root, "modNames")                                        ' :949
+            If Jsoncpp.Empty(mods) AndAlso Jsoncpp.Empty(modNames) Then Return True     ' :950-954
+            If TypeOf mods Is JsonArray Then                                            ' :959-967
+                For Each md In Jsoncpp.Valores(mods)
+                    UIntJ(Idx(md, "index")) : StringJ(Idx(md, "name"))
+                Next
+            End If
+            If TypeOf modNames Is JsonArray Then                                        ' :969-974 (isMember ⇒ ya lo es)
+                For Each mn In Jsoncpp.Valores(modNames) : StringJ(mn) : Next
+            End If
+            Dim headParts = Idx(root, "headParts")                                      ' :976-1015
+            If Not Jsoncpp.Empty(headParts) AndAlso TypeOf headParts Is JsonArray Then
+                For Each part In Jsoncpp.Valores(headParts)
+                    If IsMemberJ(part, "formIdentifier") Then                           ' :979-980
+                        StringJ(Idx(part, "formIdentifier"))
+                    ElseIf IsMemberJ(part, "formId") Then                               ' :988-990
+                        UIntJ(Idx(part, "type")) : UIntJ(Idx(part, "formId"))
+                    End If
+                Next
+            End If
+            Dim headData = Idx(root, "actor")                                           ' :1017-1024
+            If Not Jsoncpp.Empty(headData) AndAlso TypeOf headData Is JsonObject Then
+                FloatJ(Idx(headData, "weight")) : UIntJ(Idx(headData, "hairColor"))
+                If IsMemberJ(headData, "headTexture") Then StringJ(Idx(headData, "headTexture"))
+            End If
+            Dim tintInfo = Idx(root, "tintInfo")                                        ' :1027-1036
+            If Not Jsoncpp.Empty(tintInfo) AndAlso TypeOf tintInfo Is JsonArray Then
+                For Each tint In Jsoncpp.Valores(tintInfo)
+                    UIntJ(Idx(tint, "color")) : UIntJ(Idx(tint, "index")) : StringJ(Idx(tint, "texture"))
+                Next
+            End If
+            Dim faceTextures = Idx(root, "faceTextures")                                ' :1038-1046
+            If Not Jsoncpp.Empty(faceTextures) AndAlso TypeOf faceTextures Is JsonArray Then
+                For Each ft In Jsoncpp.Valores(faceTextures)
+                    UIntJ(Idx(ft, "index")) : StringJ(Idx(ft, "texture"))
+                Next
+            End If
+            Dim morphs = Idx(root, "morphs")                                            ' :1048-1111
+            If Not Jsoncpp.Empty(morphs) Then
+                Dim defaultMorphs = Idx(morphs, "default")                              ' :1050
+                If Not Jsoncpp.Empty(defaultMorphs) Then
+                    For Each p In Jsoncpp.Valores(Idx(defaultMorphs, "presets")) : UIntJ(p) : Next     ' :1052-1059
+                    For Each m In Jsoncpp.Valores(Idx(defaultMorphs, "morphs")) : FloatJ(m) : Next     ' :1061-1064
+                End If
+                Dim customMorphs = Idx(morphs, "custom")                                ' :1066-1074
+                If Not Jsoncpp.Empty(customMorphs) Then
+                    For Each cm In Jsoncpp.Valores(customMorphs)
+                        StringJ(Idx(cm, "name")) : FloatJ(Idx(cm, "value"))
+                    Next
+                End If
+                Dim multiplier As Integer = -1                                          ' :1076
+                Dim sculptMult = Idx(morphs, "sculptDivisor")                           ' :1078-1080
+                If Not Jsoncpp.Empty(sculptMult) Then multiplier = IntJ(sculptMult)
+                Dim sculptData = Idx(morphs, "sculpt")                                  ' :1082-1110
+                If Not Jsoncpp.Empty(sculptData) Then
+                    For Each hostFile In Jsoncpp.Valores(sculptData)
+                        StringJ(Idx(hostFile, "host"))                                  ' :1086
+                        For Each row In Jsoncpp.Valores(Idx(hostFile, "data"))          ' :1087-1106
+                            UIntJ(Idx(row, 0))
+                            If multiplier > 0 Then
+                                IntJ(Idx(row, 1)) : IntJ(Idx(row, 2)) : IntJ(Idx(row, 3))
+                            Else
+                                FloatJ(Idx(row, 1)) : FloatJ(Idx(row, 2)) : FloatJ(Idx(row, 3))
+                            End If
+                        Next
+                    Next
+                End If
+            End If
+            Dim transforms = Idx(root, "transforms")                                    ' :1113-1148
+            If Not Jsoncpp.Empty(transforms) Then
+                For Each xForm In Jsoncpp.Valores(transforms)
+                    BoolJ(Idx(xForm, "firstPerson")) : StringJ(Idx(xForm, "node"))
+                    For Each keyNode In Jsoncpp.Valores(Idx(xForm, "keys"))
+                        StringJ(Idx(keyNode, "name"))
+                        For Each jvalue In Jsoncpp.Valores(Idx(keyNode, "values")) : ValorOverrideJ(jvalue) : Next
+                    Next
+                Next
+            End If
+            Dim overrideNodes = Idx(root, "overrides")                                  ' :1150-1177
+            If Not Jsoncpp.Empty(overrideNodes) Then
+                For Each ovr In Jsoncpp.Valores(overrideNodes)
+                    StringJ(Idx(ovr, "node"))
+                    For Each jvalue In Jsoncpp.Valores(Idx(ovr, "values")) : ValorOverrideJ(jvalue) : Next
+                Next
+            End If
+            Dim skinOverrides = Idx(root, "skinOverrides")                              ' :1179-1209
+            If Not Jsoncpp.Empty(skinOverrides) Then
+                For Each skinData In Jsoncpp.Valores(skinOverrides)
+                    BoolJ(Idx(skinData, "firstPerson")) : UIntJ(Idx(skinData, "slotMask"))
+                    For Each jvalue In Jsoncpp.Valores(Idx(skinData, "values")) : ValorOverrideJ(jvalue) : Next
+                Next
+            End If
+            Dim bodyMorphs = Idx(root, "bodyMorphs")                                    ' :1211-1246
+            If Not Jsoncpp.Empty(bodyMorphs) Then
+                For Each bm In Jsoncpp.Valores(bodyMorphs)
+                    StringJ(Idx(bm, "name"))                                            ' :1214
+                    If Not Jsoncpp.Empty(Idx(bm, "value")) Then FloatJ(Idx(bm, "value"))   ' :1217-1222
+                    Dim values = Idx(bm, "keys")                                        ' :1225-1244
+                    If Not Jsoncpp.Empty(values) Then
+                        For Each jvalue In Jsoncpp.Valores(values)
+                            StringJ(Idx(jvalue, "key")) : FloatJ(Idx(jvalue, "value"))
+                        Next
+                    End If
+                Next
+            End If
+            Return False
+        Catch ex As LanzaJsoncpp
+            Return True
+        End Try
     End Function
+
+    ''' <summary>Un <c>OverrideVariant</c> leído de un <c>values[]</c> (:1125-1142, :1156-1173, :1187-1204): <c>key</c>
+    ''' asUInt, <c>type</c> asInt (se guarda en <c>UInt8 type</c>, OverrideVariant.h:71 ⇒ el switch ve el byte bajo),
+    ''' <c>index</c> asInt, y <c>data</c> según el tipo: Bool=5 asBool · Int=3 asInt · Float=4 asFloat · String=2
+    ''' asString (OverrideVariant.h:63-68); otro tipo no lee <c>data</c>.</summary>
+    Private Shared Sub ValorOverrideJ(jvalue As JsonNode)
+        UIntJ(Idx(jvalue, "key"))
+        Dim t = IntJ(Idx(jvalue, "type"))
+        IntJ(Idx(jvalue, "index"))
+        Select Case CByte(t And &HFF)
+            Case 5 : BoolJ(Idx(jvalue, "data"))
+            Case 3 : IntJ(Idx(jvalue, "data"))
+            Case 4 : FloatJ(Idx(jvalue, "data"))
+            Case 2 : StringJ(Idx(jvalue, "data"))
+        End Select
+    End Sub
+
+    ' Los accesos y conversiones de jsoncpp con su falla convertida en LanzaJsoncpp (json_value.cpp: operator[]
+    ' :918-936/:970-994, isMember :1090-1093, asUInt :653-673, asInt :631-651, asFloat :758-778, asBool :780-795,
+    ' asString :606-623).
+    Private Shared Function Idx(n As JsonNode, key As String) As JsonNode
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.Miembro(n, key, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function Idx(n As JsonNode, index As Integer) As JsonNode
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.Elemento(n, index, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function IsMemberJ(n As JsonNode, key As String) As Boolean
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.IsMember(n, key, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function UIntJ(n As JsonNode) As UInteger
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.AsUInt(n, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function IntJ(n As JsonNode) As Integer
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.AsInt(n, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function FloatJ(n As JsonNode) As Single
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.AsFloat(n, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function BoolJ(n As JsonNode) As Boolean
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.AsBool(n, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+    Private Shared Function StringJ(n As JsonNode) As String
+        Dim ok As Boolean = True
+        Dim r = Jsoncpp.AsString(n, ok)
+        If Not ok Then Throw New LanzaJsoncpp()
+        Return r
+    End Function
+
+    ''' <summary>Los 32 bits de un <c>UInt32</c> del motor guardados en el <c>Integer</c> del modelo (mismo patrón de
+    ''' bits; el Save los re-emite como venían).</summary>
+    Private Shared Function Int32Bits(u As UInteger) As Integer
+        Return BitConverter.ToInt32(BitConverter.GetBytes(u), 0)
+    End Function
+
+    ''' <summary><c>bodyMorphData[name][key] = value</c> (:1221, :1242): el mapa interno es
+    ''' <c>unordered_map&lt;SKEEFixedString, float&gt;</c> (PresetInterface.h:59) con igualdad <c>_stricmp</c>
+    ''' (StringTable.h:28-37) ⇒ una key repetida (sin distinguir mayúsculas ASCII) PISA a la anterior.</summary>
+    Private Shared Sub PonerKey(entry As JslotBodyMorph, key As String, value As Single)
+        For Each k In entry.Keys
+            If IgualStricmp(k.Key, key) Then k.Value = value : Return
+        Next
+        entry.Keys.Add(New JslotBodyMorphKey With {.Key = key, .Value = value})
+    End Sub
+
+    ''' <summary><c>SKEEFixedString::operator==</c> (StringTable.h:28-37): mismo largo y <c>_stricmp == 0</c>, o sea
+    ''' igualdad carácter a carácter plegando SÓLO A-Z/a-z (locale "C").</summary>
+    Private Shared Function IgualStricmp(a As String, b As String) As Boolean
+        If a Is Nothing OrElse b Is Nothing OrElse a.Length <> b.Length Then Return False
+        For i = 0 To a.Length - 1
+            Dim ca = a(i), cb = b(i)
+            If ca >= "A"c AndAlso ca <= "Z"c Then ca = ChrW(AscW(ca) + 32)
+            If cb >= "A"c AndAlso cb <= "Z"c Then cb = ChrW(AscW(cb) + 32)
+            If ca <> cb Then Return False
+        Next
+        Return True
+    End Function
+
+    ' Los recorridos de `transforms`/`overrides`/`skinOverrides`/`keys`/`values` usan `Jsoncpp.Valores`, que es el
+    ' range-for del motor sobre un `Json::Value` (skee64 jsoncpp json_value.cpp:1344-1372, `Value::begin()`):
+    ' array ⇒ elementos; OBJETO ⇒ sus VALORES en orden strcmp; escalar ⇒ nada. Un helper "sólo si es JsonArray"
+    ' hacía invisible la forma objeto que el motor SÍ recorre (PresetInterface.cpp:1115, :1120, :1124, :1152,
+    ' :1155, :1181, :1186).
+    '
+    ' Las conversiones son las de jsoncpp (json_value.cpp): `asInt` :631-651 (null 0 · bool 1/0 · real TRUNCADO hacia
+    ' cero), `asUInt` :653-673, `asFloat` :758-778, `asString` :606-623 (número ⇒ su texto, bool ⇒ "true"/"false").
+    ' Los casos en que jsoncpp LANZA (string donde va número, contenedor donde va escalar, fuera de rango) ya los
+    ' rechazó `RechazaComoElMotor` antes de llegar acá; el `ok` se ignora y devuelve el 0/"" del mismo modelo.
+    ' Y los ANCHOS del OverrideVariant que reciben el valor (OverrideVariant.h:25 `UInt16 key`, :71 `UInt8 type`,
+    ' :72 `SInt8 index`) truncan como en C: key 65566 es 30, index 256 es 0, type 260 es 4.
     Private Shared Function GetInt(n As JsonNode) As Integer
-        Try : Return If(n Is Nothing, 0, n.GetValue(Of Integer)()) : Catch : Try : Return CInt(n.GetValue(Of Double)()) : Catch : Return 0 : End Try : End Try
+        Dim ok As Boolean : Return Jsoncpp.AsInt(n, ok)
     End Function
-    Private Shared Function GetLong(n As JsonNode) As Long
-        Try : Return If(n Is Nothing, 0L, n.GetValue(Of Long)()) : Catch : Try : Return CLng(n.GetValue(Of Double)()) : Catch : Return 0L : End Try : End Try
+    Private Shared Function GetUInt(n As JsonNode) As UInteger
+        Dim ok As Boolean : Return Jsoncpp.AsUInt(n, ok)
     End Function
-    Private Shared Function GetDbl(n As JsonNode) As Double
-        Try : Return If(n Is Nothing, 0.0, n.GetValue(Of Double)()) : Catch : Return 0.0 : End Try
+    Private Shared Function GetFloat(n As JsonNode) As Single
+        Dim ok As Boolean : Return Jsoncpp.AsFloat(n, ok)
     End Function
     Private Shared Function GetStr(n As JsonNode) As String
-        Try : Return If(n Is Nothing, "", n.GetValue(Of String)()) : Catch : Return "" : End Try
+        Dim ok As Boolean : Return Jsoncpp.AsString(n, ok)
+    End Function
+    ''' <summary><c>value.key = jvalue["key"].asUInt()</c> (PresetInterface.cpp:1126/:1157/:1188) guardado en
+    ''' <c>UInt16 key</c> (OverrideVariant.h:25).</summary>
+    Private Shared Function GetKey(n As JsonNode) As Integer
+        Return CInt(GetUInt(n) And &HFFFFUI)
+    End Function
+    ''' <summary><c>value.type = jvalue["type"].asInt()</c> (:1127/:1158/:1189) guardado en <c>UInt8 type</c>
+    ''' (OverrideVariant.h:71): el switch de :1129/:1160/:1191 ve el byte bajo.</summary>
+    Private Shared Function GetTipo(n As JsonNode) As Integer
+        Return GetInt(n) And &HFF
+    End Function
+    ''' <summary><c>value.index = jvalue["index"].asInt()</c> (:1128/:1159/:1190) guardado en <c>SInt8 index</c>
+    ''' (OverrideVariant.h:72): byte bajo con signo.</summary>
+    Private Shared Function GetIndex(n As JsonNode) As Integer
+        Dim b = GetInt(n) And &HFF
+        Return If(b > 127, b - 256, b)
+    End Function
+    ''' <summary>Lo que el shader lee de un <c>kParam_ShaderAlpha</c> (key 8): <c>UnpackValue(&amp;material->alpha,
+    ''' value)</c> (ShaderUtilities.cpp:291) = <c>UnpackValue&lt;float&gt;</c> (OverrideVariant.cpp:129-149): Int ⇒
+    ''' <c>data.i</c> como número · Float ⇒ <c>data.f</c> · Bool ⇒ 1/0 · otro tipo ⇒ 0. Lo que el .jslot metió en
+    ''' cada rama es el <c>asInt/asFloat/asBool</c> del switch de PresetInterface.cpp:1160-1172.</summary>
+    Private Shared Function AlphaDelShader(vtype As Integer, data As JsonNode) As Single
+        Dim ok As Boolean
+        Select Case vtype
+            Case 3 : Return CSng(GetInt(data))
+            Case 4 : Return GetFloat(data)
+            Case 5 : Return If(Jsoncpp.AsBool(data, ok), 1.0F, 0.0F)
+            Case Else : Return 0.0F
+        End Select
+    End Function
+    ''' <summary>El recorrido del motor sobre un <c>Json::Value</c> (range-for = jsoncpp json_value.cpp:1344-1372),
+    ''' materializado como <c>JsonArray</c> de CLONES: array ⇒ sus elementos, objeto ⇒ sus valores en orden strcmp,
+    ''' escalar/null/ausente ⇒ vacío. Lo usa el Save para re-emitir como array exactamente lo que el decode recorrió
+    ''' cuando el archivo trajo la forma objeto (<c>keys</c>, <c>values</c>), en vez de tirarlo.</summary>
+    Private Shared Function ArrayComoElMotor(n As JsonNode) As JsonArray
+        Dim arr As New JsonArray()
+        For Each k In Jsoncpp.Valores(n)
+            arr.Add(If(k Is Nothing, Nothing, JsonNode.Parse(k.ToJsonString())))
+        Next
+        Return arr
+    End Function
+    ''' <summary>Campos que el motor NO lee (`vertices` del sculpt, `formId`/`type` en la rama formIdentifier): se
+    ''' conservan laxos para re-emitirlos, sin ley que citar.</summary>
+    Private Shared Function GetLong(n As JsonNode) As Long
+        Try : Return If(n Is Nothing, 0L, n.GetValue(Of Long)()) : Catch : Try : Return CLng(n.GetValue(Of Double)()) : Catch : Return 0L : End Try : End Try
     End Function
 
     ''' <summary>A texture path in a form the engine can resolve. RaceMenu-authored presets use BOTH
