@@ -625,7 +625,7 @@ Namespace Canon
             If ctx.ResolverTextoLocalizado IsNot Nothing Then texto = ctx.ResolverTextoLocalizado(node)
             If String.IsNullOrEmpty(texto) Then
                 ctx.Report(WbFindingKind.TextoLocalizadoSinResolver, node.Path,
-                           $"identificador 0x{id:X8} sin resolver contra las tablas de idioma: el campo sale VACÍO")
+                           $"identifier 0x{id:X8} unresolved against the language tables: the field is written EMPTY")
                 Return ""
             End If
             Return texto
