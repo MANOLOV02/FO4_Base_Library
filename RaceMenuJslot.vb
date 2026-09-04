@@ -910,7 +910,8 @@ Public NotInheritable Class RaceMenuJslot
     ''' lo que el motor deja en <c>PresetData</c>. Devuelve <c>Nothing</c> cuando el motor devolvería
     ''' <c>loadError</c>. transforms/overrides/skinOverrides se decodifican más abajo con el modelo propio; su
     ''' aceptación la decide igual el predicado.</summary>
-    ''' <summary>True cuando este preset hubo que leerlo como cp1252 porque no era UTF-8 válido (ver
+    ''' <summary>True cuando este preset hubo que leerlo con la encoding General (cp1252 por defecto pero
+    ''' CONFIGURABLE, PluginEncodingSettings.vb:197/:327) porque no era UTF-8 válido (ver
     ''' <see cref="Jsoncpp.BytesComoLosVeJsoncpp"/>). El motor no se entera de nada — compara bytes —,
     ''' pero acá el usuario merece el aviso: sin esto el preset entra con la cadena cambiada y el
     ''' identificador queda unresolved sin explicación.

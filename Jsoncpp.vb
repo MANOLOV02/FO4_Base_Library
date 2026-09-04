@@ -433,8 +433,11 @@ Public Module Jsoncpp
     ''' <para><b>El motor.</b> <c>Reader::readString</c> (json_reader.cpp:390-400) consume CUALQUIER byte
     ''' hasta la comilla sin escapar: no valida UTF-8 ni rechaza controles. El byte llega crudo al
     ''' <c>std::string</c>, y de ahí a <c>GetFormFromIdentifier</c> → <c>LookupModByName</c>, que compara
-    ''' BYTES contra el nombre del <c>ModInfo</c> — cp1252 en un Windows occidental, la misma encoding que
-    ''' esta lib ya usa para los campos no traducibles (<see cref="PluginEncodingSettings.General"/>).</para>
+    ''' BYTES contra el nombre del <c>ModInfo</c>. Acá se decodifica con
+    ''' <see cref="PluginEncodingSettings.General"/>, que es EXACTAMENTE la encoding con la que esta lib lee los
+    ''' campos no traducibles de los plugins — o sea, contra la que se va a comparar después. Su default es
+    ''' cp1252 (<c>PluginEncodingSettings.vb:197</c>) pero es CONFIGURABLE (<c>:327</c>), y esa es justamente la
+    ''' propiedad que se quiere: sigue a la app, no a un número fijo. Decir «cp1252» a secas es impreciso.</para>
     '''
     ''' <para><b>La app.</b> <c>JsonNode.Parse</c> sobre bytes NO falla con UTF-8 inválido: sustituye por
     ''' U+FFFD y sigue. Es el único de los modos de falla del parser que no avisa — el preset entra con la
@@ -443,8 +446,8 @@ Public Module Jsoncpp
     ''' <para><b>La regla, y por qué es tan angosta.</b> Si el archivo es UTF-8 válido no se toca NADA.
     ''' Censo del 2026-09-04 sobre el disco entero: 807 archivos de preset, 0 con UTF-8 inválido, 0 con
     ''' identificadores no-ASCII ⇒ hoy esta rama no corre nunca. Sólo cuando el UTF-8 es inválido — el
-    ''' caso que hoy se corrompe callado — se transcodifica desde cp1252, que es el espacio de bytes del
-    ''' motor, y el llamador lo registra. Un preset UTF-8 legítimo con acentos nunca entra acá.</para>
+    ''' caso que hoy se corrompe callado — se transcodifica con la encoding General, que es el espacio de bytes
+    ''' en el que la app compara nombres de plugin, y el llamador lo registra. Un preset UTF-8 legítimo con acentos nunca entra acá.</para>
     '''
     ''' <para><b>HUECO declarado, con su número.</b> `readString` acepta otra cosa que System.Text.Json
     ''' rechaza: un carácter de control CRUDO dentro de un string (`'0x1A' is invalid within a JSON
@@ -454,7 +457,7 @@ Public Module Jsoncpp
     ''' que se evitó a propósito al meter el parseo de UN valor en FO4_Base_Library_CSharpHelpers.
     ''' Censo 2026-09-04 sobre el disco: 806 archivos de preset, 0 con un control crudo dentro de un
     ''' string. Si alguna vez aparece, esto es lo que hay que revisar.</para></summary>
-    ''' <param name="transcodificado">True cuando hubo que caer a cp1252. El llamador tiene que dejarlo
+    ''' <param name="transcodificado">True cuando hubo que caer a la encoding General. El llamador tiene que dejarlo
     ''' en el log: si no, se vuelve a perder el aviso.</param>
     Public Function BytesComoLosVeJsoncpp(bytes As Byte(), ByRef transcodificado As Boolean) As Byte()
         transcodificado = False

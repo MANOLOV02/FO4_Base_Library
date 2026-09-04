@@ -1,4 +1,4 @@
-﻿' Version Uploaded of Fo4Library 3.2.0
+' Version Uploaded of Fo4Library 3.2.0
 Imports System.IO
 Imports System.Numerics
 Imports System.Text.Json
@@ -187,8 +187,17 @@ Public Class Config_App
         ' ⛔⛔ SOLO EN DEBUG, AUNQUE EL FLAG ESTE PERSISTIDO.
         ' La fisica de cloth esta EN DESARROLLO y la app SE DISTRIBUYE. `Setting_HavokPhysics` vive en
         ' config.json como cualquier otra perilla, asi que un config con la fisica prendida viajaria
-        ' con el usuario y le cambiaria el render de una build publicada. El compilador la saca del
-        ' binario de Release: no es una perilla en runtime, no esta.
+        ' con el usuario y le cambiaria el render de una build publicada.
+        ' ⛔ EL CONTRATO, dicho por el usuario el 2026-09-04: en Release **NO SE EJECUTA NUNCA y NO CUESTA
+        ' PERFORMANCE**. Que el codigo este incluido en el binario ESTA BIEN.
+        ' ⛔⛔ ACA DECIA "El compilador la saca del binario de Release: no es una perilla en runtime, no
+        ' esta", Y ERA FALSO. El `#If DEBUG` de abajo protege LA ASIGNACION de `Enabled`, no la presencia
+        ' de los tipos: el .vbproj solo excluye `Shared/**`, no `Havok/Physics/**`, asi que las clases del
+        ' solver SI viajan en el DLL de Publish. La afirmacion no cambiaba nada del comportamiento, pero
+        ' mandaba a cualquiera que la leyera a auditar un contrato que no era el real.
+        ' LO QUE SIGUE ABIERTO, y es la mitad que el contrato SI exige: `HclClothPackageParser.vb:259`
+        ' recorre `HavokClothSimulation.OperadoresQueEjecuta` SIN condicional (ese archivo no tiene ni un
+        ' `#If DEBUG`), asi que hay que trazar si ese camino se alcanza en Release y que cuesta.
         ' Con esto apagado, `Render` ni siquiera arma el diccionario de instancias por frame.
 #If DEBUG Then
         Havok.Physics.HavokPhysicsSettings.Enabled = Setting_HavokPhysics AndAlso Game = Game_Enum.Fallout4

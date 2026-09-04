@@ -46,5 +46,14 @@ la sobrecarga que toma el `Utf8JsonReader` para sola al terminar el primer valor
   ella. No es un tercero, así que declara la configuración `Publish` e importa
   `ConfiguracionPublish.targets` en vez de mapearse a `Release` como `MaterialLib` y `NiflySharp`.
 - `RootNamespace` = `FO4_Base_Library`, así que desde VB se llama sin prefijo.
-- `RuntimeIdentifiers` (plural) declarado: es la trampa NETSDK1047 documentada en
-  `FO4_Base_Library.vbproj`.
+- **AnyCPU y sin ningún RID declarado**, igual que `MaterialLib` y `NiflySharp`: es managed puro, así que
+  `PlatformTarget` no cambia nada de lo que produce. Y sin plataformas condicionadas no hay
+  `RuntimeIdentifier` SINGULAR condicionado por `$(Platform)`, que es la raíz de la trampa NETSDK1047
+  documentada en `FO4_Base_Library.vbproj`: no se declara ninguno y la restauración no tiene targets que
+  pisar. ⚠️ Una versión anterior de este archivo decía lo contrario — que declaraba `RuntimeIdentifiers`
+  (plural) —, y era falso.
+- ⛔ **Tiene que estar en los tres `.sln`.** Un proyecto ausente del `.sln` no recibe configuración del
+  build de solución — `AssignProjectConfiguration` no lo encuentra en `ProjectConfigurationPlatforms` y el
+  SDK cae en su default. Medido con `bin` limpio: en una corrida `Configuration=Publish` compilaba en
+  **Debug**, y ese DLL sin optimizar se copiaba al paquete, en verde. Está en `FO4_NPC_Manager`,
+  `Nif_Explorer` y `Wardrobe_Manager` con los 18 mapeos, `Publish→Publish`.
