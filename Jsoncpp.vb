@@ -1,4 +1,4 @@
-Imports System.Text
+﻿Imports System.Text
 Imports System.Text.Json
 Imports System.Text.Json.Nodes
 
@@ -335,8 +335,28 @@ Public Module Jsoncpp
     ''' <summary><c>sscanf_s(texto, "%X", &amp;v)</c> con v inicializado en 0 (f4ee CharGenInterface.cpp:412, :444,
     ''' :505, :543; Utilities.cpp:140): salta espacio en blanco C (' ', \t, \n, \v, \f, \r), acepta un signo, un
     ''' prefijo 0x/0X opcional y digitos hex hasta el primero que no lo es; sin digitos no asigna ⇒ 0; con '-' el
-    ''' valor se niega en aritmetica sin signo. Desborde: el CRT acumula sin chequear (HUECO: no leimos la
-    ''' implementacion de MSVC; se asume que envuelve modulo 2^32).</summary>
+    ''' valor se niega en aritmetica sin signo.
+    '''
+    ''' <para><b>DESBORDE — el HUECO se cerró con fuente, y el comentario que estaba acá era FALSO.</b> Decía
+    ''' «el CRT acumula sin chequear; se asume que envuelve modulo 2^32». No es eso lo que hace: el UCRT
+    ''' (fuente en disco, <c>Windows Kits/10/Source/10.0.26100.0/ucrt/</c>) SATURA. Cadena leída:</para>
+    ''' <list type="number">
+    ''' <item><c>%X</c> ⇒ <c>process_integer_specifier(16, false)</c> — corecrt_internal_stdio_input.h:1218.</item>
+    ''' <item>acumula en <b>64 bits</b>: <c>parse_integer&lt;uint64_t&gt;</c> — corecrt_internal_strtox.h:223-350.</item>
+    ''' <item>marca <c>FL_OVERFLOW</c> con <c>number &gt; max_pre_multiply_value</c> o suma que se da vuelta (:296-311).</item>
+    ''' <item>con <c>FL_OVERFLOW</c> y <c>is_signed=false</c> <b>satura</b>: <c>number = (UnsignedInteger)-1</c> (:333-340).</item>
+    ''' <item>trunca al ancho del destino: <c>static_cast&lt;uint32_t&gt;(value)</c> — stdio_input.h:1573.</item>
+    ''' </list>
+    ''' <para>⇒ para todo valor ≥ 2^64 el motor devuelve <b>0xFFFFFFFF</b>, no los 32 bits bajos. Por debajo de
+    ''' 2^64 el acumulador de 64 bits no desborda y la truncada equivale a envolver módulo 2^32 — que es lo que
+    ''' hacía esta función —, por eso coincidían en todo el rango alcanzable y la diferencia quedaba escondida.
+    ''' Acá se transcribe la ley entera: acumulador de 64 bits, bandera de desborde y saturación.</para>
+    ''' <para>ALCANCE: la clave sale del nombre de miembro de <c>"Tints"</c>, que LooksMenu escribe como
+    ''' <c>%X</c> de un índice de 16 bits, y después pasa por <c>GetTemplateByIndex(UInt16)</c>
+    ''' (CharGenInterface.cpp:512) ⇒ hace falta un archivo editado a mano con ≥17 dígitos hex significativos
+    ''' para verlo. Es red, no reparación de algo que rompa hoy.</para>
+    ''' <para>CAVEAT: vale si los plugins linkean UCRT (VS2015 en adelante). No se verificó con qué toolset se
+    ''' compilaron <c>f4ee</c> y <c>skee64</c>; con el CRT anterior el comportamiento podría ser otro.</para></summary>
     Public Function ClaveSscanfX(texto As String) As UInteger
         If texto Is Nothing Then Return 0UI
         Dim i = 0
@@ -349,7 +369,10 @@ Public Module Jsoncpp
             i += 1
         End If
         If i + 1 < texto.Length AndAlso texto(i) = "0"c AndAlso (texto(i + 1) = "x"c OrElse texto(i + 1) = "X"c) Then i += 2
-        Dim v As UInteger = 0UI
+        ' Acumulador de 64 bits + bandera, como `parse_integer<uint64_t>` (corecrt_internal_strtox.h:246-315).
+        Dim v As ULong = 0UL
+        Dim desbordo = False
+        Dim maxAntesDeMultiplicar As ULong = ULong.MaxValue \ 16UL      ' `max_pre_multiply_value` (:296)
         Dim digitos = 0
         While i < texto.Length
             Dim c = texto(i)
@@ -363,12 +386,86 @@ Public Module Jsoncpp
             Else
                 Exit While
             End If
-            v = (v << 4) Or CUInt(d)
+            ' `number_after_multiply` / `number_after_add` y la marca de desborde (:302-311).
+            ' ⛔ EL ORDEN NO ES COSMETICO. C++ deja que `number * base` ENVUELVA y despues mira la bandera;
+            ' VB tiene el chequeo de desbordamiento PRENDIDO y ahi `v * 16UL` LANZARIA — un preset con una
+            ' clave larga tiraria OverflowException en vez de dar el 0xFFFFFFFF del motor. Con la guardia
+            ' `v > max_pre_multiply_value` ADELANTE, la multiplicacion ya no puede desbordar (v <= MaxValue entre 16
+            ' ⇒ v*16 <= MaxValue-15) y la suma tampoco (d <= 15). El `number_after_add < number_after_multiply`
+            ' de C++ queda muerto por construccion: solo cazaba el caso en que la multiplicacion ya habia
+            ' envuelto. Y una vez marcado el desborde el acumulado ya no importa — `is_overflow_condition`
+            ' (:205-217) hace que la funcion devuelva el saturado igual.
+            If v > maxAntesDeMultiplicar Then
+                desbordo = True
+            Else
+                v = v * 16UL + CULng(d)
+            End If
             digitos += 1
             i += 1
         End While
+        ' `if ((flags & FL_READ_DIGIT) == 0) return 0` (:325-329). Los llamadores ya traen `keyValue = 0`, asi
+        ' que "no asigna" y "asigna 0" dan lo mismo.
         If digitos = 0 Then Return 0UI
-        If negativo Then v = CUInt((&H100000000UL - v) And &HFFFFFFFFUL)
-        Return v
+        ' `is_overflow_condition` (:205-217): sin FL_SIGNED solo cuenta FL_OVERFLOW, y ahi `number = (uint64)-1`
+        ' (:337-340), que truncado a 32 bits (stdio_input.h:1573) queda 0xFFFFFFFF. Va ANTES que el signo porque
+        ' esa rama sale por su propio `return`, sin pasar por la negacion (:333-347).
+        If desbordo Then Return UInteger.MaxValue
+        ' `number = -(signed)number` en 64 bits (:344) y despues la truncada de stdio_input.h:1573. Negar en
+        ' 64 y truncar a 32 da lo mismo que negar los 32 bits bajos modulo 2^32, y asi se escribe: `0UL - v`
+        ' lanzaria con el chequeo de desbordamiento de VB.
+        Dim v32 As UInteger = CUInt(v And &HFFFFFFFFUL)
+        If negativo Then v32 = CUInt((&H100000000UL - CULng(v32)) And &HFFFFFFFFUL)
+        Return v32
+    End Function
+
+    ' ===================================================================================================
+    ' Los bytes tal como los ve jsoncpp
+    ' ===================================================================================================
+
+    ''' <summary>Un lector UTF-8 que LANZA en vez de sustituir. `Encoding.UTF8` trae el fallback de
+    ''' reemplazo, que es justamente el que no avisa.</summary>
+    Private ReadOnly Utf8Estricto As Encoding =
+        Encoding.GetEncoding("utf-8", EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback)
+
+    ''' <summary>Los bytes de un preset tal como los ve jsoncpp, para el ÚNICO caso en que System.Text.Json
+    ''' diverge del motor EN SILENCIO.
+    '''
+    ''' <para><b>El motor.</b> <c>Reader::readString</c> (json_reader.cpp:390-400) consume CUALQUIER byte
+    ''' hasta la comilla sin escapar: no valida UTF-8 ni rechaza controles. El byte llega crudo al
+    ''' <c>std::string</c>, y de ahí a <c>GetFormFromIdentifier</c> → <c>LookupModByName</c>, que compara
+    ''' BYTES contra el nombre del <c>ModInfo</c> — cp1252 en un Windows occidental, la misma encoding que
+    ''' esta lib ya usa para los campos no traducibles (<see cref="PluginEncodingSettings.General"/>).</para>
+    '''
+    ''' <para><b>La app.</b> <c>JsonNode.Parse</c> sobre bytes NO falla con UTF-8 inválido: sustituye por
+    ''' U+FFFD y sigue. Es el único de los modos de falla del parser que no avisa — el preset entra con la
+    ''' cadena cambiada y el identificador queda unresolved sin un solo mensaje.</para>
+    '''
+    ''' <para><b>La regla, y por qué es tan angosta.</b> Si el archivo es UTF-8 válido no se toca NADA.
+    ''' Censo del 2026-09-04 sobre el disco entero: 807 archivos de preset, 0 con UTF-8 inválido, 0 con
+    ''' identificadores no-ASCII ⇒ hoy esta rama no corre nunca. Sólo cuando el UTF-8 es inválido — el
+    ''' caso que hoy se corrompe callado — se transcodifica desde cp1252, que es el espacio de bytes del
+    ''' motor, y el llamador lo registra. Un preset UTF-8 legítimo con acentos nunca entra acá.</para>
+    '''
+    ''' <para><b>HUECO declarado, con su número.</b> `readString` acepta otra cosa que System.Text.Json
+    ''' rechaza: un carácter de control CRUDO dentro de un string (`'0x1A' is invalid within a JSON
+    ''' string`). NO se replica, por dos razones y no por olvido: (1) ahí la app LANZA — o sea AVISA —, y
+    ''' rechazar de más con aviso no es el mismo defecto que corromper en silencio; (2) escaparlos exige
+    ''' una pasada de bytes que sepa dónde empiezan y terminan los strings, o sea el tokenizador propio
+    ''' que se evitó a propósito al meter el parseo de UN valor en FO4_Base_Library_CSharpHelpers.
+    ''' Censo 2026-09-04 sobre el disco: 806 archivos de preset, 0 con un control crudo dentro de un
+    ''' string. Si alguna vez aparece, esto es lo que hay que revisar.</para></summary>
+    ''' <param name="transcodificado">True cuando hubo que caer a cp1252. El llamador tiene que dejarlo
+    ''' en el log: si no, se vuelve a perder el aviso.</param>
+    Public Function BytesComoLosVeJsoncpp(bytes As Byte(), ByRef transcodificado As Boolean) As Byte()
+        transcodificado = False
+        If bytes Is Nothing OrElse bytes.Length = 0 Then Return bytes
+        Try
+            ' GetCharCount y no GetString: valida igual y no aloca la cadena entera en el camino feliz.
+            Utf8Estricto.GetCharCount(bytes)
+            Return bytes
+        Catch ex As DecoderFallbackException
+            transcodificado = True
+            Return Encoding.UTF8.GetBytes(PluginEncodingSettings.General.GetString(bytes))
+        End Try
     End Function
 End Module

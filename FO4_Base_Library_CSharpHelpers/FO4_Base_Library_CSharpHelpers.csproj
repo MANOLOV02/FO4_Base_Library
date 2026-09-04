@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ============================================================================================
+       ⛔ ESTE PROYECTO EXISTE POR UNA SOLA RAZÓN: LO QUE VB.NET NO PUEDE COMPILAR.
+
+       No es "la parte C# de la librería" ni un lugar cómodo para escribir código nuevo. Es la
+       excepción, y cada función que entra tiene que venir con el error de compilación de VB que la
+       justifica, textual. Ver _LEEME.md, que lleva la lista.
+
+       Vive DENTRO de FO4_Base_Library y en su MISMO repositorio a propósito: se versiona, se mueve y
+       se publica con ella. No es un tercero — por eso declara la configuración Publish e importa
+       ConfiguracionPublish.targets, en vez de mapearse a Release como MaterialLib y NiflySharp.
+       ============================================================================================ -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Configurations>Debug;Release;Publish</Configurations>
+    <!-- ANYCPU, igual que MaterialLib y NiflySharp: es managed puro, sin nada nativo detrás, así que
+         PlatformTarget no cambia nada de lo que produce. Y sin plataformas condicionadas no hay
+         `RuntimeIdentifier` singular, que es la raíz de la trampa NETSDK1047 documentada en
+         FO4_Base_Library.vbproj: no se declara ninguno y la restauración no tiene targets que pisar. -->
+    <RootNamespace>FO4_Base_Library</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <Import Project="..\ConfiguracionPublish.targets" />
+
+</Project>

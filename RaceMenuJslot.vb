@@ -910,19 +910,36 @@ Public NotInheritable Class RaceMenuJslot
     ''' lo que el motor deja en <c>PresetData</c>. Devuelve <c>Nothing</c> cuando el motor devolvería
     ''' <c>loadError</c>. transforms/overrides/skinOverrides se decodifican más abajo con el modelo propio; su
     ''' aceptación la decide igual el predicado.</summary>
+    ''' <summary>True cuando este preset hubo que leerlo como cp1252 porque no era UTF-8 válido (ver
+    ''' <see cref="Jsoncpp.BytesComoLosVeJsoncpp"/>). El motor no se entera de nada — compara bytes —,
+    ''' pero acá el usuario merece el aviso: sin esto el preset entra con la cadena cambiada y el
+    ''' identificador queda unresolved sin explicación.
+    ''' <para>DE INSTANCIA a propósito, no Shared: los presets se parsean en paralelo (ver
+    ''' Tools/ParseoParaleloGate) y un flag estático se pisaría entre hilos.</para></summary>
+    Public Property LeidoComoCp1252 As Boolean
+
     Public Shared Function Load(bytes As Byte()) As RaceMenuJslot
         If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
         ' BOM UTF-8: jsoncpp no lo salta (json_reader.cpp no lo contempla en ningún lado) ⇒ el primer token no es
         ' JSON ⇒ `reader.parse` falla ⇒ loadError (:918-922). System.Text.Json SÍ lo saltaría; por eso se rechaza acá.
         If bytes.Length >= 3 AndAlso bytes(0) = &HEF AndAlso bytes(1) = &HBB AndAlso bytes(2) = &HBF Then Return Nothing
         Dim node As JsonNode
+        Dim transcodificado As Boolean
         Try
-            Using ms As New IO.MemoryStream(bytes)
-                ' `Json::Reader reader` = Features::all() (json_reader.cpp:29-32) = allowComments ⇒ los comentarios se
-                ' saltan; la coma final sigue siendo error (:413-425: el `}` llega con `name` no vacío ⇒ `break` ⇒
-                ' :453 addErrorAndRecover), igual que el default de System.Text.Json.
-                node = JsonNode.Parse(ms, Nothing, New JsonDocumentOptions With {.CommentHandling = JsonCommentHandling.Skip})
-            End Using
+            ' `Json::Reader reader` = Features::all() (json_reader.cpp:29-32) = allowComments ⇒ los comentarios se
+            ' saltan; la coma final sigue siendo error (:413-425: el `}` llega con `name` no vacío ⇒ `break` ⇒
+            ' :453 addErrorAndRecover), igual que el default de System.Text.Json.
+            ' UN VALOR Y PARA — lo que sobra al final NO rechaza el archivo. `Reader::parse` (:104-141) llama
+            ' `readValue()`, saltea comentarios y devuelve: NUNCA comprueba `current_ == end_`, y `strictRoot_`
+            ' es false en `Features()` y en `Features::all()` (:27-32) ⇒ el motor CARGA `{…}basura`.
+            ' `JsonNode.Parse` exígía fin de archivo y devolvía Nothing: el preset desaparecía de la lista
+            ' mientras el juego lo cargaba. La perilla (`AllowMultipleValues`) sólo existe en `Utf8JsonReader`,
+            ' que VB no compila (BC30668) — por eso vive en FO4_Base_Library_CSharpHelpers.
+            ' UTF-8 INVÁLIDO: el motor pasa el byte crudo (readString :390-400 no valida nada) y acá
+            ' System.Text.Json lo cambiaba por U+FFFD SIN error. `BytesComoLosVeJsoncpp` sólo actúa cuando el
+            ' archivo NO es UTF-8 válido; con uno válido devuelve el mismo array. Load no tiene ruta al log
+            ' (recibe bytes, no path): lo expone en <see cref="LeidoComoCp1252"/> del preset devuelto.
+            node = JsonPrimerValor.Nodo(Jsoncpp.BytesComoLosVeJsoncpp(bytes, transcodificado))
         Catch ex As JsonException
             Return Nothing
         End Try
@@ -933,6 +950,7 @@ Public NotInheritable Class RaceMenuJslot
         If RechazaComoElMotor(root) Then Return Nothing
         Dim ok As Boolean = True   ' de acá en más ninguna conversión puede fallar: RechazaComoElMotor las probó TODAS
         Dim j As New RaceMenuJslot() With {._raw = root}
+        j.LeidoComoCp1252 = transcodificado
         ' actor (:1017-1024): sólo si es objeto y no está vacío.
         Dim actor = TryCast(root("actor"), JsonObject)
         If actor IsNot Nothing AndAlso actor.Count > 0 Then

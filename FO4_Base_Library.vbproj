@@ -128,6 +128,17 @@
     <Compile Remove="Shared\**" />
   </ItemGroup>
 
+  <!-- FO4_Base_Library_CSharpHelpers\ es un PROYECTO propio anidado en esta carpeta (mismo repositorio,
+       se versiona y se publica con esta lib). Sus fuentes NO son de esta lib: se sacan de los globs por
+       defecto del SDK para que no entren como None ni ensucien el Explorador de soluciones.
+       ⛔ Existe SOLO para lo que VB.NET no puede compilar; la regla de admisión y la lista de lo que
+       hay adentro están en FO4_Base_Library_CSharpHelpers\_LEEME.md. -->
+  <ItemGroup>
+    <Compile Remove="FO4_Base_Library_CSharpHelpers\**" />
+    <None Remove="FO4_Base_Library_CSharpHelpers\**" />
+    <EmbeddedResource Remove="FO4_Base_Library_CSharpHelpers\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <Import Include="System.Data" />
     <Import Include="System.Drawing" />
@@ -162,6 +173,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="FO4_Base_Library_CSharpHelpers\FO4_Base_Library_CSharpHelpers.csproj" />
     <ProjectReference Include="..\..\DirectXTextWrapper\DirectXTexWrapper.vcxproj" />
     <ProjectReference Include="..\Ba2_Bsa_Library\BSA_BA2_Library_DLL.vbproj" />
     <ProjectReference Include="..\Material-Editor-master\MaterialLib\MaterialLib.csproj" />
