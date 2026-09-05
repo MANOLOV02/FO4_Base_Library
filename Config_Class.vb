@@ -1,4 +1,4 @@
-' Version Uploaded of Fo4Library 3.2.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports System.IO
 Imports System.Numerics
 Imports System.Text.Json
@@ -515,6 +515,39 @@ Public Class Config_App
             _color = Color.FromName(value)
         End Set
     End Property
+
+    Private _backFade As Integer = 0
+
+    ''' <summary>FADE RADIAL DEL FONDO DEL PREVIEW, en porcentaje entero de -100 a 100.
+    ''' <para><b>0 = plano</b>: el fondo vale <see cref="Setting_BackColor"/> en toda la pantalla. Ese caso
+    ''' no dibuja nada nuevo — ver <c>PreviewControl.PaintBackground</c>.</para>
+    ''' <para><b>&gt;0 oscurece</b> hacia las esquinas hasta NEGRO puro en +100; <b>&lt;0 aclara</b> hasta
+    ''' BLANCO puro en -100. El CENTRO conserva el color elegido con cualquier valor.</para>
+    ''' <para><b>El default es 0</b>, o sea fondo PLANO: la opcion se estrena apagada y hay que pedirla.
+    ''' Decision del usuario. Y como el initializer y la clave ausente coinciden, un config.json anterior a
+    ''' la opcion tampoco cambia de aspecto: el valor que el deserializador deja YA ES el comportamiento
+    ''' historico. Por eso no hay rama de migracion en <see cref="LoadConfig"/> ni centinela.</para>
+    ''' <para>Vive en el config GLOBAL y no en el slot por juego, igual que el color contra el que opera:
+    ''' es una preferencia de como se mira el preview, no un dato del contenido.</para></summary>
+    Public Property Setting_BackFade As Integer
+        Get
+            Return _backFade
+        End Get
+        Set(value As Integer)
+            _backFade = Math.Clamp(value, -100, 100)
+        End Set
+    End Property
+
+    ''' <summary>FONDO DIRECCIONAL: el punto claro del degradado se corre hacia donde apunta el rig, en vez
+    ''' de quedar centrado.
+    ''' <para><b>Apagado por default</b> = viñeta CENTRADA. Decision del usuario.</para>
+    ''' <para>No hay rama por <see cref="Setting_LightsFollowCamera"/>: la direccion que consume el shader
+    ''' es <c>LightRigUniforms.KeyDir</c>, que <c>ResolveFrameLights</c> ya entrega ROTADA cuando la casilla
+    ''' esta prendida. Transformarla por <c>matView</c> da, con la casilla prendida, una direccion de vista
+    ''' constante al orbitar (el punto claro no se desliza) y, con la casilla apagada, una que acompaña al
+    ''' mundo. Los dos comportamientos salen de la misma cuenta.</para></summary>
+    Public Property Setting_BackFadeDirectional As Boolean = False
+
 
     Public Property Settings_Camara As CameraSettings = Default_CameraSettings()
     ' Settings_Build moved to WM_Config

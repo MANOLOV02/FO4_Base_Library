@@ -227,6 +227,12 @@ Public Class PreviewControl
     Public SharedActiveShader As Shader_Class_Fo4
     Public SharedSSEShader As Shader_Class_SSE
     Public SharedFloorShader As Floor_Shader_Class
+    ''' <summary>Programa del quad de fondo (fade radial). Ver <see cref="PaintBackground"/>.</summary>
+    Public SharedBackgroundShader As Background_Shader_Class
+    ''' <summary>VAO VACIO del triangulo de pantalla completa del fondo. El perfil core exige un VAO
+    ''' bindeado aunque el shader no lea ningun atributo (los vertices salen de <c>gl_VertexID</c>), asi
+    ''' que existe solo para satisfacer esa regla: no tiene VBO ni buffers colgando.</summary>
+    Private _bgVao As Integer = 0
     ''' <summary>Programas del pase de profundidad del shadow map. Son el VS de cada juego (el MISMO que
     ''' usa el pase iluminado, sin copia del skinning) + el fragment de alpha-test de
     ''' <see cref="ShadowDepthShaderSource"/>. Ver Shadow_Depth_Shader_Fo4.</summary>
@@ -654,6 +660,7 @@ Public Class PreviewControl
         Me.EnsureContextCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
+        PaintBackground()
         If Not IsNothing(overlay) Then
             overlay.SetText(Texto)
             overlay.RenderCentered(Me.Width, Me.Height)
@@ -1362,6 +1369,8 @@ Public Class PreviewControl
         SharedActiveShader = New Shader_Class_Fo4
         SharedSSEShader = New Shader_Class_SSE
         SharedFloorShader = New Floor_Shader_Class
+        SharedBackgroundShader = New Background_Shader_Class
+        _bgVao = GL.GenVertexArray()
         ' Los dos programas de profundidad se compilan SIEMPRE, aunque las sombras esten apagadas: el
         ' costo es un link por juego al abrir el control, y tenerlos condicionados al setting significaria
         ' compilar GLSL en medio de un frame la primera vez que alguien prende la opcion.
@@ -1473,6 +1482,89 @@ Public Class PreviewControl
         lastFar = farZ
         UpdateRequired = True
     End Sub
+    ''' <summary>El fade radial del fondo, normalizado a -1..+1. Lo consumen el quad de fondo y el piso:
+    ''' los dos tienen que evaluar la MISMA curva o queda costura en el horizonte.</summary>
+    Friend ReadOnly Property BackgroundFadeUnit As Single
+        Get
+            Return Config_App.Current.Setting_BackFade / 100.0F
+        End Get
+    End Property
+
+    ''' <summary>El tamano del VIEWPORT GL, que es contra lo que se compara <c>gl_FragCoord</c> — no
+    ''' <c>Width</c>/<c>Height</c> del control. Salen de <c>lastW</c>/<c>lastH</c>, que es lo que
+    ''' <see cref="ApplyResize"/> le paso a <c>GL.Viewport</c> y lo que el pase de sombra restaura al
+    ''' terminar. Antes del primer resize valen -1: el Max los deja en 1 y el fondo sale plano en vez de
+    ''' dividir por cero.</summary>
+    Friend ReadOnly Property ViewportSizeGl As Vector2
+        Get
+            Return New Vector2(Math.Max(1, lastW), Math.Max(1, lastH))
+        End Get
+    End Property
+
+    ''' <summary>Pinta el FONDO del frame con el fade radial, encima del color plano que dejo el
+    ''' <c>GL.Clear</c>.
+    '''
+    ''' <para>⛔ CON FADE = 0 NO DIBUJA NADA Y SALE. No es una optimizacion: es lo que garantiza que la
+    ''' opcion apagada sea el camino de codigo de SIEMPRE, bit por bit, sin depender de que un
+    ''' <c>mix(bg, target, 0.0)</c> devuelva exactamente el mismo byte que el clear. Un A/B contra el
+    ''' commit anterior con el fade en 0 tiene que dar 0 pixeles de diferencia, y asi lo da por
+    ''' construccion.</para>
+    '''
+    ''' <para>Se dibuja con el depth test APAGADO y sin escribir profundidad: el fondo no participa de la
+    ''' oclusion, solo repinta el plano de color. El estado se devuelve como estaba —depth test,
+    ''' depth mask y cull face— porque el resto del frame lo asume prendido (misma disciplina que
+    ''' <c>FinishRenderFrame</c>).</para></summary>
+    ''' <summary>Las tres perillas del fondo DIRECCIONAL, para los DOS programas que evaluan
+    ''' <c>backgroundAt()</c> — el quad de fondo y el piso. Una sola funcion porque si los dos no reciben
+    ''' exactamente lo mismo vuelve la costura del horizonte que el Const compartido existe para evitar.
+    ''' <para>Con la casilla apagada sube <c>dirStrength = 0</c> y el shader ni entra a la rama: el
+    ''' resultado es la viñeta centrada de siempre.</para></summary>
+    ''' <summary>Fachada para el piso, que vive en otra clase. Misma funcion, mismos valores.</summary>
+    Friend Sub AplicarUniformsDireccionalesPublico(shader As Shader_Base_Class)
+        AplicarUniformsDireccionales(shader)
+    End Sub
+
+    Private Sub AplicarUniformsDireccionales(shader As Shader_Base_Class)
+        Dim direccionalidad As Single = 0.0F
+        Dim neto As Vector3 = Vector3.UnitZ
+        If Config_App.Current.Setting_BackFadeDirectional AndAlso _Model IsNot Nothing Then
+            ' El frame en curso, no el anterior: ver EnsureFrameLights.
+            _Model.EnsureFrameLights(camera)
+            direccionalidad = _Model.FrameLights.Directionality
+            neto = _Model.FrameLights.NetDir
+        End If
+        shader.SetMatrix4("matView", camera.GetViewMatrix())
+        shader.SetVector3("netDirWorld", neto)
+        shader.SetFloat("rigDirectionality", direccionalidad)
+    End Sub
+
+    Private Sub PaintBackground()
+        Dim fade As Single = BackgroundFadeUnit
+        If fade = 0.0F Then Exit Sub
+        Dim shader = SharedBackgroundShader
+        If shader Is Nothing OrElse _bgVao = 0 Then Exit Sub
+
+        shader.Use()
+        GL.Disable(EnableCap.DepthTest)
+        GL.DepthMask(False)
+        GL.Disable(EnableCap.Blend)
+        GL.Disable(EnableCap.CullFace)
+
+        shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(Config_App.Current.Setting_BackColor()))
+        shader.SetFloat("backFade", fade)
+        shader.SetVector2("viewportSize", ViewportSizeGl)
+        AplicarUniformsDireccionales(shader)
+
+        GL.BindVertexArray(_bgVao)
+        GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
+        GL.BindVertexArray(0)
+        GL.UseProgram(0)
+
+        GL.DepthMask(True)
+        GL.Enable(EnableCap.DepthTest)
+        GL.Enable(EnableCap.CullFace)
+    End Sub
+
     Private Sub RenderScene()
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         If _Model Is Nothing Then Exit Sub
@@ -1481,6 +1573,7 @@ Public Class PreviewControl
         Me.EnsureContextCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
+        PaintBackground()
         If Model.Can_Render Then
             Model.RenderAll(projection, camera)
         End If
@@ -2269,6 +2362,16 @@ Public Class PreviewControl
         If SharedFloorShader IsNot Nothing Then
             SharedFloorShader.Dispose()
             SharedFloorShader = Nothing
+        End If
+
+        If SharedBackgroundShader IsNot Nothing Then
+            SharedBackgroundShader.Dispose()
+            SharedBackgroundShader = Nothing
+        End If
+
+        If _bgVao > 0 Then
+            GL.DeleteVertexArray(_bgVao)
+            _bgVao = 0
         End If
 
         If SharedShadowFO4Shader IsNot Nothing Then
@@ -5533,6 +5636,14 @@ Public Class PreviewModel
         Public Fill1Diffuse As Vector3, Fill1Dir As Vector3
         Public BackDiffuse As Vector3, BackDir As Vector3
 
+        ''' <summary>Direccion NETA del rig (unitaria, mundo) y cuan DIRECCIONAL es (0..1). Las calcula
+        ''' <c>ResolveFrameLights</c> sobre estas mismas luces resueltas; las consume el fondo radial.
+        ''' <para>0 = las luces se cancelan entre si o el ambiente las tapa (rig plano) ⇒ el fondo queda
+        ''' centrado. 1 = una sola luz y nada de ambiente ⇒ doblez maximo. No hay constante en el medio:
+        ''' el numero ES el rig.</para></summary>
+        Public NetDir As Vector3
+        Public Directionality As Single
+
         ''' <summary>La direccion de la luz i en el ORDEN CANONICO de ShadowMapMath.LuzDelRig
         ''' (0 key, 1 fill izq, 2 fill der, 3 back). Devuelve la direccion YA RESUELTA de este frame
         ''' —o sea con follow-camera aplicado si esta prendido—, que es la MISMA que va a los uniforms
@@ -5589,6 +5700,16 @@ Public Class PreviewModel
         Return cam.right * d.X + cam.Forward * d.Y + cam.upPlane * d.Z
     End Function
 
+    ''' <summary>Deja <c>FrameLights</c> al dia para ESTE frame. Existe porque el fondo direccional se
+    ''' dibuja ANTES de <c>RenderAll</c> y necesita la direccion de la key del frame en curso: sin esto
+    ''' leeria la del frame anterior y el punto claro llegaria un frame tarde mientras se orbita.
+    ''' <para>Es PURA e idempotente —recalcula del rig y la camara—, asi que la llamada que <c>RenderAll</c>
+    ''' hace un instante despues da lo mismo. Se expone en vez de duplicar la ley del follow-camera en el
+    ''' camino del fondo, que es lo que habria que hacer si no.</para></summary>
+    Friend Sub EnsureFrameLights(cam As OrbitCamera)
+        ResolveFrameLights(cam)
+    End Sub
+
     Private Sub ResolveFrameLights(cam As OrbitCamera)
         ' El rig sale de ActiveLights() = el set del JUEGO activo (FO4/SSE tienen el suyo).
         Dim rig = Config_App.Current.ActiveLights()
@@ -5626,6 +5747,26 @@ Public Class PreviewModel
             .BackDiffuse = Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()),
             .BackDir = bd
         }
+
+        ' DIRECCIONALIDAD DEL RIG, para el fondo radial. Es el mismo gesto que ya hace el piso con
+        ' `floorExposure`: resumir el rig en un escalar para decidir la apariencia de una superficie. Y usa
+        ' la MISMA luma Rec.709 (Shader_Base_Class.Luma), sobre los difusos LINEALES, que es lo que el piso
+        ' promedia en `upLuma`.
+        '   d = |suma de las direcciones pesadas por luma| / (esa luma total + la del ambiente)
+        ' Cuatro luces simetricas se cancelan y dan ~0; una sola luz sin ambiente da 1. El ambiente entra
+        ' SOLO en el denominador porque es omnidireccional: cuanto mas hay, mas plano es el rig y menos
+        ' tiene que doblarse el fondo.
+        Dim wK = Shader_Base_Class.Luma(_frameLights.KeyDiffuse)
+        Dim w0 = Shader_Base_Class.Luma(_frameLights.Fill0Diffuse)
+        Dim w1 = Shader_Base_Class.Luma(_frameLights.Fill1Diffuse)
+        Dim wB = Shader_Base_Class.Luma(_frameLights.BackDiffuse)
+        Dim neto As Vector3 = kd * wK + f0 * w0 + f1 * w1 + bd * wB
+        Dim total As Single = wK + w0 + w1 + wB +
+                              Shader_Base_Class.Luma(_frameLights.AmbientSky) +
+                              Shader_Base_Class.Luma(_frameLights.AmbientGround)
+        Dim mag As Single = neto.Length
+        _frameLights.NetDir = If(mag > 0.000001F, neto / mag, Vector3.Zero)
+        _frameLights.Directionality = If(total > 0.000001F, Math.Clamp(mag / total, 0.0F, 1.0F), 0.0F)
     End Sub
 
     ' ===================== SOMBRAS =====================
@@ -6523,6 +6664,12 @@ Public Class FloorRenderer
         shader.SetFloat("tileStep", safeStep)
         shader.SetFloat("floorHalfSize", safeSize * 0.5F)
         shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(background))
+        ' Las DOS perillas del fade radial. El piso se funde contra el fondo en el horizonte, asi que
+        ' tiene que evaluar la misma funcion en el mismo pixel; con fade = 0 backgroundAt() devuelve
+        ' backgroundColor tal cual y el piso queda identico a como estaba.
+        shader.SetFloat("backFade", ParentControl.BackgroundFadeUnit)
+        shader.SetVector2("viewportSize", ParentControl.ViewportSizeGl)
+        ParentControl.AplicarUniformsDireccionalesPublico(shader)
         shader.SetVector3("backgroundLinear", Shader_Base_Class.Color_to_Vector_Linear(background))
         shader.SetVector3("groutColorLinear", Shader_Base_Class.Color_to_Vector_Linear(Color))
         shader.SetVector3("cameraPosition", camera.GetEyePosition())
@@ -6532,7 +6679,7 @@ Public Class FloorRenderer
         For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
             upLighting += lights.DifusoDeLuz(i) * Math.Max(lights.DirDeLuz(i).Z, 0.0F)
         Next
-        Dim upLuma = upLighting.X * 0.2126F + upLighting.Y * 0.7152F + upLighting.Z * 0.0722F
+        Dim upLuma = Shader_Base_Class.Luma(upLighting)
         shader.SetFloat("floorExposure", Math.Clamp(0.72F / Math.Max(upLuma, 0.001F), 0.55F, 1.8F))
         For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
             shader.SetVector3($"lightDiffuse[{i}]", lights.DifusoDeLuz(i))

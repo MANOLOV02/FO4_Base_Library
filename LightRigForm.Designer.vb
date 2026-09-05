@@ -82,6 +82,9 @@ Partial Class LightRigForm
         grpBackground = New GroupBox()
         lblBackground = New Label()
         cmbBackground = New ColorComboBox()
+        lblBackFade = New Label()
+        tBackFade = New TinySliderTextBox()
+        chkBackDirectional = New CheckBox()
         grpShadows = New GroupBox()
         chkShadows = New CheckBox()
         chkDepth16 = New CheckBox()
@@ -675,7 +678,7 @@ Partial Class LightRigForm
         grpPresets.Controls.Add(lblPreset)
         grpPresets.Controls.Add(cmbPreset)
         grpPresets.Controls.Add(btnApplyPreset)
-        grpPresets.Location = New Point(444, 364)
+        grpPresets.Location = New Point(444, 400)
         grpPresets.Name = "grpPresets"
         grpPresets.Size = New Size(418, 59)
         grpPresets.TabIndex = 6
@@ -715,7 +718,7 @@ Partial Class LightRigForm
         btnReset.ImageAlign = ContentAlignment.MiddleRight
         btnReset.ImageKey = "AgtReload"
         btnReset.ImageList = IconsSmall
-        btnReset.Location = New Point(444, 432)
+        btnReset.Location = New Point(444, 468)
         btnReset.Name = "btnReset"
         btnReset.Size = New Size(414, 25)
         btnReset.TabIndex = 2
@@ -828,38 +831,92 @@ Partial Class LightRigForm
         btnAmbGround.TabIndex = 3
         ToolTip1.SetToolTip(btnAmbGround, "Ambient color when a surface faces DOWN (world -Z) -- ground bounce.")
         btnAmbGround.UseVisualStyleBackColor = False
-        ' 
+        '
         ' grpBackground
-        ' 
+        '
+        ' DOS FILAS, NO TRES, Y SOBRE LA REJA QUE YA USA LA COLUMNA DERECHA DEL DIALOGO:
+        '   x=87   arranca el control ancho de la fila
+        '   x=310  termina — es donde termina el TEXTBOX del slider de 'Intensity' en Ambient
+        '          (tambient: 87 + 224 de ancho - 60 de textbox - 1 de inset + 60 = 310)
+        '   x=317  arranca el control chico de la derecha — la columna de btnAmbSky / btnAmbGround
+        ' Asi la fila 'Color' calca a la de 'Intensity' y a la de 'Quality': combo de 223 y casilla en 317.
+        ' ⛔ POR ESO SE ACORTO TAMBIEN EL COMBO DE Quality, que ya estaba: con sus 254 px originales
+        ' terminaba en 341, fuera de la reja, y dejaba 57 px a la derecha — alcanzan para '16-bit' pero NO
+        ' para 'Directional' (86). O las tres filas usan la misma reja o no hay simetria posible.
+        ' 'Medium (2048)', el item mas largo de Quality, mide ~90 px: entra de sobra en 223.
+        ' La casilla va con AutoSize, como TODAS las demas del dialogo; su Y es la del combo + 4, que es
+        ' exactamente la relacion que ya tenian 'Quality' y '16-bit'.
+        ' El slider de 'Fade' si mide 320 (87..407) porque no tiene nada a su derecha, igual que
+        ' 'Softness' y 'Darkness'.
         grpBackground.Controls.Add(lblBackground)
         grpBackground.Controls.Add(cmbBackground)
+        grpBackground.Controls.Add(chkBackDirectional)
+        grpBackground.Controls.Add(lblBackFade)
+        grpBackground.Controls.Add(tBackFade)
         grpBackground.Location = New Point(444, 110)
         grpBackground.Name = "grpBackground"
-        grpBackground.Size = New Size(418, 68)
+        grpBackground.Size = New Size(418, 104)
         grpBackground.TabIndex = 6
         grpBackground.TabStop = False
         grpBackground.Text = "Background"
-        ' 
+        '
         ' lblBackground
-        ' 
+        '
         lblBackground.AutoSize = True
         lblBackground.Location = New Point(11, 32)
         lblBackground.Name = "lblBackground"
         lblBackground.Size = New Size(36, 15)
-        lblBackground.TabIndex = 0
+        lblBackground.TabIndex = 3
         lblBackground.Text = "Color"
-        ' 
+        '
         ' cmbBackground
-        ' 
+        '
         cmbBackground.Dibuja = False
         cmbBackground.DrawMode = DrawMode.OwnerDrawFixed
         cmbBackground.DropDownStyle = ComboBoxStyle.DropDownList
         cmbBackground.Location = New Point(87, 28)
         cmbBackground.Name = "cmbBackground"
         cmbBackground.SelectedColor = Color.Black
-        cmbBackground.Size = New Size(320, 24)
+        cmbBackground.Size = New Size(223, 23)
         cmbBackground.TabIndex = 0
         ToolTip1.SetToolTip(cmbBackground, "Select the preview background color.")
+        '
+        ' chkBackDirectional
+        '
+        ' AutoSize APAGADO a proposito: con AutoSize la casilla termina donde termine su texto y el borde
+        ' derecho del grupo queda dentado contra el slider de abajo. Con alto 24 y el mismo Y que el combo,
+        ' los dos quedan centrados en la misma linea (centro 40).
+        chkBackDirectional.AutoSize = True
+        chkBackDirectional.Location = New Point(317, 32)
+        chkBackDirectional.Name = "chkBackDirectional"
+        chkBackDirectional.Size = New Size(86, 19)
+        chkBackDirectional.TabIndex = 1
+        chkBackDirectional.Text = "Directional"
+        ToolTip1.SetToolTip(chkBackDirectional, "Off: the fade is centered on the view. On: it bends toward the light, by an amount the light rig itself decides. Follows the ""lights follow camera"" setting.")
+        '
+        ' lblBackFade
+        '
+        lblBackFade.AutoSize = True
+        lblBackFade.Location = New Point(11, 69)
+        lblBackFade.Name = "lblBackFade"
+        lblBackFade.Size = New Size(33, 15)
+        lblBackFade.TabIndex = 4
+        lblBackFade.Text = "Fade"
+        '
+        ' tBackFade
+        '
+        tBackFade.FillMode = TinySliderFillMode.Center
+        tBackFade.DisplayFormat = "0'%'"
+        tBackFade.Location = New Point(87, 62)
+        tBackFade.Maximum = 100.0R
+        tBackFade.Minimum = -100.0R
+        tBackFade.Name = "tBackFade"
+        tBackFade.Size = New Size(320, 28)
+        tBackFade.SmallChange = 1.0R
+        tBackFade.LargeChange = 10.0R
+        tBackFade.TabIndex = 2
+        tBackFade.Value = 0.0R
+        ToolTip1.SetToolTip(tBackFade, "Radial background fade. 0 = flat. Positive darkens the corners to black, negative lightens them to white; the center keeps the color above.")
         ' 
         ' grpShadows
         ' 
@@ -873,7 +930,7 @@ Partial Class LightRigForm
         grpShadows.Controls.Add(tShadowSoft)
         grpShadows.Controls.Add(lblShadowStrength)
         grpShadows.Controls.Add(tShadowStrength)
-        grpShadows.Location = New Point(444, 184)
+        grpShadows.Location = New Point(444, 220)
         grpShadows.Name = "grpShadows"
         grpShadows.Size = New Size(418, 174)
         grpShadows.TabIndex = 7
@@ -892,7 +949,7 @@ Partial Class LightRigForm
         ' chkDepth16
         ' 
         chkDepth16.AutoSize = True
-        chkDepth16.Location = New Point(350, 60)
+        chkDepth16.Location = New Point(317, 60)
         chkDepth16.Name = "chkDepth16"
         chkDepth16.Size = New Size(57, 19)
         chkDepth16.TabIndex = 9
@@ -922,7 +979,7 @@ Partial Class LightRigForm
         cmbShadowQuality.DropDownStyle = ComboBoxStyle.DropDownList
         cmbShadowQuality.Location = New Point(87, 56)
         cmbShadowQuality.Name = "cmbShadowQuality"
-        cmbShadowQuality.Size = New Size(254, 23)
+        cmbShadowQuality.Size = New Size(223, 23)
         cmbShadowQuality.TabIndex = 1
         ' 
         ' lblShadowSoft
@@ -1541,6 +1598,9 @@ Partial Class LightRigForm
     End Sub
 
     Friend WithEvents grpKey As GroupBox
+    Friend WithEvents lblBackFade As Label
+    Friend WithEvents chkBackDirectional As CheckBox
+    Friend WithEvents tBackFade As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents tK_Az As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents tK_El As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblK_Str As Label

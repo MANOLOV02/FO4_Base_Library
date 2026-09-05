@@ -3,6 +3,113 @@ Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
 
+''' <summary>EL FONDO RADIAL DEL PREVIEW, EN UN SOLO LUGAR.
+''' <para>El GLSL de <c>backgroundAt()</c> lo comparten DOS programas: el quad de fondo
+''' (<see cref="Background_Shader_Class"/>) y el piso (<c>Floor_Shader_Class.Fragment_Floor</c>), que se
+''' funde contra el fondo en el horizonte. Si cada uno tuviera su copia, cambiar la curva en uno dejaria
+''' una COSTURA visible en la linea donde el piso se funde — que es exactamente el defecto que este
+''' Const compartido existe para hacer imposible.</para>
+''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES, como el resto del archivo: vive en un
+''' <c>Const String</c> de VB y una comilla cierra el literal. El gate <c>glsl-ascii</c> lo cubre.</para>
+''' </summary>
+Friend Module BackgroundFadeSource
+
+    ''' <summary>Declaracion de los uniforms del fondo + la funcion que lo evalua. Se INYECTA en los dos
+    ''' fragments; por eso declara <c>backgroundColor</c> aca y no en el bloque de uniforms del piso.</summary>
+    Friend Const Fade_Helper As String =
+"
+// ---- FONDO RADIAL ---------------------------------------------------------------------------
+// backFade: -1..+1. En 0 el fondo es PLANO y vale exactamente backgroundColor en toda la pantalla
+// (y ademas el quad ni se dibuja: ver PreviewControl.PaintBackground). Por encima de 0 las esquinas
+// van a NEGRO, por debajo van a BLANCO. El centro conserva backgroundColor con cualquier fade.
+// El radio se normaliza por SEMI-EJE, no por pixel: la iso-linea sigue la forma del viewport en vez
+// de salir aplastada en un panel ancho. Y se divide por sqrt(2) para que la ESQUINA valga 1 exacto,
+// que es lo que significa -al 100 % las esquinas quedan negras-.
+uniform vec3 backgroundColor;
+uniform float backFade;
+uniform vec2 viewportSize;
+// Se declara tambien en Vertex_Floor: un uniform puede declararse en los dos stages y linkea a uno solo.
+uniform mat4 matView;
+// NETO del rig en MUNDO (unitario) y DIRECCIONALIDAD del rig (0..1). Los dos los calcula
+// ResolveFrameLights sobre las luces YA RESUELTAS -- o sea con follow-camera aplicado cuando la casilla
+// esta prendida. Por eso aca no hay rama por ese setting: transformar por matView da una direccion de
+// vista CONSTANTE al orbitar con la casilla prendida, y una que acompania al mundo con la casilla
+// apagada. Los dos comportamientos salen de la misma cuenta.
+// Se apunta al NETO y no a la key: si el fill pesa casi tanto, el punto claro va ENTRE las dos.
+uniform vec3 netDirWorld;
+uniform float rigDirectionality;
+
+vec3 backgroundAt(in vec2 fragXY)
+{
+    vec2 semi = max(viewportSize * 0.5, vec2(1.0));
+    vec2 d = (fragXY - semi) / semi;
+    float r = clamp(length(d) * 0.70710678, 0.0, 1.0);
+
+    // FONDO DIRECCIONAL: el degradado se abre hacia donde esta la luz y se cierra del lado opuesto.
+    // [!] SE DOBLA EL EXPONENTE, NO EL RADIO. pow(1, g) = 1 para cualquier g > 0, asi que las CUATRO
+    // esquinas siguen valiendo exactamente 1 pase lo que pase con la direccion: +100 % sigue dando
+    // esquinas negras exactas y -100 % blancas exactas. Lo unico que se mueve son las iso-lineas del
+    // interior. Mover el CENTRO del radial en vez del exponente habria roto ese contrato.
+    float gain = 1.0;
+    if (rigDirectionality > 0.0)
+    {
+        vec2 netScreen = (matView * vec4(netDirWorld, 0.0)).xy;
+        float nl = length(netScreen);
+        if (nl > 0.00001)
+        {
+            // LA CANTIDAD NO ES UNA CONSTANTE: sale de cuanto se cancelan las luces entre si
+            // (rigDirectionality) por cuanto de ese neto se PROYECTA en pantalla (nl, que es el seno del
+            // angulo contra el eje de camara). Una luz que apunta justo a la camara no tiene direccion en
+            // pantalla y no dobla nada -- eso es una ley, no un guard.
+            float amount = rigDirectionality * nl;
+            vec2 toPixel = d / max(length(d), 0.00001);
+            float toward = dot(toPixel, netScreen / nl);
+            // El signo del fade decide que significa -mas luz-: con fade > 0 (esquinas al negro) el lado
+            // iluminado se oscurece MENOS; con fade < 0 (esquinas al blanco) blanquea MAS. En los dos
+            // casos el fondo queda mas luminoso donde apunta la luz, que es la unica lectura coherente.
+            gain = 1.0 + amount * toward * sign(backFade);
+        }
+    }
+
+    float rd = pow(r, max(gain, 0.05));
+    float t = smoothstep(0.0, 1.0, rd) * abs(backFade);
+    vec3 target = (backFade >= 0.0) ? vec3(0.0) : vec3(1.0);
+    return mix(backgroundColor, target, t);
+}
+"
+
+    ''' <summary>Triangulo de pantalla completa SIN atributos: los tres vertices salen de
+    ''' <c>gl_VertexID</c>. Por eso el draw es <c>DrawArrays(Triangles, 0, 3)</c> con un VAO vacio y no
+    ''' hace falta ni VBO ni geometria. Un triangulo, no dos: evita la costura por la diagonal.</summary>
+    Friend Const Vertex_Background As String =
+"#version 430
+
+void main()
+{
+    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}"
+
+    Friend Const Fragment_Background As String =
+"#version 430
+
+out vec4 FragColor;
+" & Fade_Helper & "
+void main()
+{
+    FragColor = vec4(backgroundAt(gl_FragCoord.xy), 1.0);
+}"
+
+End Module
+
+''' <summary>Programa del quad de fondo. Se dibuja SOLO cuando el fade no es 0.</summary>
+Public Class Background_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(BackgroundFadeSource.Vertex_Background, BackgroundFadeSource.Fragment_Background)
+    End Sub
+End Class
+
 Public Class Floor_Shader_Class
     Inherits Shader_Base_Class
     ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
@@ -38,7 +145,6 @@ in vec3 worldPos;
 
 uniform float tileStep;
 uniform float floorHalfSize;
-uniform vec3 backgroundColor;
 uniform vec3 backgroundLinear;
 uniform vec3 groutColorLinear;
 uniform vec3 cameraPosition;
@@ -49,7 +155,7 @@ uniform vec3 lightDiffuse[4];
 uniform vec3 lightDirection[4];
 
 out vec4 FragColor;
-
+" & BackgroundFadeSource.Fade_Helper & "
 vec3 tonemap(in vec3 x)
 {
     const float A = 0.15;
@@ -125,7 +231,10 @@ void main()
     float edgeCoord = max(abs(worldPos.x), abs(worldPos.y)) / max(floorHalfSize, 0.001);
     float edgeFade = 1.0 - smoothstep(0.58, 0.98, edgeCoord);
     float floorFade = surfaceLod * grazingFade * edgeFade;
-    FragColor = vec4(mix(backgroundColor, displayColor, floorFade), 1.0);
+    // EL FONDO SE EVALUA EN ESTE PIXEL, no como color plano: con el fade radial encendido el quad de
+    // fondo detras del piso no es uniforme, y fundir contra una constante dejaba una COSTURA justo en
+    // la banda del horizonte. Misma funcion, mismas coordenadas de pantalla, mismo resultado.
+    FragColor = vec4(mix(backgroundAt(gl_FragCoord.xy), displayColor, floorFade), 1.0);
 }"
     Sub New()
         MyBase.New(Vertex_Floor, Fragment_Floor)
@@ -3850,6 +3959,13 @@ Public MustInherit Class Shader_Base_Class
     ''' wizard de FOMOD—, y eso es correcto: las tres capturan lo que la pantalla esta mostrando.</para>
     ''' </summary>
     Public Shared Property DebugView As ShaderDebugView = ShaderDebugView.None
+
+    ''' <summary>Luma Rec.709 de un color de luz. UNA sola definicion: la comparten el auto-exposure del
+    ''' piso (<c>floorExposure</c>) y la direccionalidad del rig que consume el fondo. Tener dos copias de
+    ''' estos tres pesos es como empiezan a divergir dos partes del mismo cuadro.</summary>
+    Public Shared Function Luma(v As Vector3) As Single
+        Return v.X * 0.2126F + v.Y * 0.7152F + v.Z * 0.0722F
+    End Function
 
     Public Shared Function Color_to_Vector(color As Color) As Vector3
         Return New Vector3(color.R / 255.0F, color.G / 255.0F, color.B / 255.0F)

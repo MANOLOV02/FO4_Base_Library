@@ -285,6 +285,8 @@ Partial Public Class LightRigForm
         ' Background color picker (handler is wired later in AddHandlers, so this init does not fire it)
         cmbBackground.Rellena()
         cmbBackground.SelectedColor = Config_App.Current.Setting_BackColor
+        tBackFade.Value = Config_App.Current.Setting_BackFade
+        chkBackDirectional.Checked = Config_App.Current.Setting_BackFadeDirectional
 
         CargarPestanaRender()
 
@@ -682,6 +684,8 @@ Partial Public Class LightRigForm
                                                      End Sub
 
         AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
+        AddHandler tBackFade.ValueChanged, AddressOf BackgroundFadeChanged
+        AddHandler chkBackDirectional.CheckedChanged, AddressOf BackgroundFadeChanged
         AddHandler cmbPreset.SelectedIndexChanged, Sub(sender, e) ActualizarTooltipPreset()
 
         For Each b In New Button() {btnAmbSky, btnAmbGround, btnKeyColor, btnFillLColor, btnFillRColor, btnBackColor}
@@ -702,6 +706,18 @@ Partial Public Class LightRigForm
     Private Sub BackgroundChanged(sender As Object, e As EventArgs)
         If _preventchanges = False Then
             Config_App.Current.Setting_BackColorName = cmbBackground.SelectedColor.Name
+            RaiseEvent LightsChanged()
+        End If
+    End Sub
+
+    ''' <summary>El fade radial del fondo. Mismo camino que el color contra el que opera: escribe el
+    ''' config y levanta <c>LightsChanged</c> para que el preview repinte en vivo mientras se arrastra.
+    ''' No pasa por <c>VolcarUIenModelo</c> a proposito — no es parte del rig de luces y volcarlo ahi
+    ''' marcaria el combo de presets como "Custom" sin que se haya tocado una luz.</summary>
+    Private Sub BackgroundFadeChanged(sender As Object, e As EventArgs)
+        If _preventchanges = False Then
+            Config_App.Current.Setting_BackFade = CInt(Math.Round(tBackFade.Value))
+            Config_App.Current.Setting_BackFadeDirectional = chkBackDirectional.Checked
             RaiseEvent LightsChanged()
         End If
     End Sub
@@ -980,6 +996,17 @@ Partial Public Class LightRigForm
         ' nombra aca) + background al default del config (DarkGray). CargarValoresIniciales recarga el combo
         ' de background desde Setting_BackColor; el VolcarUIenModelo final refresca el preview.
         Config_App.Current.Setting_BackColorName = Color.DarkGray.Name
+        ' El fondo vuelve con el color: dejarlo afuera haria que Reset devolviera el color pero no el
+        ' degradado, que es lo que el usuario ve.
+        ' ⛔ DE LOS DEFAULTS DECLARADOS EN Config_App, NO DE LITERALES — misma ley que el anclaje de abajo.
+        ' Escribir 0 y False aca haria que Reset contradiga al default; ya paso: el fade nacio en 0 y hoy
+        ' su default es 50, y un literal habria dejado a Reset devolviendo el fondo plano para siempre.
+        Dim defaults As New Config_App()
+        Config_App.Current.Setting_BackFade = defaults.Setting_BackFade
+        Config_App.Current.Setting_BackFadeDirectional = defaults.Setting_BackFadeDirectional
+        ' Los controles NO se tocan aca: `AplicarRig` de abajo llama a `CargarValoresIniciales` con
+        ' `_preventchanges` puesto, y esa recarga los pinta desde el config sin disparar el handler ni un
+        ' repintado de mas. Es el mismo camino que ya usa el combo de background.
         ' Reset devuelve TODO el estado de iluminacion del preview, sombras incluidas: dejarlas afuera
         ' hacia que "Reset" no reseteara la mitad del dialogo.
         Config_App.Current.SetActiveShadows(PreviewShadowSettings.Defaults())
