@@ -1045,6 +1045,20 @@ Public Class Nifcontent_Class_Manolo
 
         Dim bsdSkinInst = TryCast(skinInst, BSDismemberSkinInstance)
         Dim bsdParts = bsdSkinInst?.Partitions
+        ' ⛔ SIN PARTICIONES NO HAY PASE. Si la malla trae un NiSkinInstance liso (o un dismember sin
+        ' particiones) no existe información de body part, y el motor SALTEA el recorrido entero:
+        ' 0x14021DB61 test edi,edi / 0x14021DB63 je 0x14021DD17. Devolver una lista de −1 por triángulo
+        ' era inventar un body part fuera de banda, y por el camino de WORN ITEM «fuera de banda» significa
+        ' OCULTO ⇒ la malla entera desaparecía.
+        ' ⛔ Lo cazó el barrido masivo del visor, no una revisión de diff: en Skyrim se ocultaban ENTERAS
+        ' 1570 líneas en ~400 NPC —mudcrab, liebre, Barbas y todos los perros, cabra, vaca, mamut, oso,
+        ' atronachos de fuego y tormenta, caballos con montura, dragones—, o sea casi todas las criaturas,
+        ' porque sus mallas no traen BSDismemberSkinInstance. El atronacho de HIELO no aparecía en la lista
+        ' justamente porque es de las pocas que sí la trae (una partición [30]).
+        ' ⛔ Esto NO es lo mismo que una partición cuyo body part cae fuera de [30,61] teniendo dismember:
+        ' ésa sí se oculta por el camino de worn item, y se conserva (medido: 15 de 958 mallas ARMA de
+        ' Skyrim declaran una partición en un slot que su BOD2 no trae).
+        If bsdParts Is Nothing OrElse bsdParts.Count = 0 Then Return Nothing
         Dim result As New List(Of Integer)(tris.Count)
         For Each partInd In triPartsField
             If bsdParts IsNot Nothing AndAlso partInd >= 0 AndAlso partInd < bsdParts.Count Then
