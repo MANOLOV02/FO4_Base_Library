@@ -108,12 +108,47 @@ Public Interface IRenderableShape
     ''' (the default; e.g. Wardrobe_Manager never sets it, so its render is unaffected). Read by the
     ''' render per-segment index filter (EnsureZapIndexBuffer → BSTriShapeGeometry.ComputeHiddenTriangles).</summary>
     Property CoveredSlotsMask As UInteger
-    ''' <summary>This shape's OWN worn biped-slot mask (bit N-30 = slot N) = the item's BOD2 footprint.
-    ''' Lets the per-segment filter tell a SELF-tagged segment (slot the item occupies → hide-if-covered,
-    ''' engine self-exclude/occluder-order) from a FOREIGN one (slot the item does NOT occupy → the engine
-    ''' coverage-key companion branch, inverse polarity). 0 = unknown owner ⇒ the foreign branch is skipped
-    ''' (current behaviour). Only NpcRenderHost sets it, on FO4 worn items; WM/SSE leave it 0.</summary>
-    Property OwnSlotsMask As UInteger
+    ''' <summary>Estado del slot <b>occluder</b> de este actor, que el resolver <c>0x14035E3B0</c> calcula
+    ''' una sola vez y NO saca de <see cref="CoveredSlotsMask"/>: arranca en 0
+    ''' (<c>0x14035E418 xor bpl,bpl</c>) y se enciende sólo si <c>table[D]+0x28 ≠ table[D]+0x10</c>
+    ''' (<c>0x14035E473</c> + <c>0x14035E47D cmovne</c>), detrás de <c>0x14035E45E cmp eax,-1 / je</c>.
+    ''' <para><c>+0x28</c> es el ARMA y <c>+0x10</c> el ARMO, pero el writer <c>0x1403597E0</c> escribe el
+    ''' ARMO en UN SOLO slot: barre ascendente y el one-shot <c>0x1403599CA xor bl,bl</c> /
+    ''' <c>0x140359B15 mov bl,1</c> se consume en el PRIMER slot que el ARMA ganó y el ARMO también declara.
+    ''' ⇒ True ⟺ el ganador del slot occluder registró SU ARMO ahí, o sea
+    ''' <c>D = min(ARMO.BOD2 ∩ ARMA.BOD2 ∩ ganados)</c>. Slot vacío ⇒ los dos punteros nulos ⇒ False.</para>
+    ''' <para>⛔ NO es identidad contra los default objects del Pipboy: el resolver no consulta ningún DFOB.
+    ''' La ley estructural resuelve sola el uniforme que declara el 60 de incidente (su primer slot
+    ''' compartido es el 33, así que en el 60 le queda el ARMA ⇒ su antebrazo-60 sigue visible).</para>
+    ''' False (el default) = sin dispositivo ⇒ el segmento del slot occluder se dibuja y su variante
+    ''' <c>+130</c> no, que es lo que WM necesita al previsualizar una prenda sin actor.</summary>
+    Property OccluderConDispositivo As Boolean
+    ''' <summary>Bit (N−30) del biped slot que la RACE del actor reserva como <b>occluder</b>. En Fallout 4
+    ''' sale de <c>RACE.DATA</c> "Pipboy Biped Object" (<c>race+0x200</c>, leído por
+    ''' <c>Fallout4.exe 0x1404FCEC0</c>) y gobierna DOS ramas del resolver per-segmento
+    ''' <c>0x14035E3B0</c>: la rama occluder-order (<c>0x14035E4F1</c>, que saca al slot de la comparación
+    ''' de clave de cobertura) y el <b>swap N+100</b> del post-loop (<c>0x14035E65C</c>), que el motor aplica
+    ''' <b>sólo</b> al tag <c>occluder+130</c> y a ningún otro de la banda 130-161.
+    ''' <para>⛔ NO es la constante 60: el motor lo lee de la raza. Medido sobre el load order, 15 razas
+    ''' declaran 30 (⇒ biped slot 60), 3 declaran 0 (⇒ biped slot <b>30</b>: FeralGhoul y sus variantes) y 97
+    ''' declaran None. 0 acá = la raza no reserva ninguno ⇒ no hay rama occluder y la banda 130-161 queda
+    ''' intacta, que es lo que hace el motor cuando el campo vale −1.</para>
+    ''' <para>Skyrim no tiene este campo en su layout de <c>RACE.DATA</c> ⇒ 0.</para></summary>
+    Property OccluderSlotMask As UInteger
+    ''' <summary>True cuando esta shape se resuelve por el camino de <b>worn items</b>; False = camino de
+    ''' <b>head parts</b>. Los dos caminos del motor son disjuntos y su valor por DEFECTO es OPUESTO, así que
+    ''' el filtro per-partición necesita saber en cuál está:
+    ''' <list type="bullet">
+    ''' <item>head parts (<c>SkyrimSE.exe ApplyOcclusionToGeometry 0x1403CC770</c>):
+    ''' <c>visible = (folded == 30+B) ? !hide : 1</c> ⇒ toda partición que no sea la del slot de pelo se
+    ''' <b>fuerza visible</b>, incluidas las que caen fuera de [30,61].</item>
+    ''' <item>worn items (<c>SkyrimSE.exe 0x14021DAE0</c> fase 1): la visibilidad nace en <b>0</b> y una
+    ''' partición cuyo slot plegado cae fuera de [30,61] no pasa por ninguna rama que la encienda
+    ''' (<c>lea eax,[rdi-0x1e] ; cmp ax,0x1f ; ja</c>) ⇒ queda <b>oculta</b>.</item>
+    ''' </list>
+    ''' False (el default) = semántica de head part, que es la que WM necesita: previsualiza una prenda
+    ''' suelta, sin actor ni dueño de slot, y ahí ninguna partición debe desaparecer sola.</summary>
+    Property OcclusionAsWornItem As Boolean
     Property MaskedVertices As HashSet(Of Integer)
     ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
     ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets

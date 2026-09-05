@@ -1088,20 +1088,20 @@ Public Class PreviewControl
                 ' defecto, asi que ese era el caso NORMAL.
                 If Havok.Physics.HavokPhysicsSettings.Enabled AndAlso
                    Havok.Physics.HavokPhysicsSettings.Mode <> Havok.Physics.HavokPhysicsMode.Off Then
-                Dim physByInstance As New Dictionary(Of SkeletonInstance, List(Of IRenderableShape))
-                For Each mesh In dirtyMeshes
-                    Dim inst As SkeletonInstance = If(resolvedSkels(mesh), SkeletonInstance.Default)
-                    If inst Is Nothing Then Continue For
-                    Dim lst As List(Of IRenderableShape) = Nothing
-                    If Not physByInstance.TryGetValue(inst, lst) Then
-                        lst = New List(Of IRenderableShape)
-                        physByInstance(inst) = lst
-                    End If
-                    lst.Add(mesh.MeshData.Shape)
-                Next
-                For Each kv In physByInstance
-                    Havok.Physics.HavokClothSimulation.StepShapes(kv.Value, kv.Key, Havok.Physics.HavokPhysicsSettings.FrameDeltaSeconds)
-                Next
+                    Dim physByInstance As New Dictionary(Of SkeletonInstance, List(Of IRenderableShape))
+                    For Each mesh In dirtyMeshes
+                        Dim inst As SkeletonInstance = If(resolvedSkels(mesh), SkeletonInstance.Default)
+                        If inst Is Nothing Then Continue For
+                        Dim lst As List(Of IRenderableShape) = Nothing
+                        If Not physByInstance.TryGetValue(inst, lst) Then
+                            lst = New List(Of IRenderableShape)
+                            physByInstance(inst) = lst
+                        End If
+                        lst.Add(mesh.MeshData.Shape)
+                    Next
+                    For Each kv In physByInstance
+                        Havok.Physics.HavokClothSimulation.StepShapes(kv.Value, kv.Key, Havok.Physics.HavokPhysicsSettings.FrameDeltaSeconds)
+                    Next
                 End If
             Catch exPhys As Exception
                 Dim exL = exPhys
@@ -2528,6 +2528,16 @@ Public Class PreviewModel
         ' lib default False) so the dirty gate's first pass always recomputes occlusion regardless
         ' of the runtime value.
         Private _lastDrawHidden As Boolean = True
+        ' Último Shape.OccluderSlotMask y Shape.OcclusionAsWornItem observados. Los dos cambian el resultado
+        ' de la oclusión, así que entran al gate sucio igual que la máscara. Centinelas al revés del valor
+        ' real posible (0xFFFFFFFF no es una máscara de un solo slot; True no es el default de la librería)
+        ' para que la PRIMERA pasada siempre calcule.
+        Private _lastOccluderSlotMask As UInteger = &HFFFFFFFFUI
+        Private _lastOcclusionAsWornItem As Boolean = True
+        ' Y el estado del slot occluder. ⛔ Entra al gate SÍ O SÍ: es lo que cambia al equipar o sacar el
+        ' dispositivo, y sin esto un toggle deja el antebrazo con el estado viejo. Centinela True porque el
+        ' default de la librería es False.
+        Private _lastOccluderConDispositivo As Boolean = True
         Private _occlHidden As Boolean() = Nothing
         Private _occlEvaluated As Boolean = False
 
@@ -3341,7 +3351,14 @@ Public Class PreviewModel
             ' Dirty-gated: only rebuild when ApplyMorphPlan re-touched the zap mask (ZapTopologyDirty), the
             ' ApplyZaps toggle flipped, the worn-slot mask changed, or drawHidden flipped. Otherwise a few
             ' cheap checks and out — no per-frame scan. ApplyMorphPlan is the single writer of VertexMask=-1.
-            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps AndAlso coveredMask = _lastCoveredSlotsMask AndAlso drawHidden = _lastDrawHidden Then Return
+            ' Slot occluder de la RACE del actor y camino de oclusión (worn item vs head part): los dos entran
+            ' al gate sucio de abajo porque los dos CAMBIAN el resultado. Ver IRenderableShape.
+            Dim occluderMask As UInteger = If(MeshData.Shape IsNot Nothing, MeshData.Shape.OccluderSlotMask, 0UI)
+            Dim asWorn As Boolean = MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.OcclusionAsWornItem
+            Dim occlDispositivo As Boolean = MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.OccluderConDispositivo
+            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps AndAlso coveredMask = _lastCoveredSlotsMask AndAlso
+               drawHidden = _lastDrawHidden AndAlso occluderMask = _lastOccluderSlotMask AndAlso asWorn = _lastOcclusionAsWornItem AndAlso
+               occlDispositivo = _lastOccluderConDispositivo Then Return
 
             ' Recompute the per-segment hidden-triangle set only when the dirty gate above tripped (mask
             ' changed, etc.). occl is indexed by the SHAPE's triangle index — the SAME order as geom.Indices
@@ -3359,18 +3376,22 @@ Public Class PreviewModel
                 Dim subIdx = TryCast(MeshData.Shape?.NifShape, NiflySharp.Blocks.BSSubIndexTriShape)
                 If subIdx IsNot Nothing Then
                     ' FO4: per-segment occlusion via BSSubIndexTriShape/BSGeometrySegmentData.
-                    occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask, MeshData.Shape.OwnSlotsMask)
-                ElseIf coveredMask <> 0UI AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso
+                    occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask, occluderMask, occlDispositivo)
+                ElseIf (coveredMask <> 0UI OrElse asWorn) AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso
                        MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.NifContent IsNot Nothing AndAlso MeshData.Shape.NifShape IsNot Nothing Then
-                    ' SSE: per-partition occlusion via BSDismemberSkinInstance partitions (engine
-                    ' ApplyOcclusionToGeometry 0x1403C56B0). Keyed on the mesh's REAL partition SBP slot,
-                    ' NOT the ARMA BOD2 (which declares incidental extra slots — e.g. NakedTorso BOD2
-                    ' includes calves(38), so boots would whole-hide the body under a BOD2 check; the
-                    ' body mesh's partition is SBP 32, so per-partition hides it only when slot 32 is
-                    ' covered). The app sets CoveredSlotsMask only on SKIN shapes (see NpcRenderHost),
-                    ' so this never runs on outfit shapes. For vanilla single-partition skin meshes every
-                    ' triangle shares one SBP → whole-mesh result, insensitive to triangle order.
-                    occl = MeshData.Shape.NifContent.ComputeHiddenTrianglesDismember(MeshData.Shape.NifShape, coveredMask)
+                    ' SSE: per-partition occlusion via BSDismemberSkinInstance partitions. Keyed on the mesh's
+                    ' REAL partition SBP slot, NOT the ARMA BOD2 (which declares incidental extra slots — e.g.
+                    ' NakedTorso BOD2 includes calves(38), so boots would whole-hide the body under a BOD2
+                    ' check; the body mesh's partition is SBP 32, so per-partition hides it only when slot 32
+                    ' is covered). Para vanilla single-partition skin meshes cada triángulo comparte un SBP →
+                    ' resultado whole-mesh, insensible al orden de triángulos.
+                    ' `asWorn` elige el camino del motor y con él el DEFAULT de una partición fuera de banda:
+                    ' head parts (0x1403CC770) la fuerza visible, worn items (0x14021DAE0 fase 1) la oculta.
+                    ' Por eso una shape de worn item entra acá aunque su máscara sea 0: con máscara 0 el motor
+                    ' igual oculta lo que cae fuera de [30,61], así que 0 NO es no-op en ese camino.
+                    ' NpcRenderHost setea CoveredSlotsMask en TODA shape no-headpart de SSE (piel Y outfits),
+                    ' que es lo que hace la fase 1 del motor.
+                    occl = MeshData.Shape.NifContent.ComputeHiddenTrianglesDismember(MeshData.Shape.NifShape, coveredMask, asWorn)
                 End If
             End If
             _occlHidden = occl
@@ -3408,6 +3429,9 @@ Public Class PreviewModel
                 _lastApplyZaps = applyZaps
                 _lastCoveredSlotsMask = coveredMask
                 _lastDrawHidden = drawHidden
+                _lastOccluderSlotMask = occluderMask
+                _lastOcclusionAsWornItem = asWorn
+                _lastOccluderConDispositivo = occlDispositivo
                 MeshData.Meshgeometry.ZapTopologyDirty = False
                 Return
             End If
@@ -3434,6 +3458,9 @@ Public Class PreviewModel
             _lastApplyZaps = applyZaps
             _lastCoveredSlotsMask = coveredMask
             _lastDrawHidden = drawHidden
+            _lastOccluderSlotMask = occluderMask
+            _lastOcclusionAsWornItem = asWorn
+            _lastOccluderConDispositivo = occlDispositivo
             MeshData.Meshgeometry.ZapTopologyDirty = False
         End Sub
 
@@ -4797,59 +4824,59 @@ Public Class PreviewModel
             Using msObj As New MemoryStream()
                 Using sw As New StreamWriter(msObj, New UTF8Encoding(False), 1024, leaveOpen:=True)
 
-                sw.WriteLine("# Exportado por ExportMeshToOBJ")
-                sw.WriteLine("# Shape: " & MeshData.ShapeName)
+                    sw.WriteLine("# Exportado por ExportMeshToOBJ")
+                    sw.WriteLine("# Shape: " & MeshData.ShapeName)
 
-                ' GPU Skinning: export world-space vertices (Vertices are now local-space)
-                Dim wv = SkinningHelper.GetWorldVertices(MeshData.Meshgeometry)
-                For Each v In wv
-                    sw.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "v {0} {1} {2}", v.X, v.Y, v.Z))
-                Next
-
-                ' GPU Skinning: export world-space normals
-                Dim wn = SkinningHelper.GetWorldNormals(MeshData.Meshgeometry)
-                If wn IsNot Nothing AndAlso wn.Length = wv.Length Then
-                    For Each n In wn
-                        sw.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "vn {0} {1} {2}", n.X, n.Y, n.Z))
+                    ' GPU Skinning: export world-space vertices (Vertices are now local-space)
+                    Dim wv = SkinningHelper.GetWorldVertices(MeshData.Meshgeometry)
+                    For Each v In wv
+                        sw.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "v {0} {1} {2}", v.X, v.Y, v.Z))
                     Next
-                End If
 
-                ' ?? UVs
-                If MeshData.Meshgeometry.Uvs_Weight IsNot Nothing AndAlso MeshData.Meshgeometry.Uvs_Weight.Length = MeshData.Meshgeometry.Vertices.Length Then
-                    For Each uv In MeshData.Meshgeometry.Uvs_Weight
-                        sw.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "vt {0} {1}", uv.X, 1 - uv.Y)) ' invertir V
-                    Next
-                End If
-
-                ' ?? Caras (triángulos)
-                Dim tieneUV As Boolean = MeshData.Meshgeometry.Uvs_Weight IsNot Nothing AndAlso MeshData.Meshgeometry.Uvs_Weight.Length = MeshData.Meshgeometry.Vertices.Length
-                Dim tieneNorm As Boolean = MeshData.Meshgeometry.Normals IsNot Nothing AndAlso MeshData.Meshgeometry.Normals.Length = MeshData.Meshgeometry.Vertices.Length
-
-                For i = 0 To MeshData.Meshgeometry.Indices.Length - 1 Step 3
-                    Dim i1 = MeshData.Meshgeometry.Indices(i) + 1
-                    Dim i2 = MeshData.Meshgeometry.Indices(i + 1) + 1
-                    Dim i3 = MeshData.Meshgeometry.Indices(i + 2) + 1
-
-                    Dim f1 As String = i1.ToString()
-                    Dim f2 As String = i2.ToString()
-                    Dim f3 As String = i3.ToString()
-
-                    If tieneUV AndAlso tieneNorm Then
-                        f1 &= "/" & i1 & "/" & i1
-                        f2 &= "/" & i2 & "/" & i2
-                        f3 &= "/" & i3 & "/" & i3
-                    ElseIf tieneUV Then
-                        f1 &= "/" & i1
-                        f2 &= "/" & i2
-                        f3 &= "/" & i3
-                    ElseIf tieneNorm Then
-                        f1 &= "//" & i1
-                        f2 &= "//" & i2
-                        f3 &= "//" & i3
+                    ' GPU Skinning: export world-space normals
+                    Dim wn = SkinningHelper.GetWorldNormals(MeshData.Meshgeometry)
+                    If wn IsNot Nothing AndAlso wn.Length = wv.Length Then
+                        For Each n In wn
+                            sw.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "vn {0} {1} {2}", n.X, n.Y, n.Z))
+                        Next
                     End If
 
-                    sw.WriteLine("f " & f1 & " " & f2 & " " & f3)
-                Next
+                    ' ?? UVs
+                    If MeshData.Meshgeometry.Uvs_Weight IsNot Nothing AndAlso MeshData.Meshgeometry.Uvs_Weight.Length = MeshData.Meshgeometry.Vertices.Length Then
+                        For Each uv In MeshData.Meshgeometry.Uvs_Weight
+                            sw.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "vt {0} {1}", uv.X, 1 - uv.Y)) ' invertir V
+                        Next
+                    End If
+
+                    ' ?? Caras (triángulos)
+                    Dim tieneUV As Boolean = MeshData.Meshgeometry.Uvs_Weight IsNot Nothing AndAlso MeshData.Meshgeometry.Uvs_Weight.Length = MeshData.Meshgeometry.Vertices.Length
+                    Dim tieneNorm As Boolean = MeshData.Meshgeometry.Normals IsNot Nothing AndAlso MeshData.Meshgeometry.Normals.Length = MeshData.Meshgeometry.Vertices.Length
+
+                    For i = 0 To MeshData.Meshgeometry.Indices.Length - 1 Step 3
+                        Dim i1 = MeshData.Meshgeometry.Indices(i) + 1
+                        Dim i2 = MeshData.Meshgeometry.Indices(i + 1) + 1
+                        Dim i3 = MeshData.Meshgeometry.Indices(i + 2) + 1
+
+                        Dim f1 As String = i1.ToString()
+                        Dim f2 As String = i2.ToString()
+                        Dim f3 As String = i3.ToString()
+
+                        If tieneUV AndAlso tieneNorm Then
+                            f1 &= "/" & i1 & "/" & i1
+                            f2 &= "/" & i2 & "/" & i2
+                            f3 &= "/" & i3 & "/" & i3
+                        ElseIf tieneUV Then
+                            f1 &= "/" & i1
+                            f2 &= "/" & i2
+                            f3 &= "/" & i3
+                        ElseIf tieneNorm Then
+                            f1 &= "//" & i1
+                            f2 &= "//" & i2
+                            f3 &= "//" & i3
+                        End If
+
+                        sw.WriteLine("f " & f1 & " " & f2 & " " & f3)
+                    Next
 
                 End Using
                 Dim objBytes = msObj.ToArray()
@@ -5531,6 +5558,7 @@ Public Class PreviewModel
             End Select
         End Function
     End Structure
+
 
     ''' <summary>Rig resuelto para el frame en curso. Lo llena <see cref="RenderAll"/> antes de dibujar y lo
     ''' consume ApplyMaterial. Se resuelve UNA vez por frame: por malla serian 18 Math.Pow + 4 Direction()

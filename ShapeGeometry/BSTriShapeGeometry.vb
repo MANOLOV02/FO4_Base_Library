@@ -729,7 +729,13 @@ Public Class BSTriShapeGeometry
     ''' <para>Derivacion identica a <see cref="GetSegmentation(BSSubIndexTriShape)"/>: mapa partID -> UserSlotID
     ''' sobre cada sub-segmento y ruteo de los 3 vertices de cada triangulo segun ese slot. False (ambos
     ''' vacios) si la shape no tiene segmentacion o no es BSSubIndex. Lectura pura.</para></summary>
+    ''' <param name="bitTop">Bit del PRIMER slot del canal de pelo de la raza (B) y
+    ''' <paramref name="bitLong"/> el del segundo (B+1), en la convención bit i = biped 30+i. ⛔ Acá estaban
+    ''' los slots 30 y 31 escritos a mano, que sólo son el canal de las razas con B=0: medido sobre los 115
+    ''' RACE del load order de Fallout, B vale 1 en 31 razas (canal {31,32}) y −1 en 73. Los bits los
+    ''' resuelve <c>RaceUtil.RaceHairFirstBit</c>/<c>RaceHairSecondBit</c>, que es la sede.</param>
     Private Shared Function BuildHairPartitionVertexSets(subIndex As BSSubIndexTriShape,
+                                                         bitTop As UInteger, bitLong As UInteger,
                                                          ByRef v30 As HashSet(Of Integer),
                                                          ByRef v31 As HashSet(Of Integer)) As Boolean
         v30 = New HashSet(Of Integer)()
@@ -757,9 +763,11 @@ Public Class BSTriShapeGeometry
             Dim pid As Integer = snap.TriParts(ti)
             Dim slot As UInteger
             If pid < 0 OrElse Not partToSlot.TryGetValue(pid, slot) Then Continue For
-            If slot <> 30UI AndAlso slot <> 31UI Then Continue For
+            If slot < 30UI OrElse slot > 61UI Then Continue For
+            Dim bit As UInteger = 1UI << CInt(slot - 30UI)
+            If bit <> bitTop AndAlso bit <> bitLong Then Continue For
             Dim t = tris(ti)
-            Dim target = If(slot = 30UI, v30, v31)
+            Dim target = If(bit = bitTop, v30, v31)
             target.Add(CInt(t.V1))
             target.Add(CInt(t.V2))
             target.Add(CInt(t.V3))
@@ -773,10 +781,11 @@ Public Class BSTriShapeGeometry
     ''' conjunto de 31 conserva el anillo de borde compartido, asi que la malla larga no se rasga.
     ''' <para>Es propiedad estable de la segmentacion (no depende de pose ni morph): el caller DEBERIA cachearlo
     ''' por shape. Conjunto vacio si no hay segmentacion, no hay particion 30 o no es BSSubIndex.</para></summary>
-    Public Shared Function GetTopOnlyVertexIndices(subIndex As BSSubIndexTriShape) As HashSet(Of Integer)
+    Public Shared Function GetTopOnlyVertexIndices(subIndex As BSSubIndexTriShape,
+                                                  bitTop As UInteger, bitLong As UInteger) As HashSet(Of Integer)
         Dim v30 As HashSet(Of Integer) = Nothing
         Dim v31 As HashSet(Of Integer) = Nothing
-        BuildHairPartitionVertexSets(subIndex, v30, v31)
+        BuildHairPartitionVertexSets(subIndex, bitTop, bitLong, v30, v31)
         ' v30 − v31: drop the shared border ring so the long partition stays watertight.
         v30.ExceptWith(v31)
         Return v30
@@ -789,10 +798,11 @@ Public Class BSTriShapeGeometry
     ''' sigue visible. Restar el conjunto de 30 mantiene el anillo compartido y la particion top estanca.
     ''' <para>Propiedad estable de la segmentacion: el caller DEBERIA cachearlo por shape. Vacio si no hay
     ''' segmentacion, no hay particion 31 o no es BSSubIndex.</para></summary>
-    Public Shared Function GetLongOnlyVertexIndices(subIndex As BSSubIndexTriShape) As HashSet(Of Integer)
+    Public Shared Function GetLongOnlyVertexIndices(subIndex As BSSubIndexTriShape,
+                                                   bitTop As UInteger, bitLong As UInteger) As HashSet(Of Integer)
         Dim v30 As HashSet(Of Integer) = Nothing
         Dim v31 As HashSet(Of Integer) = Nothing
-        BuildHairPartitionVertexSets(subIndex, v30, v31)
+        BuildHairPartitionVertexSets(subIndex, bitTop, bitLong, v30, v31)
         ' v31 − v30: drop the shared border ring so the top partition stays watertight.
         v31.ExceptWith(v30)
         Return v31
@@ -840,49 +850,114 @@ Public Class BSTriShapeGeometry
         Return result
     End Function
 
-    ''' <summary>Oclusion per-segmento SIMETRICA y engine-faithful: <c>result(ti)</c> es True (oculto) si el
-    ''' slot biped del segmento del triangulo esta cubierto por un item equipado, segun el resolver
-    ''' Fallout4.exe 0x14035E0B9. Un triangulo cuyo segmento no lleva slot (padre, o sin segmentacion) nunca se
-    ''' oculta.
-    ''' <para>Convencion de <paramref name="coveredSlotsMask"/>: <b>bit (N-30) = slot biped N</b>, la MISMA que
-    ''' SlotConflictResolver.OccupiedSlots y el formato de biped objects. Los biped objects van de 30 a 61, asi
+    ''' <summary>Oclusion per-segmento, fiel al resolver <c>Fallout4.exe 0x14035E3B0</c>: <c>result(ti)</c>
+    ''' es True (oculto) cuando el motor resuelve como oculto el tag del sub-segmento de ese triangulo. Un
+    ''' triangulo cuyo segmento no lleva slot (padre, o sin segmentacion) nunca se oculta.
+    ''' <para>Convencion de <paramref name="slotsQueOcultan"/>: <b>bit (N-30) = slot biped N</b>, la MISMA que
+    ''' el formato de biped objects. Los biped objects van de 30 a 61, asi
     ''' que solo esos pueden ocultar; un slot fuera de rango (incluido el -1) deja el triangulo visible.</para>
-    ''' <para>Rango N+100 (130..161), la "variante ocupada": el resolver 0x14035E344 cambia a la geometria
-    ''' con-item de un segmento cuando el slot base N esta ocupado. Ese triangulo es el INVERSO del base: se
-    ''' MUESTRA solo cuando su slot base esta cubierto y se oculta si no. Es el swap del antebrazo del Pipboy.</para>
-    ''' <para>Lectura pura; el resultado es funcion de (segmentacion, coveredSlotsMask), asi que se puede cachear
-    ''' por ese par.</para></summary>
-    Public Shared Function ComputeHiddenTriangles(subIndex As BSSubIndexTriShape, coveredSlotsMask As UInteger, Optional ownSlotsMask As UInteger = 0UI) As Boolean()
+    ''' <para>Rango N+100 (130..161), la "variante ocupada": el motor cambia a la geometria con-item de un
+    ''' segmento cuando el slot base esta ocupado. Ese triangulo es el INVERSO del base: se MUESTRA solo
+    ''' cuando su slot base esta cubierto y se oculta si no. Es el swap del antebrazo del Pipboy, y el motor
+    ''' lo aplica a UN SOLO tag — ver <paramref name="occluderSlotBit"/>.</para>
+    ''' <para>Lectura pura; el resultado es funcion de (segmentacion, slotsQueOcultan, occluderSlotBit,
+    ''' occluderConDispositivo), asi que se puede cachear por esa tupla.</para></summary>
+    ''' <param name="occluderSlotBit">Bit (N−30) del biped slot que la RACE del actor declara como occluder
+    ''' (Fallout 4: <c>RACE.DATA</c> "Pipboy Biped Object" → <c>race+0x200</c>, leido por
+    ''' <c>0x1404FCEC0</c>). Gobierna las dos ramas que el motor reserva para ese slot y NADA MAS:
+    ''' <list type="number">
+    ''' <item>la rama occluder de <c>0x14035E4F1</c> —que corre ANTES del self-exclude de
+    ''' <c>0x14035E540</c>—, que saca a ese slot de la comparacion de clave de cobertura y lo resuelve con
+    ''' el estado de <paramref name="occluderConDispositivo"/>;</item>
+    ''' <item>el swap del post-loop <c>0x14035E65C</c>, que busca EXACTAMENTE el tag
+    ''' <c>occluder+130</c> y le da el estado complementario. El resto de la banda 130-161 el motor NO LA
+    ''' TOCA: en el loop principal cae en <c>0x14035E626</c>, no matchea 100-102 y sale sin llamar a ningun
+    ''' setter, o sea que se queda visible.</item>
+    ''' </list>
+    ''' 0 = la raza no declara occluder (valor −1 en el archivo, el caso de 97 de las 115 razas del load
+    ''' order medido) ⇒ no hay rama occluder y la banda 130-161 queda intacta, igual que el motor cuando
+    ''' <c>0x14035E65C</c> se saltea por <c>occluderSlotIdx == -1</c>. ⛔ NO es la constante 60: 3 razas
+    ''' vanilla (FeralGhoul y variantes) declaran 0 ⇒ biped slot 30.</param>
+    ''' <param name="occluderConDispositivo">Estado del slot occluder, que el motor calcula UNA vez por
+    ''' actor y NO saca de ninguna máscara de cobertura:
+    ''' <code>
+    ''' 0x14035E418  xor bpl, bpl                 ; el estado arranca en 0
+    ''' 0x14035E45E  cmp eax, r14d / je           ; D == -1  -> no hay rama occluder
+    ''' 0x14035E46E  mov rcx, [rdx+rdi+0x10]      ; table[D]+0x10
+    ''' 0x14035E473  cmp [rdx+rdi+0x28], rcx      ; table[D]+0x28
+    ''' 0x14035E478  mov    ecx, 1
+    ''' 0x14035E47D  cmovne ebp, ecx              ; distintos -> estado = 1
+    ''' </code>
+    ''' <c>+0x28</c> es el ARMA y <c>+0x10</c> es el ARMO, pero el writer <c>0x1403597E0</c> escribe el ARMO
+    ''' en UN SOLO slot: barre ascendente (<c>0x1403599D4 xor esi,esi</c> … <c>0x140359B38 cmp esi,0x20</c>)
+    ''' y el one-shot <c>0x1403599CA xor bl,bl</c> / <c>0x140359B15 mov bl,1</c> se consume en el PRIMER slot
+    ''' que el ARMA ganó y el ARMO también declara. ⇒ True ⟺ el ganador del slot occluder registró SU ARMO
+    ''' ahí, o sea <c>D = min(ARMO.BOD2 ∩ ARMA.BOD2 ∩ ganados)</c>. Slot vacío ⇒ los dos punteros nulos ⇒
+    ''' iguales ⇒ False.
+    ''' <para>⛔ NO es identidad contra los default objects del Pipboy: el resolver no consulta ningún DFOB.
+    ''' La ley es estructural y resuelve sola el caso del uniforme que declara el 60 de incidente (su primer
+    ''' slot compartido es el 33, así que en el 60 queda el ARMA ⇒ antebrazo visible).</para></param>
+    Public Shared Function ComputeHiddenTriangles(subIndex As BSSubIndexTriShape, slotsQueOcultan As UInteger,
+                                                  occluderSlotBit As UInteger,
+                                                  occluderConDispositivo As Boolean) As Boolean()
         Dim tb = GetTriangleBipedObjects(subIndex)
         If tb.Length = 0 Then Return Array.Empty(Of Boolean)()
 
         Dim result(tb.Length - 1) As Boolean
         For ti = 0 To tb.Length - 1
-            Dim b As Integer = tb(ti)
-            If b >= 30 AndAlso b <= 61 Then
-                Dim bit As UInteger = 1UI << (b - 30)
-                ' A segment tagged with a slot the item does NOT occupy (FOREIGN, and not the Pipboy-60
-                ' occluder slot) goes through the engine coverage-key branch (resolver 0x14035E243-0x14035E289),
-                ' NOT the self-exclude/occupancy branch. With the default coverage-key ("") that branch SHOWS
-                ' the segment only when the foreign slot is OCCUPIED by another item and HIDES it when the slot
-                ' is empty — the INVERSE of the occlusion polarity. <paramref name="ownSlotsMask"/>=0 (unknown
-                ' owner) or slot 60 (Pipboy occluder-order) skip this and use the occlusion polarity.
-                ' No-op on vanilla: measured 0 of 1267 vanilla ARMA meshes carry a foreign (tag not in own
-                ' BOD2, !=60) segment, so this branch never fires on vanilla content.
-                If ownSlotsMask <> 0UI AndAlso b <> 60 AndAlso (ownSlotsMask And bit) = 0UI Then
-                    result(ti) = (coveredSlotsMask And bit) = 0UI          ' foreign: SHOW iff slot occupied
-                Else
-                    result(ti) = (coveredSlotsMask And bit) <> 0UI         ' self / Pipboy-60: HIDE iff covered
-                End If
-            ElseIf b >= 130 AndAlso b <= 161 Then
-                ' N+100 occupied-variant (engine resolver 0x14035E344): the "with-item" geometry is SHOWN only
-                ' when its base slot (b-100) is covered, HIDDEN otherwise. b-130 = (b-100)-30 = base slot bit.
-                result(ti) = (coveredSlotsMask And (1UI << (b - 130))) = 0UI
-            Else
-                result(ti) = False
-            End If
+            result(ti) = SegmentoOculto(tb(ti), slotsQueOcultan, occluderSlotBit, occluderConDispositivo)
         Next
         Return result
+    End Function
+
+    ''' <summary>⭐ LA decision, por UN segmento: ¿queda oculto el triangulo tagueado con el biped object
+    ''' <paramref name="b"/>? Es el cuerpo del resolver <c>Fallout4.exe 0x14035E3B0</c>, extraido de
+    ''' <see cref="ComputeHiddenTriangles"/> para que la LEY se pueda ejercer sobre cualquier tag sin
+    ''' depender de que exista una malla con ese tag en el disco. La version de array de arriba es
+    ''' plomeria: lee los tags del NIF y llama a esta.
+    ''' <para>El motor arranca con el segmento en <b>HIDE</b> (<c>xor dil,dil</c> @0x14035E4EE) y lo enciende
+    ''' por una de tres ramas: la occluder (<c>0x14035E4F1</c>), el self-exclude del slot al que la malla
+    ''' esta adjunta (<c>0x14035E54F mov dil,1</c>) y la clave de cobertura (<c>0x14035E595 _stricmp</c> +
+    ''' <c>0x14035E5A6 cmove edi,eax</c>). Las dos ultimas dan la MISMA respuesta —visible ⟺ el slot lo
+    ''' ocupa un modelo con el mismo path que el mio— asi que aca son una sola.</para>
+    ''' <para>⛔ NO se modelan dos terminos que en el motor solo pueden OCULTAR, nunca mostrar, y que en
+    ''' una preview estatica no existen: el gate del BOD2 de la RAZA (<c>0x14035E515-0x14035E53E</c>,
+    ''' detras de un bool que el writer calcula contra un singleton en <c>0x140D5CF40</c>, y que con
+    ''' <c>HumanRace</c> = {33,34,35,42,43,51,59,60,61} borraria el pelo y las mascaras) y el de estado de
+    ''' desmembramiento (<c>0x14035E5DE-0x14035E5F9</c> -> <c>0x140C880A0</c>).</para></summary>
+    Public Shared Function SegmentoOculto(b As Integer, slotsQueOcultan As UInteger,
+                                          occluderSlotBit As UInteger,
+                                          occluderConDispositivo As Boolean) As Boolean
+        If b >= 30 AndAlso b <= 61 Then
+            Dim bit As UInteger = 1UI << (b - 30)
+            If occluderSlotBit <> 0UI AndAlso bit = occluderSlotBit Then
+                ' Rama occluder (0x14035E4F1, ANTES del self-exclude de 0x14035E540): NO mira la máscara de
+                ' cobertura. Sale del estado descrito en occluderConDispositivo, y el visible es su
+                ' complemento (0x14035E507 movzx edi,[rsp+0x20] / 0x14035E50C xor dil,1).
+                Return occluderConDispositivo
+            End If
+            ' Self-exclude (0x14035E54F mov dil,1) y clave de cobertura (0x14035E595 _stricmp +
+            ' 0x14035E5A6 cmove edi,eax) son la MISMA respuesta: visible ⟺ el slot lo ocupa un modelo con
+            ' MI mismo path. El self-exclude queda subsumido por construcción —la malla adjunta en el slot S
+            ' se cargó desde table[S]+0x30, así que S la tiene a ella de dueña—, y las dos causas de HIDE
+            ' (slot de otro modelo, y slot VACÍO por 0x14035E563 cmp [rcx+r8+0x30],r12 + je) las resuelve el
+            ' productor de la máscara, NpcMeshCollector.SlotsCubiertosPorOtroModelo.
+            Return (slotsQueOcultan And bit) <> 0UI
+        ElseIf occluderSlotBit <> 0UI AndAlso b >= 130 AndAlso b <= 161 AndAlso
+               (1UI << (BipedSlots.FoldPartitionBodyPart(b) - 30)) = occluderSlotBit Then
+            ' Swap del post-loop: 0x14035E66F add r8d,0x82 arma el tag EXACTO `occluder+130` y
+            ' 0x14035E679 call 0x1416C3860 lo busca; 0x14035E6A4 cmp [rsp+0x20],r12b le da el estado
+            ' EXACTAMENTE complementario al del `occluder+30` de arriba. El plegado a slot base sale de la
+            ' ley unica (BipedSlots.FoldPartitionBodyPart); el guard 130..161 de la izquierda es el mismo
+            ' rango que esa ley pliega, y esta para que el `-30` nunca corra sobre un valor sin plegar.
+            Return Not occluderConDispositivo
+        Else
+            ' Todo lo demas queda visible. Incluye el RESTO de la banda 130-161 (el motor no la toca: en el
+            ' loop principal cae en 0x14035E626, no matchea 100-102 y sale sin llamar a ningun setter) y los
+            ' gore caps 100-102, que en el motor SI los oculta el resolver pero en la app los gobierna el
+            ' toggle "Render gore" por shape (MeatcapClassification), no este filtro.
+            Return False
+        End If
     End Function
 
     ''' <summary>Reconstruye la segmentacion de un BSSubIndexTriShape desde la info semantica + los partID por

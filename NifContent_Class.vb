@@ -1066,24 +1066,49 @@ Public Class Nifcontent_Class_Manolo
     ''' Nothing when the shape has no dismember partitions (caller falls back to whole-node hide, which
     ''' mirrors the engine's SetAppCulled fallback for non-dismember geometry).
     '''
-    ''' Slot rule: body-part value v is a Skyrim SBP; dismemberment-state variants (130-161 / 230-261)
-    ''' fold to the canonical biped slot 30-61 via <c>30 + ((v-30) mod 100)</c> (engine folds the same
-    ''' three ranges). A triangle is hidden iff its slot bit (slot-30) is set in coveredSlotsMask.
-    ''' Non-biped body parts (FO3-style gore 0-9, or -1 unassigned) are never slot-occluded. NO N+100
-    ''' inverse-swap (that is an FO4-only Pipboy-forearm mechanism; Skyrim has none).</summary>
-    Public Function ComputeHiddenTrianglesDismember(shape As INiShape, coveredSlotsMask As UInteger) As Boolean()
+    ''' Slot rule: el valor es un SBP de Skyrim, plegado por <see cref="BipedSlots.FoldPartitionBodyPart"/>
+    ''' (la ley del plegado, que vive sola). Una partición cuyo slot plegado cae en [30,61] se oculta ⟺ su
+    ''' bit (slot−30) está en <paramref name="coveredSlotsMask"/>.
+    ''' Devuelve <c>Nothing</c> si la shape no tiene particiones dismember (el caller cae al whole-node hide,
+    ''' que es el fallback <c>SetAppCulled</c> del motor). NO hay swap inverso N+100: eso es el mecanismo del
+    ''' antebrazo del Pipboy, exclusivo de FO4.</summary>
+    ''' <param name="hideOutOfBand">Qué hacer con una partición cuyo slot plegado NO cae en [30,61] — el
+    ''' punto donde los dos caminos del motor son OPUESTOS, y por eso es un parámetro y no una constante:
+    ''' <list type="bullet">
+    ''' <item><b>False</b> = camino de <b>head parts</b> (<c>ApplyOcclusionToGeometry 0x1403CC770</c>):
+    ''' <c>visible = (folded == 30+B) ? !hide : 1</c>. El <c>cmovne ecx, r10d</c> con <c>r10d=1</c> fuerza
+    ''' VISIBLE todo lo que no sea la partición del slot de pelo.</item>
+    ''' <item><b>True</b> = camino de <b>worn items</b> (<c>0x14021DAE0</c> fase 1): la visibilidad nace en 0
+    ''' (<c>xor r14b,r14b</c>) y el <c>lea eax,[rdi-0x1e] ; cmp ax,0x1f ; ja 0x14021DC66</c> salta al final
+    ''' SIN encenderla ⇒ la partición queda OCULTA.</item>
+    ''' </list>
+    ''' Medido sobre 5.337 NIF sueltos con BSDismember: 18 particiones caen fuera de banda (BodyPart=0, en
+    ''' <c>3BBBCollisionArmorP_*.nif</c>), así que el parámetro decide sobre casos reales, no hipotéticos.</param>
+    Public Function ComputeHiddenTrianglesDismember(shape As INiShape, coveredSlotsMask As UInteger,
+                                                    hideOutOfBand As Boolean) As Boolean()
         Dim bodyParts = GetTriangleBodyParts(shape)
         If bodyParts Is Nothing OrElse bodyParts.Count = 0 Then Return Nothing
         Dim result(bodyParts.Count - 1) As Boolean
         For ti = 0 To bodyParts.Count - 1
-            Dim v As Integer = bodyParts(ti)
-            If v < 30 Then Continue For   ' gore/unassigned — not a biped-slot partition
-            Dim slot As Integer = 30 + ((v - 30) Mod 100)
-            If slot >= 30 AndAlso slot <= 61 Then
-                result(ti) = (coveredSlotsMask And (1UI << (slot - 30))) <> 0UI
-            End If
+            result(ti) = ParticionOculta(bodyParts(ti), coveredSlotsMask, hideOutOfBand)
         Next
         Return result
+    End Function
+
+    ''' <summary>⭐ LA decisión, por UNA partición: ¿queda oculta la partición cuyo <c>BodyPart</c> es
+    ''' <paramref name="bodyPart"/>? Extraída de <see cref="ComputeHiddenTrianglesDismember"/> para que la
+    ''' ley se pueda ejercer sobre cualquier valor sin depender de que exista una malla con ese valor en el
+    ''' disco; la versión de array es plomería que lee los BodyPart del NIF y llama a ésta.
+    ''' <para>El plegado sale de <see cref="BipedSlots.FoldPartitionBodyPart"/> (⛔ no se reescribe acá), y
+    ''' <paramref name="hideOutOfBand"/> es el default del camino del motor que corresponda — ver la doc del
+    ''' método de array, que es donde está la cita de los dos defaults.</para></summary>
+    Public Shared Function ParticionOculta(bodyPart As Integer, coveredSlotsMask As UInteger,
+                                           hideOutOfBand As Boolean) As Boolean
+        Dim slot As Integer = BipedSlots.FoldPartitionBodyPart(bodyPart)
+        If slot >= 30 AndAlso slot <= 61 Then
+            Return (coveredSlotsMask And (1UI << (slot - 30))) <> 0UI
+        End If
+        Return hideOutOfBand
     End Function
 
     ''' <summary>

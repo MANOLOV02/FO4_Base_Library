@@ -326,18 +326,52 @@ Public Class RaceUtil
     '''   Sale de Hair Biped Object.
     ''' Bits bounded to 0..31. 0 when None (B=-1 / >31).</summary>
     Public Shared Function RaceHairMask(race As Canon.IRace) As UInteger
+        ' Se DERIVA de los dos bits; la ley del canal se declara una sola vez, abajo.
+        Return RaceHairFirstBit(race) Or RaceHairSecondBit(race)
+    End Function
+
+    ''' <summary>Primer bit del canal de pelo, el que el motor llama B.
+    ''' <para>FO4: <c>Unknown Bytes2</c> del RACE.DATA, que el driver lee en
+    ''' <c>0x140506702 mov r13d,[r13+0x1b4]</c> y usa como tag <c>B+30</c> en la 1ª llamada
+    ''' (<c>0x140506733</c>).</para>
+    ''' <para>SSE: <c>Hair Biped Object</c>, leído en <c>0x1403C2A6A mov ecx,[r15+0x130]</c>.</para>
+    ''' 0 cuando la raza no reserva canal.</summary>
+    Public Shared Function RaceHairFirstBit(race As Canon.IRace) As UInteger
         If race Is Nothing Then Return 0UI
         Dim fo4 = TryCast(race, Canon.RaceFO4)
-        If fo4 IsNot Nothing Then
-            Dim b = fo4.OcclusionHairBipedDe()
-            Return BipedValueToBit(b) Or BipedValueToBit(b + 1)
-        End If
+        If fo4 IsNot Nothing Then Return BipedValueToBit(fo4.OcclusionHairBipedDe())
         Dim sse = TryCast(race, Canon.RaceSSE)
         If sse IsNot Nothing Then
             If Not sse.HairBipedObjectPresente Then Return 0UI
             Return BipedValueToBit(sse.HairBipedObject)
         End If
         Return 0UI
+    End Function
+
+    ''' <summary>Segundo bit del canal de pelo (B+1). ⭐ SÓLO existe en Fallout 4: el driver arma el segundo
+    ''' tag con <c>0x14050677B lea esi,[r13+1]</c> y hace una SEGUNDA llamada sobre el MISMO nodo
+    ''' (<c>0x1405067A3</c>, con el nodo recargado de <c>[rsp+0x90]</c> en <c>0x140506790</c>).
+    ''' <para>Skyrim tiene un solo canal y una sola llamada (<c>0x1403C2A9D call 0x1403CC770</c>), así que
+    ''' acá devuelve 0 — sumar B+1 allá metería el slot 32 (Body) en el canal de pelo.</para>
+    ''' <para>⛔ Es RELATIVO A LA RAZA, no la constante 31: por eso no se usa
+    ''' <c>BipedSlots.SlotBitHairLong</c>. Medido sobre los 7 plugins vanilla de FO4: B vale −1 en 70 razas,
+    ''' 1 en 30 y 0 en 10, y las 30 con B=1 son animales, robots, Power Armor y Vertibird. Lo MEDIDO sobre
+    ''' ellas es que ningún <c>NPC_</c> de una raza con B ≠ 0 trae head part de tipo 3, así que en vanilla
+    ''' el canal de pelo humano es siempre {30,31}.</para></summary>
+    Public Shared Function RaceHairSecondBit(race As Canon.IRace) As UInteger
+        Dim fo4 = TryCast(race, Canon.RaceFO4)
+        If fo4 Is Nothing Then Return 0UI
+        ' ⛔ SIN GUARD DE b < 0, Y ES A PROPÓSITO. "Ninguno" se codifica −1 y −1+1 = 0, o sea el slot 30 —
+        ' y eso es EXACTAMENTE lo que hace el motor. Los dos guards del driver son POR LLAMADA y sólo el
+        ' de la PRIMERA descarta el −1:
+        '   1ª:  0x140506702 mov r13d,[r13+0x1b4]   ; B = −1
+        '        0x140506714 cmp r13d,0x1f / ja     ; 0xFFFFFFFF > 0x1f ⇒ máscara 0, canal muerto
+        '   2ª:  0x14050677B lea esi,[r13+1]        ; B+1 = 0
+        '        0x140506782 cmp esi,0x1f / ja      ; 0 <= 0x1f ⇒ NO salta
+        '        0x140506789 mov eax,1 / shl eax,cl ; máscara = bit 0 = slot 30
+        ' ⇒ una raza con B = −1 igual tiene segundo canal, y es el slot 30. Poner el guard acá le sacaba
+        ' al motor una rama que sí ejecuta.
+        Return BipedValueToBit(fo4.OcclusionHairBipedDe() + 1)
     End Function
 
     ''' <summary>Máscara de la ranura del vello facial de una raza.

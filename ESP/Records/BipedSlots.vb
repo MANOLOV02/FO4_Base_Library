@@ -167,21 +167,43 @@ Public Module BipedSlots
         Return 0UI
     End Function
 
-    ''' <summary>Pliega el <c>BodyPart</c> de una partición BSDismember a su slot BASE: los valores
-    ''' SBP_1xx / SBP_2xx son la misma región biped con prefijo (100 = "editor visible", 200 = variantes),
-    ''' así que 2xx → −200 y 1xx → −100. Es LA ley del plegado y vive acá sola; ⛔ no reescribirla en sus
-    ''' consumidores (los dos sitios de <c>NpcMeshCollector</c> —la máscara de particiones del candidate y
-    ''' el de-dup de piel SSE— más <c>ShapeBipedSlotMask</c>).
+    ''' <summary>Pliega a su slot BASE el número de región biped que trae una partición BSDismember (Skyrim)
+    ''' o un sub-segmento BSSubIndexTriShape (Fallout 4): los valores con prefijo 1xx / 2xx son el mismo slot
+    ''' con un estado de desmembramiento encima. Es LA ley del plegado y vive acá sola; ⛔ no reescribirla en
+    ''' sus consumidores (los dos sitios de <c>NpcMeshCollector</c> —la máscara de particiones del candidate y
+    ''' el de-dup de piel SSE—, <c>ShapeBipedSlotMask</c>, <c>ComputeHiddenTriangles</c> y
+    ''' <c>ComputeHiddenTrianglesDismember</c>).
     '''
-    ''' DEVUELVE EL VALOR PLEGADO **SIN FILTRAR** a <c>[30,61]</c>, a propósito. Los dos call sites de
-    ''' <c>NpcMeshCollector</c> NO son equivalentes y colapsarlos rompería uno: el de la máscara descarta lo que cae
-    ''' fuera del rango ANTES de setear el bit, mientras que el de-dup de piel SSE mete el valor crudo en su
-    ''' lista y después usa <c>parts.Count = 0</c> como "no clasificable ⇒ conservar la shape". Si esta
-    ''' función filtrara, una malla de piel SSE con TODAS sus particiones fuera de rango pasaría de
-    ''' descartada a renderizada. El filtro es del CALL SITE, no de la ley.</summary>
+    ''' <para>⭐ LAS BANDAS SON CERRADAS, no "≥100" / "≥200". ⛔ Y el plegado es de <b>SKYRIM</b>, no de los
+    ''' dos motores: Fallout 4 NO PLIEGA NADA. En <c>Fallout4.exe 0x14035E3B0</c> no existe el par de
+    ''' restas —verificado por ausencia de <c>sub cx,0x82</c> / <c>sub cx,0xE6</c> en toda la función— y un
+    ''' tag fuera de <c>[30,61]</c> sale por <c>0x14035E4E4 cmp r13d,0x1f / ja 0x14035E626</c>, donde sólo
+    ''' matchea la banda de gore 100-102 (<c>0x14035E626 add eax,-0x64 ; cmp eax,2</c>) y todo lo demás se
+    ''' va sin llamar a ningún setter. De la banda 1xx, Fallout 4 toca <b>un solo tag</b>: el post-loop
+    ''' <c>0x14035E66F add r8d,0x82</c> arma el tag EXACTO <c>occluder+130</c>, lo busca con
+    ''' <c>0x14035E679 call 0x1416C3860</c> y le da el estado complementario (<c>0x14035E6A4</c>).</para>
+    ''' <para>El par de restas acotadas, entonces, es de Skyrim y sólo de Skyrim:</para>
+    ''' <code>
+    ''' SkyrimSE 1.7.104.0  0x1403CC840  sub cx,0x82 ; cmp cx,0x1f ; ja  → 130..161 : −100
+    '''                     0x1403CC85D  sub cx,0xe6 ; cmp cx,0x1f ; ja  → 230..261 : −200
+    ''' (idéntico en 0x14021E010-0x14021E03C, la fase 1 de worn items)
+    ''' </code>
+    ''' <para>Un valor FUERA de las dos bandas se compara TAL CUAL. La versión vieja de esta función usaba
+    ''' <c>≥200</c> / <c>≥100</c> abiertos, que pliegan de más: 100..129, 162..199, 200..229 y todo lo ≥262
+    ''' salían movidos donde el motor no los mueve. Ninguno de esos casos cambiaba el resultado de los
+    ''' consumidores que había (todos terminaban igual fuera de <c>[30,61]</c>), pero la ley estaba mal
+    ''' escrita y el consumidor nuevo —el default de fuera de banda de la oclusión per-partición— sí la
+    ''' distingue.</para>
+    '''
+    ''' <para>DEVUELVE EL VALOR PLEGADO **SIN FILTRAR** a <c>[30,61]</c>, a propósito. Los call sites NO son
+    ''' equivalentes y colapsarlos rompería uno: el de la máscara descarta lo que cae fuera del rango ANTES
+    ''' de setear el bit, mientras que el de-dup de piel SSE mete el valor crudo en su lista y después usa
+    ''' <c>parts.Count = 0</c> como "no clasificable ⇒ conservar la shape". Si esta función filtrara, una
+    ''' malla de piel SSE con TODAS sus particiones fuera de rango pasaría de descartada a renderizada. El
+    ''' filtro es del CALL SITE, no de la ley.</para></summary>
     Public Function FoldPartitionBodyPart(bodyPart As Integer) As Integer
-        If bodyPart >= 200 Then Return bodyPart - 200
-        If bodyPart >= 100 Then Return bodyPart - 100
+        If bodyPart >= 230 AndAlso bodyPart <= 261 Then Return bodyPart - 200
+        If bodyPart >= 130 AndAlso bodyPart <= 161 Then Return bodyPart - 100
         Return bodyPart
     End Function
 

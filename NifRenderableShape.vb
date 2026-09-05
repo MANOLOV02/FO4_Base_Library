@@ -300,7 +300,12 @@ Public Class NifRenderableShape
     Public Property TintColor As Color = Color.White Implements IRenderableShape.TintColor
     Public Property ApplyZaps As Boolean = False Implements IRenderableShape.ApplyZaps
     Public Property CoveredSlotsMask As UInteger = 0 Implements IRenderableShape.CoveredSlotsMask
-    Public Property OwnSlotsMask As UInteger = 0 Implements IRenderableShape.OwnSlotsMask
+    ''' <summary>Ver <see cref="IRenderableShape.OccluderConDispositivo"/>. False = sin dispositivo.</summary>
+    Public Property OccluderConDispositivo As Boolean = False Implements IRenderableShape.OccluderConDispositivo
+    ''' <summary>Ver <see cref="IRenderableShape.OccluderSlotMask"/>. 0 = la raza no reserva ninguno.</summary>
+    Public Property OccluderSlotMask As UInteger = 0 Implements IRenderableShape.OccluderSlotMask
+    ''' <summary>Ver <see cref="IRenderableShape.OcclusionAsWornItem"/>. False = camino de head part.</summary>
+    Public Property OcclusionAsWornItem As Boolean = False Implements IRenderableShape.OcclusionAsWornItem
     Public Property MaskedVertices As New HashSet(Of Integer)() Implements IRenderableShape.MaskedVertices
     ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
     ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets
