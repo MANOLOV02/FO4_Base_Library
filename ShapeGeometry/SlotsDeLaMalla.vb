@@ -89,6 +89,30 @@ Public Class SlotsDeLaMalla
         Return r
     End Function
 
+    ''' <summary>¿Está el archivo? Sede compartida para que la respuesta no pueda divergir de la que
+    ''' usa <see cref="DeLaMalla"/>: el diccionario devuelve un array VACÍO —no <c>Nothing</c>— cuando
+    ''' la clave no está, así que comparar contra <c>Nothing</c> es una guarda muerta.
+    ''' <para>Existe para que un testigo pueda distinguir «el archivo no está» (corpus del usuario) de
+    ''' «está y no se pudo leer» (que sí es un defecto), sin pasar por el parseo del NIF.</para></summary>
+    ''' <param name="meshKey">Clave normalizada de FilesDictionary.</param>
+    Public Shared Function HayBytes(meshKey As String) As Boolean
+        If String.IsNullOrEmpty(meshKey) Then Return False
+        Try
+            Return HayBytes(FilesDictionary_class.GetBytes(meshKey))
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
+
+    ''' <summary>La misma ley sobre bytes YA leídos. Existe para que <see cref="DeLaMalla"/> lea el
+    ''' archivo UNA sola vez: la caché de bytes del diccionario es una <c>WeakReference</c>, así que si
+    ''' el recolector cae entre dos lecturas la segunda vuelve a descomprimir la entrada del BA2
+    ''' entera — y en un bake con presión de memoria esa ventana no es hipotética.</summary>
+    ''' <param name="bytes">Los bytes leídos, o Nothing.</param>
+    Public Shared Function HayBytes(bytes As Byte()) As Boolean
+        Return bytes IsNot Nothing AndAlso bytes.Length > 0
+    End Function
+
     ''' <summary>Lo que declara un ARCHIVO de malla entero, sumando todas sus shapes con el lector que
     ''' corresponda. <c>Nothing</c> significa «no se pudo leer» y es distinto de un conteo en cero, que
     ''' significa «se leyó y no declara nada»: los dos estados le dicen cosas distintas al usuario.
@@ -101,7 +125,7 @@ Public Class SlotsDeLaMalla
         If String.IsNullOrEmpty(meshKey) Then Return Nothing
         Try
             Dim bytes = FilesDictionary_class.GetBytes(meshKey)
-            If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
+            If Not HayBytes(bytes) Then Return Nothing
             Dim nif As New Nifcontent_Class_Manolo()
             nif.Load_Manolo(bytes)
             Dim total As ConteoDeSlots = Nothing
