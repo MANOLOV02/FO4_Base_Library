@@ -506,7 +506,10 @@ Public Module FaceTintCompositor
             ("GROUND-VERTEX", GroundShadowShaderSource.Vertex_Ground),
             ("GROUND-FRAGMENT", GroundShadowShaderSource.Fragment_Ground),
             ("OVERLAY-VERTEX", TextOverlayRenderer.VertexOverlaySrc),
-            ("OVERLAY-FRAGMENT", TextOverlayRenderer.FragmentOverlaySrc)}
+            ("OVERLAY-FRAGMENT", TextOverlayRenderer.FragmentOverlaySrc),
+            ("BACKGROUND-FADE-HELPER", BackgroundFadeSource.Fade_Helper),
+            ("BACKGROUND-VERTEX", BackgroundFadeSource.Vertex_Background),
+            ("BACKGROUND-FRAGMENT", BackgroundFadeSource.Fragment_Background)}
     End Function
 
     Private Const VertexShaderSource As String = "#version 430
