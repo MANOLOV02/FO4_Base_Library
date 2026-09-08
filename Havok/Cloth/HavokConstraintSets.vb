@@ -148,8 +148,8 @@ Namespace Havok.Canon
         ''' CRUDO con ese numero corta la COLA del arreglo, y `constraintExecution` indexa por POSICION
         ''' en el arreglo del archivo: el set de la cola se pierde del solve sin que nada avise.</para>
         ''' </summary>
-        Private Shared Function CuantosDeclara(sim As Havok.Canon.Objects.HkObj_HclSimClothData,
-                                               fuente As Fuente) As Integer
+        Public Shared Function CuantosDeclara(sim As Havok.Canon.Objects.HkObj_HclSimClothData,
+                                              Optional fuente As Fuente = Fuente.Estaticos) As Integer
             If sim Is Nothing Then Return 0
             Select Case fuente
                 Case Fuente.AntiPinch : Return sim.Raw.AntiPinchConstraintSetsCount

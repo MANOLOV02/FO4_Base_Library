@@ -53,6 +53,7 @@ Namespace Havok.Motor
                 New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclUpdateAllVertexFramesOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclUpdateAllVertexFramesOperator.Leer),
                 New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclUpdateSomeVertexFramesOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclUpdateSomeVertexFramesOperator.Leer),
                 New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclMeshBoneDeformOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclMeshBoneDeformOperator.Leer),
+                New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclMeshMeshDeformOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclMeshMeshDeformOperator.Leer),
                 New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclSkinOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclSkinOperator.Leer),
                 New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclInputConvertOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclInputConvertOperator.Leer),
                 New Havok.Canon.HavokConstraintSets.LectorDeClase(Havok.Canon.Objects.HkObj_HclOutputConvertOperator.NombreDeClase, AddressOf Havok.Canon.Objects.HkObj_HclOutputConvertOperator.Leer),

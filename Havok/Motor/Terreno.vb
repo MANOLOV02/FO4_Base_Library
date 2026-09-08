@@ -19,10 +19,17 @@ Imports System.Runtime.Intrinsics
 '     (= `r8`) en `+0x100`, y de paso construye el estado de `+0xF0` con campos del ARCHIVO
 '     (`data+0x140`, `+0x141`, `+0x144` → `estado+0x80`, `+0x81`, `+0x84`).
 '   · ⛔ **A esa función NO LA LLAMA NADIE.** Barrido exhaustivo del `.exe`: cero `call rel32`,
-'     cero `jmp rel32`, cero `lea` rip-relativo y cero punteros de 64 bits en ninguna sección. Sus
-'     únicas tres referencias son datos de desenrollado: `.pdata 0x14403A778` y dos entradas de la
-'     tabla de ámbitos de SEH (`.rdata 0x142D8CC5C` y `0x142D8CCB4`), reconocibles porque son
-'     tripletes `inicio, fin, handler` que apuntan al MEDIO de la función.
+'     cero `jmp rel32`, cero `lea` rip-relativo y cero punteros de 64 bits en ninguna sección —
+'     comprobado también por las relocaciones DIR64 de `.reloc` y sobre el rango ENTERO
+'     `0x1418C7B10`-`0x1418C7CDB`, no sólo sobre el primer byte. Lo único que la referencia son
+'     **datos de desenrollado**: `.pdata` y `UNWIND_INFO`.
+'   · ⚠️ Y acá antes decía mal QUÉ eran esos datos (motor-82). No es UNA entrada `.pdata` sino
+'     **siete encadenadas** (`0x14403A778` … `0x14403A7C0`, los chunks `B10-B1D`, `B1D-B2B`,
+'     `B2B-B95`, `B95-C29`, `C29-C3E`, `C3E-C73`, `C73-CDB`); y `.rdata 0x142D8CC5C` /
+'     `0x142D8CCB4` no son «tabla de ámbitos SEH con tripletes que apuntan al MEDIO» sino
+'     `UNWIND_INFO` con `flags = 0x4` (`UNW_FLAG_CHAININFO`), cuyo triplete embebido es la
+'     `RUNTIME_FUNCTION` **primaria** y apunta al **INICIO** `0x1418C7B10`. La conclusión no
+'     cambia; el que lea «`.pdata 0x14403A778`» sin esto va a creer que la función mide 13 bytes.
 '   · Los otros sitios que tocan los tres punteros los **ponen en cero**: `0x1418C6677` es el
 '     constructor (escribe el mismo `rsi` en `+0xE0`, `+0xE8`, `+0xF0`, `+0xF8`, `+0x100`, `+0x108`)
 '     y `0x1418C7D3A` es el borrado (`xor eax, eax` inmediatamente antes).
@@ -111,9 +118,18 @@ Namespace Havok.Motor
     ''' <summary>
     ''' Lo que el capítulo 16 necesita del MUNDO y que el archivo no trae.
     ''' <para>⛔ Los AABB de las dos listas se validan con `max &lt; min` + `movmskps` + `test al,7` y
-    ''' con `[+0x18] != 0` (`0x14195DB64`-`0x14195DBA3`). El margen es un `float` GLOBAL, `+0x14` del
-    ''' bloque que devuelve `0x1418C7730` (`0x141A140A4` y `0x141A142CB`), y el interruptor es
-    ''' `byte[globals+0x1D]` (`0x14195E3B2`).</para>
+    ''' con `[+0x18] != 0` (`0x14195DB64`-`0x14195DBA3`).</para>
+    ''' <para>⛔⛔ **EL MARGEN Y EL PERMISO NO ESTÁN ACÁ: SALEN DEL ARCHIVO** (motor-83). Acá decía
+    ''' que el margen era «un `float` GLOBAL» y el interruptor «`byte[globals+0x1D]`», y era falso —
+    ''' la cabecera de este mismo archivo ya decía lo contrario. `0x1418C7730` devuelve
+    ''' `[inst+0x1D8]` si no es nulo y si no `[inst+0x10] + 0x10`, y `[inst+0x10]` es el
+    ''' `hclSimClothData`; o sea que el bloque es **`simulationInfo`**. Y la reflexión lo cierra:
+    ''' `hclSimClothDataOverridableSimulationInfo.collisionTolerance` está en **`+0x14`**
+    ''' (`0x141A140A4`, `0x141A142CB`) y `.landscapeCollisionEnabled` en **`+0x1D`**
+    ''' (`0x14195E3B2`). Los dos viven ya en <see cref="Instancia.ToleranciaDeColision"/> y
+    ''' <see cref="Instancia.LandscapeHabilitado"/>.</para>
+    ''' <para>⚠️ HUECO DECLARADO: el override de runtime `[inst+0x1D8]` es siempre nulo en el
+    ''' corpus, así que acá se usa el del dato. Si algún día no lo fuera, gana el override.</para>
     ''' </summary>
     Friend NotInheritable Class TerrenoDelMundo
         Friend ReadOnly Triangulos As TrianguloDeTerreno()
@@ -122,23 +138,33 @@ Namespace Havok.Motor
         Friend ReadOnly Convexos As ConvexoDeTerreno()
         Friend ReadOnly MinConvexos As Vector128(Of Single)
         Friend ReadOnly MaxConvexos As Vector128(Of Single)
-        Friend ReadOnly Margen As Single
-        Friend ReadOnly HabilitadoGlobal As Boolean
 
         Friend Sub New(triangulos As TrianguloDeTerreno(),
                        minTriangulos As Vector128(Of Single), maxTriangulos As Vector128(Of Single),
                        convexos As ConvexoDeTerreno(),
-                       minConvexos As Vector128(Of Single), maxConvexos As Vector128(Of Single),
-                       margen As Single, habilitadoGlobal As Boolean)
+                       minConvexos As Vector128(Of Single), maxConvexos As Vector128(Of Single))
             Me.Triangulos = If(triangulos, Array.Empty(Of TrianguloDeTerreno)())
             Me.MinTriangulos = minTriangulos
             Me.MaxTriangulos = maxTriangulos
             Me.Convexos = If(convexos, Array.Empty(Of ConvexoDeTerreno)())
             Me.MinConvexos = minConvexos
             Me.MaxConvexos = maxConvexos
-            Me.Margen = margen
-            Me.HabilitadoGlobal = habilitadoGlobal
         End Sub
+
+        ''' <summary>`0x14195DB5F`-`0x14195DB7D`: la lista de triángulos participa sólo si NO es nula,
+        ''' su AABB es válida y su cuenta no es cero. Ver <see cref="Terreno.AabbValida"/>.</summary>
+        Friend ReadOnly Property HayTriangulos As Boolean
+            Get
+                Return Terreno.AabbValida(MinTriangulos, MaxTriangulos, Triangulos.Length)
+            End Get
+        End Property
+
+        ''' <summary>`0x14195DB82`-`0x14195DBA0`, la misma ley para los convexos.</summary>
+        Friend ReadOnly Property HayConvexos As Boolean
+            Get
+                Return Terreno.AabbValida(MinConvexos, MaxConvexos, Convexos.Length)
+            End Get
+        End Property
     End Class
 
     ''' <summary>
@@ -199,6 +225,12 @@ Namespace Havok.Motor
         ''' <summary>`1e-4` — `0x142498010`, la ε que se le suma a `landscapeRadius²`.</summary>
         Friend Const EpsilonDeRadio As Single = 9.99999975E-05F
 
+        ''' <summary>`0xFFF0` = 65.520 — el tamaño de lote del camino de triángulos
+        ''' (`0x14195DC8F mov ebx, 0xfff0`, con el `cmovl` de `0x14195DCA5` para el último).
+        ''' <para>⛔ No es una perilla: cada lote se cuantiza, ORDENA y barre por separado, así que
+        ''' el número decide el ORDEN de acumulación por partícula y con él los bits.</para></summary>
+        Friend Const TrianguloPorLote As Integer = &HFFF0
+
         ''' <summary>`−87` — `0x14271A348`, el piso del exponente antes del `exp` rápido.</summary>
         Friend Const PisoDelExponente As Single = -87.0F
 
@@ -240,8 +272,11 @@ Namespace Havok.Motor
                                    numParticulasDeTerreno As Integer,
                                    hayContexto As Boolean) As Boolean
             If inst Is Nothing OrElse mundo Is Nothing Then Return False
-            If Not mundo.HabilitadoGlobal Then Return False
-            If mundo.Triangulos.Length = 0 AndAlso mundo.Convexos.Length = 0 Then Return False
+            ' ⛔ El permiso sale del ARCHIVO: `simulationInfo.landscapeCollisionEnabled` (+0x1D),
+            ' leído por `0x14195E3AE`/`B2` a través de `getSimulationInfo`. No es un flag del mundo.
+            If Not inst.LandscapeHabilitado Then Return False
+            ' ⛔ Con la AABB validada, no sólo con `Length > 0` (motor-89).
+            If Not mundo.HayTriangulos AndAlso Not mundo.HayConvexos Then Return False
             If numParticulasDeTerreno = 0 Then Return False
             Return hayContexto
         End Function
@@ -259,15 +294,40 @@ Namespace Havok.Motor
                                  ByRef lo As Vector128(Of Single), ByRef hi As Vector128(Of Single))
             lo = Vector128.Create(Simd.CasiFltMax)                       ' 0x142F3C740
             hi = Vector128.Xor(lo.AsUInt32(), Vector128.Create(2147483648UI)).AsSingle()
-            If mundo.Triangulos.Length > 0 Then
+            If mundo.HayTriangulos Then
                 lo = Vector128.Min(lo, mundo.MinTriangulos)              ' 0x14195DBD6
                 hi = Vector128.Max(hi, mundo.MaxTriangulos)              ' 0x14195DBDA
             End If
-            If mundo.Convexos.Length > 0 Then
+            If mundo.HayConvexos Then
                 lo = Vector128.Min(lo, mundo.MinConvexos)                ' 0x14195DBED
                 hi = Vector128.Max(hi, mundo.MaxConvexos)
             End If
         End Sub
+
+        ''' <summary>
+        ''' ⛔⛔ LA VALIDACIÓN DE UNA LISTA, QUE FALTABA (motor-89) — `0x14195DB64`-`0x14195DB78` para
+        ''' los triángulos y `0x14195DB87`-`0x14195DB9E` para los convexos, idénticas.
+        ''' <para>```
+        ''' cmpltps  xmm0, [lista+0x20]     ' max &lt; min, lane a lane
+        ''' movmskps eax, xmm0
+        ''' test     al, 7                  ' ⛔ SOLO las tres lanes bajas: la `w` no cuenta
+        ''' jne      → inválida
+        ''' cmp      dword [lista+0x18], 0  ' y la cuenta no puede ser cero
+        ''' je       → inválida
+        ''' ```</para>
+        ''' <para>⚠️ Una lista inválida queda fuera **de la caja Y de la colisión**, no sólo de una
+        ''' de las dos. Acá sólo se miraba `Length &gt; 0`, así que un AABB «vacío» del tipo
+        ''' `min = +max, max = −max` —el idiomático para decir «nada»— se colisionaba igual.</para>
+        ''' </summary>
+        Friend Function AabbValida(minimo As Vector128(Of Single), maximo As Vector128(Of Single),
+                                   cuenta As Integer) As Boolean
+            If cuenta = 0 Then Return False                              ' 0x14195DB74/78
+            Dim menor = Vector128.LessThan(maximo, minimo)               ' 0x14195DB68 cmpltps
+            For k = 0 To 2                                               ' `test al, 7`
+                If menor.AsUInt32().GetElement(k) <> 0UI Then Return False
+            Next
+            Return True
+        End Function
 
         ' -----------------------------------------------------------------------------------------
         ' El cuantizador — 0x141A15018-0x141A150AC
@@ -313,9 +373,18 @@ Namespace Havok.Motor
             Dim b = Vector128.Multiply(Vector128.Subtract(hi, q.Lo), q.Escala)
             Dim l(2) As Integer, h(2) As Integer
             For k = 0 To 2
-                ' `cvttss2si` trunca hacia cero; el `+1` de arriba es el `inc ax` conservador
-                l((q.Eje + k) Mod 3) = CInt(Math.Truncate(CDbl(Vector128.GetElement(a, k))))
-                h((q.Eje + k) Mod 3) = CInt(Math.Truncate(CDbl(Vector128.GetElement(b, k)))) + 1
+                ' ⛔⛔ `cvttss2si` Y RECORTE A 16 BITS, NO `CInt` (motor-88).
+                '
+                ' `CInt(Double)` compila a `conv.ovf.i4` y **lanza** con `NaN` o fuera de rango. El
+                ' motor hace `0x141A1518B cvttss2si` + `mov word ptr […], ax` (y `inc ax` para el
+                ' alto): con `NaN` el `cvttss2si` da `0x80000000`, el `mov word` se queda con los 16
+                ' bits bajos — `0` — y sigue. Disparador real: una lane del dominio con `ext = 0`
+                ' hace `rcp(0) = +inf`, `0·inf = NaN`, y TODAS las entradas de esa lane salen `NaN`.
+                ' El motor las trata como «todo solapa en ese eje»; el `CInt` reventaba.
+                Dim ql = Simd.ATruncado(Vector128.GetElement(a, k))     ' 0x141A1518B cvttss2si
+                Dim qh = Simd.ATruncado(Vector128.GetElement(b, k))
+                l((q.Eje + k) Mod 3) = ql And &HFFFF                    ' mov word ptr
+                h((q.Eje + k) Mod 3) = (qh + 1) And &HFFFF              ' inc ax, conservador
             Next
             Dim e As EntradaDeBroadphase
             e.Lo0 = l(0) : e.Lo1 = l(1) : e.Lo2 = l(2)
@@ -578,12 +647,18 @@ Namespace Havok.Motor
         ''' contra −87 delante.</para>
         ''' </summary>
         Friend Function ExpRapido(x As Single) As Single
-            Dim v = Math.Max(x, PisoDelExponente)
-            Dim d = CDbl(v) * CDbl(EscalaDeExp) + CDbl(SesgoDeExp)
-            If Double.IsNaN(d) OrElse d >= 2147483648.0R OrElse d < -2147483648.0R Then
-                Return BitConverter.Int32BitsToSingle(Integer.MinValue)   ' lo que da `cvttss2si`
-            End If
-            Return BitConverter.Int32BitsToSingle(CInt(Math.Truncate(d)))
+            ' ⛔⛔ DOS REDONDEOS EN `Single`, NO UNO EN `Double` (motor-86).
+            '
+            ' El motor hace `maxss` → `mulss` → `addss` → `cvttss2si`: el producto y la suma
+            ' redondean CADA UNO a `float32`. Hacerlo en `Double` y truncar una sola vez da otro
+            ' entero, y con él otros bits en el `exp` — o sea en TODO peso gaussiano y en todo
+            ' plano acumulado. MEDIDO sobre 200.001 muestras de `x ∈ [−87, 0]`: **196.870 dan un
+            ' entero distinto**; con `x = −1,5` el motor da `1046654016` y la cuenta en `Double`
+            ' daba `1046653991`.
+            Dim v = Math.Max(x, PisoDelExponente)                  ' 0x141A1591E maxss
+            Dim m As Single = CSng(v * EscalaDeExp)                ' 0x141A15925 mulss  — UN redondeo
+            Dim s As Single = CSng(m + SesgoDeExp)                 ' 0x141A1592D addss  — OTRO
+            Return BitConverter.Int32BitsToSingle(Simd.ATruncado(s))   ' 0x141A15935 cvttss2si
         End Function
 
         ' -----------------------------------------------------------------------------------------
@@ -736,7 +811,16 @@ Namespace Havok.Motor
                 If Simd.Lane0(n2) <= 0.0F Then Continue For               ' 0x141A14584/86
                 Dim nHat = Vector128.Multiply(v, Simd.RsqrtNewtonConGuarda(n2))
                 Dim pos = Simd.Leer(inst.Posiciones, p)
-                Dim d = Simd.Lane0(Simd.Dot3(pos, nHat)) + Vector128.GetElement(nHat, 3)
+                ' ⛔⛔ ACÁ ES LA HSUM DE **CUATRO** LANES, NO `Dot3` MÁS LA `w` APARTE (motor-87).
+                ' `0x141A14593 unpckhps` + `0x141A14596 shufps 0xC4` arman
+                ' `(P.x·n̂.x, P.y·n̂.y, P.z·n̂.z, n̂.w)` y recién ahí van los dos `shufps`
+                ' (`0x141A1459D` `0x4E` y `0x141A145A7` `0xB1`): `(x + z) + (y + w)`.
+                ' `Dot3` asocia `((y+x)+z)` y sumarle `w` después da `((y+x)+z)+w` — otros bits.
+                ' ⚠️ Es la MISMA divergencia que este archivo ya señalaba para `Formas.Plano`, y acá
+                ' estaba escrita al revés.
+                Dim pn = Vector128.Multiply(pos, nHat)                   ' 0x141A1458D mulps
+                Dim d = Simd.Lane0(Simd.Hsum4(pn.WithElement(Simd.LaneW,
+                                              Vector128.GetElement(nHat, Simd.LaneW))))
                 Simd.Escribir(acum, p, nHat.WithElement(Simd.LaneW, -(d + radio)))
             Next
         End Sub
@@ -787,28 +871,61 @@ Namespace Havok.Motor
                 enlaces As List(Of EnlaceDeTerreno)) As Single()
             If Not Habilitado(inst, mundo, numParticulasDeTerreno, True) Then Return Nothing
 
-            ' el scratch: un `vec4` por partícula MÁS CUATRO de guarda (`0x14195DB1C`, `esi + 4`)
+            ' ⚠️ `0x14195DB16`-`37` reserva las ENTRADAS DEL BROADPHASE (16 B cada una) más los
+            ' CUATRO centinelas `0xFFFF` que escribe `0x141A14F92`-`FC4` — no «un `vec4` por
+            ' partícula más cuatro de guarda», que es lo que decía acá (motor-90). El acumulador es
+            ' el buffer del LLAMADOR, que `0x141A14060` pone a cero para `[inst+0x20]` partículas.
+            ' Sobreasignar no tiene consecuencia, pero la cita estaba mal.
             Dim acum((inst.NumParticulas + 4) * 4 - 1) As Single
 
             Dim cajaLo As Vector128(Of Single) = Nothing
             Dim cajaHi As Vector128(Of Single) = Nothing
             CajaDeTrabajo(mundo, cajaLo, cajaHi)
             ' 0x141A140B5/C4: la caja se ensancha por el margen global ANTES de filtrar partículas
-            Dim m = Vector128.Create(mundo.Margen)
+            ' ⛔ `simulationInfo.collisionTolerance` (+0x14), no un global del mundo (motor-83).
+            Dim margen = inst.ToleranciaDeColision
+            Dim m = Vector128.Create(margen)
             Dim expLo = Vector128.Subtract(cajaLo, m)
             Dim expHi = Vector128.Add(cajaHi, m)
 
             Dim q = HacerCuantizador(inst.AabbMinMascara, inst.AabbMaxMascara)
-            Dim ep = EntradasDeParticula(inst, q, expLo, expHi, mundo.Margen)
+            Dim ep = EntradasDeParticula(inst, q, expLo, expHi, margen)
             If ep.Count = 0 Then Return acum                              ' 0x14195DC23/32
             Ordenar(ep)
 
-            If mundo.Triangulos.Length > 0 Then
-                Dim et = EntradasDeTriangulo(mundo.Triangulos, q)
-                Ordenar(et)
-                ColisionarTriangulos(inst, mundo, radio, Pares(ep, et), acum)
+            If mundo.HayTriangulos Then
+                ' ⛔⛔ POR LOTES DE 0xFFF0, NO DE UNA (motor-91) — `0x14195DC8F`-`0x14195DCC2`:
+                '
+                '     ebx = 0xFFF0 ; si quedan menos, ebx = los que quedan   ' cmovl 0x14195DCA5
+                '     0x141A14130(inst, puntero, ebx, …)                     ' cuantiza + ordena + barre
+                '     puntero += ebx · 0x30                                   ' 3 hkVector4 por triángulo
+                '
+                ' Cada lote se ordena y barre POR SEPARADO, así que los pares salen agrupados por
+                ' lote. Con más de 65.520 triángulos, el orden en que cada partícula acumula
+                ' cambia — y en punto flotante eso son otros bits. Una sola pasada no es la
+                ' misma ley aunque hoy ninguna escena llegue a ese número.
+                Dim desde = 0
+                While desde < mundo.Triangulos.Length
+                    Dim lote = Math.Min(TrianguloPorLote, mundo.Triangulos.Length - desde)
+                    Dim tramo(lote - 1) As TrianguloDeTerreno
+                    Array.Copy(mundo.Triangulos, desde, tramo, 0, lote)
+                    Dim et = EntradasDeTriangulo(tramo, q)
+                    Ordenar(et)
+                    ' ⛔ El índice que viaja en el par es el del LOTE, y `ColisionarTriangulos` lo
+                    ' usa contra `mundo.Triangulos`: se le suma la base para que apunte al mismo
+                    ' triángulo que el motor.
+                    Dim paresLote As List(Of ParDeTerreno) = Pares(ep, et)
+                    If desde > 0 Then
+                        For k = 0 To paresLote.Count - 1
+                            paresLote(k) = New ParDeTerreno(paresLote(k).Particula,
+                                                            paresLote(k).Objeto + desde)
+                        Next
+                    End If
+                    ColisionarTriangulos(inst, mundo, radio, paresLote, acum)
+                    desde += lote
+                End While
             End If
-            If mundo.Convexos.Length > 0 Then
+            If mundo.HayConvexos Then
                 ColisionarConvexos(inst, mundo, radio, ep, acum)
             End If
 

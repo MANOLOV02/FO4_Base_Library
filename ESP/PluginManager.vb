@@ -1190,6 +1190,13 @@ Public Class PluginManager
     ''' <para>NO confundir con <see cref="PartialIndexOfFormID"/>, justo arriba: aquélla devuelve el
     ''' ÍNDICE del plugin y ésta el OBJECT ID del record — las dos mitades complementarias del mismo
     ''' FormID (<c>ModInfo::GetPartialIndex</c> y el inverso de <c>ModInfo::GetFormID</c>).</para></summary>
+    ''' <para>⛔⛔ AHORA CON LA CITA DEL MOTOR, que hasta aca era una observacion del editor. El
+    ''' juego arma la ruta con `Meshes\Actors\Character\FaceGenData\FaceGeom\%s\%08X.NIF` y enmascara el
+    ''' FormID justo antes de formatearlo: `mov ecx, 0xFFFFFF` / `mov edx, 0xFFF` / `cmovne ecx, edx` /
+    ''' `and ecx, ebx`, eligiendo el de 12 bits cuando el archivo es liviano.
+    ''' Fallout 4: 0x140658EDF..0x140658EF8, cadena en 0x1424D6E38.
+    ''' Skyrim SE: 0x1403C2E7E..0x1403C2E97, cadena en 0x14185F3B0.
+    ''' O sea la MISMA regla que esta escrita abajo, y ahora sale del `.exe` y no de mirar que produce el CK.</para></summary>
     Public Shared Function ToFaceGenLocalFormID(globalFormID As UInteger) As UInteger
         If (globalFormID >> 24) = &HFEUI Then Return globalFormID And &HFFFUI
         Return globalFormID And &HFFFFFFUI

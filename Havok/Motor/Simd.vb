@@ -71,16 +71,22 @@ Namespace Havok.Motor
         Friend DivExacta As Long
         Friend SqrtExacta As Long
         Friend PowCrt As Long
+        ''' <summary>`rcpps` CRUDO, sin Newton y sin guarda — la rama `scaleNormalBehaviour = 2` de
+        ''' `hclMeshMeshDeformOperator` (`0x141953819`). Es una CLASE distinta de
+        ''' <see cref="RcpNewton"/> y por eso lleva su propio contador.</summary>
+        Friend RcpCrudo As Long
 
-        ''' <summary>Pone las seis en cero. El arnés lo llama antes de cada caso.</summary>
+        ''' <summary>Pone las siete en cero. El arnés lo llama antes de cada caso.</summary>
         Friend Sub Cerar()
             RsqrtCrudo = 0 : RsqrtNewton = 0 : RcpNewton = 0
-            DivExacta = 0 : SqrtExacta = 0 : PowCrt = 0
+            DivExacta = 0 : SqrtExacta = 0 : PowCrt = 0 : RcpCrudo = 0
         End Sub
 
-        ''' <summary>Las seis, en el orden de los campos, para compararlas de un saque.</summary>
+        ''' <summary>Las siete, en el orden de los campos, para compararlas de un saque.
+        ''' <para>⛔ `RcpCrudo` va AL FINAL a propósito: los gates indexan por posición
+        ''' (`cu(0)`, `cu(1)`, `cu(2)`), así que agregar al final no corre ningún índice vivo.</para></summary>
         Friend Function Instantanea() As Long()
-            Return New Long() {RsqrtCrudo, RsqrtNewton, RcpNewton, DivExacta, SqrtExacta, PowCrt}
+            Return New Long() {RsqrtCrudo, RsqrtNewton, RcpNewton, DivExacta, SqrtExacta, PowCrt, RcpCrudo}
         End Function
 
     End Module
@@ -132,6 +138,57 @@ Namespace Havok.Motor
         Friend Function RcpNewton(x As Vector128(Of Single)) As Vector128(Of Single)
             CuentasDeSimd.RcpNewton += 1L                    ' motor-60, el instrumento del mapa
             Return Vector128.Divide(Vector128.Create(1.0F), x)
+        End Function
+
+        ''' <summary>
+        ''' `rcpps` **crudo**: sin Newton y **sin guarda**.
+        ''' <para>Sitio: la rama `scaleNormalBehaviour = 2` del marco de triángulo de
+        ''' `hclMeshMeshDeformOperator` (`0x141953819 rcpps` + `0x14195381C mulps`), que escala la
+        ''' normal por la INVERSA del área.</para>
+        ''' <para>⛔⛔ Ahí **no hay `cmpleps`/`andnps`**, a diferencia de
+        ''' <see cref="RsqrtConGuarda"/>: con un triángulo degenerado el motor produce `+inf` y lo
+        ''' propaga. Ponerle una guarda que el motor no tiene es inventar.</para>
+        ''' </summary>
+        <MethodImpl(MethodImplOptions.AggressiveInlining)>
+        Friend Function RcpCrudo(x As Vector128(Of Single)) As Vector128(Of Single)
+            CuentasDeSimd.RcpCrudo += 1L                     ' motor-60, el instrumento del mapa
+            Return Vector128.Divide(Vector128.Create(1.0F), x)
+        End Function
+
+        ''' <summary>
+        ''' ⭐ La suma horizontal de las **CUATRO** lanes, `(x + z) + (y + w)`, por dos `shufps`.
+        ''' <para>⛔⛔ **NO es `Dot3` más la `w` aparte.** `Dot3` asocia `((y + x) + z)` y después
+        ''' sumarle `w` da `((y+x)+z)+w`; esto da `(x+z)+(y+w)`. En punto flotante son **otros
+        ''' bits**, y la diferencia se ve con lanes de magnitudes distintas.</para>
+        ''' <para>⭐ **UNA ley, UN lugar.** El motor la usa en tres sitios y los tres son la misma
+        ''' red: el plano de `Formas` (`0x141A6E8C2` `0x4E` + `0x141A6E8CC` `0xB1`), la norma del
+        ''' cuaternión de `hclSkinOperator` (`0x141909DFF` + `0x141909E10`, y `0x14191003E` +
+        ''' `0x14191004F` para el dual mezclado) y la salida de planos del terreno
+        ''' (`0x141A1459D` + `0x141A145A7`). Tenerla escrita tres veces era la duplicación que la
+        ''' regla del workspace prohíbe.</para>
+        ''' </summary>
+        <MethodImpl(MethodImplOptions.AggressiveInlining)>
+        Friend Function Hsum4(p As Vector128(Of Single)) As Vector128(Of Single)
+            Dim s = Vector128.Add(Vector128.Shuffle(p, Vector128.Create(2, 3, 0, 1)), p)
+            Return Vector128.Add(Vector128.Shuffle(s, Vector128.Create(1, 0, 3, 2)), s)
+        End Function
+
+        ''' <summary>
+        ''' `cvttss2si` — trunca hacia cero, y si no entra en 32 bits devuelve el «entero
+        ''' indefinido» `0x80000000`, que es lo que el x86 pone.
+        ''' <para>⭐ **UNA ley, UN lugar.** Sitios: el `VC_SHORT3` de salida de `Convertir`
+        ''' (`0x14195ECC0`, `0x14195ECCC`, `0x14195ECD9`), el `exp` por bits del terreno
+        ''' (`0x141A15935`) y la cuantización de la broadphase (`0x141A1518B`).</para>
+        ''' <para>⛔⛔ Y no es un detalle de estilo: `CInt(Double)` en VB compila a `conv.ovf.i4` y
+        ''' **lanza** `OverflowException` con `NaN` o fuera de rango, justo donde el motor escribe
+        ''' `0x80000000` y sigue. Ya mordió dos veces en este árbol.</para>
+        ''' </summary>
+        <MethodImpl(MethodImplOptions.AggressiveInlining)>
+        Friend Function ATruncado(x As Single) As Integer
+            If Single.IsNaN(x) OrElse x >= 2147483648.0F OrElse x < -2147483648.0F Then
+                Return Integer.MinValue
+            End If
+            Return CInt(Math.Truncate(CDbl(x)))
         End Function
 
         ''' <summary>

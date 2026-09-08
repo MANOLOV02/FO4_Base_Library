@@ -176,11 +176,19 @@ Namespace Havok.Motor
     Friend NotInheritable Class OpDeformar
         Inherits OperadorCompilado
 
+        ''' <summary>El buffer de simulación del que salen los triángulos. **Sólo lectura**, para
+        ''' que el arnés pueda medir el marco de un cloth-bone concreto (motor-84).</summary>
+        Friend ReadOnly BufferDeEntrada As Integer
+
         Private ReadOnly _bufferDeEntrada As Integer
 
         ''' <summary>`op.outputTransformSetIdx` (+0x24) — donde el deform deja la pose de los
         ''' cloth-bones. Lo lee el cableado para escribir la capa de fisica.</summary>
         Friend ReadOnly TransformSetDeSalida As Integer
+        ''' <summary>Los `triangleBonePairs` `{boneOffset, triangleOffset}`. **Sólo lectura**, para
+        ''' el diagnóstico del arnés.</summary>
+        Friend ReadOnly Pares As Integer()()
+
         Private ReadOnly _pares As Integer()()
         Private ReadOnly _localBoneTransforms As Mat4()
 
@@ -197,8 +205,10 @@ Namespace Havok.Motor
                        pares As Integer()(), localBoneTransforms As Mat4(), nombre As String)
             MyBase.New(17, nombre)
             _bufferDeEntrada = bufferDeEntrada
+            Me.BufferDeEntrada = bufferDeEntrada
             Me.TransformSetDeSalida = transformSetDeSalida
             _pares = pares
+            Me.Pares = pares
             _localBoneTransforms = localBoneTransforms
             Dim vistos As New HashSet(Of Integer)()
             If pares IsNot Nothing Then
@@ -241,6 +251,35 @@ Namespace Havok.Motor
             Operadores.CopiarVertices(Buffers.Real(ctx.Buffers, _entrada),
                                       Buffers.Real(ctx.Buffers, _salida),
                                       _inicioEntrada, _inicioSalida, _numVertices, _copiarNormales)
+        End Sub
+
+    End Class
+
+    ''' <summary>
+    ''' `hclMeshMeshDeformOperator` — type **5**, `0x1419529F0` («TtMesh Mesh Deform»).
+    ''' <para>⛔ Los DOS buffers entran con **doble indirección** (`0x1418C5EEF`-`0x1418C5F18`:
+    ''' `buffers[ buffers[idx][+0x100] ]`), como `LocalRange` y a diferencia de `Convertir`.</para>
+    ''' <para>La cadena es: marcos de triángulo → al espacio de salida → deform. Ver
+    ''' <see cref="MallaAMallaPorPares"/>.</para>
+    ''' </summary>
+    Friend NotInheritable Class OpMallaAMallaPorPares
+        Inherits OperadorCompilado
+
+        Private ReadOnly _op As MallaAMallaPorParesCompilada
+
+        Friend Sub New(op As MallaAMallaPorParesCompilada, nombre As String)
+            MyBase.New(5, nombre)
+            _op = op
+        End Sub
+
+        Friend Overrides Sub Ejecutar(ByRef ctx As ContextoDeCadena)
+            If _op Is Nothing Then Return
+            Dim entrada = Buffers.Real(ctx.Buffers, _op.BufferDeEntrada)
+            Dim salida = Buffers.Real(ctx.Buffers, _op.BufferDeSalida)
+            If entrada Is Nothing OrElse salida Is Nothing Then Return
+            Dim marcos = MallaAMallaPorPares.Marcos(_op, entrada)     ' 0x141952B22/29/30
+            MallaAMallaPorPares.AEspacioDeSalida(marcos, entrada, salida)   ' 0x141952B35-CCD
+            MallaAMallaPorPares.Deformar(_op, marcos, salida)         ' 0x141952E38-6F
         End Sub
 
     End Class

@@ -1195,6 +1195,29 @@ Namespace Havok.Motor
                                             AEnteros(oDefH.TriangleBoneStartForBone), oDefH.Name)
             End If
 
+            ' ⭐⭐ `hclMeshMeshDeformOperator` — type 5, `0x1419529F0`.
+            ' ⛔ NO es la familia `*MeshMeshDeform*` de 26-33: es una clase aparte, con
+            ' `triangleVertexPairs` propios. Ver `MallaAMallaPorPares.vb`.
+            Dim oMM = HkObj_HclMeshMeshDeformOperator.Leer(g, crudo)
+            If oMM IsNot Nothing Then
+                Dim pr = oMM.TriangleVertexPairs
+                Dim nP = If(pr Is Nothing, 0, pr.Count)
+                Dim pares5(Math.Max(0, nP - 1)) As ParDeVerticeDeTriangulo
+                For k = 0 To nP - 1
+                    pares5(k).PosicionLocal = V4(pr(k).LocalPosition)
+                    pares5(k).NormalLocal = V4(pr(k).LocalNormal)
+                    pares5(k).Triangulo = pr(k).TriangleIndex
+                    pares5(k).Peso = pr(k).Weight
+                Next
+                Dim comp As New MallaAMallaPorParesCompilada(
+                    AEnteros(oMM.InputTrianglesSubset), pares5,
+                    AEnteros(oMM.TriangleVertexStartForVertex),
+                    CInt(oMM.InputBufferIdx), CInt(oMM.OutputBufferIdx),
+                    oMM.StartVertex, oMM.EndVertex, oMM.ScaleNormalBehaviour,
+                    oMM.DeformNormals, oMM.PartialDeform)
+                Return New OpMallaAMallaPorPares(comp, oMM.Name)
+            End If
+
             ' ⭐ LAS CUATRO VARIANTES DE PIEL EN ESPACIO DE HUESO (types 18 a 21).
             Dim pHueso = PielDeHuesoDe(g, crudo)
             If pHueso IsNot Nothing Then Return New OpPielDeHueso(pHueso, NombreDeHueso(g, crudo))
@@ -1397,7 +1420,10 @@ Namespace Havok.Motor
             If sim Is Nothing Then Return Nothing
             Dim inst As New Instancia(sim)
             Dim info = sim.SimulationInfo
-            If info IsNot Nothing Then inst.ToleranciaDeColision = info.CollisionTolerance
+            If info IsNot Nothing Then
+                inst.ToleranciaDeColision = info.CollisionTolerance
+                inst.LandscapeHabilitado = info.LandscapeCollisionEnabled   ' +0x1D, 0x14195E3B2
+            End If
             Return inst
         End Function
 

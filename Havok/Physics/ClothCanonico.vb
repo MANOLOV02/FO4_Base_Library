@@ -41,6 +41,26 @@ Namespace Havok.Physics
         ''' <summary>El estado vivo por bloque. ⛔ Persiste entre frames — ver la cabecera.</summary>
         Private Shared ReadOnly _prendas As New Dictionary(Of BSClothExtraData, Havok.Motor.PrendaSimulada())
 
+        ''' <summary>
+        ''' Las prendas simuladas vivas, para que el ARNÉS pueda medir adentro.
+        ''' <para>⛔ Sólo lectura y sólo Debug: no cambia ninguna ley, expone lo que ya existe. Hace
+        ''' falta porque medir el marco de triángulo de un cloth-bone concreto —el `|a × b|` en el
+        ''' bind contra el `|a × b|` en el frame que da la púa— requiere el buffer de simulación y
+        ''' los pares del deform, y los dos viven acá adentro.</para>
+        ''' </summary>
+        Friend Shared Function PrendasVivas() As List(Of Havok.Motor.PrendaSimulada)
+            Dim r As New List(Of Havok.Motor.PrendaSimulada)()
+            SyncLock _prendas
+                For Each kv In _prendas
+                    If kv.Value Is Nothing Then Continue For
+                    For Each p In kv.Value
+                        If p IsNot Nothing Then r.Add(p)
+                    Next
+                Next
+            End SyncLock
+            Return r
+        End Function
+
         ''' <summary>Los esqueletos a los que esta simulación le escribió la capa, para poder
         ''' limpiarla cuando se apaga.</summary>
         Private Shared ReadOnly _tocados As New ConcurrentDictionary(Of SkeletonInstance, Object)

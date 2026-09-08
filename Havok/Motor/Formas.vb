@@ -548,8 +548,7 @@ Namespace Havok.Motor
             Dim m = Vector128.Multiply(plano, p)                            ' 0x141A6E8A7 mulps
             ' (m.x, m.y, m.z, plano.w) — 0x141A6E8B8 unpckhps + 0x141A6E8BB shufps 0xC4
             Dim q = m.WithElement(Simd.LaneW, plano.GetElement(Simd.LaneW))
-            Dim h = Vector128.Add(Vector128.Shuffle(q, Vector128.Create(2, 3, 0, 1)), q)  ' 0x141A6E8C2/C6
-            Return Vector128.Add(Vector128.Shuffle(h, Vector128.Create(1, 0, 3, 2)), h)   ' 0x141A6E8CC/D0
+            Return Simd.Hsum4(q)                          ' 0x141A6E8C2/C6 + 0x141A6E8CC/D0
         End Function
 
     End Class

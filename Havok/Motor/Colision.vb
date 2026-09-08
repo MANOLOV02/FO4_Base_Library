@@ -184,6 +184,41 @@ Namespace Havok.Motor
         ''' <summary>La VA del `return` común de los tipos 4, 6, 7 y 8.</summary>
         Friend Const VaDelReturn As ULong = &H141A75D5CUL
 
+        ''' <summary>
+        ''' ⭐⭐ El `type` que le toca a cada clase de shape — **la otra mitad** de
+        ''' <see cref="TablaDeDespacho"/>, que va de `type` a kernel.
+        ''' <para>⛔ `hclShape.type` (+0x10) viene en CERO en el archivo: lo escribe el CONSTRUCTOR
+        ''' al cargar. Por eso esto no se puede leer del `.hkx` y por eso es una ley del motor.</para>
+        ''' <para>Los ocho sitios, derivados por RTTI → COL → vtable → el `lea` que la instala →
+        ''' el `mov dword ptr [rcx+0x10], imm32`, y **verificados byte a byte por `GEX3`**:</para>
+        ''' <para>`0x1418E69DC` 0 · `0x1418E585C` 1 · `0x1418E2D0C` 2 · `0x1418E739C` 3 ·
+        ''' `0x1418E392C` 5 · `0x1418E382C` 9 · `0x14196092E` 10 · `0x1418E3B8C` 11.</para>
+        ''' <para>⛔ Los tipos **4, 6, 7 y 8** no tienen clase: son las cuatro entradas que
+        ''' apuntan al `return` de <see cref="TablaDeDespacho"/>. Y el **10**
+        ''' (`hclPointContactPlanesShape`) no está en la reflexión — lo fabrica
+        ''' `computeContactPlanes` en runtime —, así que nunca sale de un archivo.</para>
+        ''' <para>⭐ Es la expectativa INDEPENDIENTE que usa el censo (M14) para comprobar lo que
+        ''' devuelve `Fachada.FormaDeColisionable`: `Forma.Tipo` lo pone cada subclase en
+        ''' `Formas.vb` y esto sale de los ctores del binario. Dos sitios, no uno.</para>
+        ''' <para>Devuelve **−1** para una clase que no es un shape con `type`.</para>
+        ''' </summary>
+        Friend Function TipoDeShapePorClase(nombre As String) As Integer
+            If String.IsNullOrEmpty(nombre) Then Return -1
+            Select Case nombre
+                Case Havok.Canon.Objects.HkObj_HclSphereShape.NombreDeClase : Return 0
+                Case Havok.Canon.Objects.HkObj_HclPlaneShape.NombreDeClase : Return 1
+                Case Havok.Canon.Objects.HkObj_HclCapsuleShape.NombreDeClase : Return 2
+                Case Havok.Canon.Objects.HkObj_HclTaperedCapsuleShape.NombreDeClase : Return 3
+                Case Havok.Canon.Objects.HkObj_HclConvexHeightFieldShape.NombreDeClase : Return 5
+                Case Havok.Canon.Objects.HkObj_HclConvexGeometryShape.NombreDeClase : Return 9
+                ' ⛔ Éste no tiene clase generada porque no está en la reflexión; el nombre sale
+                ' del RTTI del binario (`.?AVhclPointContactPlanesShape@@`).
+                Case "hclPointContactPlanesShape" : Return 10
+                Case Havok.Canon.Objects.HkObj_HclConvexPlanesShape.NombreDeClase : Return 11
+                Case Else : Return -1
+            End Select
+        End Function
+
         ''' <summary>`True` si ese `type` no hace nada: fuera de rango (`0x141A71702`: `si t > 11`) o
         ''' uno de los cuatro que apuntan al `return`.</summary>
         Friend Function NoHaceNada(tipo As Integer) As Boolean

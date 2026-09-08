@@ -60,6 +60,16 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>MotorFisicaGate</_Parameter1>
     </AssemblyAttribute>
+    <!-- Tools/ClothPhysicsGate: el arnes VISUAL, el unico que corre el motor sobre prendas REALES y
+         saca PNG. Necesita llegar a `ClothCanonico.PrendasVivas` y a `OpDeformar` / `Polar` (todos
+         `Friend`) para medir el `|a x b|` del marco de triangulo de un cloth-bone concreto: la
+         explicacion de por que un hueso se va 120 u en el estado `Animate` dice que el estiron entra
+         AL CUADRADO por ese termino, y sin medirlo sobre la prenda de verdad la explicacion es una
+         deduccion, no una medicion (motor-84). `Havok.Motor` vive entero dentro de `#If DEBUG`, asi
+         que en Release no hay ni tipos que exponer. NADA se vuelve Public por esto. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ClothPhysicsGate</_Parameter1>
+    </AssemblyAttribute>
     <!-- Tools/HkxLoadOrderAudit: es la probe que corre sobre el CORPUS REAL (BA2 + loose). El censo
          M14 construye la `Forma` de cada `hclCollidable` de verdad con `Havok.Motor.Fachada` y
          comprueba que el tipo salga el del archivo. Sin eso, la unica prueba de la traduccion son

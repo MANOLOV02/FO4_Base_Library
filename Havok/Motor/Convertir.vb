@@ -332,10 +332,9 @@ Namespace Havok.Motor
         ''' y `0x14195ECD9`, los tres del `VC_SHORT3` de salida.
         ''' </summary>
         Private Function ATruncado(x As Single) As Integer
-            If Single.IsNaN(x) OrElse x >= 2147483648.0F OrElse x < -2147483648.0F Then
-                Return Integer.MinValue
-            End If
-            Return CInt(Math.Truncate(CDbl(x)))
+            ' ⭐ LA LEY VIVE EN `Simd.ATruncado`: el mismo `cvttss2si` lo usan el `exp` del terreno
+            ' (`0x141A15935`) y la cuantización de la broadphase (`0x141A1518B`).
+            Return Simd.ATruncado(x)
         End Function
 
         ''' <summary>

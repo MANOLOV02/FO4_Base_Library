@@ -545,8 +545,9 @@ Namespace Havok.Motor
         ''' (`0x14191003E`/`0x14191004F`).</para>
         ''' </summary>
         Friend Function Hsum4(p As Vector128(Of Single)) As Vector128(Of Single)
-            Dim s = Vector128.Add(Vector128.Shuffle(p, Vector128.Create(2, 3, 0, 1)), p)
-            Return Vector128.Add(Vector128.Shuffle(s, Vector128.Create(1, 0, 3, 2)), s)
+            ' ⭐ LA LEY VIVE EN `Simd.Hsum4`. Acá quedó el nombre local porque es el que usan los
+            ' dos sitios de este archivo; el cuerpo estaba DUPLICADO con `Formas` y con el terreno.
+            Return Simd.Hsum4(p)
         End Function
 
         ''' <summary>El `xorps` contra `{0x80000000 ×4}` de `0x141909E0A` — voltea las CUATRO

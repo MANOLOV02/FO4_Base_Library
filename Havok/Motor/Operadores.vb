@@ -207,22 +207,27 @@ Namespace Havok.Motor
         ''' <para>**Prueba de identidad**: con `[R0;R1;R2]` ortonormal a derechas, `U = R2×R0 = R1` y
         ''' `V = U×R2 = R0` ⇒ devuelve la misma terna. Toda transcripción tiene que pasarla — es la
         ''' rutina que ya falló una vez en este árbol, con dos filas intercambiadas.</para>
-        ''' <para>⭐⭐ **EL MARCO ESCALA CON EL ÁREA, Y ESO SE VE.** `n = a × b` va **crudo**: el cruz
-        ''' de dos `shufps` de `0x14195B415`-`0x14195B43D` no tiene ni un `rsqrt`. Como la traslación
-        ''' lleva el término `L.z · n`, un estirón del triángulo entra **al cuadrado**.</para>
-        ''' <para>MEDIDO en `ClothPhysicsGate` sobre `PrewarDress` con el clip
-        ''' `Stand_to_Run_L180`, en el estado `Animate` (`ObjectSpaceSkinPN → CopyVertices →
-        ''' SimpleMeshBoneDeform`, o sea sin solver): el desvío del peor cloth-bone recorre
-        ''' `10,5 · 34,2 · 54,7 · 116,3 · 120,6 · 97,2 u` siguiendo el paso, y el pico es
-        ''' `Bone_Cloth_H_007`, que se va de `(-2,2, -21,73, 28,48)` a `(-121,06, -13,25, 46,75)` —
-        ''' una púa visible en el PNG. La serie es **suave**, no salta, y cierra con la cuenta: el
-        ''' arnés ya tenía medido que esa malla se estira sola **x8,24** en ese estado, y
-        ''' `8,24² ≈ 68` por un brazo de ~1,8 u da los ~120 u observados.</para>
+        ''' <para>⭐⭐ **EL MARCO ESCALA CON EL ÁREA.** `n = a × b` va **crudo**: el cruz de dos
+        ''' `shufps` de `0x14195B415`-`0x14195B43D` no tiene ni un `rsqrt`. Como la traslación lleva
+        ''' el término `L.z · n`, un estirón del triángulo entra **al cuadrado**.</para>
+        ''' <para>⭐ MEDIDO, y AISLADO de cualquier prenda — `GO4f` de `MotorFisicaGate`: con
+        ''' `L.F3 = (0, 0, 1, 0)` para que sólo quede el término `L.z·n`, escalar el triángulo por
+        ''' **3** multiplica la traslación por **9** (0,33333325 → 3), no por 3.</para>
         ''' <para>⛔ NO es un defecto de la transcripción: bajo giro **rígido** el mismo camino da
-        ''' x1,008 y 0,006 u de movimiento (ley L6), o sea que los `localBoneTransform` y el indexado
-        ''' de pares están bien. Es lo que el estado hace, y es la razón de que el motor **simule**:
-        ''' con el solver adentro la misma serie queda acotada en `7,9`-`36,3 u`, porque el solver
-        ''' mantiene la malla cerca de su reposo y `|n|` cerca del de bind.</para>
+        ''' x1,008 y 0,006 u de movimiento (ley `L6a` de `ClothPhysicsGate`). ⚠️ Eso descarta las
+        ''' matrices mal compuestas **que fallan bajo rotación**; NO descarta una influencia que
+        ''' resuelva al hueso equivocado cuando dos huesos coinciden en bind, que también daría
+        ''' bind exacto y giro rígido exacto.</para>
+        ''' <para>OBSERVADO (no es prueba, es el síntoma que llevó a mirar): en `ClothPhysicsGate`
+        ''' con `PrewarDress` y el clip `Stand_to_Run_L180`, en el estado `Animate`
+        ''' (`ObjectSpaceSkinPN → CopyVertices → SimpleMeshBoneDeform`, sin solver), el desvío del
+        ''' peor cloth-bone recorre `10,5 · 34,2 · 54,7 · 116,3 · 120,6 · 97,2 u` siguiendo el paso,
+        ''' con pico en `Bone_Cloth_H_007`; con solver queda acotado en `7,9`-`36,3 u`.</para>
+        ''' <para>⛔⛔ Acá antes decía que eso prueba el mecanismo porque `8,24² × 1,8 ≈ 120`, y esa
+        ''' cuenta es CIRCULAR (motor-84): el x8,24 se mide sobre la malla que estos mismos
+        ''' cloth-bones deforman, así que el efecto explicaba la causa — y el «brazo de 1,8 u» no
+        ''' estaba medido en ninguna parte. También decía que «es la razón de que el motor
+        ''' SIMULE»: eso es una conjetura sobre el diseño de Havok, sin cita, y sale.</para>
         ''' </summary>
         Friend Sub DeformarHuesosSimple(buf As Buffer, transforms As Mat4(),
                                         pares As Integer()(), localBoneTransforms As Mat4())

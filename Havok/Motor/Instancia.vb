@@ -107,6 +107,15 @@ Namespace Havok.Motor
         ''' los dos ultimos AABB (`0x1418C750A`).</summary>
         Friend ToleranciaDeColision As Single
 
+        ''' <summary>
+        ''' `simulationInfo.landscapeCollisionEnabled` (`+0x1D` de la reflexión), el permiso que
+        ''' lee la puerta del terreno por `getSimulationInfo` (`0x14195E3AE`/`B2`).
+        ''' <para>⛔ Sale del ARCHIVO, no del mundo (motor-83). Vive acá por el MISMO motivo que
+        ''' <see cref="ToleranciaDeColision"/>: la fachada lo copia del dato y el motor lo lee de la
+        ''' instancia, que es lo que hace la ley medible con un fixture.</para>
+        ''' </summary>
+        Friend LandscapeHabilitado As Boolean
+
         ''' <summary>`data.staticCollisionMasks` (+0xF8): una máscara `uint32` por partícula. El
         ''' bit que se consulta para el colisionable `ci` es `1 &lt;&lt; min(ci, 30)`
         ''' (`0x141A71641`, `0x141A71893`). `Nothing` si el dato no la trae.
