@@ -196,7 +196,7 @@ Public Class Config_App
         ' solver SI viajan en el DLL de Publish. La afirmacion no cambiaba nada del comportamiento, pero
         ' mandaba a cualquiera que la leyera a auditar un contrato que no era el real.
         ' LO QUE SIGUE ABIERTO, y es la mitad que el contrato SI exige: `HclClothPackageParser.vb:259`
-        ' recorre `HavokClothSimulation.OperadoresQueEjecuta` SIN condicional (ese archivo no tiene ni un
+        ' recorre `Havok.Motor.Declarado.OperadoresQueEjecuta` SIN condicional (ese archivo no tiene ni un
         ' `#If DEBUG`), asi que hay que trazar si ese camino se alcanza en Release y que cuesta.
         ' Con esto apagado, `Render` ni siquiera arma el diccionario de instancias por frame.
 #If DEBUG Then
@@ -204,8 +204,14 @@ Public Class Config_App
 #Else
         Havok.Physics.HavokPhysicsSettings.Enabled = False
 #End If
+        ' ⛔ EL TECHO SALE DEL ENUM, NO DE UN NÚMERO A MANO. Acá decía `Math.Min(2, …)`, de cuando el
+        ' enum terminaba en `FullSimulation`. Al agregarse `MotorCanonico = 3` el recorte lo devolvió
+        ' a 2 EN SILENCIO: el arnés de física pedía el motor canónico, corría el viejo, y el A/B daba
+        ' "idénticos" — la conclusión más creíble y la más falsa. Un techo escrito a mano al lado de
+        ' un enum que crece es una medición falsa esperando.
         Havok.Physics.HavokPhysicsSettings.Mode =
-            CType(Math.Max(0, Math.Min(2, Setting_HavokPhysicsMode)), Havok.Physics.HavokPhysicsMode)
+            CType(Math.Max(0, Math.Min(Havok.Physics.RangoDeModo.Maximo, Setting_HavokPhysicsMode)),
+                  Havok.Physics.HavokPhysicsMode)
         Havok.Physics.HavokPhysicsSettings.GravityScale = Setting_HavokPhysicsGravityScale
     End Sub
     ' WM inspection toggle: when True, EnsureZapIndexBuffer bypasses per-segment occlusion so all geometry

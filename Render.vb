@@ -1107,7 +1107,12 @@ Public Class PreviewControl
                         lst.Add(mesh.MeshData.Shape)
                     Next
                     For Each kv In physByInstance
-                        Havok.Physics.HavokClothSimulation.StepShapes(kv.Value, kv.Key, Havok.Physics.HavokPhysicsSettings.FrameDeltaSeconds)
+                        ' ⛔ La fisica de tela es Debug-only: en Release este bloque no existe. El guarda
+                        ' de arriba (`Enabled`) ya deja el diccionario sin armar, asi que el costo en
+                        ' Release es cero.
+#If DEBUG Then
+                        Havok.Physics.ClothCanonico.StepShapes(kv.Value, kv.Key, Havok.Physics.HavokPhysicsSettings.FrameDeltaSeconds)
+#End If
                     Next
                 End If
             Catch exPhys As Exception

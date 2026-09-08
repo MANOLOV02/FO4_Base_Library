@@ -31,6 +31,14 @@
     <MyType>Windows</MyType>
   </PropertyGroup>
 
+  <!-- Identidad que ve el usuario: Propiedades del archivo en Windows y el volcado de ensamblados
+       de un reporte de caida. El NUMERO no esta aca: sale del Directory.Build.props del repo. -->
+  <PropertyGroup>
+    <Product>FO4 Base Library</Product>
+    <AssemblyTitle>FO4 Base Library</AssemblyTitle>
+    <Description>Shared engine library for the Fallout 4 / Skyrim SE toolset: plugins, archives, meshes and rendering.</Description>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Platform)'=='x86'">
     <PlatformTarget>x86</PlatformTarget>
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
@@ -42,6 +50,25 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Tools/MotorFisicaGate: los gates del MOTOR DE FISICA canonico (Havok/Motor/). Ese motor entero
+         vive dentro de `#If DEBUG` y todos sus tipos son `Friend`, asi que el gate no puede verlo desde
+         afuera sin esto. ⛔ Y tiene que verlo: dos de sus rutinas —la normalizacion SIMD y la
+         descomposicion polar— son EXACTAMENTE la clase de codigo que ya fallo una vez en este arbol (la
+         ortonormalizacion del deform, con dos filas intercambiadas = 180 grados, invisible para un gate
+         que solo media traslacion). Sin gate directo sobre ellas no hay forma de falsearlas.
+         NADA se vuelve Public por esto, y en Release no hay ni tipos que exponer. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>MotorFisicaGate</_Parameter1>
+    </AssemblyAttribute>
+    <!-- Tools/HkxLoadOrderAudit: es la probe que corre sobre el CORPUS REAL (BA2 + loose). El censo
+         M14 construye la `Forma` de cada `hclCollidable` de verdad con `Havok.Motor.Fachada` y
+         comprueba que el tipo salga el del archivo. Sin eso, la unica prueba de la traduccion son
+         formas que escribo yo en el gate de unidad: un fixture no puede decir si la fachada cubre lo
+         que HAY. `Havok.Motor` ademas vive entero dentro de `#If DEBUG`, asi que en Release no hay
+         ni tipos que exponer. NADA se vuelve Public por esto. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>HkxLoadOrderAudit</_Parameter1>
+    </AssemblyAttribute>
     <!-- Tools/ParityGate corre los self-tests que NO dependen de la maquina del usuario (leyes del
          resolver, lexico del GLSL, golden absolutos). Vivian DENTRO de esta lib y corrian en el proceso
          del usuario; salieron el 2026-08-08. Esto les da acceso a los miembros `Friend` que ya usaban,

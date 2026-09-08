@@ -9,7 +9,7 @@ Option Explicit On
 ' ⛔ SI ESTA EN LA RUTA DEL RENDER. La cabecera decia lo contrario y nombraba a
 ' Wardrobe_Manager/PhysicsWeightCollapseHelper como consumidor principal: es falso.
 ' `HavokClothSimulation` lo llama para armar el paquete de tela, y `Render.vb` llama a
-' `HavokClothSimulation.StepShapes` dentro del `#If DEBUG` que abre unas lineas mas arriba.
+' `ClothCanonico.StepShapes` dentro del `#If DEBUG` que abre unas lineas mas arriba.
 ' Los otros consumidores (Wardrobe_Manager y las herramientas de Tools/) tambien existen.
 '
 ' ALCANCE: los offsets ya no se escriben aca. Todo campo declarado sale del objeto generado
@@ -227,7 +227,7 @@ Public NotInheritable Class HclClothPackageParser_Class
     ''' <para>⛔ CERO LITERALES DE NOMBRE DE CLASE Y CERO SEGUNDA LISTA. Aca hubo primero un
     ''' `Select Case` con siete strings en minuscula y un normalizador propio; despues, cinco
     ''' `Leer(Of T)` escritos a mano, que es una lista paralela a
-    ''' <see cref="Havok.Physics.HavokClothSimulation.OperadoresQueEjecuta"/> con nada que las
+    ''' <see cref="Havok.Motor.Declarado.OperadoresQueEjecuta"/> con nada que las
     ''' obligue a coincidir. Ahora manda esa lista: se recorre y cada entrada lee con SU `Leer`, que
     ''' el nombre del tipo con la regla del generador.</para>
     ''' <para>Los DOS que llevan analisis propio (el entrelazado SIMD de los carriles, los pares
@@ -256,7 +256,7 @@ Public NotInheritable Class HclClothPackageParser_Class
             Return deform.Operador
         End If
 
-        For Each lec In Havok.Physics.HavokClothSimulation.OperadoresQueEjecuta
+        For Each lec In Havok.Motor.Declarado.OperadoresQueEjecuta
             Dim o = lec.Leer(graph, op)
             If o Is Nothing Then Continue For
             ' ⛔ LO QUE VA ENVUELTO NO SE ENTREGA CRUDO. Si el parseo del envoltorio fallo sobre un

@@ -25,6 +25,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Identidad que ve el usuario: Propiedades del archivo en Windows y el volcado de ensamblados
+       de un reporte de caida. El NUMERO no esta aca: sale del Directory.Build.props del repo. -->
+  <PropertyGroup>
+    <Product>FO4 Base Library - C# helpers</Product>
+    <AssemblyTitle>FO4 Base Library - C# helpers</AssemblyTitle>
+    <Description>Helpers for FO4 Base Library that Visual Basic cannot express.</Description>
+  </PropertyGroup>
+
   <Import Project="..\ConfiguracionPublish.targets" />
 
 </Project>

@@ -176,6 +176,76 @@
             Return removed
         End Function
 
+        ''' <summary>Saca TODOS los subrecords de esa firma, cuelguen de donde cuelguen. Devuelve
+        ''' cuantos saco.
+        ''' <para>⛔ NO es una disciplina de busqueda nueva: usa <see cref="FindSubrecord"/>, que ya
+        ''' recorre el arbol entero, aplicada en bucle. Por eso hereda su semantica — y su riesgo: una
+        ''' firma que aparece en dos lugares distintos del mismo record (el <c>FULL</c> de la raiz y el
+        ''' de cada <c>Combination</c>) se saca en LOS DOS. Solo vale para firmas que aparecen una vez
+        ''' por rama, y quien la llama se hace cargo de eso.</para></summary>
+        Public Function RemoveSubrecordEnTodoElArbol(root As WbNode, sig As String) As Integer
+            If root Is Nothing OrElse String.IsNullOrEmpty(sig) Then Return 0
+            Dim sacados = 0
+            While True
+                Dim n = FindSubrecord(root, sig)
+                If n Is Nothing OrElse n.Parent Is Nothing Then Exit While
+                Dim i = n.Parent.IndiceDeHijo(n)
+                If i < 0 Then Exit While
+                n.Parent.QuitarHijoEn(i)
+                sacados += 1
+            End While
+            Return sacados
+        End Function
+
+        ''' <summary>El nodo del contenedor declarado, CREANDOLO en su posicion si no esta. Es
+        ''' <see cref="EnsureSubrecord"/> pero indexado por nombre de definicion en vez de por firma.
+        ''' <para>La posicion sale de la DECLARACION, no del orden en que se llame: un grupo fuera de
+        ''' orden hace que la relectura descarte todo lo que venga despues.</para></summary>
+        Public Function EnsureGroup(root As WbNode, def As WbRecordDef, groupName As String, ctx As WbContext) As WbNode
+            For Each c In root.Children
+                Dim dc = TryCast(c.Def, WbMemberDef)
+                If dc IsNot Nothing AndAlso String.Equals(dc.Name, groupName, StringComparison.Ordinal) Then Return c
+            Next
+            Dim memberIdx = -1
+            For i = 0 To def.Members.Length - 1
+                If String.Equals(def.Members(i).Name, groupName, StringComparison.Ordinal) Then
+                    memberIdx = i
+                    Exit For
+                End If
+            Next
+            If memberIdx < 0 Then Return Nothing
+            Return InsertarEnPosicionDeclarada(root, def, def.Members(memberIdx).CreateRequired(ctx))
+        End Function
+
+        ''' <summary>Saca el CONTENEDOR declarado que agrupa a varios subrecords, por su nombre de
+        ''' definicion. Devuelve cuantos saco.
+        '''
+        ''' <para>Existe porque <see cref="RemoveSubrecord"/> mira SOLO los hijos directos de la raiz,
+        ''' y un monton de subrecords no cuelgan de ahi: <c>KSIZ</c> y <c>KWDA</c> son hijos del grupo
+        ''' <c>Keywords</c>, asi que pedirlos por firma devolvia 0 y el codigo que crei que los sacaba
+        ''' no sacaba nada.</para>
+        '''
+        ''' <para>⛔ La llave es el <b>nombre de la definicion</b>, no la firma, y eso NO es un detalle:
+        ''' es la misma decision que <c>CanonHerencia</c> ya tomo y documento. Buscar por firma en todo
+        ''' el arbol seria una tercera disciplina de busqueda al lado de <see cref="FindSubrecord"/> y
+        ''' <c>ByFieldPath</c>, y ademas ambigua — <c>FULL</c> esta en la raiz del <c>NPC_</c> y otra vez
+        ''' adentro de cada <c>Combination</c> del Object Template.</para>
+        '''
+        ''' <para>Sacar el grupo se lleva a sus miembros: es la operacion de "este record NO declara
+        ''' keywords", distinta de escribir un contador en cero, que SI las declara y las deja vacias.</para></summary>
+        Public Function RemoveGroup(root As WbNode, groupName As String) As Integer
+            If root Is Nothing OrElse String.IsNullOrEmpty(groupName) Then Return 0
+            Dim removed = 0
+            For i = root.Children.Count - 1 To 0 Step -1
+                Dim d = TryCast(root.Children(i).Def, WbMemberDef)
+                If d IsNot Nothing AndAlso String.Equals(d.Name, groupName, StringComparison.Ordinal) Then
+                    root.QuitarHijoEn(i)
+                    removed += 1
+                End If
+            Next
+            Return removed
+        End Function
+
         ''' <summary>Devuelve el nodo de una ruta de campo, CREANDO los niveles que falten.
         '''
         ''' <para>Existe porque sin esto nada recién creado acepta campos: un record nuevo, o un elemento

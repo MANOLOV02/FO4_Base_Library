@@ -1,0 +1,36 @@
+<Project>
+
+  <!-- IDENTIDAD DE LOS ENSAMBLADOS DE ESTE REPO.
+
+       ⛔ VA ACÁ Y NO EN LA RAÍZ DEL ÁRBOL. `Fallout 4 Related\` está COMPARTIDO con
+       BodySlide-and-Outfit-Studio, f4se-master, nifskope y ~100 .vcxproj de terceros: un
+       Directory.Build.props ahí arriba se los come a todos. Mismo motivo que documenta
+       Tools\Directory.Build.props. Cada repo declara el suyo.
+
+       ⛔ EL NÚMERO ES DE ESTE REPO. Los repos se versionan por separado (decisión del usuario,
+       2026-09-06): acá se toca este archivo y nada más. Arrancan todos en 2.1.2 y de ahí cada uno sigue
+       su propio camino.
+
+       `<Version>` es la ÚNICA perilla: de ella el SDK deriva las tres que importan —
+         AssemblyVersion       2.1.2.0   la IDENTIDAD DE BINDING: es la que se hornea en la tabla
+                                         AssemblyRef de todo el que compile contra este DLL, y la única
+                                         que mira el loader.
+         FileVersion           2.1.2.0   la que muestra Windows en Propiedades -> Detalles.
+         InformationalVersion  2.1.2     texto libre; es lo que devuelve Application.ProductVersion.
+
+       ⛔ QUE ESTO SOLO NO ALCANZA ESTÁ MEDIDO, y por eso existe Shared\VersionGate.vb: con el exe
+       compilado contra la 1.0.0.0 y una lib 2.0.0.0 en la carpeta, .NET 8 carga la mayor SIN DECIR NADA
+       (roll-forward) y la app revienta más tarde igual que sin versión. Sólo la dirección inversa falla
+       sola. El número es necesario — sin él las dos DLL dicen 1.0.0.0 y no hay NADA que comparar — pero
+       quien avisa es el gate. -->
+
+  <PropertyGroup>
+    <Version>2.1.2</Version>
+    <Company>MANOLOV02</Company>
+    <Copyright>Copyright (c) 2026 MANOLOV02</Copyright>
+    <!-- Sin esto, en un repo con git el SDK le pega "+<sha del commit>" a InformationalVersion y el
+         número que se lee para el título de la ventana sale con la cola pegada. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

@@ -47,33 +47,117 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     '''
     ''' Lo que NO describe la reflexión —y por eso se queda acá— es la DECODIFICACIÓN: el entrelazado
     ''' SIMD de los carriles y la dequantización `float(v &lt;&lt; 16) × bitcast_float(w &lt;&lt; 16)`.
+    ''' <para>⭐ LAS CUATRO VARIANTES — `P` (22), `PN` (23), `PNT` (24) y `PNTB` (25).</para>
+    ''' <para>⛔ Se prueban UNA POR UNA porque son HERMANAS, no derivadas: `Leer` acepta la clase
+    ''' exacta o las que DERIVAN de ella, y la reflexión dice `padre=hclObjectSpaceSkinOperator`
+    ''' para las cuatro. Probar sólo `PN` deja a las otras tres en `Nothing`.</para>
+    ''' <para>Comparten TODO salvo cuántas listas de vectores locales traen; el layout de
+    ''' influencias es el mismo y lo decodifica el mismo código.</para>
+    ''' <para>⚠️ El corpus vanilla trae **cero** de las tres que no son `PN` (censo M1). Van igual
+    ''' porque un mod puede traerlas.</para>
     ''' </summary>
-    Friend Shared Function ParseObjectSpaceSkinPNOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
-        ' ⛔ EL GUARDA POR NOMBRE Y LA LECTURA SON LA MISMA LLAMADA, Y LA HACE LA PROPIA CLASE.
-        ' `Leer` compara contra su `NombreDeClase` —emitido desde la reflexion del .exe— y acepta
-        ' tambien las subclases que la tabla declara. Antes esto pasaba por un generico que
-        ' resolvia el lector por REFLEXION a partir del `Type`.
-        Dim o = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.Leer(graph, source)
-        If o Is Nothing OrElse o.ObjectSpaceDeformer Is Nothing Then Return Nothing
-        Dim d = o.ObjectSpaceDeformer
+    Friend Shared Function ParseObjectSpaceSkinOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
+        Dim result As New HclObjectSpaceSkinPNOperatorGraph_Class
 
-        Dim result As New HclObjectSpaceSkinPNOperatorGraph_Class With {.Operador = o}
+        Dim oPn = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator.Leer(graph, source)
+        If oPn IsNot Nothing Then
+            result.Operador = oPn
+            Comunes(result, oPn.ObjectSpaceDeformer, oPn.BoneFromSkinMeshTransforms,
+                    oPn.TransformSubset, oPn.OutputBufferIndex, oPn.TransformSetIndex, oPn.Name, 2)
+            If oPn.LocalPNs IsNot Nothing Then
+                For Each b In oPn.LocalPNs
+                    If b Is Nothing Then Continue For
+                    result.CanalesPorBloque.Add(New IReadOnlyList(Of Integer)() {b.LocalPosition, b.LocalNormal})
+                Next
+            End If
+            Return Cerrar(result)
+        End If
+
+        Dim oP = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPOperator.Leer(graph, source)
+        If oP IsNot Nothing Then
+            Comunes(result, oP.ObjectSpaceDeformer, oP.BoneFromSkinMeshTransforms,
+                    oP.TransformSubset, oP.OutputBufferIndex, oP.TransformSetIndex, oP.Name, 1)
+            If oP.LocalPs IsNot Nothing Then
+                For Each b In oP.LocalPs
+                    If b Is Nothing Then Continue For
+                    result.CanalesPorBloque.Add(New IReadOnlyList(Of Integer)() {b.LocalPosition})
+                Next
+            End If
+            Return Cerrar(result)
+        End If
+
+        Dim oPnt = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNTOperator.Leer(graph, source)
+        If oPnt IsNot Nothing Then
+            Comunes(result, oPnt.ObjectSpaceDeformer, oPnt.BoneFromSkinMeshTransforms,
+                    oPnt.TransformSubset, oPnt.OutputBufferIndex, oPnt.TransformSetIndex, oPnt.Name, 3)
+            If oPnt.LocalPNTs IsNot Nothing Then
+                For Each b In oPnt.LocalPNTs
+                    If b Is Nothing Then Continue For
+                    result.CanalesPorBloque.Add(New IReadOnlyList(Of Integer)() {
+                        b.LocalPosition, b.LocalNormal, b.LocalTangent})
+                Next
+            End If
+            Return Cerrar(result)
+        End If
+
+        Dim oPntb = Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNTBOperator.Leer(graph, source)
+        If oPntb IsNot Nothing Then
+            Comunes(result, oPntb.ObjectSpaceDeformer, oPntb.BoneFromSkinMeshTransforms,
+                    oPntb.TransformSubset, oPntb.OutputBufferIndex, oPntb.TransformSetIndex, oPntb.Name, 4)
+            If oPntb.LocalPNTBs IsNot Nothing Then
+                For Each b In oPntb.LocalPNTBs
+                    If b Is Nothing Then Continue For
+                    result.CanalesPorBloque.Add(New IReadOnlyList(Of Integer)() {
+                        b.LocalPosition, b.LocalNormal, b.LocalTangent, b.LocalBiTangent})
+                Next
+            End If
+            Return Cerrar(result)
+        End If
+
+        Return Nothing
+    End Function
+
+    ''' <summary>Los cinco campos que las cuatro variantes declaran igual.</summary>
+    Private Shared Sub Comunes(r As HclObjectSpaceSkinPNOperatorGraph_Class,
+                               deformador As Havok.Canon.Objects.HkObj_HclObjectSpaceDeformer,
+                               huesos As List(Of Single()), subset As List(Of Integer),
+                               bufferDeSalida As UInteger, transformSet As UInteger,
+                               nombre As String, canales As Integer)
+        r.Deformador = deformador
+        r.HuesosDesdeMalla = huesos
+        r.Subconjunto = subset
+        r.BufferDeSalida = CInt(bufferDeSalida)
+        r.IndiceDelTransformSet = CInt(transformSet)
+        r.Nombre = nombre
+        r.Canales = canales
+    End Sub
+
+    ''' <summary>Las cuatro familias de influencias y los vértices, que son iguales en las cuatro
+    ''' variantes: lo único que cambió arriba es de dónde salen las listas de canal.</summary>
+    Private Shared Function Cerrar(r As HclObjectSpaceSkinPNOperatorGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
+        Dim d = r.Deformador
+        If d Is Nothing Then Return r
 
         ' ⛔ LAS CUATRO FAMILIAS. `hclObjectSpaceDeformer` declara CUATRO arrays de entradas
         ' (four/three/two/oneBlendEntries) y acá se leían TRES. Los vértices con UNA sola influencia
         ' quedaban SIN skinnear: no entraban al diccionario, así que la partícula que los usaba caía
         ' al DefaultClothPose, que está en otro espacio.
-        ' Las cuatro familias, desentrelazadas. Son LOCALES: lo que sale de aca es la lista de
-        ' vertices, y guardar ademas los subconjuntos era tener el mismo vertice dos veces.
         Dim porFamilia = New List(Of List(Of HclSkinVertice_Class))() From {
             SubconjuntosDe(d.FourBlendEntries.Select(Function(b) New BloquePesado(b.VertexIndices, b.BoneIndices, b.BoneWeights)).ToList(), 4),
             SubconjuntosDe(d.ThreeBlendEntries.Select(Function(b) New BloquePesado(b.VertexIndices, b.BoneIndices, b.BoneWeights)).ToList(), 3),
             SubconjuntosDe(d.TwoBlendEntries.Select(Function(b) New BloquePesado(b.VertexIndices, b.BoneIndices, b.BoneWeights)).ToList(), 2),
             SubconjuntosDeUnaInfluencia(d.OneBlendEntries)
         }
+        r.Vertices.AddRange(VerticesDe(r, porFamilia))
+        Return r
+    End Function
 
-        result.Vertices.AddRange(VerticesDe(result, porFamilia))
-        Return result
+    ''' <summary>La variante `PN`, para los consumidores que necesitan el operador TIPADO.
+    ''' <para>Devuelve `Nothing` si el objeto no es `PN` — que es lo que esos consumidores esperan;
+    ''' el motor usa <see cref="ParseObjectSpaceSkinOperator"/>, que acepta las cuatro.</para></summary>
+    Friend Shared Function ParseObjectSpaceSkinPNOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
+        Dim r = ParseObjectSpaceSkinOperator(graph, source)
+        Return If(r Is Nothing OrElse r.Operador Is Nothing, Nothing, r)
     End Function
 
 
@@ -250,8 +334,10 @@ Friend NotInheritable Class HclRenderGraphParser_Class
         If IsNothing(source) Then Return result
 
         Dim tomados(porFamilia.Count - 1) As Integer
-        Dim control = If(source.Operador?.ObjectSpaceDeformer?.ControlBytes, New List(Of Integer)())
-        Dim bloques = If(source.Operador?.LocalPNs, New List(Of Havok.Canon.Objects.HkObj_HclObjectSpaceDeformerLocalBlockPN)())
+        Dim control = If(source.Deformador?.ControlBytes, New List(Of Integer)())
+        ' ⛔ LAS LISTAS DE CANAL, no el bloque tipado: son 1 en `P`, 2 en `PN`, 3 en `PNT` y 4 en
+        ' `PNTB`, y atarlo al tipo `LocalBlockPN` es lo que dejaba a tres variantes sin parsear.
+        Dim bloques = source.CanalesPorBloque
         Dim nBloques = Math.Max(control.Count, bloques.Count)
 
         If Logger.Enabled Then
@@ -260,10 +346,10 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             ' incompleta por construccion y no hace falta discutirlo.
             Dim ws As New List(Of String)
             For Each b In bloques
-                If b Is Nothing Then Continue For
+                If b Is Nothing OrElse b.Length = 0 Then Continue For
                 For carril = 0 To 7
-                    ws.Add("0x" & (HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlot(b, carril, 0)(3) And &HFFFF).ToString("X4"))
-                    ws.Add("0x" & (HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlot(b, carril, 1)(3) And &HFFFF).ToString("X4"))
+                    ws.Add("0x" & (HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlotEnLista(b(0), carril, 0)(3) And &HFFFF).ToString("X4"))
+                    ws.Add("0x" & (HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlotEnLista(b(0), carril, 1)(3) And &HFFFF).ToString("X4"))
                 Next
             Next
             Dim wl = ws
@@ -281,42 +367,53 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             If desde + 16 > lista.Count Then Continue For
             tomados(familia) = desde + 16
 
-            Dim local As Havok.Canon.Objects.HkObj_HclObjectSpaceDeformerLocalBlockPN = Nothing
-            If iBloque < bloques.Count Then local = bloques(iBloque)
-            If local Is Nothing Then Continue For
+            Dim canales As IReadOnlyList(Of Integer)() = Nothing
+            If iBloque < bloques.Count Then canales = bloques(iBloque)
+            If canales Is Nothing OrElse canales.Length = 0 Then Continue For
 
             For slot = 0 To 15
                 Dim v = lista(desde + slot)
                 If slot > 0 AndAlso v.VertexIndex = lista(desde + slot - 1).VertexIndex Then Exit For
                 v.BlockIndex = iBloque
                 Dim carril = slot \ 2, par = slot Mod 2
-                Dim pos = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlot(local, carril, par)
-                Dim nor = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlot(local, carril + 8, par)
+                Dim pos = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlotEnLista(canales(0), carril, par)
                 ' ⛔ SIN ESCALA NO HAY VERTICE. Antes se caia al 256 "historico" y el vertice salia
                 ' decodificado con la escala equivocada; ahora se saltea y se cuenta.
-                ' ⛔ Y CADA UNA CON LA SUYA: el tag de la NORMAL no puede decidir si se decodifica la
-                ' POSICION. Estuvieron acopladas un rato (`Not escP.HasValue OrElse Not escN.HasValue`)
-                ' y eso descartaba el vertice ENTERO por un `w` de normal degenerado — el vertice
-                ' desaparecia del mapa de skin, la particula que lo usa se quedaba sin puente, y
-                ' `[CLOTH-ANCLASINMAPA]` acusaba a las anclas de un defecto de decodificacion.
                 Dim escP = PositionScaleFromW(pos)
-                Dim escN = PositionScaleFromW(nor)
                 If Not escP.HasValue Then
                     sinEscala += 1
                     Continue For
                 End If
                 v.Position = DecodeQuantizedVector3(pos, escP.Value, carril, par)
-                ' ⛔⛔ LA NORMAL SE DECODIFICA COMO LA POSICION, NO CON UN 32767 INVENTADO.
-                ' En el deformer que consume estos bloques (0x14193C5E0) las UNICAS dos constantes
-                ' que multiplican son `65536.0` (0x14262BA50) y `1/255` (0x142492850): la primera
-                ' es el `<< 16` del reinterpretado y la segunda la normalizacion de los PESOS. No
-                ' hay ningun 32767 en el camino, asi que la normal comparte `PositionScaleFromW`.
-                ' La normal se omite sola si su tag no sirve: el vertice sale con la posicion buena y
-                ' la normal en cero, que es lo que hacia antes de todo esto.
-                If escN.HasValue Then
-                    v.Normal = DecodeQuantizedVector3(nor, escN.Value, carril + 8, par)
-                Else
-                    sinEscalaNormal += 1
+
+                ' ⛔⛔ CADA CANAL CON SU TAG, y ninguno decide por otro. El tag de la NORMAL no puede
+                ' descartar la POSICION: estuvieron acopladas un rato y eso borraba el vertice ENTERO
+                ' por un `w` de normal degenerado — el vertice desaparecia del mapa de skin, la
+                ' particula que lo usa se quedaba sin puente, y `[CLOTH-ANCLASINMAPA]` acusaba a las
+                ' anclas de un defecto de decodificacion.
+                ' ⛔ Y LA NORMAL SE DECODIFICA COMO LA POSICION, no con un 32767 inventado: en el
+                ' deformer que consume estos bloques (`0x14193C5E0`) las UNICAS dos constantes que
+                ' multiplican son `65536.0` (`0x14262BA50`) y `1/255` (`0x142492850`) — el `<< 16` del
+                ' reinterpretado y la normalizacion de los PESOS. No hay ningun 32767 en el camino.
+                ' Lo mismo vale para la tangente y la bitangente: es el mismo layout de 64 `int16`.
+                If canales.Length > 1 Then
+                    Dim nor = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlotEnLista(canales(1), carril, par)
+                    Dim escN = PositionScaleFromW(nor)
+                    If escN.HasValue Then
+                        v.Normal = DecodeQuantizedVector3(nor, escN.Value, carril + 8, par)
+                    Else
+                        sinEscalaNormal += 1
+                    End If
+                End If
+                If canales.Length > 2 Then
+                    Dim tan = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlotEnLista(canales(2), carril, par)
+                    Dim escT = PositionScaleFromW(tan)
+                    If escT.HasValue Then v.Tangent = DecodeQuantizedVector3(tan, escT.Value, carril + 16, par)
+                End If
+                If canales.Length > 3 Then
+                    Dim bit = HclObjectSpaceSkinPNOperatorGraph_Class.VectorDeSlotEnLista(canales(3), carril, par)
+                    Dim escB = PositionScaleFromW(bit)
+                    If escB.HasValue Then v.BiTangent = DecodeQuantizedVector3(bit, escB.Value, carril + 24, par)
                 End If
                 result.Add(v)
             Next
@@ -330,7 +427,7 @@ Friend NotInheritable Class HclRenderGraphParser_Class
             Next
             Dim h = String.Join(" ", hist.OrderBy(Function(kv) kv.Key).Select(Function(kv) $"tipo{kv.Key}x{kv.Value}"))
             Dim ultimos = String.Join(",", result.Skip(Math.Max(0, result.Count - 24)).Select(Function(x) x.VertexIndex.ToString()))
-            Dim sv = source.Operador.ObjectSpaceDeformer.StartVertexIndex, ev = source.Operador.ObjectSpaceDeformer.EndVertexIndex
+            Dim sv = source.Deformador.StartVertexIndex, ev = source.Deformador.EndVertexIndex
             Dim nv = result.Count, nb = nBloques, nlb = bloques.Count, nse = sinEscala, nsn = sinEscalaNormal
             If nse > 0 Then Logger.LogLazy(Function() $"[CLOTH-SKINBLK-SINESCALA] {nse} vertices sin decodificar: el tag `w` de POSICION no da una escala usable")
             ' ⛔ OTRO TAG: son dos leyes distintas. "el vertice desaparecio del mapa de skin" y "el
@@ -381,7 +478,28 @@ End Class
 ''' `hclMoveParticlesOperator` — y tampoco salen del archivo.</para>
 ''' </summary>
 Public Class HclObjectSpaceSkinPNOperatorGraph_Class
+    ''' <summary>El operador tipado — SOLO en la variante `PN`. En las otras tres queda en
+    ''' `Nothing` y lo que hay que mirar son los cinco campos de abajo.</summary>
     Public Property Operador As Havok.Canon.Objects.HkObj_HclObjectSpaceSkinPNOperator
+
+    ''' <summary>
+    ''' ⛔ LOS CAMPOS COMUNES A LAS CUATRO VARIANTES, copiados al parsear.
+    ''' <para>Las cuatro son HERMANAS bajo `hclObjectSpaceSkinOperator` (reflexión:
+    ''' `padre=hclObjectSpaceSkinOperator` en las cuatro), así que no hay un tipo común que las
+    ''' cubra y `Operador` sólo puede sostener a `PN`. Atar el grafo a ese tipo era lo que dejaba
+    ''' a las otras tres SIN PARSEAR — y con una línea de log diciendo que se soportaban.</para>
+    ''' </summary>
+    Public Property Deformador As Havok.Canon.Objects.HkObj_HclObjectSpaceDeformer
+    Public Property HuesosDesdeMalla As List(Of Single())
+    Public Property Subconjunto As List(Of Integer)
+    Public Property BufferDeSalida As Integer
+    Public Property IndiceDelTransformSet As Integer
+    Public Property Nombre As String
+
+    ''' <summary>Por bloque, las listas de `int16` de cada canal: 1 en `P`, 2 en `PN`, 3 en `PNT`
+    ''' y 4 en `PNTB`. El layout de cada una es el mismo — 8 carriles de 8 enteros, dos vértices
+    ''' por carril — y lo lee <see cref="VectorDeSlotEnLista"/>, que ya estaba escrita general.</summary>
+    Public ReadOnly Property CanalesPorBloque As New List(Of IReadOnlyList(Of Integer)())
 
     ''' <summary>Los vertices del skin, cada uno con su posicion, su normal y sus influencias.
     ''' Es lo que caminan TODOS los consumidores.</summary>
@@ -390,6 +508,10 @@ Public Class HclObjectSpaceSkinPNOperatorGraph_Class
     ''' parser: no sale del archivo. (El `&lt;summary&gt;` de "los carriles crudos" que estaba aca colgaba de
     ''' `...LocalBlockLaneGraph_Class`, que se borro; la ley vive en <see cref="CarrilDe"/>.)</summary>
     Public Property CoveredVertexCount As Integer
+
+    ''' <summary>Cuantos canales trae cada bloque local: 1 = P, 2 = PN, 3 = PNT, 4 = PNTB. Es lo
+    ''' unico que separa a las cuatro variantes del operador (tipos 22 a 25).</summary>
+    Public Property Canales As Integer = 2
 
     ''' <summary>Los nombres de hueso que se pudieron resolver contra el esqueleto. Analisis del
     ''' package parser: no sale del archivo.</summary>
@@ -409,13 +531,32 @@ Public Class HclObjectSpaceSkinPNOperatorGraph_Class
     Public Shared Function CarrilDe(bloque As Havok.Canon.Objects.HkObj_HclObjectSpaceDeformerLocalBlockPN, carril As Integer) As Short()
         If bloque Is Nothing OrElse carril < 0 OrElse carril > 15 Then Return Array.Empty(Of Short)()
         Dim fuente = If(carril < 8, bloque.LocalPosition, bloque.LocalNormal)
-        If fuente Is Nothing OrElse fuente.Count < 64 Then Return Array.Empty(Of Short)()
+        Return CarrilDeLista(fuente, carril)
+    End Function
+
+    ''' <summary>
+    ''' Un carril de UNA lista de 64 `int16` — la forma general, que sirve para los cuatro canales
+    ''' de las cuatro variantes (`LocalBlockP`, `PN`, `PNT`, `PNTB`).
+    ''' <para>El layout es siempre el mismo: 8 carriles de 8 enteros, dos vertices por carril. Lo
+    ''' unico que cambia entre variantes es CUANTAS listas hay, no como se lee cada una.</para>
+    ''' </summary>
+    Public Shared Function CarrilDeLista(fuente As IReadOnlyList(Of Integer), carril As Integer) As Short()
+        If fuente Is Nothing OrElse fuente.Count < 64 OrElse carril < 0 Then Return Array.Empty(Of Short)()
         Dim base_ = (carril Mod 8) * 8
         Dim r(7) As Short
         For i = 0 To 7
             r(i) = CShort(fuente(base_ + i))
         Next
         Return r
+    End Function
+
+    ''' <summary>Los cuatro `int16` de un slot dentro de una lista de canal.</summary>
+    Public Shared Function VectorDeSlotEnLista(fuente As IReadOnlyList(Of Integer), carril As Integer,
+                                               par As Integer) As Short()
+        Dim c = CarrilDeLista(fuente, carril)
+        If c.Length < 8 Then Return Array.Empty(Of Short)()
+        Dim b = par * 4
+        Return New Short() {c(b), c(b + 1), c(b + 2), c(b + 3)}
     End Function
 
     ''' <summary>Los cuatro int16 (x, y, z, w) de un slot: `par` elige la mitad del carril.</summary>
@@ -444,6 +585,10 @@ Public Class HclSkinVertice_Class
     Public Property SlotIndex As Integer = -1
     Public Property Position As HclObjectSpaceSkinQuantizedVectorGraph_Class
     Public Property Normal As HclObjectSpaceSkinQuantizedVectorGraph_Class
+    ''' <summary>La tangente y la bitangente locales, en las variantes que las traen (`PNT` y
+    ''' `PNTB`). `Nothing` en `P` y `PN`, que no las declaran.</summary>
+    Public Property Tangent As HclObjectSpaceSkinQuantizedVectorGraph_Class
+    Public Property BiTangent As HclObjectSpaceSkinQuantizedVectorGraph_Class
     ''' <summary>`boneIndices` viene por INFLUENCIA y `boneWeights` por CARRIL: no es simetrico,
     ''' y desentrelazarlo es lo unico que la reflexion no dice.</summary>
     Public ReadOnly Property TransformIndices As New List(Of UShort)

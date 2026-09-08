@@ -34,6 +34,27 @@ Namespace Havok.Physics
         FullSimulation = 2
     End Enum
 
+    ''' <summary>
+    ''' El valor más alto de <see cref="HavokPhysicsMode"/>, DERIVADO del enum.
+    ''' <para>⛔ Existe porque el techo escrito a mano ya quedó viejo una vez y costó una medición
+    ''' falsa: `Config_App.ApplyHavokPhysicsSettings` recortaba con `Math.Min(2, …)` de cuando el enum
+    ''' llegaba hasta `FullSimulation`. Al agregar `MotorCanonico = 3` el recorte lo devolvió a 2 en
+    ''' silencio, así que el arnés pidió el motor canónico y corrió el viejo — y el A/B dio "x1,
+    ''' idénticos", que es exactamente lo que uno querría creer.</para>
+    ''' <para>Se calcula UNA vez: el volcado de config corre en cada frame y `GetValues` reflexiona.</para>
+    ''' </summary>
+    Public Module RangoDeModo
+        Public ReadOnly Maximo As Integer = MaximoDelEnum()
+
+        Private Function MaximoDelEnum() As Integer
+            Dim m = 0
+            For Each v In [Enum].GetValues(GetType(HavokPhysicsMode))
+                m = Math.Max(m, CInt(v))
+            Next
+            Return m
+        End Function
+    End Module
+
     ''' <summary>Ajustes globales de la física Havok. Todo estático: es una perilla de sesión, no estado.</summary>
     Public NotInheritable Class HavokPhysicsSettings
 
@@ -60,13 +81,31 @@ Namespace Havok.Physics
                 ' interruptor y el siguiente evento es un cambio de preset (rama de morph) o de textura,
                 ' el `PhysicsDeltaTransform` del último frame simulado seguiría compuesto en el hueso.
                 ' Apagar tiene que limpiar por sí solo, no depender de qué evento venga después.
-                If wasOn AndAlso Not value Then HavokClothSimulation.ClearAllTouchedSkeletons()
+                ' ⛔ El motor de tela es Debug-only: en Release no existe y no hay capa que limpiar.
+#If DEBUG Then
+                If wasOn AndAlso Not value Then ClothCanonico.LimpiarTodos()
+#End If
             End Set
         End Property
 
         ''' <summary>Cuánto se corre cuando Enabled=True. Ver la nota de <see cref="Enabled"/>:
         ''' `Setting_HavokPhysicsMode` de la config lo pisa en cada frame.</summary>
         Public Shared Property Mode As HavokPhysicsMode = HavokPhysicsMode.FullSimulation
+
+        ''' <summary>
+        ''' ⭐ ¿Este modo corre el `hclClothState` que declara el `hclSimulateOperator`?
+        ''' <para>⛔ La pregunta se hace ACÁ y en un solo lugar. Preguntar `Mode = FullSimulation` en el
+        ''' punto de uso ya costó una corrida entera: `MotorCanonico` no es `FullSimulation`, así que
+        ''' `SeleccionarEstado` eligió el estado SIN simulador y el motor canónico produjo, bit a bit,
+        ''' lo mismo que `DeformOnly` — con el gate en verde y el PNG idéntico al de DeformOnly.</para>
+        ''' <para>`MotorCanonico` **es** simulación: lo único que cambia es QUIÉN integra las
+        ''' partículas, no qué estado del archivo se corre.</para>
+        ''' </summary>
+        Public Shared ReadOnly Property CorreSimulacion As Boolean
+            Get
+                Return Mode = HavokPhysicsMode.FullSimulation
+            End Get
+        End Property
 
         ''' <summary>0 = usar el authored del hclSimulateOperator (lo que hace el motor). &gt;0 = pisarlo.</summary>
         Public Shared Property SubstepOverride As Integer = 0

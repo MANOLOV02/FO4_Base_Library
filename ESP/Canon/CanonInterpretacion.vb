@@ -1300,6 +1300,131 @@ Namespace Canon
             WbEdit.RemoveSubrecord(v.Node, firma)
         End Sub
 
+        ''' <summary>Copia SOLO los campos nombrados de un subrecord. Es el punto medio que faltaba
+        ''' entre copiar el subrecord entero y escribir propiedad por propiedad.
+        '''
+        ''' <para>Existe porque el motor no siempre copia un subrecord completo: del <c>AIDT</c> copia
+        ''' 12 bytes en Skyrim (<c>sub_1401DE8F0</c>) y 16 en Fallout 4 (<c>sub_14030C2E0</c>) de una
+        ''' struct EN MEMORIA que no tiene el layout del archivo. <see cref="CopiarSubrecord"/> seria
+        ''' copia de MAS, y su propio docstring dice que esta hecha para ser todo-o-nada.</para>
+        '''
+        ''' <para>⛔⛔ ACA DECIA "copia un PREFIJO de la struct, hasta <c>Warn</c> / hasta
+        ''' <c>Warn/Attack</c>". Es FALSO y era el segundo de tres dueños de la misma ley falsa. El
+        ''' loader REEMPAQUETA: el setter guarda los siete primeros bytes como un bitfield en +0x08 y los
+        ''' tres u32 del archivo como tres <b>u16 saturados</b> en +0x0C/+0x0E/+0x10
+        ''' (<c>sub_14030C5A0</c>: <c>lea rsi,[rdi+0xc]</c> 0x14030C6D1, <c>mov ebp,3</c> 0x14030C6D7,
+        ''' bucle <c>cmovb cx,ax</c> 0x14030C6FA). Con ese layout los 12 y los 16 bytes copian los TRES
+        ''' radios en los dos juegos, y los 4 de mas de FO4 son <c>No Slow Approach</c> (+0x14).
+        ''' La lista de campos vive en <c>NpcTemplateMaterializer</c>, con la medicion entera.</para>
+        '''
+        ''' <para>⛔ La lista que se le pasa es la de lo que SI se copia, nunca la de lo excluido: lo
+        ''' excluido depende de la VERSION del record —<c>FromVersion(29)</c> agrega campos al final— y
+        ''' ademas el byte +0x07 del archivo no se almacena en ningun lado, asi que "todo menos X" no
+        ''' tiene forma de escribirse bien.</para>
+        '''
+        ''' <para>Llega a campos ANIDADOS: <c>WbEdit.FindField</c> recorre el subarbol entero del
+        ''' subrecord y casa por nombre de hoja, asi que alcanza los que estan dentro de una struct
+        ''' interna y los que no tienen propiedad generada — el byte <c>Unused</c> del <c>Aggro</c> de
+        ''' Skyrim, por ejemplo.</para>
+        '''
+        ''' <para>Un campo que el origen no trae se saltea; no se inventa un cero.</para></summary>
+        <Extension>
+        Public Function CopiarCamposDeSubrecord(Of T As Class)(destino As T, origen As T, firma As String,
+                                                               campos As IEnumerable(Of String)) As Integer
+            Dim vd = TryCast(destino, CanonView), vo = TryCast(origen, CanonView)
+            If vd Is Nothing OrElse vo Is Nothing Then Return 0
+            If vd.Node Is Nothing OrElse vo.Node Is Nothing OrElse campos Is Nothing Then Return 0
+            Dim copiados = 0
+            For Each nombre In campos
+                Dim src = WbEdit.FindField(vo.Node, firma, nombre)
+                If src Is Nothing Then Continue For
+                Dim dst = WbEdit.FindField(vd.Node, firma, nombre)
+                If dst Is Nothing Then Continue For
+                ' ⛔ Un `Byte()` se CLONA. Asignar la referencia dejaria a los dos records compartiendo
+                ' el mismo array, y editar uno cambiaria al otro. `CopiarSubrecord` clona el nodo; esto
+                ' tiene que clonar el valor. Hoy los campos del AIDT son enteros, pero la funcion es
+                ' publica y generica.
+                Dim v = src.Value
+                Dim bs = TryCast(v, Byte())
+                dst.Value = If(bs Is Nothing, v, CType(bs.Clone(), Byte()))
+                copiados += 1
+            Next
+            Return copiados
+        End Function
+
+        ''' <summary>Copia un CONTENEDOR declarado entero, con todo lo que agrupa. Devuelve True si
+        ''' el origen lo traia; False si no lo traia, y en ese caso el destino se queda SIN el.
+        ''' <para>Es el gemelo de <see cref="CopiarSubrecord"/> para los casos en que lo que el motor
+        ''' mueve no es un subrecord suelto sino un grupo — los sonidos del actor son
+        ''' <c>Sound Types</c> en Skyrim y <c>Actor Sounds</c> en Fallout 4, cada uno con varios
+        ''' subrecords adentro y un array anidado.</para>
+        ''' <para>El valor de retorno NO es cosmetico: quien llama necesita saber si el origen era
+        ''' DUEÑO de sus sonidos, porque de eso depende el bit de ACBS que hay que derivar.</para></summary>
+        <Extension>
+        Public Function CopiarGrupo(Of T As Class)(destino As T, origen As T, nombreDelGrupo As String) As Boolean
+            Dim vd = TryCast(destino, CanonView), vo = TryCast(origen, CanonView)
+            If vd Is Nothing OrElse vo Is Nothing Then Return False
+            If vd.Node Is Nothing OrElse vo.Node Is Nothing Then Return False
+
+            Dim fuentes As New List(Of WbNode)
+            For Each h In vo.Node.Children
+                Dim dh = TryCast(h.Def, WbMemberDef)
+                If dh IsNot Nothing AndAlso String.Equals(dh.Name, nombreDelGrupo, StringComparison.Ordinal) Then fuentes.Add(h)
+            Next
+            If fuentes.Count = 0 Then
+                WbEdit.RemoveGroup(vd.Node, nombreDelGrupo)
+                Return False
+            End If
+
+            ' ⛔ De aca para abajo, un fallo NO es "el origen no lo trae": es un error de CABLEADO — un
+            ' nombre de grupo que no existe en la def, un esquema que no resuelve. Devolver `False`
+            ' mezclaba los dos casos y quien llama tomaba el segundo por el primero: `CopiarSonidos`
+            ' apagaba el bit de sonidos propios sobre un destino que seguia declarando su grupo, un
+            ' estado que el motor nunca produce. Se tira, como hace `LeyDelMotor` con lo suyo.
+            Dim def = WbSchema.Get(vd.Context.Game, vd.Context.RecordSignature)
+            If def Is Nothing Then Throw New InvalidOperationException(
+                "CopiarGrupo: no hay def para " & vd.Context.RecordSignature)
+            Dim hueco = WbEdit.EnsureGroup(vd.Node, def, nombreDelGrupo, vd.Context)
+            If hueco Is Nothing Then Throw New InvalidOperationException(
+                "CopiarGrupo: el grupo '" & nombreDelGrupo & "' no existe en la def de " &
+                vd.Context.RecordSignature)
+            Dim donde = vd.Node.IndiceDeHijo(hueco)
+            If donde < 0 Then Throw New InvalidOperationException(
+                "CopiarGrupo: el grupo '" & nombreDelGrupo & "' no quedo como hijo de la raiz")
+
+            ' Igual que CopiarSubrecord: se sacan los que ya estaban DESPUES de ubicar el hueco, asi la
+            ' posicion sale de la declaracion tanto si el destino ya lo traia como si no.
+            For i = vd.Node.Children.Count - 1 To donde Step -1
+                Dim di = TryCast(vd.Node.Children(i).Def, WbMemberDef)
+                If di IsNot Nothing AndAlso String.Equals(di.Name, nombreDelGrupo, StringComparison.Ordinal) Then
+                    vd.Node.QuitarHijoEn(i)
+                End If
+            Next
+            For i = 0 To fuentes.Count - 1
+                vd.Node.InsertarHijo(donde + i, fuentes(i).Clonar(vd.Node))
+            Next
+            Return True
+        End Function
+
+        ''' <summary>Saca ese subrecord de DONDE SEA que cuelgue. Para los que viven adentro de un
+        ''' elemento de array y no como hijo directo de la raiz.</summary>
+        <Extension>
+        Public Sub QuitarSubrecordEnTodoElArbol(Of T As Class)(rec As T, firma As String)
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing Then Return
+            WbEdit.RemoveSubrecordEnTodoElArbol(v.Node, firma)
+        End Sub
+
+        ''' <summary>Saca del arbol el CONTENEDOR declarado con ese nombre, con todo lo que agrupa.
+        ''' Es "este record no declara X", para los casos en que X no es un subrecord suelto sino un
+        ''' grupo — <c>Keywords</c> agrupa a <c>KSIZ</c> y <c>KWDA</c>.</summary>
+        <Extension>
+        Public Sub QuitarGrupo(Of T As Class)(rec As T, nombreDelGrupo As String)
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing Then Return
+            WbEdit.RemoveGroup(v.Node, nombreDelGrupo)
+        End Sub
+
         ''' <summary>Copia un subrecord entero -y todo lo que cuelga de el- de un record a otro del mismo
         ''' tipo. Si el origen no lo trae, el destino se queda sin el.
         '''
@@ -1682,7 +1807,15 @@ Namespace Canon
                 End If
                 cuantos += 1
             Next
-            If cuantos > 0 OrElse traiaContador Then
+            ' ⛔ rev-06: aca decia `cuantos > 0 OrElse traiaContador`, o sea que dejaba el contador
+            ' en CERO si el record ya lo traia — una ley distinta de la de keywords, a 30 lineas.
+            ' MEDIDO sobre el orden de carga entero (SSE 24 plugins / 6452 NPC_, FO4 58 / 4365):
+            '    sin perks  SSE 4253 / FO4 2087, de esos CON PRKZ: 0 y 0
+            '    sin spells SSE 4250 / FO4 3890, de esos CON SPCT: 0 y 0
+            '    sin items  SSE 2237 / FO4 1367, de esos CON COCT: 0 y 0
+            ' Las CUATRO listas siguen la misma ley: sin elementos, el record NO declara el
+            ' contador. Se unifican en vez de justificar dos.
+            If cuantos > 0 Then
                 npc.Count2 = CUInt(cuantos)
             Else
                 npc.QuitarSubrecord("COCT")
@@ -1708,7 +1841,15 @@ Namespace Canon
                 e.PerkRank = p.PerkRank
                 cuantas += 1
             Next
-            If cuantas > 0 OrElse traiaContador Then
+            ' ⛔ rev-06: aca decia `cuantos > 0 OrElse traiaContador`, o sea que dejaba el contador
+            ' en CERO si el record ya lo traia — una ley distinta de la de keywords, a 30 lineas.
+            ' MEDIDO sobre el orden de carga entero (SSE 24 plugins / 6452 NPC_, FO4 58 / 4365):
+            '    sin perks  SSE 4253 / FO4 2087, de esos CON PRKZ: 0 y 0
+            '    sin spells SSE 4250 / FO4 3890, de esos CON SPCT: 0 y 0
+            '    sin items  SSE 2237 / FO4 1367, de esos CON COCT: 0 y 0
+            ' Las CUATRO listas siguen la misma ley: sin elementos, el record NO declara el
+            ' contador. Se unifican en vez de justificar dos.
+            If cuantas > 0 Then
                 npc.PerkCount = CUInt(cuantas)
             Else
                 npc.QuitarSubrecord("PRKZ")
@@ -1733,8 +1874,14 @@ Namespace Canon
             Next
         End Sub
 
-        ''' <summary>Reemplaza las palabras clave por las de la lista. El contador KSIZ queda con la cuenta
-        ''' nueva: sin el, la lectura interpreta la lista como vacia.</summary>
+        ''' <summary>Reemplaza las palabras clave por las de la lista.
+        ''' <para>Si queda al menos una, el contador <c>KSIZ</c> lleva la cuenta nueva: sin el, la
+        ''' lectura interpreta la lista como vacia. Si NO queda ninguna, el record deja de declarar
+        ''' keywords del todo — se saca el grupo entero.</para>
+        ''' <para>⭐ Las otras tres listas del archivo siguen la MISMA ley, y eso esta medido, no
+        ''' supuesto: sin perks / hechizos / items, **ningun** NPC del orden de carga trae su contador
+        ''' (0 de 4253+2087, 0 de 4250+3890, 0 de 2237+1367). Antes eran dos leyes a 30 lineas de
+        ''' distancia; se unificaron.</para></summary>
         <Extension>
         Public Sub PonerPalabrasClave(npc As INpc, lista As IEnumerable(Of UInteger))
             If npc Is Nothing Then Return
@@ -1751,11 +1898,22 @@ Namespace Canon
                     cuantas += 1
                 Next
             End If
-            If cuantas > 0 OrElse traiaContador Then
+            ' ⛔⛔ cg-09. Aca habia dos defectos encadenados, y el segundo tapaba al primero:
+            '   (a) `QuitarSubrecord("KSIZ")` era NO-OP. `RemoveSubrecord` mira solo los hijos DIRECTOS
+            '       de la raiz, y en la def del NPC_ las keywords son `RStruct("Keywords", Sub_("KSIZ"),
+            '       Sub_("KWDA"))` => son NIETOS. Devolvia 0. (SPCT, PRKZ y COCT si son de primer nivel,
+            '       asi que el mismo llamado funciona en los otros tres sitios de este archivo.)
+            '   (b) y aunque hubiera funcionado no servia, porque este `Else` exigia que el record NO
+            '       trajera KSIZ, o sea que no hubiera NADA que sacar. La rama que produce el estado
+            '       raro —KSIZ=0 con KWDA vacio— pasaba por el `If` y no se limpiaba nunca.
+            ' Ahora la condicion es la que corresponde: si no queda ni una keyword, el record NO LAS
+            ' DECLARA, venga como venga. Sale del corpus, no de una preferencia: **0 de 1428 NPC de FO4
+            ' y 0 de 5825 de SSE** sin keywords traen KSIZ. Y del motor, que libera el mismo campo que
+            ' el `LoadForm` escribio (SSE `TESNPC+0x110` / FO4 `+0x158`).
+            If cuantas > 0 Then
                 npc.KeywordsKeywordCount = CUInt(cuantas)
             Else
-                npc.QuitarSubrecord("KSIZ")
-                npc.QuitarSubrecord("KWDA")
+                npc.QuitarGrupo("Keywords")
             End If
         End Sub
 
@@ -1777,7 +1935,15 @@ Namespace Canon
                     cuantos += 1
                 Next
             End If
-            If cuantos > 0 OrElse traiaContador Then
+            ' ⛔ rev-06: aca decia `cuantos > 0 OrElse traiaContador`, o sea que dejaba el contador
+            ' en CERO si el record ya lo traia — una ley distinta de la de keywords, a 30 lineas.
+            ' MEDIDO sobre el orden de carga entero (SSE 24 plugins / 6452 NPC_, FO4 58 / 4365):
+            '    sin perks  SSE 4253 / FO4 2087, de esos CON PRKZ: 0 y 0
+            '    sin spells SSE 4250 / FO4 3890, de esos CON SPCT: 0 y 0
+            '    sin items  SSE 2237 / FO4 1367, de esos CON COCT: 0 y 0
+            ' Las CUATRO listas siguen la misma ley: sin elementos, el record NO declara el
+            ' contador. Se unifican en vez de justificar dos.
+            If cuantos > 0 Then
                 npc.Count = CUInt(cuantos)
             Else
                 npc.QuitarSubrecord("SPCT")

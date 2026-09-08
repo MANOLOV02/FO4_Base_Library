@@ -901,6 +901,14 @@ Namespace Canon
             Next
         End Sub
 
+        ''' <summary>Un struct NUEVO se crea con sus miembros OBLIGATORIOS, no con todos.
+        ''' <para>⛔ Aca se ignoraba <see cref="OptionalFromElement"/>, asi que un `TEND` recien creado
+        ''' salia con sus 7 bytes donde el origen traia 1 — y el gate lo reportaba como "no copiado",
+        ''' cuando en realidad no era PERDIDA sino FABRICACION. Es la misma ley que `WbRStructDef`
+        ''' ya aplica ("miembros de un struct NUEVO: solo los marcados Required") y la que
+        ''' <see cref="Parse"/> ya reconoce como legal al leer: si un struct con miembros opcionales
+        ''' puede LEERSE truncado, crearlo truncado tambien es legal, y es lo minimo.</para>
+        ''' <para>-1 (ningun miembro opcional) deja la conducta anterior intacta.</para></summary>
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
             For Each m In Members
