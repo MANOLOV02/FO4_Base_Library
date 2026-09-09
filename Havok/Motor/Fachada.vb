@@ -331,22 +331,42 @@ Namespace Havok.Motor
         ''' (`setTransform`, `0x1419605F0`). Las `linearVelocity`/`angularVelocity` serializadas
         ''' son **basura** y no se copian.</para>
         ''' <para>⛔ `pinchDetectionEnabled` (`+0x80`) del archivo tampoco: el buffer de trabajo lo
-        ''' reescribe desde `collidablePinchingDatas` (cap. 2q.8). Queda en `False` hasta que se
-        ''' transcriba ese camino.</para>
+        ''' reescribe desde `data.collidablePinchingDatas` (`+0x118`), que es una lista PARALELA a
+        ''' `perInstanceCollidables`. Eso es lo que cuenta la puerta de `TtCollideAndSolve`
+        ''' (`0x141A697F0`: `cmp byte ptr [rcx], dil` con paso `0x90` sobre el buffer de
+        ''' trabajo).</para>
         ''' </summary>
         Friend Function ColisionablesDe(sim As HkObj_HclSimClothData) As Colisionable()
             If sim Is Nothing Then Return Array.Empty(Of Colisionable)()
             Dim lista = sim.PerInstanceCollidables
             If lista Is Nothing OrElse lista.Count = 0 Then Return Array.Empty(Of Colisionable)()
+            ' ⛔ LISTA PARALELA, por INDICE. `collidablePinchingDatas` (+0x118) no trae de que
+            ' colisionable habla: el motor la recorre a la par (misma `i`).
+            ' ⛔⛔ QUE PASA SI ES MAS CORTA: el motor NO compara contra el `count`
+            ' (`0x1418C68A3 mov rdx, [rdi+0x118]` + `[rdx + r13]` con `r13 = i*8`), o sea que
+            ' leeria fuera de la lista. Aca se recorta, y eso ES un default — pero MEDIDO no se
+            ' ejerce: `collidablePinchingDatas` cubre `perInstanceCollidables` en las 759
+            ' prendas del corpus, ninguna mas corta, ninguna sin lista (`--motorcenso`).
+            Dim pinch = sim.CollidablePinchingDatas
             Dim r(lista.Count - 1) As Colisionable
             For i = 0 To lista.Count - 1
                 Dim cd = lista(i)
                 If cd Is Nothing Then Continue For
+                Dim opta = False
+                Dim radioPellizco = 0.0F
+                Dim prioridad = 0
+                If pinch IsNot Nothing AndAlso i < pinch.Count AndAlso pinch(i) IsNot Nothing Then
+                    opta = pinch(i).PinchDetectionEnabled                ' +0x00
+                    prioridad = pinch(i).PinchDetectionPriority          ' +0x01
+                    radioPellizco = pinch(i).PinchDetectionRadius        ' +0x04
+                End If
                 r(i) = New Colisionable() With {
                     .Transform = M4(cd.Transform),
                     .VelLineal = Vector128(Of Single).Zero,
                     .VelAngular = Vector128(Of Single).Zero,
-                    .PellizcoActivo = False,
+                    .PellizcoActivo = opta,
+                    .PrioridadDePellizco = prioridad,
+                    .RadioDePellizco = radioPellizco,
                     .Forma = FormaDeColisionable(cd)}
             Next
             Return r
@@ -480,6 +500,19 @@ Namespace Havok.Motor
                 e.Gravedad = V4(info.Gravity)                            ' simulationInfo+0x00
                 e.DampingPorSegundo = info.GlobalDampingPerSecond        ' +0x10
                 e.TransferenciaHabilitada = info.TransferMotionEnabled   ' +0x1E
+            End If
+
+            ' ---- lo del paso 4b (`computeContactPlanes`) ----
+            ' ⛔ `MundoDeTerreno` queda en `Nothing`: en FO4 NADIE escribe `[inst+0xF8]`/`[+0x100]`
+            ' (el unico escritor, `0x1418C7B10`, no tiene llamadores), asi que la puerta
+            ' `0x14195E3A0` no abre. Los otros tres si salen del archivo y son las condiciones
+            ' que el motor mira para decidirlo, no un adorno.
+            e.ParticulasDeTerreno = CInt(sim.NumLandscapeCollidableParticles)   ' +0x148
+            Dim tierra = sim.LandscapeCollisionData                             ' +0x134
+            If tierra IsNot Nothing Then
+                e.RadioDeTerreno = tierra.LandscapeRadius
+                e.DetectarPegadas = tierra.EnableStuckParticleDetection
+                e.FactorDePegado = tierra.StuckParticlesStretchFactorSq
             End If
 
             ' ⛔ sin `doNormals` no hay normales que actualizar: se dejan en Nothing y el paso 5
@@ -1232,7 +1265,15 @@ Namespace Havok.Motor
 
             Dim oSim = HkObj_HclSimulateOperator.Leer(g, crudo)
             If oSim IsNot Nothing Then
-                Return New OpSimular(CInt(oSim.SubSteps), CInt(oSim.SimClothIndex), oSim.Name)
+                ' ⛔ LOS TRES SALEN DEL ARCHIVO, no de un default. `numberOfSolveIterations`
+                ' es el lazo del paso 4e (0x141A134F7), `adaptConstraintStiffness` promueve el
+                ' modo (0x141A1349B) y `constraintExecution` manda el orden con `-1` = colision
+                ' (0x141A13798). Estaban los tres sin leer.
+                Return New OpSimular(CInt(oSim.SubSteps), CInt(oSim.SimClothIndex),
+                                     oSim.NumberOfSolveIterations,
+                                     oSim.AdaptConstraintStiffness,
+                                     AEnteros(oSim.ConstraintExecution),
+                                     oSim.Name)
             End If
 
             Dim oMov = HkObj_HclMoveParticlesOperator.Leer(g, crudo)
@@ -1423,7 +1464,15 @@ Namespace Havok.Motor
             If info IsNot Nothing Then
                 inst.ToleranciaDeColision = info.CollisionTolerance
                 inst.LandscapeHabilitado = info.LandscapeCollisionEnabled   ' +0x1D, 0x14195E3B2
+                ' ⛔ La PRIMERA comprobacion de la puerta de `TtCollideAndSolve` (0x141A697BF).
+                inst.PellizcoHabilitado = info.PinchDetectionEnabled        ' +0x1C
             End If
+            ' ⛔ El rango de pellizco es INCLUSIVO y las dos puntas salen del dato: el minimo ya
+            ' lo pone el ctor, el maximo faltaba (0x141A75F5A `movzx eax, word [rdx+0x12A]`).
+            inst.MaximoDePellizco = sim.MaxPinchedParticleIndex             ' +0x12A
+            ' ⛔ La bandera POR PARTICULA (+0x108): parte la lista de la colision en dos
+            ' (`0x141A71898`). Sin ella todas iban por el mismo camino.
+            inst.PellizcoPorParticula = ABytesDeBool(sim.PerParticlePinchDetectionEnabledFlags)
             Return inst
         End Function
 
@@ -1508,6 +1557,17 @@ Namespace Havok.Motor
         ''' <summary>`heights` viene como `List(Of Integer)` del parser, pero en el archivo son
         ''' `uint8` (reflexion: `heights,30,array,uint8`). Se recorta a byte, que es el ancho
         ''' real: el kernel lee con `movzx eax, byte ptr`.</summary>
+        ''' <summary>Una lista de `bool` del archivo, a bytes — la bandera por particula del
+        ''' pellizco (`data+0x108`), que el motor lee de a un byte (`0x141A71898`).</summary>
+        Friend Function ABytesDeBool(lista As System.Collections.Generic.IList(Of Boolean)) As Byte()
+            If lista Is Nothing OrElse lista.Count = 0 Then Return Array.Empty(Of Byte)()
+            Dim r(lista.Count - 1) As Byte
+            For i = 0 To lista.Count - 1
+                r(i) = CByte(If(lista(i), 1, 0))
+            Next
+            Return r
+        End Function
+
         Friend Function ABytesDeEnteros(lista As System.Collections.Generic.IList(Of Integer)) As Byte()
             If lista Is Nothing OrElse lista.Count = 0 Then Return Array.Empty(Of Byte)()
             Dim r(lista.Count - 1) As Byte

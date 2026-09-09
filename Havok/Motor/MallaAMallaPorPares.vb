@@ -171,6 +171,15 @@ Namespace Havok.Motor
 
     ' =============================================================================================
 
+    ''' <summary>Lo que el metodo `+0x38` (`0x141952920`) declara: que buffer lee, cual escribe,
+    ''' cuantos vertices y si toca el canal de normales.</summary>
+    Friend Structure UsoDeBuffersDelDeform
+        Friend BufferLeido As Integer
+        Friend BufferEscrito As Integer
+        Friend VerticesEscritos As Integer
+        Friend EscribeNormales As Boolean
+    End Structure
+
     Friend Module MallaAMallaPorPares
 
         ''' <summary>`scaleNormalBehaviour = 0` — la normal del marco sale UNITARIA.</summary>
@@ -193,11 +202,93 @@ Namespace Havok.Motor
         ''' <para>⛔ El `|n|²` se reduce con `((y + x) + z)`, la asociación de
         ''' <see cref="Simd.Dot3"/> (`0x141953513`/`16`).</para>
         ''' </summary>
+        ''' <summary>
+        ''' La SALIDA TEMPRANA del kernel — `0x141952A6A test ecx, ecx` + `je 0x141952F2C`.
+        ''' <para>⛔ `ecx` es `entrada.numTriangles` (`[r13+0x30]`, leido en `0x141952A50`) y el
+        ''' corte es ANTES del scratch, de los marcos y del deform. Con el buffer de entrada
+        ''' declarando cero triangulos el operador **no toca la salida**, tenga o no
+        ''' subconjunto: la sustitucion del subconjunto vacio (`0x141952A58`) pasa antes pero no
+        ''' cambia esta condicion.</para>
+        ''' </summary>
+        Friend Function HayQueDeformar(entrada As Buffer) As Boolean
+            Return entrada IsNot Nothing AndAlso entrada.NumTriangulos <> 0
+        End Function
+
+        ''' <summary>
+        ''' El metodo de vtable `+0x20` — `0x1419528D0`. Un predicado de TAMAÑO:
+        ''' <para><code>
+        ''' n = op.inputTrianglesSubset.size            ' [op+0x28], 0x1419528D0
+        ''' si n &gt; 0x400                        → False  ' 0x1419528D4/DB
+        ''' buf = buffers[op.inputBufferIdx]            ' [op+0x50], 0x1419528DD-E5
+        ''' si buf.numVertices &gt; 0x400 (sin signo) → False  ' 0x1419528E9/F1
+        ''' si n &lt;&gt; 0                         → True   ' 0x1419528F3/F6/09
+        ''' devuelve buf.numTriangles &lt;= 0x400          ' 0x1419528F8/0x141952900 setbe
+        ''' </code></para>
+        ''' <para>⛔⛔ EL CAMINO DE EJECUCION NO LO CONSULTA, y esto esta MEDIDO, no supuesto: el
+        ''' despachador `0x1418C5DE0` salta por su tabla de RVAs y para el type 5 cae en
+        ''' `0x1418C5F24 jmp 0x1419529F0`, un salto DIRECTO al kernel sin ninguna llamada por
+        ''' vtable en el medio; y ese `jmp` es el UNICO xref al kernel en todo el `.text`. O sea
+        ''' que en FO4 el operador corre sin que nadie pregunte esto.</para>
+        ''' <para>⛔ Se transcribe igual porque es de la CLASE, no del kernel — la lista de
+        ''' metodos es cerrada y sale de la vtable `0x142701ED8`. El `0x400` no es un umbral mio:
+        ''' es el inmediato que compara `0x1419528D4`.</para>
+        ''' </summary>
+        Friend Function CabeEnUnLote(op As MallaAMallaPorParesCompilada, entrada As Buffer) As Boolean
+            If op Is Nothing OrElse entrada Is Nothing Then Return False
+            Dim n = op.SubconjuntoDeTriangulos.Length
+            If n > &H400 Then Return False                             ' 0x1419528D4/DB
+            If CUInt(entrada.Cuenta) > &H400UI Then Return False       ' 0x1419528E9/F1, `ja` sin signo
+            If n <> 0 Then Return True                                 ' 0x1419528F3/F6 -> 0x141952909
+            Return entrada.NumTriangulos <= &H400                      ' 0x1419528F8 + setbe
+        End Function
+
+        ''' <summary>
+        ''' El metodo de vtable `+0x38` — `0x141952920`: QUE buffers usa el operador, y como.
+        ''' <para>Es lo que alimenta el `hclClothStateBufferAccess` / `usedBuffers` del estado: el
+        ''' motor lo pregunta para saber que puede correr en paralelo y que no.</para>
+        ''' <para><code>
+        ''' lee   inputBufferIdx                        ' 0x141952940 (0x141A0D7A0)
+        ''' lee   inputBufferIdx, canal 0               ' 0x14195294E (0x141A0D5E0)
+        ''' cuantos = endVertex - startVertex + 1       ' 0x141952953-62
+        ''' por cada i LOCAL con pares:                 ' 0x141952970-84
+        '''     escribe outputBufferIdx, vertice i, canal 0        ' 0x141952992 (0x141A0D750)
+        '''     si deformNormals: idem canal 1                     ' 0x1419529AC
+        ''' </code></para>
+        ''' <para>⛔ El vertice que registra es el LOCAL (`r8d = ebx`, `0x14195298C`), no el
+        ''' global — igual que el indice con el que se lee `startForVertex`.</para>
+        ''' <para>⛔ Y el «sin pares no se toca» aparece tambien aca (`0x141952984 jle`): un
+        ''' vertice sin pares no figura como escrito. Es la misma ley vista desde el registro.</para>
+        ''' </summary>
+        Friend Function UsoDeBuffers(op As MallaAMallaPorParesCompilada) As UsoDeBuffersDelDeform
+            Dim r As UsoDeBuffersDelDeform
+            r.BufferLeido = -1
+            r.BufferEscrito = -1
+            r.VerticesEscritos = 0
+            r.EscribeNormales = False
+            If op Is Nothing Then Return r
+            r.BufferLeido = op.BufferDeEntrada                         ' 0x14195293A
+            Dim cuantos = op.VerticeFinal - op.VerticeInicial + 1      ' 0x141952953-62
+            ' ⛔ `je` a la salida con la cuenta en CERO (0x141952965), antes del bucle.
+            If cuantos = 0 Then Return r
+            For i = 0 To cuantos - 1
+                If i + 1 >= op.InicioPorVertice.Length Then Exit For
+                If op.InicioPorVertice(i + 1) - op.InicioPorVertice(i) <= 0 Then Continue For  ' 0x141952984
+                r.BufferEscrito = op.BufferDeSalida                    ' 0x141952986
+                r.VerticesEscritos += 1
+                If op.DeformarNormales Then r.EscribeNormales = True   ' 0x141952997/9B
+            Next
+            Return r
+        End Function
+
         Friend Function Marcos(op As MallaAMallaPorParesCompilada, entrada As Buffer) As Mat4()
             Dim cuantos = op.SubconjuntoDeTriangulos.Length
             If cuantos = 0 Then cuantos = entrada.NumTriangulos       ' 0x141952A58
-            Dim r(Math.Max(0, cuantos - 1)) As Mat4
-            If cuantos = 0 Then Return r
+            ' ⛔ VACIO, NO «UNO NULO». `Dim r(cuantos - 1)` con `cuantos = 0` declara `r(0)`, que
+            ' en VB es un arreglo de UN elemento — y ese Mat4 en cero llegaba a `Deformar`, que
+            ' lo aceptaba (`0 < marcos.Length`) y escribia CERO en el vertice. El motor no
+            ' escribe nada (0x141952A6C).
+            If cuantos = 0 Then Return Array.Empty(Of Mat4)()
+            Dim r(cuantos - 1) As Mat4
 
             Dim unTercio = Vector128.Create(0.333333343F)             ' 0x142F3C660
             For k = 0 To cuantos - 1

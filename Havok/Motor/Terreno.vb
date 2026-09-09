@@ -275,8 +275,16 @@ Namespace Havok.Motor
             ' ⛔ El permiso sale del ARCHIVO: `simulationInfo.landscapeCollisionEnabled` (+0x1D),
             ' leído por `0x14195E3AE`/`B2` a través de `getSimulationInfo`. No es un flag del mundo.
             If Not inst.LandscapeHabilitado Then Return False
-            ' ⛔ Con la AABB validada, no sólo con `Length > 0` (motor-89).
-            If Not mundo.HayTriangulos AndAlso Not mundo.HayConvexos Then Return False
+            ' ⛔⛔ LA PUERTA MIRA LA CUENTA, NO LA AABB (motor-96). `0x14195E3C3
+            ' `cmp dword ptr [rax + 0x18], 0` y `0x14195E3D5` idem para la otra lista: es el
+            ' `size` del `hkArray`. La validacion de AABB (`cmpltps` + `test al, 7`) esta en
+            ' `0x14195DB64`-`9E`, DENTRO de `computeContactPlanes`, y alli solo decide si esa
+            ' lista PARTICIPA de la caja y de la colision.
+            ' La diferencia se ve: con cuenta > 0 y AABB invalida el motor pasa la puerta, pone
+            ' el buffer de planos en CERO (`0x141A14060`) y sigue hasta el final; devolver
+            ' `Nothing` aca era otra salida para la misma entrada.
+            If mundo.Triangulos Is Nothing OrElse mundo.Convexos Is Nothing Then Return False
+            If mundo.Triangulos.Length = 0 AndAlso mundo.Convexos.Length = 0 Then Return False
             If numParticulasDeTerreno = 0 Then Return False
             Return hayContexto
         End Function

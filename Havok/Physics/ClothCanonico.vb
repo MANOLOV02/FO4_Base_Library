@@ -370,10 +370,19 @@ Namespace Havok.Physics
         End Function
 
         ''' <summary>¿Esta matriz se puede invertir? La `Transform_Class` TIRA al invertir una
-        ''' singular, y con NaN adentro ni siquiera llega a decirlo.</summary>
+        ''' singular, y con NaN adentro ni siquiera llega a decirlo.
+        ''' <para>⛔ EL UMBRAL ERA INVENTADO. Decia `Math.Abs(d) > 1.0E-12F`, un numero que no
+        ''' sale de ningun lado: ni del `.exe`, ni de la reflexion, ni de una medicion. Una matriz
+        ''' es invertible si su determinante NO ES CERO, y eso es exacto. Un determinante chico
+        ''' pero distinto de cero es una matriz mal condicionada, no una singular, y descartarla
+        ''' en silencio era decidir por el motor.</para>
+        ''' <para>⛔ La guarda de singularidad que el motor SI tiene es otra cosa y vive donde
+        ''' corresponde: `n0·n1·n2·FLT_EPSILON &lt; |det|` en <see cref="Havok.Motor.Polar"/>
+        ''' (`0x141360010`), sobre la `Mat3` del solver — no sobre esta `Matrix4` del render.</para>
+        ''' </summary>
         Private Shared Function EsInvertible(m As Matrix4) As Boolean
             Dim d = m.Determinant
-            Return Not Single.IsNaN(d) AndAlso Not Single.IsInfinity(d) AndAlso Math.Abs(d) > 1.0E-12F
+            Return Not Single.IsNaN(d) AndAlso Not Single.IsInfinity(d) AndAlso d <> 0.0F
         End Function
 
         ''' <summary>Un `Mat4` del motor a la `Matrix4` de OpenTK que usa el esqueleto.</summary>

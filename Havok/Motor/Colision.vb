@@ -48,7 +48,18 @@ Namespace Havok.Motor
         ''' `SolveContacts` (`0x141A716D7`). Lo escribe el constructor, no el archivo.</summary>
         Friend PellizcoActivo As Boolean
 
-        ''' <summary>`+0x88` — el shape, ya con sus datos derivados al mundo.</summary>
+        ''' <summary>`+0x81` — `collidablePinchingDatas[i].pinchDetectionPriority` (`int8`).
+        ''' Con ella el motor decide cual de dos contactos gana cuando una particula queda entre
+        ''' dos colisionables.</summary>
+        Friend PrioridadDePellizco As Integer
+
+        ''' <summary>`+0x84` — `collidablePinchingDatas[i].pinchDetectionRadius` (`real`).</summary>
+        Friend RadioDePellizco As Single
+
+        ''' <summary>`+0x88` — el shape, en espacio LOCAL.
+        ''' <para>⛔ Decia «ya con sus datos derivados al mundo» y caduco con motor-75: la
+        ''' derivacion la hace `ResolverUnColisionable` UNA VEZ POR SUBSTEP (`Derivar`), porque el
+        ''' colisionable se mueve en cada substep.</para></summary>
         Friend Forma As Forma
 
     End Class
@@ -249,7 +260,8 @@ Namespace Havok.Motor
         ''' usuario pidió el motor completo.</para>
         ''' </summary>
         Friend Sub ResolverContactos(inst As Instancia, colisionables As Colisionable(),
-                                     dtSub As Single, conPellizco As Boolean, sinPellizco As Boolean)
+                                     dtSub As Single, conPellizco As Boolean, sinPellizco As Boolean,
+                                     Optional detectar As Boolean = False)
             If colisionables Is Nothing Then Return
             For ci = 0 To colisionables.Length - 1                  ' 0x141A7165F: si n <= 0, nada
                 Dim c = colisionables(ci)
@@ -260,9 +272,76 @@ Namespace Havok.Motor
                     If Not sinPellizco Then Continue For            ' 0x141A716EE/F1
                 End If
                 If NoHaceNada(c.Forma.Tipo) Then Continue For       ' 0x141A71702/05 + la tabla
-                ResolverUnColisionable(inst, c, ci, dtSub)
+                ' ⛔⛔ EL CUARTO BOOLEANO (`0x141A71641 movzx r11d, r9b`, `0x141A717EB test r11b`):
+                ' con el prendido y el colisionable declarando pellizco, la particula va a la
+                ' variante que SOLO DETECTA — pero solo si su bandera por particula esta puesta
+                ' (`0x141A71898`). Las demas siguen por el kernel normal.
+                ResolverUnColisionable(inst, c, ci, dtSub, detectar AndAlso c.PellizcoActivo)
             Next
         End Sub
+
+        ''' <summary>
+        ''' `TtCollide And Solve` — `0x141A69730`. **Es el paso de colision del motor**, y corre
+        ''' DENTRO del lazo de `numberOfSolveIterations`, despues de los conjuntos.
+        ''' <para>⛔⛔ QUE ESTE ACA Y NO EN EL (4b) ESTA MEDIDO, no razonado: `SolveContacts`
+        ''' (`0x141A71610`) tiene **tres** llamadores en todo el `.text` y los tres estan adentro
+        ''' de esta funcion; y esta funcion tiene **dos**, los dos en el solve (`0x141A135A4` y
+        ''' `0x141A137A9`). `computeContactPlanes` (`0x14195DA70`), que es lo que va en el (4b),
+        ''' tiene **uno**: `0x14195CB7A`. (Barrido de los `E8` del `.text` resolviendo el destino
+        ''' de cada uno.)</para>
+        ''' <para>LA PUERTA, `0x141A697BF`-`0x141A6980B` — las tres condiciones:
+        ''' `info.pinchDetectionEnabled`, `numColisionables &gt; 0`, y **mas de un** colisionable con
+        ''' pellizco. Cerrada, es UNA llamada con los dos booleanos en `True` (`0x141A699EE`:
+        ''' `mov r8b, 1` + `movzx edx, r8b`) — y esa es la ruta de FO4.</para>
+        ''' <para>⛔ LOS ANTI-PELLIZCO VAN ACA, NO EN EL SOLVE, y con `k = 1,0` (`0x141A69993`) y
+        ''' `usaK = False` (`0x141A699BA`), no con el `k` de la ley normal.</para>
+        ''' <para>Devuelve cuantos `antiPinchConstraintSet` aplico, para que la marca
+        ''' `[MOTOR-SETSOK]` la siga emitiendo quien hace el trabajo.</para>
+        ''' </summary>
+        Friend Function ColisionYSolve(inst As Instancia, e As EntradaDelCuadro,
+                                       colisionables As Colisionable(), dtSub As Single,
+                                       ByRef ctx As ContextoDeSolve) As Integer
+            ' ---- la puerta ----
+            Dim hay = colisionables IsNot Nothing AndAlso colisionables.Length > 0  ' 0x141A697D4
+            Dim conPellizco = 0
+            If hay Then
+                For ci = 0 To colisionables.Length - 1                    ' 0x141A697F0-0x141A69806
+                    Dim c = colisionables(ci)
+                    If c IsNot Nothing AndAlso c.PellizcoActivo Then conPellizco += 1
+                Next
+            End If
+            ' ⛔ `cmp eax, 1` + `jle`: hacen falta DOS. Con uno solo no hay entre que pellizcar.
+            Dim puerta = inst IsNot Nothing AndAlso inst.PellizcoHabilitado AndAlso
+                         hay AndAlso conPellizco > 1                      ' 0x141A69808/0B
+
+            If Not puerta Then
+                ' ⛔ LOS DOS EN TRUE. El motor pasaba `False, True`, o sea que se salteaba todo
+                ' colisionable con pellizco declarado.
+                ' ⛔ el cuarto en False: sin deteccion, es el kernel NORMAL para todas.
+                ResolverContactos(inst, colisionables, dtSub, True, True, False) ' 0x141A699EE/A01
+                Return 0
+            End If
+
+            Pellizco.CerarContactosCacheados(inst)                        ' 0x141A6984B
+            ' ⛔ el cuarto en TRUE: esta es la pasada que DETECTA (0x141A698CA pone `r9b = 1`).
+            ResolverContactos(inst, colisionables, dtSub, True, False, True)  ' 0x141A698CA
+            Pellizco.ResolverContactosDePellizco(inst, dtSub)             ' 0x141A6993C
+            ResolverContactos(inst, colisionables, dtSub, False, True, False) ' 0x141A69982
+
+            If e.AntiPellizcos Is Nothing Then Return 0
+            ' ⛔ COPIA del contexto: el `usaK` de aca es False y no debe volver al del solve.
+            Dim ctxAnti = ctx
+            ctxAnti.UsaK = False                                          ' 0x141A699BA
+            Dim aplicados = 0
+            For j = 0 To e.AntiPellizcos.Length - 1                       ' 0x141A6998B/9DF
+                Dim cs = e.AntiPellizcos(j)
+                If cs Is Nothing Then Continue For
+                ctxAnti.IndiceDelSet = j                                  ' 0x141A699B7 mov r9d, edi
+                cs.Aplicar(ctxAnti, 1.0F)                                 ' 0x141A69993 k = 1,0
+                aplicados += 1
+            Next
+            Return aplicados
+        End Function
 
         ''' <summary>
         ''' La respuesta, para un colisionable y las partículas que su máscara habilita.
@@ -270,8 +349,19 @@ Namespace Havok.Motor
         ''' llamar al kernel (`0x141A71893`: `test dword [r8], r12d`). Si el dato no trae máscaras,
         ''' entran **todas** — que es lo que hace el motor cuando el arreglo no existe.</para>
         ''' </summary>
+        ''' <summary>
+        ''' ⛔⛔ `detectar` elige la VARIANTE DE PELLIZCO, que **solo detecta**.
+        ''' <para>Medido: la funcion que registra el pellizco (`0x141A6AEE0`-`0x141A6B46E`, con
+        ''' `.pdata` para delimitarla — las entradas estan encadenadas) escribe UNICAMENTE el
+        ''' registro de 48 B del cache (`0x141A6B138`/`14C`/`159`). NUNCA posiciones ni previas; la
+        ''' que si aplica respuesta escribe indexado por particula (`0x141A6A935 movups
+        ''' [r9 + rdi*8]`). La correccion de esas particulas sale de «Ttsolve contacts»
+        ''' (`0x141A75E00`), UNA sola por particula — la del colisionable de mayor prioridad.</para>
+        ''' <para>⛔ Y el reparto es POR PARTICULA (`0x141A71898`): dentro del mismo colisionable,
+        ''' las de bandera puesta van a detectar y las demas al kernel normal.</para>
+        ''' </summary>
         Private Sub ResolverUnColisionable(inst As Instancia, c As Colisionable, ci As Integer,
-                                           dtSub As Single)
+                                           dtSub As Single, detectar As Boolean)
             Dim dt = Vector128.Create(dtSub)
 
             ' ⛔⛔ EL SHAPE SE DERIVA **UNA VEZ POR COLISIONABLE**, acá, antes del bucle de
@@ -286,32 +376,91 @@ Namespace Havok.Motor
             Dim forma = c.Forma.Derivar(c.Transform)
 
             ' ⛔ LA MÁSCARA SÓLO SE APLICA SI `ci < data.perInstanceCollidables.count` (`data+0xB0`):
-            ' `0x141A7173F cmp ebx, r9d / jge` y `0x141A71C6D jge`. Para `ci >= count` la lista se arma
-            ' con **todas** las partículas. En FO4 no se ejerce (el buffer de trabajo son los clones
-            ' per-instance, cap. 2ter.2), pero la ley es ésa y se implementa entera (motor-57).
+            ' `0x141A7173F cmp ebx, r9d / jge` y `0x141A71C6D jge`.
+            ' ⛔⛔ Y PARA `ci >= count` EL FILTRO NO ES «TODAS»: es `invMass != 0`
+            ' (`0x141A71D00 ucomiss xmm6, dword ptr [rdx]` con `rdx` arrancando en
+            ' `particleData + 4` y paso `0x10`, y `je` que SALTEA la particula). O sea que las
+            ' de masa infinita — las ancladas — quedan afuera. Decia «todas» y era falso.
+            ' En FO4 no se ejerce (el buffer de trabajo son los clones per-instance,
+            ' cap. 2ter.2), pero la ley es ésa y se implementa entera (motor-57, motor-110).
             Dim masc = If(ci < inst.NumColisionablesPorInstancia, inst.MascarasDeColision, Nothing)
             Dim bit = BitDeMascara(ci)
+            Dim porMasa = masc Is Nothing
 
             ' ⛔⛔ EL REPARTO BLOQUE / RESTO. El motor arma la lista de partículas del colisionable y
             ' la recorre en bloques de 4 (`sar r13d, 2`) **más un bucle de resto** (`and cx, 3`), y
             ' **el resto NO corre la misma ley** (ver `Forma.PuntoMasCercano`). Así que primero hay
             ' que saber cuántas entran, y recién después cuáles caen en las últimas `n mod 4`.
-            Dim lista As New List(Of Integer)()
+            ' ⛔⛔ SON DOS LISTAS, NO UNA. `0x141A71898 cmp byte [rdx], 0` reparte ANTES de
+            ' recorrer: bandera != 0 va a la lista A (`0x141A718A2 mov [r15+rax*2], cx`,
+            ' contador `edi`) y bandera == 0 a la B (`0x141A718AE mov [rsi+rax*2], cx`,
+            ' contador `ebx`), y las dos cuentas se guardan por separado (`0x141A718C7`/`CD`).
+            ' Cada kernel arma su bloque/resto sobre SU lista. Una sola lista mezclada mete
+            ' particulas en el resto que el motor tiene en bloque, y el resto NO corre la
+            ' misma ley (motor-122).
+            Dim listaPellizco As New List(Of Integer)()             ' A — 0x141A718A2
+            Dim listaNormal As New List(Of Integer)()               ' B — 0x141A718AE
             For i = 0 To inst.NumParticulas - 1
+                Dim aPellizco = False
                 If masc IsNot Nothing AndAlso i < masc.Length Then
                     If (masc(i) And bit) = 0UI Then Continue For    ' 0x141A71893 test
+                    ' el reparto por bandera vive SOLO en este camino
+                    aPellizco = detectar AndAlso inst.PellizcoPorParticula IsNot Nothing AndAlso
+                                i < inst.PellizcoPorParticula.Length AndAlso
+                                inst.PellizcoPorParticula(i) <> 0   ' 0x141A71898
+                ElseIf porMasa Then
+                    ' ⛔ sin mascara, el filtro es la masa inversa — 0x141A71D00/03. Y ese
+                    ' camino escribe SOLO la lista B (`0x141A71D0A`, el mismo `rsi`/`ebx`):
+                    ' no prueba la bandera ni toca `r15`. Sin reparto de pellizco.
+                    If inst.InvMasa(i) = 0.0F Then Continue For
                 End If
-                lista.Add(i)
+                If aPellizco Then listaPellizco.Add(i) Else listaNormal.Add(i)
             Next
-            Dim nBloque = (lista.Count \ 4) * 4                    ' 0x141A6A5C5 sar r13d, 2
 
-            For k = 0 To lista.Count - 1
-                Dim i = lista(k)
-                Dim enResto = (k >= nBloque)                        ' 0x141A6ABF9 and cx, 3
+            ' ⛔ CADA LISTA CON SU PROPIO BLOQUE/RESTO — `sar` sobre SU cuenta, no sobre el total.
+            Dim nBloqueP = (listaPellizco.Count \ 4) * 4            ' 0x141A6A5C5 sar r13d, 2
+            Dim nBloqueN = (listaNormal.Count \ 4) * 4
+            ' el orden del motor: primero la de pellizco (`0x141A718D0 test edi,edi / je`),
+            ' despues la normal. Son disjuntas, asi que el orden no es observable, pero se
+            ' respeta el del binario.
+            Dim orden As New List(Of Integer)()
+            Dim restos As New List(Of Boolean)()
+            Dim dePellizco As New List(Of Boolean)()
+            For k = 0 To listaPellizco.Count - 1
+                orden.Add(listaPellizco(k))
+                restos.Add(k >= nBloqueP)
+                dePellizco.Add(True)
+            Next
+            For k = 0 To listaNormal.Count - 1
+                orden.Add(listaNormal(k))
+                restos.Add(k >= nBloqueN)
+                dePellizco.Add(False)
+            Next
+
+            For k = 0 To orden.Count - 1
+                Dim i = orden(k)
+                Dim enResto = restos(k)                             ' 0x141A6ABF9 and cx, 3
 
                 Dim p = Simd.Leer(inst.Posiciones, i)
                 Dim radioP = inst.Radio(i)
                 Dim con = forma.PuntoMasCercano(p, i, radioP, enResto)
+
+                ' ⛔ EL REPARTO YA SE HIZO EN LA PARTICION (0x141A71898), que es donde lo hace
+                ' el motor: aca solo se corre la variante que le toco a esta particula.
+                If dePellizco(k) Then
+                    ' ⛔ LA DETECCION MIRA MAS LEJOS QUE EL CONTACTO: el test de entrada resta
+                    ' tambien el `radioDePellizco` (`0x141A6B07C`/`7F subps`, `0x141A6B087
+                    ' cmpltps`). Y NO se aplica respuesta: esta variante no escribe posiciones.
+                    Dim dPellizco = con.Distancia - radioP - c.RadioDePellizco
+                    If Not (dPellizco < 0.0F) Then Continue For
+                    Dim rP = Vector128.Subtract(con.Superficie, c.Transform.F3)
+                    Pellizco.RegistrarContacto(
+                        inst, c.PrioridadDePellizco, c.RadioDePellizco, i,
+                        dPellizco, con.Superficie, con.Normal,
+                        Vector128.Add(c.VelLineal, Polar.Cruz(c.VelAngular, rP)))
+                    Continue For
+                End If
+
                 If Not (con.Distancia - radioP < 0.0F) Then Continue For   ' cmpltps contra 0
 
                 ' --- separación: proyección EXACTA, sin escalar por dtSub

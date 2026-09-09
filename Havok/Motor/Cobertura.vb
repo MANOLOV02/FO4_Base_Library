@@ -130,9 +130,19 @@ Namespace Havok.Motor
                                                                Havok.Canon.HavokConstraintSets.Fuente.Estaticos)
             Dim n = 0
             If crudos IsNot Nothing Then
+                ' ⛔⛔ POR NOMBRE DE CLASE EXACTO, NO POR SUBCADENA. Decia
+                ' `ClassName.IndexOf("Volume") >= 0`, que es una regla inventada: el motor no
+                ' clasifica por texto. La lista es CERRADA y sale de la reflexion — son las dos
+                ' clases de volumen que la tabla declara como conjunto de restricciones — y la
+                ' comparacion es `Ordinal`, igual que en `HkObj_*.Leer`.
+                ' (La subcadena ademas matcheaba `hclVolumeConstraintApplyData` y sus seis
+                ' hermanas de datos, que no son conjuntos.)
                 For Each c In crudos
-                    If c.Bloque IsNot Nothing AndAlso c.Bloque.ClassName IsNot Nothing AndAlso
-                       c.Bloque.ClassName.IndexOf("Volume", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                    If c.Bloque Is Nothing OrElse c.Bloque.ClassName Is Nothing Then Continue For
+                    If String.Equals(c.Bloque.ClassName,
+                                     HkObj_HclVolumeConstraint.NombreDeClase, StringComparison.Ordinal) OrElse
+                       String.Equals(c.Bloque.ClassName,
+                                     HkObj_HclVolumeConstraintMx.NombreDeClase, StringComparison.Ordinal) Then
                         n += 1
                     End If
                 Next

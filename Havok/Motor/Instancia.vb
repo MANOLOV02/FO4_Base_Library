@@ -176,7 +176,9 @@ Namespace Havok.Motor
         ''' <summary>¿Ya se sembró el transform previo de la transferencia? Es el `simCloth[+0x108] == 0`
         ''' del motor: en el PRIMER cuadro el previo se pone igual al actual y no se transfiere nada
         ''' (`0x14195C401`). Sin esto, el primer cuadro transfiere el salto desde la identidad.</summary>
-        Friend TransferenciaSembrada As Boolean
+        ' ⛔ `TransferenciaSembrada` SE FUE (motor-125): era un segundo dueno de una senal
+        ' que el motor ya tiene. La primera vez es `DtSubCacheado = 0` (`0x14195B827`), y la
+        ' siembra vive en `Tiempo.Preparar`.
 
         ''' <summary>`+0x120 … +0x160`: el transform del hueso de referencia en el cuadro anterior,
         ''' 4 filas de 16 B. Lo siembra `prepare` la primera vez y lo actualiza `execute`.</summary>
@@ -233,9 +235,48 @@ Namespace Havok.Motor
         ''' (`{puntoDelPlano, normal, velocidadDelCuerpo}`).</summary>
         Friend ContactosCacheados As Single()
 
-        ''' <summary>`+0x198`: un byte por partícula, «hay contacto», indexado **relativo a
-        ''' `minPinchedParticleIndex`** — no absoluto.</summary>
+        ''' <summary>`data.maxPinchedParticleIndex` (+0x12A). Con el minimo define el RANGO
+        ''' INCLUSIVO que recorren las dos piezas de pellizco (`0x141A75E2F cmp bx, di` + `jbe`),
+        ''' y el tamano que `zeroCachedContacts` limpia (`0x141A75F5A`-`68`: `max - min + 1`).</summary>
+        Friend MaximoDePellizco As Integer
+
+        ''' <summary>`data.perParticlePinchDetectionEnabledFlags` (+0x108) — un byte por
+        ''' particula: si opta a la deteccion de pellizco.
+        ''' <para>⛔ PARTE LA LISTA EN DOS. `0x141A71893`-`0x141A718C2`: de las particulas que la
+        ''' mascara habilita, las de bandera != 0 van a la variante de PELLIZCO (que solo detecta) y
+        ''' las de bandera = 0 al kernel NORMAL (que aplica la respuesta). Ignorarla hacia que
+        ''' TODAS fueran por el mismo camino.</para></summary>
+        Friend PellizcoPorParticula As Byte()
+
+        ''' <summary>`simulationInfo.pinchDetectionEnabled` (+0x1C) — la PRIMERA de las tres
+        ''' comprobaciones de la puerta de `TtCollideAndSolve` (`0x141A697BF`).</summary>
+        Friend PellizcoHabilitado As Boolean
+
+        ''' <summary>`+0x198`: un byte por partícula, «hay contacto CACHEADO», indexado **relativo
+        ''' a `minPinchedParticleIndex`** — no absoluto.
+        ''' <para>⛔ NO es el del rescate. Lo escribe `SolveContacts` cuando el colisionable
+        ''' declara pellizco, y lo lee la resolucion de contactos (`0x141A75E51`).</para></summary>
         Friend HayContacto As Byte()
+
+        ''' <summary>`+0x1A0`: un byte por particula, «esta PELLIZCADA», tambien relativo al
+        ''' minimo.
+        ''' <para>⛔⛔ ES OTRO ARRAY QUE `HayContacto`. `zeroCachedContacts` pone los dos a cero por
+        ''' separado (`0x141A75F4C` el +0x198, `0x141A75F96` el +0x1A0), y el rescate de
+        ''' `hclAntiPinchConstraintSet` lee **este** (`0x1419F833C mov rax, [rbp + 0x1a0]`, con
+        ''' `0x1419F8343 sub rcx, r11` para el indice relativo). Tenerlos colapsados hacia que el
+        ''' rescate se disparara con un contacto cualquiera en vez de con un pellizco.</para>
+        ''' </summary>
+        Friend EstaPellizcada As Byte()
+
+        ''' <summary>`+0x1A8`: la PRIORIDAD del colisionable que reclamo cada particula, **un
+        ''' byte por particula**, relativa al minimo como los otros dos arrays.
+        ''' <para>⛔ `zeroCachedContacts` la llena con `0xFFFFFFFF` por DWORD (`0x141A75FC8`-`D0`
+        ''' `rep stosd`), o sea `-1` en cada byte: «nadie la reclamo todavia». Y ese `-1` es lo que
+        ''' hace de centinela — la deteccion mira si el byte dejo de ser negativo.</para>
+        ''' <para>⛔ Es `Byte()`, no `Integer()`: el motor la lee de a UN byte
+        ''' (`0x141A6B0D1 movzx ecx, byte ptr [rdx + r10]`). Escribirla como enteros la haria
+        ''' cuatro veces mas grande y el indice relativo dejaria de caer donde cae.</para></summary>
+        Friend PrioridadDeContacto As Byte()
 
         ' -----------------------------------------------------------------------------------------
         ' Construcción

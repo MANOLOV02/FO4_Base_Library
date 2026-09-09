@@ -115,6 +115,37 @@ Namespace Havok.Motor
             _bufferIdx = CInt(src.ReferenceMeshBufferIdx)
         End Sub
 
+        ''' <summary>
+        ''' El RELOJ POR PARTICULA — `0x1419F7F70`, el pase que corre DESPUES de las iteraciones.
+        ''' <para>⛔⛔ No es parte del kernel: el motor lo llama aparte, una vez por substep, al
+        ''' final de `0x141A13650` (`0x141A138C9`). Sin el, el reloj que el rescate pone en 0
+        ''' (`:143`) no avanza nunca, `t > 0` no se cumple y la particula queda CLAVADA en fase 2.</para>
+        ''' <para>Las dos ramas, con el umbral ESTRICTO (`comiss` + `jbe`, que salta cuando
+        ''' reloj es menor o igual al periodo):</para>
+        ''' <para>fase 2 (`0x1419F7FC2`): `reloj += dt`; si `reloj > toAnimPeriod` (+0x30) pasa a fase 1.</para>
+        ''' <para>fase 3 (`0x1419F7FA3`): `reloj += dt`; si `reloj > toSimPeriod` (+0x34) pasa a fase 0.</para>
+        ''' <para>Las fases 0 y 1 no tocan el reloj (`0x1419F7F99 sub ecx,2` y el `jne` de
+        ''' `0x1419F7FA1` las mandan al incremento del bucle).</para>
+        ''' </summary>
+        Friend Sub AvanzarReloj(inst As Instancia, indiceDelSet As Integer, dtSub As Single)
+            ' el mismo bloque de estado que usa el kernel (0x1419F81E3); si no existe, no hay
+            ' nada que avanzar: el motor lee `[estado+0x30]`/`[+0x20]` de un estado ya creado.
+            Dim est = inst.EstadoDeAntiPellizco(indiceDelSet)
+            If est Is Nothing Then Return
+            For i = 0 To _n - 1                                   ' 0x1419F7F7A: cuenta = [set+0x28]
+                Dim fase = est.Fase(i)                            ' 0x1419F7F94 byte [r9+rdx]
+                If fase = 2 Then                                  ' 0x1419F7F99/9C
+                    Dim t = est.Reloj(i) + dtSub                  ' 0x1419F7FC9 addss
+                    est.Reloj(i) = t                              ' 0x1419F7FCE movss
+                    If t > _periodoAAnim Then est.Fase(i) = 1     ' 0x1419F7FD3/D8/DA
+                ElseIf fase = 3 Then                              ' 0x1419F7F9E/A1
+                    Dim t = est.Reloj(i) + dtSub                  ' 0x1419F7FAA addss
+                    est.Reloj(i) = t                              ' 0x1419F7FAF movss
+                    If t > _periodoASim Then est.Fase(i) = 0      ' 0x1419F7FB4/B9/BB
+                End If
+            Next
+        End Sub
+
         Protected Overrides Sub Kernel(ctx As ContextoDeSolve, k As Vector128(Of Single))
             Dim inst = ctx.Instancia
             ' el bloque de estado, en la lista PROPIA de AntiPinch (`0x1419F81E3`)
@@ -129,7 +160,9 @@ Namespace Havok.Motor
 
             ' ---- FASE 1: el rescate (`0x1419F8330`) ----
             Dim lo = inst.MinimoDePellizco
-            Dim contacto = inst.HayContacto
+            ' ⛔ EL DEL RESCATE ES `+0x1A0`, NO `+0x198`. `0x1419F833C mov rax, [rbp + 0x1a0]`.
+            ' El otro es el del contacto cacheado y lo lee la resolucion, no esto.
+            Dim contacto = inst.EstaPellizcada
             For i = 0 To _n - 1
                 Dim rel = _particula(i) - lo
                 Dim pellizcada = contacto IsNot Nothing AndAlso rel >= 0 AndAlso

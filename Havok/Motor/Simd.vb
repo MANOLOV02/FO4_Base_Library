@@ -185,6 +185,10 @@ Namespace Havok.Motor
         ''' </summary>
         <MethodImpl(MethodImplOptions.AggressiveInlining)>
         Friend Function ATruncado(x As Single) As Integer
+            ' ⛔ NO ES UN UMBRAL: es el RANGO del `cvttss2si` (`0x141A15935`, `0x141A1518B`).
+            ' Fuera de [-2^31, 2^31) la instruccion devuelve el indefinido entero `0x80000000`,
+            ' que es `Integer.MinValue`. La cita va aca pegada y no solo en la cabecera, para que
+            ' una auditoria de umbrales inventados no lo tenga que adivinar.
             If Single.IsNaN(x) OrElse x >= 2147483648.0F OrElse x < -2147483648.0F Then
                 Return Integer.MinValue
             End If

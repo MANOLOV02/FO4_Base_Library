@@ -89,6 +89,15 @@ Namespace Havok.Motor
             Me.Nombre = nombre
         End Sub
 
+        ''' <summary>
+        ''' El `prepare` del operador — slot `+0x30` de su vtable. Por defecto no hace nada.
+        ''' <para>⛔⛔ CORREN TODOS ANTES QUE TODOS LOS `execute`: `0x1418C8E60`-`8C` recorre los
+        ''' operadores del estado llamando al `+0x30` de cada uno, dentro de `0x1418C8B70`, que
+        ''' los ejecutores invocan ANTES del lazo de `execute` (motor-103).</para>
+        ''' </summary>
+        Friend Overridable Sub Preparar(ByRef ctx As ContextoDeCadena)
+        End Sub
+
         Friend MustOverride Sub Ejecutar(ByRef ctx As ContextoDeCadena)
 
     End Class
@@ -121,17 +130,68 @@ Namespace Havok.Motor
     Friend NotInheritable Class OpSimular
         Inherits OperadorCompilado
 
-        ''' <summary>`op.subSteps` (+0x28). Sólo se usa si `info.subSteps` es 0 (`0x14195C6A8`).</summary>
+        ''' <summary>`op.subSteps` (+0x24). Sólo se usa si `info.subSteps` es 0 (`0x14195C6A8`).
+        ''' <para>'La cita decia +0x28, que es `numberOfSolveIterations`. El codigo leia bien
+        ''' (`oSim.SubSteps`, por la reflexion); la que estaba corrida era la direccion. El binario
+        ''' lo confirma: `0x14195C6B6 mov eax, dword ptr [r15 + 0x24]`.</para></summary>
         Friend ReadOnly SubSteps As Integer
+
+        ''' <summary>`op.numberOfSolveIterations` (+0x28) — el LAZO EXTERNO del solve.
+        ''' <para>'' NO es un adorno: el paso 4e entero va adentro de este lazo, en las DOS
+        ''' ramas (`0x141A134F7`/`0x141A135B1` sin `constraintExecution`, `0x141A13756`/`0x141A13825`
+        ''' con). Y la colision va adentro tambien, asi que con N iteraciones la tela colisiona N
+        ''' veces por substep, no una.</para>
+        ''' <para>' EN CERO NO CORRE NADA — ni sets ni colision (`jle` a la salida). Se transcribe
+        ''' tal cual: poner un minimo de 1 seria inventar. El corpus vanilla mide 1 en los 342.</para>
+        ''' </summary>
+        Friend ReadOnly IteracionesDeSolve As Integer
+
+        ''' <summary>`op.adaptConstraintStiffness` (+0x40) — PROMUEVE el modo 1 a 2.
+        ''' <para>`0x141A1349B` (sin `constraintExecution`) y `0x141A136F1` (con): si el modo de la
+        ''' instancia es 1 y esto esta prendido, el modo pasa a 2 **antes** de calcular `k`
+        ''' (`0x141A13538 mov edx, ebp`) y `usaK` (`0x141A134BC`). Cambia las dos.</para></summary>
+        Friend ReadOnly AdaptaRigidez As Boolean
+
+        ''' <summary>`op.constraintExecution` (+0x30, cuenta en +0x38) — el orden EXPLICITO.
+        ''' <para>Vacia, el motor recorre `staticConstraintSets` en orden y colisiona al final
+        ''' (`0x141A133E0`). No vacia, manda esta lista (`0x141A13650`), y **`-1` significa
+        ''' «aca va la colision»** (`0x141A13798`): sirve para INTERCALAR colision entre sets.</para>
+        ''' </summary>
+        Friend ReadOnly EjecucionDeRestricciones As Integer()
 
         ''' <summary>`op.simClothIndex` (+0x20). El motor lo usa literal:
         ''' `simCloth = clothInstance.simCloths[op.simClothIndex]` (`0x14195C3E0`).</summary>
         Friend ReadOnly IndiceDelSimCloth As Integer
 
-        Friend Sub New(subSteps As Integer, indiceDelSimCloth As Integer, nombre As String)
+        Friend Sub New(subSteps As Integer, indiceDelSimCloth As Integer,
+                       iteracionesDeSolve As Integer, adaptaRigidez As Boolean,
+                       ejecucionDeRestricciones As Integer(), nombre As String)
             MyBase.New(1, nombre)
+            ' ⛔ `Me.` EN LOS SEIS. VB no distingue mayusculas: `SubSteps = subSteps` sin `Me.`
+            ' resuelve los dos lados al PARAMETRO y no asigna nada, en silencio.
             Me.SubSteps = subSteps
             Me.IndiceDelSimCloth = indiceDelSimCloth
+            Me.IteracionesDeSolve = iteracionesDeSolve
+            Me.AdaptaRigidez = adaptaRigidez
+            Me.EjecucionDeRestricciones = ejecucionDeRestricciones
+        End Sub
+
+        ''' <summary>
+        ''' El `prepare` del `hclSimulateOperator` — slot `+0x30` de su vtable (`0x142704338`).
+        ''' <para>⛔⛔ CORRE ANTES QUE TODOS LOS `execute`, no adentro del suyo. `0x1418C8E60`-`8C`
+        ''' recorre los operadores del estado y llama al `+0x30` de cada uno, y ese bucle esta
+        ''' dentro de `0x1418C8B70`, que los ejecutores invocan ANTES del lazo de `execute`.
+        ''' Tenerlo adentro de `Simular` hacia que `ReescalarPrevias` corriera despues de que
+        ''' `MoveParticles` ya habia movido las previas (motor-103).</para>
+        ''' </summary>
+        Friend Overrides Sub Preparar(ByRef ctx As ContextoDeCadena)
+            If ctx.Instancia Is Nothing Then Return
+            Dim e = ctx.Cuadro
+            Dim n = Motor.SubStepsDelCuadro(ctx.Instancia, SubSteps)
+            ' ⛔ la siembra del transform de transferencia va acá adentro, con la señal del motor
+            ' (`dtSubCacheado == 0`, `0x14195B827`) y su puerta `+0x1E` (`0x14195B850`) — motor-125.
+            Tiempo.Preparar(ctx.Instancia, e.Dt, n, e.DampingPorSegundo,
+                            e.TransferenciaHabilitada, e.TransformDeTransferencia)
         End Sub
 
         Friend Overrides Sub Ejecutar(ByRef ctx As ContextoDeCadena)
@@ -140,6 +200,9 @@ Namespace Havok.Motor
             ' de `Simular`, que es donde el motor decide (`0x14195C6A8`).
             Dim e = ctx.Cuadro
             e.SubStepsDelOperador = SubSteps
+            e.IteracionesDeSolve = IteracionesDeSolve
+            e.AdaptaRigidez = AdaptaRigidez
+            e.EjecucionDeRestricciones = EjecucionDeRestricciones
             e.Buffers = ctx.Buffers
             e.TransformSets = ctx.TransformSets
             Motor.Simular(ctx.Instancia, ctx.Colisionadores, e)
@@ -277,6 +340,9 @@ Namespace Havok.Motor
             Dim entrada = Buffers.Real(ctx.Buffers, _op.BufferDeEntrada)
             Dim salida = Buffers.Real(ctx.Buffers, _op.BufferDeSalida)
             If entrada Is Nothing OrElse salida Is Nothing Then Return
+            ' ⛔ LA SALIDA TEMPRANA DEL KERNEL — 0x141952A6A. Con el buffer de entrada declarando
+            ' cero triángulos el operador no toca la salida, tenga subconjunto o no.
+            If Not MallaAMallaPorPares.HayQueDeformar(entrada) Then Return
             Dim marcos = MallaAMallaPorPares.Marcos(_op, entrada)     ' 0x141952B22/29/30
             MallaAMallaPorPares.AEspacioDeSalida(marcos, entrada, salida)   ' 0x141952B35-CCD
             MallaAMallaPorPares.Deformar(_op, marcos, salida)         ' 0x141952E38-6F
@@ -342,6 +408,12 @@ Namespace Havok.Motor
         ''' </summary>
         Friend Sub Ejecutar(ops As OperadorCompilado(), ByRef ctx As ContextoDeCadena)
             If ops Is Nothing Then Return
+            ' ⛔⛔ TODOS LOS `prepare` PRIMERO — 0x1418C8E60-8C, dentro de 0x1418C8B70, que los
+            ' dos ejecutores llaman ANTES del lazo de `execute` (0x1418BF075, 0x1418F3054).
+            For i = 0 To ops.Length - 1
+                If ops(i) Is Nothing Then Continue For
+                ops(i).Preparar(ctx)
+            Next
             For i = 0 To ops.Length - 1
                 If ops(i) Is Nothing Then Continue For
                 ops(i).Ejecutar(ctx)

@@ -83,15 +83,28 @@ Namespace Havok.Motor
         ''' `globalDampingPerSecond` distinto, el damping efectivo **se queda con el viejo**.</para>
         ''' <para>La segunda rama es la primera vez (`dtViejo == 0`, `0x14195B919`): cachea y calcula
         ''' el damping, pero **no** re-escala — no hay velocidad previa que conservar.</para>
-        ''' <para>⚠️ Falta acá la siembra del transform previo del TransferMotion
-        ''' (`0x14195B848`-`0x14195B8FF`) y la reconstrucción de la lista de acciones
-        ''' (`0x14195BB52`-`0x14195BE1B`): las dos necesitan piezas que todavía no existen y van con
-        ''' ellas, no adivinadas acá.</para>
+        ''' <para>⛔ LA SIEMBRA DEL TRANSFORM DE TRANSFERENCIA VIVE ACÁ (`0x14195B848`-`0x14195B8FF`),
+        ''' no en `execute`. Su señal de «primera vez» es `dtSubCacheado == 0` (`0x14195B827
+        ''' ucomiss` + `0x14195B842 jne`) — la MISMA que usa el resto de este método — y encima
+        ''' pide `transferMotionEnabled` (+0x1E, `0x14195B850`). Estaba en `Motor.Simular` con un
+        ''' booleano propio: dos dueños para una señal, y en la fase equivocada (motor-125).</para>
+        ''' <para>⚠️ Falta acá la reconstrucción de la lista de acciones
+        ''' (`0x14195BB52`-`0x14195BE1B`): necesita piezas que todavía no existen y va con ellas,
+        ''' no adivinada acá.</para>
         ''' </summary>
         Friend Sub Preparar(inst As Instancia, dtFrame As Single, numSubSteps As Integer,
-                            dampingPorSegundo As Single)
+                            dampingPorSegundo As Single,
+                            transferenciaHabilitada As Boolean, transformDeTransferencia As Mat4)
             Dim dtNuevo = DtSubDePrepare(dtFrame, numSubSteps, inst.Modo, inst.S1)
             Dim dtViejo = inst.DtSubCacheado
+
+            ' ⛔ LA SIEMBRA VA PRIMERO y con la senal del motor, no con un booleano aparte:
+            ' `dtSubCacheado == 0` es la primera vez (0x14195B827/42) y ademas tiene que estar
+            ' habilitada la transferencia (0x14195B850). Sin esto el primer cuadro ve la
+            ' diferencia entre la identidad y la pose real del hueso y la tela sale disparada.
+            If dtViejo = 0.0F AndAlso transferenciaHabilitada Then
+                inst.TransformPrevioDeTransferMotion = transformDeTransferencia
+            End If
 
             If dtViejo = dtNuevo Then Return                             ' 0x14195B90F ucomiss / je
             If dtViejo <> 0.0F Then ReescalarPrevias(inst, dtViejo, dtNuevo)   ' 0x14195B919 jne
