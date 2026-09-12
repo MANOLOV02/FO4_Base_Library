@@ -1334,6 +1334,18 @@ Namespace Canon
             Dim vd = TryCast(destino, CanonView), vo = TryCast(origen, CanonView)
             If vd Is Nothing OrElse vo Is Nothing Then Return 0
             If vd.Node Is Nothing OrElse vo.Node Is Nothing OrElse campos Is Nothing Then Return 0
+            ' Si el origen no declara el subrecord no hay campos que copiar ni estructura que crear.
+            If WbEdit.FindSubrecord(vo.Node, firma) Is Nothing Then Return 0
+            ' ⛔ Un destino SIN el contenedor se lo crea desde la DECLARACION del record -- orden, version y
+            ' miembros requeridos-- y despues se pisan SOLO los campos nombrados, nunca el subrecord entero:
+            ' el motor copia campos, y copiar el nodo metia los bytes que excluye. Sin esto `FindField` fallaba
+            ' en todos los nombres, se copiaba CERO y quien llama no podia distinguirlo de un esquema roto.
+            ' Poblacion esperada en plugins validos: cero -- xEdit declara `AIDT` requerido en los dos juegos
+            ' (wbDefinitionsTES5.pas:4488, wbDefinitionsFO4.pas:6231). Es defensa, no un defecto vivo.
+            If WbEdit.FindSubrecord(vd.Node, firma) Is Nothing Then
+                Dim def = WbSchema.Get(vd.Context.Game, vd.Context.RecordSignature)
+                If def Is Nothing OrElse WbEdit.EnsureSubrecord(vd.Node, def, firma, vd.Context) Is Nothing Then Return 0
+            End If
             Dim copiados = 0
             For Each nombre In campos
                 Dim src = WbEdit.FindField(vo.Node, firma, nombre)
