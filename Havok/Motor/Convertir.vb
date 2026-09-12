@@ -61,7 +61,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' operador y ninguna es ésta). Van igual: son de la lista cerrada del despachador.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -422,4 +421,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

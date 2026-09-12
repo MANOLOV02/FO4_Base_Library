@@ -17,7 +17,6 @@ Imports System.Runtime.Intrinsics
 ' (`0x1418FAB10`). Usar la inversa traspuesta o renormalizar es «arreglar» el motor.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -298,4 +297,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

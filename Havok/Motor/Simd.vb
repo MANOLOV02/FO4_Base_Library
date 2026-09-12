@@ -47,7 +47,6 @@ Imports System.Runtime.Intrinsics
 ' Referencia: Tools/re-docs/RE_MOTOR_FISICA_CANONICO_2026-09-05.md, cap. 10.3 y Anexo C.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -415,4 +414,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

@@ -106,7 +106,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' entre «escribir 0» y «no escribir», y se ve en el buffer de salida.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -403,4 +402,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

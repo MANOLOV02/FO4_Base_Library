@@ -15,7 +15,6 @@ Imports System.Runtime.Intrinsics
 ' `collisionTolerance`.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -115,4 +114,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

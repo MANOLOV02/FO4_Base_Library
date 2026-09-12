@@ -88,7 +88,6 @@ Imports System.Runtime.Intrinsics
 '     `(x+z)+(y+w)`: **otro orden de sumas, otros bits**. Por eso el plano NO delega.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -969,4 +968,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

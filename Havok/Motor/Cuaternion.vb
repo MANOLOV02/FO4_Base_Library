@@ -18,7 +18,6 @@ Imports System.Runtime.Intrinsics
 ' mientras que el eigensolver normaliza filas de 3 CON guarda (0x141361096). No unificarlas.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -437,4 +436,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

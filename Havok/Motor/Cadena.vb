@@ -56,8 +56,6 @@ Imports System.Runtime.Intrinsics
 ' Cualquier otra clase deja su lugar VACÍO y se dice en el log; no se aproxima con otra.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>Lo que un operador de la cadena necesita del cuadro.</summary>
@@ -424,4 +422,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

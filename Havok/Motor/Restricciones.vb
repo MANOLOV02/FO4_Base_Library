@@ -26,7 +26,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' Con `A == B` eso importa, y el motor no lo evita.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -1357,4 +1356,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

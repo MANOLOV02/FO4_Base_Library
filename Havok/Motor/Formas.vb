@@ -16,8 +16,6 @@ Imports System.Runtime.Intrinsics
 ' sola vez, en `Colision`.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>Lo que un shape le entrega a la respuesta de contacto.</summary>
@@ -107,7 +105,7 @@ Namespace Havok.Motor
         ''' <para>⚠️ La esfera suma `(y·M1 + x·M0)` en vez de `(x·M0 + y·M1)`; la suma de dos
         ''' `float` es conmutativa y exacta, así que es **el mismo bit**.</para>
         ''' </summary>
-      Protected Shared Function AlMundo(v As Vector128(Of Single), m As Mat4) As Vector128(Of Single)
+        Protected Shared Function AlMundo(v As Vector128(Of Single), m As Mat4) As Vector128(Of Single)
             Dim r = Vector128.Multiply(Simd.BcastX(v), m.F0)
             r = Vector128.Add(r, Vector128.Multiply(Simd.BcastY(v), m.F1))
             r = Vector128.Add(r, Vector128.Multiply(Simd.BcastZ(v), m.F2))
@@ -344,7 +342,7 @@ Namespace Havok.Motor
             End If
 
             ' ⛔ REPORTE, no corte: el motor sigue derivando con lo que haya (motor-77)
-            If rMax <> 0.0F AndAlso (rMax - rMin) / rMax < 0.0199999996F Then
+            If rMax <> 0.0F AndAlso (rMax - rMin) / rMax < 0.02F Then
                 ReportesDelMotor.Geometria += 1L                          ' 0x141A0768C/93, 0x3CA3D70A
             End If
 
@@ -1322,4 +1320,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

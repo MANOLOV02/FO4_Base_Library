@@ -18,7 +18,6 @@ Imports System.Runtime.Intrinsics
 ' `0x141360C70`, y tiene tres cosas que un Jacobi de libro hace distinto (ver `EigenSimetrico`).
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -403,4 +402,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

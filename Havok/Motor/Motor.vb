@@ -18,7 +18,6 @@ Imports System.Runtime.Intrinsics
 ' `setTransform` del paso 2 le deja la pose VIEJA y guarda la diferencia como velocidad.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -394,4 +393,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

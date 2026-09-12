@@ -52,8 +52,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 '     parámetros como ESCALARES (`toAnimPeriod` +0x30, `toSimPeriod` +0x34, `toSimMaxDistance` +0x38).
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>
@@ -245,4 +243,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

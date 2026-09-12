@@ -47,7 +47,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' ⚠️ CERO apariciones en el corpus vanilla. Va igual: es de la lista cerrada.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -166,4 +165,4 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If
+

@@ -19,7 +19,6 @@ Imports System.Runtime.Intrinsics
 ' inercia — sin dejar NaN ni nada que se note en los números.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -86,4 +85,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

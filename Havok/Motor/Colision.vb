@@ -20,8 +20,6 @@ Imports System.Runtime.Intrinsics
 ' `vt·fricción` a `Pprev` **resta** velocidad tangencial. Aplicarla a `Posiciones` la sumaría.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>
@@ -485,4 +483,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

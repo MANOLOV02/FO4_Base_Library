@@ -13,7 +13,6 @@ Imports System.Runtime.Intrinsics
 ' area. Normalizarla antes daria un promedio distinto y una tela iluminada distinta.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -99,4 +98,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

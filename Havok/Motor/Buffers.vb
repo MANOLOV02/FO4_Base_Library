@@ -27,8 +27,6 @@ Imports System.Runtime.Intrinsics
 '    buffers en `Operator Prepare` (`0x1418C8C61`), donde el sustituto guarda la ranura original.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>
@@ -342,4 +340,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

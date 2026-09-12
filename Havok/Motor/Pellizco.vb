@@ -35,7 +35,6 @@ Imports System.Runtime.Intrinsics
 ' (`0x141A699EE`: `mov r8b, 1` + `movzx edx, r8b`).
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -235,4 +234,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

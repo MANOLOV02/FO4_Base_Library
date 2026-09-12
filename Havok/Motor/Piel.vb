@@ -33,7 +33,6 @@ Imports System.Runtime.Intrinsics
 ' ⛔ La lista de UNA influencia **no trae pesos**: el peso es 1 y el motor ni lee el array.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -303,4 +302,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

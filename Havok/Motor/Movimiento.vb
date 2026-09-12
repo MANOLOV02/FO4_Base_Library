@@ -15,7 +15,6 @@ Imports System.Runtime.Intrinsics
 ' transferencia queda apagada de verdad. El `min*Blend` se carga DENTRO del `if`.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -191,4 +190,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

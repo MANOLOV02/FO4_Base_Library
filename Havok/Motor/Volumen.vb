@@ -37,7 +37,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' el motor, no un caso a «arreglar».
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -278,4 +277,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

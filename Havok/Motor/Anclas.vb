@@ -19,8 +19,6 @@ Imports System.Runtime.Intrinsics
 ' cada substep de cada frame.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>
@@ -109,4 +107,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

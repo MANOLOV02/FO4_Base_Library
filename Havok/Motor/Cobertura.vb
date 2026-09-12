@@ -27,8 +27,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' entero desconectado.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     Friend Module Cobertura
@@ -316,4 +314,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

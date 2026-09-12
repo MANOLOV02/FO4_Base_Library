@@ -127,7 +127,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' `hclSkinOperator` no está entre ellas. Va igual, que es de la lista cerrada del despachador.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -560,4 +559,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

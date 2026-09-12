@@ -18,8 +18,6 @@ Imports System.Runtime.Intrinsics
 ' el archivo son basura**: son campos de runtime que esta funcion deriva de (viejo, nuevo, dt).
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>
@@ -39,7 +37,7 @@ Namespace Havok.Motor
         Friend Offsets As Mat4()
     End Structure
 
-   Friend Module Colisionables
+    Friend Module Colisionables
 
         ''' <summary>
         ''' ⭐⭐ `hclCollidable::setTransform` — `0x1419605F0`. De `(pose vieja, pose nueva, dt)`
@@ -240,10 +238,10 @@ Namespace Havok.Motor
             Next
         End Sub
 
-      ''' <summary>`1,1920929e-07` — `0x34000000` en `0x142F3C760`. Es el piso de `|qd.xyz|²` bajo
+        ''' <summary>`1,1920929e-07` — `0x34000000` en `0x142F3C760`. Es el piso de `|qd.xyz|²` bajo
         ''' el cual el motor declara que no hubo giro. ⛔ No es `FLT_EPSILON` de casualidad: es el
         ''' mismo numero, pero comparado contra el CUADRADO de la norma.</summary>
-        Friend Const EpsilonDelEje As Single = 1.1920929E-07F
+        Friend Const EpsilonDelEje As Single = 0.00000011920929F
 
         ''' <summary>La parte 3×3 de un transform: `quatDeMatriz` (`0x14135EE20`) lee tres filas y
         ''' la traslacion no entra.</summary>
@@ -259,4 +257,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

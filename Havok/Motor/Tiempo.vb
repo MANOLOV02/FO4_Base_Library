@@ -15,7 +15,6 @@ Imports System.Runtime.Intrinsics
 ' cada partícula por el cociente de los pasos.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -177,4 +176,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

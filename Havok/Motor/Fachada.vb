@@ -13,7 +13,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' ⛔ Esta es la unica pieza que traduce; el resto del motor no sabe que existe un archivo.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -1601,4 +1600,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

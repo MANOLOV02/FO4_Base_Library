@@ -16,7 +16,6 @@ Option Explicit On
 ' tienen que estar en el mismo sitio para que no puedan divergir.
 ' =================================================================================================
 
-#If DEBUG Then
 
 Namespace Havok.Motor
 
@@ -112,4 +111,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If

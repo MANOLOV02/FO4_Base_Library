@@ -47,8 +47,6 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' igual, la `Mx` y su gemelo tienen que dar el MISMO número.
 ' =================================================================================================
 
-#If DEBUG Then
-
 Namespace Havok.Motor
 
     ''' <summary>
@@ -559,4 +557,3 @@ Namespace Havok.Motor
 
 End Namespace
 
-#End If
