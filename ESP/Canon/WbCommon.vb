@@ -214,31 +214,6 @@ Namespace Canon
         End Function
 
         '=====================================================================================
-        ' Object Template: un contador OBTE, el arreglo de combinaciones (cada una con su marca
-        ' OBTF, su nombre FULL y su bloque OBTS) y un marcador STOP de cierre.
-        ' El contenido de OBTS queda declarado como PENDIENTE y se reporta como tal: el bloque de
-        ' propiedades es grande y todavía no está descrito campo a campo. Marcarlo pendiente es
-        ' deliberado; copiar sus bytes en silencio daría por entendido algo que no lo está.
-        '=====================================================================================
-
-        Public Function ObjectTemplate() As WbMemberDef
-            Dim stop_ = Wb.MarkerSub("STOP", "Marker")
-            stop_.Required = True
-            Dim obts = Wb.PendingSub("OBTS", "Object Template Payload")
-            obts.Required = True
-            Dim combos = Wb.RArray("Combinations",
-                Wb.RStruct("Combination",
-                    Wb.MarkerSub("OBTF", "Editor Only"),
-                    Wb.LStrSub("FULL", "Name"),
-                    obts).WithUnordered())
-            combos.CountPath = "OBTE\Count"
-            Return Wb.RStruct("Object Template",
-                Wb.IntSub("OBTE", "Count", WbIntType.u32, ""),
-                combos,
-                stop_)
-        End Function
-
-        '=====================================================================================
         ' Sculpt Data del ARMA: arreglo de conjuntos de modificadores de escala de hueso. Cada
         ' conjunto apunta a un género (BSMP) y lleva su lista de pares nombre de hueso (BSMB) y
         ' delta de escala en tres floats (BSMS).
