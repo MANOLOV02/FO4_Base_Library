@@ -1073,21 +1073,13 @@ Public Class PreviewControl
             ' y la cache de transforms globales TODAVÍA no se construyó. La física lee el esqueleto ya
             ' posado y escribe la capa PhysicsDeltaTransform, que la cache de abajo tiene que ver.
             ' Con el interruptor apagado esto limpia la capa y sale: el render queda bit-idéntico.
-            ' Ver FO4_Base_Library/Havok/Physics/HavokClothSimulation.vb.
-#If DEBUG Then
-            ' ⛔⛔ EN RELEASE ESTO NO EXISTE. `ApplyHavokPhysicsSettings` deja `Enabled = False` fijo en
-            ' Release (`#If DEBUG` en Config_Class), asi que llamarla por frame y evaluar el `If` era
-            ' trabajo para un resultado que el compilador ya conoce. Con el bloque adentro del
-            ' `#If DEBUG` el binario publicado no trae NI la llamada NI la rama: el unico rastro que
-            ' queda de la fisica en Release es el chequeo de nulo de `PhysicsDeltaTransform` en
-            ' `SkeletonInstance.LocaLTransform`, que es una comparacion de referencia por hueso.
+            ' Ver FO4_Base_Library/Havok/Physics/ClothCanonico.vb.
+            ' ⛔ El código entra en todas las configuraciones; en Release `ApplyHavokPhysicsSettings`
+            ' deja `Enabled = False` y el `If` de abajo no entra.
             Try
-                ' La config es la PERSISTENCIA de la perilla; el módulo estático es la perilla. Volcarla
-                ' acá (3 asignaciones) hace que cambiar `Setting_HavokPhysics` en config.json tenga efecto
+                ' La config es la PERSISTENCIA del interruptor y del modo; el módulo estático es donde se
+                ' leen. Volcarla acá hace que cambiar `Setting_HavokPhysics` en config.json tenga efecto
                 ' sin que las apps tengan que acordarse de propagarlo.
-                ' ⚠️ Y OJO: esta llamada REESCRIBE `GravityScale` desde la config en CADA frame. Cualquier
-                ' perilla puesta directo en la propiedad estatica dura hasta el proximo render — el gate
-                ' ponia `--grav 0` ahi y daba resultados identicos a `--grav 1`.
                 Config_App.Current?.ApplyHavokPhysicsSettings()
                 ' ⛔ CON LA FISICA APAGADA NO SE PAGA NADA. `StepShapes` ya sale temprano, pero el
                 ' diccionario de abajo se armaba IGUAL todos los frames — una asignacion y una pasada
@@ -1106,20 +1098,17 @@ Public Class PreviewControl
                         End If
                         lst.Add(mesh.MeshData.Shape)
                     Next
-                    For Each kv In physByInstance
-                        ' ⛔ La fisica de tela es Debug-only: en Release este bloque no existe. El guarda
-                        ' de arriba (`Enabled`) ya deja el diccionario sin armar, asi que el costo en
-                        ' Release es cero.
-#If DEBUG Then
-                        Havok.Physics.ClothCanonico.StepShapes(kv.Value, kv.Key, Havok.Physics.HavokPhysicsSettings.FrameDeltaSeconds)
-#End If
-                    Next
+                    ' ⛔ UNA llamada por render con TODOS los esqueletos: el reloj de la tela avanza un
+                    ' cuadro por render, no uno por esqueleto.
+                    ' La cámara: la distancia² del LOD de la tela (`0x140DB329F` lee la de la PlayerCamera).
+                    Dim ojo = camera.GetEyePosition()
+                    Havok.Physics.ClothCanonico.StepShapes(physByInstance, Havok.Physics.HavokPhysicsSettings.MilisegundosDelCuadro,
+                                                           camara:=New System.Numerics.Vector3(ojo.X, ojo.Y, ojo.Z))
                 End If
             Catch exPhys As Exception
                 Dim exL = exPhys
                 Logger.LogLazy(Function() $"[HAVOK-PHYS] el paso de física falló y se omite este frame: {exL.GetType().Name}: {exL.Message}")
             End Try
-#End If
 
             For Each mesh In dirtyMeshes
                 Dim inst As SkeletonInstance = If(resolvedSkels(mesh), SkeletonInstance.Default)

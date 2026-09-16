@@ -73,8 +73,9 @@ Namespace Havok.Motor
         ''' <summary>
         ''' `hclCopyVerticesOperator` (tipo 4) — despacho de **cuatro** kernels en `0x1418FA860`.
         ''' <para>Los cuatro son **la misma ley**: lo que cambia es si el elemento se mueve entero de
-        ''' 16 B (bit 0 de `+0x20` y `+0x48`) o con tres `movss` (float3 apretado). Acá el acceso va
-        ''' por el stride del buffer, que cubre los dos casos sin duplicar la ley.</para>
+        ''' 16 B (bit 0 de `+0x20` y `+0x48`) o con tres `movss` (float3 apretado). ⛔ Que el elemento
+        ''' vaya entero NO es sólo acceso: la lane `w` de la salida recibe la `w` transformada
+        ''' (`0x1418FAACD`), así que la elección sale de <see cref="KernelSimple"/>.</para>
         ''' <para>⚠️ Los cuatro strides son **`uint8`** en el motor (`movzx …, byte ptr [buf+0x1C]`).</para>
         ''' </summary>
         Friend Sub CopiarVertices(entrada As Buffer, salida As Buffer,
@@ -85,14 +86,43 @@ Namespace Havok.Motor
             ' (0x1418FA860): `copyNormals` sola no alcanza.
             Dim conNormales = copiarNormales AndAlso
                               entrada.Normales IsNot Nothing AndAlso salida.Normales IsNot Nothing
+            Dim entero = KernelSimple(entrada, salida, conNormales)
             For i = 0 To numVertices - 1
-                salida.SetVertice(inicioSalida + i, TransformarPunto(entrada.Vertice(inicioEntrada + i), m))
+                Dim p = TransformarPunto(entrada.Vertice(inicioEntrada + i), m)
+                If entero Then
+                    salida.SetVerticeEntero(inicioSalida + i, p)            ' 0x1418FAACD / 0x1418FAC8C movups
+                Else
+                    salida.SetVertice(inicioSalida + i, p)                  ' 0x1418FAE77-0x1418FAE8B / 0x1418FB058-0x1418FB06C
+                End If
                 If conNormales Then
                     ' ⛔ misma `M`, sin traslación, y SIN renormalizar
-                    salida.SetNormal(inicioSalida + i, TransformarDireccion(entrada.Normal(inicioEntrada + i), m))
+                    Dim nr = TransformarDireccion(entrada.Normal(inicioEntrada + i), m)
+                    If entero Then
+                        salida.SetNormalEntera(inicioSalida + i, nr)        ' 0x1418FACBA movups
+                    Else
+                        salida.SetNormal(inicioSalida + i, nr)              ' 0x1418FB0B5-0x1418FB0C9
+                    End If
                 End If
             Next
         End Sub
+
+        ''' <summary>
+        ''' El despacho de los tres operadores de transferencia — `CopyVertices` `0x1418FA8BD`-`0x1418FA93B`,
+        ''' `GatherAll` `0x1418F94A4`-`0x1418F9515`, `GatherSome` `0x1418F9ED4`-`0x1418F9F45`, los tres
+        ''' con la MISMA forma:
+        ''' <para>· con normales (el bool del operador Y `+0x38` en los dos buffers): el kernel simple
+        ''' pide el bit 0 de `+0x20` y de `+0x48` en la entrada Y en la salida.</para>
+        ''' <para>· sin normales: el bit 0 de `+0x20` en la entrada y en la salida.</para>
+        ''' <para>El kernel simple lee y escribe el elemento de 16 B entero (`movups`): la lane `w` de la
+        ''' salida recibe la `w` transformada. El otro, tres `movss` (12 B).</para>
+        ''' </summary>
+        Friend Function KernelSimple(entrada As Buffer, salida As Buffer, conNormales As Boolean) As Boolean
+            If conNormales Then
+                Return entrada.LayoutSimple AndAlso entrada.LayoutSimpleNormales AndAlso
+                       salida.LayoutSimple AndAlso salida.LayoutSimpleNormales          ' 0x1418FA8D2-0x1418FA8E8
+            End If
+            Return entrada.LayoutSimple AndAlso salida.LayoutSimple                     ' 0x1418FA910-0x1418FA91A
+        End Function
 
         ''' <summary>
         ''' `hclGatherAllVerticesOperator` (tipo 2) — `0x1418F96F0` (y `0x1418F9450` con normales).
@@ -104,11 +134,24 @@ Namespace Havok.Motor
             Dim m = MatrizEntreBuffers(entrada, salida)
             Dim conNormales = juntarNormales AndAlso
                               entrada.Normales IsNot Nothing AndAlso salida.Normales IsNot Nothing
+            Dim entero = KernelSimple(entrada, salida, conNormales)           ' 0x1418F94A4-0x1418F9515
             For i = 0 To entradaDesdeSalida.Length - 1
                 Dim src = CInt(entradaDesdeSalida(i))
                 If src < 0 Then Continue For
-                salida.SetVertice(i, TransformarPunto(entrada.Vertice(src), m))
-                If conNormales Then salida.SetNormal(i, TransformarDireccion(entrada.Normal(src), m))
+                Dim p = TransformarPunto(entrada.Vertice(src), m)
+                If entero Then
+                    salida.SetVerticeEntero(i, p)                              ' 0x1418F96B5 / 0x1418F9870 movups
+                Else
+                    salida.SetVertice(i, p)                                    ' 0x1418F9A61-0x1418F9A74
+                End If
+                If conNormales Then
+                    Dim nr = TransformarDireccion(entrada.Normal(src), m)
+                    If entero Then
+                        salida.SetNormalEntera(i, nr)                          ' 0x1418F989A movups
+                    Else
+                        salida.SetNormal(i, nr)
+                    End If
+                End If
             Next
         End Sub
 
@@ -122,10 +165,23 @@ Namespace Havok.Motor
             Dim m = MatrizEntreBuffers(entrada, salida)
             Dim conNormales = juntarNormales AndAlso
                               entrada.Normales IsNot Nothing AndAlso salida.Normales IsNot Nothing
+            Dim entero = KernelSimple(entrada, salida, conNormales)           ' 0x1418F9ED4-0x1418F9F45
             For Each par In paresEntradaSalida
                 Dim src = par(0), dst = par(1)
-                salida.SetVertice(dst, TransformarPunto(entrada.Vertice(src), m))
-                If conNormales Then salida.SetNormal(dst, TransformarDireccion(entrada.Normal(src), m))
+                Dim p = TransformarPunto(entrada.Vertice(src), m)
+                If entero Then
+                    salida.SetVerticeEntero(dst, p)                            ' 0x1418FA4F8 / 0x1418FA6AC movups
+                Else
+                    salida.SetVertice(dst, p)
+                End If
+                If conNormales Then
+                    Dim nr = TransformarDireccion(entrada.Normal(src), m)
+                    If entero Then
+                        salida.SetNormalEntera(dst, nr)                        ' 0x1418FA6E3 movups
+                    Else
+                        salida.SetNormal(dst, nr)
+                    End If
+                End If
             Next
         End Sub
 

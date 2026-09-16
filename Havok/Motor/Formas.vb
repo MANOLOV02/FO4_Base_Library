@@ -145,9 +145,14 @@ Namespace Havok.Motor
 
         ''' <summary>`0x141A7019A`-`0x141A701E4`: el centro al mundo y el radio tal cual.
         ''' <para>⛔ El radio es la **`w`** del `hkSphere` (`shape[+0x2C]`, `0x141A701CB`), no un
-        ''' campo aparte — por eso no se transforma.</para></summary>
+        ''' campo aparte — por eso no se transforma.</para>
+        ''' <para>⛔⛔ Y el derivado lleva el radio **en la `w` del centro**: `0x141A701DF` guarda el
+        ''' centro transformado en `[rsp+0x40]` y `0x141A701E4 movss [rsp+0x4C], xmm0` le pisa la
+        ''' lane 3 con `shape[+0x2C]` antes de `0x141A701EA call 0x141A05FF0`. La `w` que deja `AlMundo` no
+        ''' sobrevive, y es la que después resta `0x141A7027D` (`P − centro`) en las cuatro lanes
+        ''' y suma `0x141A707D0` a la superficie.</para></summary>
         Friend Overrides Function Derivar(m As Mat4) As Forma
-            Return New Esfera(AlMundo(Centro, m), Radio)
+            Return New Esfera(AlMundo(Centro, m).WithElement(Simd.LaneW, Radio), Radio)  ' 0x141A701D3 + 0x141A701E4
         End Function
 
         ''' <summary>
@@ -320,7 +325,7 @@ Namespace Havok.Motor
         ''' d    = r / sinθ                                 ' 0x141A07824 divss
         ''' Ápice= A − d·Eje                                ' 0x141A07847/59
         ''' tanθ = sqrt(u) / H                              ' 0x141A07850 sqrtss EXACTO + 0x141A0786D
-        ''' cosθ = H / sqrt(u + H²)                         ' 0x141A078AA/B5/B9
+        ''' cosθ = H / sqrt(sqrt(u)² + H²)                  ' 0x141A07871/9F/AA/B5/B9
         ''' ```</para>
         ''' <para>⛔ **`tanθ` NO es `sinθ/cosθ`** y **`H` lleva `(R−r)` a la primera**: `0x141A07792`
         ''' recarga `R−r` encima del `(R−r)²` antes del `mulss` de `0x141A077A4`. Con cualquiera de
@@ -369,14 +374,66 @@ Namespace Havok.Motor
             Dim d = Simd.Lane0(Simd.DivExacta(Vector128.Create(rMin), Vector128.Create(sn)))  ' 0x141A07824
             Dim apice = Vector128.Subtract(a, Vector128.Multiply(Vector128.Create(d), eje))   ' 0x141A07847/59
 
+            Dim su = Simd.SqrtExacta(u)                           ' 0x141A07850 sqrtss xmm3
             Dim tn = Simd.Lane0(Simd.DivExacta(
-                Vector128.Create(Simd.SqrtExacta(u)),
-                Vector128.Create(h)))                             ' 0x141A07850 + 0x141A0786D
+                Vector128.Create(su),
+                Vector128.Create(h)))                             ' 0x141A0786D
+            ' ⛔⛔ `u` NO vuelve: `0x141A07871 mulss xmm3, xmm3` eleva al cuadrado la RAÍZ que dejó
+            ' `0x141A07850`, y `0x141A078AA` le suma `H·H` (`0x141A0789F`). `sqrt(u)²` no es `u`
+            ' bit a bit.
             Dim cs = Simd.Lane0(Simd.DivExacta(
                 Vector128.Create(h),
-                Vector128.Create(Simd.SqrtExacta(u + h * h))))  ' 0x141A078AA/B5/B9
+                Vector128.Create(Simd.SqrtExacta(su * su + h * h))))  ' 0x141A07871/9F/AA/B5/B9
 
             Return New CapsulaConica(a, b, apice, eje, rMin, rMax, l, d, cs, sn, tn)
+        End Function
+
+        ''' <summary>
+        ''' ⭐ La caja del **prefiltro** de partículas del cono — `0x141A08600`, llamada desde el
+        ''' despacho del tipo 3 (`0x141A71FF4`) con el transform del colisionable (`r9 = buf+0x20`,
+        ''' `0x141A71FBD`) y `maxParticleRadius` difundido (`data+0x130`, `0x141A71FDC`/`E9`).
+        ''' <para>Opera sobre el shape **LOCAL** (`rdx` = `buf+0x88`): lee `+0x20` con `+0x90` y
+        ''' `+0x30` con `+0x94` **sin reordenar**, y transforma los dos puntos él mismo.</para>
+        ''' <para>```
+        ''' A = ((x·M0 + y·M1) + z·M2) + M3  ;  B ídem          ' 0x141A0864B…77 / 0x141A08680…C0
+        ''' min = min(min(C, min(C, A) − r0), min(C, B) − r1) − maxR   ' 0x141A086BC/C5/DF/E3/F5, 0x141A08704/08
+        ''' max = max(max(−C, max(−C, A) + r0), max(−C, B) + r1) + maxR ' 0x141A086C8/D1/DC/EF/F2/F8, 0x141A08700
+        ''' ```</para>
+        ''' <para>`C` = `3,40282002e+38` (`0x142F3C740`, `0x141A08629`); `−C` por `xorps` con el bit
+        ''' de signo (`0x141A08693`/`9B`/`A8`/`AF`/`B9`). `min`/`max` son `minps`/`maxps`: devuelven
+        ''' el **segundo** operando salvo que el primero sea estrictamente menor/mayor.</para>
+        ''' </summary>
+        Friend Sub CajaDelPrefiltro(m As Mat4, radioMaximo As Single,
+                                         ByRef cajaMin As Vector128(Of Single),
+                                         ByRef cajaMax As Vector128(Of Single))
+            Dim a = AlMundo(Chico, m)                                     ' 0x141A0864B…0x141A08677
+            Dim b = AlMundo(Grande, m)                                    ' 0x141A08680…0x141A086C0
+            Dim casi = Vector128.Create(Simd.CasiFltMax)                  ' 0x141A08629
+            Dim menosCasi = Vector128.Create(-Simd.CasiFltMax)            ' xorps signo, 0x141A086A8/AF/B9
+            Dim r0 = Vector128.Create(RadioChico)                         ' +0x90, 0x141A086A0/AB
+            Dim r1 = Vector128.Create(RadioGrande)                        ' +0x94, 0x141A086D4/EB
+            Dim rm = Vector128.Create(radioMaximo)
+
+            Dim mnA = Vector128.Subtract(MinPs(casi, a), r0)              ' 0x141A086BC + 0x141A086C5
+            Dim mxA = Vector128.Add(MaxPs(menosCasi, a), r0)              ' 0x141A086C8 + 0x141A086D1
+            Dim mxB = Vector128.Add(MaxPs(menosCasi, b), r1)              ' 0x141A086DC + 0x141A086F2
+            Dim mn = MinPs(casi, mnA)                                     ' 0x141A086DF
+            Dim mnB = Vector128.Subtract(MinPs(casi, b), r1)              ' 0x141A086E3 + 0x141A086F5
+            Dim mx = MaxPs(menosCasi, mxA)                                ' 0x141A086EF
+            mx = Vector128.Add(MaxPs(mx, mxB), rm)                        ' 0x141A086F8 + 0x141A08700
+            mn = Vector128.Subtract(MinPs(mn, mnB), rm)                   ' 0x141A08704 + 0x141A08708
+            cajaMax = mx                                                  ' 0x141A0870C [rcx+0x10]
+            cajaMin = mn                                                  ' 0x141A08710 [rcx]
+        End Sub
+
+        ''' <summary>`minps a, b`: `a &lt; b ? a : b` por lane (con `NaN` o `±0` gana `b`).</summary>
+        Private Shared Function MinPs(a As Vector128(Of Single), b As Vector128(Of Single)) As Vector128(Of Single)
+            Return Vector128.ConditionalSelect(Vector128.LessThan(a, b), a, b)
+        End Function
+
+        ''' <summary>`maxps a, b`: `a &gt; b ? a : b` por lane (con `NaN` o `±0` gana `b`).</summary>
+        Private Shared Function MaxPs(a As Vector128(Of Single), b As Vector128(Of Single)) As Vector128(Of Single)
+            Return Vector128.ConditionalSelect(Vector128.GreaterThan(a, b), a, b)
         End Function
 
         ''' <summary>
@@ -526,7 +583,22 @@ Namespace Havok.Motor
                                                   indiceParticula As Integer,
                                                   radioP As Single,
                                                   enResto As Boolean) As Contacto
-            Dim dist = DistanciaAlPlano(p, Ecuacion)
+            If Not enResto Then
+                ' ⛔⛔ EL BLOQUE DE 4 NO ES EL `Hsum4` DEL RESTO. Traspone las cuatro `P·n`
+                ' (`shufps 0x44/0xEE/0xDD/0x88`, `0x141A6E3E7`…`0x141A6E423`) y suma por partícula
+                ' `((y + x) + z) + w`: `0x141A6E420` (y+x), `0x141A6E427` (+z) y `0x141A6E434` (+w,
+                ' la `w` del plano difundida por máscara `0x14271CCB0` + `shufps 0x4E/0xB1` + `orps`).
+                ' Y la superficie es `P − dist·n` (`0x141A6E491 mulps` + `0x141A6E495 subps`).
+                Dim m = Vector128.Multiply(p, Ecuacion)                        ' 0x141A6E3C4 mulps
+                Dim d = ((m.GetElement(1) + m.GetElement(0)) + m.GetElement(2)) +
+                        Ecuacion.GetElement(Simd.LaneW)                        ' 0x141A6E420/427/434
+                Dim rb As Contacto
+                rb.Normal = Ecuacion
+                rb.Distancia = d
+                rb.Superficie = Vector128.Subtract(p, Vector128.Multiply(Vector128.Create(d), Ecuacion))  ' 0x141A6E491/495
+                Return rb
+            End If
+            Dim dist = DistanciaAlPlano(p, Ecuacion)                           ' resto: 0x141A6E8C2/CC
             Dim r As Contacto
             r.Normal = Ecuacion                                            ' la `w` no molesta: sólo se usan 3 lanes
             r.Distancia = Simd.Lane0(dist)

@@ -54,8 +54,36 @@ Namespace Havok.Motor
         ''' ⛔ Se corren aparte de los estaticos, como en el motor.</summary>
         Friend ReadOnly AntiPellizcos As SetCompilado()
 
-        ''' <summary>La cadena `hclClothState.operators`, compilada en el orden del archivo.</summary>
-        Friend ReadOnly Operadores As OperadorCompilado()
+        ''' <summary>`hclClothData.clothStateDatas`, en el orden del archivo.</summary>
+        Friend ReadOnly Estados As IList(Of HkObj_HclClothState)
+
+        ''' <summary>La cadena `operators` de CADA estado, compilada en el orden del archivo.</summary>
+        Friend ReadOnly Cadenas As OperadorCompilado()()
+
+        ''' <summary>`clothInstance[+0x18]`: el estado que corre. La instancia nace en el **0**
+        ''' (`0x1418ECFA2 mov [rcx], eax` con `eax = 0`, que `0x1418C7EE3` copia a `+0x18`).</summary>
+        Friend EstadoActual As Integer
+
+        ''' <summary>El índice en `clothInstance.simCloths` del sim-cloth de esta prenda.</summary>
+        Friend ReadOnly IndiceDelSim As Integer
+
+        ''' <summary>`hclClothData.actions` del archivo (fuente 2 de `prepare`).</summary>
+        Friend ReadOnly AccionesDeClothData As List(Of AccionDeViento)
+        ''' <summary>`hclSimClothData.actions` del archivo (fuente 3).</summary>
+        Friend ReadOnly AccionesDeSimData As List(Of AccionDeViento)
+        ''' <summary>`hclClothInstance+0x50` (fuente 4): la acción del pool que recibe al enganchar.</summary>
+        Friend ReadOnly AccionesDeLaInstancia As New List(Of AccionDeViento)
+        ''' <summary>Acciones del archivo de una clase que no es `hclSimpleWindAction` (medición).</summary>
+        Friend ReadOnly AccionesSinTranscribir As Integer
+
+        ''' <summary>La cadena del estado ACTUAL.</summary>
+        Friend ReadOnly Property Operadores As OperadorCompilado()
+            Get
+                If Cadenas Is Nothing OrElse EstadoActual < 0 OrElse EstadoActual >= Cadenas.Length OrElse
+                   Cadenas(EstadoActual) Is Nothing Then Return Array.Empty(Of OperadorCompilado)()
+                Return Cadenas(EstadoActual)
+            End Get
+        End Property
 
         ''' <summary>Cuantos conjuntos de transforms declara el archivo
         ''' (`hclClothData.transformSetDefinitions`). ⛔ El tamano de cada uno lo declara
@@ -65,7 +93,8 @@ Namespace Havok.Motor
         Private Sub New(datos As HkObj_HclClothData, sim As HkObj_HclSimClothData, estado As Instancia,
                         colisionadores As Colisionable(), buffers As Buffer(),
                         nombresDeHueso As System.Collections.Generic.IList(Of String),
-                        restricciones As SetCompilado(), operadores As OperadorCompilado(),
+                        restricciones As SetCompilado(), estados As IList(Of HkObj_HclClothState),
+                        cadenas As OperadorCompilado()(), estadoInicial As Integer, indiceDelSim As Integer,
                         numTransformSets As Integer, antiPellizcos As SetCompilado())
             Me.Datos = datos
             Me.Sim = sim
@@ -74,7 +103,14 @@ Namespace Havok.Motor
             Me.Buffers = buffers
             Me.NombresDeHueso = nombresDeHueso
             Me.Restricciones = restricciones
-            Me.Operadores = operadores
+            Me.Estados = estados
+            Me.Cadenas = cadenas
+            Dim sinT = 0
+            If datos IsNot Nothing Then AccionesDeClothData = Viento.DelArchivo(datos.Actions, sinT)   ' clothData+0x68
+            If sim IsNot Nothing Then AccionesDeSimData = Viento.DelArchivo(sim.Actions, sinT)         ' simClothData+0xE8
+            AccionesSinTranscribir = sinT
+            Me.EstadoActual = estadoInicial
+            Me.IndiceDelSim = indiceDelSim
             Me.NumTransformSets = numTransformSets
             Me.AntiPellizcos = antiPellizcos
         End Sub
@@ -89,19 +125,36 @@ Namespace Havok.Motor
         ''' Es el puente que `transformIndices` indexa.</param>
         Friend Shared Function Crear(datos As HkObj_HclClothData,
                                      estadoACorrer As HkObj_HclClothState,
-                                     nombresDeHueso As System.Collections.Generic.IList(Of String)) As PrendaSimulada
+                                     nombresDeHueso As System.Collections.Generic.IList(Of String),
+                                     Optional huesosPorSet As Integer() = Nothing) As PrendaSimulada
             If datos Is Nothing OrElse datos.SimClothDatas Is Nothing OrElse datos.SimClothDatas.Count = 0 Then
                 Return Nothing
             End If
-            Dim ops = CadenaDe(datos, estadoACorrer)
+            ' ⛔ TODOS los estados se compilan: el job cambia de estado en caliente (`0x1418C8370`).
+            Dim estados As IList(Of HkObj_HclClothState) = If(datos.ClothStateDatas, New List(Of HkObj_HclClothState)())
+            Dim cadenas = New OperadorCompilado(Math.Max(0, estados.Count) - 1)() {}
+            For e = 0 To estados.Count - 1
+                cadenas(e) = CadenaDe(datos, estados(e))
+            Next
+            ' `estadoACorrer` Nothing ⇒ el 0, que es donde nace la instancia (`0x1418ECFA2`).
+            Dim inicial = 0
+            If estadoACorrer IsNot Nothing Then
+                For e = 0 To estados.Count - 1
+                    If estados(e) Is estadoACorrer Then inicial = e : Exit For
+                Next
+            End If
 
             ' ⛔ El sim-cloth lo nombra el operador, no el orden: el motor hace
             ' `simCloth = clothInstance.simCloths[op.simClothIndex]` (0x14195C3E0). Sin simulate en la
             ' cadena (las cadenas «Animate») igual hace falta una instancia: es la que el deform lee.
             Dim si = 0
-            For Each o In ops
-                Dim osim = TryCast(o, OpSimular)
-                If osim IsNot Nothing Then si = osim.IndiceDelSimCloth : Exit For
+            Dim hallado = False
+            For Each cad In cadenas
+                If cad Is Nothing OrElse hallado Then Continue For
+                For Each o In cad
+                    Dim osim = TryCast(o, OpSimular)
+                    If osim IsNot Nothing Then si = osim.IndiceDelSimCloth : hallado = True : Exit For
+                Next
             Next
             If si < 0 OrElse si >= datos.SimClothDatas.Count Then si = 0
             Dim sim = datos.SimClothDatas(si)
@@ -111,65 +164,278 @@ Namespace Havok.Motor
             If inst Is Nothing OrElse inst.NumParticulas = 0 Then Return Nothing
             Dim nts = If(datos.TransformSetDefinitions Is Nothing, 0, datos.TransformSetDefinitions.Count)
             Dim prenda = New PrendaSimulada(datos, sim, inst, ColisionablesDe(sim), BuffersDe(datos, inst),
-                                            nombresDeHueso, RestriccionesDe(sim), ops, nts,
+                                            nombresDeHueso, RestriccionesDe(sim), estados, cadenas, inicial, si, nts,
                                             AntiPellizcosDe(sim))
+            prenda._huesosPorSet = huesosPorSet
             ' ⛔ La cobertura del DATO se publica al armar, una vez y SIEMPRE (con el log prendido):
             ' es lo que deja ver si lo que el archivo declara llego entero al motor.
             Cobertura.Publicar(prenda)
             Return prenda
         End Function
 
+        ''' <summary>El índice del estado cuyo nombre es EXACTAMENTE `nombre` (`strcmp`
+        ''' `0x14133A520`, llamado desde `0x1418A548D`/`0x1418A54B1`), o −1.</summary>
+        Friend Function IndiceDeEstado(nombre As String) As Integer
+            If Estados Is Nothing Then Return -1
+            For e = 0 To Estados.Count - 1
+                If Estados(e) IsNot Nothing AndAlso String.Equals(Estados(e).Name, nombre, StringComparison.Ordinal) Then Return e
+            Next
+            Return -1
+        End Function
+
+        ''' <summary>`0x1418C87C0`: los `simClothIndex` de los operadores de tipo 1 del estado, sólo
+        ''' si el estado declara `usedSimCloths` (`[state+0x50] > 0`).</summary>
+        ''' <remarks>Lista en el orden de los operadores y CON repetidos: `pushBack` por operador de tipo 1
+        ''' sin buscar (`0x1418C883B`-`0x1418C8872`). `FijarEstado` usa la posición.</remarks>
+        Private Function SimsDelEstado(e As Integer) As List(Of Integer)
+            Dim r As New List(Of Integer)
+            If Estados Is Nothing OrElse e < 0 OrElse e >= Estados.Count OrElse Estados(e) Is Nothing Then Return r
+            If Estados(e).UsedSimCloths Is Nothing OrElse Estados(e).UsedSimCloths.Count <= 0 Then Return r   ' 0x1418C87EB
+            For Each o In Cadenas(e)
+                Dim osim = TryCast(o, OpSimular)                                   ' 0x1418C8834 cmp [op+0x18], 1
+                If osim IsNot Nothing Then r.Add(osim.IndiceDelSimCloth)           ' 0x1418C886C [op+0x20]
+            Next
+            Return r
+        End Function
+
         ''' <summary>
-        ''' ⭐⭐ Un cuadro — la cadena `hclClothState.operators` entera, en el orden del archivo.
-        ''' <para>⛔ `poseDe` devuelve la pose global del hueso vivo con ese nombre, o `Nothing`. Para
-        ''' los colisionables la ley es esa pose **tal cual** (`offsets[i] × transformSet[hueso]`); el
-        ''' bind embebido es del SKINNING y no va aca.</para>
-        ''' <para>⛔ `modoAabb` es `simCloth[+0x1C8]`, campo de runtime.</para>
+        ''' `hclClothInstance::setCurrentState` — `0x1418C8370`: si cambia, al sim-cloth que el estado
+        ''' NUEVO usa y el viejo no le pone los tres AABB en `(+FLT_MAX, −FLT_MAX)`
+        ''' (`0x1418C8431`-`0x1418C8472`, `0x142F3C740`), y `[+0x18] = nuevo` (`0x1418C850F`).
         ''' </summary>
-        Friend Sub Cuadro(dt As Single, modoAabb As Integer,
-                          poseDe As Func(Of String, Single()))
-            ' ⛔⛔ EL TRANSFORM SET ES ESTADO VIVO, NO SE REARMA. El deform escribe ahi la pose de
-            ' los cloth-bones y el skin del cuadro SIGUIENTE la lee: ese es el lazo del sistema. Los
-            ' cloth-bones no estan animados — su pose sin fisica es la del bind —, asi que rearmarlo
-            ' entero cada cuadro los devolvia al bind mientras el cuerpo se movia, y el skin producia
-            ' una malla estirada entre las dos poses. En reposo no se nota; en animacion la falda
-            ' explota.
-            ' La regla del refresco sale de quien es DUEÑO de cada entrada: la que el deform escribe
-            ' es suya y se conserva; las demas las refresca la pose del esqueleto, que es lo que el
-            ' juego mueve.
-            Dim ts = TransformSetDeHuesos(NombresDeHueso, poseDe)
-            If _sets Is Nothing Then
-                ' primer cuadro: todo sale de la pose, incluidos los cloth-bones (todavia no hay
-                ' deform que haya escrito nada)
-                ReDim _sets(Math.Max(0, NumTransformSets - 1))
-                For i = 0 To _sets.Length - 1
-                    Dim copia(ts.Length - 1) As Mat4
-                    Array.Copy(ts, copia, ts.Length)
-                    _sets(i) = copia
-                Next
-            Else
-                Dim delDeform = HuesosConCapa
-                For i = 0 To _sets.Length - 1
-                    Dim dst = _sets(i)
-                    If dst Is Nothing OrElse dst.Length <> ts.Length Then
-                        Dim copia(ts.Length - 1) As Mat4
-                        Array.Copy(ts, copia, ts.Length)
-                        _sets(i) = copia
-                        Continue For
-                    End If
-                    For b = 0 To ts.Length - 1
-                        dst(b) = ts(b)
-                    Next
-                    ' y se devuelve lo que el deform habia escrito: es suyo
-                    For Each b In delDeform
-                        If b >= 0 AndAlso b < dst.Length AndAlso _propiasDelDeform IsNot Nothing AndAlso
-                           b < _propiasDelDeform.Length Then
-                            dst(b) = _propiasDelDeform(b)
-                        End If
-                    Next
+        ''' <para>```
+        ''' viejos = SimsDelEstado(actual) ; nuevos = SimsDelEstado(nuevo)  ' 0x1418C83A8 / 0x1418C83C8
+        ''' para cada POSICIÓN k de nuevos (r9d):                           ' 0x1418C83D4-0x1418C848F
+        '''     si nuevos[k] no está en viejos:                             ' 0x1418C83F7-0x1418C8412 (je 0x1418C8481 si está)
+        '''         simCloths[k] — índice k (r11 = k·8), no nuevos[k]:      ' 0x1418C842D / 0x1418C8447 / 0x1418C8464
+        '''             +0x50/+0x70/+0x90 = 0x7F7FFFEE, +0x60/+0x80/+0xA0 = su xor con 0x80000000
+        ''' ```</para>
+        ''' <para>⛔ Resetea los sim-cloths que ENTRAN (en el nuevo y no en el viejo), no los que salen.
+        ''' Leído al revés dejaba vacío el AABB que el motor conserva al pasar de Simulate a Animate:
+        ''' llamadas 0-1 del diferencial de cuadro, 16 lanes de `simCloth+0x50..+0x6F` más el ancho.</para>
+        Friend Sub FijarEstado(nuevo As Integer)
+            If nuevo = EstadoActual Then Return                                    ' 0x1418C8384
+            Dim viejos = SimsDelEstado(EstadoActual)
+            Dim nuevos = SimsDelEstado(nuevo)
+            For k = 0 To nuevos.Count - 1                                          ' 0x1418C83D4 / 0x1418C848C
+                If viejos.Contains(nuevos(k)) Then Continue For                    ' 0x1418C8405-0x1418C8408
+                ' `simCloths[k]` (0x1418C842D mov rcx, [r11 + rax]): esta prenda tiene la instancia IndiceDelSim
+                If k <> IndiceDelSim Then Continue For
+                Dim mas = Vector128.Create(Simd.CasiFltMax)                        ' 0x1418C841B (0x142F3C740)
+                Dim menos = Vector128.Xor(mas, Vector128.Create(-0.0F))            ' 0x1418C8422-0x1418C8435
+                Estado.AabbMinParticulas = mas : Estado.AabbMaxParticulas = menos   ' 0x1418C8431 / 0x1418C8438
+                Estado.AabbMinAncho = mas : Estado.AabbMaxAncho = menos             ' 0x1418C844B / 0x1418C8452
+                Estado.AabbMinMascara = mas : Estado.AabbMaxMascara = menos         ' 0x1418C8468 / 0x1418C8472
+            Next
+            EstadoActual = nuevo                                                   ' 0x1418C850F
+        End Sub
+
+        ''' <summary>`getSimulationInfo(simCloth).transferMotionEnabled` (`0x1418C7730` + `[+0x1E]`).</summary>
+        Private ReadOnly Property TransferenciaHabilitada As Boolean
+            Get
+                Return Sim IsNot Nothing AndAlso Sim.SimulationInfo IsNot Nothing AndAlso Sim.SimulationInfo.TransferMotionEnabled
+            End Get
+        End Property
+
+        ''' <summary>`sets[transferMotionData.transformSetIndex][transformIndex]`, o `Nothing`.</summary>
+        Private Function TransformDeTransferencia() As Mat4?
+            Dim tm = TransferenciaDe(Sim)
+            Dim sets = TransformSets
+            If tm.IndiceDelSet < 0 OrElse tm.IndiceDelSet >= sets.Length OrElse sets(tm.IndiceDelSet) Is Nothing Then Return Nothing
+            If tm.IndiceDelTransform < 0 OrElse tm.IndiceDelTransform >= sets(tm.IndiceDelSet).Length Then Return Nothing
+            Return sets(tm.IndiceDelSet)(tm.IndiceDelTransform)
+        End Function
+
+        ''' <summary>
+        ''' `0x1418C98F0`: con `transferMotionEnabled`, `simCloth[+0x120] = set[..][..]` copiado por
+        ''' `0x1412986A0` (filas 0-2 con `w = 0`, fila 3 con `w = 1`).
+        ''' </summary>
+        Friend Sub SembrarTransferencia()
+            If Not TransferenciaHabilitada Then Return                             ' 0x1418C990B
+            Dim m = TransformDeTransferencia()
+            If Not m.HasValue Then Return
+            Dim c As Mat4
+            c.F0 = m.Value.F0.WithElement(Simd.LaneW, 0.0F)                        ' 0x1412986B9…C8
+            c.F1 = m.Value.F1.WithElement(Simd.LaneW, 0.0F)
+            c.F2 = m.Value.F2.WithElement(Simd.LaneW, 0.0F)
+            c.F3 = m.Value.F3.WithElement(Simd.LaneW, 1.0F)                        ' 0x1412986B2 / 0x1412986DE
+            Estado.TransformPrevioDeTransferMotion = c
+        End Sub
+
+        ''' <summary>`previous = positions` en todas las partículas — `0x1418794B6`-`0x1418794E2`.</summary>
+        Friend Sub PreviasIgualAPosiciones()
+            For i = 0 To Estado.NumParticulas - 1
+                Simd.Escribir(Estado.Previas, i, Simd.Leer(Estado.Posiciones, i))
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `0x1418C9530` (vía `0x1418C94D0`, sólo con `collidableTransformMap.transformSetIndex ≥ 0`):
+        ''' cada colisionable a `offsets[i] ∘ set[transformIndices[i]]` y sus dos velocidades a cero
+        ''' (`0x1418C9686`/`0x1418C968B`).
+        ''' </summary>
+        Friend Sub RecolocarColisionables()
+            Dim mapa = MapaDe(Sim)
+            If mapa.IndiceDelSet < 0 Then Return                                    ' 0x1418C94FC
+            Dim sets = TransformSets
+            If mapa.IndiceDelSet >= sets.Length OrElse sets(mapa.IndiceDelSet) Is Nothing OrElse
+               mapa.Indices Is Nothing OrElse mapa.Offsets Is Nothing OrElse Colisionadores Is Nothing Then Return
+            Dim ts = sets(mapa.IndiceDelSet)
+            For i = 0 To Colisionadores.Length - 1
+                Dim c = Colisionadores(i)
+                If c Is Nothing OrElse i >= mapa.Indices.Length OrElse i >= mapa.Offsets.Length Then Continue For
+                Dim bi = mapa.Indices(i)
+                If bi < 0 OrElse bi >= ts.Length Then Continue For
+                Dim b = ts(bi), a = mapa.Offsets(i)
+                Dim m As Mat4
+                m.F0 = Colisionables.FilaPorMat(a.F0, b)                           ' 0x1418C95BF…5F1
+                m.F1 = Colisionables.FilaPorMat(a.F1, b)                           ' 0x1418C95F5…619
+                m.F2 = Colisionables.FilaPorMat(a.F2, b)                           ' 0x1418C961C…640
+                m.F3 = Colisionables.FilaPorMatConTraslacion(a.F3, b)              ' 0x1418C9643…67E
+                c.Transform = m
+                c.VelLineal = Vector128(Of Single).Zero                            ' 0x1418C9686
+                c.VelAngular = Vector128(Of Single).Zero                           ' 0x1418C968B
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' ⭐ El teletransporte del sim-cloth — `0x1418CA380(simCloth, delta, conColisionables)`.
+        ''' <para>```
+        ''' positions[i], previous[i] = delta · p            ' 0x1418CA3D4 / 0x1418CA3E6 (0x14133A140), i &lt; data+0x40
+        ''' simCloth[+0x120] = delta · simCloth[+0x120]      ' 0x1418CA400 (0x141298260)
+        ''' por cada staticConstraintSet de tipo 6 o 17:     ' 0x1418CA42E / 0x1418CA552
+        '''   estado(+0xB0 por id)[+0x10..+0x40] = delta · ése   ' 0x1418CA473
+        ''' si conColisionables:                             ' 0x1418CA48A
+        '''   M = matriz(delta)                              ' 0x1418CA49A (0x141483C00) + 0x1418CA4A9 (0x1412986A0)
+        '''   coll.transform = M ∘ coll.transform            ' 0x1418CA4FD (0x141298180)
+        '''   coll.linVel, coll.angVel = rotar(delta.R, ·)   ' 0x1418CA50D / 0x1418CA51D (0x14133A040)
+        ''' ```</para>
+        ''' </summary>
+        Friend Sub Teletransportar(delta As Qs, conColisionables As Boolean)
+            For i = 0 To Estado.NumParticulas - 1
+                Simd.Escribir(Estado.Posiciones, i, Descomposicion.TransformarPuntoQs(delta, Simd.Leer(Estado.Posiciones, i)))
+                Simd.Escribir(Estado.Previas, i, Descomposicion.TransformarPuntoQs(delta, Simd.Leer(Estado.Previas, i)))
+            Next
+            Estado.TransformPrevioDeTransferMotion = Descomposicion.QsPorMatriz(delta, Estado.TransformPrevioDeTransferMotion)
+
+            If Restricciones IsNot Nothing Then
+                For s = 0 To Restricciones.Length - 1
+                    Dim rs = Restricciones(s)
+                    If rs Is Nothing OrElse (rs.Tipo <> 6 AndAlso rs.Tipo <> 17) Then Continue For
+                    ' ⛔ El motor crea el bloque en el constructor de la instancia; la app lo crea en el
+                    ' primer `solve` (`Volumen.vb`). Sin bloque todavía no hay marco que mover.
+                    Dim est = Estado.EstadoDelSet(s)
+                    If est Is Nothing Then Continue For
+                    Dim m As Mat4
+                    m.F0 = est.Marco.F0 : m.F1 = est.Marco.F1 : m.F2 = est.Marco.F2   ' estado+0x10/+0x20/+0x30
+                    m.F3 = est.CentroidePonderado                                       ' estado+0x40
+                    Dim n = Descomposicion.QsPorMatriz(delta, m)
+                    est.Marco.F0 = n.F0 : est.Marco.F1 = n.F1 : est.Marco.F2 = n.F2
+                    est.CentroidePonderado = n.F3
                 Next
             End If
-            Dim sets = _sets
+
+            If Not conColisionables OrElse Colisionadores Is Nothing Then Return
+            Dim mat = Descomposicion.QsAMatrizPorProducto(delta)
+            For Each c In Colisionadores
+                If c Is Nothing Then Continue For
+                c.Transform = Mat4.Componer(mat, c.Transform)
+                c.VelLineal = Descomposicion.RotarVector(delta.R, c.VelLineal)
+                c.VelAngular = Descomposicion.RotarVector(delta.R, c.VelAngular)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Lo que `0x1418A5930` necesita de la instancia para las filas de transferencia
+        ''' (`0x1418A5C32`-`0x1418A5D8F`): un `transferMotionData.transformIndex` (`[data+0x154]`) por
+        ''' cada sim-cloth de `[inst+0x20]` con datos y `transferMotionEnabled` (`0x1418C7730` +
+        ''' `[+0x1E]`). La app modela UN sim-cloth (M22: 808 de 808 `hclClothData` declaran uno).
+        ''' <para>La fila la rebasa `ConjuntoDeTransforms.RebasarConjunto`; acá sólo vive el dato,
+        ''' leído UNA vez del archivo (es inmutable).</para>
+        ''' </summary>
+        Friend ReadOnly Property FilasDeTransferencia As Integer()
+            Get
+                If _filasDeTransferencia Is Nothing Then
+                    _filasDeTransferencia = If(TransferenciaHabilitada, {TransferenciaDe(Sim).IndiceDelTransform}, Array.Empty(Of Integer)())
+                End If
+                Return _filasDeTransferencia
+            End Get
+        End Property
+        Private _filasDeTransferencia As Integer()
+
+        ''' <summary>
+        ''' ⭐ `hclClothInstance.transformSets` visto como la lista de `BSTransformSet` que la capa de
+        ''' Bethesda registra (`0x1418A39AA` → `0x1418C85F0`: `[inst+0x40][i] = ts`). Un elemento por
+        ''' `hclClothData.transformSetDefinitions[i]`, en el mismo índice que <see cref="TransformSets"/>.
+        ''' <para>⛔ Nothing hasta que el cableado la arma: los arneses que usan la prenda sin capa no
+        ''' la tienen.</para>
+        ''' </summary>
+        Friend Conjuntos As Havok.Physics.ConjuntoDeTransforms()
+
+        ''' <summary>El tamaño de cada transform set: los huesos del `hkaSkeleton` de su
+        ''' `BSTransformSet` (`0x1418A413F`: `[skel+0x30]`). Nothing ⇒ <see cref="NombresDeHueso"/>.</summary>
+        Private _huesosPorSet As Integer()
+
+        ''' <summary>`setStiffnessMode(2, 1, 1)` — `0x1418A66A8` → `0x1418C6540`.</summary>
+        Friend Sub ModoDeRigidezPorHuesoRapido()
+            Estado.Modo = 2
+            Estado.S1 = 1.0F
+            Estado.S2 = 1.0F
+        End Sub
+
+        ''' <summary>
+        ''' El pasaje de Animate a Simulate — `0x141879550`-`0x1418795BA`: con `transferMotionEnabled`,
+        ''' `nuevo = qs(set[..][..])`, `viejo = qs(simCloth[+0x120])` y `0x1418C97A0`:
+        ''' `previous[i] = delta(viejo, nuevo, 1, 1) · previous[i]` para las `data.particleDatas` partículas.
+        ''' </summary>
+        Friend Sub RebasarPrevias()
+            If Not TransferenciaHabilitada Then Return                             ' 0x14187955B
+            Dim m = TransformDeTransferencia()
+            If Not m.HasValue Then Return
+            Dim nuevo = Descomposicion.AQs(m.Value)                                ' 0x141879588 (0x141483CD0)
+            Dim viejo = Descomposicion.AQs(Estado.TransformPrevioDeTransferMotion) ' 0x14187959C
+            Dim delta = Descomposicion.DeltaDeRebase(viejo, nuevo, 1.0F, 1.0F)     ' 0x1418C97D1
+            For i = 0 To Estado.NumParticulas - 1                                  ' 0x1418C97DC [data+0x40]
+                Simd.Escribir(Estado.Previas, i, Descomposicion.TransformarPuntoQs(delta, Simd.Leer(Estado.Previas, i)))   ' 0x1418C9803
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' `hclClothInstance.transformSets` (`+0x40`) — ⛔ ESTADO VIVO. Una entrada de 64 B por hueso
+        ''' del `hkaSkeleton`, en IDENTIDAD al crearse (`0x1418A41B0`-`0x1418A41E4`).
+        ''' <para>⛔⛔ NADIE de la app lo rearma. Lo escribe la capa de Bethesda
+        ''' (`Havok.Physics.ConjuntoDeTransforms`, `0x1418A6080`) SÓLO en los huesos de su máscara de
+        ''' lectura, y el deform en los que escribe. El resto conserva lo que tenía. La app lo
+        ''' rearmaba entero cada cuadro desde el esqueleto y le devolvía a los cloth-bones la salida
+        ''' del deform anterior: dos leyes que el motor no tiene.</para>
+        ''' </summary>
+        Friend ReadOnly Property TransformSets As Mat4()()
+            Get
+                If _sets Is Nothing Then
+                    ReDim _sets(Math.Max(0, NumTransformSets - 1))
+                    For i = 0 To _sets.Length - 1
+                        Dim n = If(_huesosPorSet IsNot Nothing AndAlso i < _huesosPorSet.Length, _huesosPorSet(i), NombresDeHueso.Count)
+                        Dim s(Math.Max(0, n) - 1) As Mat4
+                        For b = 0 To s.Length - 1
+                            s(b) = Mat4.Identidad
+                        Next
+                        _sets(i) = s
+                    Next
+                End If
+                Return _sets
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' ⭐⭐ Un paso — la cadena `hclClothState.operators` entera, en el orden del archivo, sobre el
+        ''' transform set vivo.
+        ''' <para>⛔ El llamador abre y cierra el acceso del `BSTransformSet` alrededor de esta
+        ''' llamada, como `Operator Prepare` (`0x1418C8DE0`) y `Runtime Buffers Release`
+        ''' (`0x1418C908C`) alrededor de la ejecución.</para>
+        ''' <para>⛔ `modoAabb` es `simCloth[+0x1C8]`, campo de runtime.</para>
+        ''' </summary>
+        Friend Sub Cuadro(dt As Single, modoAabb As Integer)
+            Dim sets = TransformSets
 
             Dim ctx As ContextoDeCadena
             ctx.Buffers = Buffers
@@ -190,22 +456,20 @@ Namespace Havok.Motor
                     mT = tsT(tm.IndiceDelTransform)
                 End If
             End If
-            ctx.Cuadro = EntradaDeCuadro(Sim, dt, 1, modoAabb, ts, mT)
+            ' ⛔ Los colisionables leen el set que nombra `collidableTransformMap.transformSetIndex`
+            ' (`0x14195C4B0`), no «el set 0».
+            Dim mapa = MapaDe(Sim)
+            Dim tsColisionables As Mat4() = Array.Empty(Of Mat4)()
+            If mapa.IndiceDelSet >= 0 AndAlso mapa.IndiceDelSet < sets.Length AndAlso sets(mapa.IndiceDelSet) IsNot Nothing Then
+                tsColisionables = sets(mapa.IndiceDelSet)
+            End If
+            ctx.Cuadro = EntradaDeCuadro(Sim, dt, 1, modoAabb, tsColisionables, mT)
             ctx.Cuadro.Restricciones = Restricciones
             ctx.Cuadro.AntiPellizcos = AntiPellizcos
+            ctx.Cuadro.Acciones = Viento.ListaActiva(AccionesDeClothData, AccionesDeSimData, AccionesDeLaInstancia)   ' 0x14195BB87
+            ctx.Cuadro.MasaTotal = If(Sim Is Nothing, 0.0F, Sim.TotalMass)                                           ' data+0x78
             Cadena.Ejecutar(Operadores, ctx)
             _salida = ctx.TransformSets
-            ' lo que el deform acaba de escribir queda guardado: es lo que el skin del proximo cuadro
-            ' tiene que ver, y lo que el refresco de arriba no puede pisar.
-            Dim sal = TransformSetDeSalida
-            If sal IsNot Nothing Then
-                If _propiasDelDeform Is Nothing OrElse _propiasDelDeform.Length <> sal.Length Then
-                    ReDim _propiasDelDeform(sal.Length - 1)
-                End If
-                For Each b In HuesosConCapa
-                    If b >= 0 AndAlso b < sal.Length Then _propiasDelDeform(b) = sal(b)
-                Next
-            End If
             ' el control del instrumento: sobre la piel, no sobre las particulas
             Cobertura.ControlDeLaPiel(Me)
         End Sub
@@ -247,10 +511,6 @@ Namespace Havok.Motor
 
         ''' <summary>`hclClothInstance.transformSets` (+0x40) — ESTADO VIVO, persiste entre cuadros.</summary>
         Private _sets As Mat4()()
-
-        ''' <summary>Lo que el deform escribio en el ultimo cuadro, por hueso. El refresco de la pose
-        ''' no lo pisa: esas entradas son del deform, no del esqueleto.</summary>
-        Private _propiasDelDeform As Mat4()
 
     End Class
 
@@ -1101,11 +1361,12 @@ Namespace Havok.Motor
             ' cuatro. Antes se probaban una por una y para tres de ellas se llamaba a
             ' `PielDeVariante`, que terminaba en el parser de `PN` y devolvia Nothing — caian en el
             ' hueco igual, con una linea de log diciendo que se soportaban.
-            Dim grafPiel = HclRenderGraphParser_Class.ParseObjectSpaceSkinOperator(g, crudo)
-            If grafPiel IsNot Nothing Then
-                Dim p = PielDeGrafo(grafPiel)
-                If p Is Nothing Then Return Nothing
-                Return New OpPiel(p, grafPiel.Nombre)
+            ' El MOTOR compila la piel desde los bloques CRUDOS (`PielDeObjeto.Compilar`, kernels de
+            ' 0x141938CB0 / 0x14193BBD0 / 0x141940960 / 0x141947C60). El parser de render queda para
+            ' sus otros consumidores.
+            Dim pielObj = PielDeObjeto.Compilar(g, crudo)
+            If pielObj IsNot Nothing Then
+                Return New OpPiel(pielObj, HkObj_HclObjectSpaceSkinOperator.Leer(g, crudo)?.Name)
             End If
 
             ' ⭐⭐ `hclInputConvertOperator` (14) y `hclOutputConvertOperator` (15) — los dos

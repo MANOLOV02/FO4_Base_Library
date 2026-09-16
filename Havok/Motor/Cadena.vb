@@ -110,16 +110,16 @@ Namespace Havok.Motor
         Inherits OperadorCompilado
 
         ''' <summary>La piel compilada. La lee `Cobertura` para medir que cubre el buffer.</summary>
-        Friend ReadOnly Piel As PielCompilada
+        Friend ReadOnly Piel As PielObjeto
 
-        Friend Sub New(piel As PielCompilada, nombre As String)
+        Friend Sub New(piel As PielObjeto, nombre As String)
             ' 22 = P, 23 = PN, 24 = PNT, 25 = PNTB — la tabla de `0x1418C6390`
-            MyBase.New(21 + Math.Max(1, Math.Min(4, piel.Canales)), nombre)
+            MyBase.New(piel.Tipo, nombre)
             Me.Piel = piel
         End Sub
 
         Friend Overrides Sub Ejecutar(ByRef ctx As ContextoDeCadena)
-            Havok.Motor.Piel.Ejecutar(Piel, ctx.Buffers, ctx.TransformSets)
+            PielDeObjeto.Ejecutar(Piel, ctx.Buffers, ctx.TransformSets)             ' PielObjeto.vb
         End Sub
 
     End Class

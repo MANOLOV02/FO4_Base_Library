@@ -225,6 +225,9 @@ Partial Public Class HkxObjectGraph_Class
             Throw New InvalidDataException($"hkaSplineCompressedAnimation @0x{source.RelativeOffset:X} has no spline payload.")
         End If
 
+        ' El muestreador del `.exe` lee los mismos campos del mismo objeto (offsets de 0x1419B1780).
+        result.Muestreador = HkaSplineMuestreador.Desde(hkr, splineBlob)
+
         DecompressSplineAnimation(result, splineBlob,
                                                                   result.Animacion.NumberOfTransformTracks,
                                                                   result.NumFrames,
@@ -1450,6 +1453,10 @@ Public Class HkxAnimacionDescomprimida_Class
     Public ReadOnly Property ScaleQuantUsados As New Dictionary(Of Integer, Integer)
 
     Public Property Binding As Havok.Canon.Objects.HkObj_HkaAnimationBinding
+
+    ''' <summary>El muestreador del `.exe` (0x1419B1750) sobre el MISMO objeto spline: la pose a un tiempo
+    ''' arbitrario, no sólo en los frames. Nothing cuando la fuente es lossless (no tiene spline).</summary>
+    Public Property Muestreador As HkaSplineMuestreador
 
     ''' <summary>`hkaAnimation.annotationTracks[i].trackName`. Los dos parsers lo leian con un
     ''' stride escrito a mano; el objeto generado lo declara.</summary>

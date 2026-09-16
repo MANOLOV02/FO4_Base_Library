@@ -167,8 +167,6 @@ Public Class Config_App
     Public Property Setting_HavokPhysics As Boolean = False
     ''' <summary>0 = Off · 1 = DeformOnly (sin integración; no puede explotar) · 2 = FullSimulation.</summary>
     Public Property Setting_HavokPhysicsMode As Integer = 2
-    ''' <summary>Multiplica la gravedad authored. 1.0 = fiel al archivo.</summary>
-    Public Property Setting_HavokPhysicsGravityScale As Single = 1.0F
 
     ''' <summary>
     ''' Vuelca las tres claves de config al módulo estático de física. Idempotente y barata; llamarla
@@ -212,7 +210,6 @@ Public Class Config_App
         Havok.Physics.HavokPhysicsSettings.Mode =
             CType(Math.Max(0, Math.Min(Havok.Physics.RangoDeModo.Maximo, Setting_HavokPhysicsMode)),
                   Havok.Physics.HavokPhysicsMode)
-        Havok.Physics.HavokPhysicsSettings.GravityScale = Setting_HavokPhysicsGravityScale
     End Sub
     ' WM inspection toggle: when True, EnsureZapIndexBuffer bypasses per-segment occlusion so all geometry
     ' draws. Default TRUE = "draw everything" (the neutral renderer default; WM wants it ON, and an existing

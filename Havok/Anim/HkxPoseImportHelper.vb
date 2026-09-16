@@ -239,6 +239,41 @@ Public NotInheritable Class HkxPoseImportSession
             If _previewPoseCache.TryGetValue(usedFrame, cached) Then Return cached
         End If
 
+        Dim result = ArmarPose(poseName, collectDiagnostics, $"frame={usedFrame}/{_animation.NumFrames - 1}",
+                               Function(track) _animation.GetTransform(usedFrame, track),
+                               Function(track) _animation.GetMask(usedFrame, track))
+        If collectDiagnostics = False Then _previewPoseCache(usedFrame) = result
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' La pose a un TIEMPO del clip, muestreada por el `.exe` (`hkaSplineCompressedAnimation::sampleTracks`
+    ''' 0x1419B1750, transcripto en <see cref="HkaSplineMuestreador"/>), y armada por el MISMO camino que
+    ''' <see cref="BuildPose"/>: sólo cambia de dónde sale el `hkQsTransform` de cada track y la máscara
+    ''' de componentes (la del bloque que el `.exe` leyó para ese tiempo). Sin caché: el tiempo es continuo.
+    ''' <para>⛔ Sólo para clips spline. Un clip lossless no tiene muestreador del `.exe` transcripto y
+    ''' tira: no se inventa una interpolación en su lugar.</para>
+    ''' </summary>
+    Public Function BuildPoseAtTime(t As Single, poseName As String,
+                                    Optional collectDiagnostics As Boolean = False) As HkxPoseImportHelper.ImportResult
+        Dim m = If(_animation Is Nothing, Nothing, _animation.Muestreador)
+        If m Is Nothing Then Throw New InvalidOperationException("BuildPoseAtTime: el clip no es hkaSplineCompressedAnimation (no hay muestreador del .exe).")
+        Dim s = m.PoseAtTime(t)
+        Dim tr = s.Transforms
+        Return ArmarPose(poseName, collectDiagnostics, $"t={t:R} bloque={s.Bloque}",
+                         Function(track)
+                             If s.Bloque < 0 OrElse track < 0 OrElse track >= m.TransformTracks Then Return Nothing
+                             Dim q(11) As Single
+                             Array.Copy(tr, 12 * track, q, 0, 12)
+                             Return q
+                         End Function,
+                         Function(track) m.MascaraDeContenido(s.Bloque, track))
+    End Function
+
+    ''' <summary>El cuerpo común de <see cref="BuildPose"/> y <see cref="BuildPoseAtTime"/>.</summary>
+    Private Function ArmarPose(poseName As String, collectDiagnostics As Boolean, cuando As String,
+                               transformDe As Func(Of Integer, Single()),
+                               mascaraDe As Func(Of Integer, Integer)) As HkxPoseImportHelper.ImportResult
         Dim diagnostics = If(collectDiagnostics, CloneDiagnostics(_baseDiagnostics), Nothing)
 
         Dim pose As New Poses_class With {
@@ -249,7 +284,7 @@ Public NotInheritable Class HkxPoseImportSession
             .Transforms = New Dictionary(Of String, PoseTransformData)(Math.Max(0, _tracks.Count), StringComparer.OrdinalIgnoreCase)
         }
 
-        Logger.LogLazy(Function() $"[HKX-POSE] BuildPose start pose='{pose.Name}' frame={usedFrame}/{_animation.NumFrames - 1} tracks={_tracks.Count} skeletonSource={_baseDiagnostics.SkeletonSource} diagnostics={collectDiagnostics}")
+        Logger.LogLazy(Function() $"[HKX-POSE] BuildPose start pose='{pose.Name}' {cuando} tracks={_tracks.Count} skeletonSource={_baseDiagnostics.SkeletonSource} diagnostics={collectDiagnostics}")
 
         Dim skippedInvalidBindings = 0
         Dim skippedNoContent = 0
@@ -282,11 +317,11 @@ Public NotInheritable Class HkxPoseImportSession
         Dim additiveCurrent = _esAditivoActual
 
         For Each resolved In _tracks
-            Dim hkxTransform = _animation.GetTransform(usedFrame, resolved.TrackIndex)
-            Dim hkxMask = _animation.GetMask(usedFrame, resolved.TrackIndex)
+            Dim hkxTransform = transformDe(resolved.TrackIndex)
+            Dim hkxMask = mascaraDe(resolved.TrackIndex)
             If hkxTransform Is Nothing Then
                 skippedInvalidBindings += 1
-                Logger.LogLazy(Function() $"[HKX-POSE] skip track={resolved.TrackIndex} bone='{resolved.BoneName}': transform missing at frame={usedFrame}.")
+                Logger.LogLazy(Function() $"[HKX-POSE] skip track={resolved.TrackIndex} bone='{resolved.BoneName}': transform missing at {cuando}.")
                 Continue For
             End If
 
@@ -419,9 +454,9 @@ Public NotInheritable Class HkxPoseImportSession
             diagnostics.SkippedInvalidBindings = skippedInvalidBindings
             If diagnostics.MaxDeltaTranslation > 300.0F Then diagnostics.Warning = $"Large translation delta detected ({diagnostics.MaxDeltaTranslation:0.###}). Check skeleton/animation match."
 
-            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' usedFrame={usedFrame} imported={diagnostics.ImportedBones} missingLive={diagnostics.SkippedMissingLiveBones} invalid={diagnostics.SkippedInvalidBindings} noContent={skippedNoContent} identity={droppedIdentity} refT={diagnostics.TranslationComponentsFromReferencePose} refR={diagnostics.RotationComponentsFromReferencePose} refS={diagnostics.ScaleComponentsFromReferencePose} maxDeltaT={diagnostics.MaxDeltaTranslation:0.###} maxDeltaR={diagnostics.MaxDeltaRotationDegrees:0.###} warning='{diagnostics.Warning}'")
+            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' {cuando} imported={diagnostics.ImportedBones} missingLive={diagnostics.SkippedMissingLiveBones} invalid={diagnostics.SkippedInvalidBindings} noContent={skippedNoContent} identity={droppedIdentity} refT={diagnostics.TranslationComponentsFromReferencePose} refR={diagnostics.RotationComponentsFromReferencePose} refS={diagnostics.ScaleComponentsFromReferencePose} maxDeltaT={diagnostics.MaxDeltaTranslation:0.###} maxDeltaR={diagnostics.MaxDeltaRotationDegrees:0.###} warning='{diagnostics.Warning}'")
         Else
-            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' usedFrame={usedFrame} imported={pose.Transforms.Count} missingLive={skippedMissingLiveBones} invalid={skippedInvalidBindings} noContent={skippedNoContent} identity={droppedIdentity} tracks={_tracks.Count}")
+            Logger.LogLazy(Function() $"[HKX-POSE] BuildPose result pose='{pose.Name}' {cuando} imported={pose.Transforms.Count} missingLive={skippedMissingLiveBones} invalid={skippedInvalidBindings} noContent={skippedNoContent} identity={droppedIdentity} tracks={_tracks.Count}")
         End If
 
         Dim result = New HkxPoseImportHelper.ImportResult With {
@@ -434,7 +469,6 @@ Public NotInheritable Class HkxPoseImportSession
             .SkeletonSource = _baseDiagnostics.SkeletonSource
         }
 
-        If collectDiagnostics = False Then _previewPoseCache(usedFrame) = result
         Return result
     End Function
 

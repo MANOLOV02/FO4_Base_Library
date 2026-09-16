@@ -119,7 +119,7 @@ Namespace Havok.Motor
 
         ''' <summary>`(v.y·M1 + v.x·M0) + v.z·M2` — sin traslacion, con la `y` primero
         ''' (`0x1412987DA`/`DF` antes que `0x1412987B0`/`D7`).</summary>
-        Private Shared Function FilaCompuesta(v As Vector128(Of Single), m As Mat4) As Vector128(Of Single)
+        Friend Shared Function FilaCompuesta(v As Vector128(Of Single), m As Mat4) As Vector128(Of Single)
             Dim r = Vector128.Add(Vector128.Multiply(Simd.BcastY(v), m.F1),
                                   Vector128.Multiply(Simd.BcastX(v), m.F0))
             Return Vector128.Add(r, Vector128.Multiply(Simd.BcastZ(v), m.F2))
@@ -398,20 +398,40 @@ Namespace Havok.Motor
             ' misma ley (motor-122).
             Dim listaPellizco As New List(Of Integer)()             ' A — 0x141A718A2
             Dim listaNormal As New List(Of Integer)()               ' B — 0x141A718AE
+            ' ⛔ LA CÁPSULA CÓNICA (tipo 3) PREFILTRA POR CAJA: la de la forma LOCAL al mundo agrandada
+            ' por `maxParticleRadius` (`0x141A08600`), y sólo entra `min <= P <= max` en xyz
+            ' (`0x141A72170`/`78` cmpleps + `0x141A7217D` andps + `0x141A72183` and 7 / `cmp al, 7`,
+            ' y lo mismo en `0x141A7260B`). Va después de la máscara y antes de la bandera.
+            Dim conCaja = TypeOf c.Forma Is CapsulaConica
+            Dim cajaMin As Vector128(Of Single), cajaMax As Vector128(Of Single)
+            If conCaja Then
+                DirectCast(c.Forma, CapsulaConica).CajaDelPrefiltro(c.Transform, inst.RadioMaximoDeParticula, cajaMin, cajaMax)
+            End If
             For i = 0 To inst.NumParticulas - 1
-                Dim aPellizco = False
                 If masc IsNot Nothing AndAlso i < masc.Length Then
                     If (masc(i) And bit) = 0UI Then Continue For    ' 0x141A71893 test
-                    ' el reparto por bandera vive SOLO en este camino
-                    aPellizco = detectar AndAlso inst.PellizcoPorParticula IsNot Nothing AndAlso
-                                i < inst.PellizcoPorParticula.Length AndAlso
-                                inst.PellizcoPorParticula(i) <> 0   ' 0x141A71898
                 ElseIf porMasa Then
-                    ' ⛔ sin mascara, el filtro es la masa inversa — 0x141A71D00/03. Y ese
-                    ' camino escribe SOLO la lista B (`0x141A71D0A`, el mismo `rsi`/`ebx`):
-                    ' no prueba la bandera ni toca `r15`. Sin reparto de pellizco.
-                    If inst.InvMasa(i) = 0.0F Then Continue For
+                    ' ⛔ sin mascara, el filtro es la masa inversa — `ucomiss xmm6, [invMass]` +
+                    ' `je` SALTEA (`0x141A71D00`/`03`, con `xmm6 = 0` de `0x141A7169D xorps`).
+                    ' ⛔ `je` tambien salta con `ZF = 1` de un UNORDERED: una `invMass` NaN queda
+                    ' afuera igual que un cero. `= 0.0F` de VB la dejaba entrar.
+                    Dim im = inst.InvMasa(i)
+                    If Not (im < 0.0F OrElse im > 0.0F) Then Continue For
                 End If
+                If conCaja Then
+                    Dim p = Simd.Leer(inst.Posiciones, i)
+                    Dim dentro = Vector128.BitwiseAnd(Vector128.LessThanOrEqual(p, cajaMax),
+                                                      Vector128.LessThanOrEqual(cajaMin, p))
+                    If (Vector128.ExtractMostSignificantBits(dentro) And 7UI) <> 7UI Then Continue For
+                End If
+                ' ⛔⛔ EL REPARTO POR BANDERA ESTA EN LOS DOS CAMINOS DE LA PASADA QUE DETECTA: con
+                ' mascara (`0x141A71898 cmp byte [rdx], 0`) y SIN mascara (`0x141A71986 cmp byte
+                ' [rdx], r12b`, cápsula; `0x141A721FB`, cono; `0x141A72B88`, tipo 5; `0x141A73546`,
+                ' tipo 9; `0x141A73DE6`, plano). Decia que el camino sin mascara no probaba la bandera citando `0x141A71D0A`,
+                ' pero ese es el de la pasada NORMAL (`r9b = 0`), donde `detectar` ya es False.
+                Dim aPellizco = detectar AndAlso inst.PellizcoPorParticula IsNot Nothing AndAlso
+                                i < inst.PellizcoPorParticula.Length AndAlso
+                                inst.PellizcoPorParticula(i) <> 0
                 If aPellizco Then listaPellizco.Add(i) Else listaNormal.Add(i)
             Next
 

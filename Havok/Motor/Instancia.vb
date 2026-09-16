@@ -170,7 +170,17 @@ Namespace Havok.Motor
         ''' `TransferMotion`. Lo pisa el paso 1 despues de transferir (RE cap. 5).
         ''' <para>⚠️ Convive con `TransformPrevioTransferMotion` (el arreglo plano de 16
         ''' `Single` que modela los mismos 64 B). Hay que unificarlos.</para></summary>
-        Friend TransformPrevioDeTransferMotion As Mat4 = Mat4.Identidad
+        Friend TransformPrevioDeTransferMotion As Mat4 = PrevioDelConstructor()
+
+        ''' <summary>Lo que escribe el constructor del sim-cloth: filas 0-2 de la identidad desde
+        ''' `0x142F3C700`/`0x142F3C710`/`0x142F3C720` (`0x1418C6A54`-`0x1418C6A7F`) y la fila 3 en
+        ''' CERO, `w` incluida (`0x1418C6A75 xorps` + `0x1418C6A87 movups [r14+0x150]`). No es
+        ''' `Mat4.Identidad`: esa trae `w = 1` en la fila 3.</summary>
+        Private Shared Function PrevioDelConstructor() As Mat4
+            Dim m = Mat4.Identidad
+            m.F3 = Vector128(Of Single).Zero
+            Return m
+        End Function
 
         ''' <summary>¿Ya se sembró el transform previo de la transferencia? Es el `simCloth[+0x108] == 0`
         ''' del motor: en el PRIMER cuadro el previo se pone igual al actual y no se transfiere nada
@@ -229,6 +239,9 @@ Namespace Havok.Motor
         ''' <summary>`data.minPinchedParticleIndex` (+0x128) — la base del índice del array de
         ''' pellizco: `HayContacto` se indexa `p − este valor`, no `p`.</summary>
         Friend MinimoDePellizco As Integer
+        ''' <summary>`hclSimClothData.maxParticleRadius` (`data+0x130`): lo que agranda la caja del prefiltro
+        ''' de la cápsula cónica (`0x141A08700`/`08708`).</summary>
+        Friend RadioMaximoDeParticula As Single
 
         ''' <summary>`+0x188`: los contactos cacheados del pellizco, **48 B** cada uno
         ''' (`{puntoDelPlano, normal, velocidadDelCuerpo}`).</summary>
@@ -292,6 +305,7 @@ Namespace Havok.Motor
             ' ⛔ LA BASE DEL INDICE DE PELLIZCO. `HayContacto` se indexa `p − minPinchedParticleIndex`
             ' (`0x1419F8343 sub rcx, r11`), no `p`. Sin esto el AntiPinch mira otra particula.
             MinimoDePellizco = datos.MinPinchedParticleIndex
+            RadioMaximoDeParticula = datos.MaxParticleRadius
 
             Dim pds = datos.ParticleDatas
             NumParticulas = If(pds Is Nothing, 0, pds.Count)

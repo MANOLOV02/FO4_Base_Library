@@ -61,6 +61,11 @@ Namespace Havok.Motor
         Friend ReadOnly AplicarParticula As Integer()
         Friend ReadOnly AplicarRigidez As Single()
 
+        ''' <summary>Cuántas de las entradas de marco / de aplicar vinieron en LOTES (múltiplo de 16,
+        ''' `hclVolumeConstraintMx+0x28`/`+0x48` × 16). Las de después son las sueltas.</summary>
+        Friend ReadOnly MarcoLotes As Integer
+        Friend ReadOnly AplicarLotes As Integer
+
         Private ReadOnly _n As Integer
 
         Friend Overrides ReadOnly Property Cuenta As Integer
@@ -77,14 +82,15 @@ Namespace Havok.Motor
             If src.FrameBatchDatas IsNot Nothing Then
                 For Each b In src.FrameBatchDatas
                     If b Is Nothing Then Continue For
-                    Dim n = If(b.ParticleIndex Is Nothing, 0, b.ParticleIndex.Count)
-                    For i = 0 To n - 1
-                        Volcar(mv, b.FrameVector, i)
+                    ExigirLoteDe16(b.FrameVector?.Count, b.ParticleIndex?.Count, b.Weight?.Count, "frameBatchData")
+                    For i = 0 To 15
+                        VolcarUno(mv, b.FrameVector(i))
                         mp.Add(b.ParticleIndex(i))
-                        mw.Add(If(b.Weight Is Nothing OrElse i >= b.Weight.Count, 0.0F, b.Weight(i)))
+                        mw.Add(b.Weight(i))
                     Next
                 Next
             End If
+            MarcoLotes = mp.Count
             If src.FrameSingleDatas IsNot Nothing Then
                 For Each e In src.FrameSingleDatas
                     If e Is Nothing Then Continue For
@@ -100,14 +106,15 @@ Namespace Havok.Motor
             If src.ApplyBatchDatas IsNot Nothing Then
                 For Each b In src.ApplyBatchDatas
                     If b Is Nothing Then Continue For
-                    Dim n = If(b.ParticleIndex Is Nothing, 0, b.ParticleIndex.Count)
-                    For i = 0 To n - 1
-                        Volcar(av, b.FrameVector, i)
+                    ExigirLoteDe16(b.FrameVector?.Count, b.ParticleIndex?.Count, b.Stiffness?.Count, "applyBatchData")
+                    For i = 0 To 15
+                        VolcarUno(av, b.FrameVector(i))
                         ap.Add(b.ParticleIndex(i))
-                        ar.Add(If(b.Stiffness Is Nothing OrElse i >= b.Stiffness.Count, 0.0F, b.Stiffness(i)))
+                        ar.Add(b.Stiffness(i))
                     Next
                 Next
             End If
+            AplicarLotes = ap.Count
             If src.ApplySingleDatas IsNot Nothing Then
                 For Each e In src.ApplySingleDatas
                     If e Is Nothing Then Continue For
@@ -162,13 +169,20 @@ Namespace Havok.Motor
         ''' listas del archivo se aplanan igual que en el ctor de arriba, y `frameVector` sirve para
         ''' las dos fases porque en el dato real tambien coinciden.</summary>
         Friend Shared Function DePrueba(frameVector As IList(Of Single()), particula As IList(Of Integer),
-                                        peso As IList(Of Single), rigidez As IList(Of Single)) As Volumen
-            Return New Volumen(frameVector, particula, peso, rigidez)
+                                        peso As IList(Of Single), rigidez As IList(Of Single),
+                                        Optional nLotes As Integer = 0) As Volumen
+            Return New Volumen(frameVector, particula, peso, rigidez, nLotes)
         End Function
 
+        ''' <summary>`nLotes`: las primeras `16·nLotes` entradas van en lotes, en las dos listas.</summary>
         Private Sub New(frameVector As IList(Of Single()), particula As IList(Of Integer),
-                        peso As IList(Of Single), rigidez As IList(Of Single))
+                        peso As IList(Of Single), rigidez As IList(Of Single), nLotes As Integer)
             MyBase.New(17, "(prueba)")
+            If nLotes < 0 OrElse 16 * nLotes > particula.Count Then
+                Throw New ArgumentOutOfRangeException(NameOf(nLotes))
+            End If
+            MarcoLotes = 16 * nLotes
+            AplicarLotes = 16 * nLotes
             Dim mv As New List(Of Single)()
             For i = 0 To particula.Count - 1
                 VolcarUno(mv, frameVector(i))
@@ -182,9 +196,13 @@ Namespace Havok.Motor
             _n = AplicarParticula.Length
         End Sub
 
-        Private Shared Sub Volcar(destino As List(Of Single), fuente As IList(Of Single()), i As Integer)
-            Dim v = If(fuente Is Nothing OrElse i >= fuente.Count, Nothing, fuente(i))
-            VolcarUno(destino, v)
+        ''' <summary>Un lote es `T[16]` por reflexión (`0x160` B, leído por `0x141A0AB60`/`ACC0`/`A890`
+        ''' sin cuenta propia). Uno que no traiga 16 no es un lote que el motor sepa leer.</summary>
+        Private Shared Sub ExigirLoteDe16(nVec As Integer?, nIdx As Integer?, nEsc As Integer?, que As String)
+            If nVec.GetValueOrDefault() <> 16 OrElse nIdx.GetValueOrDefault() <> 16 OrElse nEsc.GetValueOrDefault() <> 16 Then
+                Throw New InvalidOperationException(
+                    $"Volumen: {que} con {nVec}/{nIdx}/{nEsc} entradas; el lote del motor es de 16.")
+            End If
         End Sub
 
         Private Shared Sub VolcarUno(destino As List(Of Single), v As Single())
@@ -196,6 +214,11 @@ Namespace Havok.Motor
         ''' <summary>
         ''' ⛔ El `k` de este set NO corta en cero como el de los enlaces: `0x141A0A4EF comiss` +
         ''' `jbe 0x141A0A6D9` sale con `k <= 0`, que es lo mismo, pero la base ya lo hace.
+        ''' <para>⛔⛔ **Los lotes NO son sólo empaquetado.** Un lote de `0x160` B son 4 grupos de 4
+        ''' lanes (`frameVector @0x00+0x10·j`, `particleIndex u16 @0x100+2·j`, `weight/stiffness
+        ''' @0x120+4·j`), y los tres kernels de lotes llevan UN ACUMULADOR POR LANE que recién se
+        ''' combinan al final. En `float` esa suma no es la suma en fila de los sueltos: medido contra
+        ''' la emulación de `0x141A0A4D0` (GDFr4).</para>
         ''' </summary>
         Protected Overrides Sub Kernel(ctx As ContextoDeSolve, k As Vector128(Of Single))
             Dim inst = ctx.Instancia
@@ -207,71 +230,145 @@ Namespace Havok.Motor
             End If
 
             Dim pos = inst.Posiciones
+            Dim cero = Vector128(Of Single).Zero
+            Dim nMarco = MarcoParticula.Length, nAplicar = AplicarParticula.Length
 
-            ' ---- (1) CENTROIDE PONDERADO — LA SUMA LLANA DE TODAS LAS ENTRADAS.
-            ' ⭐ MEDIDO, no supuesto: el kernel de lotes (`0x141A0AB60`) arranca sus cuatro
-            ' acumuladores en cero (`0x141A0AB7B`-`87`) y hace un STORE (`0x141A0AC8D`); el de
-            ' sueltos (`0x141A675C0`) arma su suma aparte y hace un ADD sobre lo que aquel dejo
-            ' (`0x141A67601`-`08`); y el envoltorio los llama en ese orden (`0x141A0A5C4`,
-            ' `0x141A0A5D7`). O sea que el empaquetado en lotes no cambia ningun numero, y por
-            ' eso no hay una frontera `MarcoDeLote` que respetar — la habia como campo, escrita
-            ' en tres sitios y leida en NINGUNO.
-            Dim c = Vector128(Of Single).Zero
-            For i = 0 To MarcoParticula.Length - 1
-                Dim p = MarcoParticula(i)
-                If p < 0 OrElse p >= inst.NumParticulas Then Continue For
-                c = Vector128.Add(c, Vector128.Multiply(Simd.Leer(pos, p),
-                                                        Vector128.Create(MarcoPeso(i))))
-            Next
+            ' ---- (1) CENTROIDE PONDERADO. `estado+0x40 = 0` (`0x141A0A5AA`).
+            Dim c = cero
+            If MarcoLotes > 0 Then
+                ' `0x141A0AB60`: cuatro acumuladores en cero (`0x141A0AB7B`-`87`), uno por lane, que
+                ' cruzan todos los lotes; `Sj += w_j · P[idx_j]` (`0x141A0AC43`/`4F`/`57`/`5A`), y el
+                ' cierre `(S2 + S3) + (S1 + S0)` (`0x141A0AC75`/`7D`/`8A`) se ESCRIBE (`0x141A0AC8D`).
+                Dim sLane(3) As Vector128(Of Single)
+                For e = 0 To MarcoLotes - 1
+                    Dim j = e And 3
+                    sLane(j) = Vector128.Add(sLane(j), Vector128.Multiply(
+                        Vector128.Create(MarcoPeso(e)), LeerParticula(inst, MarcoParticula(e))))
+                Next
+                c = Vector128.Add(Vector128.Add(sLane(2), sLane(3)), Vector128.Add(sLane(1), sLane(0)))
+            End If
+            If nMarco > MarcoLotes Then
+                ' `0x141A675C0`: la suma de los sueltos arranca en cero (`0x141A675C3`) y se le SUMA a
+                ' lo que dejaron los lotes (`0x141A67601`-`08`).
+                Dim sSueltos = cero
+                For e = MarcoLotes To nMarco - 1
+                    sSueltos = Vector128.Add(sSueltos, Vector128.Multiply(
+                        Vector128.Create(MarcoPeso(e)), LeerParticula(inst, MarcoParticula(e))))
+                Next
+                c = Vector128.Add(c, sSueltos)
+            End If
             est.CentroidePonderado = c
 
-            ' ---- (2) COVARIANZA — `0x141A672F0`, el kernel escalar, leído entero.
-            ' ⛔ Las tres filas arrancan en `FLT_EPSILON` (`0x142F3C760` → xmm6 en `0x141A6731C`, y
-            ' `0x141A67328`/`30`/`39` lo copian a xmm7, xmm8 y xmm9).
-            ' ⭐ QUÉ HACE, MEDIDO (GVE1 y GVE2): con la covarianza DEGENERADA —los `frameVector` en
-            ' cero— lo que le llega a la descomposición polar es esta matriz de `eps`, de rango 1, y
-            ' el marco sale con suma de |entradas| = 2,2499998. Arrancando las filas en cero, el
-            ' marco queda NULO. O sea: es lo que evita que el marco colapse cuando la covarianza no
-            ' aporta nada. (Antes acá decía «se transcribe porque está ahí»: ahora está medido.)
-            ' ⛔⛔ Y EL AGRUPAMIENTO ES `(fv · d) · w`, NO `fv · (d · w)`: `0x141A673E0` multiplica el
-            ' `frameVector` difundido por `d` y recién `0x141A673E3` por el peso. El producto flotante
-            ' no es asociativo, así que los dos agrupamientos dan bits distintos.
+            ' ---- (2) COVARIANZA. La matriz del envoltorio arranca en CERO (`0x141A0A5DC`-`F1`) y cada
+            ' kernel le suma sus filas con `0x1413606D0` (`filas + A`).
+            ' ⛔ Las filas de cada kernel arrancan en `FLT_EPSILON` (`0x142F3C760`). ⭐ MEDIDO (GVE1 y
+            ' GVE2): con la covarianza degenerada es lo que evita que el marco colapse.
+            ' ⛔⛔ Y el término agrupa `(fv · d)` primero (`0x141A676F0`, `0x141A0AE5E`).
             Dim eps = Vector128.Create(Simd.FltEpsilon)
             Dim a As Mat3
-            a.F0 = eps : a.F1 = eps : a.F2 = eps
-            For i = 0 To MarcoParticula.Length - 1
-                Dim p = MarcoParticula(i)
-                If p < 0 OrElse p >= inst.NumParticulas Then Continue For
-                Dim d = Vector128.Subtract(Simd.Leer(pos, p), c)          ' 0x141A673AC
-                Dim w = Vector128.Create(MarcoPeso(i))                    ' 0x141A673BE/C7
-                a.F0 = Vector128.Add(a.F0, Vector128.Multiply(
-                    Vector128.Multiply(Vector128.Create(MarcoVector(i * 4)), d), w))      ' 0x141A673E0/E3/E6
-                a.F1 = Vector128.Add(a.F1, Vector128.Multiply(
-                    Vector128.Multiply(Vector128.Create(MarcoVector(i * 4 + 1)), d), w))  ' 0x141A673F3/F6/F9
-                a.F2 = Vector128.Add(a.F2, Vector128.Multiply(
-                    Vector128.Multiply(Vector128.Create(MarcoVector(i * 4 + 2)), d), w))  ' 0x141A67407/0A/0D
-            Next
+            a.F0 = cero : a.F1 = cero : a.F2 = cero
+            If MarcoLotes > 0 Then
+                ' `0x141A0ACC0`: DOCE acumuladores —fila × lane—, todos en eps (`0x141A0ACCF`-`AD2D`).
+                Dim r(2, 3) As Vector128(Of Single)
+                For f = 0 To 2
+                    For j = 0 To 3
+                        r(f, j) = eps
+                    Next
+                Next
+                For e = 0 To MarcoLotes - 1
+                    Dim j = e And 3
+                    Dim d = Vector128.Subtract(LeerParticula(inst, MarcoParticula(e)), c)   ' 0x141A0ADE8…AE1B
+                    Dim w = Vector128.Create(MarcoPeso(e))
+                    For f = 0 To 2
+                        r(f, j) = Vector128.Add(r(f, j), Vector128.Multiply(w,
+                            Vector128.Multiply(Vector128.Create(MarcoVector(e * 4 + f)), d)))
+                    Next
+                Next
+                ' el cierre por fila: `(r3 + r2) + (r1 + r0)` (`0x141A0B017`-`0x141A0B083`)
+                Dim filas As Mat3
+                filas.F0 = Vector128.Add(Vector128.Add(r(0, 3), r(0, 2)), Vector128.Add(r(0, 1), r(0, 0)))
+                filas.F1 = Vector128.Add(Vector128.Add(r(1, 3), r(1, 2)), Vector128.Add(r(1, 1), r(1, 0)))
+                filas.F2 = Vector128.Add(Vector128.Add(r(2, 3), r(2, 2)), Vector128.Add(r(2, 1), r(2, 0)))
+                a = SumarFilas(filas, a)                                          ' 0x141A0B0C3
+            End If
+            If nMarco > MarcoLotes Then
+                ' `0x141A67620`: tres filas en eps (`0x141A67636`-`4A`), en fila por entrada.
+                Dim filas As Mat3
+                filas.F0 = eps : filas.F1 = eps : filas.F2 = eps
+                For e = MarcoLotes To nMarco - 1
+                    Dim d = Vector128.Subtract(LeerParticula(inst, MarcoParticula(e)), c)   ' 0x141A676BC
+                    Dim w = Vector128.Create(MarcoPeso(e))                                   ' 0x141A676D7
+                    filas.F0 = Vector128.Add(filas.F0, Vector128.Multiply(
+                        Vector128.Multiply(Vector128.Create(MarcoVector(e * 4)), d), w))      ' 0x141A676F0/F3/F6
+                    filas.F1 = Vector128.Add(filas.F1, Vector128.Multiply(
+                        Vector128.Multiply(Vector128.Create(MarcoVector(e * 4 + 1)), d), w))  ' 0x141A67703/06/09
+                    filas.F2 = Vector128.Add(filas.F2, Vector128.Multiply(
+                        Vector128.Multiply(Vector128.Create(MarcoVector(e * 4 + 2)), d), w))  ' 0x141A67716/19/1C
+                Next
+                a = SumarFilas(filas, a)                                          ' 0x141A6775D
+            End If
 
-            ' el marco, por descomposición polar. ⛔ `BasePropia` entra como SEMILLA y sale
-            ' actualizada: es el `r14+0x50` que `0x141A0A630` le pasa al cierre.
+            ' el marco, por descomposición polar (`0x141A0A6F0`). ⛔ `BasePropia` entra como SEMILLA
+            ' y sale actualizada: es el `r14+0x50` que `0x141A0A630` le pasa al cierre.
             est.Marco = Polar.FactorOrtogonal(a, est.BasePropia)
             est.BaseSembrada = True
+            Dim m = est.Marco
 
             ' ---- (3) APLICAR — `k` difundido a las 4 lanes (`0x141A0A65E shufps 0`)
-            Dim kEsc = Vector128.Create(Simd.Lane0(k))
-            For i = 0 To AplicarParticula.Length - 1
-                Dim p = AplicarParticula(i)
-                If p < 0 OrElse p >= inst.NumParticulas Then Continue For
-                ' el punto que el marco dicta: centroide + frameVector · marco
-                Dim fv = Vector128.Create(AplicarVector(i * 4), AplicarVector(i * 4 + 1),
-                                          AplicarVector(i * 4 + 2), 0.0F)
-                Dim objetivo = Vector128.Add(c, Polar.FilaPor(fv, est.Marco))
-                Dim actual = Simd.Leer(pos, p)
-                Dim s = Vector128.Multiply(kEsc, Vector128.Create(AplicarRigidez(i)))
-                Simd.Escribir(pos, p, Vector128.Add(actual,
-                    Vector128.Multiply(Vector128.Subtract(objetivo, actual), s)))
+            Dim kVec = Vector128.Create(Simd.Lane0(k))
+            If AplicarLotes > 0 Then
+                ' `0x141A0A890`, por grupo de 4: ⛔ LEE las cuatro posiciones antes de escribir ninguna
+                ' (`0x141A0A981`-`990` contra `0x141A0AAB8`-`ACF`), así que dos lanes con la misma
+                ' partícula NO se encadenan. Objetivo `((x·M0 + C) + y·M1) + z·M2` (`0x141A0A9E6`…
+                ' `0x141A0AA1A`) y `s_j = (rigidez · k)_j` (`0x141A0A9AC`).
+                Dim pj(3) As Vector128(Of Single)
+                For g = 0 To AplicarLotes \ 4 - 1
+                    Dim b = g * 4
+                    For j = 0 To 3
+                        pj(j) = LeerParticula(inst, AplicarParticula(b + j))
+                    Next
+                    For j = 0 To 3
+                        Dim e = b + j
+                        Dim t = Vector128.Add(Vector128.Multiply(Vector128.Create(AplicarVector(e * 4)), m.F0), c)
+                        t = Vector128.Add(t, Vector128.Multiply(Vector128.Create(AplicarVector(e * 4 + 1)), m.F1))
+                        t = Vector128.Add(t, Vector128.Multiply(Vector128.Create(AplicarVector(e * 4 + 2)), m.F2))
+                        Dim sj = Vector128.Multiply(Vector128.Create(AplicarRigidez(e)), kVec)
+                        Simd.Escribir(pos, AplicarParticula(e),
+                                      Vector128.Add(pj(j), Vector128.Multiply(Vector128.Subtract(t, pj(j)), sj)))
+                    Next
+                Next
+            End If
+            For e = AplicarLotes To nAplicar - 1
+                ' `0x141A67790`: objetivo por `0x141339F90` = `((y·M1 + x·M0) + z·M2) + C`, y
+                ' `s = (k₀ · rigidez)` difundido (`0x141A677DB` mulss + `0x141A677ED` shufps 0).
+                Dim t = Vector128.Add(Vector128.Multiply(Vector128.Create(AplicarVector(e * 4 + 1)), m.F1),
+                                      Vector128.Multiply(Vector128.Create(AplicarVector(e * 4)), m.F0))
+                t = Vector128.Add(t, Vector128.Multiply(Vector128.Create(AplicarVector(e * 4 + 2)), m.F2))
+                t = Vector128.Add(t, c)
+                Dim actual = LeerParticula(inst, AplicarParticula(e))
+                Dim s = Vector128.Create(Simd.Lane0(k) * AplicarRigidez(e))
+                Simd.Escribir(pos, AplicarParticula(e),
+                              Vector128.Add(Vector128.Multiply(s, Vector128.Subtract(t, actual)), actual))
             Next
         End Sub
+
+        ''' <summary>`0x1413606D0`: `destino.Fk = fuente.Fk + destino.Fk`, fila por fila.</summary>
+        Private Shared Function SumarFilas(fuente As Mat3, destino As Mat3) As Mat3
+            Dim r As Mat3
+            r.F0 = Vector128.Add(fuente.F0, destino.F0)
+            r.F1 = Vector128.Add(fuente.F1, destino.F1)
+            r.F2 = Vector128.Add(fuente.F2, destino.F2)
+            Return r
+        End Function
+
+        ''' <summary>El motor indexa sin guarda (`[rsi + idx*16]`). Acá un índice fuera de rango
+        ''' revienta con mensaje en vez de leer memoria ajena (motor-61).</summary>
+        Private Shared Function LeerParticula(inst As Instancia, p As Integer) As Vector128(Of Single)
+            If p < 0 OrElse p >= inst.NumParticulas Then
+                Throw New InvalidOperationException($"Volumen: particleIndex {p} fuera de [0, {inst.NumParticulas - 1}].")
+            End If
+            Return Simd.Leer(inst.Posiciones, p)
+        End Function
 
     End Class
 

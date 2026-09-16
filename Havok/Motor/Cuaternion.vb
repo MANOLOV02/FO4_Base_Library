@@ -323,26 +323,82 @@ Namespace Havok.Motor
         ''' `shufps 0xB1`, `movhlps` y `shufps 0x8D`. Acá se escribe la matriz que sale de esa
         ''' cuenta, elemento por elemento, porque el orden de las sumas es el mismo y la forma SIMD
         ''' no aporta nada legible.</para>
-        ''' <para>⛔ La `w` de cada fila queda con basura en el motor (`2yz − 2wx` en la fila 0): son
-        ''' 16 B por fila y la 4.ª columna no se lee. Acá va CERO, que es lo que
-        ''' <see cref="Mat3"/> promete; si alguna vez algo leyera esa lane, esto divergiría.</para>
+        ''' <para>⛔⛔ La `w` de cada fila NO es cero: el motor escribe las 16 B de cada fila y
+        ''' las lanes w salen de la misma cuenta (derivadas lane por lane):
+        '''   fila 0: (−(w·2x)) − (−(2z·y))  — `0x141365ACC` xorps + `0x141365ADE` subps
+        '''   fila 1: (w·2y) − (−(2z·x))     — `0x141365AEF` xorps + `0x141365AF6` subps + `0x141365AF9` shufps 0xB1
+        '''   fila 2: 0                      — `0x141365B00` shufps 0x8D toma la lane 2 de (1,0,0,0)
+        ''' Hay quien las SUMA (`0x141339F90`) y quien las compone: medido contra la emulación de
+        ''' `SubstepCollidables` (GDFi4bw). Por eso hay UNA sola `AMatriz` y trae las w.</para>
         ''' </summary>
         Friend Function AMatriz(q As Vector128(Of Single)) As Mat3
-            Dim x = q.GetElement(0), y = q.GetElement(1), z = q.GetElement(2), w = q.GetElement(3)
-            Dim xx = 2.0F * x * x, yy = 2.0F * y * y, zz = 2.0F * z * z
-            Dim xy = 2.0F * x * y, xz = 2.0F * x * z, yz = 2.0F * y * z
-            Dim wx = 2.0F * w * x, wy = 2.0F * w * y, wz = 2.0F * w * z
+            ' ⛔⛔ TRANSCRIPCIÓN INSTRUCCIÓN POR INSTRUCCIÓN de `0x141365A80`. La forma escalar daba los
+            ' mismos números finitos pero NO el mismo NaN: el motor niega con `xorps` contra máscaras
+            ' y un NaN sale con otro bit de signo (GDFt3b/3c). Las restas de la diagonal quedan en el
+            ' orden del motor por construcción (motor-37):
+            '   fila 0: (−2z² + 1) − 2y²  · fila 1: (−2z² + 1) − 2x²  · fila 2: (1 − 2x²) − 2y²
+            Dim m60 = Vector128.Create(0UI, &H80000000UI, &H80000000UI, &H80000000UI).AsSingle()   ' 0x142629E60
+            Dim m70 = Vector128.Create(&H80000000UI, 0UI, &H80000000UI, &H80000000UI).AsSingle()   ' 0x142629E70
+            Dim x3 = Sse(q, q, 0)                                        ' 0x141365A9C addps
+            Dim x0 = Shufps(q, q, &H41)                                         ' 0x141365A98
+            Dim x4 = Vector128.WithElement(q, 0, Sse(q, x3, 2).GetElement(0))   ' 0x141365AA6 mulss
+            Dim x6 = Shufps(q, q, &HFE)                                         ' 0x141365AA2
+            Dim x1 = Sse(Shufps(x3, x3, &HA5), x0, 2)               ' 0x141365AAD + 0x141365AB1
+            Dim uno = Vector128.Create(1.0F, 0.0F, 0.0F, 0.0F)                  ' 0x142F3C700
+            x3 = Shufps(x3, x3, &H1A)                                           ' 0x141365ABE
+            x6 = Sse(x6, x3, 2)                                     ' 0x141365AC2
+            Dim x5 = Vector128.WithElement(uno, 0, Sse(uno, x4, 1).GetElement(0))   ' 0x141365AC5 subss
+            Dim x2 = Vector128.Xor(m60, x1)                                     ' 0x141365AC9
+            x6 = Vector128.Xor(x6, m70)                                         ' 0x141365ACC
+            x5 = Vector128.WithElement(x5, 0, Sse(x5, x1, 1).GetElement(0))   ' 0x141365AD3 subss
+            x6 = Vector128.WithElement(x6, 0, Sse(x6, uno, 0).GetElement(0))  ' 0x141365AD7 addss
+            Dim f0 = Sse(x6, x2, 1)                                 ' 0x141365ADE → [rcx]
+            x2 = Vector128.WithElement(x2, 0, x4.GetElement(0))                 ' 0x141365AE1 movss
+            Dim y0 = Sse(Vector128.Xor(m60, x6), x2, 1)             ' 0x141365AEF xorps + 0x141365AF6 subps
+            Dim f1 = Shufps(y0, y0, &HB1)                                       ' 0x141365AF9 → [rcx+0x10]
+            Dim hl = Vector128.Create(f1.GetElement(2), f1.GetElement(3),
+                                      f0.GetElement(2), f0.GetElement(3))       ' 0x141365AFD movhlps
             Dim r As Mat3
-            ' ⛔ EL ORDEN DE LAS RESTAS DE LA DIAGONAL ES DEL MOTOR, y NO es el mismo en las tres:
-            '   fila 0: (1 − 2z²) − 2y²   — 0x141365AD7 `addss` 1 al −2z², 0x141365ADE `subps` el 2y²
-            '   fila 1: (1 − 2z²) − 2x²   — 0x141365AEF `xorps` + 0x141365AF6 `subps` con lane0 = 2x²
-            '   fila 2: (1 − 2x²) − 2y²   — 0x141365AC5 `subss` + 0x141365AD3 `subss`
-            ' Escribir `1 − yy − zz` para la fila 0 se va 1 ulp, y este transform se REDERIVA en cada
-            ' substep (DeMatriz → ⊗ → AMatriz), así que se compone (motor-37).
-            r.F0 = Vector128.Create((1.0F - zz) - yy, xy + wz, xz - wy, 0.0F)   ' 0x141365AE5
-            r.F1 = Vector128.Create(xy - wz, (1.0F - zz) - xx, yz + wx, 0.0F)   ' 0x141365B08
-            r.F2 = Vector128.Create(xz + wy, yz - wx, (1.0F - xx) - yy, 0.0F)   ' 0x141365B04
+            r.F0 = f0
+            r.F1 = f1
+            r.F2 = Shufps(hl, x5, &H8D)                                         ' 0x141365B00 → [rcx+0x20]
             Return r
+        End Function
+
+        ''' <summary>La aritmética de `addps`/`subps`/`mulps` (op 0/1/2) con el NaN que sale en el
+        ''' procesador: si el primer operando es NaN sale ése (silenciado), si no el del segundo.
+        ''' Escrito lane por lane para que el orden de los operandos no dependa del JIT.
+        ''' <para>⛔ MEDIDO en la CPU, no supuesto: los bytes de `0x141365A80` ejecutados nativos con
+        ''' q = NaN dan la fila 0 `(7FC, FFC, 7FC, 7FC)…`, lo mismo que esto; unicorn da otro signo
+        ''' (su regla de NaN es la de QEMU). Los fixtures de GDFt3 corren esos leaf en la CPU
+        ''' (`emu.leaf_nativo`).</para></summary>
+        Private Function Sse(a As Vector128(Of Single), b As Vector128(Of Single), op As Integer) As Vector128(Of Single)
+            Dim r As Vector128(Of Single)
+            For i = 0 To 3
+                Dim x = a.GetElement(i), y = b.GetElement(i), v As Single
+                If Single.IsNaN(x) Then
+                    v = Silenciar(x)
+                ElseIf Single.IsNaN(y) Then
+                    v = Silenciar(y)
+                Else
+                    v = If(op = 0, x + y, If(op = 1, x - y, x * y))
+                    ' un NaN nuevo (inf − inf, 0 · inf) es el «indefinido» de x86: 0xFFC00000
+                    If Single.IsNaN(v) Then v = BitConverter.Int32BitsToSingle(&HFFC00000)
+                End If
+                r = r.WithElement(i, v)
+            Next
+            Return r
+        End Function
+
+        Private Function Silenciar(x As Single) As Single
+            Return BitConverter.Int32BitsToSingle(BitConverter.SingleToInt32Bits(x) Or &H400000)
+        End Function
+
+        ''' <summary>`shufps a, b, imm`: lanes 0-1 de `a`, lanes 2-3 de `b`, por los pares de bits de
+        ''' `imm`. Copia bits, no hace aritmética.</summary>
+        Private Function Shufps(a As Vector128(Of Single), b As Vector128(Of Single), imm As Integer) As Vector128(Of Single)
+            Return Vector128.Create(a.GetElement(imm And 3), a.GetElement((imm >> 2) And 3),
+                                    b.GetElement((imm >> 4) And 3), b.GetElement((imm >> 6) And 3))
         End Function
 
         ''' <summary>

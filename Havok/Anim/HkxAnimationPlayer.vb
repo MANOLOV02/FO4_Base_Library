@@ -163,6 +163,21 @@ Public Class HkxAnimationPlayer
         Return _session.BuildPose(ClampFrame(frame), _poseName, collectDiagnostics:=False)?.Pose
     End Function
 
+    ''' <summary>La pose en el tiempo <paramref name="t"/> (segundos del clip) muestreada por el `.exe`
+    ''' (<see cref="HkxPoseImportSession.BuildPoseAtTime"/>). El tiempo va tal cual: el muestreador hace
+    ''' su propio recorte (0x1419B1893) y no se le aplica el rango reproducible de este reproductor.</summary>
+    Public Function PoseAtTime(t As Single) As Poses_class
+        If _session Is Nothing Then Return Nothing
+        Return _session.BuildPoseAtTime(t, _poseName, collectDiagnostics:=False)?.Pose
+    End Function
+
+    ''' <summary>`frameDuration` del clip (0 sin sesión).</summary>
+    Public ReadOnly Property FrameDuration As Single
+        Get
+            Return If(_session Is Nothing, 0.0F, _session.FrameDuration)
+        End Get
+    End Property
+
     ' ─────────────────────────────────────────────────────────────────────────────────────────
     ' Loop de render basado en Application.Idle (best practice WinForms/OpenTK para tiempo real).
     ' Alternativa al WinForms Timer durante el play: renderiza apenas el hilo UI queda libre (sin

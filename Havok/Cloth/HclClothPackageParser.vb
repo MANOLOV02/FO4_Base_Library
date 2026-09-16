@@ -8,8 +8,8 @@ Option Explicit On
 '
 ' ⛔ SI ESTA EN LA RUTA DEL RENDER. La cabecera decia lo contrario y nombraba a
 ' Wardrobe_Manager/PhysicsWeightCollapseHelper como consumidor principal: es falso.
-' `HavokClothSimulation` lo llama para armar el paquete de tela, y `Render.vb` llama a
-' `ClothCanonico.StepShapes` dentro del `#If DEBUG` que abre unas lineas mas arriba.
+' `ClothCanonico` lo llama para armar el paquete de tela, y `Render.vb` llama a
+' `ClothCanonico.StepShapes` en cada render que posa (si la física está prendida).
 ' Los otros consumidores (Wardrobe_Manager y las herramientas de Tools/) tambien existen.
 '
 ' ALCANCE: los offsets ya no se escriben aca. Todo campo declarado sale del objeto generado

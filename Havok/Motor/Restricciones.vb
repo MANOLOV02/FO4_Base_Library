@@ -826,11 +826,6 @@ Namespace Havok.Motor
         ''' cambiar de velocidad**. Es lo que hace que un rango local no inyecte energía.</para>
         ''' </summary>
         Protected Overrides Sub Kernel(ctx As ContextoDeSolve, k As Vector128(Of Single))
-            ' ⛔ shapeType ∉ {0,1} ⇒ el motor SALE sin tocar nada (`jne 0x141A027BC`), no lo
-            ' trata como punto (motor-62).
-            If _shapeType <> 0 AndAlso _shapeType <> 1 Then Return
-            Dim mideContraLaLinea = (_shapeType = 1)
-
             Dim inst = ctx.Instancia
             ' ⛔ la doble indirección, como en 0x141A01F5A…F65. `Buffers.Real` revienta si no se
             ' puede resolver: el motor no tiene camino de escape y acá tampoco (motor-61).
@@ -840,6 +835,12 @@ Namespace Havok.Motor
             ' que traer normales. (El `& 1` de +0x48 sólo elige el direccionamiento: medido que
             ' no cambia ni una operación aritmética.)
             Dim usaNormal = _aplicaNormal AndAlso buf.Normales IsNot Nothing
+            ' ⛔ `shapeType` (+0x38) sólo viaja por la rama CON normales (`0x141A01FD5`/`0x141A0200E`
+            ' lo apilan); la rama sin normales (`0x141A0207F` → `0x141A02140`/`021D0`/`02270`/`022F0`)
+            ' no lo pasa, y sus hojas `0x141A02A80`/`02B50`/`02C40`/`02D10` son la forma del punto.
+            ' Con normales, shapeType ∉ {0,1} ⇒ el motor SALE sin tocar nada (`jne 0x141A027BC`, motor-62).
+            If usaNormal AndAlso _shapeType <> 0 AndAlso _shapeType <> 1 Then Return
+            Dim mideContraLaLinea = usaNormal AndAlso (_shapeType = 1)
             Dim pos = inst.Posiciones
             Dim prev = inst.Previas
             Dim cero = Vector128(Of Single).Zero
@@ -1014,8 +1015,11 @@ Namespace Havok.Motor
                 Dim p = Simd.Leer(pos, ci)
                 Dim vel = Vector128.Subtract(p, Simd.Leer(prev, ci)) ' 0x1419FCE0C/E10, ANTES
 
-                ' `dist = dot3(P − M.F3, n) + plano.w`
-                Dim dist = Vector128.Add(Simd.Dot3(Vector128.Subtract(p, m.F3), n),
+                ' `dist = dot3(P − o, n) + plano.w`, con `o` = el punto CERO transformado:
+                ' `((0·F0 + F3) + 0·F1) + 0·F2` (`0x1419FCC89`…`CCC3`, xmm7 = `0x142F3C550`). No es
+                ' `M.F3`: con un `−0` en la matriz el bit de signo cambia (medido contra la emulación).
+                Dim origen = Operadores.TransformarPunto(Vector128(Of Single).Zero, m)
+                Dim dist = Vector128.Add(Simd.Dot3(Vector128.Subtract(p, origen), n),
                                          Simd.BcastW(plano))
                 ' ⛔ el `mulss` + `shufps 0` del motor: `k` por lane 0, no el vector entero
                 Dim f = Vector128.Create(kEscalar * _stiffness(i))
@@ -1297,7 +1301,10 @@ Namespace Havok.Motor
                         est.DistanciaDeArranque(ci) = largo               ' 0x141A09064/68
                         Continue For
                     End If
-                    If Not (t < _periodoAAnim) Then
+                    ' ⛔ `comiss t, período` / `jb 0x141A09081` (`0x141A09075`/`078`): `jb` salta
+                    ' también con unordered, así que con NaN el motor CALCULA y no clava. La clavada
+                    ' es sólo `t >= período` ordenado.
+                    If t >= _periodoAAnim Then
                         ' ⛔ la CLAVADA escribe sólo `positions`, aun con `usaK`: `0x141A09507` es
                         ' un `movups` suelto, contra los tres de `0x141A09540`/`45`/`49`
                         Simd.Escribir(pos, ci, q)                         ' 0x141A0907A, llegó

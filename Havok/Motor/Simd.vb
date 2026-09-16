@@ -20,16 +20,20 @@ Imports System.Runtime.Intrinsics
 ' la dirección de los sitios que los justifican, y el resto de `Havok/Motor/` NO puede nombrar
 ' `Sqrt`, `Pow`, `^` ni `ReciprocalSqrt` — eso lo comprueba el gate G19a sobre el fuente.
 '
-' ⛔ DECISIÓN DEL USUARIO (06-sep): SIN `System.Runtime.Intrinsics.X86.Sse`.
+' ⛔ DECISIÓN DEL USUARIO (06-sep, reafirmada el 14-sep): SIN `System.Runtime.Intrinsics.X86.Sse`.
 ' `FastPow.vb:17` declara la ley del repo — «Solo la API CROSS-PLATFORM `Vector256`/`Vector128`,
 ' JAMÁS `Avx.*`/`Sse.*`» — y el usuario eligió respetarla. Consecuencia, escrita y no escondida:
 '
-'   · `RsqrtCrudo` y `RsqrtNewton` tienen HOY el mismo cuerpo (`1 / Vector128.Sqrt(x)`), porque
-'     .NET 8 no expone `rsqrtps` de forma cross-platform (`Vector128.ReciprocalSqrtEstimate` llegó
-'     en .NET 9).
-'   · En los sitios donde el motor NO refina, nuestro resultado es MÁS exacto que el del juego, con
-'     una diferencia acotada a 1,5·2^-12 relativo. Medido: `rsqrtps(4)` da 0,49987793 y el exacto
-'     0,5.
+'   · La ESTIMACIÓN de `rsqrtps`/`rcpps` se reemplaza por el valor exacto (`1 / Vector128.Sqrt(x)`,
+'     `1 / x`). `RsqrtCrudo` devuelve eso; `RsqrtNewton`/`RcpNewton` le aplican encima la Newton
+'     literal del motor. Es exactamente lo que hace un EMULADOR (QEMU `helper_rsqrtps`), NO lo que
+'     hace el procesador.
+'   · Medido en la CPU real (i7-8700K, 14-sep, ejecutando la instrucción nativa): `rsqrtps(4)` da
+'     0,49987793 y el exacto 0,5; `rsqrtps(2)` 0,70690918 contra 0,70710677. El juego en ese
+'     procesador usa la estimación.
+'   · Por eso los diferenciales GDF contra unicorn prueban la TRANSCRIPCIÓN (orden de operaciones,
+'     ramas, NaN) y NO la igualdad de bits con el juego en los sitios `rsqrtps`/`rcpps`. La
+'     diferencia contra la CPU real se mide aparte (fixtures de `Diferencial\cpu\`).
 '   · Eso NO se amplifica en el solve (es contractivo: k <= 1, damping < 1), pero SÍ mueve el
 '     equilibrio de cada enlace a `|d| = restLength/(1+eps)`: hasta 3,7e-4 relativo, que sobre una
 '     prenda de 100 unidades son 0,04 u.
@@ -104,9 +108,8 @@ Namespace Havok.Motor
         ''' <para>Sitios del motor que lo usan: el enlace estándar (`0x141A06170`, un solo `rsqrtps`
         ''' y ninguna constante 3,0/0,5 en toda la función), la dirección del heightfield
         ''' (`0x141A00E65`) y la normalización del marco de contacto.</para>
-        ''' <para>⛔ Refinarlo en esos sitios CAMBIA el resultado del motor. Que hoy comparta cuerpo
-        ''' con <see cref="RsqrtNewton"/> es consecuencia de la decisión de no usar `Sse.*`, no de
-        ''' que sean la misma cosa.</para>
+        ''' <para>⛔ Refinarlo en esos sitios CAMBIA el resultado del motor. El valor es el exacto, no
+        ''' la estimación del procesador (decisión de no usar `Sse.*`, ver el encabezado).</para>
         ''' </summary>
         <MethodImpl(MethodImplOptions.AggressiveInlining)>
         Friend Function RsqrtCrudo(x As Vector128(Of Single)) As Vector128(Of Single)
@@ -125,7 +128,13 @@ Namespace Havok.Motor
         <MethodImpl(MethodImplOptions.AggressiveInlining)>
         Friend Function RsqrtNewton(x As Vector128(Of Single)) As Vector128(Of Single)
             CuentasDeSimd.RsqrtNewton += 1L                    ' motor-60, el instrumento del mapa
-            Return Vector128.Divide(Vector128.Create(1.0F), Vector128.Sqrt(x))
+            ' ⛔ LA NEWTON SE HACE, instrucción por instrucción: `r = rsqrtps(x)` (evaluado exacto, que
+            ' es la semántica con la que se emula el `.exe` — QEMU `helper_rsqrtps` = 1/sqrt) y después
+            ' `(3 − (x·r)·r)·(r·0,5)`. Devolver `1/sqrt(x)` a secas difiere en ulps y en inf/NaN:
+            ' con x = 0 el motor da NaN (0·inf), no +inf. Lo cazó el diferencial GDF.
+            Dim r = Vector128.Divide(Vector128.Create(1.0F), Vector128.Sqrt(x))
+            Dim t = Vector128.Multiply(Vector128.Multiply(x, r), r)
+            Return Vector128.Multiply(Vector128.Subtract(Vector128.Create(3.0F), t), Vector128.Multiply(r, Vector128.Create(0.5F)))
         End Function
 
         ''' <summary>
@@ -136,7 +145,11 @@ Namespace Havok.Motor
         <MethodImpl(MethodImplOptions.AggressiveInlining)>
         Friend Function RcpNewton(x As Vector128(Of Single)) As Vector128(Of Single)
             CuentasDeSimd.RcpNewton += 1L                    ' motor-60, el instrumento del mapa
-            Return Vector128.Divide(Vector128.Create(1.0F), x)
+            ' ⛔ `r = rcpps(x)` (exacto, como la emulación) y la Newton literal `(2 − x·r)·r`. Con x
+            ' subnormal `r = +inf` y la Newton lo vuelve −inf; `1/x` a secas daba +inf (GDFf2,
+            ' `0x1419F9E73`-`0x1419F9E9E`).
+            Dim r = Vector128.Divide(Vector128.Create(1.0F), x)
+            Return Vector128.Multiply(Vector128.Subtract(Vector128.Create(2.0F), Vector128.Multiply(x, r)), r)
         End Function
 
         ''' <summary>

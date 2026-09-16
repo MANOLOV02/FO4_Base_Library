@@ -180,6 +180,79 @@ Namespace Havok.Motor
             Bitangentes(off + 2) = v.GetElement(2)
         End Sub
 
+        ' -----------------------------------------------------------------------------------------
+        ' EL ELEMENTO ENTERO DE 16 B — los kernels de LAYOUT SIMPLE.
+        '
+        ' ⛔ Los kernels que el despacho elige con el bit 0 de `+0x20`/`+0x48`/`+0x60`/`+0x78` puesto
+        ' leen y escriben el elemento con UN `movups`: la lane `w` entra y sale. Sitios de escritura:
+        ' `CopyVertices` `0x1418FAACD` (0x1418FA990) y `0x1418FAC8C`/`0x1418FACBA` (0x1418FAB10);
+        ' `GatherAll` `0x1418F96B5` (0x1418F9560) y `0x1418F9870`/`0x1418F989A` (0x1418F96F0);
+        ' `GatherSome` `0x1418FA4F8` (0x1418FA3B0) y `0x1418FA6AC`/`0x1418FA6E3` (0x1418FA530);
+        ' `hclSkinOperator` `0x14191F6B9` (lineal P) y `0x141910174` (dual P), y los `movups` de
+        ' `0x1419173B0`-`0x141917430` (lineal PNTB). Lectura: `0x14191E601` / `0x14190FD4F`.
+        ' Los kernels no simples usan `movsd`+`movss` (12 B) y van por los `Set*` de arriba.
+        ' -----------------------------------------------------------------------------------------
+
+        ''' <summary>El vértice `i` con sus CUATRO lanes (`movups`, `0x14190FD4F`).</summary>
+        Friend Function VerticeEntero(i As Integer) As Vector128(Of Single)
+            Dim off = (StrideBytes \ 4) * i
+            Return Vector128.Create(Datos(off), Datos(off + 1), Datos(off + 2), Datos(off + 3))
+        End Function
+
+        ''' <summary>Escribe las CUATRO lanes del vértice `i` (`movups`, `0x1418FAACD`).</summary>
+        Friend Sub SetVerticeEntero(i As Integer, v As Vector128(Of Single))
+            Dim off = (StrideBytes \ 4) * i
+            Datos(off) = v.GetElement(0)
+            Datos(off + 1) = v.GetElement(1)
+            Datos(off + 2) = v.GetElement(2)
+            Datos(off + 3) = v.GetElement(3)
+        End Sub
+
+        ''' <summary>La normal `i` con sus cuatro lanes.</summary>
+        Friend Function NormalEntera(i As Integer) As Vector128(Of Single)
+            Dim off = (StrideNormalesBytes \ 4) * i
+            Return Vector128.Create(Normales(off), Normales(off + 1), Normales(off + 2), Normales(off + 3))
+        End Function
+
+        ''' <summary>Escribe las cuatro lanes de la normal `i` (`movups`, `0x1418FACBA`).</summary>
+        Friend Sub SetNormalEntera(i As Integer, v As Vector128(Of Single))
+            Dim off = (StrideNormalesBytes \ 4) * i
+            Normales(off) = v.GetElement(0)
+            Normales(off + 1) = v.GetElement(1)
+            Normales(off + 2) = v.GetElement(2)
+            Normales(off + 3) = v.GetElement(3)
+        End Sub
+
+        ''' <summary>La tangente `i` con sus cuatro lanes.</summary>
+        Friend Function TangenteEntera(i As Integer) As Vector128(Of Single)
+            Dim off = (StrideTangentesBytes \ 4) * i
+            Return Vector128.Create(Tangentes(off), Tangentes(off + 1), Tangentes(off + 2), Tangentes(off + 3))
+        End Function
+
+        ''' <summary>Escribe las cuatro lanes de la tangente `i` (`movups`, `0x141917401`).</summary>
+        Friend Sub SetTangenteEntera(i As Integer, v As Vector128(Of Single))
+            Dim off = (StrideTangentesBytes \ 4) * i
+            Tangentes(off) = v.GetElement(0)
+            Tangentes(off + 1) = v.GetElement(1)
+            Tangentes(off + 2) = v.GetElement(2)
+            Tangentes(off + 3) = v.GetElement(3)
+        End Sub
+
+        ''' <summary>La bitangente `i` con sus cuatro lanes.</summary>
+        Friend Function BitangenteEntera(i As Integer) As Vector128(Of Single)
+            Dim off = (StrideBitangentesBytes \ 4) * i
+            Return Vector128.Create(Bitangentes(off), Bitangentes(off + 1), Bitangentes(off + 2), Bitangentes(off + 3))
+        End Function
+
+        ''' <summary>Escribe las cuatro lanes de la bitangente `i` (`movups`, `0x141917430`).</summary>
+        Friend Sub SetBitangenteEntera(i As Integer, v As Vector128(Of Single))
+            Dim off = (StrideBitangentesBytes \ 4) * i
+            Bitangentes(off) = v.GetElement(0)
+            Bitangentes(off + 1) = v.GetElement(1)
+            Bitangentes(off + 2) = v.GetElement(2)
+            Bitangentes(off + 3) = v.GetElement(3)
+        End Sub
+
     End Class
 
     ' =============================================================================================

@@ -109,9 +109,14 @@ Namespace Havok.Motor
                 If w >= datos.VelMaxRotacion Then                           ' 0x141A13B58 comiss / jb
                     blendR = datos.BlendMaxRotacion
                 ElseIf w > datos.VelMinRotacion Then                        ' 0x141A13B6F comiss / jbe
-                    Dim t = Rampa(w, datos.VelMinRotacion, datos.VelMaxRotacion)
-                    blendR = datos.BlendMinRotacion +
-                             (datos.BlendMaxRotacion - datos.BlendMinRotacion) * t
+                    ' ⛔ NO es la rampa de la traslación: acá hay UNA división, `1/den`
+                    ' (`0x141A13BA9`, sobre el 1,0 de xmm10 cargado en `0x141A139C9`), y el orden es
+                    ' `((bMax − bMin)·(w − min))·inv + bMin` (`0x141A13BB6`…`0x141A13BC7`).
+                    Dim den = datos.VelMaxRotacion - datos.VelMinRotacion    ' 0x141A13B7B
+                    Dim invDen = If(DenominadorDespreciable(den), 0.0F,
+                                 Simd.Lane0(Simd.DivExacta(Vector128.Create(1.0F), Vector128.Create(den))))
+                    blendR = ((datos.BlendMaxRotacion - datos.BlendMinRotacion) *
+                              (w - datos.VelMinRotacion)) * invDen + datos.BlendMinRotacion
                 End If
             End If
 
@@ -157,11 +162,21 @@ Namespace Havok.Motor
         ''' </summary>
         Friend Function Rampa(v As Single, minimo As Single, maximo As Single) As Single
             Dim den = maximo - minimo                                       ' 0x141A13AA3 subss
-            Dim absDen = Vector128.ShiftRightLogical(
-                Vector128.ShiftLeft(Vector128.Create(den).AsInt32(), 1), 1).AsSingle()  ' 0x141A13ACF/D4
-            If Not (EpsilonDelDenominador < Simd.Lane0(absDen)) Then Return 0.0F        ' 0x141A13AD9 ucomiss / jb
+            If DenominadorDespreciable(den) Then Return 0.0F
             Return Simd.Lane0(Simd.DivExacta(Vector128.Create(v), Vector128.Create(den))) -
                    Simd.Lane0(Simd.DivExacta(Vector128.Create(minimo), Vector128.Create(den)))  ' 0x141A13AE6/EA/F6
+        End Function
+
+        ''' <summary>
+        ''' La guarda de las dos rampas: `|den − 0|` con el bit de signo borrado (`pslld`/`psrld`,
+        ''' `0x141A13ACF`/`D4` y `0x141A13B94`/`99`), y `ucomiss eps, |den|` / `jb` a dividir
+        ''' (`0x141A13AD9`/`DC`, `0x141A13B9E`/`BA1`). ⛔ `jb` salta también con unordered: con un
+        ''' `den` NaN el motor DIVIDE. Sólo es despreciable `eps >= |den|` ordenado.
+        ''' </summary>
+        Private Function DenominadorDespreciable(den As Single) As Boolean
+            Dim absDen = Vector128.ShiftRightLogical(
+                Vector128.ShiftLeft(Vector128.Create(den - 0.0F).AsInt32(), 1), 1).AsSingle()
+            Return EpsilonDelDenominador >= Simd.Lane0(absDen)
         End Function
 
         ''' <summary>`((v.y·M1 + v.x·M0) + v.z·M2) + M3` — `0x141339F90`, el punto por el

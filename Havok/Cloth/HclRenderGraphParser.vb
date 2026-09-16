@@ -174,10 +174,14 @@ Friend NotInheritable Class HclRenderGraphParser_Class
     End Class
 
     ''' <summary>
-    ''' ⛔ EL ENTRELAZADO SIMD, QUE ES LO ÚNICO QUE LA REFLEXIÓN NO DICE.
-    ''' Un bloque son 16 carriles. `boneIndices` viene por INFLUENCIA (los 16 carriles de la
-    ''' influencia 0, después los de la 1…) y `boneWeights` viene por CARRIL (las n influencias del
-    ''' carril 0, después las del 1…). No es simétrico y por eso los dos índices son distintos.
+    ''' ⛔ EL ENTRELAZADO, LEÍDO DEL `.exe`. Un bloque son 16 carriles, y `boneIndices` y `boneWeights`
+    ''' vienen los DOS por CARRIL: las n influencias del carril 0, después las del 1…
+    ''' <para>Cita (bloque de 4 influencias, `0xE0` B): por carril el kernel lee los cuatro `u16`
+    ''' SEGUIDOS — `movzx [rbp]` en `0x14193D90C` y `[r10+r13-0x5E/-0x5C/-0x5A]` en `0x14193D910`/
+    ''' `916`/`91C`, que por `0x14193D8E0`-`8F8` son `base+2/+4/+6` — y la base avanza 8 por carril
+    ''' (`0x14193DA91 add rbp, 8`, `0x14193DA99 add r13, 8`); los pesos, 4 B por carril
+    ''' (`0x14193DAA5 add rbx, 4`). Decía «boneIndices por INFLUENCIA» sin cita, y así la piel de la
+    ''' simulación tomaba los huesos de otro carril (diferencial del cuadro entero, 14-sep).</para>
     ''' </summary>
     Private Shared Function SubconjuntosDe(bloques As List(Of BloquePesado), influenceCount As Integer) As List(Of HclSkinVertice_Class)
         Dim result As New List(Of HclSkinVertice_Class)
@@ -191,7 +195,7 @@ Friend NotInheritable Class HclRenderGraphParser_Class
                     .SlotIndex = lane,
                     .VertexIndex = CUShort(b.Vertices(lane) And &HFFFF)}
                 For influence = 0 To influenceCount - 1
-                    v.TransformIndices.Add(CUShort(b.Huesos((influence * 16) + lane) And &HFFFF))
+                    v.TransformIndices.Add(CUShort(b.Huesos((lane * influenceCount) + influence) And &HFFFF))   ' 0x14193D90C-91C
                 Next
                 For influence = 0 To influenceCount - 1
                     v.WeightBytes.Add(CByte(b.Pesos((lane * influenceCount) + influence) And &HFF))

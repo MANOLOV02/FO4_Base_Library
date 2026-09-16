@@ -71,9 +71,9 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 ' ⛔ Las variantes de ancho (`test byte [buf+0x20],1` y hermanas sobre `+0x48`/`+0x60`/`+0x78`) son
 ' de ACCESO, no de aritmética: MEDIDO sobre los 12 kernels de cada camino que el multiconjunto de
 ' `mulps`/`shufps` es idéntico dentro de cada familia de canales (PNTB 187/82, PNT 184/79, PN 181/76,
-' P 178/73) y que lo único que cambia son los `movhlps` del guardado de 12 B. Acá el acceso va por el
-' stride del `Buffer`, que cubre los dos casos sin duplicar la ley — la misma decisión que
-' `Operadores.CopiarVertices`.
+' P 178/73) y que lo único que cambia son los `movhlps` del guardado de 12 B. ⛔ Pero el guardado de
+' 16 B SÍ escribe la lane `w` (ver más abajo): la aritmética de `x/y/z` es una sola, y la elección
+' de cuántos bytes se escriben sale del despacho, canal por canal.
 '
 ' ⭐⭐ EL BUCLE POR VÉRTICE (`0x14191E440` para el lineal, `0x14190FBF0` para el dual):
 '
@@ -83,6 +83,21 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 '     ini = boneInfluenceStartPerVertex[v] ; fin = boneInfluenceStartPerVertex[v+1]
 '     si fin <= ini: el vértice NO SE ESCRIBE                            ' 0x14191E5EA jbe
 '     n = fin − ini
+'
+' ⛔⛔ **LAS INFLUENCIAS SE LEEN CON UN CURSOR SECUENCIAL, NO DESDE `ini`.** El puntero se carga UNA
+' vez con `boneInfluences + start[0]·2` (`0x14191E4A0` lineal, `0x14190FC58` dual) y sólo avanza
+' ADENTRO de las ramas de 1..8 (1..4) influencias (`0x14191E647`, `0x14191E682`; `0x14191009D`,
+' `0x14190FDAB`). Un vértice que pasa el techo (`0x14191E62E` ja, `0x14190FD84` jne) NO lo avanza, y
+' el siguiente lee desde donde quedó.
+'
+' ⛔ Los kernels de LAYOUT SIMPLE leen y escriben el elemento de 16 B entero (`0x14191E601` /
+' `0x14191F6B9`, `0x14190FD4F` / `0x141910174`): la lane `w` de la salida es la `w` de la cuenta. Qué
+' canal va entero lo decide el despacho (`0x14190A75B`-`0x14190A84F`, `0x14190A3BB`-`0x14190A4AF`):
+'     P       → P si sP                                   (0x14191E440 / 0x141914BE0)
+'     P,N     → P si sP ; N si sP·sN                      (0x14191A1C0 / 0x14191F7F0 / 0x141913640)
+'     P,N,T   → P,N si sP·sN ; T si sP·sN·sT              (0x1419175F0 / 0x14191CDF0 / 0x141912030)
+'     P,N,T,B → P,N si sP·sN ; T,B si sP·sN·sT·sB         (0x141915F80 / 0x141918B80 · 0x14191B720 / 0x141910980)
+' con sX = bit 0 del canal en la entrada Y en la salida (`0x14190A5EC`-`0x14190A650`).
 '
 ' ⛔⛔ **CON UNA SOLA INFLUENCIA EL PESO NO SE APLICA.** `0x14191E642` lee el `boneIndex`, saltea el
 ' byte del peso y carga las cuatro filas de la matriz TAL CUAL. No es `w/255 · M`: es `M`.
@@ -94,6 +109,8 @@ Imports FO4_Base_Library.Havok.Canon.Objects
 '
 '     con n >= 2:  M = Σ_k (peso_k / 255) · comp[hueso_k]                ' 1/255 en `0x142492850`
 '                  (suma de izquierda a derecha, en el orden del arreglo — 0x14191F63F-0x14191F66B)
+'                  ⛔ el acumulador ARRANCA en el primer producto, no en +0 (`0x14191E6D6` y
+'                  el `addps` de `0x14191F64F`; dual `0x14191002F`/`0x141910032`): sólo se ve en −0.
 '
 '     posición  = ((P.x·M0 + M3) + P.y·M1) + P.z·M2                      ' 0x14191F68B-0x14191F6B5
 '     normal    = (N.y·M1 + N.x·M0) + N.z·M2                             ' 0x1419173A7-0x1419173CD
@@ -395,34 +412,82 @@ Namespace Havok.Motor
                                   comp As Mat4())
             Dim canales = CanalesVivos(p, entrada, salida)
             If canales = 0 Then Return                                   ' 0x14190A83C test/je
+            Dim entero = CanalesEnteros(canales, entrada, salida)
             Dim cuantos = p.VerticeFinal - p.VerticeInicial + 1          ' 0x14190A664/6E
+            ' ⛔ el cursor de influencias: `boneInfluences + start[0]·2`, UNA vez (0x14191E49C/4A0)
+            Dim cursor = If(p.ComienzoPorVertice.Length > 0, p.ComienzoPorVertice(0), 0)
             For i = 0 To cuantos - 1
                 Dim v = p.VerticeInicial + i                             ' punteros corridos, 0x14190A695
-                If v < 0 OrElse v >= entrada.Cuenta OrElse v >= salida.Cuenta Then Continue For
                 If i + 1 >= p.ComienzoPorVertice.Length Then Exit For
                 Dim ini = p.ComienzoPorVertice(i)
                 Dim fin = p.ComienzoPorVertice(i + 1)
                 If fin <= ini Then Continue For                          ' 0x14191E5EA: NO se escribe
-                Dim m = MezclaLineal(p, comp, ini, fin)
+                Dim m = MezclaLineal(p, comp, cursor, fin - ini)
+                ' la guarda de rango va DESPUÉS de la mezcla: el cursor avanza como en el motor
+                If v < 0 OrElse v >= entrada.Cuenta OrElse v >= salida.Cuenta Then Continue For
 
-                salida.SetVertice(v, Operadores.TransformarPunto(entrada.Vertice(v), m))
+                Dim x = If(entero(0), entrada.VerticeEntero(v), entrada.Vertice(v))   ' 0x14191E601 movups
+                Dim y = Operadores.TransformarPunto(x, m)
+                If entero(0) Then salida.SetVerticeEntero(v, y) Else salida.SetVertice(v, y)   ' 0x14191F6B9
                 If canales >= 2 Then
-                    salida.SetNormal(v, Operadores.TransformarDireccion(entrada.Normal(v), m))
+                    y = Operadores.TransformarDireccion(entrada.Normal(v), m)
+                    If entero(1) Then salida.SetNormalEntera(v, y) Else salida.SetNormal(v, y)
                 End If
                 If canales >= 3 Then
-                    salida.SetTangente(v, Operadores.TransformarDireccion(entrada.Tangente(v), m))
+                    y = Operadores.TransformarDireccion(entrada.Tangente(v), m)
+                    If entero(2) Then salida.SetTangenteEntera(v, y) Else salida.SetTangente(v, y)
                 End If
                 If canales >= 4 Then
-                    salida.SetBitangente(v, Operadores.TransformarDireccion(entrada.Bitangente(v), m))
+                    y = Operadores.TransformarDireccion(entrada.Bitangente(v), m)
+                    If entero(3) Then salida.SetBitangenteEntera(v, y) Else salida.SetBitangente(v, y)
                 End If
             Next
         End Sub
 
-        ''' <summary>La matriz mezclada de un vértice — las tres ramas de `0x14191E615`-`0x14191F66B`.</summary>
+        ''' <summary>
+        ''' Qué canales escriben el elemento de 16 B entero — el despacho de `0x14190A75B`-`0x14190A84F`
+        ''' (lineal) y `0x14190A3BB`-`0x14190A4AF` (dual), con `sX` = bit 0 del canal en la entrada Y en
+        ''' la salida (`0x14190A5EC`-`0x14190A650`).
+        ''' <para>```
+        ''' P       → P si sP                              0x14190A83C-0x14190A84F
+        ''' P,N     → P si sP ; N si sP·sN                 0x14190A811-0x14190A835
+        ''' P,N,T   → P,N si sP·sN ; T si sP·sN·sT         0x14190A7DE-0x14190A808
+        ''' P,N,T,B → P,N si sP·sN ; T,B si los cuatro     0x14190A782-0x14190A7D7
+        ''' ```</para>
+        ''' <para>Verificado en las escrituras de los 24 kernels: `movups` donde dice 16 B
+        ''' (`0x1419173B0`-`0x141917430`, `0x141919FD2`/`0x141919FF3`, `0x14191B5BB`/`0x14191B5DC`,
+        ''' `0x141920B16`, …) y `movsd`+`movss` en el resto.</para>
+        ''' </summary>
+        Private Function CanalesEnteros(canales As Integer, entrada As Buffer, salida As Buffer) As Boolean()
+            Dim sP = entrada.LayoutSimple AndAlso salida.LayoutSimple                       ' 0x14190A5EC-0x14190A5FF
+            Dim sN = entrada.LayoutSimpleNormales AndAlso salida.LayoutSimpleNormales       ' 0x14190A607-0x14190A613
+            Dim sT = entrada.LayoutSimpleTangentes AndAlso salida.LayoutSimpleTangentes     ' 0x14190A625-0x14190A631
+            Dim sB = entrada.LayoutSimpleBitangentes AndAlso salida.LayoutSimpleBitangentes ' 0x14190A63D-0x14190A649
+            Dim r(3) As Boolean
+            Select Case canales
+                Case 1
+                    r(0) = sP
+                Case 2
+                    r(0) = sP
+                    r(1) = sP AndAlso sN
+                Case 3
+                    r(0) = sP AndAlso sN : r(1) = r(0)
+                    r(2) = r(0) AndAlso sT
+                Case 4
+                    r(0) = sP AndAlso sN : r(1) = r(0)
+                    r(2) = r(0) AndAlso sT AndAlso sB : r(3) = r(2)
+            End Select
+            Return r
+        End Function
+
+        ''' <summary>La matriz mezclada de un vértice — las tres ramas de `0x14191E615`-`0x14191F66B`,
+        ''' leyendo las `n` influencias desde el <paramref name="cursor"/>, que avanza sólo en las
+        ''' ramas de 1..8 (`0x14191E647`, `0x14191E682`, …).</summary>
         Private Function MezclaLineal(p As PielConPesosCompilada, comp As Mat4(),
-                                      ini As Integer, fin As Integer) As Mat4
-            Dim n = fin - ini
-            If n > MaxInfluenciasLineal Then Return Nothing              ' 0x14191E62E ja → acumuladores en cero
+                                      ByRef cursor As Integer, n As Integer) As Mat4
+            If n > MaxInfluenciasLineal Then Return Nothing              ' 0x14191E62E ja → acumuladores en cero, cursor quieto
+            Dim ini = cursor
+            cursor += n                                                  ' 0x14191E647 add r13,2 (·n)
             If n = 1 Then                                          ' 0x14191E642
                 ' ⛔ 0x14191E642: se lee el hueso, se SALTEA el peso y la matriz entra tal cual
                 Dim b1 = HuesoDe(p, ini)
@@ -431,14 +496,25 @@ Namespace Havok.Motor
             End If
 
             Dim m As Mat4
-            For k = ini To fin - 1
+            Dim hay = False
+            For k = ini To ini + n - 1
                 Dim b = HuesoDe(p, k)
                 If b < 0 OrElse b >= comp.Length Then Continue For
                 Dim w = Vector128.Create(CSng(p.Pesos(k)) * EscalaDePeso)   ' cvtdq2ps + mulps 1/255
-                m.F0 = Vector128.Add(m.F0, Vector128.Multiply(comp(b).F0, w))
-                m.F1 = Vector128.Add(m.F1, Vector128.Multiply(comp(b).F1, w))
-                m.F2 = Vector128.Add(m.F2, Vector128.Multiply(comp(b).F2, w))
-                m.F3 = Vector128.Add(m.F3, Vector128.Multiply(comp(b).F3, w))
+                Dim t0 = Vector128.Multiply(comp(b).F0, w)
+                Dim t1 = Vector128.Multiply(comp(b).F1, w)
+                Dim t2 = Vector128.Multiply(comp(b).F2, w)
+                Dim t3 = Vector128.Multiply(comp(b).F3, w)
+                If Not hay Then
+                    ' ⛔ el acumulador arranca en el primer producto (0x14191E6D6), no en +0
+                    m.F0 = t0 : m.F1 = t1 : m.F2 = t2 : m.F3 = t3
+                    hay = True
+                Else
+                    m.F0 = Vector128.Add(m.F0, t0)                       ' 0x14191F64F addps
+                    m.F1 = Vector128.Add(m.F1, t1)
+                    m.F2 = Vector128.Add(m.F2, t2)
+                    m.F3 = Vector128.Add(m.F3, t3)
+                End If
             Next
             Return m
         End Function
@@ -456,42 +532,74 @@ Namespace Havok.Motor
                                 dq As CuaternionDual())
             Dim canales = CanalesVivos(p, entrada, salida)
             If canales = 0 Then Return
+            Dim entero = CanalesEnteros(canales, entrada, salida)
             Dim cuantos = p.VerticeFinal - p.VerticeInicial + 1
+            ' ⛔ el cursor de influencias: `boneInfluences + start[0]·2`, UNA vez (0x14190FC54/58)
+            Dim cursor = If(p.ComienzoPorVertice.Length > 0, p.ComienzoPorVertice(0), 0)
             For i = 0 To cuantos - 1
                 Dim v = p.VerticeInicial + i
-                If v < 0 OrElse v >= entrada.Cuenta OrElse v >= salida.Cuenta Then Continue For
                 If i + 1 >= p.ComienzoPorVertice.Length Then Exit For
                 Dim ini = p.ComienzoPorVertice(i)
                 Dim fin = p.ComienzoPorVertice(i + 1)
-                If fin <= ini Then Continue For
-                Dim mezcla = MezclaDual(p, dq, ini, fin)
+                If fin <= ini Then Continue For                          ' 0x14190FD3B jbe
+                Dim mezcla = MezclaDual(p, dq, cursor, fin - ini)
+                ' la guarda de rango va DESPUÉS de la mezcla: el cursor avanza como en el motor
+                If v < 0 OrElse v >= entrada.Cuenta OrElse v >= salida.Cuenta Then Continue For
                 Dim q = mezcla.Real, d = mezcla.Dual
 
-                salida.SetVertice(v, PuntoPorDual(entrada.Vertice(v), q, d))
-                If canales >= 2 Then salida.SetNormal(v, DireccionPorDual(entrada.Normal(v), q))
-                If canales >= 3 Then salida.SetTangente(v, DireccionPorDual(entrada.Tangente(v), q))
-                If canales >= 4 Then salida.SetBitangente(v, DireccionPorDual(entrada.Bitangente(v), q))
+                ' ⛔ en el kernel simple la `w` de la entrada ENTRA en la cuenta: `movups` de
+                ' 0x14190FD4F y el `addps xmm6, xmm11` de 0x141910160
+                Dim x = If(entero(0), entrada.VerticeEntero(v), entrada.Vertice(v))
+                Dim y = PuntoPorDual(x, q, d)
+                If entero(0) Then salida.SetVerticeEntero(v, y) Else salida.SetVertice(v, y)   ' 0x141910174
+                If canales >= 2 Then
+                    x = If(entero(1), entrada.NormalEntera(v), entrada.Normal(v))
+                    y = DireccionPorDual(x, q)
+                    If entero(1) Then salida.SetNormalEntera(v, y) Else salida.SetNormal(v, y)
+                End If
+                If canales >= 3 Then
+                    x = If(entero(2), entrada.TangenteEntera(v), entrada.Tangente(v))
+                    y = DireccionPorDual(x, q)
+                    If entero(2) Then salida.SetTangenteEntera(v, y) Else salida.SetTangente(v, y)
+                End If
+                If canales >= 4 Then
+                    x = If(entero(3), entrada.BitangenteEntera(v), entrada.Bitangente(v))
+                    y = DireccionPorDual(x, q)
+                    If entero(3) Then salida.SetBitangenteEntera(v, y) Else salida.SetBitangente(v, y)
+                End If
             Next
         End Sub
 
-        ''' <summary>El dual mezclado de un vértice — `0x14190FD66`-`0x141910098`.</summary>
+        ''' <summary>El dual mezclado de un vértice — `0x14190FD66`-`0x141910098`, leyendo las `n`
+        ''' influencias desde el <paramref name="cursor"/>, que avanza sólo en las ramas de 1..4
+        ''' (`0x14191009D`, `0x14190FFF3`, `0x14190FDAB`, …).</summary>
         Private Function MezclaDual(p As PielConPesosCompilada, dq As CuaternionDual(),
-                                    ini As Integer, fin As Integer) As CuaternionDual
+                                    ByRef cursor As Integer, n As Integer) As CuaternionDual
             Dim r As CuaternionDual
-            Dim n = fin - ini
-            If n > MaxInfluenciasDual Then Return r                      ' 0x14190FD84: los dos en cero
+            If n > MaxInfluenciasDual Then Return r                      ' 0x14190FD84: los dos en cero, cursor quieto
+            Dim ini = cursor
+            cursor += n                                                  ' 0x14191009D add rdi,2 (·n)
             If n = 1 Then                                          ' 0x14191009A
                 Dim b1 = HuesoDe(p, ini)
                 If b1 < 0 OrElse b1 >= dq.Length Then Return r
                 Return dq(b1)                                            ' 0x14191009A: crudo
             End If
 
-            For k = ini To fin - 1
+            Dim hay = False
+            For k = ini To ini + n - 1
                 Dim b = HuesoDe(p, k)
                 If b < 0 OrElse b >= dq.Length Then Continue For
                 Dim w = Vector128.Create(CSng(p.Pesos(k)) * EscalaDePeso)
-                r.Real = Vector128.Add(r.Real, Vector128.Multiply(dq(b).Real, w))
-                r.Dual = Vector128.Add(r.Dual, Vector128.Multiply(dq(b).Dual, w))
+                Dim tr = Vector128.Multiply(dq(b).Real, w)
+                Dim td = Vector128.Multiply(dq(b).Dual, w)
+                If Not hay Then
+                    ' ⛔ el acumulador arranca en el primer producto (0x14191002F), no en +0
+                    r.Real = tr : r.Dual = td
+                    hay = True
+                Else
+                    r.Real = Vector128.Add(r.Real, tr)                   ' 0x141910032 addps
+                    r.Dual = Vector128.Add(r.Dual, td)                   ' 0x141910090 addps
+                End If
             Next
 
             ' ⛔ Las DOS partes se escalan con el MISMO factor, el de la norma de la REAL

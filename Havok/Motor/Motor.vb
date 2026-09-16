@@ -65,6 +65,11 @@ Namespace Havok.Motor
         ''' <summary>`op.constraintExecution` (+0x30). Vacia ⇒ orden del archivo y colision al
         ''' final; no vacia ⇒ manda la lista y **`-1` es la colision** (`0x141A13798`).</summary>
         Friend EjecucionDeRestricciones As Integer()
+        ''' <summary>La lista activa de acciones que arma `prepare` (`simCloth+0x168`,
+        ''' `0x14195BB87`), en su orden. `Nothing` = ninguna.</summary>
+        Friend Acciones As AccionDeViento()
+        ''' <summary>`hclSimClothData.totalMass` (`+0x78`), que lee `applyAction` (`0x1418F842E`).</summary>
+        Friend MasaTotal As Single
         ''' <summary>La geometria del mundo para `computeContactPlanes` (el paso 4b).
         ''' <para>⛔⛔ EN FO4 ES SIEMPRE `Nothing`, y eso esta MEDIDO, no supuesto: el unico
         ''' escritor de `[inst+0xF8]`/`[inst+0x100]` es `0x1418C7B10` y no tiene NI UN llamador.
@@ -190,10 +195,15 @@ Namespace Havok.Motor
                                                  e.FactorDePegado, Nothing)      ' (4b) 0x14195DA70
                 Anclas.Interpolar(inst, snapAnclas, s, invN)                         ' (4c) 0x14195CB88
                 ' ⛔ 0x141A13007 (`movaps xmm0, [rip+...]` + el bucle de 0x141A13020), sobre el
-                ' buffer que el integrador reserva en 0x141A12FD1-0x141A12FFF. NO es 0x141A13080:
-                ' eso es el LAZO DE ACCIONES (`mov rax, [rdi+0x168]`), que es otra cosa y que
-                ' ademas todavia no esta transcripto (motor-124/126).
+                ' buffer que el integrador reserva en 0x141A12FD1-0x141A12FFF; despues el LAZO DE
+                ' ACCIONES (`0x141A13080`, `mov rax, [rdi+0x168]`) con `xmm2 = dtSub` y
+                ' `r9 = fuerzas`, y recien despues el bucle de integracion.
                 Integrador.CerarFuerzas(fuerzas)                                 ' (4d) 0x141A13007
+                If e.Acciones IsNot Nothing Then                                 '      0x141A13066
+                    For Each a In e.Acciones
+                        a.Aplicar(inst, e.MasaTotal, dtSub, fuerzas)             '      0x141A1309C vtbl[+0x20]
+                    Next
+                End If
                 Integrador.Integrar(inst, e.Gravedad, fuerzas, dtSub)            '      0x141A12EE0
                 Resolver(inst, e, buffer, dtSub, n, s)                           ' (4e) 0x141A133E0
             Next
@@ -201,6 +211,13 @@ Namespace Havok.Motor
             ' ---- (5) cierre
             If e.ModoAabb = 0 Then                                               ' simCloth[+0x1C8]
                 Aabb.ActualizarAabbDeParticulas(inst)                            ' 0x1418C7300
+                ' y el ancho y la máscara quedan VACÍOS: `0x142F3C740` (0x7F7FFFEE en las 4 lanes) al
+                ' mínimo y su negación (xorps con 0x80000000 difundido, `0x14195CCED`-`CCFF`) al máximo
+                ' (`0x14195CCE9` +0x70, `0x14195CD02` +0x80, `0x14195CD13` +0x90, `0x14195CD1A` +0xA0).
+                Dim mas = Vector128.Create(Simd.CasiFltMax)
+                Dim menos = Vector128.Xor(mas, Vector128.Create(-0.0F))
+                inst.AabbMinAncho = mas : inst.AabbMaxAncho = menos
+                inst.AabbMinMascara = mas : inst.AabbMaxMascara = menos
             Else
                 Aabb.ActualizarAabbs(inst)                                       ' 0x1418C73C0
             End If

@@ -102,7 +102,15 @@ Namespace Havok.Motor
             ' habilitada la transferencia (0x14195B850). Sin esto el primer cuadro ve la
             ' diferencia entre la identidad y la pose real del hueso y la tela sale disparada.
             If dtViejo = 0.0F AndAlso transferenciaHabilitada Then
-                inst.TransformPrevioDeTransferMotion = transformDeTransferencia
+                ' ⛔ no se copia tal cual: `0x14195B8FF` llama a `0x1412986A0`, que borra la lane w de
+                ' las filas 0-2 (`pslldq`/`psrldq 4`) y arma la fila 3 como `(t.xyz, 1)`
+                ' (`unpckhps` contra el 1,0 de `0x142F3C560` + `shufps 0xC4`).
+                Dim sembrado = transformDeTransferencia
+                sembrado.F0 = Vector128.WithElement(sembrado.F0, 3, 0.0F)
+                sembrado.F1 = Vector128.WithElement(sembrado.F1, 3, 0.0F)
+                sembrado.F2 = Vector128.WithElement(sembrado.F2, 3, 0.0F)
+                sembrado.F3 = Vector128.WithElement(sembrado.F3, 3, 1.0F)
+                inst.TransformPrevioDeTransferMotion = sembrado
             End If
 
             If dtViejo = dtNuevo Then Return                             ' 0x14195B90F ucomiss / je
@@ -149,7 +157,7 @@ Namespace Havok.Motor
                                         iSubstep As Integer, numSubSteps As Integer,
                                         s1 As Single, s2 As Single) As Single
             If modo <> 2 Then Return 1.0F                               ' 0x1418C6438
-            If numSubSteps = 1 AndAlso s1 = 1.0F AndAlso s2 = 1.0F Then Return 1.0F   ' 0x1418C646E…
+            If numSubSteps = 1 AndAlso IgualUcomiss(s1, 1.0F) AndAlso IgualUcomiss(s2, 1.0F) Then Return 1.0F   ' 0x1418C646E…
 
             Select Case tipoDeSet
                 Case TipoLocalRange, TipoBonePlanes                     ' 0x1418C64A9 / 0x1418C64B3
@@ -168,8 +176,17 @@ Namespace Havok.Motor
         ''' </summary>
         Friend Function UsaK(modo As Integer, numSubSteps As Integer, s1 As Single, s2 As Single) As Boolean
             If modo = 1 Then Return False
-            If numSubSteps = 1 AndAlso s1 = 1.0F AndAlso s2 = 1.0F Then Return False
+            If numSubSteps = 1 AndAlso IgualUcomiss(s1, 1.0F) AndAlso IgualUcomiss(s2, 1.0F) Then Return False   ' 0x141A134CF…D7
             Return True
+        End Function
+
+        ''' <summary>
+        ''' La igualdad de `ucomiss a, b` + `jne`/`je` (`0x1418C6473`/`76`, `0x141A134CF`/`D2`/`D7`):
+        ''' `ZF = 1` también con unordered, así que un NaN cuenta como IGUAL. El `=` de VB da falso con
+        ''' NaN y tomaba la otra rama (GDFc4a/b).
+        ''' </summary>
+        Private Function IgualUcomiss(a As Single, b As Single) As Boolean
+            Return Not (a < b OrElse a > b)
         End Function
 
     End Module
