@@ -393,6 +393,100 @@ Public Module SaveNpcEspWriter
         Public OriginalVcs2 As UShort = 0US
     End Class
 
+
+    ''' <summary>One HDPT (Head Part) record to write. NEW: <see cref="FormID"/> es el centinela provisional del
+    ''' caller (0xFF…), el writer le asigna el FormID self-index real. OVERRIDE: el FormID real del
+    ''' record que se esta sobrescribiendo.
+    ''' <para>⛔ Es la SEGUNDA clase de record de este writer que se referencia a SI MISMA -la primera es
+    ''' LVLI, cuyo `Item` es un `Wb.Fid("Item")` SIN firma declarada: medido, LVLI->LVLI son 4.448 aristas en
+    ''' Fallout 4 y 9.891 en Skyrim-. Aca el array <c>HNAM</c> (Extra Parts) apunta a otros HDPT, y lo usan
+    ''' 2.662 de los 2.992 HDPT de Fallout 4 (89 %%, medido). No rompe nada ACA -el reparto de FormID se
+    ''' completa ANTES de serializar, asi que una auto-referencia resuelve como cualquier otra-, pero si
+    ''' obliga a que la clausura transitiva del caller recorra con conjunto de visitados, y el MOLDE resuelto
+    ''' ya existe: la clausura de LVLI con su visited set. No inventar uno nuevo.</para></summary>
+    Public Class HdptRecordEntry
+        ''' <summary>El record a grabar. De aca sale todo el cuerpo y la cabecera y, en un OVERRIDE, los
+        ''' campos que el usuario no toco: el arbol viene de leer la fuente, asi que reproducirlo alcanza
+        ''' sin un camino de preservacion aparte.</summary>
+        Public ReadOnly Property Record As Canon.CanonView
+
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29.</summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            _Record = record
+        End Sub
+
+        Public FormID As UInteger
+        Public EditorID As String = ""
+        Public IsOverride As Boolean = False
+        Public OriginalVcs1 As UInteger = 0UI
+        Public OriginalVcs2 As UShort = 0US
+    End Class
+
+    ''' <summary>One TXST (Texture Set) record to write. NEW: <see cref="FormID"/> es el centinela provisional del
+    ''' caller (0xFF…), el writer le asigna el FormID self-index real. OVERRIDE: el FormID real del
+    ''' record que se esta sobrescribiendo.
+    ''' <para>Lo referencia el <c>TNAM</c> de un HDPT (en los ojos, ESA es la diffuse) y los dos campos de skin texture de un ARMA. <c>OBND</c> esta en el 100 %% del corpus, asi que un TXST nuevo lo emite; su valor sale de la plantilla o son ceros (486 de 1.000 en FO4), que es un valor transcrito del archivo y no un default inventado.</para></summary>
+    Public Class TxstRecordEntry
+        ''' <summary>El record a grabar. De aca sale todo el cuerpo y la cabecera y, en un OVERRIDE, los
+        ''' campos que el usuario no toco: el arbol viene de leer la fuente, asi que reproducirlo alcanza
+        ''' sin un camino de preservacion aparte.</summary>
+        Public ReadOnly Property Record As Canon.CanonView
+
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29.</summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            _Record = record
+        End Sub
+
+        Public FormID As UInteger
+        Public EditorID As String = ""
+        Public IsOverride As Boolean = False
+        Public OriginalVcs1 As UInteger = 0UI
+        Public OriginalVcs2 As UShort = 0US
+    End Class
+
+    ''' <summary>One FLST (Form List) record to write. NEW: <see cref="FormID"/> es el centinela provisional del
+    ''' caller (0xFF…), el writer le asigna el FormID self-index real. OVERRIDE: el FormID real del
+    ''' record que se esta sobrescribiendo.
+    ''' <para>La referencia el <c>RNAM</c> de un HDPT (en que razas es valido) y el swap-list de skin de un ARMA. <c>LNAM</c> es un arreglo de FormID SIN firma declarada en el esquema: la lista puede contener cualquier cosa, y el filtro a RACE es de la UI y no del record.</para></summary>
+    Public Class FlstRecordEntry
+        ''' <summary>El record a grabar. De aca sale todo el cuerpo y la cabecera y, en un OVERRIDE, los
+        ''' campos que el usuario no toco: el arbol viene de leer la fuente, asi que reproducirlo alcanza
+        ''' sin un camino de preservacion aparte.</summary>
+        Public ReadOnly Property Record As Canon.CanonView
+
+        ''' <summary>El arbol es OBLIGATORIO para crear la ficha, y por eso NO hay constructor sin
+        ''' argumentos. El cuerpo del record sale de <see cref="Record"/> y de ningun otro lado, asi que
+        ''' una ficha sin arbol emite CERO bytes: el record DESAPARECE del archivo sin error, el GRUP se
+        ''' arma igual con su cabecera y el plugin queda valido. Paso con OTFT el 2026-08-29.</summary>
+        Public Sub New(record As Canon.CanonView)
+            If record Is Nothing Then
+                Throw New ArgumentNullException(NameOf(record),
+                    "El cuerpo del record sale del arbol: sin el no hay nada que grabar.")
+            End If
+            _Record = record
+        End Sub
+
+        Public FormID As UInteger
+        Public EditorID As String = ""
+        Public IsOverride As Boolean = False
+        Public OriginalVcs1 As UInteger = 0UI
+        Public OriginalVcs2 As UShort = 0US
+    End Class
+
     ''' <summary>Result of a save operation.</summary>
     Public Class SaveResult
         Public OutputPath As String
@@ -436,6 +530,12 @@ Public Module SaveNpcEspWriter
         Public ReadOnly Arma As New List(Of Byte())
         Public ReadOnly Armo As New List(Of Byte())
         Public ReadOnly Clfm As New List(Of Byte())
+        ''' <summary>Los tres GRUP que trae la ola de head parts. Van en el orden referenced-first del
+        ''' Paso 5: TXST y FLST primero (no referencian nada de lo que escribimos y los referencia HDPT,
+        ''' y tambien ARMA/ARMO), y HDPT antes de NPC_.</summary>
+        Public ReadOnly Hdpt As New List(Of Byte())
+        Public ReadOnly Txst As New List(Of Byte())
+        Public ReadOnly Flst As New List(Of Byte())
     End Class
 
     ''' <summary>Save (or update) a plugin file containing the given NPC overrides.
@@ -470,7 +570,10 @@ Public Module SaveNpcEspWriter
                                        Optional armoEntries As List(Of ArmoRecordEntry) = Nothing,
                                        Optional armaEntries As List(Of ArmaRecordEntry) = Nothing,
                                        Optional mswpEntries As List(Of MswpRecordEntry) = Nothing,
-                                       Optional clfmEntries As List(Of ClfmRecordEntry) = Nothing) As SaveResult
+                                       Optional clfmEntries As List(Of ClfmRecordEntry) = Nothing,
+                                       Optional hdptEntries As List(Of HdptRecordEntry) = Nothing,
+                                       Optional txstEntries As List(Of TxstRecordEntry) = Nothing,
+                                       Optional flstEntries As List(Of FlstRecordEntry) = Nothing) As SaveResult
 
         If String.IsNullOrWhiteSpace(outputPath) Then Throw New ArgumentException("outputPath is empty.", NameOf(outputPath))
         If entries Is Nothing Then entries = New List(Of NpcOverrideEntry)()
@@ -484,6 +587,9 @@ Public Module SaveNpcEspWriter
         If armaEntries Is Nothing Then armaEntries = New List(Of ArmaRecordEntry)()
         If mswpEntries Is Nothing Then mswpEntries = New List(Of MswpRecordEntry)()
         If clfmEntries Is Nothing Then clfmEntries = New List(Of ClfmRecordEntry)()
+        If hdptEntries Is Nothing Then hdptEntries = New List(Of HdptRecordEntry)()
+        If txstEntries Is Nothing Then txstEntries = New List(Of TxstRecordEntry)()
+        If flstEntries Is Nothing Then flstEntries = New List(Of FlstRecordEntry)()
 
         Dim gameMaster = MasterFileNamePublic(game)
 
@@ -547,6 +653,20 @@ Public Module SaveNpcEspWriter
                 ' FormID via draftRemap; OVERRIDE ones (authored by a prior save of this plugin) keep their real FormID.
                 For Each ce In clfmEntries
                     b.Clfm.Add(SerializeClfmRecord(ce, rm, game, selfIdx, b.Advertencias))
+                Next
+
+                ' TXST / FLST / HDPT. Mismo camino que MSWP/ARMA/ARMO: el cuerpo sale del arbol y cada
+                ' FormID que referencian pasa por el remapper (draft → self via draftRemap; real →
+                ' remap de masters). Una auto-referencia HNAM entre dos HDPT nuevos resuelve igual,
+                ' porque draftRemap ya esta completo antes de esta pasada.
+                For Each te In txstEntries
+                    b.Txst.Add(SerializeTxstRecord(te, rm, game, selfIdx, b.Advertencias))
+                Next
+                For Each fe In flstEntries
+                    b.Flst.Add(SerializeFlstRecord(fe, rm, game, selfIdx, b.Advertencias))
+                Next
+                For Each he In hdptEntries
+                    b.Hdpt.Add(SerializeHdptRecord(he, rm, game, selfIdx, b.Advertencias))
                 Next
                 Return b
             End Function
@@ -744,6 +864,12 @@ Public Module SaveNpcEspWriter
         Next
         For Each ce In clfmEntries : If ce.IsOverride Then noteUsedObjectId(ce.FormID)
         Next
+        For Each he In hdptEntries : If he.IsOverride Then noteUsedObjectId(he.FormID)
+        Next
+        For Each te In txstEntries : If te.IsOverride Then noteUsedObjectId(te.FormID)
+        Next
+        For Each fe In flstEntries : If fe.IsOverride Then noteUsedObjectId(fe.FormID)
+        Next
 
         ' Los records PROPIOS que se preservan también tienen que caber en el ancho de SALIDA.
         ' La condición: archivo LIGHT + ObjectID > 0xFFF + el record es DUEÑO de este archivo
@@ -865,6 +991,24 @@ Public Module SaveNpcEspWriter
             If draftRemap.ContainsKey(ce.FormID) Then Continue For
             draftRemap(ce.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
+        ' TXST / FLST / HDPT nuevos. ⛔ El reparto COMPLETO antes de serializar es lo que hace que la
+        ' auto-referencia de HDPT (HNAM → otro HDPT, 89 % del corpus) no necesite ningun orden especial:
+        ' cuando el emisor escribe el primer HNAM, el FormID real del hijo ya existe en el mapa.
+        For Each te In txstEntries
+            If te.IsOverride Then Continue For
+            If draftRemap.ContainsKey(te.FormID) Then Continue For
+            draftRemap(te.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
+        Next
+        For Each fe In flstEntries
+            If fe.IsOverride Then Continue For
+            If draftRemap.ContainsKey(fe.FormID) Then Continue For
+            draftRemap(fe.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
+        Next
+        For Each he In hdptEntries
+            If he.IsOverride Then Continue For
+            If draftRemap.ContainsKey(he.FormID) Then Continue For
+            draftRemap(he.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
+        Next
 
         Dim remapper As SaveNpcEspWriter.FormIdRemapper =
             Function(globalFormID As UInteger) As UInteger
@@ -980,6 +1124,9 @@ Public Module SaveNpcEspWriter
         Dim armaBuffers As List(Of Byte()) = emitted.Arma
         Dim armoBuffers As List(Of Byte()) = emitted.Armo
         Dim clfmBuffers As List(Of Byte()) = emitted.Clfm
+        Dim hdptBuffers As List(Of Byte()) = emitted.Hdpt
+        Dim txstBuffers As List(Of Byte()) = emitted.Txst
+        Dim flstBuffers As List(Of Byte()) = emitted.Flst
 
         ' ====================================================================
         ' Paso 5: envolver cada tipo de record en su GRUP de primer nivel, en orden referenced-first:
@@ -993,6 +1140,12 @@ Public Module SaveNpcEspWriter
         ' rompe nada.
         ' Lo que SI tiene que estar bien es HEDR.numRecords, mas abajo.
         ' ====================================================================
+        ' TXST y FLST van PRIMEROS: no referencian nada de lo que este writer emite, y los referencian
+        ' HDPT (TNAM/RNAM) y ARMA/ARMO (skin texture + swap list). HDPT va despues de CLFM/MSWP -a los
+        ' que referencia- y antes de NPC_, que lo referencia por PNAM.
+        Dim grupTxstBytes As Byte() = If(txstBuffers.Count > 0, BuildGrup("TXST", txstBuffers), Array.Empty(Of Byte)())
+        Dim grupFlstBytes As Byte() = If(flstBuffers.Count > 0, BuildGrup("FLST", flstBuffers), Array.Empty(Of Byte)())
+        Dim grupHdptBytes As Byte() = If(hdptBuffers.Count > 0, BuildGrup("HDPT", hdptBuffers), Array.Empty(Of Byte)())
         Dim grupClfmBytes As Byte() = If(clfmBuffers.Count > 0, BuildGrup("CLFM", clfmBuffers), Array.Empty(Of Byte)())
         Dim grupMswpBytes As Byte() = If(mswpBuffers.Count > 0, BuildGrup("MSWP", mswpBuffers), Array.Empty(Of Byte)())
         Dim grupArmaBytes As Byte() = If(armaBuffers.Count > 0, BuildGrup("ARMA", armaBuffers), Array.Empty(Of Byte)())
@@ -1026,12 +1179,15 @@ Public Module SaveNpcEspWriter
         ' Counting only the records made the CK pop "Form counts don't match / correct the file header?".
         ' The NPC_ GRUP is always emitted (Step 7), the rest only when non-empty.
         Dim grupCount As Integer = 1 +
+                                   If(txstBuffers.Count > 0, 1, 0) + If(flstBuffers.Count > 0, 1, 0) +
                                    If(clfmBuffers.Count > 0, 1, 0) +
-                                   If(mswpBuffers.Count > 0, 1, 0) + If(armaBuffers.Count > 0, 1, 0) +
+                                   If(mswpBuffers.Count > 0, 1, 0) + If(hdptBuffers.Count > 0, 1, 0) +
+                                   If(armaBuffers.Count > 0, 1, 0) +
                                    If(armoBuffers.Count > 0, 1, 0) + If(otftBuffers.Count > 0, 1, 0) +
                                    If(lvlnBuffers.Count > 0, 1, 0) + If(lvliBuffers.Count > 0, 1, 0)
         Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count + lvlnBuffers.Count +
-                                      mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count + clfmBuffers.Count + grupCount
+                                      mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count + clfmBuffers.Count +
+                                      hdptBuffers.Count + txstBuffers.Count + flstBuffers.Count + grupCount
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
@@ -1054,9 +1210,18 @@ Public Module SaveNpcEspWriter
             outputPath,
             Sub(fs)
                 fs.Write(tes4Bytes, 0, tes4Bytes.Length)
-                ' Canonical referenced-first GRUP order: CLFM → MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_ (Step 5).
+                ' Orden ESTABLE de GRUP, referenced-first DONDE EL GRAFO LO PERMITE (Paso 5):
+                '   TXST → FLST → CLFM → MSWP → HDPT → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_
+                ' ⛔ NO es «referenced-first» a secas, y no puede serlo: medido, FLST→HDPT son 384 aristas
+                ' en Fallout 4 y HDPT→FLST existe por el RNAM, o sea que las dos clases forman un CICLO y
+                ' ningún orden las pone a las dos primero. Lo mismo con LVLI→LVLI. Sin consecuencia: al
+                ' motor el orden de los GRUP no le importa —la resolución de FormID es global— así que esto
+                ' es el rótulo, no la ley. Lo levantó la revisión adversarial.
+                If grupTxstBytes.Length > 0 Then fs.Write(grupTxstBytes, 0, grupTxstBytes.Length)
+                If grupFlstBytes.Length > 0 Then fs.Write(grupFlstBytes, 0, grupFlstBytes.Length)
                 If grupClfmBytes.Length > 0 Then fs.Write(grupClfmBytes, 0, grupClfmBytes.Length)
                 If grupMswpBytes.Length > 0 Then fs.Write(grupMswpBytes, 0, grupMswpBytes.Length)
+                If grupHdptBytes.Length > 0 Then fs.Write(grupHdptBytes, 0, grupHdptBytes.Length)
                 If grupArmaBytes.Length > 0 Then fs.Write(grupArmaBytes, 0, grupArmaBytes.Length)
                 If grupArmoBytes.Length > 0 Then fs.Write(grupArmoBytes, 0, grupArmoBytes.Length)
                 If grupOtftBytes.Length > 0 Then fs.Write(grupOtftBytes, 0, grupOtftBytes.Length)
@@ -1293,6 +1458,34 @@ Public Module SaveNpcEspWriter
     ''' <summary>Serialize one ARMO (Armor). Misma nota que <see cref="SerializeArmaRecord"/> sobre
     ''' pluginManager.</summary>
     Public Function SerializeArmoRecord(entry As ArmoRecordEntry,
+                                        remapper As SaveNpcEspWriter.FormIdRemapper,
+                                        game As Config_App.Game_Enum,
+                                        selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
+        Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
+    End Function
+
+    ''' <summary>Serialize one HDPT (Head Part). Misma nota que <see cref="SerializeArmaRecord"/>: el
+    ''' cuerpo sale del arbol del record, no hace falta resolver nada aca.</summary>
+    Public Function SerializeHdptRecord(entry As HdptRecordEntry,
+                                        remapper As SaveNpcEspWriter.FormIdRemapper,
+                                        game As Config_App.Game_Enum,
+                                        selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
+        Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
+    End Function
+
+    ''' <summary>Serialize one TXST (Texture Set). Ver <see cref="SerializeHdptRecord"/>.</summary>
+    Public Function SerializeTxstRecord(entry As TxstRecordEntry,
+                                        remapper As SaveNpcEspWriter.FormIdRemapper,
+                                        game As Config_App.Game_Enum,
+                                        selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()
+        Return SerializarRecord(entry.Record, entry.FormID, remapper, game,
+                                entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
+    End Function
+
+    ''' <summary>Serialize one FLST (Form List). Ver <see cref="SerializeHdptRecord"/>.</summary>
+    Public Function SerializeFlstRecord(entry As FlstRecordEntry,
                                         remapper As SaveNpcEspWriter.FormIdRemapper,
                                         game As Config_App.Game_Enum,
                                         selfIdxDestino As Integer, Optional avisos As List(Of String) = Nothing) As Byte()

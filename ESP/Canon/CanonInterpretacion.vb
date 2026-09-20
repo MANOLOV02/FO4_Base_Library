@@ -915,6 +915,243 @@ Namespace Canon
         ''' (Hair) NO - 1 shape en 3044 archivos, 0 en 114, NUNCA 2. Para los tipos 1,2,4,6,7,8,9 el corpus
         ''' no tiene un solo NPC con dos FormID distintos del mismo tipo, asi que la ley se generaliza sobre
         ''' conjunto vacio: si algun dia aparece uno, ESTA es la linea que hay que revisar contra el CK.</summary>
+        ''' <summary>Los nombres del enum <c>HDPT.PNAM</c> del juego pedido, SACADOS de los
+        ''' formateadores generados (<c>FmtFO4.F070</c> / <c>FmtTES5.F065</c>) y no de una lista a mano:
+        ''' Fallout 4 declara 0–9 y Skyrim 0–6, y una copia local se queda vieja el día que el esquema
+        ''' se regenere.
+        ''' <para>⛔ La lista NO es el dominio del campo: es sólo lo que el enum NOMBRA. Medido, cinco
+        ''' HDPT del corpus traen 69 y 71, que no están acá — quien muestre esto en un control tiene que
+        ''' poder representar un valor ausente del diccionario, no normalizarlo.</para></summary>
+        Public Function NombresDeTipoDeHeadPart(game As WbGame) As IReadOnlyDictionary(Of Long, String)
+            If game = WbGame.Skyrim Then Return FmtTES5.F065
+            Return FmtFO4.F070
+        End Function
+
+        ''' <summary>El nombre de una funcion de condicion, de la tabla generada del juego
+        ''' (<c>WbConditions*.Nombres</c>: 479 entradas en Fallout 4 y 402 en Skyrim, emitidas del
+        ''' <c>.pas</c> de xEdit por <c>Tools\CanonLayoutGen</c>). Cadena vacia si el indice no esta.
+        ''' <para>⛔ Existe porque las tablas son <c>Friend</c> de esta libreria: sin este acceso, la app
+        ''' tendria que copiar los 479 nombres, que es exactamente la copia a mano que el generador
+        ''' existe para evitar.</para></summary>
+        Public Function NombreDeFuncionDeCondicion(indice As Integer, game As WbGame) As String
+            Dim nombre As String = Nothing
+            If game = WbGame.Skyrim Then
+                If WbConditionsTES5.Nombres.TryGetValue(indice, nombre) Then Return nombre
+            Else
+                If WbConditionsFO4.Nombres.TryGetValue(indice, nombre) Then Return nombre
+            End If
+            Return ""
+        End Function
+
+        ''' <summary>Todas las funciones de condicion del juego, indice -> nombre. Para poblar un combo
+        ''' sin que nadie copie la lista.</summary>
+        Public Function FuncionesDeCondicion(game As WbGame) As IReadOnlyDictionary(Of Integer, String)
+            If game = WbGame.Skyrim Then Return WbConditionsTES5.Nombres
+            Return WbConditionsFO4.Nombres
+        End Function
+
+        ''' <summary>QUE ES una rama de parametro de condicion: la clase de dato, el rotulo con el que
+        ''' xEdit la nombra, las firmas que acepta si es una referencia y los valores si es un enumerado.
+        ''' <para>Sale entera de <c>WbConditions*.Rama*</c>, o sea de <c>wbConditionParameters</c> del
+        ''' .pas. Existe para que un editor pueda escribir CUALQUIERA de las 50 clases sin una tabla
+        ''' propia: antes habia cinco ramas a mano y las otras 45 se mostraban en crudo.</para></summary>
+        Public Structure RamaDeParametro
+            ''' <summary>El ordinal del tipo de parametro en el enum del juego. -1 = la rama de reserva
+            ''' (4 bytes crudos), la que cae cuando la funcion no esta en la tabla.</summary>
+            Public Ordinal As Integer
+            ''' <summary>crudo | ninguno | float | entero | especial | enumerado | formid | union.
+            ''' <para>«especial» es un entero con formateador propio de xEdit (el Alias, el Event, el
+            ''' Quest Stage): se edita como numero, que es lo que el campo es.</para>
+            ''' <para>Una clase que este modulo no conozca llega como «crudo» y el editor la muestra sin
+            ''' dejar editarla: degrada, no miente.</para></summary>
+            Public Clase As String
+            ''' <summary>El rotulo de xEdit ('Actor Base', 'Quest Stage'). Es tambien el ultimo tramo de
+            ''' la RUTA del esquema, asi que es con lo que se llega a la rama.</summary>
+            Public Nombre As String
+            ''' <summary>Las firmas que acepta. VACIO = sin restriccion declarada (`wbFormID` pelado):
+            ''' no es un hueco, es lo que el .pas dice.</summary>
+            Public Firmas As String()
+            ''' <summary>valor -> rotulo de un enumerado; Nothing si la rama no es un enumerado. Puede
+            ''' ser DISPERSO (hashes de 32 bits en el Misc Stat, bits en el Furniture Entry).</summary>
+            Public Valores As IReadOnlyDictionary(Of Long, String)
+            ''' <summary>El entero es con signo (`itS32`).</summary>
+            Public ConSigno As Boolean
+
+            Public ReadOnly Property EsReferencia As Boolean
+                Get
+                    Return Clase = "formid"
+                End Get
+            End Property
+            Public ReadOnly Property EsEnumerado As Boolean
+                Get
+                    Return Clase = "enumerado" AndAlso Valores IsNot Nothing AndAlso Valores.Count > 0
+                End Get
+            End Property
+            ''' <summary>Se puede editar como numero: entero, float o entero con formateador.</summary>
+            Public ReadOnly Property EsNumero As Boolean
+                Get
+                    Return Clase = "entero" OrElse Clase = "float" OrElse Clase = "especial"
+                End Get
+            End Property
+            ''' <summary>La rama no declara dato: la funcion no toma ese parametro.</summary>
+            Public ReadOnly Property EsNinguno As Boolean
+                Get
+                    Return Clase = "ninguno"
+                End Get
+            End Property
+            ''' <summary>Ni referencia, ni enumerado, ni numero, ni «ninguno»: 4 bytes sin forma
+            ''' declarada, o una union anidada. El editor la muestra y no la toca.</summary>
+            Public ReadOnly Property EsCruda As Boolean
+                Get
+                    Return Not (EsReferencia OrElse EsEnumerado OrElse EsNumero OrElse EsNinguno)
+                End Get
+            End Property
+        End Structure
+
+        ''' <summary>La rama de parametro que le toca al parametro <paramref name="cual"/> (1 o 2) de esa
+        ''' funcion de condicion.
+        ''' <para>El parametro 3 NO esta en la tabla de funciones —el generador emite dos ordinales por
+        ''' funcion, que es lo que declaran `ParamType1` y `ParamType2`— asi que pedirlo devuelve la rama
+        ''' de reserva. No es un hueco de este modulo: es lo que hay en `wbConditionFunctions`.</para></summary>
+        Public Function RamaDeParametroDeCondicion(indiceDeFuncion As Integer, cual As Integer,
+                                                   game As WbGame) As RamaDeParametro
+            Dim pares As Integer() = Nothing
+            Dim ok As Boolean
+            If game = WbGame.Skyrim Then
+                ok = WbConditionsTES5.Params.TryGetValue(indiceDeFuncion, pares)
+            Else
+                ok = WbConditionsFO4.Params.TryGetValue(indiceDeFuncion, pares)
+            End If
+            Dim ordinal As Integer = -1
+            If ok AndAlso pares IsNot Nothing AndAlso cual >= 1 AndAlso cual <= pares.Length Then
+                ordinal = pares(cual - 1)
+            End If
+            Return RamaDeOrdinalDeParametro(ordinal, game)
+        End Function
+
+        ''' <summary>La rama de un ORDINAL del enum de tipos de parametro del juego.</summary>
+        Public Function RamaDeOrdinalDeParametro(ordinal As Integer, game As WbGame) As RamaDeParametro
+            Dim r As New RamaDeParametro With {.Ordinal = ordinal, .Clase = "crudo", .Nombre = "",
+                                               .Firmas = Array.Empty(Of String)()}
+            Dim clase As String = Nothing, nombre As String = Nothing
+            Dim firmas As String() = Nothing
+            Dim valores As IReadOnlyDictionary(Of Long, String) = Nothing
+            If game = WbGame.Skyrim Then
+                WbConditionsTES5.RamaClase.TryGetValue(ordinal, clase)
+                WbConditionsTES5.RamaNombre.TryGetValue(ordinal, nombre)
+                WbConditionsTES5.RamaFirmas.TryGetValue(ordinal, firmas)
+                WbConditionsTES5.RamaValores.TryGetValue(ordinal, valores)
+                r.ConSigno = WbConditionsTES5.RamaConSigno.Contains(ordinal)
+            Else
+                WbConditionsFO4.RamaClase.TryGetValue(ordinal, clase)
+                WbConditionsFO4.RamaNombre.TryGetValue(ordinal, nombre)
+                WbConditionsFO4.RamaFirmas.TryGetValue(ordinal, firmas)
+                WbConditionsFO4.RamaValores.TryGetValue(ordinal, valores)
+                r.ConSigno = WbConditionsFO4.RamaConSigno.Contains(ordinal)
+            End If
+            If Not String.IsNullOrEmpty(clase) Then r.Clase = clase
+            r.Nombre = If(nombre, "")
+            If firmas IsNot Nothing Then r.Firmas = firmas
+            r.Valores = valores
+            Return r
+        End Function
+
+        ''' <summary>indice de funcion de condicion -> los DOS ordinales de tipo de parametro que
+        ''' declara (`ParamType1`, `ParamType2`), tal cual los emitio el generador.
+        ''' <para>Existe para que un instrumento pueda preguntar «que funcion declara esta clase de
+        ''' parametro» en vez de llevar una lista a mano de 50 entradas.</para></summary>
+        Public Function ParametrosDeFuncionesDeCondicion(game As WbGame) _
+                                                        As IReadOnlyDictionary(Of Integer, Integer())
+            If game = WbGame.Skyrim Then Return WbConditionsTES5.Params
+            Return WbConditionsFO4.Params
+        End Function
+
+        ''' <summary>Las ramas que este juego NO pudo resolver del .pas, con el motivo. Hueco DECLARADO
+        ''' y no silencioso: hoy es una sola, el `wbVATSValueFunctionEnum` de Skyrim, que xEdit
+        ''' REFERENCIA en `GetVATSValue` y no DEFINE en ningun archivo de definiciones.</summary>
+        Public Function RamasDeParametroSinResolver(game As WbGame) As IReadOnlyList(Of String)
+            If game = WbGame.Skyrim Then Return WbConditionsTES5.RamasSinResolver
+            Return WbConditionsFO4.RamasSinResolver
+        End Function
+
+        ''' <summary>La RUTA del esquema hasta la rama de ese parametro, para leerla o escribirla.
+        ''' <para>Con el ultimo tramo puesto —el rotulo de la rama— la escritura pasa por
+        ''' <c>WbEdit.ReevaluarAlternativa</c>, que vuelve a correr el decider y MATERIALIZA la rama que
+        ''' la funcion nueva pide. Sin el tramo, la ruta cae en la rama que el arbol trae de la lectura,
+        ''' que con la funcion recien cambiada es la VIEJA: escribir ahi guarda el dato interpretado como
+        ''' otra cosa.</para></summary>
+        Public Function RutaDeParametroDeCondicion(cual As Integer, rama As RamaDeParametro) As String
+            If cual < 1 OrElse cual > 3 Then Return ""
+            Dim ruta = "CTDA\Parameter #" & cual.ToString(Globalization.CultureInfo.InvariantCulture)
+            If String.IsNullOrEmpty(rama.Nombre) Then Return ruta
+            Return ruta & "\" & rama.Nombre
+        End Function
+
+        ''' <summary>Los NOMBRES de los dos tipos de parametro de una funcion de condicion, de la
+        ''' tabla generada (<c>WbConditions*.Params</c>, los mismos ordinales que usa el lector para
+        ''' elegir la rama de la union). Cadena vacia = esa funcion no declara ese parametro.
+        ''' <para>⛔ Existe para que un editor de condiciones NO escriba su propia tabla de tipos: seria
+        ''' la segunda ley sobre "de que tipo es este parametro", y divergiria de la que decodifica.</para></summary>
+        Public Function TiposDeParametroDeCondicion(indiceDeFuncion As Integer, game As WbGame) _
+                                                    As (Uno As String, Dos As String)
+            Dim pares As Integer() = Nothing
+            Dim ok As Boolean
+            If game = WbGame.Skyrim Then
+                ok = WbConditionsTES5.Params.TryGetValue(indiceDeFuncion, pares)
+            Else
+                ok = WbConditionsFO4.Params.TryGetValue(indiceDeFuncion, pares)
+            End If
+            If Not ok OrElse pares Is Nothing OrElse pares.Length < 2 Then Return ("", "")
+            Return (NombreDeOrdinalDeParametro(pares(0), game), NombreDeOrdinalDeParametro(pares(1), game))
+        End Function
+
+        ''' <summary>El nombre del tipo de parametro para un ORDINAL del enum del juego. Sale del mismo
+        ''' orden que emitio el generador, sin lista a mano: el ordinal ES el indice.</summary>
+        Private Function NombreDeOrdinalDeParametro(ordinal As Integer, game As WbGame) As String
+            Dim orden = OrdenDeTiposDeParametro(game)
+            If ordinal <= 0 OrElse ordinal >= orden.Count Then Return ""
+            ' Se saca el prefijo "pt" para que el rotulo lea "Quest" y no "ptQuest".
+            Dim n = orden(ordinal)
+            If n.StartsWith("pt", StringComparison.Ordinal) Then n = n.Substring(2)
+            Return n
+        End Function
+
+        ''' <summary>El orden del enum de tipos de parametro del juego (50 en Fallout 4, 57 en
+        ''' Skyrim), emitido por el generador: el indice ES el ordinal.
+        ''' <para>Publica porque un instrumento tiene que poder recorrer TODAS las clases para
+        ''' afirmar algo sobre todas. Es la MISMA sede que usa la app, no una copia para probar.</para></summary>
+        Public Function OrdenDeTiposDeParametro(game As WbGame) As List(Of String)
+            If game = WbGame.Skyrim Then Return WbConditionsTES5.OrdenDeTipos
+            Return WbConditionsFO4.OrdenDeTipos
+        End Function
+
+        ''' <summary>Los nombres del enum <c>HDPT.Parts\NAM0</c> (tipo de archivo de parte) del juego
+        ''' pedido: <c>FmtFO4.F071</c> / <c>FmtTES5.F066</c>. Los tres valores son los mismos en los dos
+        ''' juegos; la funcion existe igual para no cablear el formateador desde la UI.
+        ''' <para>Medido sobre los dos corpus completos: CERO valores fuera del enum (Fallout 4 usa 1 y 2
+        ''' -119 y 2.447 entradas- y Skyrim los tres -707 / 4.874 / 1.749-). A diferencia del PNAM, aca la
+        ''' lista cerrada NO tiene contraejemplo; el control la representa igual con entrada extra, porque
+        ''' el dominio del campo es u32 y el corpus del usuario cambia cuando instala un mod.</para></summary>
+        Public Function NombresDeTipoDeParteDeHeadPart(game As WbGame) As IReadOnlyDictionary(Of Long, String)
+            If game = WbGame.Skyrim Then Return FmtTES5.F066
+            Return FmtFO4.F071
+        End Function
+
+        ''' <summary>Los nombres de <c>CTDA\Run On</c> del juego pedido, SACADOS del esquema
+        ''' (<c>FmtFO4.F017</c> / <c>FmtTES5.F025</c>) y no de una lista a mano.
+        ''' <para>⛔⛔ <b>Los dos juegos NO tienen la misma cantidad</b>: Fallout 4 declara ONCE (0-10,
+        ''' con <c>8 Command Target</c>, <c>9 Event Camera Ref</c> y <c>10 My Killer</c>) y Skyrim OCHO
+        ''' (0-7). La lista escrita a mano que estaba antes era la de Skyrim rotulada como la de Fallout 4,
+        ''' y por eso existe esta funcion: medido sobre los dos corpus completos, <b>177 CTDA de Fallout 4</b>
+        ''' llevan 8, 9 o 10 (163 + 4 + 10, en INFO 165 / IDLE 10 / PACK 1 / CPTH 1) y un control armado con
+        ''' ocho entradas no puede representarlos.</para>
+        ''' <para>⛔ Y el <c>Run On</c> entra en el decisor del tipo de parametro, asi que normalizarlo de
+        ''' 8 a 0 no pierde solo el campo: puede cambiar la RAMA con la que se interpretan los parametros.</para></summary>
+        Public Function NombresDeRunOnDeCondicion(game As WbGame) As IReadOnlyDictionary(Of Long, String)
+            If game = WbGame.Skyrim Then Return FmtTES5.F025
+            Return FmtFO4.F017
+        End Function
+
         Public Function SlotAcumulaVarios(tipo As Integer) As Boolean
             Return tipo = 5
         End Function
@@ -1288,6 +1525,106 @@ Namespace Canon
                 End Using
             Next
             Return total
+        End Function
+
+        ''' <summary>Pone en CERO los bytes del campo de esa ruta, CUALQUIERA SEA LA RAMA que el arbol
+        ''' decodifico. Distinto de escribir una propiedad: la propiedad sabe de que TIPO es el campo, y
+        ''' esto sirve justo cuando NO se sabe.
+        '''
+        ''' <para>Existe por el `CTDA`. Sus dos parametros son UNIONES cuya rama la elige un decisor a
+        ''' partir de la FUNCION, y la lista de ramas tiene decenas de miembros -- `Wb.Bytes`, enteros,
+        ''' floats, alias, eventos y una fila larga de `Wb.Fid`. Un editor que cambia la funcion tiene que
+        ''' dejar los parametros en cero o el record queda semanticamente FALSO, y poniendo en cero las
+        ''' ramas que el editor CONOCE se cubren solo unas pocas: si el record traia una que no modela,
+        ''' los bytes viejos sobreviven y se releen como lo que la funcion nueva declare.</para>
+        '''
+        ''' <para>El cero se deriva del VALOR que la hoja tiene puesto, no de una tabla de tipos: un
+        ''' arreglo de bytes vuelve del mismo largo y lleno de ceros, un numero vuelve cero de su propio
+        ''' tipo, un texto vuelve vacio. Asi no hay una lista de tipos que se desactualice.</para>
+        '''
+        ''' <para>Devuelve False si la ruta no resuelve o si no termina en una hoja editable: no crea
+        ''' nada. Poner en cero lo que no esta no tiene sentido -- ausente ya es menos que cero.</para></summary>
+        <Extension>
+        Public Function PonerCeroEnCampo(Of T As Class)(rec As T, ruta As String) As Boolean
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return False
+            Dim n = v.Node.ByFieldPath(ruta)
+            If n Is Nothing Then Return False
+            Dim hoja = WbEdit.HojaEditable(n)
+            If hoja Is Nothing Then Return False
+            Dim actual = hoja.Value
+            If TypeOf actual Is Byte() Then
+                Dim viejos = DirectCast(actual, Byte())
+                ' ⛔ `New Byte(n) {}` declara el INDICE MAXIMO, no el largo. Aca decia
+                '     New Byte(Math.Max(0, viejos.Length - 1)) {}
+                ' y con un arreglo VACIO el `Math.Max(0, -1)` daba 0, o sea un arreglo de UN byte --
+                ' justo lo contrario de lo que promete la frase «vuelve del mismo largo». Un byte de mas
+                ' en un `CTDA`, que es de tamano FIJO, corre todo lo que viene despues.
+                hoja.Value = If(viejos.Length = 0, Array.Empty(Of Byte)(), New Byte(viejos.Length - 1) {})
+            ElseIf TypeOf actual Is String Then
+                hoja.Value = ""
+            ElseIf actual IsNot Nothing Then
+                Try
+                    hoja.Value = Convert.ChangeType(0, actual.GetType())
+                Catch
+                    Return False
+                End Try
+            Else
+                Return False
+            End If
+            Return True
+        End Function
+
+        ''' <summary>El VALOR de la hoja de esa ruta, tal cual esta en el arbol, o Nothing si la ruta
+        ''' no resuelve o no termina en una hoja. No convierte: devuelve el objeto que la hoja tiene, que
+        ''' es del tipo que el esquema declaro (un UInteger para un FormID, un Single para un float, un
+        ''' Byte() para una rama cruda).
+        ''' <para>Existe para que un editor pueda mostrar una rama de la que no sabe el tipo de antemano
+        ''' —las 50 clases de parametro de una condicion— sin una escalera de casos por clase.</para></summary>
+        <Extension>
+        Public Function ValorDeCampo(Of T As Class)(rec As T, ruta As String) As Object
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return Nothing
+            Dim n = v.Node.ByFieldPath(ruta)
+            If n Is Nothing Then Return Nothing
+            Dim hoja = WbEdit.HojaEditable(n)
+            If hoja Is Nothing Then Return Nothing
+            Return hoja.Value
+        End Function
+
+        ''' <summary>Escribe <paramref name="valor"/> en la hoja de esa ruta, creandola si hace falta, y
+        ''' convirtiendolo al tipo que la hoja ya tiene puesto.
+        ''' <para>⛔ Va por <c>WbEdit.EnsureFieldPath</c> y NO por <c>ByFieldPath</c>: el <c>Ensure</c>
+        ''' corre <c>ReevaluarAlternativa</c>, que le vuelve a preguntar al decider que rama de una union
+        ''' corresponde y la MATERIALIZA si cambio. Con la otra puerta la escritura aterriza en la rama
+        ''' que el arbol trae de la lectura —la de ANTES del cambio— y el dato queda guardado como otra
+        ''' cosa, sin error y sin aviso.</para>
+        ''' <para>Devuelve False si la ruta no se pudo asegurar o si el valor no se pudo convertir al tipo
+        ''' de la hoja: no escribe a medias ni escribe otra cosa.</para></summary>
+        <Extension>
+        Public Function PonerValorEnCampo(Of T As Class)(rec As T, ruta As String, valor As Object) As Boolean
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return False
+            Dim n = WbEdit.EnsureFieldPath(v.Node, v.Context, ruta)
+            If n Is Nothing Then Return False
+            Dim hoja = WbEdit.HojaEditable(n)
+            If hoja Is Nothing Then Return False
+            ' ⛔ LA CONVERSION VA ACA. `WbEdit.PonerValor` asigna `hoja.Value = valor` tal cual,
+            ' sin mirar el tipo: dejarle un Long a una hoja de UInteger le cambia el TIPO al nodo y
+            ' el escritor emite por el tipo del valor. Se convierte al que la hoja YA tiene puesto,
+            ' que es el que el esquema declaro -- el mismo criterio que `PonerCeroEnCampo`.
+            Dim actual = hoja.Value
+            Dim aEscribir As Object = valor
+            If actual IsNot Nothing AndAlso valor IsNot Nothing AndAlso
+               actual.GetType() IsNot valor.GetType() Then
+                Try
+                    aEscribir = Convert.ChangeType(valor, actual.GetType(),
+                                                   Globalization.CultureInfo.InvariantCulture)
+                Catch
+                    Return False
+                End Try
+            End If
+            Return WbEdit.PonerValor(hoja, aEscribir)
         End Function
 
         ''' <summary>Saca del arbol el subrecord de esa firma. Es la operacion de "no lo declares":
