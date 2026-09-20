@@ -901,14 +901,21 @@ Namespace Canon
             Next
         End Sub
 
-        ''' <summary>Un struct NUEVO se crea con sus miembros OBLIGATORIOS, no con todos.
-        ''' <para>⛔ Aca se ignoraba <see cref="OptionalFromElement"/>, asi que un `TEND` recien creado
-        ''' salia con sus 7 bytes donde el origen traia 1 — y el gate lo reportaba como "no copiado",
-        ''' cuando en realidad no era PERDIDA sino FABRICACION. Es la misma ley que `WbRStructDef`
-        ''' ya aplica ("miembros de un struct NUEVO: solo los marcados Required") y la que
-        ''' <see cref="Parse"/> ya reconoce como legal al leer: si un struct con miembros opcionales
-        ''' puede LEERSE truncado, crearlo truncado tambien es legal, y es lo minimo.</para>
-        ''' <para>-1 (ningun miembro opcional) deja la conducta anterior intacta.</para></summary>
+        ''' <summary>Un struct NUEVO se crea con TODOS sus miembros, incluidos los opcionales.
+        ''' <para>⛔⛔ ACA DECIA LO CONTRARIO --"se crea con sus miembros OBLIGATORIOS, no con todos"-- y el
+        ''' codigo nunca lo hizo: era un comentario que prometia una guarda inexistente, de las que el proximo
+        ''' lector da por vigente. La afirmacion se saca, y con ella la tentacion de "arreglarlo" aca.</para>
+        ''' <para>⛔ POR QUE ESTA BIEN ASI. (1) Es lo que hace xEdit: `StructDoInit` (wbImplementation.pas) crea
+        ''' TODOS los miembros cuando no hay datos de origen; el `OptionalFromElement` lo aplica al COPIAR
+        ''' (`Assign`), que es otra cosa: ahi el destino hereda el largo de la FUENTE. (2) Truncar al nacer
+        ''' romperia en silencio a todo el que despues escriba un miembro opcional, porque `WbEdit.Escribir` NO
+        ''' puede crearlo: `WbEdit.MiembrosDe` sabe crecer un `RStruct` pero no un `Struct`. Medido: con el
+        ''' truncado puesto, las capas de tinte de PALETA salian sin color y las entradas nuevas de lista nivelada
+        ''' sin `Count` ni `Chance None`.</para>
+        ''' <para>⛔ Quien necesite el struct truncado lo pide EXPLICITO con `WbEdit.RecortarColaOpcional`. Ojo:
+        ''' ese recorte es de IDA --no hay forma de volver a hacer crecer un `Struct`-- y esta dicho en su propio
+        ''' doc. Aca se prometia un dual `AsegurarPrefijoDeStruct`: se escribio, no tuvo un solo llamador, no lo
+        ''' corrio ningun gate y se borro. La promesa se va con el.</para></summary>
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
             For Each m In Members

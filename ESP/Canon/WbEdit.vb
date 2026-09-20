@@ -622,6 +622,53 @@
             Return False
         End Function
 
+        ''' <summary>⛔⛔ RECORTA LA COLA OPCIONAL de una estructura de VALORES, dejándola en su prefijo
+        ''' obligatorio. Un <c>OptionalFrom(N)</c> se serializa como PREFIJO: los miembros 0..N-1 están siempre y
+        ''' los de N en adelante están o no están, pero nunca con un hueco en el medio.
+        ''' <para>⛔⛔ HOY ESTO ES UNA OPERACIÓN DE IDA, y hay que saberlo antes de usarla: el escritor NO tiene
+        ''' forma de volver a hacer crecer un <c>Struct</c> recortado — <see cref="MiembrosDe"/> sabe crecer un
+        ''' <c>RStruct</c> pero no un <c>Struct</c>, así que un `Escribir` sobre un miembro que se fue es un
+        ''' no-op MUDO. Acá hubo un dual (`AsegurarPrefijoDeStruct`) y se sacó: no tenía un solo llamador, no lo
+        ''' corría ningún gate, y su retorno confundía "ya estaba completo" con "no se pudo". Publicar en una
+        ''' librería que enlazan dos aplicaciones un primitivo que nunca corrió es peor que declarar la asimetría.
+        ''' El día que alguien necesite crecer, que lo escriba CON su llamador y su testigo.</para>
+        ''' <para>⛔ POR QUÉ NO SIRVE <see cref="QuitarCampo"/> PARA ESTO: esa sube hasta el SUBRECORD y se lleva
+        ''' el subrecord entero. Pedirle "que no esté el último miembro" borraba el `TEND` completo y la capa se
+        ''' quedaba sin intensidad ni color. MEDIDO con sonda sobre esta misma librería.</para>
+        ''' <para>⛔ ES OPT-IN, y por eso está acá y no en <c>WbStructDef.CreateDefault</c>. Crear los structs
+        ''' truncados POR DEFECTO cambiaría la regla de nacimiento de los 170 <c>OptionalFrom</c> del esquema
+        ''' (FO4 + SSE) y rompería en silencio a todo el que escriba un miembro opcional de un struct recién
+        ''' creado — hoy `Escribir` NO puede crearlo: <see cref="MiembrosDe"/> sólo sabe crecer `RStruct`, no
+        ''' `Struct`. Y además xEdit tampoco trunca al CREAR (<c>StructDoInit</c> crea todos los miembros cuando
+        ''' no hay datos de origen); donde sí aplica <c>OptionalFromElement</c> es al COPIAR (<c>Assign</c>), o
+        ''' sea "el destino hereda el largo de la fuente". Quien quiera esa ley la pide acá, explícito.</para>
+        ''' <para>Devuelve True si sacó algo. No hace nada si el nodo no es un struct con cola opcional.
+        ''' <b>Tampoco hace nada con `OptionalFrom(0)`</b>, que SÍ es un struct con cola opcional: ahí el prefijo
+        ''' obligatorio serían CERO miembros y el subrecord saldría con el cuerpo vacío, así que devuelve False.
+        ''' Es decir que el False mezcla TRES cosas: «no correspondía», «me negué» y «ya estaba recortado»
+        ''' --el `quitados = 0` de un nodo que ya viene con su prefijo, que es el caso MÁS frecuente del corpus
+        ''' (en Skyrim no hay una sola capa recortable y en FO4 dejan de haberla apenas se guarda una vez)--.
+        ''' Es la misma confusión por la que se descartó `AsegurarPrefijoDeStruct`; acá se deja a propósito, porque
+        ''' distinguirlos costaría cambiar la firma de una función `Public` de una librería que enlazan dos
+        ''' aplicaciones, y el único llamador de hoy descarta el retorno: la diferencia en el resultado es cero.</para></summary>
+        Public Function RecortarColaOpcional(nodo As WbNode) As Boolean
+            If nodo Is Nothing Then Return False
+            Dim sd = TryCast(nodo.Def, WbStructDef)
+            If sd Is Nothing OrElse sd.OptionalFromElement < 0 Then Return False
+            ' ⛔ PISO EN 1 MIEMBRO. Con `OptionalFrom(0)` el bucle sacaría TODOS los hijos y el subrecord se
+            ' emitiría con cuerpo de CERO bytes. El esquema declara cinco structs así --todos en Skyrim y todos
+            ' `AsRequired`: CSGD, CSME, CSCR, CSFL y el DATA de EFSH--, así que no es hipotético: es el segundo
+            ' dueño esperando. Hoy el único llamador es el `TEND`, que es `OptionalFrom(1)`, pero un primitivo
+            ' público de una librería que enlazan dos aplicaciones no se apoya en quién lo llama hoy.
+            If sd.OptionalFromElement < 1 Then Return False
+            Dim quitados As Integer = 0
+            While nodo.ChildCount > sd.OptionalFromElement
+                nodo.QuitarHijoEn(nodo.ChildCount - 1)
+                quitados += 1
+            End While
+            Return quitados > 0
+        End Function
+
         ''' <summary>Quita un elemento de un arreglo. Devuelve False si el índice no existe.
         ''' <para>El contador del arreglo, si el formato lo declara aparte, se recalcula solo al
         ''' escribir: no hay que acordarse de bajarlo a mano.</para></summary>
