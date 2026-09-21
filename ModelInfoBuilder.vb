@@ -177,7 +177,6 @@ Public Module ModelInfoBuilder
     ''' <summary>SYNC con <c>FO4UnifiedMaterial_Class.vb:3911-3912</c> (alla son <c>Private Const</c>):
     ''' la plantilla de la que hereda un material que no declara raiz.</summary>
     Private Const PLANTILLA_DEFECTO As String = "template/defaultTemplate_wet.bgsm"
-    Private Const PLANTILLA_PIEL As String = "template/SkinTemplate_Wet.bgsm"
     Private Const SENTINELA_WETNESS As Single = -1.0F
 
     '==============================================================================================
@@ -272,7 +271,7 @@ Public Module ModelInfoBuilder
                 ' load del modelo. Medido: recorrer la cadena para TODOS da 3,92 %; solo para el del
                 ' swap, 98,44 %.
                 If par.VinoDeSwap Then
-                    For Each raiz In CadenaDeRaices(par.Mat, forma, nif)
+                    For Each raiz In CadenaDeRaices(par.Mat, forma, nif, par.VinoDeSwap)
                         If vistosMat.Add(raiz) Then d.Materiales.Add(EntradaDeRuta(raiz))
                     Next
                 End If
@@ -380,7 +379,8 @@ Public Module ModelInfoBuilder
     ''' Caso que lo mostro: <c>ARMO 001C4BE8 ClothesEyeGlasses</c>, cuyo bloque lista la raiz del
     ''' <c>.bgsm</c> y NO la del <c>.bgem</c>.</para></summary>
     Private Function CadenaDeRaices(mat As FO4UnifiedMaterial_Class, forma As INiShape,
-                                    nif As Nifcontent_Class_Manolo) As List(Of String)
+                                    nif As Nifcontent_Class_Manolo,
+                                    vinoDeSwap As Boolean) As List(Of String)
         Dim outp As New List(Of String)
         If mat Is Nothing Then Return outp
         Try
@@ -389,19 +389,25 @@ Public Module ModelInfoBuilder
         End Try
 
         Dim eff = Wetness(mat)
-        Dim ruta = PrimeraRaiz(mat, forma, nif)
+        Dim ruta = PrimeraRaiz(mat, forma, nif, vinoDeSwap)
         Dim vistos As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim defaultUsado = False
         Dim salto = 0
         While salto < 16 AndAlso eff.Any(Function(v) v = SENTINELA_WETNESS)
             If String.IsNullOrEmpty(ruta) Then
                 If defaultUsado Then Exit While
-                Dim esPiel = False
-                Try
-                    esPiel = mat.Facegen OrElse mat.SkinTint
-                Catch ex As Exception
-                End Try
-                ruta = If(esPiel, PLANTILLA_PIEL, PLANTILLA_DEFECTO)
+                ' ⛔⛔ LA PLANTILLA IMPLICITA ES SIEMPRE LA DEFAULT, y aca esto SE APARTA A PROPOSITO
+                ' de `FO4UnifiedMaterial_Class.ResolveEffectiveWetness` (…vb:3932), que para un material
+                ' con `Facegen`/`SkinTint` usa `SkinTemplate_Wet`. Las dos cosas son ciertas porque
+                ' contestan preguntas distintas: alla se resuelve QUE MOJADO pinta el motor —y esa rama
+                ' esta verificada con GhoulMatProbe—; aca se replica QUE ARCHIVOS ABRIO EL CK para
+                ' escribir el bloque. Medido sobre la poblacion limpia de Fallout 4: con la rama de piel
+                ' 7.800 equivalentes, sin ella 7.802.
+                '   ⛔ Y NO es "no hay plantilla implicita": sacarla del todo derrumba a 7.682 (−118),
+                ' asi que la plantilla va — lo que no va es la variante de piel.
+                ' Caso testigo `ARMA 0303D2AC DLC03_AAMutatedWolf_Red`: `mutatedwof_redalpha.bgsm` no
+                ' declara raiz y trae `SkinTint`, y el bloque del archivo NO lista `SkinTemplate_Wet`.
+                ruta = PLANTILLA_DEFECTO
                 defaultUsado = True
             End If
             Dim clave = FO4UnifiedMaterial_Class.CorrectMaterialPath(ruta)
@@ -437,7 +443,7 @@ Public Module ModelInfoBuilder
     ''' De 341 bloques a los que les faltaba la raiz, 247 la traian en el shader y 94 solo en el
     ''' material, asi que quedarse con una sola fuente deja fuera a los otros.</summary>
     Private Function PrimeraRaiz(mat As FO4UnifiedMaterial_Class, forma As INiShape,
-                                 nif As Nifcontent_Class_Manolo) As String
+                                 nif As Nifcontent_Class_Manolo, vinoDeSwap As Boolean) As String
         Dim delArchivo = "", delShader = ""
         Try
             delArchivo = If(mat.RootMaterialPath, "")
@@ -447,6 +453,13 @@ Public Module ModelInfoBuilder
             delShader = If(TryCast(nif.GetShader(forma), INiShader)?.RootMaterialName, "")
         Catch ex As Exception
         End Try
+        ' ⛔ El respaldo del shader describe al material que la FORMA declara. Si un material swap
+        ' lo reemplazo, el que el motor resuelve es OTRO archivo y su raiz es la suya; la del shader
+        ' quedo hablando del original. Medido sobre la poblacion limpia de Fallout 4: usarlo igual
+        ' cuesta 1 bloque (7.799 -> 7.800 equivalentes). Caso testigo
+        ' `ARMA 001236AC AAClothesInstituteLabCoatDivisionHead`, donde el bloque del archivo trae
+        ' `DefaultTemplate_Wet` y el shader hacia poner `OutfitTemplate_Wet`.
+        If vinoDeSwap Then delShader = ""
         Return If(delArchivo <> "", delArchivo, delShader)
     End Function
 

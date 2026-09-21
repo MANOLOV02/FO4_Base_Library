@@ -60,17 +60,30 @@
             Return _plugins.ResolveLocalizedString(_rec.SourcePluginName, id, tabla)
         End Function
 
-        ''' <summary>En qué tabla vive el texto de este campo.
+        ''' <summary>⛔⛔ EN QUÉ TABLA VIVE EL TEXTO DE UN CAMPO — <b>LA SEDE ÚNICA DE ESA LEY</b>.
         ''' <para>Depende del par (tipo de record, subrecord), no del valor. Son cuatro casos y el
-        ''' resto va a la tabla general.</para></summary>
-        Private Function TablaDe(node As WbNode) As LocalizedStringTableKind
-            Dim sub_ = FirmaDelSubrecord(node)
-            Dim recSig = If(_rec Is Nothing, "", _rec.Header.Signature)
-
-            If sub_ = "DESC" AndAlso recSig <> "LSCR" Then Return LocalizedStringTableKind.DLStrings
-            If sub_ = "CNAM" AndAlso (recSig = "QUST" OrElse recSig = "BOOK") Then Return LocalizedStringTableKind.DLStrings
-            If recSig = "INFO" AndAlso sub_ <> "RNAM" Then Return LocalizedStringTableKind.ILStrings
+        ''' resto va a la tabla general.</para>
+        ''' <para>⛔ ES <c>Public Shared</c> Y TOMA LAS DOS FIRMAS, no un nodo, A PROPÓSITO: el que necesita
+        ''' la ley no siempre tiene un <see cref="WbNode"/> en la mano. El caso medido es
+        ''' <c>Tools\StringsResolverGate</c>, que recorre subrecords crudos y llamaba a
+        ''' <c>PluginManager.ResolveFieldString</c> <b>sin</b> la tabla — o sea, pidiendo SIEMPRE la general.
+        ''' MEDIDO el 21-sep: con la tabla general daba <b>3.800</b> textos «rotos» en Fallout 4 y <b>2.150</b>
+        ''' en Skyrim; con esta ley, <b>7</b> y <b>32</b>. Las otras 3.793 resuelven a TEXTO REAL (se verificó
+        ''' que pasan a texto y no a vacío), o sea que el 99,8 % de ese rojo lo fabricaba el llamador.</para>
+        ''' <para>⛔ Y POR ESO NO SE COPIA: un segundo dueño de esta tabla es un dueño que el día que la ley
+        ''' cambie se queda atrás y miente en silencio — que es exactamente lo que pasó. El que la necesite la
+        ''' LLAMA.</para></summary>
+        Public Shared Function TablaDeCampo(recSig As String, subSig As String) As LocalizedStringTableKind
+            If subSig = "DESC" AndAlso recSig <> "LSCR" Then Return LocalizedStringTableKind.DLStrings
+            If subSig = "CNAM" AndAlso (recSig = "QUST" OrElse recSig = "BOOK") Then Return LocalizedStringTableKind.DLStrings
+            If recSig = "INFO" AndAlso subSig <> "RNAM" Then Return LocalizedStringTableKind.ILStrings
             Return LocalizedStringTableKind.Strings
+        End Function
+
+        ''' <summary>La misma ley, para el que SÍ tiene el nodo. ⛔ No repite las condiciones: las delega en
+        ''' <see cref="TablaDeCampo"/>. Lo único suyo es de dónde saca las dos firmas.</summary>
+        Private Function TablaDe(node As WbNode) As LocalizedStringTableKind
+            Return TablaDeCampo(If(_rec Is Nothing, "", _rec.Header.Signature), FirmaDelSubrecord(node))
         End Function
 
         ''' <summary>Firma del subrecord del que cuelga el nodo, subiendo hasta encontrarla.</summary>
