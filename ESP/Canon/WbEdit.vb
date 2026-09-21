@@ -307,6 +307,129 @@
             Return Nothing
         End Function
 
+        ''' <summary>⛔ LA RAMA VIGENTE DE UNA UNIÓN, SIN NOMBRE DE RAMA DE POR MEDIO: le vuelve a
+        ''' preguntar al decisor qué rama corresponde AHORA y la materializa si el árbol tiene otra.
+        ''' Devuelve la hoja de la rama vigente, o <c>Nothing</c> si no se pudo asegurar.
+        '''
+        ''' <para>POR QUÉ EXISTE, y no alcanzaba con <see cref="ReevaluarAlternativa"/>. Esa se llama
+        ''' desde <c>Asegurar</c> DESPUÉS del paso que pregunta «¿el tramo nombra al nodo en el que ya
+        ''' estamos?», y ese paso GANA. Entonces, en una unión cuya rama se llama IGUAL que la unión, la
+        ''' re-decisión NUNCA corre: la escritura aterriza en la rama VIEJA y el llamador recibe
+        ''' <c>True</c>. Medido sobre los dos esquemas generados: de 502 uniones declaradas, <b>161 tienen
+        ''' una rama homónima</b> (32 %), y 78 de ésas son de clase <c>Fid</c>. Las dos del <c>CTDA</c> son
+        ''' <c>Reference</c> y <c>Parameter #3</c>.</para>
+        '''
+        ''' <para>⛔ Y para una rama <c>Fid</c> el daño no es de interpretación sino de REFERENCIA: un
+        ''' FormID escrito en un nodo cuya def es <c>WbIntegerDef</c> no lo ve
+        ''' <see cref="WbFormIdWalker"/> —cuya garantía es estructural, por la def y no por el nombre—,
+        ''' así que no se remapea al índice de master del archivo destino y no entra en la pasada que
+        ''' DESCUBRE los masters. Resultado: la referencia apunta a otro record y la lista de masters sale
+        ''' corta.</para>
+        '''
+        ''' <para>LA INVARIANTE ES «el hijo actual no es <c>Members(idx)</c>», no «el índice cambió».
+        ''' Un árbol ya escrito por la puerta rota tiene un hijo cuya def NO es la de su
+        ''' <c>UnionBranch</c>, con el índice coincidiendo; con la guarda por índice no se repararía nada
+        ''' y la escritura siguiente volvería a caer en el hijo viejo. Con esta invariante la función
+        ''' además CURA lo que la sesión ya corrompió.</para>
+        '''
+        ''' <para>Un nodo que NO es una unión se devuelve tal cual: así el llamador puede pasar cada nodo
+        ''' de una ruta sin saber cuáles son uniones.</para>
+        '''
+        ''' <para>⛔ SE NIEGA si el nodo todavía no está cableado a su padre: el decisor busca los
+        ''' discriminadores entre los HERMANOS (<c>Sibling(parent, …)</c>), y sin padre no los encuentra,
+        ''' devuelve 0 y se materializaría la rama 0 — silenciosamente la equivocada.</para>
+        '''
+        ''' <para>Es ADITIVA a propósito: no cambia la conducta de ningún llamador de
+        ''' <c>Escribir</c>/<c>PonerPresencia</c>/<c>Asegurar</c>. Reordenar los pasos de
+        ''' <c>Asegurar</c> —que arreglaría las 161 uniones de una vez— es alcance de las DOS
+        ''' aplicaciones y de todos los records, y quedó como ola aparte con su propio A/B por decisión
+        ''' del usuario.</para></summary>
+        ''' <summary>La <c>Def</c> de la rama que el DECISOR elige para esa union con el estado ACTUAL del
+        ''' record, SIN materializar nada. <c>Nothing</c> si el nodo no es una union, si no tiene padre o si
+        ''' el decisor sale de rango.
+        ''' <para>⛔ ES DISTINTA DE MIRAR EL HIJO PUESTO. El arbol se materializa al parsear o al crear, no
+        ''' de forma perezosa: un elemento recien agregado tiene la rama que correspondia cuando su
+        ''' discriminador valia cero, y sigue teniendola despues de que alguien escriba el discriminador.
+        ''' Leer el hijo devuelve esa rama RANCIA; esta funcion devuelve la que corresponde AHORA.</para>
+        ''' <para>Existe para poder MEDIR sin tocar: un instrumento que llamara a
+        ''' <see cref="AsegurarRamaVigente"/> para averiguarlo estaria cambiando el arbol que mide.</para></summary>
+        Public Function RamaQueElDecisorElige(nodo As WbNode, ctx As WbContext) As WbDef
+            If nodo Is Nothing Then Return Nothing
+            Dim un = TryCast(nodo.Def, WbUnionDef)
+            If un Is Nothing OrElse un.Decider Is Nothing Then Return Nothing
+            If nodo.Parent Is Nothing Then Return Nothing
+            Dim idx = un.Decider(ctx, Nothing, 0, 0, nodo.Parent)
+            If idx < 0 OrElse idx >= un.Members.Length Then Return Nothing
+            Return un.Members(idx)
+        End Function
+
+        Public Function AsegurarRamaVigente(nodo As WbNode, ctx As WbContext) As WbNode
+            If nodo Is Nothing Then Return Nothing
+            Dim un = TryCast(nodo.Def, WbUnionDef)
+            If un Is Nothing OrElse un.Decider Is Nothing Then Return nodo
+
+            ' Ver el ⛔ del doc: sin padre el decisor no ve los discriminadores y contestaría 0.
+            If nodo.Parent Is Nothing Then Return Nothing
+
+            Dim idx = un.Decider(ctx, Nothing, 0, 0, nodo.Parent)
+            If idx < 0 OrElse idx >= un.Members.Length Then Return Nothing
+            Dim elegida = un.Members(idx)
+            If elegida Is Nothing Then Return Nothing
+
+            ' La invariante: el hijo que está puesto tiene que ser el de ESTA rama. Se compara la `Def`
+            ' por REFERENCIA porque las `Def` del esquema son instancias compartidas, una por rama.
+            If nodo.ChildCount = 1 AndAlso nodo.Children(0).Def Is elegida Then
+                nodo.UnionBranch = idx
+                Return nodo.Children(0)
+            End If
+
+            Dim nuevo = elegida.CreateDefault(ctx)
+            If nuevo Is Nothing Then Return Nothing
+            nuevo.Parent = nodo
+            nodo.LimpiarHijos()
+            nodo.AddChild(nuevo)
+            nodo.UnionBranch = idx
+            Return nuevo
+        End Function
+
+        ''' <summary>Asegura la ruta y, en cada nodo de UNIÓN del camino, deja puesta la rama que el
+        ''' decisor elige AHORA (<see cref="AsegurarRamaVigente"/>). Devuelve el nodo final.
+        ''' <para>⛔ La ruta NO nombra ramas. Eso es el punto: nombrarlas es lo que hacía que
+        ''' <c>Asegurar</c> las reconociera por nombre —y lo que rompía cuando el nombre de la rama era el
+        ''' de la unión—. Acá la rama la elige el DECISOR, que es de quien es la ley; el llamador sólo
+        ''' dice hasta qué campo quiere llegar.</para>
+        ''' <para>Una ruta que termina EN la unión devuelve la hoja de su rama vigente, que es lo que
+        ''' <see cref="HojaEditable"/> va a escribir.</para>
+        '''
+        ''' <para>⛔⛔ EL <c>Nothing</c> DE ESTA FUNCIÓN SIGNIFICA «NO ESCRIBÍ, Y PUEDE QUE ADEMÁS HAYA
+        ''' REEMPLAZADO UNA RAMA». <see cref="AsegurarRamaVigente"/> hace <c>LimpiarHijos</c> +
+        ''' <c>AddChild</c> ANTES de que el resto de la ruta se resuelva, y no hay marcha atrás: si un
+        ''' tramo posterior falla, la rama vieja ya se destruyó con su dato. Es un contrato PEOR que el
+        ''' de <c>EnsureFieldPath</c>, que al fallar deshacía el miembro que él mismo había creado, y
+        ''' por eso se escribe: es la diferencia entre un <c>False</c> que el llamador puede ignorar y
+        ''' uno que no.</para>
+        '''
+        ''' <para>Para las rutas del <c>CTDA</c> es inalcanzable, y se puede decir por qué: son de DOS
+        ''' tramos, y en un <c>StructV</c> de tamaño fijo los miembros SIEMPRE están — los 263.461
+        ''' <c>CTDA</c> de los dos corpus miden 32 bytes, así que el paso que crea un miembro que falta
+        ''' no se alcanza nunca. Lo mismo vale para el backtracking que se pierde al asegurar tramo por
+        ''' tramo en vez de pasarle la ruta entera a <c>Asegurar</c>: es la marcha atrás de un paso que
+        ''' no corre.</para></summary>
+        Public Function AsegurarRutaConRamasVigentes(raiz As WbNode, ctx As WbContext, ruta As String) As WbNode
+            If raiz Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return Nothing
+            Dim cur = AsegurarRamaVigente(raiz, ctx)
+            If cur Is Nothing Then Return Nothing
+            For Each tramo In ruta.Split(SEPARADOR)
+                Dim t = tramo.Trim()
+                If t.Length = 0 Then Continue For
+                Dim sig = Asegurar(cur, ctx, New String() {t}, 0)
+                If sig Is Nothing Then Return Nothing
+                cur = AsegurarRamaVigente(sig, ctx)
+                If cur Is Nothing Then Return Nothing
+            Next
+            Return cur
+        End Function
+
         ''' <summary>Vuelve a decidir qué rama de una alternativa corresponde, y la cambia si hace falta.
         '''
         ''' <para>La rama la elige otro campo del record. Al armar un elemento nuevo ese campo todavía

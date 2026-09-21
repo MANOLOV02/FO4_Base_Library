@@ -134,6 +134,114 @@ Namespace Canon
     ''' remapper de índices de master sólo recorre ese otro tipo. Es el caso de
     ''' <c>MGEF.ResistValue</c> — referencia en Fallout 4, entero con enum en Skyrim — y el de
     ''' <c>WEAP.Skill</c>.</para></summary>
+    ''' <summary>⛔ ¿LOS BYTES QUE HAY SIGUEN SIGNIFICANDO LO MISMO CON LA OTRA <c>Def</c>?
+    ''' Es la pregunta que decide si un cambio de rama de unión OBLIGA a resetear el campo, o si el dato
+    ''' sigue siendo válido y resetearlo lo destruiría de gusto.
+    '''
+    ''' <para>⛔ NO ES «CAMBIÓ EL ÍNDICE DE RAMA». De las once ramas de <c>Parameter #3</c> del
+    ''' <c>CTDA</c> de Fallout 4, <b>NUEVE son <c>Int("Parameter #3", s32)</c> idénticas</b>; el índice 5
+    ''' es <c>Int("Quest Alias", s32, "wbConditionAliasToStr")</c> —mismo tipo, sólo cambia el formateador
+    ''' de display— y el 7 es <c>Enumerated("Event Data", s32)</c>. Así que un <c>Run On</c> de 0 a 1
+    ''' cambia el índice y NO cambia nada: resetear ahí destruye un dato que seguía significando lo mismo.
+    ''' El único par de esa unión que reinterpreta de verdad es 5 ↔ 7.</para>
+    '''
+    ''' <para>⛔ TAMPOCO ES «LA CLASE Y EL ANCHO». <see cref="WbIntegerDef"/> cubre también los
+    ''' enumerados: <c>Wb.Enumerated</c> devuelve <c>New WbIntegerDef(name, t, "wbEnum", Nothing, values)</c>
+    ''' y NO existe un <c>WbEnumeratedDef</c>. Comparando clase + <c>IntType</c>, <c>Int s32</c> y
+    ''' <c>Enumerated s32</c> darían iguales — que es exactamente el par que SÍ hay que resetear. El
+    ''' término portante es el DICCIONARIO de valores, y tiene que ser conciente de <c>Nothing</c>: el
+    ''' <c>Int</c> lo trae en <c>Nothing</c> y el <c>Enumerated</c> con diccionario, así que «los dos
+    ''' vacíos ⇒ iguales» vuelve a fallar el mismo par. Se compara por REFERENCIA porque las tablas del
+    ''' esquema son instancias compartidas a propósito (la misma <c>FmtFO4.Fnnn</c> en dos ramas).</para>
+    '''
+    ''' <para>⛔ Y EL NOMBRE DEL FORMATEADOR NO ENTRA. Es display: <c>wbConditionAliasToStr</c> y
+    ''' <c>wbConditionStringToStr</c> son callbacks de <c>ctToEditValue</c>/<c>ctToSummary</c>/
+    ''' <c>ctToSortKey</c>. Si entrara, el par <c>Quest Alias</c> → <c>Parameter #3</c> (mismo
+    ''' <c>Int s32</c>, formateador distinto) resetearía y destruiría el índice de alias. Se parece a parte
+    ''' del tipo y no lo es.</para>
+    '''
+    ''' <para>⛔ Y LA PSEUDO-FIRMA <c>NULL</c> SE EXCLUYE DEL CONJUNTO DE UN <c>Fid</c>. Dos ramas reales
+    ''' de la misma unión son <c>Wb.Fid("Faction","FACT")</c> y <c>Wb.Fid("Faction","FACT","NULL")</c>:
+    ''' mismo nombre, misma clase, mismo ancho, y los conjuntos difieren SÓLO en <c>NULL</c>, que no es un
+    ''' tipo de record sino el permiso de dejarlo en cero. Comparando los conjuntos crudos, pasar de una a
+    ''' otra resetearía y tiraría una referencia <c>FACT</c> perfectamente válida.</para>
+    '''
+    ''' <para>Dos <c>Def</c> que son el MISMO objeto son trivialmente el mismo dominio. Una clase que esta
+    ''' función no conoce devuelve False —dominio distinto—: ante la duda se resetea, que pierde un dato,
+    ''' y no se conserva, que escribiría bytes falsos.</para></summary>
+    Public Module WbDominio
+
+        Public Function MismoDominio(a As WbDef, b As WbDef) As Boolean
+            If a Is b Then Return True
+            If a Is Nothing OrElse b Is Nothing Then Return False
+
+            Dim ia = TryCast(a, WbIntegerDef)
+            Dim ib = TryCast(b, WbIntegerDef)
+            If ia IsNot Nothing OrElse ib IsNot Nothing Then
+                If ia Is Nothing OrElse ib Is Nothing Then Return False
+                If ia.IntType <> ib.IntType Then Return False
+                ' El diccionario es el termino PORTANTE: es lo unico que distingue `Int s32` de
+                ' `Enumerated s32`. Por referencia y conciente de Nothing (ver el ⛔ del doc).
+                Return ia.EnumValues Is ib.EnumValues
+            End If
+
+            Dim fa = TryCast(a, WbFormIdDef)
+            Dim fb = TryCast(b, WbFormIdDef)
+            If fa IsNot Nothing OrElse fb IsNot Nothing Then
+                If fa Is Nothing OrElse fb Is Nothing Then Return False
+                Return MismoConjuntoDeFirmas(fa, fb)
+            End If
+
+            Dim ba = TryCast(a, WbByteArrayDef)
+            Dim bb = TryCast(b, WbByteArrayDef)
+            If ba IsNot Nothing OrElse bb IsNot Nothing Then
+                If ba Is Nothing OrElse bb Is Nothing Then Return False
+                ' El `Size` entra: `Bytes(4)` y `Bytes(8)` son otro dominio Y otro tamano. Y el -1
+                ' (`Wb.Bytes(name)` sin tamano, «lo que quede del subrecord») no es «igual a otro -1»
+                ' sin mas: sin largo declarado no hay dominio con el que comparar.
+                If ba.Size < 0 OrElse bb.Size < 0 Then Return False
+                Return ba.Size = bb.Size
+            End If
+
+            If TypeOf a Is WbFloatDef Then Return TypeOf b Is WbFloatDef
+            If TypeOf b Is WbFloatDef Then Return False
+
+            ' Los tres de texto son un dominio entre si SOLO si son la misma clase y el mismo largo
+            ' fijo: un zstring y un texto de largo fijo no son lo mismo.
+            Dim sa = TryCast(a, WbStringDef)
+            Dim sb = TryCast(b, WbStringDef)
+            If sa IsNot Nothing OrElse sb IsNot Nothing Then
+                If sa Is Nothing OrElse sb Is Nothing Then Return False
+                Return sa.FixedLength = sb.FixedLength
+            End If
+
+            ' ⚠ Clase no conocida: dominio DISTINTO. Ante la duda se resetea --que pierde un dato-- y no
+            ' se conserva, que escribiria bytes que significan otra cosa.
+            Return False
+        End Function
+
+        ''' <summary>Los dos <c>Fid</c> aceptan el mismo conjunto de destinos, SIN contar la pseudo-firma
+        ''' <c>NULL</c>. Ver el ⛔ de <see cref="MismoDominio"/>.</summary>
+        Private Function MismoConjuntoDeFirmas(a As WbFormIdDef, b As WbFormIdDef) As Boolean
+            Dim sa = SinNull(a.AllowedSignatures)
+            Dim sb = SinNull(b.AllowedSignatures)
+            ' Los dos sin restriccion (`wbFormID` pelado) son el mismo dominio: cualquier record.
+            If sa.Count = 0 OrElse sb.Count = 0 Then Return sa.Count = sb.Count
+            If sa.Count <> sb.Count Then Return False
+            Return sa.SetEquals(sb)
+        End Function
+
+        Private Function SinNull(firmas As String()) As HashSet(Of String)
+            Dim r As New HashSet(Of String)(StringComparer.Ordinal)
+            If firmas Is Nothing Then Return r
+            For Each f In firmas
+                If Not String.Equals(f, "NULL", StringComparison.Ordinal) Then r.Add(f)
+            Next
+            Return r
+        End Function
+
+    End Module
+
     Public NotInheritable Class WbIntegerDef
         Inherits WbValueDef
 
@@ -439,6 +547,19 @@ Namespace Canon
             Return PluginEncodingSettings.DecodeGeneral(data, o, len)
         End Function
 
+        ''' <summary>Los BYTES que este campo va a escribir para <paramref name="texto"/>, que es la
+        ''' unica medida comparable contra <see cref="FixedLength"/>.
+        ''' <para>⛔ NO es <c>texto.Length</c>: <see cref="Encode"/> pasa por el codepage del archivo
+        ''' (<c>EncodeTranslatable</c>/<c>EncodeGeneral</c>), asi que en un codepage multibyte los
+        ''' caracteres y los bytes NO coinciden y un chequeo por caracteres deja pasar justo el caso
+        ''' que importa.</para>
+        ''' <para>Publica porque el validador vive AFUERA --un editor decide antes de escribir-- y
+        ''' <see cref="Encode"/> es privada: sin esta puerta, el de afuera duplicaria <c>Encode</c>,
+        ''' que seria la segunda ley sobre como se codifica el texto de un campo.</para></summary>
+        Public Function LongitudCodificada(texto As String, ctx As WbContext) As Integer
+            Return Encode(texto, ctx).Length
+        End Function
+
         Private Function Encode(s As String, ctx As WbContext) As Byte()
             If String.IsNullOrEmpty(s) Then Return Array.Empty(Of Byte)()
             If Translatable Then
@@ -455,6 +576,28 @@ Namespace Canon
                                     node.RawOverride, Encode(texto, ctx))
             If FixedLength > 0 Then
                 Dim buf(FixedLength - 1) As Byte
+                ' ⛔⛔ EL TRUNCADO NO ES SILENCIOSO. El `Math.Min` de abajo recorta y sigue, y en estos
+                ' campos el recorte produce un dato VALIDO Y EQUIVOCADO, que es peor que uno invalido:
+                ' los `Subtype`/`Name` de 4 son 4CC --un texto de 5 se corta a 4 y queda OTRO 4CC
+                ' legitimo-- y los `Level 0..3` del `STAT` son rutas de 260 (MAX_PATH), donde el corte
+                ' deja una ruta que apunta a otro archivo o a ninguno.
+                ' Medidos recorriendo el ESQUEMA (`AnchoFijoGate`, EJE 1): 160 campos de ancho fijo en
+                ' Fallout 4 y 86 en Skyrim. ⛔ Y el numero importa de donde sale: un grep del fuente
+                ' generado da 10 y 9, porque el `Extension` (4) del bloque `Model Information` se
+                ' ESCRIBE una vez y se INSTANCIA en ~150 records. Lo que puede truncar son las
+                ' instancias, no las lineas del fuente.
+                ' Los tamaños son dos: 4 (los `Extension` del MODT, los `Subtype`/`Name`, todos 4CC) y
+                ' 260 (los `Level 0..3` del STAT, o sea MAX_PATH).
+                ' `WbStringDef` es la UNICA clase con `FixedLength`, asi que esto los cubre todos.
+                ' ⛔ Y NO TIRA: reporta y escribe. Tirar aca dejaria el `.esp` a medio escribir, que es
+                ' el modo de falla ya cerrado para `WbFormIdDef`. El canal es el que el arbol YA usa
+                ' desde un `Emit` --`WbLStringDef.Emit` reporta igual, ver mas abajo en este archivo--
+                ' y `SerializarRecord` lo vuelca por `VolcarAvisos`.
+                If body.Length > FixedLength Then
+                    ctx.Report(WbFindingKind.Tessellation, node.Path,
+                               $"texto de {body.Length} bytes en un campo de ancho fijo de " &
+                               $"{FixedLength}: se escribieron los primeros y el resto SE PERDIO")
+                End If
                 Buffer.BlockCopy(body, 0, buf, 0, Math.Min(body.Length, FixedLength))
                 bw.Write(buf)
             Else

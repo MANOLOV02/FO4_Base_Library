@@ -1084,7 +1084,7 @@ Namespace Canon
             {10, New Dictionary(Of Long, String) From {{0L, "Good"}, {1L, "Neutral"}, {2L, "Evil"}, {3L, "Very Good"}, {4L, "Very Evil"}}},
             {11, New Dictionary(Of Long, String) From {{88L, "X"}, {89L, "Y"}, {90L, "Z"}}},
             {12, New Dictionary(Of Long, String) From {{0L, "Left"}, {1L, "Right"}, {2L, "Voice"}, {3L, "Instant"}}},
-            {13, New Dictionary(Of Long, String) From {{-1L, "None"}, {0L, "Steal"}, {1L, "Pickpocket"}, {2L, "Trespass"}, {3L, "Attack"}, {4L, "Murder"}}},
+            {13, New Dictionary(Of Long, String) From {{0L, "Steal"}, {1L, "Pickpocket"}, {2L, "Trespass"}, {3L, "Attack"}, {4L, "Murder"}}},
             {14, New Dictionary(Of Long, String) From {{0L, "None"}, {1L, "Goo Start"}, {2L, "Goo End"}, {3L, "Disintegrate Start"}, {4L, "Disintegrate End"}}},
             {15, New Dictionary(Of Long, String) From {{0L, "Activator"}, {1L, "Armor"}, {2L, "Book"}, {3L, "Container"}, {4L, "Door"}, {5L, "Ingredient"}, {6L, "Light"}, {7L, "MiscItem"}, {8L, "Static"}, {9L, "Grass"}, {10L, "Tree"}, {12L, "Weapon"}, {13L, "Actor"}, {14L, "LeveledCharacter"}, {15L, "Spell"}, {16L, "Enchantment"}, {17L, "Potion"}, {18L, "LeveledItem"}, {19L, "Key"}, {20L, "Ammo"}, {21L, "Flora"}, {22L, "Furniture"}, {23L, "Sound Marker"}, {24L, "LandTexture"}, {25L, "CombatStyle"}, {26L, "LoadScreen"}, {27L, "LeveledSpell"}, {28L, "AnimObject"}, {29L, "WaterType"}, {30L, "IdleMarker"}, {31L, "EffectShader"}, {32L, "Projectile"}, {33L, "TalkingActivator"}, {34L, "Explosion"}, {35L, "TextureSet"}, {36L, "Debris"}, {37L, "MenuIcon"}, {38L, "FormList"}, {39L, "Perk"}, {40L, "BodyPartData"}, {41L, "AddOnNode"}, {42L, "MovableStatic"}, {43L, "CameraShot"}, {44L, "ImpactData"}, {45L, "ImpactDataSet"}, {46L, "Quest"}, {47L, "Package"}, {48L, "VoiceType"}, {49L, "Class"}, {50L, "Race"}, {51L, "Eyes"}, {52L, "HeadPart"}, {53L, "Faction"}, {54L, "Note"}, {55L, "Weather"}, {56L, "Climate"}, {57L, "ArmorAddon"}, {58L, "Global"}, {59L, "Imagespace"}, {60L, "Imagespace Modifier"}, {61L, "Encounter Zone"}, {62L, "Message"}, {63L, "Constructible Object"}, {64L, "Acoustic Space"}, {65L, "Ragdoll"}, {66L, "Script"}, {67L, "Magic Effect"}, {68L, "Music Type"}, {69L, "Static Collection"}, {70L, "Keyword"}, {71L, "Location"}, {72L, "Location Ref Type"}, {73L, "Footstep"}, {74L, "Footstep Set"}, {75L, "Material Type"}, {76L, "Actor Action"}, {77L, "Music Track"}, {78L, "Word of Power"}, {79L, "Shout"}, {80L, "Relationship"}, {81L, "Equip Slot"}, {82L, "Association Type"}, {83L, "Outfit"}, {84L, "Art Object"}, {85L, "Material Object"}, {87L, "Lighting Template"}, {88L, "Shader Particle Geometry"}, {89L, "Visual Effect"}, {90L, "Apparatus"}, {91L, "Movement Type"}, {92L, "Hazard"}, {93L, "SM Event Node"}, {94L, "Sound Descriptor"}, {95L, "Dual Cast Data"}, {96L, "Sound Category"}, {97L, "Soul Gem"}, {98L, "Sound Output Model"}, {99L, "Collision Layer"}, {100L, "Scroll"}, {101L, "ColorForm"}, {102L, "Reverb Parameters"}}},
             {16, New Dictionary(Of Long, String) From {{1L, "Sit"}, {2L, "Lay"}, {4L, "Lean"}}},
@@ -1095,12 +1095,25 @@ Namespace Canon
             {22, New Dictionary(Of Long, String) From {{0L, "None"}, {1L, "Absorb"}, {2L, "Break"}}}
         }
 
+        ''' <summary>ordinal -> los valores que el enumerado declara y que NO ENTRAN en el
+        ''' ancho declarado del campo, con su rotulo. Se dejan AFUERA de `RamaValores`.
+        ''' <para>Hoy: `wbCrimeTypeEnum` declara -1 ('None') sobre un campo `itU32`. xEdit compara
+        ''' la clave contra el NativeValue, que para un u32 es SIN signo, asi que esa entrada no
+        ''' puede coincidir nunca: es una inconsistencia de la declaracion, no un idioma del
+        ''' formato, y por eso NO se reinterpreta como patron de bits. Medido: `GetCrime` --la
+        ''' unica funcion que declara `ptCrimeType`-- tiene CERO usos en los 263.461 CTDA de los
+        ''' dos corpus, asi que es inalcanzable en la practica.</para></summary>
+        Friend ReadOnly RamaValoresFueraDeDominio As New Dictionary(Of Integer, IReadOnlyDictionary(Of Long, String)) From {
+            {13, New Dictionary(Of Long, String) From {{-1L, "None"}}}
+        }
+
         ''' <summary>Los ordinales cuya rama es un entero CON SIGNO (`itS32`).</summary>
         Friend ReadOnly RamaConSigno As New HashSet(Of Integer) From {2, 4, 7, 9}
 
         ''' <summary>⚠️ HUECOS DECLARADOS de esta tabla: ramas que el .pas nombra y no
         ''' define, asi que no hay de donde sacarlas. Degradan a entero crudo.</summary>
         Friend ReadOnly RamasSinResolver As New List(Of String) From {
+            "rama 14 ('Crime Type'): el valor -1 ('None') no entra en itU32 declarado del campo; se deja AFUERA del enumerado",
             "rama 22 ('VATS Value Function'): enum wbVATSValueFunctionEnum sin resolver"
         }
 

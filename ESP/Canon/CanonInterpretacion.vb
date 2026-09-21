@@ -950,6 +950,191 @@ Namespace Canon
             Return WbConditionsFO4.Nombres
         End Function
 
+        ''' <summary>Convierte <paramref name="valor"/> al dominio que declara esa <c>Def</c>, o dice que
+        ''' NO ENTRA. El False es lo que distingue «no se pudo escribir» de «se escribió otra cosa», y el
+        ''' editor lo usa para no cerrar con OK.
+        '''
+        ''' <para>⛔ LAS TRES CLASES DE HOJA SON HERMANAS, NO UNA JERARQUÍA. <c>WbIntegerDef</c>,
+        ''' <c>WbFormIdDef</c> y <c>WbStringDef</c> son <c>NotInheritable</c> y las tres heredan de
+        ''' <c>WbValueDef</c>. Acá había un solo <c>TryCast(def, WbIntegerDef)</c> creyendo que cubría las
+        ''' referencias, y no: devolvía False para las <b>33 ramas <c>Fid</c></b> de
+        ''' <c>Parameter #1</c>/<c>#2</c>, para el <c>Reference</c> y para el
+        ''' <c>Comparison Value - Global</c>. El EJE 4 de <c>CondicionesGate</c> lo dio en 48 rojos;
+        ''' compilaba igual. El testigo es el gate, no el compilador.</para>
+        '''
+        ''' <para>⛔ PARA UNA REFERENCIA EL RANGO NO ES OPCIONAL. <c>WbFormIdDef.Emit</c> hace
+        ''' <c>bw.Write(CUInt(node.Value))</c> y NO enmascara, contra <c>WbIntegerDef.Emit</c> que hace
+        ''' <c>CUInt(v And &amp;HFFFFFFFFL)</c>: un valor fuera de u32 en una hoja <c>Fid</c> no se trunca,
+        ''' hace tirar el <c>Emit</c> <b>durante el guardado</b>, con el <c>.esp</c> a medio escribir.</para>
+        '''
+        ''' <para>Se escribe un <c>UInteger</c> y no un <c>Long</c> porque
+        ''' <c>WbFormIdDef.CreateDefault</c> boxea <c>0UI</c>: cambiarle el tipo boxeado al nodo haría que
+        ''' <see cref="ValorDeCampo"/> devuelva <c>Long</c> donde devolvía <c>UInteger</c>.</para>
+        '''
+        ''' <para>La asimetría con <c>CanonView.PonerReferencia</c> —que pasa un <c>Long</c> sin acotar—
+        ''' no es una divergencia de política: esa recibe un <c>UInteger</c> TIPADO y no puede salirse de
+        ''' rango por construcción; ésta recibe un <c>Object</c> de un editor y su razón de existir es
+        ''' validar.</para></summary>
+        Private Function ConvertirAlDominioDeLaDef(def As WbDef, valor As Object, ctx As WbContext,
+                                                   ByRef aEscribir As Object) As Boolean
+            aEscribir = Nothing
+            If def Is Nothing OrElse valor Is Nothing Then Return False
+
+            ' --- referencia: su propia rama, y con el rango OBLIGATORIO (ver el ⛔ del doc) ---
+            If TypeOf def Is WbFormIdDef Then
+                Dim v As Long
+                If Not ALongSinRedondear(valor, v) Then Return False
+                If v < 0L OrElse v > &HFFFFFFFFL Then Return False
+                aEscribir = CUInt(v)
+                Return True
+            End If
+
+            ' --- entero, acotado por el ancho que declara la Def. Cubre tambien los ENUMERADOS:
+            ' `Wb.Enumerated` devuelve `New WbIntegerDef(name, t, "wbEnum", Nothing, values)` y NO
+            ' existe un `WbEnumeratedDef`.
+            Dim entero = TryCast(def, WbIntegerDef)
+            If entero IsNot Nothing Then
+                Dim v As Long
+                If Not ALongSinRedondear(valor, v) Then Return False
+                Dim lo As Long, hi As Long
+                If Not RangoDeEntero(entero.IntType, lo, hi) Then Return False
+                If v < lo OrElse v > hi Then Return False
+                aEscribir = v
+                Return True
+            End If
+
+            If TypeOf def Is WbFloatDef Then
+                Dim f As Single
+                Try
+                    f = Convert.ToSingle(valor, Globalization.CultureInfo.InvariantCulture)
+                Catch
+                    Return False
+                End Try
+                ' ⛔ NaN E INFINITO SE RECHAZAN, Y SE LLEGABA CON EL TECLADO. `Single.TryParse` con
+                ' `NumberStyles.Float` + `InvariantCulture` acepta los literales «NaN», «Infinity» y
+                ' «-Infinity» — ejecutado, no supuesto —, y es el mismo `TryParse` que usan las cajas
+                ' del editor de condiciones. MEDIDO sobre los dos corpus: 126.858 + 124.320
+                ' `Comparison Value - Float` y 10 + 27 parámetros `ptFloat` = 251.215 floats,
+                ' **CERO no finitos**. Y un NaN en un campo de comparación es justo el valor que hace
+                ' que la condición no se pueda razonar: `x > NaN` y `x <= NaN` son las dos falsas.
+                If Single.IsNaN(f) OrElse Single.IsInfinity(f) Then Return False
+                aEscribir = f
+                Return True
+            End If
+
+            ' --- arreglo de bytes: se gatea por la `Def` y se exige el largo DECLARADO ---
+            Dim arr = TryCast(def, WbByteArrayDef)
+            If arr IsNot Nothing Then
+                Dim bytes = TryCast(valor, Byte())
+                If bytes Is Nothing Then Return False
+                ' `Size = -1` es `Wb.Bytes(name)` sin tamano: «lo que quede del subrecord», cualquier
+                ' largo es legal. Con un tamano declarado el largo tiene que ser EXACTO, porque
+                ' `WbByteArrayDef.Emit` escribe el arreglo verbatim y un byte de menos corre todo lo
+                ' que viene despues dentro del subrecord.
+                If arr.Size > 0 AndAlso bytes.Length <> arr.Size Then Return False
+                aEscribir = bytes
+                Return True
+            End If
+
+            ' --- texto: las TRES clases, porque el `CIS1`/`CIS2` es `WbStringDef` ---
+            ' ⛔ ALCANCE: `WbEdit.PonerValor` corre `QuitarBytesSinDescribir` solo para hojas de TEXTO.
+            ' Medido para el `CIS`: 21.845 subrecords en los dos corpus, CERO con bytes de cola despues
+            ' del primer NUL, asi que ahi no puede borrar nada. Esa medicion NO cubre las demas hojas
+            ' de texto de los demas records, que esta rama tambien habilita.
+            If TypeOf def Is WbStringDef OrElse TypeOf def Is WbLStringDef OrElse
+               TypeOf def Is WbLenStringDef Then
+                ' ⛔ EL VALOR TIENE QUE SER UN TEXTO. Acá había un `Convert.ToString`, que acepta
+                ' CUALQUIER objeto y nunca falla: `Convert.ToString(New Byte(){1,2,3})` devuelve la
+                ' cadena «System.Byte[]», o sea que se escribía el NOMBRE DEL TIPO como texto del campo
+                ' y la función devolvía True. Era el mismo «escribir a ciegas» que esta función vino a
+                ' cerrar, mudado de la rama de `Byte()` a la de texto. Y el `Return (… IsNot Nothing)`
+                ' que lo acompañaba NO podía dar False nunca: una guarda que se lee como validación y
+                ' no puede ponerse roja.
+                ' La simetría de las cinco ramas es: cada una gatea por la `Def` Y por el tipo del
+                ' valor.
+                Dim txt = TryCast(valor, String)
+                If txt Is Nothing Then Return False
+                ' ⛔ EL LARGO SE MIDE EN BYTES CODIFICADOS. Un `WbStringDef` con `FixedLength > 0`
+                ' escribe EXACTAMENTE ese ancho y su `Emit` recorta con `Math.Min`, asi que sin este
+                ' chequeo se aceptaba un texto mas largo, se devolvia True, y el `.esp` se llevaba el
+                ' texto CORTADO -- y cortado deja un dato valido y equivocado: los campos de 4 son 4CC
+                ' (un texto de 5 se corta a 4 y queda OTRO 4CC legitimo) y los `Level N` del STAT son
+                ' rutas de 260 (MAX_PATH), donde el corte apunta a otro archivo o a ninguno.
+                ' Medidos por `AnchoFijoGate`: 160 campos de ancho fijo en Fallout 4 y 86 en Skyrim.
+                ' `texto.Length` NO sirve para esto: el encode pasa por el codepage del archivo, asi
+                ' que se le pregunta a la `Def` por los BYTES (`LongitudCodificada`), que es la unica
+                ' medida comparable. `WbStringDef` es la unica clase con `FixedLength`.
+                Dim sd = TryCast(def, WbStringDef)
+                If sd IsNot Nothing AndAlso sd.FixedLength > 0 AndAlso
+                   sd.LongitudCodificada(txt, ctx) > sd.FixedLength Then Return False
+                aEscribir = txt
+                Return True
+            End If
+
+            ' ⚠ Una clase de `Def` que este conversor no conoce NO se escribe a ciegas: se declara que
+            ' no se pudo. Degradar a «escribir el objeto tal cual» es lo que dejaria un valor de otro
+            ' tipo en el nodo, que es el defecto que esta funcion vino a cerrar.
+            Return False
+        End Function
+
+        ''' <summary>El valor como <c>Long</c>, RECHAZANDO el numérico con parte fraccionaria.
+        ''' <para>⛔ <c>Convert.ToInt64</c> REDONDEA y no tira: <c>1,5</c> entra como <b>2</b>, y con
+        ''' redondeo bancario <c>2,5</c> da 2 y <c>3,5</c> da 4. O sea que un flotante en una hoja entera
+        ''' entraría en silencio con OTRO valor — justo lo que el False de
+        ''' <see cref="ConvertirAlDominioDeLaDef"/> tiene que atajar. Se rechaza antes de convertir.</para>
+        ''' <para>El <c>Catch</c> cubre lo demás: el valor sin conversión a entero (un <c>Byte()</c>, un
+        ''' texto no numérico) y el flotante fuera del rango de <c>Int64</c>.</para></summary>
+        Private Function ALongSinRedondear(valor As Object, ByRef v As Long) As Boolean
+            v = 0L
+            If TypeOf valor Is Single OrElse TypeOf valor Is Double OrElse TypeOf valor Is Decimal Then
+                Dim d As Double
+                Try
+                    d = Convert.ToDouble(valor, Globalization.CultureInfo.InvariantCulture)
+                Catch
+                    Return False
+                End Try
+                If d <> Math.Floor(d) Then Return False
+            End If
+            Try
+                v = Convert.ToInt64(valor, Globalization.CultureInfo.InvariantCulture)
+            Catch
+                Return False
+            End Try
+            Return True
+        End Function
+
+        ''' <summary>El rango que declara un <c>WbIntType</c>. False para un ancho que no se conoce: no se
+        ''' escribe a ciegas.
+        ''' <para><c>i0</c> es «ancho 0: no ocupa bytes, valor siempre 0» (<c>WbCore.vb:52-53</c>), así que
+        ''' su único valor legal es el cero.</para></summary>
+        Private Function RangoDeEntero(t As WbIntType, ByRef lo As Long, ByRef hi As Long) As Boolean
+            lo = 0L
+            hi = 0L
+            Select Case t
+                Case WbIntType.i0 : lo = 0L : hi = 0L
+                Case WbIntType.u8 : lo = 0L : hi = 255L
+                Case WbIntType.s8 : lo = -128L : hi = 127L
+                Case WbIntType.u16 : lo = 0L : hi = 65535L
+                Case WbIntType.s16 : lo = -32768L : hi = 32767L
+                Case WbIntType.u24 : lo = 0L : hi = &HFFFFFFL
+                Case WbIntType.u32 : lo = 0L : hi = &HFFFFFFFFL
+                Case WbIntType.s32 : lo = -2147483648L : hi = 2147483647L
+                ' ⛔ `u64`/`s64` DEVUELVEN False, y no un rango. Acá decía
+                '     Case WbIntType.u64, WbIntType.s64 : lo = Long.MinValue : hi = Long.MaxValue
+                ' y para `u64` eso MENTÍA de las dos puntas: `Long.MinValue` admite negativos en un
+                ' campo sin signo, y `Long.MaxValue` excluye la mitad superior del dominio real
+                ' (`[2^63, 2^64-1]` es legal en u64 y no cabe en un `Long`). Una tabla de rangos con
+                ' una fila que miente es peor que una fila que no está.
+                ' MEDIDO: ningún campo de los DOS esquemas generados declara 64 bits
+                ' (`grep -o "WbIntType\.[us]64"` sobre `WbSchemaGen_FO4` y `_TES5` da CERO), así que
+                ' esta rama es inalcanzable por ESQUEMA — con el número, no con un «no debería pasar».
+                ' El día que el formato declare un campo de 64 bits, toda la cañería es `Long` y hay que
+                ' decidirlo ahí, no heredar un rango inventado.
+                Case Else : Return False
+            End Select
+            Return True
+        End Function
+
         ''' <summary>QUE ES una rama de parametro de condicion: la clase de dato, el rotulo con el que
         ''' xEdit la nombra, las firmas que acepta si es una referencia y los valores si es un enumerado.
         ''' <para>Sale entera de <c>WbConditions*.Rama*</c>, o sea de <c>wbConditionParameters</c> del
@@ -1014,7 +1199,8 @@ Namespace Canon
         ''' funcion, que es lo que declaran `ParamType1` y `ParamType2`— asi que pedirlo devuelve la rama
         ''' de reserva. No es un hueco de este modulo: es lo que hay en `wbConditionFunctions`.</para></summary>
         Public Function RamaDeParametroDeCondicion(indiceDeFuncion As Integer, cual As Integer,
-                                                   game As WbGame) As RamaDeParametro
+                                                   game As WbGame, tipoCompleto As Long,
+                                                   runOn As Long) As RamaDeParametro
             Dim pares As Integer() = Nothing
             Dim ok As Boolean
             If game = WbGame.Skyrim Then
@@ -1025,6 +1211,14 @@ Namespace Canon
             Dim ordinal As Integer = -1
             If ok AndAlso pares IsNot Nothing AndAlso cual >= 1 AndAlso cual <= pares.Length Then
                 ordinal = pares(cual - 1)
+            End If
+            ' ⛔ ACA ESTABA LA SEGUNDA RESPUESTA. Se devolvia la rama del ordinal CRUDO de la tabla,
+            ' sin pasar por el ajuste que el LECTOR aplica, asi que el editor y el lector discrepaban:
+            ' medido con el EJE 5, 1.342 de 8.820 comparaciones, en seis formas. Ahora se delega en la
+            ' sede unica, `WbDeciders.OrdinalDeParametroAjustado`, que es la transcripcion del `.pas`.
+            If ordinal > 0 Then
+                ordinal = WbDeciders.OrdinalDeParametroAjustado(game, ordinal, tipoCompleto, runOn,
+                                                               indiceDeFuncion)
             End If
             Return RamaDeOrdinalDeParametro(ordinal, game)
         End Function
@@ -1060,6 +1254,17 @@ Namespace Canon
         ''' declara (`ParamType1`, `ParamType2`), tal cual los emitio el generador.
         ''' <para>Existe para que un instrumento pueda preguntar «que funcion declara esta clase de
         ''' parametro» en vez de llevar una lista a mano de 50 entradas.</para></summary>
+        ''' <summary>Los indices de funcion que el `.pas` nombra `GetIsCurrentPackage`, emitidos por el
+        ''' generador (`gicp_indices`). Solo Fallout 4 los tiene: su decisor del parametro 1 trae una
+        ''' excepcion para esa funcion con `Run On = 5`, y el de Skyrim no.
+        ''' <para>Publica para que un instrumento pueda afirmar que ninguna de ellas declara un
+        ''' `ParamType2` en el conjunto que `OrdinalDeParametroAjustado` re-rutea -- la equivalencia que hoy
+        ''' hace inofensivo que esa funcion sea UNA para los dos parametros. Ver el ⚠️ de su doc.</para></summary>
+        Public Function FuncionesIsCurrentPackage(game As WbGame) As IReadOnlyCollection(Of Integer)
+            If game = WbGame.Skyrim Then Return New List(Of Integer)()
+            Return WbConditionsFO4.IsCurrentPackage.ToList()
+        End Function
+
         Public Function ParametrosDeFuncionesDeCondicion(game As WbGame) _
                                                         As IReadOnlyDictionary(Of Integer, Integer())
             If game = WbGame.Skyrim Then Return WbConditionsTES5.Params
@@ -1082,38 +1287,15 @@ Namespace Canon
         ''' otra cosa.</para></summary>
         Public Function RutaDeParametroDeCondicion(cual As Integer, rama As RamaDeParametro) As String
             If cual < 1 OrElse cual > 3 Then Return ""
-            Dim ruta = "CTDA\Parameter #" & cual.ToString(Globalization.CultureInfo.InvariantCulture)
-            If String.IsNullOrEmpty(rama.Nombre) Then Return ruta
-            Return ruta & "\" & rama.Nombre
-        End Function
-
-        ''' <summary>Los NOMBRES de los dos tipos de parametro de una funcion de condicion, de la
-        ''' tabla generada (<c>WbConditions*.Params</c>, los mismos ordinales que usa el lector para
-        ''' elegir la rama de la union). Cadena vacia = esa funcion no declara ese parametro.
-        ''' <para>⛔ Existe para que un editor de condiciones NO escriba su propia tabla de tipos: seria
-        ''' la segunda ley sobre "de que tipo es este parametro", y divergiria de la que decodifica.</para></summary>
-        Public Function TiposDeParametroDeCondicion(indiceDeFuncion As Integer, game As WbGame) _
-                                                    As (Uno As String, Dos As String)
-            Dim pares As Integer() = Nothing
-            Dim ok As Boolean
-            If game = WbGame.Skyrim Then
-                ok = WbConditionsTES5.Params.TryGetValue(indiceDeFuncion, pares)
-            Else
-                ok = WbConditionsFO4.Params.TryGetValue(indiceDeFuncion, pares)
-            End If
-            If Not ok OrElse pares Is Nothing OrElse pares.Length < 2 Then Return ("", "")
-            Return (NombreDeOrdinalDeParametro(pares(0), game), NombreDeOrdinalDeParametro(pares(1), game))
-        End Function
-
-        ''' <summary>El nombre del tipo de parametro para un ORDINAL del enum del juego. Sale del mismo
-        ''' orden que emitio el generador, sin lista a mano: el ordinal ES el indice.</summary>
-        Private Function NombreDeOrdinalDeParametro(ordinal As Integer, game As WbGame) As String
-            Dim orden = OrdenDeTiposDeParametro(game)
-            If ordinal <= 0 OrElse ordinal >= orden.Count Then Return ""
-            ' Se saca el prefijo "pt" para que el rotulo lea "Quest" y no "ptQuest".
-            Dim n = orden(ordinal)
-            If n.StartsWith("pt", StringComparison.Ordinal) Then n = n.Substring(2)
-            Return n
+            ' ⛔ LA RUTA NO NOMBRA LA RAMA, Y ESO ES EL PUNTO. Acá se le pegaba `\<rotulo>` para que
+            ' `Asegurar` pudiera reconocerla por nombre, y de ahí salían DOS defectos: el no-op mudo
+            ' cuando el nombre no coincidía con la rama vigente (`ReevaluarAlternativa` abandona con
+            ' `elegida.Name <> tramo`), y el cortocircuito cuando el nombre de la rama ERA el de la
+            ' unión — el caso de `Reference` y `Parameter #3`, 161 uniones expuestas de 502 medidas.
+            ' La rama la elige el DECISOR, que es de quien es la ley:
+            ' `WbEdit.AsegurarRutaConRamasVigentes` la re-decide y la materializa, y la ruta llega
+            ' hasta la UNIÓN. `HojaEditable` baja después a la hoja de la rama correcta.
+            Return "CTDA\Parameter #" & cual.ToString(Globalization.CultureInfo.InvariantCulture)
         End Function
 
         ''' <summary>El orden del enum de tipos de parametro del juego (50 en Fallout 4, 57 en
@@ -1581,6 +1763,35 @@ Namespace Canon
         ''' Byte() para una rama cruda).
         ''' <para>Existe para que un editor pueda mostrar una rama de la que no sabe el tipo de antemano
         ''' —las 50 clases de parametro de una condicion— sin una escalera de casos por clase.</para></summary>
+        ''' <summary>El NOMBRE de la rama que el arbol tiene puesta en esa ruta, o "" si no resuelve.
+        ''' <para>⛔ EXISTE PORQUE LOS BYTES NO ALCANZAN. Las cuatro uniones del <c>CTDA</c> tienen TODAS
+        ''' sus ramas de 4 bytes, asi que medir el volcado no distingue «escribi el FormID en la rama
+        ''' <c>Reference</c>» de «lo escribi en la rama <c>Alias</c>»: son los mismos cuatro bytes en el
+        ''' mismo offset. Un gate de bytes sobre eso sale VERDE y hace concluir que el defecto no
+        ''' existe.</para>
+        ''' <para>Devuelve el nombre de la <c>Def</c> de la hoja, que es lo que el esquema declara para esa
+        ''' rama ('Reference', 'Alias', 'Quest Alias', 'Event Data'...). NO materializa nada: es una
+        ''' lectura.</para></summary>
+        <Extension>
+        Public Function NombreDeRamaVigenteDeCampo(Of T As Class)(rec As T, ruta As String) As String
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return ""
+            Dim n = v.Node.ByFieldPath(ruta)
+            If n Is Nothing Then Return ""
+            ' ⛔ SE LE PREGUNTA AL DECISOR, NO AL HIJO PUESTO. Acá se leía `HojaEditable(n).Def.Name`,
+            ' y eso devuelve la rama RANCIA: el árbol se materializa al parsear o al crear, no de forma
+            ' perezosa, así que un elemento recén agregado arrastra la rama que correspondía cuando su
+            ' discriminador valía cero. Medido en vivo: un instrumento que leía el hijo dio 8.820
+            ' divergencias, TODAS a 'Unknown' — la rama 0 —, que era el defecto del medidor y no de lo
+            ' medido.
+            Dim delDecisor = WbEdit.RamaQueElDecisorElige(n, v.Context)
+            If delDecisor IsNot Nothing Then Return If(delDecisor.Name, "")
+            ' No es una unión: el campo tiene una sola forma y su nombre es el de su propia hoja.
+            Dim hoja = WbEdit.HojaEditable(n)
+            If hoja Is Nothing OrElse hoja.Def Is Nothing Then Return ""
+            Return If(hoja.Def.Name, "")
+        End Function
+
         <Extension>
         Public Function ValorDeCampo(Of T As Class)(rec As T, ruta As String) As Object
             Dim v = TryCast(rec, CanonView)
@@ -1605,25 +1816,38 @@ Namespace Canon
         Public Function PonerValorEnCampo(Of T As Class)(rec As T, ruta As String, valor As Object) As Boolean
             Dim v = TryCast(rec, CanonView)
             If v Is Nothing OrElse v.Node Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return False
-            Dim n = WbEdit.EnsureFieldPath(v.Node, v.Context, ruta)
+            ' ⛔ POR `AsegurarRutaConRamasVigentes` Y NO POR `EnsureFieldPath`. Las dos aseguran la
+            ' ruta, pero la primera le vuelve a preguntar al DECISOR, en cada nodo de unión del
+            ' camino, qué rama corresponde ahora, y la materializa si el árbol tiene otra. La
+            ' segunda pasa por `Asegurar`, donde el paso «el tramo nombra al nodo actual» LE GANA a
+            ' la re-decisión: en una unión cuya rama se llama igual que la unión la escritura
+            ' aterriza en la rama VIEJA y esta función devolvía True. Medido: 161 de 502 uniones
+            ' de los dos esquemas tienen una rama homónima, 78 de clase `Fid`.
+            ' Consecuencia de la que se salva un `Fid`: un FormID en un nodo `WbIntegerDef` no lo
+            ' ve `WbFormIdWalker`, así que no se remapea al índice de master del destino ni entra en
+            ' la pasada que descubre los masters.
+            Dim n = WbEdit.AsegurarRutaConRamasVigentes(v.Node, v.Context, ruta)
             If n Is Nothing Then Return False
             Dim hoja = WbEdit.HojaEditable(n)
             If hoja Is Nothing Then Return False
-            ' ⛔ LA CONVERSION VA ACA. `WbEdit.PonerValor` asigna `hoja.Value = valor` tal cual,
-            ' sin mirar el tipo: dejarle un Long a una hoja de UInteger le cambia el TIPO al nodo y
-            ' el escritor emite por el tipo del valor. Se convierte al que la hoja YA tiene puesto,
-            ' que es el que el esquema declaro -- el mismo criterio que `PonerCeroEnCampo`.
-            Dim actual = hoja.Value
-            Dim aEscribir As Object = valor
-            If actual IsNot Nothing AndAlso valor IsNot Nothing AndAlso
-               actual.GetType() IsNot valor.GetType() Then
-                Try
-                    aEscribir = Convert.ChangeType(valor, actual.GetType(),
-                                                   Globalization.CultureInfo.InvariantCulture)
-                Catch
-                    Return False
-                End Try
-            End If
+            ' ⛔ ACA DECIA QUE «EL ESCRITOR EMITE POR EL TIPO DEL VALOR» Y ES FALSO. Lo refuta
+            ' `WbIntDef.Emit` (WbValueDefs.vb:239-265): hace `Convert.ToInt64(node.Value)` y emite
+            ' por el `IntType` de la DEF, no por el tipo del objeto boxeado. Y toda la libreria
+            ' escribe un `Long` en hojas u32 desde antes de esta ola -- `CanonView.PonerReferencia`
+            ' hace `Escribir(ruta, CLng(valor))` --, o sea que el caso «un Long en una hoja u32» es
+            ' el caso NORMAL y no rompe nada.
+            ' La conversion se queda por un motivo mas chico y verdadero: dejar el objeto boxeado
+            ' del mismo tipo que la hoja ya tenia, para que quien LEA el nodo (`ValorDeCampo`, los
+            ' gates) reciba lo mismo que recibia antes de escribir. En la practica casi nunca hace
+            ' nada: toda hoja `WbIntDef` viene boxeada como `Long`.
+            ' ⛔ LA CONVERSIÓN VA CONTRA LA `Def`, NO CONTRA EL VALOR QUE LA HOJA TIENE PUESTO.
+            ' Con `actual.GetType()` (a) no había conversión cuando `hoja.Value` era Nothing y se
+            ' escribía crudo, y (b) todo dependía de que las hojas enteras vengan boxeadas como
+            ' `Long` — cierto hoy por `ReadRaw`, pero nadie lo declaró ley.
+            ' Lo que la `Def` declara es el DOMINIO del campo, así que el `False` pasa a significar
+            ' «este valor no cabe acá», que es lo que el OK del editor mira.
+            Dim aEscribir As Object = Nothing
+            If Not ConvertirAlDominioDeLaDef(hoja.Def, valor, v.Context, aEscribir) Then Return False
             Return WbEdit.PonerValor(hoja, aEscribir)
         End Function
 

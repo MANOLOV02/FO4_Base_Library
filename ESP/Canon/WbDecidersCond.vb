@@ -38,8 +38,38 @@ Namespace Canon
         ''' Alias, y el bit 0x08 ("usar packdata") en Packdata.
         ''' <para>Fallout 4 tiene UNA excepción que Skyrim no: con <c>Run On = 5</c> (alias de
         ''' quest) y la función <c>GetIsCurrentPackage</c>, el tipo NO se fuerza a Alias.</para></summary>
-        Private Function AdjustParam(game As WbGame, pt As Integer, typeFlags As Long,
-                                     runOn As Long, funcIndex As Integer) As Integer
+        ''' <summary>⛔ LA SEDE UNICA DE «DE QUE TIPO ES ESTE PARAMETRO DE CONDICION».
+        ''' Ajusta el ordinal que la tabla declara segun los DISCRIMINADORES del propio `CTDA`.
+        '''
+        ''' <para>Transcripcion de `wbConditionParam1Decider` / `wbConditionParam2Decider`
+        ''' (`wbDefinitionsFO4.pas:808-857`): con el tipo declarado en
+        ''' <c>{ptReference, ptActor, ptPackage}</c>, el bit <c>0x02</c> del <c>Type</c>
+        ''' (<i>Use Aliases</i>) lo fuerza a <c>ptAlias</c> y el <c>0x08</c> (<i>Use PackData</i>) a
+        ''' <c>ptPackdata</c>. El <c>0x02</c> se evalua ANTES del <c>0x08</c> —es el <c>else</c> del
+        ''' Pascal—, asi que con los dos puestos gana el alias.</para>
+        '''
+        ''' <para>⛔ ES PUBLICA PORQUE EL EDITOR TIENE QUE PREGUNTARLE A ELLA. La sede del editor
+        ''' (<c>CanonInterpretacion.RamaDeParametroDeCondicion</c>) leia <c>Params</c> a secas, sin los
+        ''' flags ni el <c>Run On</c>, o sea que habia DOS respuestas a la misma pregunta y divergian:
+        ''' medido con el EJE 5 de <c>CondicionesGate</c> antes del arreglo, <b>1.342 divergencias de
+        ''' 8.820 comparaciones</b>, en seis formas que son exactamente los tres tipos de origen por los
+        ''' dos destinos. El editor mostraba un selector de record para un parametro que el motor iba a
+        ''' leer como indice de alias.</para>
+        '''
+        ''' <para>Recibe el <c>Type</c> COMPLETO y hace las mascaras adentro: si el llamador las
+        ''' hiciera, la mascara quedaria escrita dos veces.</para>
+        '''
+        ''' <para>⚠️ LA EXCEPCION DE <c>GetIsCurrentPackage</c> ES DEL PARAMETRO 1 EN EL <c>.pas</c>, y
+        ''' esta funcion la aplica a los DOS. `wbConditionParam1Decider` trae
+        ''' <c>if not ((Run On = 5) and (Desc.Name = 'GetIsCurrentPackage'))</c> y
+        ''' `wbConditionParam2Decider` NO la trae. La equivalencia es POR DATO, no por codigo:
+        ''' <c>Params(161) = {40, 0}</c>, o sea que el parametro 2 de la unica funcion afectada es
+        ''' <c>ptNone</c> y esta funcion sale antes de tocarlo. ⛔ Esa tabla se REGENERA del `.pas`:
+        ''' el dia que un commit de xEdit le de a <c>GetIsCurrentPackage</c> un <c>ParamType2</c> en el
+        ''' conjunto re-ruteado, el lector de la app se separa del de xEdit EN SILENCIO. La asercion que
+        ''' lo ataja vive en el EJE 4 de <c>CondicionesGate</c>.</para></summary>
+        Public Function OrdinalDeParametroAjustado(game As WbGame, pt As Integer, typeFlags As Long,
+                                                   runOn As Long, funcIndex As Integer) As Integer
             Dim isSse = (game = WbGame.Skyrim)
             Dim refO = If(isSse, WbConditionsTES5.ReferenceOrdinal, WbConditionsFO4.ReferenceOrdinal)
             Dim actO = If(isSse, WbConditionsTES5.ActorOrdinal, WbConditionsFO4.ActorOrdinal)
@@ -68,7 +98,10 @@ Namespace Canon
                        If p Is Nothing Then Return 0
                        Dim tf = Sibling(parent, "Type")
                        Dim ro = Sibling(parent, "Run On")
-                       Dim pt = AdjustParam(ctx.Game, p(which),
+                       ' ⛔ LLAMA A LA PUBLICA. Si quedaran las dos --la Private para el lector y la
+                       ' publica para el editor-- volverian a haber dos duenos de la misma ley, esta vez
+                       ' con cuerpos identicos que nadie va a comparar.
+                       Dim pt = OrdinalDeParametroAjustado(ctx.Game, p(which),
                                             If(tf.HasValue, tf.Value, 0L),
                                             If(ro.HasValue, ro.Value, -1L),
                                             CInt(fi.Value))
