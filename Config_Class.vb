@@ -653,7 +653,27 @@ Public Class Config_App
         Return True
     End Function
     ' Check_BSFolder, Check_OsFolder, Check_All_Folder moved to WM_Config
+    ''' <summary>¿Se puede CARGAR el esqueleto configurado? ⛔⛔ Tiene que contestar lo MISMO que el
+    ''' loader, porque es la misma pregunta: acá decía sólo <c>IO.File.Exists</c> —disco y nada más—
+    ''' mientras <c>SkeletonInstance.LoadFromConfig</c> resuelve el archivo suelto Y, si no está, la
+    ''' entrada del diccionario (BA2/BSA), con el comentario explícito de que lo hace para «mantener
+    ''' correcto el indicador de esqueleto disponible».
+    ''' <para>Con las dos sedes discrepando, un esqueleto que vive SÓLO dentro de un archive —el caso
+    ''' normal en vanilla— se cargaba perfecto y este chequeo decía que no estaba: cruz roja en el
+    ''' diálogo de configuración, y peor, el auto-detector de rutas lo tomaba como «falta» y PISABA la
+    ''' elección del usuario con el de BodySlide, sin avisar. El defecto no lo trajo el selector nuevo;
+    ''' el selector nuevo lo hizo alcanzable desde el diálogo donde este chequeo se mira.</para></summary>
     Public Shared Function Check_Skeleton() As Boolean
-        Return IO.File.Exists(Current.SkeletonPath)
+        Dim ruta = Current.SkeletonPath
+        If String.IsNullOrEmpty(ruta) Then Return False
+        If IO.File.Exists(ruta) Then Return True
+        ' Mismo camino que el loader: la clave del diccionario es la ruta RELATIVA a Data.
+        Try
+            Dim relativa = IO.Path.GetRelativePath(Current.DataPath, ruta)
+            Dim entrada As FilesDictionary_class.File_Location = Nothing
+            Return FilesDictionary_class.Dictionary.TryGetValue(relativa, entrada)
+        Catch
+            Return False
+        End Try
     End Function
 End Class

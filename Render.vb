@@ -1411,13 +1411,33 @@ Public Class PreviewControl
         MyBase.OnResize(e)
         ApplyResize(False)
     End Sub
+    ''' <summary>Aplica el tamaño del control al viewport GL y recalcula la proyección.
+    '''
+    ''' <para>⛔⛔ <b>SI NO SE PUDO HACER CURRENT EL CONTEXTO PROPIO, NO SE TOCA <c>GL.Viewport</c>.</b>
+    ''' Acá se llamaba a <c>EnsureContextCurrent()</c> IGNORANDO lo que devuelve — y ese Boolean existe
+    ''' justamente para esto (ver su doc: «los nombres de GL son por contexto»). Un <c>PreviewControl</c>
+    ''' todavía sin handle —el caso de un editor que lo crea en el CONSTRUCTOR, antes de que el formulario
+    ''' exista— no tiene contexto que hacer current, así que el <c>GL.Viewport</c> se aplicaba al contexto
+    ''' del preview que SÍ estaba current (típicamente el del MainForm) con el tamaño del panel del OTRO
+    ''' control. El síntoma que reportó el usuario: el preview principal quedaba rasterizando en un
+    ''' rectángulo chico y el cartel «Loading…» salía encogido.</para>
+    '''
+    ''' <para>⛔ Y <c>lastW/lastH</c> TAMPOCO se sellan en ese caso: sellarlos dejaba el control creyendo
+    ''' que ya publicó un viewport que nunca publicó, y como el <c>If</c> de abajo compara contra ellos,
+    ''' el <c>GL.Viewport</c> correcto no se emitía NUNCA más (salvo un <c>Force</c>). Dejándolos como
+    ''' estaban, el próximo <c>OnResize</c> —o el <c>ApplyResize(True)</c> del <c>OnLoad</c>, que corre
+    ''' cuando el contexto ya existe— reintenta.</para>
+    '''
+    ''' <para>⛔ <c>UpdateProjection</c> SÍ corre igual: no emite un solo comando GL, sólo escribe el campo
+    ''' <c>projection</c> de ESTE control. Saltearlo dejaría la matriz con el aspecto viejo.</para></summary>
     Public Sub ApplyResize(Force As Boolean)
         If Me.IsInDesignMode Then Return
         If Force OrElse (Me.Width <> lastW OrElse Me.Height <> lastH) Then
-            EnsureContextCurrent()
-            GL.Viewport(0, 0, Me.Width, Me.Height)
-            lastW = Me.Width
-            lastH = Me.Height
+            If EnsureContextCurrent() Then
+                GL.Viewport(0, 0, Me.Width, Me.Height)
+                lastW = Me.Width
+                lastH = Me.Height
+            End If
             UpdateProjection(True)
         End If
     End Sub
@@ -2326,6 +2346,17 @@ Public Class PreviewControl
         ' draw calls against shaders/VAOs/textures we are about to delete.
         ' If BeginTeardown was already called, this is a no-op for those two lines.
         BeginTeardown()
+
+        ' ⛔⛔ ACÁ PUSE UN `EnsureContextCurrent()` Y LO SAQUÉ, porque no cerraba nada y no tenía
+        ' medición. El razonamiento era por analogía —`NpcRenderHost.Dispose` lo hace, y el comentario de
+        ' los ocho defaults (más abajo) dice que los borrados «irian con ids viejos contra el contexto de
+        ' OTRO PreviewControl vivo»— y `overlay.Clean()` sí corre antes del único `EnsureContextCurrent`
+        ' del teardown, que vive dentro de `Model.Clean`. Suena bien y es FALSO como arreglo:
+        ' `Tools\ViewportAjenoGate`, caso V-3, mide el daño en PÍXELES del cartel del preview hermano y da
+        ' **8432 píxeles idénticos con y sin esa línea**. O sea que el daño existe (es real y repetible)
+        ' pero NO lo causa el contexto que esté current, así que la línea era decoración.
+        ' ⛔ EL DEFECTO SIGUE ABIERTO y su sujeto NO está identificado: ver el encabezado de
+        ' `ViewportAjenoGate` (V-3, declarado como medición sin veredicto).
 
         If overlay IsNot Nothing Then
             overlay.Clean()

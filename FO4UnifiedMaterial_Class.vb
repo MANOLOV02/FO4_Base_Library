@@ -4794,6 +4794,32 @@ Public Class FO4UnifiedMaterial_Class
         Return v
     End Function
 
+    ''' <summary>La MISMA normalización, elegida por su raíz. Existe para que la UI pueda sembrar un
+    ''' picker con la MISMA regla con la que el render resuelve el string — que es el punto: si la caja
+    ''' y el render no coinciden sobre qué archivo nombra ese texto, el picker abre en la raíz del árbol
+    ''' y el render igual encuentra el archivo, o al revés.
+    ''' <para>⛔ No hay una cuarta regla acá: esto DESPACHA a las tres que ya existen (con sus cachés).
+    ''' Una raíz desconocida PERO NO VACÍA cae en <c>NormalizeGameRelativePath</c> con esa raíz, que es
+    ''' la sede única. La raíz VACÍA tiene rama propia y no delega — ver la guarda del cuerpo: delegar
+    ''' ahí mangla la ruta, porque el anclaje es <c>"\" &amp; raíz</c> y sin raíz eso corta en la primera
+    ''' barra.</para></summary>
+    Public Shared Function CorrectGameRelativePath(path As String, rootPrefix As String) As String
+        If String.Equals(rootPrefix, TexturesPrefix, StringComparison.OrdinalIgnoreCase) Then Return CorrectTexturePath(path)
+        If String.Equals(rootPrefix, MaterialsPrefix, StringComparison.OrdinalIgnoreCase) Then Return CorrectMaterialPath(path)
+        If String.Equals(rootPrefix, MeshesPrefix, StringComparison.OrdinalIgnoreCase) Then Return CorrectMeshPath(path)
+        ' ⛔⛔ RAÍZ VACÍA: NO SE PUEDE DELEGAR, PORQUE MANGLA LA RUTA. `NormalizeGameRelativePath`
+        ' ancla en `"\" & raíz`, y con la raíz vacía eso es `IndexOf("\")` — o sea que corta en la
+        ' PRIMERA barra y devuelve `character\x.nif` para `actors\character\x.nif`. No es hipotético:
+        ' `ALLMeshesDictionary_Filter` declara `RootPrefix = ""` y Wardrobe Manager lo usa para el
+        ' esqueleto. El comentario que había acá declaraba ese caso como seguro; era justo el que
+        ' rompía. Sin raíz no hay nada que sacar ni que agregar: se normalizan separadores y caja, que
+        ' es lo único que la clave del diccionario necesita.
+        If String.IsNullOrWhiteSpace(rootPrefix) Then
+            Return If(path, "").Correct_Path_Separator().Trim().Trim(""""c).TrimStart("\"c).ToLowerInvariant()
+        End If
+        Return NormalizeGameRelativePath(path, rootPrefix)
+    End Function
+
 
     Shared Sub New()
 
