@@ -810,7 +810,26 @@ Public Module SaveNpcEspWriter
         ' ESL, que el motor enmascara a 12 bits (ModInfo::GetFormID) y hace colisionar con otro record —
         ' y ademas congelaba el contador en 0xFFF, con lo que CADA guardado siguiente volvia a repartir
         ' 0xFFF a un record distinto.
-        Dim objectIdMask As UInteger = If(lightMaster, &HFFFUI, &HFFFFFFUI)
+        ' ⛔⛔ EL ANCHO SALE DE LA LEY, NO DE LA CASILLA. `lightMaster` es lo que el usuario pidió
+        ' ESCRIBIR en el header; si el plugin es light o no lo decide la ley canónica, que es
+        ' `0x200 OR (extensión .esl AND NOT IsUpdate)` (PluginManager.IsLightSlot). Las dos coinciden
+        ' siempre para un archivo que escribimos nosotros —la extensión sale de ExtensionCanonica—, pero
+        ' NO para uno que alguien renombró a mano: con "Update existing" sobre un `.esl` y la casilla
+        ' DESTILDADA, esta línea repartía object ids de 24 bits en un archivo que el motor pliega a 12
+        ' (ModInfo::GetFormID) ⇒ dos records con el mismo FormID. Es exactamente la falla que el párrafo
+        ' de arriba dice que este mask existe para evitar, entrando por la otra puerta.
+        ' El flag del header (BuildTes4Header, más abajo) sigue saliendo de `lightMaster`: eso es lo que
+        ' el usuario pidió escribir. Lo que NO puede salir de ahí es el espacio de FormID, porque el
+        ' motor no lo lee del flag sino de la ley.
+        Dim flagsParaLey As UInteger = If(lightMaster, FLAG_ESL, 0UI)
+        Dim lightEfectivo As Boolean = PluginManager.IsLightSlot(
+            Path.GetDirectoryName(outputPath), Path.GetFileName(outputPath), flagsParaLey)
+        If lightEfectivo <> lightMaster Then
+            Dim nomL = Path.GetFileName(outputPath), casL = lightMaster, efeL = lightEfectivo
+            Logger.LogLazy(Function() $"[SAVE-ESP] '{nomL}': la casilla Light dice {casL} pero la ley " &
+                                      $"(0x200 OR extensión .esl) dice {efeL}. El espacio de FormID usa la LEY.")
+        End If
+        Dim objectIdMask As UInteger = If(lightEfectivo, &HFFFUI, &HFFFFFFUI)
 
         ' PISO del espacio de object ids. NO es la constante 0x800: el canónico lo decide POR ARCHIVO
         ' (juego + versión del HEDR + tener masters) y para un plugin SSE nuestro da 1, no 0x800 — ver
@@ -886,7 +905,7 @@ Public Module SaveNpcEspWriter
             Throw New InvalidOperationException(
                 $"'{outName}' already contains {overWide.Count} record(s) whose object id does not fit this " &
                 $"file's FormID width (first: 0x{overWide(0):X}, maximum 0x{objectIdMask:X})." &
-                If(lightMaster, $" A light (ESL) plugin only addresses 0x{objectIdFloor:X}..0x{objectIdMask:X}, so the game would fold " &
+                If(lightEfectivo, $" A light (ESL) plugin only addresses 0x{objectIdFloor:X}..0x{objectIdMask:X}, so the game would fold " &
                                 "those records onto other FormIDs. Save it without the Light flag, or split " &
                                 "the records across two plugins.", " Split the records across two plugins."))
         End If
@@ -939,7 +958,7 @@ Public Module SaveNpcEspWriter
                 Throw New InvalidOperationException(
                     $"'{outName}' has no free FormID left: every object id from 0x{objectIdFloor:X} to " &
                     $"0x{objectIdMask:X} is already used by a record in the file. " &
-                    If(lightMaster, $"A light (ESL) plugin only addresses {span} of them — save without the " &
+                    If(lightEfectivo, $"A light (ESL) plugin only addresses {span} of them — save without the " &
                                     "Light flag, or split the records across two plugins.",
                                     "Split the records across two plugins."))
             End Function

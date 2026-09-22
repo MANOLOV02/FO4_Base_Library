@@ -1378,6 +1378,33 @@ Public Class PluginManager
         Return Not isUpdate                                                     ' extensión .esl, sólo en el ELSE
     End Function
 
+    ''' <summary>La EXTENSIÓN que le corresponde a un plugin según lo que el archivo declara ser. Es la
+    ''' INVERSA de <see cref="IsMasterGroup"/> + <see cref="IsLightSlot"/>, y por eso vive acá y no en el
+    ''' diálogo que la usa.
+    ''' <code>
+    ''' master + light  -> .esl
+    ''' master          -> .esm
+    ''' no master       -> .esp   (con o sin light)
+    ''' </code>
+    ''' <para><b>Por qué ESTE mapeo y no otro.</b> No es una convención elegida: es exactamente lo que la
+    ''' EXTENSIÓN SOLA produce en el motor. El bit 0 (grupo master) se prende con extensión <c>.esm</c> o
+    ''' <c>.esl</c>; el bit 9 (light) se prende con extensión <c>.esl</c>. Aplicando esta tabla, el archivo
+    ''' declara lo mismo por su nombre y por sus flags, así que da igual por dónde lo lea el motor.</para>
+    ''' <para><b>Los flags se escriben IGUAL, aunque la extensión ya lo diga.</b> MEDIDO en el Data del
+    ''' usuario (78 plugins): los 13 <c>.esl</c> de Creation Club traen <c>0x201</c> y los 8 <c>.esm</c> de
+    ''' los DLC traen <c>0x01</c> — Bethesda es redundante. Y la redundancia es lo que salva al archivo si
+    ''' alguien lo renombra a mano.</para>
+    ''' <para><b>Lo que esta tabla NO dice</b>: que un plugin tenga que respetarla. El motor no lo exige y
+    ''' en el mismo censo conviven las 6 combinaciones — 30 <c>.esp</c> con flag master
+    ''' (<c>WM_ClonePack*.esp</c>, que escribe Wardrobe Manager) y un <c>.esl</c> SIN flag master
+    ''' (<c>ShowCollectibles.esl</c>). Esto es la forma que ESCRIBIMOS nosotros, no un validador.</para>
+    ''' <para>⛔ Es la ÚNICA sede de esta ley. Quien necesite la extensión de destino la pide acá; no se
+    ''' vuelve a escribir la tabla en un formulario.</para></summary>
+    Public Shared Function ExtensionCanonica(esMaster As Boolean, esLight As Boolean) As String
+        If Not esMaster Then Return ".esp"
+        Return If(esLight, ".esl", ".esm")
+    End Function
+
     ''' <summary>Discriminante de la memo de grupo: "flat" / "vr" / "vr+esl". Va en la CLAVE porque el valor
     ''' depende de VR y de VRESL, no sólo del archivo.
     ''' <para>⛔ NO MEMOIZAR esta función: cachearía un estado del FILESYSTEM (si está el dll de VRESL) que
