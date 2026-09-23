@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Linq
 Imports System.Text
 Imports System.Threading
@@ -1057,6 +1057,20 @@ Public Class PluginManager
             AllRecords(globalFormID) = kvp.Value
         Next
     End Sub
+
+    ''' <summary>Esta app OVERRIDE-ó en memoria el record de <paramref name="fid"/> y todavía
+    ''' guarda el que ganaba antes. Es de SOLO LECTURA: existe para que un testigo pueda comprobar la
+    ''' PRECONDICIÓN de <see cref="RevertAppOverride"/> sin consumirla — sin esto, un aserto de
+    ''' «ya se revirtió» no distingue «se revirtió» de «nunca hubo nada que revertir», y pasa en vacío.</summary>
+    Public Function TieneOverrideDeLaApp(fid As UInteger) As Boolean
+        If fid = 0UI Then Return False
+        _rwLock.EnterReadLock()
+        Try
+            Return _recordBeforeAppOverride.ContainsKey(fid)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
 
     ''' <summary>Revert an app-authored override IN MEMORY: make <paramref name="fid"/> resolve again to the record
     ''' that was WINNING before the app override — the last non-app override captured in

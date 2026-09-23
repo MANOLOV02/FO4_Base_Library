@@ -25,7 +25,7 @@
        quien avisa es el gate. -->
 
   <PropertyGroup>
-    <Version>2.2.3</Version>
+    <Version>2.3.4</Version>
     <Company>MANOLOV02</Company>
     <Copyright>Copyright (c) 2026 MANOLOV02</Copyright>
     <!-- Sin esto, en un repo con git el SDK le pega "+<sha del commit>" a InformationalVersion y el
