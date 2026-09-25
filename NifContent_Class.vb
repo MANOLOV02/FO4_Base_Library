@@ -708,12 +708,11 @@ Public Class Nifcontent_Class_Manolo
     Public Sub RemoveSmpPhysicsExtraData()
         Dim root = Me.GetRootNode()
         If IsNothing(root) OrElse IsNothing(root.ExtraDataList) Then Exit Sub
+        ' RemoveBlock suelta la referencia correcta (por bloque) y reindexa el resto. ⛔ Nada de RemoveBlockRef: borra
+        ' por POSICION, no por indice de bloque (ver PurgarTodosLosBodyTri); con el indice de bloque soltaba OTRO extra
+        ' data y RemoveUnreferencedBlocks lo borraba (Tools\ExtraDataUnlinkGate, MScoat.nif perdia la tela).
         For Each ed In GetRootExtraData(root, Me).OfType(Of NiStringExtraData).Where(AddressOf IsSmpPhysicsExtraData).ToList()
-            Dim idx As Integer
-            If GetBlockIndex(ed, idx) Then
-                root.ExtraDataList.RemoveBlockRef(idx)
-                RemoveBlock(ed)
-            End If
+            RemoveBlock(ed)
         Next
         RemoveUnreferencedBlocks()
     End Sub

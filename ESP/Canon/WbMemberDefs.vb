@@ -226,6 +226,28 @@ Namespace Canon
             Return Me
         End Function
 
+        ''' <summary>Clave de orden (<c>wbRStructSK</c>) y la extendida (<c>wbRStructExSK</c>): indices de miembros.
+        ''' Solo la lee la ley de orden de la capa <c>XEdit</c>.</summary>
+        Public Property SortKey As Integer()
+        Public Property ExSortKey As Integer()
+        ''' <summary><c>dfStructFirstNotRequired</c>: al CREAR el grupo xEdit no agrega el miembro 0.</summary>
+        Public Property FirstNotRequired As Boolean
+
+        Public Function WithSortKey(ParamArray idx As Integer()) As WbRStructDef
+            SortKey = idx
+            Return Me
+        End Function
+
+        Public Function WithExSortKey(ParamArray idx As Integer()) As WbRStructDef
+            ExSortKey = idx
+            Return Me
+        End Function
+
+        Public Function WithFirstNotRequired() As WbRStructDef
+            FirstNotRequired = True
+            Return Me
+        End Function
+
         ''' <summary>El struct acepta a sus miembros EN CUALQUIER ORDEN. Es MÁS que
         ''' <see cref="AllowAnyMember"/>: los dos hacen que el struct se abra con cualquiera de sus
         ''' firmas, pero además esto reinicia el cursor de miembros a 0 después de cada uno, o sea
@@ -377,6 +399,20 @@ Namespace Canon
 
         Public Function WithCountPath(path As String) As WbRArrayDef
             CountPath = path
+            Return Me
+        End Function
+
+        ''' <summary>Callback del .pas que decide si el arreglo se ordena (<c>SetIsSorted</c>); Nothing = el criterio
+        ''' comun de <c>wbRArrayS</c>.</summary>
+        Public Property SortedCallback As String
+
+        Public Function AsSorted() As WbRArrayDef
+            Sorted = True
+            Return Me
+        End Function
+
+        Public Function WithSortedCallback(name As String) As WbRArrayDef
+            SortedCallback = name
             Return Me
         End Function
 

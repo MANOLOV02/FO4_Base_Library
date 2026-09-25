@@ -39,6 +39,16 @@ Namespace Canon
             Return outp.ToArray()
         End Function
 
+        ''' <summary>Orden de los GRUP de primer nivel con el que xEdit GUARDA un archivo: el de cada
+        ''' <c>wbAddGroupOrder</c> del .pas (wbInterface.pas; el guardado ordena por ese indice). Lo usa el
+        ''' escritor generico cuando replica a xEdit; el escritor de NPC Manager no lo consume.</summary>
+        Public Function GroupOrder(game As WbGame) As String()
+            Select Case game
+                Case WbGame.Skyrim : Return WbSchemaGenTES5.GroupOrder
+                Case Else : Return WbSchemaGenFO4.GroupOrder
+            End Select
+        End Function
+
     End Module
 
 End Namespace

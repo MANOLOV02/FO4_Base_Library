@@ -60,6 +60,23 @@
             Return _plugins.ResolveLocalizedString(_rec.SourcePluginName, id, tabla)
         End Function
 
+        ''' <summary>Como <see cref="Text"/>, pero False si el identificador no esta en la tabla (un texto vacio de la
+        ''' tabla da True y "").</summary>
+        Public Function TryText(node As WbNode, ByRef value As String) As Boolean
+            value = ""
+            If node Is Nothing OrElse node.Value Is Nothing Then Return True
+            If TypeOf node.Value Is String Then value = CStr(node.Value) : Return True
+            Dim id As UInteger
+            Try
+                id = CUInt(Convert.ToInt64(node.Value) And &HFFFFFFFFL)
+            Catch
+                Return True
+            End Try
+            If id = 0UI Then Return True
+            If _plugins Is Nothing OrElse _rec Is Nothing Then Return False
+            Return _plugins.TryResolveLocalizedString(_rec.SourcePluginName, id, TablaDe(node), value)
+        End Function
+
         ''' <summary>⛔⛔ EN QUÉ TABLA VIVE EL TEXTO DE UN CAMPO — <b>LA SEDE ÚNICA DE ESA LEY</b>.
         ''' <para>Depende del par (tipo de record, subrecord), no del valor. Son cuatro casos y el
         ''' resto va a la tabla general.</para>

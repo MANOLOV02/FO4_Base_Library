@@ -176,6 +176,15 @@ Friend NotInheritable Class LocalizedStringTable
         Indexar(data)
     End Sub
 
+    ''' <summary>Como <see cref="Resolve"/>, pero distingue un identificador que NO esta en la tabla (False) de uno
+    ''' que esta con texto vacio (True y ""): las tablas del juego traen identificadores con texto vacio.</summary>
+    Public Function TryResolve(stringId As UInteger, ByRef text As String) As Boolean
+        text = ""
+        If Not _offsets.ContainsKey(stringId) Then Return False
+        text = Resolve(stringId)
+        Return True
+    End Function
+
     ''' <summary>El texto de ese identificador, o "" si la tabla no lo trae.
     ''' <para>Un identificador que el directorio no declara —o que declara un desplazamiento fuera
     ''' de la tabla— devuelve "": esos nunca entraron al índice.</para></summary>
@@ -305,6 +314,16 @@ Friend NotInheritable Class LocalizedStringResolver
         If table Is Nothing Then Return ""
 
         Return table.Resolve(stringId)
+    End Function
+
+    ''' <summary>False = no hay tabla para ese plugin o el identificador no esta en ella; True = el texto (quiza vacio).</summary>
+    Public Function TryResolve(pluginFileName As String, stringId As UInteger, kind As LocalizedStringTableKind, ByRef text As String) As Boolean
+        text = ""
+        If stringId = 0UI Then Return True
+        If String.IsNullOrWhiteSpace(pluginFileName) Then Return False
+        Dim table = GetTable(pluginFileName, kind)
+        If table Is Nothing Then Return False
+        Return table.TryResolve(stringId, text)
     End Function
 
     Private Function GetTable(pluginFileName As String, kind As LocalizedStringTableKind) As LocalizedStringTable

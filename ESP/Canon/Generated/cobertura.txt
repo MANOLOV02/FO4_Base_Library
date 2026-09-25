@@ -51,7 +51,6 @@ POSTFIJOS DEL FORMATO QUE NO SE TRADUCEN, Y POR QUE
        2  SetFormaterOnValue               idem
       23  SetGetCP                         prioridad de conflicto: coloreo de la vista de conflictos
       16  SetIsRemovable                   si el editor deja borrarlo
-       2  SetIsSorted                      xEdit ordena el arreglo al MOSTRARLO y al guardarlo desde su editor; nuestro escritor conserva el orden leido, que es lo que exige el round-trip byte a byte
      528  SetLinksToCallback               a donde apunta un campo para navegar; no cambia sus bytes
        6  SetLinksToCallbackOnValue        idem
       67  SetNormalizer                    clamp que aplica el EDITOR al escribir un valor a mano
@@ -77,6 +76,7 @@ POSTFIJOS DEL FORMATO QUE NO SE TRADUCEN, Y POR QUE
      258  OverrideEncoding                 cambia el juego de caracteres con el que se decodifica el texto
      133  SetCountPath                     el conteo del arreglo vive en otro campo
       53  SetCountPathOnValue              idem, aplicado al valor y no al subrecord
+       2  SetIsSorted                      callback que decide si el arreglo se ordena al escribir (ley de orden)
      170  SetOptionalFrom                  los campos desde el indice N pueden faltar
      590  SetRequired                      obliga a crear el campo al construir un record nuevo
       91  SetUnordered                     el grupo acepta sus firmas en cualquier orden y reinicia su cursor
@@ -100,7 +100,7 @@ BANDERAS DE DEFINICION (dfXxx) VISTAS
       61  dfNotAlignable                     no se traduce
      173  dfSkipImplicitEdit                 no se traduce
        4  dfStringTrim                       no se traduce
-      19  dfStructFirstNotRequired           no se traduce
+      19  dfStructFirstNotRequired           TRADUCIDA - al CREAR el grupo no se agrega su miembro 0 (no cambia la lectura)
       45  dfSummaryExcludeNULL               no se traduce
        2  dfSummaryExcludeNull               no se traduce
     1364  dfSummaryMembersNoName             no se traduce

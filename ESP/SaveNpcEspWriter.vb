@@ -691,31 +691,7 @@ Public Module SaveNpcEspWriter
         ' Un solo nombre de salida para las DOS lambdas: es el predicado de "este FormID es mio, no de un
         ' master", y escribirlo dos veces es justo la clase de duplicacion que este refactor vino a sacar.
         Dim outName = Path.GetFileName(outputPath)
-        Dim discoveryRemapper As SaveNpcEspWriter.FormIdRemapper =
-            Function(g As UInteger) As UInteger
-                If g = 0UI Then Return 0UI
-                ' Los drafts provisionales (byte alto 0xFF) no son resolvibles a un master: los maneja
-                ' draftRemap, que todavia no existe en esta pasada. Devolverlos tal cual.
-                If IsProvisionalDraftFormID(g) Then Return g
-                Dim pn = pluginManager.GetOriginatingPluginName(g)
-                If String.IsNullOrEmpty(pn) Then
-                    Throw New InvalidOperationException(
-                        $"FormID {g:X8} does not belong to any loaded plugin, so it cannot be re-mastered into the output.")
-                End If
-                If Not String.Equals(pn, outName, StringComparison.OrdinalIgnoreCase) Then
-                    referencedPluginNames.Add(pn)
-                    Dim lst As HashSet(Of UInteger) = Nothing
-                    If Not auditPerPlugin.TryGetValue(pn, lst) Then
-                        lst = New HashSet(Of UInteger)
-                        auditPerPlugin(pn) = lst
-                    End If
-                    lst.Add(g)
-                End If
-                ' IDENTIDAD deliberada (la misma convencion que usan los probes de round-trip): devolver el
-                ' FormID sin tocar garantiza que ninguna rama del emisor que dependa de cero/no-cero tome un
-                ' camino distinto al de la pasada real, o sea que las dos pasadas recorren lo mismo.
-                Return g
-            End Function
+        Dim discoveryRemapper = GenericPluginWriter.DiscoveryRemapper(pluginManager, outName, referencedPluginNames, auditPerPlugin)
         Call emitAll(discoveryRemapper, -1)
 
         ' We do NOT force-add the game master here. Auto-adding a game-master file only makes sense when
@@ -729,55 +705,9 @@ Public Module SaveNpcEspWriter
         ' the end (in load order). This minimizes the FormID-byte churn vs the "rebuild from scratch
         ' sorted by load order" approach which would re-shuffle high bytes for every survived master
         ' that isn't already in load order.
-        Dim sortedMasters As New List(Of String)
-        Dim seenLower As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-
-        ' Step 2a: for "Update existing" — preserve survivors from existingMasters in original order:
-        ' walk them in their original order and keep each one that is either (a) actually referenced by
-        ' some record, or (b) the game master. We replicate that.
-        For Each oldM In existingMasters
-            If seenLower.Contains(oldM) Then Continue For
-            If referencedPluginNames.Contains(oldM) OrElse String.Equals(oldM, gameMaster, StringComparison.OrdinalIgnoreCase) Then
-                sortedMasters.Add(oldM)
-                seenLower.Add(oldM)
-            End If
-        Next
-
-        ' Step 2b: append any newly-added masters (referenced by the new override but not in the
-        ' existing MAST) in load order. The game master is always added first if it wasn't in
-        ' existingMasters and is referenced — Bethesda convention puts it at index 0.
-        For Each plugin In pluginManager.Plugins
-            If plugin Is Nothing Then Continue For
-            If seenLower.Contains(plugin.FileName) Then Continue For
-            If referencedPluginNames.Contains(plugin.FileName) Then
-                sortedMasters.Add(plugin.FileName)
-                seenLower.Add(plugin.FileName)
-            End If
-        Next
-
-        ' Paso 2c: ORDENAR la MAST por LOAD ORDER, con el game master forzado al índice 0.
-        ' La MAST de un plugin válido está siempre en load order. El paso 2a sólo SACA masters, así que
-        ' preserva el orden; el 2b APENDEA al final, y un master que carga antes que otro ya presente
-        ' deja la lista fuera de orden.
-        ' In-game es inerte (el motor resuelve la MAST por NOMBRE y nuestros tres consumidores son
-        ' posicionales), pero el archivo deja de ser canónico y toda operación que dependa de esa
-        ' convención (comparar archivos, fusionar, reordenar masters) parte de un estado inconsistente.
-        ' Un plugin NUEVO ya sale ordenado (el paso 2b recorre pluginManager.Plugins en load order), así que
-        ' esto sólo mueve bytes en un "Update existing" cuyo MAST estaba desordenado.
-        Dim loadOrderRank As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
-        For i = 0 To pluginManager.Plugins.Count - 1
-            Dim pl = pluginManager.Plugins(i)
-            If pl IsNot Nothing AndAlso Not loadOrderRank.ContainsKey(pl.FileName) Then loadOrderRank(pl.FileName) = i
-        Next
-        sortedMasters = sortedMasters.
-            OrderBy(Function(m) If(String.Equals(m, gameMaster, StringComparison.OrdinalIgnoreCase), -1, 0)).
-            ThenBy(Function(m)
-                       Dim r As Integer
-                       ' Un master que no está en el load order cargado no puede ordenarse contra los demás;
-                       ' va al final, en su orden relativo previo (OrderBy es estable).
-                       Return If(loadOrderRank.TryGetValue(m, r), r, Integer.MaxValue)
-                   End Function).
-            ToList()
+        ' Pasos 2a-2c (sobrevivientes en su orden, nuevos en orden de carga, todo ordenado por orden de carga con el
+        ' master del juego primero): una sola copia, en GenericPluginWriter.BuildMasterList.
+        Dim sortedMasters = GenericPluginWriter.BuildMasterList(existingMasters, referencedPluginNames, pluginManager, gameMaster, alwaysKeepGameMaster:=False)
 
         ' ====================================================================
         ' Paso 3: armar el FormIdRemapper. Por cada FormID global: resolver el plugin de origen, buscar su nuevo
@@ -821,44 +751,13 @@ Public Module SaveNpcEspWriter
         ' El flag del header (BuildTes4Header, más abajo) sigue saliendo de `lightMaster`: eso es lo que
         ' el usuario pidió escribir. Lo que NO puede salir de ahí es el espacio de FormID, porque el
         ' motor no lo lee del flag sino de la ley.
-        Dim flagsParaLey As UInteger = If(lightMaster, FLAG_ESL, 0UI)
-        Dim lightEfectivo As Boolean = PluginManager.IsLightSlot(
-            Path.GetDirectoryName(outputPath), Path.GetFileName(outputPath), flagsParaLey)
-        If lightEfectivo <> lightMaster Then
-            Dim nomL = Path.GetFileName(outputPath), casL = lightMaster, efeL = lightEfectivo
-            Logger.LogLazy(Function() $"[SAVE-ESP] '{nomL}': la casilla Light dice {casL} pero la ley " &
-                                      $"(0x200 OR extensión .esl) dice {efeL}. El espacio de FormID usa la LEY.")
-        End If
-        Dim objectIdMask As UInteger = If(lightEfectivo, &HFFFUI, &HFFFFFFUI)
-
-        ' PISO del espacio de object ids. NO es la constante 0x800: el canónico lo decide POR ARCHIVO
-        ' (juego + versión del HEDR + tener masters) y para un plugin SSE nuestro da 1, no 0x800 — ver
-        ' PluginWriter.AllowsHardcodedRange. Usarlo cableado hacía que el agotamiento rehusara el guardado
-        ' a los 2048 records cuando en SSE el canónico todavía tiene 2047 libres: un límite propio MÁS
-        ' ESTRICTO que la referencia. Sólo afecta wrap / recuperación / agotamiento; el arranque de un
-        ' guardado normal sale del HEDR (0x800), así que no mueve un byte del caso corriente.
-        Dim objectIdFloor As UInteger = If(PluginWriter.AllowsHardcodedRange(game, sortedMasters.Count), 1UI, NEXT_OBJECT_ID_DEFAULT)
+        ' Ancho por la LEY del slot, piso por archivo, semilla con recuperacion y reparto: GenericPluginWriter.ObjectIdAllocator.
+        Dim alloc As New GenericPluginWriter.ObjectIdAllocator(pluginManager, outputPath, game, lightMaster, masterIndexLookup, sortedMasters.Count, existingNextObjectId)
 
         ' Object ids YA OCUPADOS en este archivo: los de los records PROPIOS que se preservan o se
         ' re-emiten con su FormID real. Antes de entregar un id nuevo hay que chequear que ninguno
         ' de estos ya lo tenga, si no dos records terminan compartiendo FormID.
-        Dim usedObjectIds As New HashSet(Of UInteger)
-        ' Toma un FormID GLOBAL. El object id NO se saca enmascarando con el ancho de SALIDA: lo decide
-        ' el encoding de ORIGEN, y esa ley ya está unificada en TryMapGlobalToFileLocal. Con el ancho de
-        ' salida, un destino ESL que el usuario destilda a full registraba (lightSlot<<12)|obj en vez de
-        ' obj — o sea no anotaba la ocupación real y encima bloqueaba un id espurio.
-        Dim noteUsedObjectId As Action(Of UInteger) =
-            Sub(g As UInteger)
-                If g = 0UI OrElse IsProvisionalDraftFormID(g) Then Return
-                Dim lf As UInteger = 0UI
-                If pluginManager.TryMapGlobalToFileLocal(g, masterIndexLookup, selfMasterIdx, outName, lf) <> PluginManager.FileLocalMapResult.Ok Then Return
-                ' Sólo los records PROPIOS ocupan object ids de este archivo; los overrides van bajo el
-                ' índice de su master. El test por el alto == selfMasterIdx ES el test por "el dueño es
-                ' outName": masterIndexLookup se llena con 0..sortedMasters.Count-1 (más arriba), o sea que
-                ' todo índice de master es ESTRICTAMENTE MENOR que selfMasterIdx = sortedMasters.Count.
-                If (lf >> 24) <> CUInt(selfMasterIdx) Then Return
-                usedObjectIds.Add(lf And &HFFFFFFUI)
-            End Sub
+        Dim noteUsedObjectId As Action(Of UInteger) = AddressOf alloc.NoteUsed
         For Each r In existingRecords
             ' `r.Header.FormID` es LOCAL: existingRecords viene de un PluginReader FRESCO del archivo de
             ' destino, que nunca pasa por MergeRecords (el único lugar que reescribe el header a global).
@@ -890,78 +789,8 @@ Public Module SaveNpcEspWriter
         For Each fe In flstEntries : If fe.IsOverride Then noteUsedObjectId(fe.FormID)
         Next
 
-        ' Los records PROPIOS que se preservan también tienen que caber en el ancho de SALIDA.
-        ' La condición: archivo LIGHT + ObjectID > 0xFFF + el record es DUEÑO de este archivo
-        ' (nuestro filtro `(lf >> 24) = selfMasterIdx`: sólo los records PROPIOS). Fuera de esas tres
-        ' condiciones no aplica.
-        ' Esta app no tiene un canal de advertencias no bloqueantes, así que frente a esta condición
-        ' el único punto de aplicación disponible es rehusar el guardado directamente.
-        ' Sin esto, el remapper lo emite con el ancho de ORIGEN (que para el remapper es lo correcto) y en
-        ' un archivo con FLAG_ESL el motor lo pliega a 12 bits (ModInfo::GetFormID) ⇒ colisiona con otro
-        ' record IN-GAME, donde ningún assert lo ve. Se alcanza al TILDAR "Light" sobre un plugin full que
-        ' ya tiene records por encima de 0xFFF, y al reabrir un ESL que el código viejo ya corrompió.
-        Dim overWide = usedObjectIds.Where(Function(o) o > objectIdMask).OrderBy(Function(o) o).ToList()
-        If overWide.Count > 0 Then
-            Throw New InvalidOperationException(
-                $"'{outName}' already contains {overWide.Count} record(s) whose object id does not fit this " &
-                $"file's FormID width (first: 0x{overWide(0):X}, maximum 0x{objectIdMask:X})." &
-                If(lightEfectivo, $" A light (ESL) plugin only addresses 0x{objectIdFloor:X}..0x{objectIdMask:X}, so the game would fold " &
-                                "those records onto other FormIDs. Save it without the Light flag, or split " &
-                                "the records across two plugins.", " Split the records across two plugins."))
-        End If
-
-        ' Semilla = el contador del HEDR ENMASCARADO, y nada más: sin piso en este paso. El único piso
-        ' lo pone la recuperación de abajo. NO cablear acá un SEGUNDO piso en 0x800: el formato no lo
-        ' exige, y en SSE (donde el piso real es 1) un HEDR en 0x300 —alcanzable sólo si un guardado
-        ' previo ya envolvió al rango hardcoded— saltaría a 0x800 tirando ~1280 ids todavía vigentes.
-        ' El caso "plugin NUEVO" (sin HEDR en disco, existingNextObjectId = 0) sí arranca en 0x800: es la
-        ' convención del CK y lo que PluginWriter escribe en el header, y mantenerla deja los FormID de un
-        ' guardado corriente donde estaban.
-        Dim nextSelfObjIndex As UInteger = If(existingNextObjectId > 0UI, existingNextObjectId And objectIdMask, NEXT_OBJECT_ID_DEFAULT)
-
-        ' Recuperación de una semilla no confiable: arrancar en el object id MÁS ALTO en uso en vez de
-        ' barrer desde el piso. Barrer desde abajo también sería seguro —el salteo de ocupados impide la
-        ' colisión— pero reciclaría el id de un record borrado, y esto deliberadamente no lo
-        ' hace.
-        ' La ley tiene DOS ramas con la MISMA forma, y `objectIdFloor` es justamente lo que las unifica:
-        '     con rango hardcoded → si NextObjectID &lt; 1 o NextObjectID = Mask, sembrar en el piso 1
-        '     sin rango hardcoded → si NextObjectID &lt; 0x800 o NextObjectID = Mask, sembrar en el
-        '     piso 0x800
-        ' Para SSE corre la PRIMERA (ver PluginWriter.AllowsHardcodedRange); confundir las dos
-        ' ramas mandaría al próximo lector a "corregir" el código hacia la rama que no se ejecuta.
-        ' El término `= Mask` NO es decorativo: hay ESL en disco guardados por esta app con ese valor
-        ' exacto en el HEDR (lo dejaba un clamp que ya no está). Se lee como "contador ya rodó, no
-        ' confiable" y hay que re-sembrar; tomarlo como bueno sería confiar en el número que dejó el bug.
-        If nextSelfObjIndex < objectIdFloor OrElse nextSelfObjIndex = objectIdMask Then
-            Dim highest As UInteger = objectIdFloor
-            For Each u In usedObjectIds
-                If u >= highest Then highest = u + 1UI
-            Next
-            nextSelfObjIndex = If(highest > objectIdMask, objectIdFloor, highest)
-        End If
-
-        ' Entrega el próximo object id LIBRE, envolviendo AL PISO (objectIdFloor — 1 o 0x800 según el
-        ' archivo, ver arriba) al pasarse del ancho y saltando los que ya están tomados, incluido el
-        ' error duro al agotarse: sin él, el desborde es SILENCIOSO y produce dos records con el mismo
-        ' FormID.
-        Dim dispenseObjectId As Func(Of UInteger) =
-            Function() As UInteger
-                Dim span As Long = CLng(objectIdMask) - CLng(objectIdFloor) + 1L
-                For attempt As Long = 0 To span - 1
-                    If nextSelfObjIndex > objectIdMask OrElse nextSelfObjIndex < objectIdFloor Then
-                        nextSelfObjIndex = objectIdFloor
-                    End If
-                    Dim candidate = nextSelfObjIndex
-                    nextSelfObjIndex += 1UI
-                    If usedObjectIds.Add(candidate) Then Return candidate
-                Next
-                Throw New InvalidOperationException(
-                    $"'{outName}' has no free FormID left: every object id from 0x{objectIdFloor:X} to " &
-                    $"0x{objectIdMask:X} is already used by a record in the file. " &
-                    If(lightEfectivo, $"A light (ESL) plugin only addresses {span} of them — save without the " &
-                                    "Light flag, or split the records across two plugins.",
-                                    "Split the records across two plugins."))
-            End Function
+        alloc.CheckWidthAndSeed()
+        Dim dispenseObjectId As Func(Of UInteger) = AddressOf alloc.Dispense
         For Each oe In outfitEntries
             If oe.IsOverride Then Continue For
             draftRemap(oe.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
@@ -1029,75 +858,7 @@ Public Module SaveNpcEspWriter
             draftRemap(he.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
 
-        Dim remapper As SaveNpcEspWriter.FormIdRemapper =
-            Function(globalFormID As UInteger) As UInteger
-                If globalFormID = 0UI Then Return 0UI
-                ' NEW draft (OTFT/LVLI/ARMA/ARMO/MSWP/CLFM) → real self FormID. Branch on the SAME predicate
-                ' the discovery pass uses — IsProvisionalDraftFormID — and only then consult draftRemap.
-                ' Using `draftRemap.TryGetValue` as the branch instead would be the law written twice with
-                ' two different tests: discovery would classify a FormID as a draft while this pass did not,
-                ' or the reverse, and the two walks would stop agreeing. They must partition FormIDs
-                ' identically; what differs between them is only what they DO with each part.
-                If IsProvisionalDraftFormID(globalFormID) Then
-                    Dim mappedDraft As UInteger
-                    If draftRemap.TryGetValue(globalFormID, mappedDraft) Then Return mappedDraft
-                    ' A provisional FormID that no draft claims: something references a draft record that is
-                    ' not being emitted (e.g. a draft cancelled while another still points at it). Falling
-                    ' through would ask GetOriginatingPluginName about a 0xFF high byte — never a valid slot,
-                    ' MAX_FULL_SLOT is 0xFD — and throw the misleading "not in any loaded plugin".
-                    Throw New InvalidOperationException(
-                        $"Draft FormID {globalFormID:X8} is referenced by a record being written but no draft " &
-                        "record claims it, so it cannot be given a real FormID. A referenced draft was most " &
-                        "likely cancelled or deleted while something still pointed at it.")
-                End If
-                ' La conversión global → local (byte alto = índice en la MAST de ESTE archivo, self =
-                ' masters.Count, ancho del object id según el encoding de ORIGEN) vive UNA sola vez, en
-                ' PluginManager.TryMapGlobalToFileLocal. Acá sólo se decide QUÉ HACER con cada resultado:
-                ' los dos casos de fallo son aserciones para el writer (ver los comentarios de abajo).
-                Dim mappedLocal As UInteger = 0UI
-                Dim mapRes = pluginManager.TryMapGlobalToFileLocal(globalFormID, masterIndexLookup, selfMasterIdx, outName, mappedLocal)
-                If mapRes = PluginManager.FileLocalMapResult.Ok Then Return mappedLocal
-
-                Dim pname = pluginManager.GetOriginatingPluginName(globalFormID)
-                If mapRes = PluginManager.FileLocalMapResult.NoOwner Then
-                    ' NEVER fall back to "best effort: keep raw". The global FormID's high byte is a
-                    ' load-order slot; in the output file it means an index into THIS file's MAST — two
-                    ' numbering spaces, so the reference silently points at whatever plugin sits there.
-                    ' Every way a FormID could reach here without a resolvable owner is closed
-                    ' upstream: the .esl extension gets a light slot (PluginReader.ReadTES4), a re-mount
-                    ' keeps its slot instead of vacating one (MergeOverridePlugin), a persisted identifier
-                    ' no longer carries a stale slot (GlobalFormIDFromIdentifierLocal), masters are merged
-                    ' before their dependents (OrderByMasters), an unloaded save target is refused by the
-                    ' Save dialog, and MakeGlobalFormID no longer invents slot 0. So this is an assertion
-                    ' on an invariant, not a user-facing failure mode: if it fires, the bug is ours.
-                    Throw New InvalidOperationException(
-                        $"FormID {globalFormID:X8} does not belong to any loaded plugin, so it cannot be " &
-                        "re-mastered into the output. Writing it unchanged would silently repoint it at " &
-                        "whichever plugin occupies that index in the new master list.")
-                End If
-                ' OwnerNotInMasterList: el owner resolvio pero no quedo en la MAST. INALCANZABLE por
-                ' construccion: la MAST se DERIVA del walk de emision (Paso 1), la misma pasada que
-                ' produce estos bytes, asi que todo FormID que llega hasta aca ya paso por
-                ' discoveryRemapper y su plugin ya esta en la lista.
-                '
-                ' Para el WRITER es una asercion y por eso lanza; el otro llamador de
-                ' TryMapGlobalToFileLocal (NpcOverrideSaver, que mapea contra la MAST VIEJA del disco)
-                ' necesita lo OPUESTO — ahi este caso es legitimo y frecuente. Por eso la funcion
-                ' compartida devuelve un enum en vez de decidir por los dos.
-                '
-                ' Tira en vez de devolver el FormID crudo: el crudo esta indexado
-                ' por load order, mientras que el byte alto de un FormID en el archivo de salida es un
-                ' indice en la MAST de ESTE archivo, asi que escribirlo repuntaria la referencia en
-                ' silencio al plugin que ocupe ese indice. Si algun dia se dispara, lo que se rompio es la
-                ' premisa de que las dos pasadas recorren lo mismo — y mejor mil veces que el guardado
-                ' falle fuerte antes que shipear un plugin apuntando al mod equivocado.
-                Throw New InvalidOperationException(
-                    $"FormID {globalFormID:X8} is owned by '{pname}', which is not in the master list " &
-                    "being written. The master list is built from the discovery pass over this very " &
-                    "emission walk, so every plugin reached here should already be in it — this means " &
-                    "the two passes disagreed. Writing it unchanged would silently repoint the " &
-                    "reference at whichever plugin occupies that index.")
-            End Function
+        Dim remapper = GenericPluginWriter.FinalRemapper(pluginManager, outName, masterIndexLookup, selfMasterIdx, draftRemap)
 
         ' Diff against existing masters for the SaveResult report.
         Dim result As New SaveResult With {
@@ -1162,18 +923,18 @@ Public Module SaveNpcEspWriter
         ' TXST y FLST van PRIMEROS: no referencian nada de lo que este writer emite, y los referencian
         ' HDPT (TNAM/RNAM) y ARMA/ARMO (skin texture + swap list). HDPT va despues de CLFM/MSWP -a los
         ' que referencia- y antes de NPC_, que lo referencia por PNAM.
-        Dim grupTxstBytes As Byte() = If(txstBuffers.Count > 0, BuildGrup("TXST", txstBuffers), Array.Empty(Of Byte)())
-        Dim grupFlstBytes As Byte() = If(flstBuffers.Count > 0, BuildGrup("FLST", flstBuffers), Array.Empty(Of Byte)())
-        Dim grupHdptBytes As Byte() = If(hdptBuffers.Count > 0, BuildGrup("HDPT", hdptBuffers), Array.Empty(Of Byte)())
-        Dim grupClfmBytes As Byte() = If(clfmBuffers.Count > 0, BuildGrup("CLFM", clfmBuffers), Array.Empty(Of Byte)())
-        Dim grupMswpBytes As Byte() = If(mswpBuffers.Count > 0, BuildGrup("MSWP", mswpBuffers), Array.Empty(Of Byte)())
-        Dim grupArmaBytes As Byte() = If(armaBuffers.Count > 0, BuildGrup("ARMA", armaBuffers), Array.Empty(Of Byte)())
-        Dim grupArmoBytes As Byte() = If(armoBuffers.Count > 0, BuildGrup("ARMO", armoBuffers), Array.Empty(Of Byte)())
-        Dim grupOtftBytes As Byte() = If(otftBuffers.Count > 0, BuildGrup("OTFT", otftBuffers), Array.Empty(Of Byte)())
+        Dim grupTxstBytes As Byte() = If(txstBuffers.Count > 0, GenericPluginWriter.BuildGrup("TXST", txstBuffers), Array.Empty(Of Byte)())
+        Dim grupFlstBytes As Byte() = If(flstBuffers.Count > 0, GenericPluginWriter.BuildGrup("FLST", flstBuffers), Array.Empty(Of Byte)())
+        Dim grupHdptBytes As Byte() = If(hdptBuffers.Count > 0, GenericPluginWriter.BuildGrup("HDPT", hdptBuffers), Array.Empty(Of Byte)())
+        Dim grupClfmBytes As Byte() = If(clfmBuffers.Count > 0, GenericPluginWriter.BuildGrup("CLFM", clfmBuffers), Array.Empty(Of Byte)())
+        Dim grupMswpBytes As Byte() = If(mswpBuffers.Count > 0, GenericPluginWriter.BuildGrup("MSWP", mswpBuffers), Array.Empty(Of Byte)())
+        Dim grupArmaBytes As Byte() = If(armaBuffers.Count > 0, GenericPluginWriter.BuildGrup("ARMA", armaBuffers), Array.Empty(Of Byte)())
+        Dim grupArmoBytes As Byte() = If(armoBuffers.Count > 0, GenericPluginWriter.BuildGrup("ARMO", armoBuffers), Array.Empty(Of Byte)())
+        Dim grupOtftBytes As Byte() = If(otftBuffers.Count > 0, GenericPluginWriter.BuildGrup("OTFT", otftBuffers), Array.Empty(Of Byte)())
         ' LVLN (Leveled NPC) va ANTES que LVLI en el orden de GRUP que usa este writer.
-        Dim grupLvlnBytes As Byte() = If(lvlnBuffers.Count > 0, BuildGrup("LVLN", lvlnBuffers), Array.Empty(Of Byte)())
-        Dim grupLvliBytes As Byte() = If(lvliBuffers.Count > 0, BuildGrup("LVLI", lvliBuffers), Array.Empty(Of Byte)())
-        Dim grupNpcBytes = BuildGrup("NPC_", recordBuffers)
+        Dim grupLvlnBytes As Byte() = If(lvlnBuffers.Count > 0, GenericPluginWriter.BuildGrup("LVLN", lvlnBuffers), Array.Empty(Of Byte)())
+        Dim grupLvliBytes As Byte() = If(lvliBuffers.Count > 0, GenericPluginWriter.BuildGrup("LVLI", lvliBuffers), Array.Empty(Of Byte)())
+        Dim grupNpcBytes = GenericPluginWriter.BuildGrup("NPC_", recordBuffers)
 
         ' ====================================================================
         ' Paso 6: armar el header TES4 y emitir el stream final.
@@ -1188,8 +949,7 @@ Public Module SaveNpcEspWriter
         ' siembra ahi y vuelve a repartir 0xFFF a OTRO record. Con el reparto ya acotado y el salteo de
         ' ocupados no protege nada.
         ' ====================================================================
-        Dim nextObjectId As UInteger = nextSelfObjIndex
-        If nextObjectId > objectIdMask Then nextObjectId = objectIdFloor
+        Dim nextObjectId As UInteger = alloc.NextObjectIdForHeader()
         ' HEDR.numRecords counts EVERY element: TES4 itself counts as 1, plus each top-level GRUP,
         ' which counts as 1 ON TOP OF the sum of its children — i.e. the GRUP counts as one form ON TOP
         ' OF its records. Subtracting TES4 leaves:
@@ -1207,7 +967,7 @@ Public Module SaveNpcEspWriter
         Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count + lvlnBuffers.Count +
                                       mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count + clfmBuffers.Count +
                                       hdptBuffers.Count + txstBuffers.Count + flstBuffers.Count + grupCount
-        Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
+        Dim tes4Bytes = GenericPluginWriter.BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, NPC_MANAGER_AUTHOR_CNAM, writeEncodingSnam:=True)
 
         ' ====================================================================
         ' Step 7: se escribe ENCIMA del .esp que ya está, con copia previa.
@@ -1512,30 +1272,6 @@ Public Module SaveNpcEspWriter
                                 entry.OriginalVcs1, entry.OriginalVcs2, selfIdxDestino, avisos)
     End Function
 
-    ''' <summary>Wrap a record body in the 24-byte record header (Signature, DataSize, Flags, FormID,
-    ''' VCS1, Version, VCS2). Shared by create + override paths. The FormID passed is already remapped.
-    ''' <paramref name="versionOverride"/> (override path) forces a specific record Version (the source
-    ''' record's) instead of the target game's default — preserve the source header on re-save.</summary>
-    Private Function WrapRecord(signature As String, body As Byte(), flags As UInteger, mappedFormID As UInteger,
-                                vcs1 As UInteger, vcs2 As UShort, game As Config_App.Game_Enum,
-                                Optional versionOverride As UShort = 0US) As Byte()
-        Dim recordVersion As UShort = If(versionOverride <> 0US, versionOverride,
-                                         If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE))
-        Using ms As New MemoryStream()
-            Using bw As New BinaryWriter(ms)
-                bw.Write(Encoding.ASCII.GetBytes(signature))    ' Signature
-                bw.Write(CUInt(body.Length))                    ' DataSize
-                bw.Write(flags)                                 ' Flags
-                bw.Write(mappedFormID)                          ' FormID (already remapped)
-                bw.Write(vcs1)                                  ' VCS1
-                bw.Write(recordVersion)                         ' Version
-                bw.Write(vcs2)                                  ' VCS2
-                bw.Write(body)
-            End Using
-            Return ms.ToArray()
-        End Using
-    End Function
-
     ''' <summary>Byte alto del identificador provisional de un borrador sin guardar.
     ''' <para>⛔ Vive ACÁ, en la librería, y no en la app: estaba escrito en los dos lados —una vez
     ''' como máscara y otra como <c>(formID &gt;&gt; 24) And &amp;HFF</c>— y había que moverlos juntos, que es
@@ -1563,30 +1299,8 @@ Public Module SaveNpcEspWriter
     Public ReadOnly FormIdAltoDeBorrador As UInteger = &HFF000000UI
 
     ''' <summary>True if a FormID is a provisional draft sentinel. Una sola ley, un solo valor.</summary>
-    Private Function IsProvisionalDraftFormID(formID As UInteger) As Boolean
+    Friend Function IsProvisionalDraftFormID(formID As UInteger) As Boolean
         Return (formID And FormIdAltoDeBorrador) = FormIdAltoDeBorrador
-    End Function
-
-    Private Function BuildGrup(label As String, recordBuffers As List(Of Byte())) As Byte()
-        ' GRUP header (24 bytes): Signature "GRUP" + GroupSize (incl. header) + Label (record-type
-        ' signature) as u32 + GroupType (0 = top-level) + Stamp + Unknown.
-        If label Is Nothing OrElse label.Length <> 4 Then Throw New ArgumentException($"GRUP label must be 4 chars: '{label}'.", NameOf(label))
-        Using ms As New MemoryStream()
-            Using bw As New BinaryWriter(ms)
-                Dim contentSize = recordBuffers.Sum(Function(b) b.Length)
-                Dim totalSize = 24 + contentSize
-                bw.Write(Encoding.ASCII.GetBytes("GRUP"))
-                bw.Write(CUInt(totalSize))
-                bw.Write(Encoding.ASCII.GetBytes(label))     ' Label u32 = record-type signature bytes
-                bw.Write(0)                                  ' GroupType = 0 (top-level)
-                bw.Write(0UI)                                ' Stamp
-                bw.Write(0UI)                                ' Unknown
-                For Each b In recordBuffers
-                    bw.Write(b)
-                Next
-            End Using
-            Return ms.ToArray()
-        End Using
     End Function
 
     ''' <summary>El plugin que genera la aplicación <b>nunca</b> declara el flag 0x80 (tablas de
@@ -1594,98 +1308,6 @@ Public Module SaveNpcEspWriter
     ''' de records para saber con qué forma escribir un texto localizable — si algún día la salida
     ''' pasara a ser localizada, las dos cosas se mueven juntas desde este único lugar.</summary>
     Public Const SALIDA_LOCALIZADA As Boolean = False
-
-    Private Function BuildTes4Header(game As Config_App.Game_Enum,
-                                     markAsMaster As Boolean,
-                                     lightMaster As Boolean,
-                                     masters As List(Of String),
-                                     numContentRecords As Integer,
-                                     nextObjectId As UInteger,
-                                     gameMaster As String,
-                                     outputDir As String) As Byte()
-        Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
-        Dim hedrVersion As Single = PluginWriter.HedrVersionFor(game)
-
-        ' HEDR + CNAM + (MAST + DATA)*N
-        Using bodyMs As New MemoryStream()
-            Using bw As New BinaryWriter(bodyMs)
-                ' HEDR (12 bytes)
-                WriteSubrecordHeader(bw, "HEDR", 12)
-                bw.Write(hedrVersion)
-                ' numRecords = content records + top-level GRUPs (TES4 itself excluded). The caller
-                ' computes it; see the derivation at the call site.
-                bw.Write(CUInt(numContentRecords))
-                ' Next free self object index — must exceed any self-index FormID we assigned to new
-                ' records (OTFT outfits start at NEXT_OBJECT_ID_DEFAULT) so the CK won't re-issue one.
-                bw.Write(nextObjectId)
-
-                ' CNAM (author, ZSTRING). TES4.CNAM is a translatable string.
-                ' Literal is ASCII-only but route via central encoder for convention consistency.
-                Dim authorBytes = PluginEncodingSettings.EncodeTranslatable(NPC_MANAGER_AUTHOR_CNAM)
-                WriteSubrecordHeader(bw, "CNAM", authorBytes.Length + 1)
-                bw.Write(authorBytes)
-                bw.Write(CByte(0))
-
-                ' SNAM (TES4 Description, ZSTRING). Convención de compatibilidad: un tag <cp:XXXX> en
-                ' este campo señala el encoding Translatable del archivo, para que quien lo abra sepa
-                ' qué codepage aplicar sin depender del idioma configurado en su máquina. No es
-                ' obligatorio — se emite acá como mejora de UX deliberada (riesgo cero de bug): los
-                ' plugins que genera NPC_Manager declaran su propio encoding sin importar la
-                ' configuración de idioma de quien los abra. El tag no ayuda in-game (el motor del juego
-                ' lo ignora) pero tampoco molesta — es sólo una descripción legible de más. Formato:
-                ' "Plugin encoding: <cp:XXXX>" — prefijo descriptivo para quien navega el plugin con otra
-                ' herramienta; el tag se puede ubicar en cualquier posición del texto.
-                Dim cpTag = PluginEncodingSettings.GetTranslatableSnamCpTag()
-                If cpTag <> "" Then
-                    Dim snamText = "Plugin encoding: " & cpTag
-                    Dim snamBytes = PluginEncodingSettings.EncodeTranslatable(snamText)
-                    WriteSubrecordHeader(bw, "SNAM", snamBytes.Length + 1)
-                    bw.Write(snamBytes)
-                    bw.Write(CByte(0))
-                End If
-
-                ' MAST + DATA pairs. DATA is an 8-byte array with no known use, normally set by the CK
-                ' but almost always null. The engine ignores the field at runtime — the canonical
-                ' CK output is 8 zero bytes, so we match that and skip the file-size lookup.
-                For Each masterName In masters
-                    ' NO Encoding.ASCII: sustituye por '?' en silencio y el lector decodifica con la General.
-                    ' Ver PluginEncodingSettings.EncodeMasterFileName — rehúsa en vez de escribir un master roto.
-                    Dim masterBytes = PluginEncodingSettings.EncodeMasterFileName(masterName)
-                    WriteSubrecordHeader(bw, "MAST", masterBytes.Length + 1)
-                    bw.Write(masterBytes)
-                    bw.Write(CByte(0))
-                    WriteSubrecordHeader(bw, "DATA", 8)
-                    bw.Write(0UL)
-                Next
-
-                ' INCC (Interior Cell Count, u32) is required on FO4 plugins: its correct value is the
-                ' count of CELL records flagged Interior (DATA bit 0 = 1). NPC_Manager auto-gen plugins never
-                ' contain CELL records, so
-                ' INCC is always 0 — but the subrecord must be emitted (engine + CK validators
-                ' expect it on FO4 ESPs).
-                WriteSubrecordHeader(bw, "INCC", 4)
-                bw.Write(0UI)
-            End Using
-            Dim bodyBytes = bodyMs.ToArray()
-
-            Using ms As New MemoryStream()
-                Using bw As New BinaryWriter(ms)
-                    bw.Write(Encoding.ASCII.GetBytes("TES4"))
-                    bw.Write(CUInt(bodyBytes.Length))
-                    Dim flags As UInteger = 0UI
-                    If markAsMaster Then flags = flags Or FLAG_ESM
-                    If lightMaster Then flags = flags Or FLAG_ESL
-                    bw.Write(flags)
-                    bw.Write(0UI)               ' FormID always 0 for TES4
-                    bw.Write(0UI)               ' VCS1
-                    bw.Write(recordVersion)     ' Version
-                    bw.Write(0US)               ' VCS2
-                    bw.Write(bodyBytes)
-                End Using
-                Return ms.ToArray()
-            End Using
-        End Using
-    End Function
 
     ''' <summary>The game's master file name. Public so callers building entries (NpcOverrideSaver's SSE
     ''' hair-colour materialization) can tell "this record lives in the game master, reusing it adds no
@@ -1771,7 +1393,7 @@ Public Module SaveNpcEspWriter
         ' La version de formulario tambien sale del contexto: al leer el original queda ahi, y un
         ' record nuevo la deja en cero, que es lo que WrapRecord interpreta como "la del juego".
         Dim banderas = vista.Context.RecordFlags
-        Return WrapRecord(vista.Context.RecordSignature, cuerpo,
+        Return GenericPluginWriter.WrapRecord(vista.Context.RecordSignature, cuerpo,
                           banderas And Not FLAG_COMPRESSED, idDestino, vcs1, vcs2, game,
                           vista.Context.FormVersion)
     End Function

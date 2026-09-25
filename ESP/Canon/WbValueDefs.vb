@@ -108,6 +108,21 @@ Namespace Canon
             Return New WbNode(Me)
         End Function
 
+        ''' <summary>El valor con el que xEdit CREA este campo (<c>SetDefaultNativeValue</c> del .pas). No cambia
+        ''' la lectura ni el emisor ni <see cref="CreateDefault"/>: lo consume solo la ley de creacion de la capa
+        ''' <c>XEdit</c> (Item_Sorter). Nothing = sin valor declarado.</summary>
+        Public Property DefaultNative As Object
+
+        Public Function WithDefaultNative(v As Long) As WbValueDef
+            DefaultNative = v
+            Return Me
+        End Function
+
+        Public Function WithDefaultNative(v As Double) As WbValueDef
+            DefaultNative = v
+            Return Me
+        End Function
+
         ''' <summary>Guard de tamaño. Recibe el NODO, no su ruta ya armada: construir
         ''' <c>WbNode.Path</c> es subir por todos los ancestros armando una lista y un
         ''' <c>String.Join</c>, y este guard está en el camino FELIZ de CADA hoja.
@@ -387,6 +402,25 @@ Namespace Canon
         Public Sub New(name As String)
             Me.Name = name
         End Sub
+
+        ''' <summary>Escala del TEXTO del valor (<c>aScale</c> de <c>wbFloat</c>): el texto es valor x escala y al
+        ''' escribir texto se divide. No cambia los bytes.</summary>
+        Public Property Scale As Double = 1.0
+        ''' <summary>Decimales del texto (<c>aDigits</c>; -1 = <c>wbFloatDigits</c>).</summary>
+        Public Property Digits As Integer = -1
+        ''' <summary>Float con normalizador de angulo (<c>wbFloatAngle</c>): su texto no esta transcrito.</summary>
+        Public Property IsAngle As Boolean
+
+        Public Function WithEditFormat(scale As Double, digits As Integer) As WbFloatDef
+            Me.Scale = scale
+            Me.Digits = digits
+            Return Me
+        End Function
+
+        Public Function AsAngle() As WbFloatDef
+            IsAngle = True
+            Return Me
+        End Function
 
         Public Overrides Function DefaultSize(ctx As WbContext) As Integer
             Return 4
@@ -997,6 +1031,22 @@ Namespace Canon
             Return Me
         End Function
 
+        ''' <summary>Indices de los miembros que forman la clave de orden (<c>wbStructSK</c>); Nothing = sin clave
+        ''' propia. Solo lo lee la ley de orden de la capa <c>XEdit</c>.</summary>
+        Public Property SortKey As Integer()
+        ''' <summary>Indices de la clave EXTENDIDA (<c>wbStructExSK</c>).</summary>
+        Public Property ExSortKey As Integer()
+
+        Public Function WithSortKey(ParamArray idx As Integer()) As WbStructDef
+            SortKey = idx
+            Return Me
+        End Function
+
+        Public Function WithExSortKey(ParamArray idx As Integer()) As WbStructDef
+            ExSortKey = idx
+            Return Me
+        End Function
+
         ''' <summary>Suma de los miembros. Con <see cref="OptionalFromElement"/> es un MÁXIMO, no un
         ''' tamaño exacto; por eso un struct con miembros opcionales no debe usarse con SizeMatch.</summary>
         Public Overrides Function DefaultSize(ctx As WbContext) As Integer
@@ -1111,6 +1161,23 @@ Namespace Canon
             _Counter = counter
             If element IsNot Nothing Then element.DefParent = Me
         End Sub
+
+        ''' <summary>Arreglo ordenado (<c>wbArrayS</c>). El lector y el emisor NO reordenan: lo consume solo la ley de
+        ''' orden de la capa <c>XEdit</c>.</summary>
+        Public Property Sorted As Boolean
+        ''' <summary>La cantidad sale de un callback del .pas (<c>SetCountPath(..., True)</c>): al CREAR el arreglo
+        ''' xEdit pone lo que diga ese contador (0), no un elemento de relleno.</summary>
+        Public Property CountPathIsCallback As Boolean
+
+        Public Function AsSorted() As WbArrayDef
+            Sorted = True
+            Return Me
+        End Function
+
+        Public Function WithCountCallback() As WbArrayDef
+            CountPathIsCallback = True
+            Return Me
+        End Function
 
         ''' <summary>Bytes del prefijo de conteo (0 si el array no lleva prefijo).</summary>
         Public ReadOnly Property PrefixWidth As Integer

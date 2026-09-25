@@ -194,7 +194,7 @@ Namespace Canon
             {305, New Integer() {0, 0}},
             {306, New Integer() {0, 0}},
             {309, New Integer() {0, 0}},
-            {310, New Integer() {0, 0}},
+            {310, New Integer() {56, 0}},
             {312, New Integer() {18, 0}},
             {313, New Integer() {0, 0}},
             {314, New Integer() {0, 0}},
@@ -1106,6 +1106,21 @@ Namespace Canon
         Friend ReadOnly RamaValoresFueraDeDominio As New Dictionary(Of Integer, IReadOnlyDictionary(Of Long, String)) From {
             {13, New Dictionary(Of Long, String) From {{-1L, "None"}}}
         }
+
+        ''' <summary>ordinal -> {ToStr, ToInt}: los callbacks de texto de la rama «especial»,
+        ''' en el orden del constructor `wbInteger(nombre, tipo, ToStr, ToInt, ...)`. <para>Al copiar
+        ''' un record xEdit pasa cada entero por su texto (SetEditValue(EditValue)); con estos
+        ''' callbacks el valor que queda escrito lo decide el ToInt, no el entero de la fuente.
+        ''' ToInt vacio = el constructor no declara uno.</para></summary>
+        Friend ReadOnly RamaCallbacks As New Dictionary(Of Integer, String()) From {
+            {3, New String() {"wbConditionStringToStr", "wbConditionStringToInt"}},
+            {4, New String() {"wbConditionAliasToStr", "wbAliasToInt"}},
+            {5, New String() {"wbConditionEventToStr", "wbConditionEventToInt"}},
+            {7, New String() {"wbConditionQuestStageToStr", "wbQuestStageToInt"}}
+        }
+
+        ''' <summary>Los ordinales cuya rama declara prioridad de conflicto `cpIgnore`.</summary>
+        Friend ReadOnly RamaIgnorada As New HashSet(Of Integer) From {0, 3}
 
         ''' <summary>Los ordinales cuya rama es un entero CON SIGNO (`itS32`).</summary>
         Friend ReadOnly RamaConSigno As New HashSet(Of Integer) From {2, 4, 7, 9}

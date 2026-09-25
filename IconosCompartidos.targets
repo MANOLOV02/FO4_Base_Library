@@ -54,7 +54,7 @@
 
       <!-- Se busca el NODO, no el nombre suelto: <metadata ... IconsSmall.TrayLocation> no cuenta. -->
       <_IconResxConCopia Include="@(_IconResx)"
-        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('%(FullPath)')), '&lt;data name=&quot;Icons(Small|Large)\.ImageStream&quot;'))" />
+        Condition="'%(FullPath)' != '' And $([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('%(FullPath)')), '&lt;data name=&quot;Icons(Small|Large)\.ImageStream&quot;'))" />
     </ItemGroup>
 
     <!-- ⛔ La Condition sobre @(...) NO sobra, aunque el %(...) del File ya deberia armar el lote:

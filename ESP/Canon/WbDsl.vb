@@ -36,7 +36,7 @@ Namespace Canon
             Return New WbIntegerDef(name, t, "wbEnum", Nothing, values)
         End Function
 
-        Public Function Flt(name As String) As WbValueDef
+        Public Function Flt(name As String) As WbFloatDef
             Return New WbFloatDef(name)
         End Function
 
@@ -97,13 +97,13 @@ Namespace Canon
         End Function
 
         Public Function ArrayV(name As String, element As WbValueDef, Optional count As Integer = -1,
-                               Optional countPath As String = Nothing, Optional elementNames As String() = Nothing) As WbValueDef
+                               Optional countPath As String = Nothing, Optional elementNames As String() = Nothing) As WbArrayDef
             Return New WbArrayDef(name, element, count, countPath, elementNames)
         End Function
 
         ''' <summary>Arreglo cuya cantidad de elementos no está en un campo del archivo sino que
         ''' se calcula recorriendo el árbol ya parseado.</summary>
-        Public Function ArrayC(name As String, element As WbValueDef, counter As WbCounter) As WbValueDef
+        Public Function ArrayC(name As String, element As WbValueDef, counter As WbCounter) As WbArrayDef
             Return New WbArrayDef(name, element, 0, Nothing, Nothing, counter)
         End Function
 

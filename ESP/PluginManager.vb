@@ -814,6 +814,16 @@ Public Class PluginManager
         Return _localizedStrings.Resolve(pluginFileName, stringId, kind)
     End Function
 
+    ''' <summary>Como <see cref="ResolveLocalizedString"/>, pero False si el identificador no esta en la tabla del idioma
+    ''' (un identificador con texto vacio da True y "").</summary>
+    Public Function TryResolveLocalizedString(pluginFileName As String, stringId As UInteger, kind As LocalizedStringTableKind,
+                                              ByRef text As String) As Boolean
+        text = ""
+        If stringId = 0UI Then Return True
+        If _localizedStrings Is Nothing Then Return False
+        Return _localizedStrings.TryResolve(pluginFileName, stringId, kind, text)
+    End Function
+
     Public Function ResolveFieldString(rec As PluginRecord, sr As SubrecordData, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If sr.Data Is Nothing OrElse sr.Data.Length = 0 Then Return ""
 
