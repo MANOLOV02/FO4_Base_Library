@@ -231,4 +231,31 @@ Public Module ShapeMaterialOverrides
         Next
     End Sub
 
+    ' ================================================================================= a base object's own Model
+
+    ''' <summary>The material of a base object's own Model: its material swap (MODS) as SET, THEN its color remapping
+    ''' index (MODC) as SET — the order the engine applies them (<c>NpcMaterialResolver</c>, "matches engine application
+    ''' order"). One place for that order: NPC Manager (ARMA base swap) and SafeScrap (object preview) call it.
+    ''' <para>FormID overload: a 0 swap is not applied (no <c>[MSWP-ENTRY]</c> is logged for it).</para></summary>
+    Public Sub ApplyModelMaterial(swapFormID As UInteger,
+                                  colorRemapIndex As Single?,
+                                  shapes As IEnumerable(Of IRenderableShape),
+                                  pluginManager As PluginManager)
+        If swapFormID <> 0UI Then ApplyMaterialSwap(swapFormID, MaterialSwapFunction.SET, shapes, pluginManager)
+        ApplyModelColor(colorRemapIndex, shapes)
+    End Sub
+
+    ''' <summary>Parsed-swap overload (a draft MSWP already resolved by the caller). A Nothing swap is skipped and the
+    ''' color is STILL applied — an unresolvable draft swap must not drop the color.</summary>
+    Public Sub ApplyModelMaterial(swap As Canon.IMswp,
+                                  colorRemapIndex As Single?,
+                                  shapes As IEnumerable(Of IRenderableShape))
+        If swap IsNot Nothing Then ApplyMaterialSwap(swap, MaterialSwapFunction.SET, shapes)
+        ApplyModelColor(colorRemapIndex, shapes)
+    End Sub
+
+    Private Sub ApplyModelColor(colorRemapIndex As Single?, shapes As IEnumerable(Of IRenderableShape))
+        If colorRemapIndex.HasValue Then ApplyColorRemap(colorRemapIndex.Value, 0.0F, ColorRemapFunction.SET, shapes)
+    End Sub
+
 End Module

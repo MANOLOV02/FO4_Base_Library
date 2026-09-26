@@ -1,0 +1,95 @@
+<Project>
+
+  <!-- ============================================================================================
+       BUILD GUARD OF AN EMBEDDED NATIVE PLUGIN (EmbeddedNativePlugin.vb).  Only READS: changes nothing.
+       The one seat of this check for every app of the workspace (moved from
+       FO4_NPC_Manager\Native\PluginNativoEmbebido.targets, SafeScrap phase C, 26-sep).
+
+       HOW AN APP USES IT: a .targets file NEXT TO ITS .dll (never inside the .vbproj: the VS designer
+       rewrites the .vbproj, and a guard written inside the file it watches is deleted with it) declares
+       one item per plugin and imports this file:
+
+         <EmbeddedNativePluginCheck Include="$(MSBuildThisFileDirectory)X.dll">
+           <LogicalName>...</LogicalName>          the resource's LogicalName (what EmbeddedNativePlugin looks up)
+           <ForbiddenMarker>...</ForbiddenMarker>  text that ONLY a build that must not ship has (optional)
+           <RequiredMarker>...</RequiredMarker>    text that EVERY build has: the positive control (optional)
+           <MissingResourceWarning/Error>, <MissingDllWarning/Error>, <ForbiddenWarning/Error>, <UnreadableWarning>
+                                                   the messages, in the owner's words; {LogicalName} and
+                                                   {ProjectFile} are replaced
+         </EmbeddedNativePluginCheck>
+
+       The path goes with $(MSBuildThisFileDirectory): a relative Include in an imported file resolves
+       against the PROJECT's folder, not the .targets'.
+
+       WHAT IT DETECTS, per item:
+         1. the project declares an <EmbeddedResource> with that LogicalName;
+         2. the .dll is on disk;
+         3. the .dll does not contain ForbiddenMarker (a measurement build, say) — with its positive control:
+            if RequiredMarker is not found either, the read is not seeing the content and check 3 would pass
+            EMPTY; that is said apart, because "no forbidden text" and "cannot read" are different answers.
+       Warning in Debug/Release, ERROR in Publish (what ships); -p:PluginNativoEsError=true|false forces it,
+       -p:PluginNativoChequeo=false skips it (the names NPC Manager's messages already teach).
+       One run PER ITEM (Outputs="%(Identity)"): properties do not leak between items.
+       ZERO items: the target does not run and nothing is said.
+       ============================================================================================ -->
+
+  <PropertyGroup>
+    <PluginNativoEsError Condition="'$(PluginNativoEsError)' == '' And '$(Configuration)' == 'Publish'">true</PluginNativoEsError>
+    <PluginNativoEsError Condition="'$(PluginNativoEsError)' == ''">false</PluginNativoEsError>
+  </PropertyGroup>
+
+  <!-- BeforeTargets="CoreCompile", not AfterTargets="Build": in Publish it has to stop BEFORE leaving a shippable
+       binary in bin\. The project's items are already evaluated at that point. -->
+  <Target Name="CheckEmbeddedNativePlugins" BeforeTargets="CoreCompile" Outputs="%(EmbeddedNativePluginCheck.Identity)"
+          Condition="'$(PluginNativoChequeo)' != 'false' And '@(EmbeddedNativePluginCheck)' != ''">
+
+    <PropertyGroup>
+      <_EnpDll>%(EmbeddedNativePluginCheck.FullPath)</_EnpDll>
+      <_EnpLogical>%(EmbeddedNativePluginCheck.LogicalName)</_EnpLogical>
+      <_EnpForbidden>%(EmbeddedNativePluginCheck.ForbiddenMarker)</_EnpForbidden>
+      <_EnpRequired>%(EmbeddedNativePluginCheck.RequiredMarker)</_EnpRequired>
+      <!-- The texts may hold quotes: the placeholders are replaced ON A PROPERTY, never inside a '...' literal. -->
+      <_EnpResWarn>%(EmbeddedNativePluginCheck.MissingResourceWarning)</_EnpResWarn>
+      <_EnpResWarn>$(_EnpResWarn.Replace('{LogicalName}', '$(_EnpLogical)').Replace('{ProjectFile}', '$(MSBuildProjectFile)'))</_EnpResWarn>
+      <_EnpResErr>%(EmbeddedNativePluginCheck.MissingResourceError)</_EnpResErr>
+      <_EnpResErr>$(_EnpResErr.Replace('{LogicalName}', '$(_EnpLogical)').Replace('{ProjectFile}', '$(MSBuildProjectFile)'))</_EnpResErr>
+      <_EnpDllWarn>%(EmbeddedNativePluginCheck.MissingDllWarning)</_EnpDllWarn>
+      <_EnpDllErr>%(EmbeddedNativePluginCheck.MissingDllError)</_EnpDllErr>
+      <_EnpForbWarn>%(EmbeddedNativePluginCheck.ForbiddenWarning)</_EnpForbWarn>
+      <_EnpForbErr>%(EmbeddedNativePluginCheck.ForbiddenError)</_EnpForbErr>
+      <_EnpUnreadWarn>%(EmbeddedNativePluginCheck.UnreadableWarning)</_EnpUnreadWarn>
+      <!-- Reset per item: a value of the previous item must not survive into this one. -->
+      <_EnpIsForbidden>false</_EnpIsForbidden>
+      <_EnpIsRead>true</_EnpIsRead>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <!-- Items created in a batched target persist across batches: clear them first. -->
+      <_EnpDeclared Remove="@(_EnpDeclared)" />
+      <_EnpMissing Remove="@(_EnpMissing)" />
+      <!-- The LogicalName is the LAW: the runtime lookup is by LogicalName, not by the Include path. -->
+      <_EnpDeclared Include="@(EmbeddedResource->'%(LogicalName)')" />
+      <_EnpMissing Include="$(_EnpLogical)" Exclude="@(_EnpDeclared)" />
+    </ItemGroup>
+
+    <Warning Condition="'@(_EnpMissing)' != '' And '$(PluginNativoEsError)' != 'true'" File="$(MSBuildProjectFullPath)" Text="$(_EnpResWarn)" />
+    <Error Condition="'@(_EnpMissing)' != '' And '$(PluginNativoEsError)' == 'true'" File="$(MSBuildProjectFullPath)" Text="$(_EnpResErr)" />
+
+    <Warning Condition="!Exists('$(_EnpDll)') And '$(PluginNativoEsError)' != 'true'" File="$(_EnpDll)" Text="$(_EnpDllWarn)" />
+    <Error Condition="!Exists('$(_EnpDll)') And '$(PluginNativoEsError)' == 'true'" File="$(_EnpDll)" Text="$(_EnpDllErr)" />
+
+    <!-- (3) The content. Only when the file is there: without it ReadAllText throws. -->
+    <PropertyGroup Condition="Exists('$(_EnpDll)')">
+      <_EnpText>$([System.IO.File]::ReadAllText($(_EnpDll)))</_EnpText>
+      <_EnpIsForbidden Condition="'$(_EnpForbidden)' != ''">$(_EnpText.Contains('$(_EnpForbidden)'))</_EnpIsForbidden>
+      <_EnpIsRead Condition="'$(_EnpRequired)' != ''">$(_EnpText.Contains('$(_EnpRequired)'))</_EnpIsRead>
+    </PropertyGroup>
+
+    <Warning Condition="'$(_EnpIsForbidden)' == 'true' And '$(PluginNativoEsError)' != 'true'" File="$(_EnpDll)" Text="$(_EnpForbWarn)" />
+    <Error Condition="'$(_EnpIsForbidden)' == 'true' And '$(PluginNativoEsError)' == 'true'" File="$(_EnpDll)" Text="$(_EnpForbErr)" />
+
+    <Warning Condition="Exists('$(_EnpDll)') And '$(_EnpIsRead)' != 'true'" File="$(_EnpDll)" Text="$(_EnpUnreadWarn)" />
+
+  </Target>
+
+</Project>
