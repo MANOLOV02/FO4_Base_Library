@@ -22,13 +22,14 @@ Imports System.Linq
 '''   · <see cref="ArmoFootprint.EquipMask"/>      BOD2 crudo del ARMO      → mutex de equip.
 '''   · <see cref="ArmoFootprint.GeometryMask"/>   unión de ARMA válidas    → particiones, segmentos, dedup.
 '''   · <see cref="ArmoFootprint.OcclusionMask"/>  geometría ∪ (ARMO ∩ headwear) → oclusión de head-parts,
-'''     categoría Headwear del toggle de render, cobertura de piel. Es la que el render usa como
+'''     categoría Headwear del toggle de render y UI de outfits. Es la que el render usa como
 ''' `candidate.SlotMask` — salvo que el render le suma además los slots de oclusión que declara la
 '''     RACE (`headOcclGate`, en <c>NpcMeshCollector.CollectArmoCandidates</c>), así que para razas
 '''     modeadas su candidate.SlotMask puede traer bits que este footprint no tiene. ⛔ NO migrar el
 '''     render a este campo sin contemplarlo.
-''' La cobertura de piel se queda acá y NO sube a EquipMask: subirla le da a dos ARMO de guantes los
-'''     bits 34/35 y vuelve la regresión histórica "broke hands".
+''' ⛔ Si la PIEL se dibuja NO sale de ninguna de estas máscaras: sale de la tabla de dueños del
+'''     attach (<c>NpcMeshCollector.EntradaQueCargaElModelo</c>). Y la geometría NO sube a EquipMask:
+'''     el mutex del motor es sobre el BOD2 del ARMO.
 '''
 ''' ══ EL JUEGO ENTRA UNA SOLA VEZ ══
 ''' Ni <see cref="Resolve"/> ni <see cref="BuildFootprint"/> reciben el juego por parámetro: lo leen de
@@ -416,10 +417,6 @@ Public Module EquipResolver
     Public Class EquipResolution
         Public ReadOnly Winners As New List(Of EquipItem)
         Public ReadOnly Losers As New List(Of EquipItem)
-        ''' <summary>Unión de <see cref="EquipItem.OcclusionMask"/> de los ganadores. NO es la unión de
-        ''' EquipMask: aguas abajo la consumen la cobertura de piel y la oclusión de head-parts, que razonan
-        ''' sobre particiones (bits de la ARMA), no sobre el equip.</summary>
-        Public OccupiedSlots As UInteger
     End Class
 
     ''' <summary>Resuelve el mutex entre los ARMO de un loadout. Any-bit sobre <see cref="EquipItem.EquipMask"/>
@@ -496,9 +493,6 @@ Public Module EquipResolver
         Dim sorted = res.Winners.OrderBy(Function(x) x.Order).ToList()
         res.Winners.Clear()
         res.Winners.AddRange(sorted)
-        For Each w In res.Winners
-            res.OccupiedSlots = res.OccupiedSlots Or w.OcclusionMask
-        Next
         Return res
     End Function
 

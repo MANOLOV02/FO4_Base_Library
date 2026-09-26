@@ -104,7 +104,7 @@ Public Interface IRenderableShape
     Property TintColor As Color
     Property ApplyZaps As Boolean
     ''' <summary>Worn biped-slot mask of the actor wearing this shape — bit (N-30) = biped slot N,
-    ''' the SAME convention as <c>SlotConflictResolver.OccupiedSlots</c>. 0 = no per-segment occlusion
+    ''' the same convention as every biped mask in the app. 0 = no per-segment occlusion
     ''' (the default; e.g. Wardrobe_Manager never sets it, so its render is unaffected). Read by the
     ''' render per-segment index filter (EnsureZapIndexBuffer → BSTriShapeGeometry.ComputeHiddenTriangles).</summary>
     Property CoveredSlotsMask As UInteger

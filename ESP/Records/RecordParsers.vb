@@ -293,7 +293,7 @@ Public Class RaceUtil
     End Function
 
     ''' <summary>Convert a RACE.DATA "biped object" value to a slot-30-relative bit (bit N = biped slot 30+N,
-    ''' the same convention as the app's occupiedSlots mask). Value v -> (1 &lt;&lt; v) when 0&lt;=v&lt;=31, else 0
+    ''' the same convention as every biped mask in the app). Value v -> (1 &lt;&lt; v) when 0&lt;=v&lt;=31, else 0
     ''' (None: -1 or v&gt;31). Verified engine rule.</summary>
     Private Shared Function BipedValueToBit(v As Integer) As UInteger
         Return If(v >= 0 AndAlso v <= 31, 1UI << v, 0UI)
