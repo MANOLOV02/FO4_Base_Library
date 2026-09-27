@@ -259,7 +259,7 @@ Public Class PluginReader
         stream.Position = dataEndPos
     End Sub
 
-    Private Shared Function ParseSubrecords(data As Byte()) As List(Of SubrecordData)
+    Friend Shared Function ParseSubrecords(data As Byte()) As List(Of SubrecordData)
         Dim result As New List(Of SubrecordData)
         If data Is Nothing OrElse data.Length < SUBRECORD_HEADER_SIZE Then Return result
 
@@ -299,7 +299,7 @@ Public Class PluginReader
     End Function
 
     ''' <summary>Read record data, handling ZLIB compression if flagged.</summary>
-    Private Shared Function ReadRecordData(br As BinaryReader, header As RecordHeader) As Byte()
+    Friend Shared Function ReadRecordData(br As BinaryReader, header As RecordHeader) As Byte()
         If Not header.IsCompressed Then
             Return br.ReadBytes(CInt(header.DataSize))
         End If

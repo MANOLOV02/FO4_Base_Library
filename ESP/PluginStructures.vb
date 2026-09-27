@@ -31,6 +31,9 @@ Public Module PluginConstants
     Public Const FLAG_UPDATE As UInteger = &H100000UI
     Public Const FLAG_ESL As UInteger = &H200UI
     Public Const FLAG_COMPRESSED As UInteger = &H40000UI
+    ''' <summary>Record flag Deleted. The runtime form keeps it at the same bit: Fallout4.exe's recipe-table builder
+    ''' (0x1403A5B50, 1.11.240) skips a COBJ with form flag 0x20.</summary>
+    Public Const FLAG_DELETED As UInteger = &H20UI
 
     ' Group header size
     Public Const RECORD_HEADER_SIZE As Integer = 24
@@ -158,6 +161,12 @@ Public Structure RecordHeader
     Public ReadOnly Property IsCompressed As Boolean
         Get
             Return (Flags And FLAG_COMPRESSED) <> 0
+        End Get
+    End Property
+
+    Public ReadOnly Property IsDeleted As Boolean
+        Get
+            Return (Flags And FLAG_DELETED) <> 0
         End Get
     End Property
 

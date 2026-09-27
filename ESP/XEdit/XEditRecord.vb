@@ -133,7 +133,7 @@ Namespace XEdit
 
         Public ReadOnly Property IsDeleted As Boolean
             Get
-                Return (RecordFlags And &H20UI) <> 0UI
+                Return (RecordFlags And FLAG_DELETED) <> 0UI
             End Get
         End Property
 
