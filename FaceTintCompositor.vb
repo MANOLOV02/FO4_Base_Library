@@ -173,31 +173,6 @@ Public Class FaceTintLayerInput
     ''' uniforme, NO horneado en la textura). Mutuamente excluyente con ForceUniformColor/LUT. Default off (FO4 inerte).</summary>
     Public Property MultiplyTextureByColor As Boolean = False
 
-    ''' <summary>SSE fold de la cadena de albedo facegen. Ley del engine (rama <c>uFgTintFold</c> del shader):
-    ''' <c>albedo = softlight(srgbToLin(complexion), TINT) × ((DETAIL + off) × amp)</c>, con la cobertura forzada a 1
-    ''' (cara completa) y early-out fuera del composite de capas. Réplica exacta del pliegue CPU
-    ''' (<c>SseFaceGenBaker.FoldFacetintIntoDiffuse</c>). Layer texture = el facetint _d (slot 6, el término del
-    ''' SOFT-LIGHT); <see cref="FoldDetailTextureId"/> = el detail (slot 3, el término AMPLIFICADO); base =
-    ''' complexion. Los nombres FgTint* quedaron por compatibilidad: el offset/amp se aplican al DETAIL, no al
-    ''' tint. Default off (FO4 inerte).</summary>
-    Public Property FgTintFold As Boolean = False
-    ''' <summary>Con <see cref="FgTintFold"/>: en vez de PLEGAR la cadena, aplica su INVERSA (unfold). Deja en el
-    ''' diffuse el valor que, despues de que el motor le aplique softlight(.,TINT) x amplify(DETAIL), devuelve
-    ''' exactamente lo que entro. Hace falta porque los slots 3 y 6 ya NO se neutralizan. Espejo GPU de
-    ''' <c>SseFaceGenBaker.PreCompensateEngineChain</c> (CPU) — si tocas una, toca la otra.</summary>
-    Public Property FgTintUnfold As Boolean = False
-    ''' <summary>Offset por canal del amplify del DETAIL (engine (1/255, 0, 1/255)). Solo si <see cref="FgTintFold"/>.</summary>
-    Public Property FgTintOffR As Single = 0F
-    Public Property FgTintOffG As Single = 0F
-    Public Property FgTintOffB As Single = 0F
-    ''' <summary>Amplitud del amplify del DETAIL (engine 255/64 = 3.984375). Solo si <see cref="FgTintFold"/>.</summary>
-    Public Property FgTintAmp As Single = 1F
-    ''' <summary>Textura GL del DETAIL (slot 3, el término AMPLIFICADO) del pliegue SSE. Solo si
-    ''' <see cref="FgTintFold"/>. 0 = sin detail ⇒ el shader usa 0.251 (<c>BSShader_DefFacegenDetail</c>, el default
-    ''' del engine ⇒ multiplicador (1.015625, 1.0, 1.015625)), igual que el fold CPU cuando
-    ''' <c>detailRgba Is Nothing</c>.</summary>
-    Public Property FoldDetailTextureId As Integer = 0
-
     ''' <summary>Canal de la máscara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (VERDE) = convención FO4 (la máscara
     ''' palette vive en el canal verde). SSE la usa en ROJO (0) — el builder SSE lo setea. Ignorado en TextureSet.</summary>
     Public Property PaletteMaskChannel As Integer = 1
@@ -285,11 +260,14 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uForceOpaqueAlphaLoc As Integer = -1
     Friend _uForceUniformColorLoc As Integer = -1
     Friend _uTexTimesColorLoc As Integer = -1
+    Friend _uSkinTintDecalLoc As Integer = -1
     Friend _uFgTintFoldLoc As Integer = -1
     Friend _uFgTintOffLoc As Integer = -1
     Friend _uFgTintAmpLoc As Integer = -1
     Friend _uFoldDetailLoc As Integer = -1
     Friend _uHasFoldDetailLoc As Integer = -1
+    Friend _uFoldTintSpaceLoc As Integer = -1
+    Friend _uFoldDefaultDetailLoc As Integer = -1
     Friend _uPaletteMaskChannelLoc As Integer = -1
     Friend _uWorkingSpaceLoc As Integer = -1
     Friend _uSrcSpaceLoc As Integer = -1
@@ -503,13 +481,20 @@ Public Module FaceTintCompositor
             ("SHADOW-DEPTH-FRAGMENT", ShadowDepthShaderSource.Fragment_ShadowDepth),
             ("SHADOW-UNIFORMS", ShadowDepthShaderSource.SharedUniformsGlsl),
             ("SHADOW-LOOKUP", ShadowDepthShaderSource.SharedLookupGlsl),
+            ("SKINTINT-PEGTOP-FN", SseOverlayCompositor.SoftLightPegtopEngineGlslFn),
+            ("SKINTINT-RGBFIX", SseOverlayCompositor.SkinTintRgbFixGlsl),
             ("GROUND-VERTEX", GroundShadowShaderSource.Vertex_Ground),
             ("GROUND-FRAGMENT", GroundShadowShaderSource.Fragment_Ground),
             ("OVERLAY-VERTEX", TextOverlayRenderer.VertexOverlaySrc),
             ("OVERLAY-FRAGMENT", TextOverlayRenderer.FragmentOverlaySrc),
             ("BACKGROUND-FADE-HELPER", BackgroundFadeSource.Fade_Helper),
             ("BACKGROUND-VERTEX", BackgroundFadeSource.Vertex_Background),
-            ("BACKGROUND-FRAGMENT", BackgroundFadeSource.Fragment_Background)}
+            ("BACKGROUND-FRAGMENT", BackgroundFadeSource.Fragment_Background),
+            ("POST-FO4-FRAGMENT", PostProcessShaderSource.Fragment_PostFo4),
+            ("POST-LUM-WEIGHTS", PostProcessShaderSource.LumWeightsGlsl),
+            ("POST-SSE-FRAGMENT", PostProcessShaderSource.Fragment_PostSse),
+            ("LUMINANCE-PARTIALS-COMPUTE", PostProcessShaderSource.Compute_LumPartials),
+            ("LUMINANCE-RESOLVE-COMPUTE", PostProcessShaderSource.Compute_LumResolve)}
     End Function
 
     Private Const VertexShaderSource As String = "#version 430
@@ -546,7 +531,8 @@ uniform int uChannel;     // 0=Diffuse 1=Normal 2=Specular
 uniform int uUseHairPalette;  // 1 = sample uHairLut per-pixel instead of authored colour (Diffuse only)
 uniform int uForceUniformColor;  // 1 = TextureSet diffuse uses uColor instead of layerSample.rgb (brow tint override path; ignored on PaletteMask)
 uniform int uTexTimesColor;      // 1 = TextureSet diffuse uses layerSample.rgb * uColor (skee overlay type-0: texxtint, tint uniforme). Ignorado en PaletteMask/ForceUniform.
-uniform int uFgTintFold;         // 1 = SSE fold de la cadena facegen: softlight(complexion, layerSample=TINT) * ((uFoldDetail + uFgTintOff) * uFgTintAmp). Default 0 = FO4 inerte.
+uniform int uSkinTintDecal;      // 1 = capa SkinTint de skee (Face [Ovl] SSE). Solo lo prende ApplySseFaceOverlayPass; cada draw de capa del pipeline lo deja en 0.
+uniform int uFgTintFold;         // 1 = SSE fold (directa), 2 = inversa. Solo lo prende ApplySseFoldPass; cada draw de capa lo deja en 0.
 uniform vec3 uFgTintOff;         // offset por canal del amplify del DETAIL (engine (1/255,0,1/255)). NO se aplica al tint.
 uniform float uFgTintAmp;        // amplitud del amplify del DETAIL (engine 255/64).
 uniform int uPaletteMaskChannel; // canal de la mascara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (verde, FO4); SSE=0 (rojo).
@@ -568,7 +554,9 @@ uniform int uFramework;        // composite: 0=OverPrev(default) 1=OverBase 2=Ad
 uniform int uPreToneSkin;      // 1 = pre-tonar el source con el skintone (solo flagged-after-skintone)
 uniform sampler2D uSkinMask;   // mask del skintone
 uniform sampler2D uFoldDetail; // SSE fold: detail (slot 3 -> t4), el termino AMPLIFICADO. Solo se lee con uFgTintFold==1.
-uniform int uHasFoldDetail;    // 0 = sin detail -> 0.2509803922 (0.251 = BSShader_DefFacegenDetail), igual que el fold CPU.
+uniform int uHasFoldDetail;    // 0 = sin detail -> uFoldDefaultDetail (BSShader_DefFacegenDetail), igual que el fold CPU.
+uniform float uFoldDefaultDetail; // SSE fold: el default del motor para el slot 3 vacio (SseFaceGenBaker.EngineDefaultDetail).
+uniform int uFoldTintSpace;   // SSE fold: espacio en que esta almacenado el facetint (OutputSpace del canal Diffuse).
 uniform vec3 uSkinColor;       // color del skintone
 uniform float uSkinOpacity;    // opacidad del skintone
 uniform int uSkinWs;           // working space del skintone
@@ -656,8 +644,11 @@ vec3 blendSoftLightGimp(vec3 d, vec3 s) {            // GIMP/Photoshop
 vec3 blendSoftLightIllusions(vec3 d, vec3 s) {       // Illusions.hu  d^(2^(2(0.5-s)))
     return pow(max(d, vec3(1e-6)), pow(vec3(2.0), 2.0*(vec3(0.5) - s)));
 }
+// pegtop = LA FORMA DEL MOTOR (PS idx 8577; = CPU BlendSoftLightModel caso 3, MISMO orden). Sede unica del
+// texto: SseOverlayCompositor.SoftLightPegtopEngineGlslFn, la misma que concatena el render SSE.
+" & SseOverlayCompositor.SoftLightPegtopEngineGlslFn & "
 vec3 blendSoftLightPegtop(vec3 d, vec3 s) {          // pegtop
-    return (1.0 - 2.0*s)*d*d + 2.0*s*d;
+    return softLightPegtopEngine(d, s);
 }
 // soft-light AGNOSTICO por modelo (= CPU BlendSoftLightModel; paridad CPU/GL). uSoftLight: 0=W3C 1=GIMP 2=Illusions 3=pegtop
 vec3 blendSoftLightModel(vec3 d, vec3 s) {
@@ -946,29 +937,26 @@ void main() {
         return;
     }
 
-    // uFgTintFold==1: PLIEGUE SSE = LEY FIJA DEL ENGINE (PS facegen de BSLightingShader, DXBC verificado byte a byte):
-    //     albedo = softlight(srgbToLin(complexion), TINT) * ((DETAIL + uFgTintOff) * uFgTintAmp)
-    //     softlight(a,b) = a*a + 2*a*b*(1-a)                   [pegtop]
+    // uFgTintFold==1: PLIEGUE SSE = LEY DEL ENGINE (PS facegen de BSLightingShader, DXBC verificado byte a byte):
+    //     albedo = softlight(complexion, TINT) * ((DETAIL + uFgTintOff) * uFgTintAmp)
+    //     softlight por modelo (uSoftLight; el del motor es pegtop: a*a + 2*a*b*(1-a))
     //     TINT   = el facetint  = texture-set slot 6 -> material+0xA0 -> PS t3  (llega en uLayer/layerSample)
     //     DETAIL = texture-set slot 3 -> material+0xA8 -> PS t4                 (llega en uFoldDetail)
     //     [engine: off=(1/255,0,1/255), amp=255/64]
-    // CORREGIDO: antes esto estaba INVERTIDO (amplify sobre el facetint, softlight con el detail). El x255/64
-    // normaliza el DETAIL (neutro 64 -> 1.0), NO el facetint; el facetint entra por soft-light igual que el skin
-    // tint del cuerpo. Con el orden viejo un skin tone saturado aplastaba R/B (cuello mucho mas saturado).
     // RE: SetupMaterial 0x1414DC310 rama facegen 0x1414DC542; OnLoadTextureSet 0x1414BA6E0.
-    // ES UNA REPLICA EXACTA DEL CPU (SseFaceGenBaker.FoldFacetintIntoDiffuse), y por eso hace early-out SIN pasar por
-    // uWorkingSpace/uBlendOp/uFramework: esa convencion es la ley (configurable) del bake de FaceTint del CK, OTRA cosa.
-    // Si el fold la heredara, cambiar una opcion de la UI lo desviaria del engine y el bake dejaria de matchear el juego.
-    // prev = complexion en sRGB (el caller lo sube en Rgba32f: un DDS lo cuantizaria a 8 bits y el fgTint amplifica x4).
-    // Salida en sRGB = exactamente lo que escribe el fold CPU.
-    // uFgTintFold==2: INVERSA de la cadena (unfold). Espejo exacto de PreCompensateEngineChain (CPU).
-    //   y = srgbToLin(prev) / amplify(DETAIL)
-    //   softlight(x,b) = x*x*(1-2b) + 2bx = y  =>  x = (-b + sqrt(b*b + k*y)) / k,  k = 1-2b
-    //   k -> 0 (b = 0.5) es la identidad: el limite es x = y (la formula daria 0/0).
+    // ESPACIOS = los del bucket Fold (SseFaceGenBaker.FoldSpaces), NO una curva escrita aca:
+    //     prev (complexion) en uSrcSpace, TINT en uFoldTintSpace, la cuenta en uWorkingSpace, salida en uOutputSpace.
+    // Con la ley SSE los cuatro coinciden y cvt devuelve la entrada: la cadena corre sobre los valores CRUDOS,
+    // como el motor (el loader de SSE no promueve a sRGB, 0x14101FED0). El DETAIL entra crudo: es dato.
+    // Corre en su PROPIO pase (ApplySseFoldPass), no dentro del pipeline de capas: el pipeline envuelve cada capa
+    // con las conversiones de seed y de salida del bucket del canal, que el pliegue CPU no tiene.
+    // ES UNA REPLICA EXACTA DEL CPU (SseFaceGenBaker.FoldOne / PreCompOne).
+    // uFgTintFold==2: INVERSA de la cadena (unfold). Espejo exacto de PreCompensateEngineChain (CPU):
+    //   y = cvt(prev, Output -> Working) / amplify(DETAIL)
+    //   x = softLightModelInverse(y, TINT) ; salida = cvt(x, Working -> Src) (el espacio del complexion que reemplaza)
     if (uFgTintFold == 2) {
-        vec3 cs = clamp(prev, 0.0, 1.0);
-        vec3 y  = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
-        vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(0.2509803922);
+        vec3 y  = cvt(prev, uOutputSpace, uWorkingSpace);
+        vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(uFoldDefaultDetail);
         // SIN PISO (decision 1: el motor no acota, no hay _sat en ningun paso del desensamblado).
         // POLITICA DE DOMINIO, replicada LITERAL de SseFaceGenBaker.FgAmpInverse: con amp <= 0 la inversa
         // NO divide y devuelve el valor tal cual. Con amp = 0 la directa multiplico por 0 y destruyo la
@@ -978,33 +966,42 @@ void main() {
         vec3 fgSafe = mix(vec3(1.0), fg, greaterThan(fg, vec3(0.0)));
         y = y / fgSafe;
         // EL DISPATCH COMPARTIDO POR MODELO, no la inversa de pegtop escrita a mano. Espejo de
-        // SseFaceGenBaker.PreCompOne, que llama a BlendSoftLightModelInverse con el MISMO uSoftLight
-        // (el caller resuelve la convencion con stage=Fold en los dos caminos).
-        vec3 b = layerSample.rgb;
+        // SseFaceGenBaker.PreCompOne, que llama a BlendSoftLightModelInverse con el MISMO modelo.
+        vec3 b = cvt(layerSample.rgb, uFoldTintSpace, uWorkingSpace);
         vec3 x = clamp(softLightModelInverseSl(y, b, uSoftLight), 0.0, 1.0);
-        vec3 outc = vec3(linearToSrgb1(x.r), linearToSrgb1(x.g), linearToSrgb1(x.b));
-        fragColor = vec4(outc, prevRgba.a);
+        fragColor = vec4(cvt(x, uWorkingSpace, uSrcSpace), prevRgba.a);
         return;
     }
 
     if (uFgTintFold == 1) {
-        vec3 cs = clamp(prev, 0.0, 1.0);
-        vec3 cl = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
+        vec3 cw = cvt(prev, uSrcSpace, uWorkingSpace);
         // Slot 3 vacio: el engine NO deja el amplify en identidad, usa su default BSShader_DefFacegenDetail
-        // = 64/255 = 0.251 (RE byte-level SkyrimSE.exe init 0x140E57E30, fill 0x40404040 = vanilla
-        // blankdetailmap) => multiplicador (1.015625, 1.0, 1.015625). DEBE ser el MISMO default que el CPU
-        // (SseFaceGenBaker.EngineDefaultDetail) o el fold GPU se desvia del bake para NPCs sin detail
-        // (caso Enhanced Khajiit, TX04 borrado).
-        vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(0.2509803922);
-        // EL DISPATCH COMPARTIDO (modelo 3), no una expresion propia: `softLightModelSl` con sl=3 ES la
-        // forma del motor `d*d + 2*d*s*(1-d)` desde la decision 4. Escribirla aca de nuevo era la quinta
-        // copia de la misma cuenta. Espejo de SseFaceGenBaker.FoldOne, que llama al MISMO dispatch.
-        vec3 sl = softLightModelSl(cl, layerSample.rgb, uSoftLight);   // softlight(complexion_lin, TINT = facetint)
+        // (RE byte-level SkyrimSE.exe init 0x140E57E30, fill 0x40404040 = vanilla blankdetailmap). Llega por
+        // uniform desde SseFaceGenBaker.EngineDefaultDetail: el MISMO numero que usa el CPU, no una copia.
+        vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(uFoldDefaultDetail);
+        // EL DISPATCH COMPARTIDO, no una expresion propia. Espejo de SseFaceGenBaker.FoldOne.
+        vec3 sl = softLightModelSl(cw, cvt(layerSample.rgb, uFoldTintSpace, uWorkingSpace), uSoftLight);
         // SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1). Espejo de FgTintChannel.
         vec3 fg = (dt + uFgTintOff) * uFgTintAmp;   // amplify del DETAIL, sin acotar
-        vec3 lin = sl * fg;
-        vec3 outc = vec3(linearToSrgb1(lin.r), linearToSrgb1(lin.g), linearToSrgb1(lin.b));
-        fragColor = vec4(outc, prevRgba.a);
+        fragColor = vec4(cvt(sl * fg, uWorkingSpace, uOutputSpace), prevRgba.a);
+        return;
+    }
+
+    // uSkinTintDecal==1: Face [Ovl] SSE = la CAPA que instala skee (shape de tecnica 5 sobre la cabeza), plegada
+    // sobre el albedo. Espejo EXACTO de SseOverlayCompositor.SkinTintLayerOne (CPU):
+    //     color = pegtop(tex, uColor) * rgbFix   (PS idx 8577, texel CRUDO, tint = cb1[1] crudo)
+    //     cov   = clamp(tex.a * uOpacity, 0, 1)  (NiAlphaProperty 4845: SRC_ALPHA / INV_SRC_ALPHA)
+    //     out   = color * cov + prev * (1 - cov)
+    // SIN conversiones de espacio ni de mascara (el bucket Overlay NO gobierna esta capa: el motor no tiene
+    // opcion) y SIN acotar el color (con tex = 1 el rgbFix da 1.0117 y el PS no satura). Alpha intacto.
+    if (uSkinTintDecal == 1) {
+        float covD = clamp(layerSample.a * uOpacity, 0.0, 1.0);
+        if (!(covD > 0.0)) {
+            fragColor = prevRgba;
+            return;
+        }
+        vec3 cD = blendSoftLightPegtop(clamp(layerSample.rgb, 0.0, 1.0), clamp(uColor, 0.0, 1.0)) * " & SseOverlayCompositor.SkinTintRgbFixGlsl & ";
+        fragColor = vec4(cD * covD + prev * (1.0 - covD), prevRgba.a);
         return;
     }
 
@@ -1524,23 +1521,13 @@ void main() {
                                                          AndAlso channel = FaceTintChannel.Diffuse _
                                                          AndAlso Not useHairPaletteEffective AndAlso Not forceUniformColorEffective)
                 GL.Uniform1(state._uTexTimesColorLoc, If(texTimesColorEffective, 1, 0))
-                ' SSE fold facetint→albedo: solo TextureSet-diffuse, no combinado con tex×color/Force/LUT. src =
-                ' (layerSample.rgb + off)·amp, cov=1 (multiply de cara completa) ⇒ blend forzado a Multiply abajo.
-                Dim fgTintFoldEffective As Boolean = (layer.FgTintFold _
-                                                      AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse _
-                                                      AndAlso channel = FaceTintChannel.Diffuse _
-                                                      AndAlso Not useHairPaletteEffective AndAlso Not forceUniformColorEffective AndAlso Not texTimesColorEffective)
-                GL.Uniform1(state._uFgTintFoldLoc, If(fgTintFoldEffective, If(layer.FgTintUnfold, 2, 1), 0))
-                GL.Uniform3(state._uFgTintOffLoc, layer.FgTintOffR, layer.FgTintOffG, layer.FgTintOffB)
-                GL.Uniform1(state._uFgTintAmpLoc, layer.FgTintAmp)
-                ' Detail (slot 3) del pliegue SSE en la unit 6. Sin detail ⇒ uHasFoldDetail=0 ⇒ el shader usa
-                ' b=0.2509803922 (0.251 = default engine BSShader_DefFacegenDetail, oscurece), EXACTAMENTE como el fold
-                ' CPU (SseFaceGenBaker emptyDetailDefault). Se bindea layerTex de relleno para que el
-                ' sampler nunca quede indefinido (no se lee salvo con uFgTintFold==1 y uHasFoldDetail==1).
-                GL.ActiveTexture(TextureUnit.Texture6)
-                GL.BindTexture(TextureTarget.Texture2D, If(layer.FoldDetailTextureId <> 0, layer.FoldDetailTextureId, layerTex))
-                GL.Uniform1(state._uFoldDetailLoc, 6)
-                GL.Uniform1(state._uHasFoldDetailLoc, If(fgTintFoldEffective AndAlso layer.FoldDetailTextureId <> 0, 1, 0))
+                ' La capa SkinTint de skee (Face [Ovl] SSE) NO es una capa del pipeline: corre en su propio pase
+                ' (ApplySseFaceOverlayPass). Apagada explicitamente en cada draw: el uniform vive en el programa.
+                GL.Uniform1(state._uSkinTintDecalLoc, 0)
+                ' El pliegue SSE NO es una capa: corre en su propio pase (ApplySseFoldPass). Cada draw de capa deja la
+                ' rama apagada explicitamente: el uniform vive en el programa y un pase de pliegue previo lo dejaria
+                ' prendido.
+                GL.Uniform1(state._uFgTintFoldLoc, 0)
                 GL.Uniform1(state._uPaletteMaskChannelLoc, layer.PaletteMaskChannel)   ' PaletteMask: verde (FO4) / rojo (SSE)
 
                 GL.Uniform3(state._uColorLoc,
@@ -1548,8 +1535,8 @@ void main() {
                             CSng(layer.G) / 255.0F,
                             CSng(layer.B) / 255.0F)
                 GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, layer.Opacity)))
-                ' uBlendOp: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight (contrato del shader). El fold SSE ya
-                ' NO se expresa como blend-op: hace early-out en el shader con la ley del engine (ver uFgTintFold).
+                ' uBlendOp: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight (contrato del shader). El fold SSE NO
+                ' es un blend-op: corre en su propio pase (ApplySseFoldPass).
                 GL.Uniform1(state._uBlendOpLoc, CInt(conv.Blend))
                 GL.Uniform1(state._uLayerKindLoc, CInt(layer.Kind))
                 GL.Uniform1(state._uChannelLoc, CInt(channel))
@@ -2223,11 +2210,14 @@ void main() {
         state._uForceOpaqueAlphaLoc = UniLoc(state._program, "uForceOpaqueAlpha", _uniMissing)
         state._uForceUniformColorLoc = UniLoc(state._program, "uForceUniformColor", _uniMissing)
         state._uTexTimesColorLoc = UniLoc(state._program, "uTexTimesColor", _uniMissing)
+        state._uSkinTintDecalLoc = UniLoc(state._program, "uSkinTintDecal", _uniMissing)
         state._uFgTintFoldLoc = UniLoc(state._program, "uFgTintFold", _uniMissing)
         state._uFgTintOffLoc = UniLoc(state._program, "uFgTintOff", _uniMissing)
         state._uFgTintAmpLoc = UniLoc(state._program, "uFgTintAmp", _uniMissing)
         state._uFoldDetailLoc = UniLoc(state._program, "uFoldDetail", _uniMissing)
         state._uHasFoldDetailLoc = UniLoc(state._program, "uHasFoldDetail", _uniMissing)
+        state._uFoldTintSpaceLoc = UniLoc(state._program, "uFoldTintSpace", _uniMissing)
+        state._uFoldDefaultDetailLoc = UniLoc(state._program, "uFoldDefaultDetail", _uniMissing)
         state._uPaletteMaskChannelLoc = UniLoc(state._program, "uPaletteMaskChannel", _uniMissing)
         state._uWorkingSpaceLoc = UniLoc(state._program, "uWorkingSpace", _uniMissing)
         state._uSrcSpaceLoc = UniLoc(state._program, "uSrcSpace", _uniMissing)
@@ -2362,6 +2352,238 @@ void main() {
         Return outTex
     End Function
 
+    ''' <summary>SSE: UN pase del pliegue de la cadena facegen — la directa (<paramref name="unfold"/> = False:
+    ''' <c>albedo = softlight(complexion, facetint) × amplify(detail)</c>) o su inversa (True) — sobre
+    ''' <paramref name="prevTexId"/>, a su mismo tamaño. Devuelve una textura NUEVA (Rgba32f) o 0 si el GL falla.
+    ''' <para>ESPEJO EXACTO de <see cref="SseFaceGenBaker.FoldFacetintIntoDiffuse"/> /
+    ''' <see cref="SseFaceGenBaker.PreCompensateEngineChain"/>: los mismos resolvers (modelo de soft-light y
+    ''' espacios del bucket Fold, <see cref="SseFaceGenBaker.ResolveFoldSpaces"/>), las mismas constantes del motor,
+    ''' y los valores ENTRAN Y SALEN TAL CUAL — sin el seed ni el pase final del pipeline de capas, que convierten
+    ''' con el bucket del canal y no tienen contraparte en el pliegue CPU. Por eso el pliegue tiene pase propio y
+    ''' no es una capa de <see cref="ApplyFaceTintPipeline"/>.</para>
+    ''' <para>Alpha: el de <paramref name="prevTexId"/> pasa intacto (el CPU tampoco lo toca).</para></summary>
+    ''' <param name="detailTexId">El detail (slot 3). 0 = vacío ⇒ el default del motor
+    ''' (<see cref="SseFaceGenBaker.EngineDefaultDetail"/>), igual que el CPU con <c>detailRgba</c> = Nothing.</param>
+    Public Function ApplySseFoldPass(state As FaceTintCompositorState, prevTexId As Integer, tintTexId As Integer,
+                                     detailTexId As Integer, width As Integer, height As Integer,
+                                     unfold As Boolean) As Integer
+        ArgumentNullException.ThrowIfNull(state)
+        If prevTexId = 0 OrElse tintTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
+        Dim sp = SseFaceGenBaker.ResolveFoldSpaces()
+        Dim slModel = SseFaceGenBaker.FoldSoftLightModel()
+        ' Captura ANTES de EnsureCompositorInitialized (ver la nota de ConvertTextureSpace).
+        Dim snap = SaveGlState()
+        Dim outTex As Integer = 0
+        Dim outFbo As Integer = 0
+        Try
+            EnsureCompositorInitialized(state)
+            If state._program = 0 OrElse state._quadVao = 0 Then Return 0
+            If Not AllocateResultTextureAndFbo(state, width, height, outTex, outFbo) Then Return 0
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, outFbo)
+            GL.Viewport(0, 0, width, height)
+            GL.Disable(EnableCap.DepthTest)
+            GL.Disable(EnableCap.ScissorTest)
+            GL.Disable(EnableCap.Blend)
+            GL.UseProgram(state._program)
+            GL.BindVertexArray(state._quadVao)
+            GL.Uniform2(state._uTargetSizeLoc, width, height)
+            GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))
+            GL.Uniform1(state._uModeLoc, 0)
+            GL.Uniform1(state._uFgTintFoldLoc, If(unfold, 2, 1))
+            GL.Uniform1(state._uSrcSpaceLoc, sp.Src)
+            GL.Uniform1(state._uWorkingSpaceLoc, sp.Working)
+            GL.Uniform1(state._uOutputSpaceLoc, sp.Output)
+            GL.Uniform1(state._uFoldTintSpaceLoc, sp.Tint)
+            GL.Uniform1(state._uSoftLightLoc, slModel)
+            GL.Uniform3(state._uFgTintOffLoc, SseFaceGenBaker.FgTintOffR, SseFaceGenBaker.FgTintOffG, SseFaceGenBaker.FgTintOffB)
+            GL.Uniform1(state._uFgTintAmpLoc, SseFaceGenBaker.FgTintAmp)
+            GL.Uniform1(state._uFoldDefaultDetailLoc, SseFaceGenBaker.EngineDefaultDetail)
+            GL.Uniform1(state._uHasFoldDetailLoc, If(detailTexId <> 0, 1, 0))
+            GL.ActiveTexture(TextureUnit.Texture0)
+            GL.BindTexture(TextureTarget.Texture2D, prevTexId)
+            GL.Uniform1(state._uPrevLoc, 0)
+            GL.ActiveTexture(TextureUnit.Texture1)
+            GL.BindTexture(TextureTarget.Texture2D, tintTexId)
+            GL.Uniform1(state._uLayerLoc, 1)
+            ' Unit 6 siempre con un binding valido (el tint de relleno) para que el sampler nunca quede indefinido;
+            ' uHasFoldDetail decide si se lee.
+            GL.ActiveTexture(TextureUnit.Texture6)
+            GL.BindTexture(TextureTarget.Texture2D, If(detailTexId <> 0, detailTexId, tintTexId))
+            GL.Uniform1(state._uFoldDetailLoc, 6)
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
+            ' La rama queda APAGADA para el que use el programa despues (el uniform vive en el programa).
+            GL.Uniform1(state._uFgTintFoldLoc, 0)
+            GL.BindTexture(TextureTarget.Texture2D, 0)
+            GL.ActiveTexture(TextureUnit.Texture1)
+            GL.BindTexture(TextureTarget.Texture2D, 0)
+            GL.ActiveTexture(TextureUnit.Texture0)
+            GL.BindTexture(TextureTarget.Texture2D, 0)
+        Catch ex As Exception
+            If outTex <> 0 Then Try : GL.DeleteTexture(outTex) : Catch : End Try
+            outTex = 0
+            Dim msg = ex.Message
+            Logger.LogLazy(Function() $"[SSE-FOLD] fold pass failed (unfold={unfold}): {msg}")
+        Finally
+            RestoreGlState(snap)
+        End Try
+        Return outTex
+    End Function
+
+    ''' <summary>Una capa <c>Face [Ovl]</c> de SSE para <see cref="ApplySseFaceOverlayPass"/>: la textura del overlay
+    ''' (bytes DDS, como cualquier capa del compositor) y lo que la capa de skee pone en el material, ya resuelto por
+    ''' <see cref="SseOverlayCompositor.ResolveSkinTintLayer"/> (tinte crudo y opacidad, en float: el (1,1,1) de la
+    ''' plantilla no pasa por un byte).</summary>
+    Public Class SseFaceOverlayGpuLayer
+        Public Property DdsBytes As Byte()
+        Public Property CacheKey As String
+        Public Property TintR As Single
+        Public Property TintG As Single
+        Public Property TintB As Single
+        Public Property Opacity As Single
+        Public Property DebugName As String = ""
+    End Class
+
+    ''' <summary>Resultado de <see cref="ApplySseFaceOverlayPass"/>. <c>Failed</c> = el GL falló (el caller aborta,
+    ''' sin fallback, igual que el resto del pliegue). <c>TextureId</c> = 0 sin fallo ⇒ no se dibujó ninguna capa
+    ''' y la base sigue siendo el resultado (el caller NO la reemplaza ni la borra).</summary>
+    Public Structure SseFaceOverlayPassResult
+        Public TextureId As Integer
+        Public Failed As Boolean
+    End Structure
+
+    ''' <summary>SSE: compone las capas <c>Face [Ovl]</c> sobre el albedo plegado <paramref name="baseTexId"/>, en el
+    ''' orden de la lista (abajo → arriba), con la ley de la capa SkinTint de skee (rama <c>uSkinTintDecal</c> del
+    ''' shader). Devuelve una textura NUEVA (Rgba32f) o, sin capas dibujables, 0.
+    ''' <para>ESPEJO EXACTO de <see cref="SseOverlayCompositor.ComposeFaceOverlaysIntoDiffuse"/>, que el CPU corre
+    ''' DESPUÉS de <c>SseFaceGenBaker.OverlayBaseToFolded</c>: los valores ENTRAN Y SALEN en el espacio de la base
+    ''' (<c>Fold.OutputSpace</c>), sin el seed ni el pase final del pipeline de capas. Por eso es un pase propio y no
+    ''' una capa de <see cref="ApplyFaceTintPipeline"/>: el bucket Overlay no gobierna esta capa (el motor no tiene
+    ''' opción: compone sobre los valores crudos).</para>
+    ''' <para>Las texturas de capa se cargan con el MISMO loader que el pipeline (caché o
+    ''' <c>DirectXDDSLoader</c>, decode en CPU) y se muestrean con el MISMO <c>fetchAt</c>, que es lo que el CPU
+    ''' replica con <c>SseFaceTintComposer.DecodeTextureRgba</c>. Alpha de la base: intacto.</para></summary>
+    Public Function ApplySseFaceOverlayPass(state As FaceTintCompositorState, cache As FaceTintTextureCache,
+                                            baseTexId As Integer, width As Integer, height As Integer,
+                                            layers As IList(Of SseFaceOverlayGpuLayer)) As SseFaceOverlayPassResult
+        ArgumentNullException.ThrowIfNull(state)
+        Dim res As New SseFaceOverlayPassResult
+        If baseTexId = 0 OrElse width <= 0 OrElse height <= 0 Then res.Failed = True : Return res
+        If layers Is Nothing OrElse layers.Count = 0 Then Return res
+        Dim snap = SaveGlState()
+        Dim batchLoaded As Dictionary(Of String, PreviewModel.Texture_Loaded_Class) = Nothing
+        Dim readTex As Integer = baseTexId
+        Dim outTex As Integer = 0
+        Dim programBound As Boolean = False
+        Try
+            EnsureCompositorInitialized(state)
+            If state._program = 0 OrElse state._quadVao = 0 Then res.Failed = True : Return res
+            ' Drain pre-existing GL errors so the post-pass check below only flags failures caused by THIS pass
+            ' (same guard as ApplyFaceTintPipeline): an error left by other render code must not abort the fold.
+            Dim drainGuard As Integer = 0
+            Do While GL.GetError() <> ErrorCode.NoError
+                drainGuard += 1
+                If drainGuard > 32 Then Exit Do
+            Loop
+
+            ' Carga: mismas reglas que el pipeline (dedupe por clave; caché si hay; srgb=False = crudas; el modo de
+            ' decode es el global del GPU, GlDecodeUseCompress — el camino GPU es GPU).
+            Dim keys As New List(Of String), bytes As New List(Of Byte()), cacheable As New List(Of Boolean)
+            Dim layerKey(layers.Count - 1) As String
+            Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            For i = 0 To layers.Count - 1
+                Dim l = layers(i)
+                If l Is Nothing OrElse l.DdsBytes Is Nothing OrElse l.DdsBytes.Length = 0 Then Continue For
+                Dim k = If(Not String.IsNullOrEmpty(l.CacheKey), l.CacheKey, $"sfo{i}")
+                layerKey(i) = k
+                If seen.Add(k) Then keys.Add(k) : bytes.Add(l.DdsBytes) : cacheable.Add(Not String.IsNullOrEmpty(l.CacheKey))
+            Next
+            If keys.Count = 0 Then Return res
+            If cache IsNot Nothing Then
+                batchLoaded = cache.GetOrLoadBatch(keys, bytes, cacheable)
+            Else
+                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(keys.ToArray(), bytes.ToArray(), GlDecodeUseCompress, True, New Boolean(keys.Count - 1) {})
+            End If
+
+            For i = 0 To layers.Count - 1
+                Dim l = layers(i)
+                Dim entry As PreviewModel.Texture_Loaded_Class = Nothing
+                If layerKey(i) Is Nothing OrElse batchLoaded Is Nothing OrElse Not batchLoaded.TryGetValue(layerKey(i), entry) _
+                   OrElse entry Is Nothing OrElse entry.Texture_ID = 0 Then
+                    Dim dn = If(l?.DebugName, "")
+                    Logger.LogLazy(Function() $"[SSE-OVL] GPU: capa '{dn}' sin textura cargada — se saltea (el CPU también la saltea: no decodifica)")
+                    Continue For
+                End If
+                Dim nextTex As Integer = 0, fbo As Integer = 0
+                If Not AllocateResultTextureAndFbo(state, width, height, nextTex, fbo) Then res.Failed = True : Return res
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, fbo)
+                GL.Viewport(0, 0, width, height)
+                GL.Disable(EnableCap.DepthTest)
+                GL.Disable(EnableCap.ScissorTest)
+                GL.Disable(EnableCap.Blend)
+                GL.UseProgram(state._program)
+                programBound = True
+                GL.BindVertexArray(state._quadVao)
+                GL.Uniform2(state._uTargetSizeLoc, width, height)
+                GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))
+                GL.Uniform1(state._uModeLoc, 0)
+                GL.Uniform1(state._uFgTintFoldLoc, 0)
+                GL.Uniform1(state._uSkinTintDecalLoc, 1)
+                GL.Uniform3(state._uColorLoc, l.TintR, l.TintG, l.TintB)
+                GL.Uniform1(state._uOpacityLoc, l.Opacity)
+                GL.ActiveTexture(TextureUnit.Texture0)
+                GL.BindTexture(TextureTarget.Texture2D, readTex)
+                GL.Uniform1(state._uPrevLoc, 0)
+                GL.ActiveTexture(TextureUnit.Texture1)
+                GL.BindTexture(TextureTarget.Texture2D, entry.Texture_ID)
+                GL.Uniform1(state._uLayerLoc, 1)
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
+                GL.BindTexture(TextureTarget.Texture2D, 0)
+                GL.ActiveTexture(TextureUnit.Texture0)
+                GL.BindTexture(TextureTarget.Texture2D, 0)
+                ' El intermedio anterior ya no se lee; la BASE es del caller y no se toca.
+                If readTex <> baseTexId Then Try : GL.DeleteTexture(readTex) : Catch : End Try
+                readTex = nextTex
+                outTex = nextTex
+            Next
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+            If GL.GetError() <> ErrorCode.NoError Then
+                If outTex <> 0 Then Try : GL.DeleteTexture(outTex) : Catch : End Try
+                outTex = 0 : readTex = baseTexId
+                res.Failed = True
+                Return res
+            End If
+            res.TextureId = outTex
+            outTex = 0 : readTex = baseTexId                     ' ownership pasa al caller
+            Return res
+        Catch ex As Exception
+            Dim msg = ex.Message
+            Logger.LogLazy(Function() $"[SSE-OVL] face overlay pass failed: {msg}")
+            res.Failed = True
+            Return res
+        Finally
+            ' La rama queda APAGADA para el que use el programa despues (el uniform vive en el programa). Sólo si
+            ' este pase bindeó el programa: con otro programa activo, Uniform1 escribiría en ESE.
+            If programBound Then
+                Try
+                    GL.UseProgram(state._program)
+                    GL.Uniform1(state._uSkinTintDecalLoc, 0)
+                Catch
+                End Try
+            End If
+            ' Un intermedio vivo sólo queda en un camino de fallo (en el éxito ya pasó al caller).
+            If readTex <> 0 AndAlso readTex <> baseTexId AndAlso res.Failed Then Try : GL.DeleteTexture(readTex) : Catch : End Try
+            If batchLoaded IsNot Nothing Then
+                For Each kvp In batchLoaded
+                    Dim e = kvp.Value
+                    If e Is Nothing OrElse e.Texture_ID = 0 Then Continue For
+                    If cache IsNot Nothing AndAlso cache.IsCached(kvp.Key) Then Continue For
+                    Try : GL.DeleteTexture(e.Texture_ID) : Catch : End Try
+                Next
+            End If
+            RestoreGlState(snap)
+        End Try
+    End Function
+
     ''' <summary>Per-channel result of <see cref="ApplyFaceTintPipeline"/>: the GL texture ID
     ''' that came out of swap+compose (or the original input ID when no work was done on that
     ''' channel) and a flag saying whether the ID is a fresh texture the caller now owns
@@ -2422,7 +2644,8 @@ void main() {
                                           Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing,
                                           Optional baseDiffuseIsLinearOnGpu As Boolean = False,
                                           Optional headDiffuseAlphaTest As Boolean = False,
-                                          Optional stage As FaceTintConvention.FaceTintStage? = Nothing) As FaceTintPipelineResult
+                                          Optional stage As FaceTintConvention.FaceTintStage? = Nothing,
+                                          Optional baseDiffuseSpace As Integer? = Nothing) As FaceTintPipelineResult
         ' `stage` va OPCIONAL Y AL FINAL a propósito: así los call sites del otro repositorio (que es un repo
         ' git independiente, sin commit atómico cruzado) no necesitan una sola edición.
         ' ES NULLABLE Y NO `= TintDiffuse`: esta función compone los TRES canales, y en Normal/Specular la etapa
@@ -2471,8 +2694,14 @@ void main() {
         ' espacios coinciden, así que esto es un no-op salvo que se separen.
         Dim accSpD As Integer = CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Diffuse, cpuMirror))
         Dim outSpD As Integer = CInt(FaceTintConvention.OutputSpaceForChannel(FaceTintChannel.Diffuse))
+        ' Base con espacio DECLARADO por el caller (baseDiffuseSpace): se siembra desde ESE espacio. Lo usan los
+        ' caminos de SSE, cuya contraparte CPU toma la base en un espacio conocido (el OutputSpace del canal para
+        ' el seed del facetint; Fold.OutputSpace para la etapa Overlay) y no "lineal porque el render decodeo".
+        ' Gana sobre los otros dos casos: es la declaracion explicita.
+        If baseDiffuseSpace.HasValue Then
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dNat.W, dNat.H, baseDiffuseSpace.Value, accSpD)
         ' Caso live (baseDiffuseIsLinearOnGpu): el GPU ya decodeó el SRV sRGB → la base entra LINEAL (0).
-        If baseDiffuseIsLinearOnGpu Then
+        ElseIf baseDiffuseIsLinearOnGpu Then
             ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dNat.W, dNat.H, 0, accSpD)
         ElseIf SeedConventionIs_G22 Then
             ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dNat.W, dNat.H, SeedDiffuseSrcSpaceValue, accSpD)

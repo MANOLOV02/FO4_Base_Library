@@ -412,7 +412,10 @@ Public Module SseOverlayCompositor
 
     Private Function SseOverlayKey(ov As RaceMenuJslot.JslotOverlayNode, key As Integer) As Double
         Select Case CType(key, FaceTintSseOverlaySortKey)
-            Case FaceTintSseOverlaySortKey.Alpha : Return If(ov.HasAlpha, ov.Alpha, 1.0)
+            Case FaceTintSseOverlaySortKey.Alpha
+                ' La opacidad EFECTIVA de la capa (key 8 o la plantilla), la MISMA que componen el CPU y el GPU.
+                Dim lp = ResolveSkinTintLayer(ov)
+                Return If(lp.HasValue, CDbl(lp.Value.Opacity), 0.0)
             Case FaceTintSseOverlaySortKey.Has_Tint : Return If(ov.HasTint, 1.0, 0.0)
             Case Else : Return DrawOrderKey(ov.NodeName)   ' Ovl_Index (default) = orden de DIBUJO de skee, asc = abajo→arriba
         End Select
@@ -433,7 +436,8 @@ Public Module SseOverlayCompositor
         For Each ov In faceOrdered
             ' Predicado ÚNICO con el gate (HasBakeableFaceOverlays) ⇒ no pueden discrepar. Va ANTES del decode:
             ' una capa invisible no justifica leer su textura.
-            If Not OverlayIsVisible(ov) Then Continue For
+            Dim lp = ResolveSkinTintLayer(ov)
+            If Not lp.HasValue OrElse Not (lp.Value.Opacity > 0.0F) Then Continue For
             Dim tex = decode(ov.DiffusePath, w, h)
             If tex Is Nothing OrElse tex.Length < npix * 4 Then
                 ' El gate dijo que SÍ (hay ruta + opacidad) y acá no se pudo leer ⇒ es un ERROR, no un no-op.
@@ -441,30 +445,86 @@ Public Module SseOverlayCompositor
                 Logger.LogLazy(Function() $"[SSE-OVL] overlay de cara SALTEADO: no se pudo leer/decodificar el diffuse '{dpFail}'")
                 Continue For
             End If
-            Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
-            ' Invariantes del loop: se angostan UNA vez por overlay, no por pixel.
-            Dim opa = CSng(opacity)
-            Dim tr = CSng(If(ov.HasTint, ov.TintR, 1.0))
-            Dim tg = CSng(If(ov.HasTint, ov.TintG, 1.0))
-            Dim tb = CSng(If(ov.HasTint, ov.TintB, 1.0))
-            ' COBERTURA = ALPHA del diffuse (FIEL AL ENGINE). VERIFICADO (Shader_Class.vb, rama sse_facegen_skin;
-            ' RE): en SSE el BSLightingShader —el shader del overlay decal (SkinTint/FaceGen)— NO tiene greyscale-to-
-            ' color/alpha (eso vive SOLO en el BSEffectShader). El diffuse se usa normal: RGB=color, alpha=cobertura
-            ' (color.a *= baseMap.a). type 0 de skee: color = tex.rgb × tint.
+            ' LA CAPA QUE INSTALA skee, no un "texture × tint": técnica 5 (SkinTint) sobre el texel CRUDO, con el
+            ' tinte y la opacidad que resuelve ResolveSkinTintLayer (key 7/8 o la plantilla). Cobertura = alpha del
+            ' diffuse × opacidad (NiAlphaProperty 4845 = SRC_ALPHA/INV_SRC_ALPHA). Ver SkinTintLayerOne.
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); el orden ENTRE overlays lo da el
             ' For Each de afuera, que sigue serial (alpha-over no conmutativo).
-            SkeeMaskApply(acc, tex, tr, tg, tb, opa, npix)
+            SkinTintLayerApply(acc, tex, lp.Value.TintR, lp.Value.TintG, lp.Value.TintB, lp.Value.Opacity, npix)
             any = True
         Next
         Return any
     End Function
 
+    ''' <summary>El rgbFix del PS de la técnica 5 (SkinTint) de SkyrimSE, como literal GLSL: idx 8577,
+    ''' <c>mul r0.xyz, r0.xyzx, l(1.011719, 0.996094, 1.011719)</c> (DXBC; memoria 31-sse-skin-tint-re).
+    ''' <para>UNA SOLA SEDE para los tres lugares que lo usan: el shader del render (<c>Shader_Class_SSE</c>, decal
+    ''' vivo de las capas de skee y piel tipo 5), el compositor GL del pliegue y el CPU del pliegue
+    ''' (<see cref="SkinTintRgbFix"/>, que se PARSEA de este mismo texto). Es Const porque los dos GLSL son Const
+    ''' y sólo pueden concatenar otra Const.</para></summary>
+    Public Const SkinTintRgbFixGlsl As String = "vec3(1.011719, 0.996094, 1.011719)"
 
-    ''' <summary>Alpha-over de skee sobre el acumulador (prologo escalar / cuerpo vectorial / cola). Vive
-    ''' fuera del lambda para que <see cref="OverlayVectorSelfTest"/> pueda contrastarla contra
-    ''' <see cref="SkeeMaskOne"/>.</summary>
-    Private Sub SkeeMaskApply(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
-                              opa As Single, npix As Integer)
+    ''' <summary>El soft-light pegtop EN LA FORMA DEL MOTOR (PS idx 8577: <c>a² + 2·a·t·(1−a)</c>, mismo orden que
+    ''' <c>FaceTintCpuCompositor.BlendSoftLightModel</c> caso 3), como función GLSL. UNA SOLA SEDE para los dos
+    ''' shaders que la usan —el render SSE (técnica 5) y el compositor de facetint/pliegue—, concatenada en sus
+    ''' fuentes Const. La forma expandida <c>(1−2s)d² + 2sd</c> es la misma identidad con otro redondeo.</summary>
+    Public Const SoftLightPegtopEngineGlslFn As String = "vec3 softLightPegtopEngine(vec3 d, vec3 s) { return d*d + 2.0*d*s*(1.0 - d); }"
+
+    ''' <summary><see cref="SkinTintRgbFixGlsl"/> como floats, para el CPU. Se parsea del MISMO texto: el
+    ''' compilador GLSL redondea cada literal al float más cercano y <see cref="Single.Parse"/> también, así que
+    ''' los tres consumidores ven los mismos bits.</summary>
+    Public ReadOnly SkinTintRgbFix As Single() = ParseGlslVec3(SkinTintRgbFixGlsl)
+
+    Private Function ParseGlslVec3(glsl As String) As Single()
+        Dim inner = glsl.Substring(glsl.IndexOf("("c) + 1).TrimEnd(")"c)
+        Return inner.Split(","c).Select(Function(p) Single.Parse(p.Trim(), Globalization.CultureInfo.InvariantCulture)).ToArray()
+    End Function
+
+    ''' <summary>Lo que la capa de skee de un overlay de cara pone en el motor, resuelto UNA vez para todos los
+    ''' consumidores (pliegue CPU/GPU, gates, orden). Nothing = la plantilla no está instalada ⇒ skee64 no instala
+    ''' la capa (OverlayInterface.cpp:104-106) ⇒ no se pliega.</summary>
+    Public Structure SkinTintLayerParams
+        ''' <summary>El tintColor del material (<c>cb1[1]</c> del PS tec 5), CRUDO: key 7 como byte/255
+        ''' (OverrideVariant.cpp:249-264) o el SkinTintColor de la plantilla.</summary>
+        Public TintR As Single
+        Public TintG As Single
+        Public TintB As Single
+        ''' <summary>El alpha del material: key 8 o el Alpha de la plantilla.</summary>
+        Public Opacity As Single
+    End Structure
+
+    ''' <summary>Resuelve el tinte y la opacidad de la capa que skee instala para <paramref name="ov"/>.
+    ''' <para>EL TINTE ES EL DE LA CAPA, NUNCA EL TONO DE PIEL, en un NPC (RE SkyrimSE 1.7.104, memoria
+    ''' 31-sse-overlay-skee-tecnica-y-tinte-re): de los 8 llamadores de <c>SetSkinFromTint</c> ninguno alcanza las
+    ''' shapes de skee de un NPC — el engarce de ARMA (15711→15712→15739) tiñe sólo la geometría del modelo que se
+    ''' engancha, <c>PrepareHeadPartForShaders</c> busca el head part por nombre, y <c>UpdateModelSkin</c>
+    ''' (0x14043DA10) sólo corre en el menú de creación y en <c>UpdateSkinColor</c> de SKSE (jugador).</para>
+    ''' <para>LA PLANTILLA ES LA DEL POOL DEL NODO (<c>face_overlay.nif</c> / <c>face_magicoverlay.nif</c>), leída
+    ''' por <see cref="SseOverlayMaterialFactory.TemplateDefaults"/>: la MISMA fuente que el decal vivo.</para></summary>
+    Public Function ResolveSkinTintLayer(ov As RaceMenuJslot.JslotOverlayNode) As SkinTintLayerParams?
+        If ov Is Nothing Then Return Nothing
+        Dim part = SseOverlayMaterialFactory.OverlayPart(ov.NodeName)
+        If part = "" Then Return Nothing
+        Dim tpl = SseOverlayMaterialFactory.TemplateDefaults(part, ov.IsSpell)
+        If Not tpl.HasValue Then Return Nothing   ' ausencia avisada UNA vez por plantilla (SseOverlayMaterialFactory)
+        Dim r As New SkinTintLayerParams
+        If ov.HasTint Then
+            r.TintR = SseOverlayMaterialFactory.TintByte(ov.TintR) / 255.0F
+            r.TintG = SseOverlayMaterialFactory.TintByte(ov.TintG) / 255.0F
+            r.TintB = SseOverlayMaterialFactory.TintByte(ov.TintB) / 255.0F
+        Else
+            r.TintR = tpl.Value.TintR : r.TintG = tpl.Value.TintG : r.TintB = tpl.Value.TintB
+        End If
+        r.Opacity = If(ov.HasAlpha, ov.Alpha, tpl.Value.Alpha)
+        Return r
+    End Function
+
+
+    ''' <summary>Alpha-over de la capa SkinTint de skee sobre el acumulador (prologo escalar / cuerpo vectorial /
+    ''' cola). Vive fuera del lambda para que <see cref="OverlayVectorSelfTest"/> pueda contrastarla contra
+    ''' <see cref="SkinTintLayerOne"/>.</summary>
+    Private Sub SkinTintLayerApply(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
+                                   opa As Single, npix As Integer)
         System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
                 Sub(range)
@@ -475,11 +535,12 @@ Public Module SseOverlayCompositor
         Dim lanes = Vector(Of Single).Count
                     If FastPow.AcceleratedV Then
                         While (e And (lanes - 1)) <> 0 AndAlso e < hi
-                            SkeeMaskOne(acc, tex, tr, tg, tb, opa, e) : e += 1
+                            SkinTintLayerOne(acc, tex, tr, tg, tb, opa, e) : e += 1
                         End While
                         ' AoS, 8 floats = 2 pixeles. `la` sale del ALPHA de cada pixel ⇒ se difunde con un
                         ' permute de indices constantes (3,3,3,3, 7,7,7,7), igual que el mask de ComposeLayer.
                         Dim tintV = FastPow.VPerChannel(tr, tg, tb, 1.0F)
+                        Dim fixV = FastPow.VPerChannel(SkinTintRgbFix(0), SkinTintRgbFix(1), SkinTintRgbFix(2), 1.0F)
                         Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
                         Dim opaV = VBroadcastS(opa)
                         ' scratch DEL HILO para las permutaciones dentro del pixel. Local por llamada.
@@ -495,8 +556,10 @@ Public Module SseOverlayCompositor
                                 e += lanes
                                 Continue While
                             End If
-                            ' (tex*tint)*la + acc*(1-la) — MISMO orden de operaciones que el escalar
-                            Dim res = Vector.Add(Vector.Multiply(Vector.Multiply(t, tintV), la),
+                            ' pegtop(tex, t)*rgbFix*la + acc*(1-la) — MISMO orden de operaciones que el escalar
+                            ' (SoftLightV modelo 3 es el espejo exacto de BlendSoftLightModel(3, ...)).
+                            Dim c = Vector.Multiply(FaceTintCpuCompositor.SoftLightV(3, t, tintV), fixV)
+                            Dim res = Vector.Add(Vector.Multiply(c, la),
                                                     Vector.Multiply(a, Vector.Subtract(one, la)))
                             ' replica los dos guards a la vez: alpha intacto, y `If la <= 0 Then Continue For`
                             Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(la, zero))
@@ -505,7 +568,7 @@ Public Module SseOverlayCompositor
                         End While
                     End If
                     While e < hi
-                        SkeeMaskOne(acc, tex, tr, tg, tb, opa, e) : e += 1
+                        SkinTintLayerOne(acc, tex, tr, tg, tb, opa, e) : e += 1
                     End While
                 End Sub)
     End Sub
@@ -591,18 +654,21 @@ Public Module SseOverlayCompositor
             End If
             Dim opa As Single = 0.8F, tr As Single = 0.9F, tg As Single = 0.7F, tb As Single = 1.1F
 
-            ' ---- alpha-over de skee ----
+            ' ---- alpha-over de la capa SkinTint de skee ----
+            ' Un texel BLANCO OPACO (a = 1): es donde el rgbFix deja el color por encima de 1 y ni el escalar ni el
+            ' vector pueden acotarlo.
+            If np >= 3 Then tex(8) = 1.0F : tex(9) = 1.0F : tex(10) = 1.0F : tex(11) = 1.0F
             Dim aVec(np * 4 - 1) As Single, aRef(np * 4 - 1) As Single
             For i = 0 To np * 4 - 1
                 aVec(i) = Rnd01(seed) : aRef(i) = aVec(i)
             Next
-            SkeeMaskApply(aVec, tex, tr, tg, tb, opa, np)
+            SkinTintLayerApply(aVec, tex, tr, tg, tb, opa, np)
             For e = 0 To np * 4 - 1
-                SkeeMaskOne(aRef, tex, tr, tg, tb, opa, e)
+                SkinTintLayerOne(aRef, tex, tr, tg, tb, opa, e)
             Next
             For i = 0 To np * 4 - 1
                 If BitConverter.SingleToInt32Bits(aVec(i)) <> BitConverter.SingleToInt32Bits(aRef(i)) Then
-                    Return $"SkeeMask vector MISMATCH: npix={np} i={i} scalar={aRef(i)} vector={aVec(i)}"
+                    Return $"SkinTintLayer vector MISMATCH: npix={np} i={i} scalar={aRef(i)} vector={aVec(i)}"
                 End If
             Next
 
@@ -697,18 +763,26 @@ Public Module SseOverlayCompositor
         msnAcc(px * 4 + 2) = (nz + 1.0F) * 0.5F
     End Sub
 
-    ''' <summary>Un ELEMENTO del alpha-over de skee: la ley escalar, usada por el prologo y la cola del
-    ''' cuerpo vectorial de arriba. Una sola definicion ⇒ el resultado no depende de donde corte la particion.</summary>
+    ''' <summary>Un ELEMENTO del alpha-over de la capa SkinTint de skee: la ley escalar, usada por el prologo y
+    ''' la cola del cuerpo vectorial de arriba. Una sola definicion ⇒ el resultado no depende de donde corte la
+    ''' particion.
+    ''' <para>LEY (motor, no app): la capa es una shape de técnica 5 cuyo albedo es el PS idx 8577
+    ''' <c>(a² + 2·a·t·(1−a)) × rgbFix</c> sobre el texel CRUDO (= <c>BlendSoftLightModel</c> modelo 3, la forma del
+    ''' motor), y el NiAlphaProperty 4845 la mezcla SRC_ALPHA/INV_SRC_ALPHA sobre la cabeza. Confirmado en el juego
+    ''' (2026-10-01): con t = 0 un texel blanco opaco sigue BLANCO y el gris 0,5 baja a 0,25.</para>
+    ''' <para>SIN ACOTAR el color de la capa: con a = 1 el rgbFix da 1,0117 en R y B y el PS no satura
+    ''' (sin <c>_sat</c>). El GPU (<c>FaceTintCompositor.ApplySseFaceOverlayPass</c>) tampoco acota.</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Sub SkeeMaskOne(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
-                            opa As Single, e As Integer)
+    Private Sub SkinTintLayerOne(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
+                                 opa As Single, e As Integer)
         Dim ch = e And 3
         If ch = 3 Then Return                                    ' el alpha no se toca
         Dim px = e >> 2
         Dim la = Clamp01(tex(px * 4 + 3) * opa)
         If la <= 0.0F Then Return
         Dim tint = If(ch = 0, tr, If(ch = 1, tg, tb))
-        acc(e) = CSng((tex(e) * tint) * la + acc(e) * (1 - la))
+        Dim c = FaceTintCpuCompositor.BlendSoftLightModel(3, tex(e), tint) * SkinTintRgbFix(ch)
+        acc(e) = c * la + acc(e) * (1.0F - la)
     End Sub
 
     ''' <summary>Compose the FACE overlays' NORMAL maps into the head normal accumulator (MODEL-SPACE / MSN, in
@@ -752,8 +826,10 @@ Public Module SseOverlayCompositor
             Where(Function(o) IsFoldableFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath) AndAlso
                               Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden de DIBUJO de skee (DrawOrderKey)
         For Each ov In faceOrdered
-            ' Predicado ÚNICO con el gate (HasFaceOverlayNormals), y ANTES del decode. Ver ComposeFaceOverlaysIntoDiffuse.
-            If Not OverlayIsVisible(ov) Then Continue For
+            ' Predicado ÚNICO con el gate (HasFaceOverlayNormals = OverlayIsVisible), y ANTES del decode. Se
+            ' resuelve UNA vez y se reusa abajo (la opacidad): dos resoluciones podían ver dos estados del caché.
+            Dim lp = ResolveSkinTintLayer(ov)
+            If Not lp.HasValue OrElse Not (lp.Value.Opacity > 0.0F) Then Continue For
             Dim ovNorm = decodeN(ov.NormalPath, w, h)
             If ovNorm Is Nothing OrElse ovNorm.Length < npix * 4 Then
                 Dim npFail = ov.NormalPath
@@ -776,8 +852,8 @@ Public Module SseOverlayCompositor
                 Logger.LogLazy(Function() $"[SSE-OVL] normal de overlay SALTEADO: sin COBERTURA legible (diffuse = '{cpFail}'). El alpha del propio normal NO se usa: no es la ley del motor y las fuentes de 2 canales lo devuelven constante = cara entera cubierta.")
                 Continue For
             End If
-            Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
-            Dim opa = CSng(opacity)   ' invariante del loop: se angosta una vez, no por pixel
+            ' La MISMA opacidad que el diffuse (key 8 o la plantilla), resuelta arriba.
+            Dim opa = lp.Value.Opacity
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); orden entre overlays = For Each serial.
             MsnBlendApply(msnAcc, ovNorm, ovDiff, opa, npix)
             any = True
@@ -804,11 +880,13 @@ Public Module SseOverlayCompositor
         Return False
     End Function
 
-    ''' <summary>Opacidad efectiva del overlay (key8 <c>Alpha</c>, 1.0 si no la declara) &gt; 0. Predicado ÚNICO
-    ''' compartido por los gates y por los dos composers, para que no puedan discrepar.</summary>
+    ''' <summary>La capa de skee existe (plantilla instalada) y su opacidad efectiva (key 8 o el Alpha de la
+    ''' plantilla, <see cref="ResolveSkinTintLayer"/>) es &gt; 0. Predicado ÚNICO compartido por los gates y por
+    ''' los dos composers, para que no puedan discrepar. Sin plantilla skee64 no instala nada, así que no hay
+    ''' nada que plegar (y el bake no entra al camino plegado por esa capa).</summary>
     Public Function OverlayIsVisible(ov As RaceMenuJslot.JslotOverlayNode) As Boolean
-        If ov Is Nothing Then Return False
-        Return If(ov.HasAlpha, ov.Alpha, 1.0) > 0.0
+        Dim lp = ResolveSkinTintLayer(ov)
+        Return lp.HasValue AndAlso lp.Value.Opacity > 0.0F
     End Function
 
     ''' <summary>THE canonical "is this overlay on the head?" test. EVERY path — CPU bake, GPU bake, the folded

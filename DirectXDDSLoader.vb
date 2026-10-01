@@ -145,6 +145,80 @@ Public Module DirectXDDSLoader
         End If
     End Sub
 
+    ''' <summary>THE OTHER COLOUR SPACE OF AN UPLOADED TEXTURE, AS A VIEW OF THE SAME STORAGE.
+    ''' <para>The engine decides sRGB PER SLOT when it binds a texture, not per file: FO4's BSEffectShaderMaterial
+    ''' texture load (0x1422249CE..C52 -> 0x142182420 -> 0x1417A3A60) promotes the slot's SRV with MakeSRGB
+    ''' (0x14183E680), so one file can be decoded in one slot and raw in another. The preview uploads a path
+    ''' ONCE (its storage space is the role it was registered with); a slot that needs the other space binds a
+    ''' texture view (GL 4.3) of the same immutable storage with the twin internal format.</para>
+    ''' <para>Returns 0 (= bind the storage itself) when no view applies: the storage is already in the wanted
+    ''' space; the format has no twin (BC4/BC5/float - MakeSRGB has no sRGB variant for them either); the file
+    ''' was AUTHORED _SRGB and the slot wants raw (its own SRV is sRGB in the engine); or the storage is mutable
+    ''' (composer textures).</para></summary>
+    Friend Function CreateColorSpaceView(texId As Integer, cubemap As Boolean, wantSrgb As Boolean, dxgiOriginal As Integer) As Integer
+        If texId = 0 Then Return 0
+        Dim immutable As Integer = 0, levels As Integer = 0, fmt As Integer = 0
+        GL.GetTextureParameter(texId, GetTextureParameter.TextureImmutableFormat, immutable)
+        If immutable = 0 Then DrainGlErrors() : Return 0
+        GL.GetTextureParameter(texId, GetTextureParameter.TextureImmutableLevels, levels)
+        GL.GetTextureLevelParameter(texId, 0, GetTextureParameter.TextureInternalFormat, fmt)
+        If GL.GetError() <> ErrorCode.NoError OrElse levels <= 0 Then DrainGlErrors() : Return 0
+        Dim storageSrgb As Boolean, twin As Integer
+        If Not TwinColorSpaceFormat(fmt, storageSrgb, twin) Then Return 0
+        If storageSrgb = wantSrgb Then Return 0
+        If storageSrgb AndAlso IsAuthoredSrgbDxgi(dxgiOriginal) Then Return 0
+
+        Dim target = If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D)
+        Dim view = GL.GenTexture()
+        GL.TextureView(view, target, texId, CType(twin, PixelInternalFormat), 0, levels, 0, If(cubemap, 6, 1))
+        If GL.GetError() <> ErrorCode.NoError Then
+            DrainGlErrors()
+            GL.DeleteTexture(view)
+            Return 0
+        End If
+        ' Same sampling as the storage: the law of the upload (ApplySamplingState) and its swizzle.
+        Dim prevBinding As Integer = 0
+        GL.GetInteger(If(cubemap, GetPName.TextureBindingCubeMap, GetPName.TextureBinding2D), prevBinding)
+        GL.BindTexture(target, view)
+        ApplySamplingState(target, levels, False, cubemap)
+        For Each sw In {GL_TEXTURE_SWIZZLE_R, GL_TEXTURE_SWIZZLE_G, GL_TEXTURE_SWIZZLE_B, GL_TEXTURE_SWIZZLE_A}
+            Dim v As Integer = 0
+            GL.GetTextureParameter(texId, CType(sw, GetTextureParameter), v)
+            GL.TexParameter(target, CType(sw, TextureParameterName), v)
+        Next
+        GL.BindTexture(target, prevBinding)
+        Return view
+    End Function
+
+    ''' <summary>The sRGB/UNORM twin of a GL internal format, for the formats the upload promotes (the same
+    ''' table as the promotion in CreateOpenGL_FromTextureLoaded_PBO, both directions).</summary>
+    Private Function TwinColorSpaceFormat(fmt As Integer, ByRef isSrgb As Boolean, ByRef twin As Integer) As Boolean
+        Select Case fmt
+            Case &H8058 : isSrgb = False : twin = &H8C43                                  ' RGBA8 -> SRGB8_ALPHA8
+            Case &H8C43 : isSrgb = True : twin = &H8058
+            Case &H83F0 : isSrgb = False : twin = GL_COMPRESSED_SRGB_S3TC_DXT1_EXT        ' BC1 RGB
+            Case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT : isSrgb = True : twin = &H83F0
+            Case &H83F1 : isSrgb = False : twin = GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT  ' BC1 RGBA
+            Case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT : isSrgb = True : twin = &H83F1
+            Case &H83F2 : isSrgb = False : twin = &H8C4E                                  ' BC2
+            Case &H8C4E : isSrgb = True : twin = &H83F2
+            Case &H83F3 : isSrgb = False : twin = &H8C4F                                  ' BC3
+            Case &H8C4F : isSrgb = True : twin = &H83F3
+            Case &H8E8C : isSrgb = False : twin = &H8E8D                                  ' BC7
+            Case &H8E8D : isSrgb = True : twin = &H8E8C
+            Case Else : Return False
+        End Select
+        Return True
+    End Function
+
+    ''' <summary>DXGI formats a DDS can be AUTHORED in as sRGB.</summary>
+    Private Function IsAuthoredSrgbDxgi(dxgi As Integer) As Boolean
+        Select Case dxgi
+            Case 29, 72, 75, 78, 91, 93, 99 : Return True
+            Case Else : Return False
+        End Select
+    End Function
+
     Const GL_UNPACK_ALIGNMENT As Integer = &HCF5
     Const GL_TEXTURE_MAX_ANISOTROPY_EXT As Integer = &H84FE
     Const GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT As Integer = &H84FF
@@ -756,6 +830,7 @@ Public Module DirectXDDSLoader
             .Path = path,
             .IsSRGB = srgb
         }
+        result.MarkLoaderStorage()
 
         ' Free pixel data now that it has been uploaded to GPU
         If tex.Levels IsNot Nothing Then
@@ -798,6 +873,7 @@ Public Module DirectXDDSLoader
                     .Path = fullpaths(i),
                     .IsSRGB = Srgb(i)
                     }
+                diccionario(fullpaths(i)).MarkLoaderStorage()
             End If
 
         Next

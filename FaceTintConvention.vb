@@ -827,7 +827,10 @@ Public Module FaceTintConvention
         ' 3; CERO Multiply/Overlay/HardLight) y sólo mueve RACEs modeadas con bop 1/2/4, que en G22 salen ≠
         ' engine. El usuario puede cambiar el espacio de cada op en config.json. Fallback (modos 5..19
         ' app-only y config viejo/null) = bucket.WorkingSpace. GL y CPU lo heredan juntos (mismo resolver).
-        If channel = FaceTintChannel.Diffuse AndAlso Not forSwap Then
+        ' La etapa FOLD queda FUERA: el pliegue no es un blend-op del tint (es la cadena facegen del motor,
+        ' softlight x amplify) y su working space es el del bucket Fold. Con el override, `Fold.WorkingSpace`
+        ' del config no llegaba NUNCA al pliegue: lo pisaba el espacio de la op Replace del tint.
+        If channel = FaceTintChannel.Diffuse AndAlso Not forSwap AndAlso stage <> FaceTintStage.Fold Then
             Dim wsb = s.DiffuseWorkingSpaceByBlend
             c.WorkingSpace = If(wsb IsNot Nothing, wsb.ForBlend(c.Blend, bucket.WorkingSpace), bucket.WorkingSpace)
         End If

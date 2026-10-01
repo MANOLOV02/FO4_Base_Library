@@ -153,8 +153,14 @@ uniform vec3 ambientSky;
 uniform vec3 ambientGround;
 uniform vec3 lightDiffuse[4];
 uniform vec3 lightDirection[4];
+// true: the frame goes through the FO4 post (PostProcess.vb). The floor then writes its LINEAR radiance,
+// premultiplied by its fade, and the fade as coverage: the post exposes, tonemaps and composites it over the
+// background like the rest of the frame (floorExposure arrives as 1). false: the display target of a frame
+// without post (SSE, debug views): the floor tonemaps, encodes and fades to the background itself.
+uniform bool bHdrTarget;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
+layout(location = 1) out vec4 CoverageOut;
 " & BackgroundFadeSource.Fade_Helper & "
 vec3 tonemap(in vec3 x)
 {
@@ -223,7 +229,6 @@ void main()
     // recessed even under a nearly vertical rig, where the two wall normals alone are subtle.
     float grooveCore = (1.0 - smoothstep(0.0, jointHalfWidth * 0.30 + aa, nearestEdge)) * detail;
     linearColor *= mix(1.0, 0.48, grooveCore);
-    vec3 displayColor = pow(max(tonemap(linearColor) / tonemap(vec3(1.0)), vec3(0.0)), vec3(1.0 / 2.2));
 
     // Grazing fade hides the projected horizon before the finite quad can read as a flat plate.
     // The floor stays opaque: it is mixed to the known clear color instead of using alpha blending.
@@ -231,6 +236,13 @@ void main()
     float edgeCoord = max(abs(worldPos.x), abs(worldPos.y)) / max(floorHalfSize, 0.001);
     float edgeFade = 1.0 - smoothstep(0.58, 0.98, edgeCoord);
     float floorFade = surfaceLod * grazingFade * edgeFade;
+    if (bHdrTarget)
+    {
+        FragColor = vec4(linearColor * floorFade, 1.0);
+        CoverageOut = vec4(floorFade, 0.0, 0.0, 1.0);
+        return;
+    }
+    vec3 displayColor = pow(max(tonemap(linearColor) / tonemap(vec3(1.0)), vec3(0.0)), vec3(1.0 / 2.2));
     // EL FONDO SE EVALUA EN ESTE PIXEL, no como color plano: con el fade radial encendido el quad de
     // fondo detras del piso no es uniforme, y fundir contra una constante dejaba una COSTURA justo en
     // la banda del horizonte. Misma funcion, mismas coordenadas de pantalla, mismo resultado.
@@ -337,6 +349,13 @@ out vec2 vUV;
 // -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
 // introduced, which is the same thing hemiAmbient() does with the normal.
 out vec3 vWorldPos;
+
+// FO4 EFFECT FALLOFF, PER VERTEX (BSEffect VS rec0440: o1.z, read by the PS as v1.z). Off when the geometry has
+// no vertex normals (model-space-normal geometry): the engine permutation for that case is not traced, and the
+// PS keeps its per-pixel evaluation there.
+uniform bool bVertexFalloff;
+uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
+out float vEffectFalloff;
 
 vec3 colorRamp(in float value)
 {
@@ -478,6 +497,16 @@ void main(void)
               mv_normal.x,    mv_normal.y,    mv_normal.z);
 
 	viewDirRaw = normalize(-vPos);
+
+	// rec0440: v = normalize(-pos) and n = normalize(3x3 * normal) in the same (camera-relative) frame;
+	// t = sat((|n.v| - start) / (stop - start)); o1.z = t*t*(3 - 2t) * (stopOpacity - startOpacity) + startOpacity.
+	vEffectFalloff = 1.0;
+	if (bVertexFalloff)
+	{
+		float nv = abs(dot(normalize(mv_normalMatrix * skinnedNormal), viewDirRaw));
+		float t = clamp((nv - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
+		vEffectFalloff = (t * t * (-2.0 * t + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
+	}
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
@@ -537,8 +566,9 @@ void main(void)
 //        SSE folds it into the palette V and does NOT multiply afterwards -- so it is one or the
 //            other, never both. Assuming FO4's rule here makes a .bgem cast nothing at all.
 //      Without recolor, both games multiply once.
-//   4. THE FALLOFF CURVE ITSELF: FO4 writes the smoothstep by hand and does not clamp the two
-//      opacities; SSE uses the built-in smoothstep() plus max(z,0) / min(w,1).
+//   4. (WITHDRAWN) the falloff curve is the SAME in both games, measured on the vertex shaders: FO4
+//      rec0440 and SSE t00010153 both do t = sat((|n.v| - start) / (stop - start)) (div_sat),
+//      t*t*(3 - 2t), then t*(stopOp - startOp) + startOp -- no clamp on the opacities, per vertex.
 // So a change that is correct for one game can be wrong for the other. Check both, always.
 //
 // ALSO: this GLSL lives inside a VB Const String. It must be PURE ASCII, and it must NOT contain a
@@ -589,15 +619,33 @@ uniform bool bHasFaceTintOverlay;       // true when composed face tint texture 
 
 uniform bool bIsEffectShader;
 uniform bool bDecal;
+// What this draw adds to the coverage of the HDR target (attachment 1; see SceneTargets): 0 = the draw is not
+// blended and covers its pixel (writes 1), 1 = blended and contributes its own light (writes its alpha;
+// the caller blends attachment 1 with ONE / ONE_MINUS_SRC_ALPHA), 2 = blended with a destination-only factor
+// (multiplicative modes: adds no light of its own, writes 0 and leaves the coverage as it was).
+uniform int uCoverageMode;
 uniform int shaderType;
 uniform bool bEffectFalloff;
 uniform bool bEffectFalloffColor;
 uniform bool bEffectGreyscaleAlpha;
 uniform float effectLightingInfluence;
 uniform vec4 effectFalloffParams;   // x=startAngle, y=stopAngle, z=startOpacity, w=stopOpacity
+uniform bool bVertexFalloff;        // the falloff arrives from the VS (vEffectFalloff), see Vertex_FO4
+in float vEffectFalloff;
+// cb1[0] of the BSEffect PS (SetupMaterial 0x142225A18..B11): rgb = powf(BaseColor.rgb * BaseColorScale, 2.2), or
+// powf(BaseColor.rgb, 2.2) with greyscale-to-palette colour (then BaseColorScale goes to cb1[1].x =
+// effectBaseColorScale and scales the palette colour); a = BaseColor.a = the file Alpha, raw.
 uniform vec3 effectBaseColor;
 uniform float effectBaseColorAlpha;
 uniform float effectBaseColorScale;
+// LIGHTING technique bit: EffectLighting on AND byte(LightingInfluence) > 0 (0x1421775CD..609, 0x142171806).
+uniform bool bEffectLighting;
+// The LIGHTING technique's light (i1385): the sum of up to 4 point lights + DLightColor, no N.L, no shadow, no
+// ambient. The preview has no point lights: DLightColor of the preview weather (Fo4PreviewWeather), linear.
+uniform vec3 effectDLightColor;
+// Mip the effect samples its cube at: max(uiMinLOD, EnvmapMinLOD) (0x142225C6E..C75), sampler MIN_MAG_LINEAR_MIP_POINT
+// with MinLOD = MaxLOD (0x141856390). uiMinLOD = 0 for a resident texture.
+uniform float effectEnvMinLod;
 
 uniform mat4 matModel;
 uniform mat4 matModelViewInverse;
@@ -630,7 +678,6 @@ uniform vec3 tintColor;
 
 // Engine-faithful FO4 path (Fallout4.exe). This fragment is FO4-only (Skyrim uses Fragment_SSE),
 // so the engine path is unconditional here -- no runtime flag.
-uniform bool bDiffuseIsColor;   // diffuse slot is a color texture (sRGB), not greyscale/data
 uniform int uEffectiveType;     // 0 Default,1 Envmap,2 Glowmap,3 Face,4 SkinTint,5 HairTint,6 Eye
 uniform bool bHair;             // hair material (Hair flag) -- robust vs the Glowmap type override
 uniform bool bHasGlowTex;       // glow-slot texture bound (for hair this is the _f strand FLOW map)
@@ -667,7 +714,8 @@ in vec2 vUV;
 in vec3 vWorldPos;
 
 " & ShadowDepthShaderSource.SharedUniformsGlsl & "
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 coverageOut;
 
 // El engine RENORMALIZA el vector de vista POR PIXEL. Los 18 PS de BSLighting de FO4 (la poblacion
 // COMPLETA del bloque b06 en Shaders011.fxp) abren con
@@ -808,18 +856,6 @@ vec3 TorranceSparrow(float NdotL, float NdotH, float NdotV, float VdotH, vec3 co
 	float spec = (specRaw < 15.0) ? specRaw : 15.0;
 
 	return color * spec * M_PI;
-}
-
-vec3 tonemap(in vec3 x)
-{
-	const float A = 0.15;
-	const float B = 0.50;
-	const float C = 0.10;
-	const float D = 0.20;
-	const float E = 0.02;
-	const float F = 0.30;
-
-	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
 // Soft-light W3C/Photoshop del tono de piel sobre un diffuse LINEAL, devuelto en LINEAL.
@@ -1107,7 +1143,6 @@ void main(void)
 				vec4 ov = texture(texFaceTintOverlay, uv);
 				diffRgb = diffRgb * (1.0 - ov.a) + ov.rgb;
 			}
-			if (bDiffuseIsColor) diffRgb = diffRgb; //pow(diffRgb, vec3(2.2))   // C1: sRGB/G22 -> linear, combined
 			diffuseComposed = diffRgb;   // = el r1 del motor (overlay ya compuesto, sin vColor)
 			albedo *= diffRgb;
 
@@ -1256,12 +1291,13 @@ void main(void)
                     //       here was an extra encode the engine does not have -> wrong palette row on
                     //       non-white verts, e.g. Mr Handy arms went blue instead of gray.) White verts
                     //       (vColor.r=1 -> +0) -> exactly PaletteScale (rec2985, no-vColor perm).
-                    //   palette = sample_l(LUT, U,V) lod0; sRGB-authored -> pow(2.2) decode to linear.
+                    //   palette = sample_l(LUT, U,V) lod0, written as is (o0.xyz = r2.xyz * ...): the palette is
+                    //   texture-set slot 3, loaded sRGB (0x1421D3C60), so the SRV already decodes it. And the
+                    //   diffuse (slot 0) is sRGB too, so pow(t0.g, 1/2.2) gives back the stored index.
                     float palU = pow(max(baseMap.g, 0.0), 1.0/2.2);
                     float palV = paletteScale + (bShowVertexColor ? max(vColor.r, 0.0) - 1.0 : 0.0);
                     vec4 luG = colorLookup(palU, palV);
 					albedo = luG.rgb;
-					albedo = pow(max(albedo, vec3(0.0)), vec3(2.2));
 					// El recolor PISA el albedo y con eso descarta el vColor, igual que el motor: en las
 					// tecnicas con GRADIENT_REMAP el multiplicador final es r1 (la paleta) y v7.x se consume
 					// como coordenada V del LUT, no como factor. Asi que aca albedo YA es el analogo exacto
@@ -1403,7 +1439,6 @@ void main(void)
 			//  - ALPHA-BLEND: engine-EXACT (BSLightingShader forward rec1507, t=0x101): cube * spec.r * 3 *
 			//    glossGate * SpecMult(cb2[11].y) * EnvmapScale(cb1[2].x) (L286/L290/L292/L298), modulated by
 			//    (ambient + diffuse) (L299-302).  *3 is the engine's forward calibration.
-			//  - OPAQUE: the engine has NO material-cube path (deferred reflects the WORLD IBL PROBE in the
 			//    composite rec3401 -- verified: 0 deferred-prepass shaders sample a material texturecube). The
 			//    previewer has no world probe, so the material cube stands in for it. The forward *3 calibration
 			//    is for the bright forward sample and over-reflects here -> the shape reads metalizado; the
@@ -1588,9 +1623,12 @@ void main(void)
 			vec3 effRgb = baseMap.rgb * vcMod * effectBaseColor;
 			float effAlpha = baseMap.a * vcAlpha * effectBaseColorAlpha;   // diffuse.a * pow(vColor.a,2.2) * BaseColor.a
 			
-			// Falloff factor (VS FalloffData -> v1.z; here angular). 1.0 when no falloff.
+			// Falloff factor = v1.z of the VS (rec0440), interpolated. 1.0 when no falloff. Geometry without vertex
+			// normals (MSN) keeps the per-pixel evaluation (see Vertex_FO4).
 			float effFalloff = 1.0;
-			if (bEffectFalloff || bEffectFalloffColor)
+			if (bVertexFalloff)
+				effFalloff = vEffectFalloff;
+			else if (bEffectFalloff || bEffectFalloffColor)
 			{
 				float NdotV_falloff = abs(dot(normal, viewDir));   // viewDir ya es unitario (main lo normaliza)
 				float ft = clamp((NdotV_falloff - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
@@ -1599,11 +1637,11 @@ void main(void)
 			}
 			
 			// Grayscale->palette recolor. COLOR(0x2000) replaces rgb; ALPHA(0x4000) replaces alpha; both=0x6000.
-			// U = pow(base.channel,1/2.2) for COLOR (rec1103 L38-40), raw base.alpha for ALPHA (rec0905 L32).
-			// V (color) = RAW BaseColor.r * falloff: SetupMaterial powf-encodes BaseColor.rgb into cb1[0]
-			//   (0x14221DC20 L132-163), and rec1103 L34-36 pow(cb1[0].x,1/2.2) cancels it -> nets raw display
-			//   BaseColor.r. NO extra pow here. (Alpha differs: BaseColor.a is NOT powf'd in setup, so its V
-			//   KEEPS pow(.,1/2.2) -- rec0905 L34-37.)
+			// U = pow(base.channel,1/2.2) for COLOR (rec1103 L38-40: the base slot is sRGB, so the sample is
+			//   linear and the pow re-encodes it), raw base.alpha for ALPHA (rec0905 L32).
+			// V (color) = pow(cb1[0].x,1/2.2) * falloff (rec1103 L34-36). effectBaseColor IS cb1[0] (powf'd on
+			//   the CPU, see the uniform), so the pow undoes it and V is the authored BaseColor.r.
+			//   (Alpha: BaseColor.a is NOT powf'd in setup, and its V still takes pow(.,1/2.2) -- rec0905 L34-37.)
 			// When the mesh has vertex colors, the engine MULTIPLIES the palette V by the vertex color
 			// channel, RAW (rec1002 `mul r0.yz, r0.yyzy, v2.xxwx`): V_color *= vColor.r, V_alpha *= vColor.a.
 			// White verts (=1) -> no change (rec1103/rec0905, no-vColor perm). NOTE BGSM does this ADDITIVE
@@ -1613,7 +1651,7 @@ void main(void)
 			if (bGreyscaleColor)
 			{
 				float palU = pow(max(baseMap.g, 0.0), 1.0/2.2);
-				float palV = max(effectBaseColor.r, 0.0) * vcRecolorR * effFalloff;
+				float palV = pow(max(effectBaseColor.r, 0.0), 1.0/2.2) * vcRecolorR * effFalloff;
 				effRgb = colorLookup(palU, palV).rgb * effectBaseColorScale;   // * BaseColorScale (PaletteColorScale)
 			}
 			
@@ -1623,7 +1661,7 @@ void main(void)
 			{
 				vec3 reflected = reflect(viewDir, normal);
 				vec3 reflectedWS = vec3(matModel * (matModelViewInverse * vec4(reflected, 0.0)));
-				vec3 cube = texture(texCubemap, reflectedWS).rgb;
+				vec3 cube = textureLod(texCubemap, reflectedWS, effectEnvMinLod).rgb;
 				float emask = bEnvMask ? texture(texEnvMask, uv).r : 1.0;
 				float nrmA = bNormalMap ? normalMap.a : 1.0;
 				effRgb += cube * envReflection * nrmA * emask;
@@ -1639,9 +1677,11 @@ void main(void)
 			if (bEffectFalloffColor && !bGreyscaleColor) effRgb *= effFalloff; // recolor already folds falloff into palette V (rec0550) -> avoid falloff^2
 			if (bEffectFalloff)      effAlpha *= effFalloff;
 			
-			// Lighting influence: lerp base toward base*sceneLight (PropertyColor ~ rig light = outDiffuse+ambient).
-			if (bLightEnabled)
-				effRgb = mix(effRgb, effRgb * (outDiffuse + hemiAmbient(normal)), effectLightingInfluence);
+			// LIGHTING technique (i1385): c = lerp(b, L * b, LI), L = point lights + DLightColor, no N.L.
+			// Without it the PS lerps toward PropertyColor.rgb * b with PropertyColor = 1 (an effect property's
+			// external emittance is null, 0x1421774F4 / 0x142226F0D..F9F): c = b.
+			if (bEffectLighting)
+				effRgb = mix(effRgb, effRgb * effectDLightColor, effectLightingInfluence);
 			
 			// NO emissive add: the engine b05 BGEM family has NO emissive term (verified -- none of the b05
 			// PS sample a glow or add an emissive). A glow on an effect material is its base color + the
@@ -1670,22 +1710,10 @@ void main(void)
 			color.rgb *= weightColor;
 		}
 
-		// Tonemap + encode sRGB: DECISION DE PREVIEW, no el camino de display de BSLighting.
-		// CORREGIDO: la nota anterior decia que eran `the BSLighting display path`. No lo son --
-		// **0 de los 18** PS de b06 contienen la constante de Hable l(0.150000), y las 18 colas escriben
-		// LINEAL a o0 (`mad o0.xyz, ...` sin curva ni pow). En el juego el tonemap y el encode son
-		// POST-PROCESO, en otro bloque de shaders, sobre el buffer ya compuesto.
-		// El preview no tiene esa pasada de post, asi que si no se hiciera aca los valores HDR (el
-		// specular llega a min(...,15) por el propio motor) se recortarian a 1 y el highlight se
-		// aplastaria. Se conserva por eso, como afordancia del visor, con la atribucion corregida.
-		// Lo que SI esta medido y por eso sigue gateado: el BGEM (b05) no lleva tonemap ni encode en el
-		// shader (0 PS de b05 con la curva de Hable) -- su salida es lineal y la compone el blend mode;
-		// tonemapear un BGEM lo lava. DebugMode escribe fragColor despues de esto y queda sin encodear.
-		if (!bIsEffectShader)
-		{
-			color.rgb = tonemap(color.rgb) / tonemap(vec3(1.0));
-			color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(1.0/2.2));
-		}
+		// SALIDA LINEAL HDR, COMO EL MOTOR: 0 de los 18 PS de b06 contienen la constante de Hable y las 18
+		// colas escriben lineal a o0 (`mad o0.xyz, ...` sin curva, sin pow, sin _sat); los PS de b05 (BGEM)
+		// tampoco. El tonemap, el encode y la LUT son POST-PROCESO sobre el buffer compuesto (ImageSpace HDR
+		// i3700 + GammaCorrectLUT i3648): los hace la pasada de PostProcess.vb, no este shader.
 	}
 	else
 	{
@@ -1698,9 +1726,8 @@ void main(void)
      color = vec4(shaded, WireAlpha) ;
 	}
 
-	// T12: engine outputs RAW alpha (no clamp on .a); clamp rgb only.
-	color.rgb = clamp(color.rgb, 0.0, 1.0);
-
+	// Sin clamp: el motor escribe o0 sin _sat sobre un target R11G11B10_FLOAT (rgb y alpha crudos). El
+	// camino wireframe se dibuja en el target de display (RGBA8), que satura al escribir.
 	fragColor = color;
 
 
@@ -1884,6 +1911,13 @@ if (bHide)
 			fragColor.a *= alpha;
 	}
 
+	// Coverage of the HDR target (ignored when the draw buffer 1 does not exist: display target).
+	if (uCoverageMode == 1)
+		coverageOut = vec4(fragColor.a, fragColor.a, 0.0, fragColor.a);
+	else if (uCoverageMode == 2)
+		coverageOut = vec4(0.0);
+	else
+		coverageOut = vec4(1.0);
 }
 "
     Sub New()
@@ -1988,6 +2022,12 @@ out vec2 vUV;
 // -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
 // introduced, which is the same thing hemiAmbient() does with the normal.
 out vec3 vWorldPos;
+
+// SSE EFFECT FALLOFF, PER VERTEX (BSEffect VS t00010153: o1.z). Same law as Vertex_FO4; off on geometry without
+// vertex normals (model-space-normal geometry), where the PS keeps its per-pixel evaluation.
+uniform bool bVertexFalloff;
+uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
+out float vEffectFalloff;
 
 vec3 colorRamp(in float value)
 {
@@ -2132,6 +2172,16 @@ void main(void)
               mv_normal.x,    mv_normal.y,    mv_normal.z);
 
 	viewDirRaw = normalize(-vPos);
+
+	// t00010153: v = normalize(-pos), n = normalize(3x3 * normal) in the same frame;
+	// t = sat((|n.v| - start) / (stop - start)); o1.z = t*t*(3 - 2t) * (stopOpacity - startOpacity) + startOpacity.
+	vEffectFalloff = 1.0;
+	if (bVertexFalloff)
+	{
+		float nv = abs(dot(normalize(mv_normalMatrix * skinnedNormal), viewDirRaw));
+		float t = clamp((nv - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
+		vEffectFalloff = (t * t * (-2.0 * t + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
+	}
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
@@ -2191,8 +2241,9 @@ void main(void)
 //        SSE folds it into the palette V and does NOT multiply afterwards -- so it is one or the
 //            other, never both. Assuming FO4's rule here makes a .bgem cast nothing at all.
 //      Without recolor, both games multiply once.
-//   4. THE FALLOFF CURVE ITSELF: FO4 writes the smoothstep by hand and does not clamp the two
-//      opacities; SSE uses the built-in smoothstep() plus max(z,0) / min(w,1).
+//   4. (WITHDRAWN) the falloff curve is the SAME in both games, measured on the vertex shaders: FO4
+//      rec0440 and SSE t00010153 both do t = sat((|n.v| - start) / (stop - start)) (div_sat),
+//      t*t*(3 - 2t), then t*(stopOp - startOp) + startOp -- no clamp on the opacities, per vertex.
 // So a change that is correct for one game can be wrong for the other. Check both, always.
 //
 // ALSO: this GLSL lives inside a VB Const String. It must be PURE ASCII, and it must NOT contain a
@@ -2265,6 +2316,13 @@ uniform vec4 effectFalloffParams;
 uniform vec3 effectBaseColor;
 uniform float effectBaseColorAlpha;
 uniform float effectBaseColorScale;
+// LIGHTING technique (bit 16): Effect_Lighting AND a static byte that is 1 (0x14152A377..A39B).
+uniform bool bEffectLighting;
+// cb2[7] of the effect PS: the preview weather's effect light (SsePreviewWeather), raw.
+uniform vec3 effectLight;
+// The falloff arrives from the VS (vEffectFalloff), see Vertex_SSE.
+uniform bool bVertexFalloff;
+in float vEffectFalloff;
 
 uniform mat4 matModel;
 uniform mat4 matModelViewInverse;
@@ -2323,7 +2381,11 @@ in vec2 vUV;
 in vec3 vWorldPos;
 
 " & ShadowDepthShaderSource.SharedUniformsGlsl & "
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 coverageOut;
+// What this draw adds to the coverage of the HDR target (see SceneTargets / Fragment_FO4): 0 unblended (1),
+// 1 blended with its own light (alpha), 2 destination-only blend (0).
+uniform int uCoverageMode;
 
 // El engine RENORMALIZA el vector de vista POR PIXEL, no confia en el interpolado: todos los PS de
 // BSLightingShader abren con `dp3 r0.x, v6.xyzx, v6.xyzx ; rsq r0.x, r0.x` y recien ahi construyen
@@ -2455,17 +2517,6 @@ vec3 TorranceSparrow(float NdotL, float NdotH, float NdotV, float VdotH, vec3 co
 	return color * spec * M_PI;
 }
 
-vec3 tonemap(in vec3 x)
-{
-	const float A = 0.15;
-	const float B = 0.50;
-	const float C = 0.10;
-	const float D = 0.20;
-	const float E = 0.02;
-	const float F = 0.30;
-
-	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
-}
 
 void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 outDiffuse, inout vec3 outSpec)
 {
@@ -2582,6 +2633,9 @@ vec3 toWorldDir(in vec3 v)
 {
 	return normalize(vec3(matModel * (matModelViewInverse * vec4(v, 0.0))));
 }
+
+// SkinTint tec 5 soft-light (PS idx 8577). Sede unica del texto: SseOverlayCompositor.SoftLightPegtopEngineGlslFn.
+" & SseOverlayCompositor.SoftLightPegtopEngineGlslFn & "
 
 vec3 hemiAmbient(in vec3 nrm)
 {
@@ -2951,8 +3005,8 @@ void main(void)
 				// vColor*diffuse (vColor folded into the non-linear base), which diverges for a non-white
 				// vColor; for white it is bit-identical. vColor commutes with the lighting multiply below.
 				vec3 sd = baseMap.rgb;
-				sd = sd * sd + 2.0 * sd * tintColor * (1.0 - sd);
-				sd *= vec3(1.011719, 0.996094, 1.011719);
+				sd = softLightPegtopEngine(sd, tintColor);
+				sd *= " & SseOverlayCompositor.SkinTintRgbFixGlsl & ";   // rgbFix tec 5: sede unica SseOverlayCompositor.SkinTintRgbFixGlsl
 				albedo = sd * vColor.rgb;
 			}
 
@@ -2969,94 +3023,38 @@ void main(void)
 			}
 		}
 
-		// Effect Shader (BGEM) overrides
+		// SSE BSEffectShader (the effect PS family, permutations 0x42 / 0x10042 / 0x10153 / 0x90073 / 0x100042 /
+		// 0x8042 of the dump): NO cube, NO emissive, NO N.L, NO Fresnel (0 of its 3216 PS declare a cube).
+		//   colour : tex.rgb * cb1[0].rgb * vc.rgb; with palette colour (bit 19) palette(U = tex.g,
+		//            V = bc.r * vc.r).rgb * scale -- V takes no falloff and no scale.
+		//   alpha  : tex.a * falloff * bc.a * vc.a * cb2[8].w (1 unfaded); with palette alpha (bit 20)
+		//            palette(U = tex.a, V = falloff * bc.a * vc.a).a, not multiplied again.
+		//   light  : LIGHTING c = lerp(c, c * L, cb1[2].x), L = 4 point lights (none here) + cb2[7]; without
+		//            it lerp(c, c * PropertyColor, cb1[2].x) with PropertyColor (1,1,1) for a NIF effect = c.
+		// Holes, declared: the soft-particle depth fade (0x40042, needs scene depth), the fog tail and the
+		// FramebufferRange factor (TEXCOORD5.w).
 		if (bIsEffectShader)
 		{
-			float effScale = bGreyscaleColor ? 1.0 : effectBaseColorScale;
-			vec3 effBase = baseMap.rgb * vColor.rgb * effectBaseColor * effScale;
-
-			// BGEM alpha: baseColor.a * vertex alpha * texture alpha
-			// Bethesda Effect.hlsl: alpha *= PropertyColor.w (single multiply, not squared)
-			float bcAlpha = effectBaseColorAlpha;
-			float effTexAlpha = bEffectGreyscaleAlpha ? 1.0 : baseMap.a;
-			color.a = bcAlpha * vColor.a * effTexAlpha;
-
-			// Falloff (calculated early - needed for cubemap and greyscale modulation)
 			float effFalloff = 1.0;
-			if (bEffectFalloff || bEffectFalloffColor)
+			if (bVertexFalloff)
+				effFalloff = vEffectFalloff;
+			else if (bEffectFalloff)
 			{
-				float NdotV_falloff = abs(dot(normal, viewDir));   // viewDir ya es unitario (main lo normaliza)
-				effFalloff = smoothstep(effectFalloffParams.x, effectFalloffParams.y, NdotV_falloff);
-				effFalloff = mix(max(effectFalloffParams.z, 0.0), min(effectFalloffParams.w, 1.0), effFalloff);
-
-				if (bEffectFalloff)
-					color.a *= effFalloff;
-
-				if (bEffectFalloffColor)
-					effBase *= effFalloff;
+				// Geometry without vertex normals: per-pixel with the same curve (see Vertex_SSE).
+				float nvP = abs(dot(normal, viewDir));
+				float tP = clamp((nvP - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
+				effFalloff = (tP * tP * (-2.0 * tP + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
 			}
-
-			// Compose base color
-			color.rgb = effBase;
-
-			// Greyscale color lookup (BEFORE lighting and cubemap - NifSkope order)
-			if (bGreyscaleColor)
-			{
-				vec4 luG = colorLookup(baseMap.g, effectBaseColor.r * vColor.r * effFalloff);
-				color.rgb = luG.rgb;
-			}
-
-			// Greyscale alpha lookup (uses original baseMap.a as X coordinate)
-			if (bEffectGreyscaleAlpha)
-			{
-				vec4 luA = colorLookup(baseMap.a, color.a);
-				color.a = luA.a;
-			}
-
-			// Lighting influence (AFTER greyscale, BEFORE cubemap - NifSkope order)
-			if (bLightEnabled)
-			{
-				color.rgb = mix(color.rgb, color.rgb * (outDiffuse + hemiAmbient(normal)), effectLightingInfluence);
-			}
-
-			// Emissive (WM addition - NifSkope effect shader has no separate emissive)
-			color.rgb += emissive;
-
-			// Cubemap (LAST - added on top of everything, matching NifSkope)
-			if (bCubemap && bEnvMap && bShowTexture)
-			{
-				float cubeIntensity = 1.0;
-				if (bEnvMask)
-				{
-					cubeIntensity = texture(texEnvMask, uv).g;
-				}
-
-				// MISMO SIGNO QUE EL BLOQUE BGSM DE ARRIBA. El BSEffectShader de Skyrim NO TIENE
-				// CONTRAPARTE MEDIBLE ACA: de sus 3217 PS (bloque idx 78..3901), **0** declaran un
-				// texturecube -- el Effect de SSE no refleja cubos (solo t0..t4 2D: greyscale-to-palette,
-				// soft-particle depth, y MRT de motion vectors + normal spheremap).
-				// OJO CON ESTA TRAMPA (me costo dos vueltas): los 540 PS con texturecube que estan FUERA
-				// del rango de BSLighting NO son Effect, son el paquete de **AGUA** (VS 11457..13628 /
-				// PS 13629..15800, emparejados 1:1 por offset). Identificarlos por `estar fuera del rango
-				// de BSLighting` es exactamente el error que hay que no repetir: hay que medir la familia
-				// (el agua se reconoce por 3 normal maps scrolleados t4/t5/t6 y la refraccion t10/t11).
-				// Y aun en el agua la reflexion tambien es ESPEJO, porque ahi el varying es ojo->superficie:
-				//     VS agua: mov o2.xyz, r1.xyzx con r1 = cb2[0..2]*pos y sqrt o2.w, dot(r1,r1)
-				//     PS agua: mad r3.xyz, r3.xyzx, -r1.wwww, r4.xyzx  => reflect(ojo->sup, N) = 2(N.V)N - V
-				// Sin referencia propia, se usa la unica referencia de SSE que existe (BSLighting,
-				// 1968/1968 sampleos con 2(N.V)N - V) y el espejo fisico. Los dos bloques van igual.
-				// El ANTIPODAL es FALLOUT 4, en sus DOS familias (205/205 sampleos de cubo con el
-				// `mov ..., -...` final): por eso Fragment_FO4 conserva reflect(viewDir,N) en sus dos
-				// bloques. Es el motor de FO4 el raro, no el de Skyrim.
-				vec3 reflected = reflect(-viewDir, normal);
-				vec3 reflectedWS = vec3(matModel * (matModelViewInverse * vec4(reflected, 0.0)));
-				vec4 cube = texture(texCubemap, reflectedWS);
-
-				cube.rgb *= envReflection * cubeIntensity;
-				cube.rgb = mix(cube.rgb, cube.rgb * outDiffuse, effectLightingInfluence);
-
-				color.rgb += cube.rgb * effFalloff;
-			}
+			float aBase = effectBaseColorAlpha * vColor.a;
+			vec3 effRgb = bGreyscaleColor
+				? colorLookup(baseMap.g, effectBaseColor.r * vColor.r).rgb * effectBaseColorScale
+				: baseMap.rgb * effectBaseColor * vColor.rgb;
+			float effAlpha = bEffectGreyscaleAlpha
+				? colorLookup(baseMap.a, effFalloff * aBase).a
+				: baseMap.a * effFalloff * aBase;
+			if (bEffectLighting)
+				effRgb = mix(effRgb, effRgb * effectLight, effectLightingInfluence);
+			color = vec4(effRgb, effAlpha);
 		}
 
 		if (bShowMask)
@@ -3069,17 +3067,8 @@ void main(void)
 			color.rgb *= weightColor;
 		}
 
-		color.rgb = tonemap(color.rgb) / tonemap(vec3(1.0));
-
-		// Linear pipeline: the lit (BSLighting) color is LINEAR (engine-faithful: sRGB-SRV diffuse +
-		// linear lights/material) and the framebuffer is not sRGB, so encode linear -> display here,
-		// like the FO4 tail. Effect shaders (BGEM) keep display-space textures (ColorTextures_Path_List
-		// is empty for BGEM -> raw upload) and compose in display space, so they are NOT encoded
-		// (matches the FO4 !bIsEffectShader encode gate).
-		if (!bIsEffectShader)
-		{
-			color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(1.0/2.2));
-		}
+		// RAW, LIKE THE ENGINE: SSE's PS (lighting and effect) write their colour with no curve and no encode, into
+		// the R11G11B10 HDR target; the curve is the post (ImageSpace HDR PS 12545, PostProcess.vb).
 	}
 	else
 	{
@@ -3092,8 +3081,7 @@ void main(void)
      color = vec4(shaded, WireAlpha) ;
 	}
 
-	color = clamp(color, 0.0, 1.0);
-
+	// No clamp: o0 is not saturated. The wireframe branch is drawn on the display target (RGBA8, saturates on write).
 	fragColor = color;
 
 
@@ -3262,6 +3250,12 @@ if (bHide)
 
 	}
 
+	if (uCoverageMode == 1)
+		coverageOut = vec4(fragColor.a, fragColor.a, 0.0, fragColor.a);
+	else if (uCoverageMode == 2)
+		coverageOut = vec4(0.0);
+	else
+		coverageOut = vec4(1.0);
 }
 "
     Sub New()
@@ -3411,9 +3405,9 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm, in int layer)
 //   2. lighting shader (.bgsm) alpha scalar: SSE multiplies BEFORE the test -- FO4 after
 //   3. falloff on the alpha WITH palette recolor: FO4 folds it into the palette V *and* multiplies
 //      again (falloff^2, on purpose); SSE folds it in and does NOT multiply again.
-//   4. the falloff curve: FO4 hand-written smoothstep without clamps; SSE built-in smoothstep with
-//      max(z,0) / min(w,1).
-// Writing one law for both is a bug that looks like a rounding problem. It already happened FOUR times.
+//   4. (WITHDRAWN) the falloff curve is the same in both games (FO4 VS rec0440 = SSE VS t00010153:
+//      div_sat, t*t*(3-2t), no clamp on the opacities).
+// Writing one law for both is a bug that looks like a rounding problem. It already happened THREE times.
 //
 // WHAT MUST BE MIRRORED, in both directions:
 //   * the alpha test quantity and its threshold
@@ -3543,19 +3537,10 @@ void main(void)
 				vec3 nGeo = bModelSpace ? normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0))
 				                        : normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
 				float NdotV = abs(nGeo.z);
-				if (bLeySse)
-				{
-					// SSE: smoothstep del lenguaje y clamps sobre las dos opacidades.
-					float ftS = smoothstep(effectFalloffParams.x, effectFalloffParams.y, NdotV);
-					effFalloff = mix(max(effectFalloffParams.z, 0.0), min(effectFalloffParams.w, 1.0), ftS);
-				}
-				else
-				{
-					// FO4: el smoothstep escrito a mano, sin clamps en z/w.
-					float ft = clamp((NdotV - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
-					ft = ft * ft * (3.0 - 2.0 * ft);
-					effFalloff = mix(effectFalloffParams.z, effectFalloffParams.w, ft);
-				}
+				// The curve of BOTH engines' vertex shaders (FO4 rec0440, SSE t00010153): div_sat, t*t*(3-2t),
+				// t*(stopOp - startOp) + startOp, no clamp on the opacities.
+				float ft = clamp((NdotV - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
+				effFalloff = (ft * ft * (-2.0 * ft + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
 			}
 			// FO4 aplica gamma al alpha de vertice; SSE lo usa lineal.
 			float vcA = bLeySse ? vColor.a : pow(max(vColor.a, 0.0), 2.2);
@@ -3734,8 +3719,17 @@ in vec2 gLocal;
 uniform vec3 uGroundTotal;
 uniform vec3 uGroundContrib[MAX_SHADOW_LIGHTS];
 uniform int  uGroundCount;   // how many wide layers exist; 0 = nothing to draw
+// The game's display encode of a linear ratio: FO4 1/2.2 (GammaCorrectLUT i3648), SSE 1 (raw pipeline).
+uniform float uDisplayExponent;
+// true: HDR target of the FO4 post (PostProcess.vb). The LINEAR ratio multiplies the linear radiance
+// (attachment 0), the coverage is left as it is (attachment 1, times 1) and the DISPLAY-space factor
+// multiplies the background-shadow target (attachment 2), which the post applies to the UI background.
+// false: display target, the display-space factor multiplies the framebuffer (see below).
+uniform bool bHdrTarget;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 coverageOut;
+layout(location = 2) out vec4 backgroundShadowOut;
 
 " & ShadowDepthShaderSource.SharedLookupGlsl & "
 
@@ -3791,12 +3785,19 @@ void main(void)
 	// 117). Exact, not approximate, for the case that actually happens: the quad depth-tests, so where
 	// the character is in front it does not draw, and its destination is the clear colour or the floor
 	// grid -- neither went through the tonemap.
-	vec3 fac = pow(lin, vec3(1.0 / 2.2));
+	vec3 fac = pow(lin, vec3(uDisplayExponent));
 	if (all(greaterThan(fac, vec3(0.998))))
 		discard;
 
 	// Multiplicative blend: the caller sets ZERO / SRC_COLOR, so this value MULTIPLIES the framebuffer.
 	// edge = 0 leaves white = the background untouched.
+	if (bHdrTarget)
+	{
+		fragColor = vec4(mix(vec3(1.0), lin, edge), 1.0);
+		coverageOut = vec4(1.0);
+		backgroundShadowOut = vec4(mix(vec3(1.0), fac, edge), 1.0);
+		return;
+	}
 	fragColor = vec4(mix(vec3(1.0), fac, edge), 1.0);
 }
 "
@@ -3911,6 +3912,24 @@ Public MustInherit Class Shader_Base_Class
         GL.DeleteShader(fragmentShader)
     End Sub
 
+    ''' <summary>A compute program (one stage), with the same compile/link checks and uniform API.</summary>
+    Protected Sub New(computeShaderSource As String)
+        Dim computeShader = CompileShader(ShaderType.ComputeShader, computeShaderSource)
+        program = GL.CreateProgram()
+        GL.AttachShader(program, computeShader)
+        GL.LinkProgram(program)
+
+        Dim linkStatus As Integer
+        GL.GetProgram(program, GetProgramParameterName.LinkStatus, linkStatus)
+        If linkStatus <> CInt(All.True) Then
+            Dim linkInfo = GL.GetProgramInfoLog(program)
+            Throw New Exception($"Shader program link error: {linkInfo}")
+        End If
+
+        GL.DetachShader(program, computeShader)
+        GL.DeleteShader(computeShader)
+    End Sub
+
     Private Shared Function CompileShader(type As ShaderType, source As String) As Integer
         Dim shader = GL.CreateShader(type)
         GL.ShaderSource(shader, source)
@@ -3984,6 +4003,12 @@ Public MustInherit Class Shader_Base_Class
     ''' autorizado en espacio perceptual) al subirlo cuando LinearPipeline esta ON: deja el termino
     ''' difuso identico al render legacy (luz_lin*albedo_lin, luego encode C3) y evita el sobre-brillo
     ''' de ambient/specular. Gateado en los call-sites de Render.vb.</summary>
+    ''' <summary>A material/rig colour as the GAME's pipeline consumes it: FO4 powf(2.2) (SetupMaterial,
+    ''' DAT_142475358 = 2.2), SSE raw (its setup has no gamma constant).</summary>
+    Public Shared Function MaterialColor(color As Color, isSSE As Boolean) As Vector3
+        Return If(isSSE, Color_to_Vector(color), Color_to_Vector_Linear(color))
+    End Function
+
     Public Shared Function Vector_to_Linear(v As Vector3) As Vector3
         Return New Vector3(CSng(Math.Pow(v.X, 2.2)),
                            CSng(Math.Pow(v.Y, 2.2)),

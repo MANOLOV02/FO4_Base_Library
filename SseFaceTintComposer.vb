@@ -18,8 +18,8 @@ Imports FO4_Base_Library.Canon.CanonInterpretacion
 ''' <para>⚠ï¸ SOBRE LA PALABRA "LINEAR" EN ESTE MODULO (anotado, NO renombrado): ni DecodeDds ni
 ''' DecodeTextureRgba aplican la curva sRGB a lineal, devuelven <c>byte/255</c> CRUDO. "linear RGBA" en las
 ''' firmas de este modulo, de SseOverlayCompositor y de SseSkeeMaskReader significa "valor de ALMACENAMIENTO
-''' normalizado a [0,1]", no "en espacio lineal". El unico lugar que de verdad linealiza es el fold
-''' (<see cref="SseFaceGenBaker.FoldFacetintIntoDiffuse"/>, que llama Srgb2Lin/Lin2Srgb explicitamente).</para>
+''' normalizado a [0,1]", no "en espacio lineal". El fold (<see cref="SseFaceGenBaker.FoldFacetintIntoDiffuse"/>)
+''' tampoco linealiza por su cuenta: convierte entre los espacios del bucket Fold, que en la ley SSE coinciden.</para>
 ''' <para>Las mascaras de tatuaje (TINI 65-74) traen TINT pero no TINP: igual tienen que registrarse
 ''' (flush-on-new-TINI) o los NPC con war-paint se van a ~74/255.</para>
 ''' <para>Es el analogo SSE de <see cref="FaceTintInputBuilder"/> (FO4) y es SSE-only: los callers gatean por

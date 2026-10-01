@@ -229,6 +229,12 @@ Public Class PreviewControl
     Public SharedFloorShader As Floor_Shader_Class
     ''' <summary>Programa del quad de fondo (fade radial). Ver <see cref="PaintBackground"/>.</summary>
     Public SharedBackgroundShader As Background_Shader_Class
+    ''' <summary>FO4 post pass (ImageSpace HDR i3700 + GammaCorrectLUT i3648) and the two compute passes of
+    ''' the mean luminance. See PostProcess.vb.</summary>
+    Friend SharedPostFo4Shader As PostProcess_Fo4_Shader_Class
+    Friend SharedPostSseShader As PostProcess_Sse_Shader_Class
+    Friend SharedLumPartialsShader As Luminance_Partials_Shader_Class
+    Friend SharedLumResolveShader As Luminance_Resolve_Shader_Class
     ''' <summary>VAO VACIO del triangulo de pantalla completa del fondo. El perfil core exige un VAO
     ''' bindeado aunque el shader no lea ningun atributo (los vertices salen de <c>gl_VertexID</c>), asi
     ''' que existe solo para satisfacer esa regla: no tiene VBO ni buffers colgando.</summary>
@@ -658,6 +664,15 @@ Public Class PreviewControl
     Public Sub Processing_Status(Texto As String)
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         Me.EnsureContextCurrent()
+        ' The card is display-space UI: it goes to the DISPLAY target (also when called in the middle of a
+        ' frame whose scene target is the HDR one), and is presented from there like any frame.
+        Dim offscreen = _targets.Ensure(Me.Width, Me.Height)
+        If offscreen Then
+            _targets.BindDisplay()
+        Else
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+            GL.Viewport(0, 0, Me.Width, Me.Height)
+        End If
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         PaintBackground()
@@ -665,6 +680,8 @@ Public Class PreviewControl
             overlay.SetText(Texto)
             overlay.RenderCentered(Me.Width, Me.Height)
         End If
+        If offscreen Then _targets.Present()
+        _statusDrawnInFrame = True
         SwapBuffers()
         ' Keep the status frame on screen until some later step explicitly requests
         ' another render; pumping the message loop here can re-enter selection/render.
@@ -1364,6 +1381,10 @@ Public Class PreviewControl
         SharedSSEShader = New Shader_Class_SSE
         SharedFloorShader = New Floor_Shader_Class
         SharedBackgroundShader = New Background_Shader_Class
+        SharedPostFo4Shader = New PostProcess_Fo4_Shader_Class
+        SharedPostSseShader = New PostProcess_Sse_Shader_Class
+        SharedLumPartialsShader = New Luminance_Partials_Shader_Class
+        SharedLumResolveShader = New Luminance_Resolve_Shader_Class
         _bgVao = GL.GenVertexArray()
         ' Los dos programas de profundidad se compilan SIEMPRE, aunque las sombras esten apagadas: el
         ' costo es un link por juego al abrir el control, y tenerlos condicionados al setting significaria
@@ -1371,6 +1392,8 @@ Public Class PreviewControl
         SharedShadowFO4Shader = New Shadow_Depth_Shader_Fo4
         SharedShadowSSEShader = New Shadow_Depth_Shader_SSE
         SharedGroundShadowShader = New Ground_Shadow_Shader_Class
+        ' Cube filtering ACROSS faces, like every D3D10+ cube sample of both engines (GL defaults to per-face).
+        GL.Enable(EnableCap.TextureCubeMapSeamless)
 
         ' 1) Aseguramos que el contexto GL está activo
         Me.EnsureContextCurrent()
@@ -1533,8 +1556,13 @@ Public Class PreviewControl
     ''' exactamente lo mismo vuelve la costura del horizonte que el Const compartido existe para evitar.
     ''' <para>Con la casilla apagada sube <c>dirStrength = 0</c> y el shader ni entra a la rama: el
     ''' resultado es la viñeta centrada de siempre.</para></summary>
-    ''' <summary>Fachada para el piso, que vive en otra clase. Misma funcion, mismos valores.</summary>
-    Friend Sub AplicarUniformsDireccionalesPublico(shader As Shader_Base_Class)
+    ''' <summary>EL FONDO COMPLETO que evalua <c>backgroundAt()</c>: color, fade, viewport y las perillas
+    ''' direccionales. Lo reciben los TRES programas que lo evaluan (el quad de fondo, el piso y la pasada de
+    ''' post de FO4) desde esta unica funcion: si no reciben exactamente lo mismo vuelve la costura.</summary>
+    Friend Sub SubirUniformsDeFondo(shader As Shader_Base_Class)
+        shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(Config_App.Current.Setting_BackColor()))
+        shader.SetFloat("backFade", BackgroundFadeUnit)
+        shader.SetVector2("viewportSize", ViewportSizeGl)
         AplicarUniformsDireccionales(shader)
     End Sub
 
@@ -1564,10 +1592,7 @@ Public Class PreviewControl
         GL.Disable(EnableCap.Blend)
         GL.Disable(EnableCap.CullFace)
 
-        shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(Config_App.Current.Setting_BackColor()))
-        shader.SetFloat("backFade", fade)
-        shader.SetVector2("viewportSize", ViewportSizeGl)
-        AplicarUniformsDireccionales(shader)
+        SubirUniformsDeFondo(shader)
 
         GL.BindVertexArray(_bgVao)
         GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
@@ -1579,18 +1604,113 @@ Public Class PreviewControl
         GL.Enable(EnableCap.CullFace)
     End Sub
 
+    ' ── FRAME TARGETS ───────────────────────────────────────────────────────────────────────────────────────
+    ' The frame is drawn offscreen (SceneTargets, PostProcess.vb) and presented with a blit. Every read
+    ' (CaptureBitmap, ReadPixelPatch) reads the DISPLAY target, so a capture is always the frame just drawn (no
+    ' front/back buffer timing). Allocated lazily by the first frame (a control that never renders - the bake
+    ' runner's context - allocates nothing), reallocated on resize, freed in Clean.
+    Private ReadOnly _targets As New SceneTargets()
+    Private _frameFbo As Integer = 0
+    Private _statusDrawnInFrame As Boolean
+
+    ''' <summary>The framebuffer RenderScene is drawing into right now (HDR target, display target, or 0).
+    ''' Passes that bind their own framebuffer (the shadow maps) return to THIS one, without a glGet per frame.</summary>
+    Friend ReadOnly Property SceneFramebuffer As Integer
+        Get
+            Return _frameFbo
+        End Get
+    End Property
+
+    ''' <summary>The ground catcher also writes its factor for the UI background (HDR frames only).</summary>
+    Friend Sub SetGroundCatcherOutputs(enabled As Boolean)
+        _targets.SetGroundCatcherOutputs(enabled)
+    End Sub
+
+    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: i3700 + i3648; SSE: 12545) unless a shader debug
+    ''' view is on (a debug view shows raw values: it is drawn straight to the display target, 8-bit exact).
+    ''' Returns the post program of the game drawing the frame, or Nothing for a direct frame.</summary>
+    Private Function FramePostProgram() As Shader_Base_Class
+        If _bgVao = 0 OrElse CurrentShader Is Nothing OrElse SharedLumPartialsShader Is Nothing OrElse
+           SharedLumResolveShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None Then Return Nothing
+        If CurrentShader Is SharedActiveShader Then Return SharedPostFo4Shader
+        If CurrentShader Is SharedSSEShader Then Return SharedPostSseShader
+        Return Nothing
+    End Function
+
+    ''' <summary>Binds the framebuffer reads come from (the scene target, or the window's default one when the
+    ''' scene target could not be allocated) and returns the previous read binding and read buffer to restore.</summary>
+    Private Function BindSceneForRead(fallback As ReadBufferMode) As (PrevFbo As Integer, PrevBuffer As Integer)
+        Dim prevFbo As Integer = 0, prevBuf As Integer = CInt(ReadBufferMode.Back)
+        Try
+            GL.GetInteger(GetPName.ReadFramebufferBinding, prevFbo)
+            GL.GetInteger(GetPName.ReadBuffer, prevBuf)
+        Catch
+        End Try
+        If _targets.DisplayFramebuffer <> 0 Then
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _targets.DisplayFramebuffer)
+            GL.ReadBuffer(ReadBufferMode.ColorAttachment0)
+        Else
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0)
+            GL.ReadBuffer(fallback)
+        End If
+        Return (prevFbo, prevBuf)
+    End Function
+
+    Private Shared Sub RestoreRead(prev As (PrevFbo As Integer, PrevBuffer As Integer))
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, prev.PrevFbo)
+        GL.ReadBuffer(CType(prev.PrevBuffer, ReadBufferMode))
+    End Sub
+
     Private Sub RenderScene()
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         If _Model Is Nothing Then Exit Sub
         If SharedActiveShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
         ApplyResize(False)
         Me.EnsureContextCurrent()
-        GL.ClearColor(Config_App.Current.Setting_BackColor)
-        GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
-        PaintBackground()
-        If Model.Can_Render Then
-            Model.RenderAll(projection, camera)
+        Dim offscreen = _targets.Ensure(Me.Width, Me.Height)
+        Dim postProgram = If(offscreen, FramePostProgram(), Nothing)
+        Dim hdr = postProgram IsNot Nothing
+        _statusDrawnInFrame = False
+        If hdr Then
+            ' Linear radiance + coverage; the background is composited by the post (it is UI).
+            _targets.BeginHdr()
+            _frameFbo = _targets.HdrFramebuffer
+        Else
+            If offscreen Then
+                _targets.BindDisplay()
+                _frameFbo = _targets.DisplayFramebuffer
+            Else
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+                GL.Viewport(0, 0, Me.Width, Me.Height)
+                _frameFbo = 0
+            End If
+            GL.ClearColor(Config_App.Current.Setting_BackColor)
+            GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
+            PaintBackground()
         End If
+        Model.FrameIsHdr = hdr
+        Try
+            If Model.Can_Render Then
+                Model.RenderAll(projection, camera)
+            End If
+            ' A status card drawn during the frame (textures still loading) is already in the display target.
+            If hdr AndAlso Not _statusDrawnInFrame Then
+                _targets.ReduceLuminance(SharedLumPartialsShader, SharedLumResolveShader)
+                If postProgram Is SharedPostSseShader Then
+                    _targets.Composite(postProgram, AddressOf SseImageSpace.SkyrimClearDay.Upload, Nothing, AddressOf SubirUniformsDeFondo, _bgVao)
+                Else
+                    _targets.Composite(postProgram, AddressOf Fo4ImageSpace.PreviewDay.Upload, Fo4ImageSpace.PreviewDay.LutPath, AddressOf SubirUniformsDeFondo, _bgVao)
+                End If
+                _frameFbo = _targets.DisplayFramebuffer
+                ' What is drawn in display values (wireframes) goes on top of the post, depth-tested
+                ' against the scene's depth (shared by both targets).
+                Model.RenderDisplayOverlays(projection, camera)
+            End If
+        Finally
+            Model.FrameIsHdr = False
+        End Try
+        If offscreen Then _targets.Present()
+        _frameFbo = 0
     End Sub
     Private Shared Sub FinishRenderFrame()
         GL.DepthMask(True)
@@ -1602,9 +1722,9 @@ Public Class PreviewControl
     ''' <paramref name="y"/>) - coordenadas del CONTROL, origen arriba-izquierda. Devuelve
     ''' <c>Color.Empty</c> si el punto cae fuera o si no hay contexto.
     '''
-    ''' <para>[!] Lo que devuelve es el pixel TAL COMO SE VE: el fragment ya le aplico iluminacion,
-    ''' tonemap y el encode a display (Shader_Class: <c>tonemap(...)</c> + <c>pow(1/2.2)</c>). NO es
-    ''' albedo, NO es lineal y NO es el tono del material. Cualquier consumidor que compare dos
+    ''' <para>[!] Lo que devuelve es el pixel TAL COMO SE VE: iluminado y pasado por la ley de display
+    ''' (FO4: la pasada de post de PostProcess.vb, exposicion + Hable + gamma + LUT; SSE: el tonemap y el
+    ''' encode de su fragment). NO es albedo, NO es lineal y NO es el tono del material. Cualquier consumidor que compare dos
     ''' muestras esta comparando resultados finales, que es exactamente para lo que existe.</para>
     '''
     ''' <para>Misma disciplina de estado que <see cref="CaptureBitmap"/>: se CAPTURA y se DEVUELVE el
@@ -1678,24 +1798,22 @@ Public Class PreviewControl
         If w <= 0 OrElse h <= 0 Then Return failed
 
         Dim buf(w * h * 4 - 1) As Byte
-        Dim prevReadBuffer As Integer = CInt(ReadBufferMode.Back)
         Dim prevPackAlignment As Integer = 4
         Try
-            GL.GetInteger(GetPName.ReadBuffer, prevReadBuffer)
             GL.GetInteger(GetPName.PackAlignment, prevPackAlignment)
         Catch
         End Try
         Dim handle As GCHandle = Nothing
+        Dim prevRead = BindSceneForRead(readTarget)
         Try
             handle = GCHandle.Alloc(buf, GCHandleType.Pinned)
-            GL.ReadBuffer(readTarget)
             GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
             GL.ReadPixels(x0, y0, w, h, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, handle.AddrOfPinnedObject())
         Catch ex As Exception
             Return failed
         Finally
             Try
-                GL.ReadBuffer(CType(prevReadBuffer, ReadBufferMode))
+                RestoreRead(prevRead)
                 GL.PixelStore(PixelStoreParameter.PackAlignment, prevPackAlignment)
             Catch
             End Try
@@ -1764,24 +1882,22 @@ Public Class PreviewControl
         ' llamador entre con el framebuffer por defecto bindeado; con un FBO bindeado el valor previo es un
         ' COLOR_ATTACHMENTi y "restaurar Back" seria dejarlo peor que antes. Lo mismo con PackAlignment: se
         ' pisa a 4 dos lineas mas abajo y hay que devolver el que habia, no el default de GL.
-        Dim prevReadBuffer As Integer = CInt(ReadBufferMode.Back)
         Dim prevPackAlignment As Integer = 4
         Try
-            GL.GetInteger(GetPName.ReadBuffer, prevReadBuffer)
             GL.GetInteger(GetPName.PackAlignment, prevPackAlignment)
         Catch
         End Try
+        ' The scene target holds the last frame drawn (the window's front buffer only when the target could not
+        ' be allocated).
+        Dim prevRead = BindSceneForRead(ReadBufferMode.Front)
         Try
-            GL.ReadBuffer(ReadBufferMode.Front)
             GL.PixelStore(PixelStoreParameter.PackAlignment, 4)
             GL.ReadPixels(0, 0, bmp.Width, bmp.Height, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, data.Scan0)
         Finally
-            ' DEVOLVER el ReadBuffer. Quedaba en Front para siempre, asi que cualquier ReadPixels o
-            ' CopyTexImage posterior contra el framebuffer por defecto leia el buffer equivocado. Es el bug
-            ' que "solo se ve a veces": el sintoma depende de si el frame ya se presento.
-            GL.ReadBuffer(CType(prevReadBuffer, ReadBufferMode))
+            ' DEVOLVER el ReadBuffer y el binding de lectura: dejarlos pisados es el bug que "solo se ve a veces".
+            RestoreRead(prevRead)
             GL.PixelStore(PixelStoreParameter.PackAlignment, prevPackAlignment)
-            Dim rb = prevReadBuffer, pa = prevPackAlignment
+            Dim rb = prevRead.PrevBuffer, pa = prevPackAlignment
             Logger.LogLazy(Function() $"[AUDIT-CAPTURE] tras la captura se devuelven ReadBuffer=0x{rb:X} y PackAlignment={pa}")
             bmp.UnlockBits(data)
         End Try
@@ -2394,10 +2510,32 @@ Public Class PreviewControl
             SharedBackgroundShader = Nothing
         End If
 
+        If SharedPostFo4Shader IsNot Nothing Then
+            SharedPostFo4Shader.Dispose()
+            SharedPostFo4Shader = Nothing
+        End If
+
+        If SharedPostSseShader IsNot Nothing Then
+            SharedPostSseShader.Dispose()
+            SharedPostSseShader = Nothing
+        End If
+
+        If SharedLumPartialsShader IsNot Nothing Then
+            SharedLumPartialsShader.Dispose()
+            SharedLumPartialsShader = Nothing
+        End If
+
+        If SharedLumResolveShader IsNot Nothing Then
+            SharedLumResolveShader.Dispose()
+            SharedLumResolveShader = Nothing
+        End If
+
         If _bgVao > 0 Then
             GL.DeleteVertexArray(_bgVao)
             _bgVao = 0
         End If
+
+        _targets.Free()
 
         If SharedShadowFO4Shader IsNot Nothing Then
             SharedShadowFO4Shader.Dispose()
@@ -2502,6 +2640,10 @@ Public Class PreviewModel
     Private ReadOnly OpaqueMeshes As New List(Of RenderableMesh)
     Private ReadOnly CutoutMeshes As New List(Of RenderableMesh)
     Private ReadOnly DecalMeshes As New List(Of RenderableMesh)
+    ' Decals that BLEND are drawn after the opaque ones and before the ordinary alpha geometry in both engines:
+    ' FO4 G-buffer stage: groups 2/3 then group 4 (blended decal, test LESS_EQUAL no write; 0x1421D4AFB, 0x141855670);
+    ' SSE: opaque decal group, then blended decal group, then the alpha list (0x14151EF40, 0x14151FD60, 0x14151FF00).
+    Private ReadOnly DecalBlendedMeshes As New List(Of RenderableMesh)
     Private ReadOnly BlendedMeshes As New List(Of RenderableMesh)
     Private ReadOnly BlendedDepthBuffer As New List(Of MeshDepth)
     Private RenderBucketsDirty As Boolean = True
@@ -2517,6 +2659,7 @@ Public Class PreviewModel
         OpaqueMeshes.Clear()
         CutoutMeshes.Clear()
         DecalMeshes.Clear()
+        DecalBlendedMeshes.Clear()
         BlendedMeshes.Clear()
         BlendedDepthBuffer.Clear()
 
@@ -2528,10 +2671,12 @@ Public Class PreviewModel
             Dim hasAlphaBlend As Boolean = Not IsNothing(material) AndAlso material.HasAlphaBlend
             Dim hasAlphaTest As Boolean = Not IsNothing(material) AndAlso material.HasAlphaTest
 
-            Dim isDecal As Boolean = Not IsNothing(material) AndAlso material.MaterialBase.Decal
+            Dim isDecal As Boolean = Not IsNothing(material) AndAlso material.MaterialBase.RendersAsDecal()
 
             If isWireframe Then
                 BlendedMeshes.Add(mesh)
+            ElseIf isDecal AndAlso hasAlphaBlend Then
+                DecalBlendedMeshes.Add(mesh)
             ElseIf isDecal Then
                 DecalMeshes.Add(mesh)
             ElseIf hasAlphaBlend Then
@@ -2546,6 +2691,7 @@ Public Class PreviewModel
         OpaqueMeshes.Sort(AddressOf CompareMeshIdx)
         CutoutMeshes.Sort(AddressOf CompareMeshIdx)
         DecalMeshes.Sort(AddressOf CompareMeshIdx)
+        DecalBlendedMeshes.Sort(AddressOf CompareMeshIdx)
         BlendedMeshes.Sort(AddressOf CompareMeshIdx)
 
         RenderBucketsDirty = False
@@ -2557,7 +2703,55 @@ Public Class PreviewModel
         Public Property Size As New Size
         Public Property DGXFormat_Original As Integer
         Public Property DGXFormat_Final As Integer
+        Private _textureId As Integer
+        ''' <summary>The GL texture of this entry. ASSIGNING IT (any value, the same number included: GL names are
+        ''' recycled) drops the colour-space views of the previous storage.</summary>
         Public Property Texture_ID As Integer
+            Get
+                Return _textureId
+            End Get
+            Set(value As Integer)
+                ReleaseViews()
+                _textureId = value
+                _loaderStorage = False
+            End Set
+        End Property
+
+        ' True only while Texture_ID is the storage the DDS loader uploaded (DirectXDDSLoader marks it). A
+        ' composer that swaps Texture_ID (FaceTint, SSE fold, rollback) clears it through the setter: its
+        ' textures hold values in their own convention (e.g. linear values in RGBA8), never re-interpreted.
+        Private _loaderStorage As Boolean
+
+        ''' <summary>Called by the DDS loader on the entry it creates for the texture it uploaded.</summary>
+        Friend Sub MarkLoaderStorage()
+            _loaderStorage = _textureId <> 0
+        End Sub
+
+        ' Views of the storage in the other colour space (DirectXDDSLoader.CreateColorSpaceView): -1 = not probed,
+        ' 0 = no view applies (bind the storage), > 0 = the view.
+        Private _viewSrgb As Integer = -1
+        Private _viewRaw As Integer = -1
+
+        ''' <summary>The texture to bind for a slot the engine samples sRGB (<paramref name="wantSrgb"/>) or raw:
+        ''' the storage when it already is in that space (or cannot be viewed), else a view of it, created once.</summary>
+        Friend Function ColorSpaceView(wantSrgb As Boolean) As Integer
+            If _textureId = 0 OrElse OwnedByComposer OrElse Not _loaderStorage Then Return _textureId
+            Dim cached = If(wantSrgb, _viewSrgb, _viewRaw)
+            If cached < 0 Then
+                cached = DirectXDDSLoader.CreateColorSpaceView(_textureId, Cubemap, wantSrgb, DGXFormat_Original)
+                If wantSrgb Then _viewSrgb = cached Else _viewRaw = cached
+            End If
+            Return If(cached > 0, cached, _textureId)
+        End Function
+
+        ''' <summary>Deletes the views (the context must be current). Called by every path that deletes or
+        ''' replaces the storage.</summary>
+        Friend Sub ReleaseViews()
+            If _viewSrgb > 0 Then GL.DeleteTexture(_viewSrgb)
+            If _viewRaw > 0 Then GL.DeleteTexture(_viewRaw)
+            _viewSrgb = -1 : _viewRaw = -1
+        End Sub
+
         ''' <summary>True si se subió como SRV sRGB (color/diffuse): la GPU gamma-decodea al samplear ⇒ el
         ''' sample devuelve LINEAL. False = cruda. Se setea AL CARGAR con la decisión de rol (SRGBTexturePaths
         ''' / ColorTextures_Path_List). Viaja con la textura y se reusa (el compositor FaceTint lee el IsSRGB
@@ -2785,14 +2979,24 @@ Public Class PreviewModel
                     ' "no material on the shape" guard must consult the override too — otherwise an
                     ' overlay over a shape with no ShapeMaterial would wrongly report not-blended.
                     If OverrideRelatedMaterial Is Nothing AndAlso IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
-                    Return MaterialBase.AlphaBlendEnabled OrElse MaterialBase.Alpha < 1.0F
+                    ' Blended = the engine-resolved blend bit OR material Alpha < 1 (the engine routes x = Alpha*fade < 1
+                    ' as blended too: Fallout4.exe 0x14217A485..A489, SkyrimSE 0x14151A47B..484).
+                    Return MaterialBase.ResolveEngineAlpha().Blend OrElse MaterialBase.Alpha < 1.0F
+                End Get
+            End Property
+
+            ''' <summary>Alpha-test threshold (0..1) of the engine-resolved alpha state (ResolveEngineAlpha). Lit pass,
+            ''' shadow pass and the occlusion tool read it from here so the three agree.</summary>
+            Public ReadOnly Property AlphaTestThreshold As Single
+                Get
+                    Return MaterialBase.ResolveEngineAlpha().Threshold / 255.0F
                 End Get
             End Property
 
             Public ReadOnly Property HasAlphaTest
                 Get
                     If OverrideRelatedMaterial Is Nothing AndAlso IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
-                    Return MaterialBase.AlphaTest
+                    Return MaterialBase.ResolveEngineAlpha().Test
                 End Get
             End Property
 
@@ -2830,9 +3034,10 @@ Public Class PreviewModel
             '     the BGSM-level Alpha multiplier doesn't carry per-shape factors so this is
             '     the only sensible default.
             Public Function Calculate_Blending() As Integer()
-                If MaterialBase.AlphaBlendEnabled Then
-                    Return {CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionSource)),
-                            CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionDest))}
+                Dim r = MaterialBase.ResolveEngineAlpha()
+                If r.Blend Then
+                    Return {CInt(MapAlphaFunctionToBlendingFactor(r.Src)),
+                            CInt(MapAlphaFunctionToBlendingFactor(r.Dst))}
                 End If
                 Return {CInt(BlendingFactor.SrcAlpha), CInt(BlendingFactor.OneMinusSrcAlpha)}
             End Function
@@ -2855,13 +3060,40 @@ Public Class PreviewModel
             End Function
 
 
+            ''' <summary>The cube the FO4 effect shader binds when its material turns environment mapping on and
+            ''' names no cube or a file that does not exist: Textures\Shared\Cubemaps\EyeCubeMap.dds (string
+            ''' 0x142904438; ctor default 0x14222435B, load fallback 0x1421825B6 via 0x142181B38).</summary>
+            Friend Const EngineEffectDefaultCube As String = "Textures\Shared\Cubemaps\EyeCubeMap.dds"
+
+            ''' <summary>The envmap path this material binds: the declared one, or, for a FO4 effect material with
+            ''' environment mapping whose cube is missing, the engine's default cube.</summary>
+            Public ReadOnly Property EnvmapTexturePath As String
+                Get
+                    Dim declared = FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture)
+                    If Config_App.Current.Game = Config_App.Game_Enum.Skyrim OrElse Not MaterialBase.IsBGEM() OrElse
+                       Not MaterialBase.EnvironmentMapping Then Return declared
+                    If declared <> "" AndAlso FilesDictionary_class.TryGetEntry(declared) IsNot Nothing Then Return declared
+                    Return FO4UnifiedMaterial_Class.CorrectTexturePath(EngineEffectDefaultCube)
+                End Get
+            End Property
+
+            ''' <summary>A FO4 material slot in the colour space the engine loads it (the sRGB flag each material
+            ''' class passes per slot, see ApplyMaterial). <paramref name="id"/> must be the id this entry resolves
+            ''' to (else it is returned unchanged).</summary>
+            Friend Function SlotTextureInColorSpace(path As String, id As UInteger, srgb As Boolean) As UInteger
+                If id = 0 OrElse String.IsNullOrEmpty(path) Then Return id
+                Dim tex As Texture_Loaded_Class = Nothing
+                If Not TryGetTexture(path, tex) OrElse tex Is Nothing OrElse CUInt(tex.Texture_ID) <> id Then Return id
+                Return CUInt(tex.ColorSpaceView(srgb))
+            End Function
+
             Public ReadOnly Property Textures_Path_List As IEnumerable(Of String)
                 Get
                     Return {FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.NormalTexture),
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.Diffuse_or_Base_Texture),
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.SmoothSpecTexture),
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.GreyscaleTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture),
+                     EnvmapTexturePath,
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.FlowTexture),
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.GlowTexture),
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.DisplacementTexture),
@@ -2894,7 +3126,7 @@ Public Class PreviewModel
                     ' Sólo es COLOR (sRGB) en el multilayer NO-facegen. Sin este gate, un NIF facegen cargado standalone
                     ' samplea el facetint sRGB y renderiza oscuro (bug del _2c). FO4 no-facegen intacto.
                     If Not MaterialBase.Facegen Then colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.InnerLayerTexture))
-                    colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture))
+                    colors.Add(EnvmapTexturePath)
                     Return colors
                 End Get
             End Property
@@ -2947,7 +3179,7 @@ Public Class PreviewModel
             End Property
             Public ReadOnly Property EnvmapTexture_ID As UInteger
                 Get
-                    Return GetTextureID(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture))
+                    Return GetTextureID(EnvmapTexturePath)
                 End Get
             End Property
             Public ReadOnly Property GreyscaleTexture_ID As UInteger
@@ -3018,7 +3250,7 @@ Public Class PreviewModel
             Public ReadOnly Property HasCubemap As Boolean
                 Get
                     Dim tex As Texture_Loaded_Class = Nothing
-                    If Not TryGetTexture(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture), tex) Then Return False
+                    If Not TryGetTexture(EnvmapTexturePath, tex) Then Return False
                     Return tex.Cubemap
                 End Get
             End Property
@@ -3818,7 +4050,7 @@ Public Class PreviewModel
         Private Shared Function ResolvePolygonOffset(materialBase As FO4UnifiedMaterial_Class) As PolygonOffsetState
             If materialBase Is Nothing Then Return PolygonOffsetState.Disabled
 
-            If Not materialBase.Decal Then
+            If Not materialBase.RendersAsDecal() Then
                 Return PolygonOffsetState.Disabled
             End If
 
@@ -3836,13 +4068,22 @@ Public Class PreviewModel
 
         Private Shared Function ResolveDepthTestEnabled(materialBase As FO4UnifiedMaterial_Class, hasAlphaBlend As Boolean) As Boolean
             If materialBase Is Nothing Then Return hasAlphaBlend = False
-            If materialBase.Decal Then Return True
+            If materialBase.RendersAsDecal() Then Return True
 
             Return materialBase.ZBufferTest OrElse (hasAlphaBlend = False)
         End Function
 
         Private Shared Function ResolveDepthWriteEnabled(materialBase As FO4UnifiedMaterial_Class, hasAlphaBlend As Boolean, hasAlphaTest As Boolean, isWireframe As Boolean) As Boolean
-            If hasAlphaBlend OrElse isWireframe Then
+            If isWireframe Then Return False
+            If hasAlphaBlend Then
+                ' FO4 EFFECT shader drawn in the alpha list (not a decal): the pass default is test LESS_EQUAL +
+                ' WRITE (0x142221DE1, effect restore 0x142227830) and the effect setup keeps it when ZTest and
+                ' ZWrite are both set, test-only when ZWrite is off, nothing when ZTest is off (0x142227528..5B6).
+                ' The BSLighting alpha-pass state of FO4 is not traced: it keeps the no-write convention.
+                If materialBase IsNot Nothing AndAlso materialBase.IsBGEM() AndAlso Not materialBase.RendersAsDecal() AndAlso
+                   Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Fallout4 Then
+                    Return materialBase.ZBufferTest AndAlso materialBase.ZBufferWrite
+                End If
                 Return False
             End If
 
@@ -4024,7 +4265,7 @@ Public Class PreviewModel
             ' el alpha real del vertice.
             shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso MeshData.Material.UseVertexAlpha)
             If usaTextura Then
-                shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
+                shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, MeshData.Material.AlphaTestThreshold))
                 ' El escalar Alpha del material. LO MIRAN LAS DOS RAMAS, no solo el dither: el cutout
                 ' lo usa para todo .bgem (los dos juegos) y para el .bgsm de SSE, que mete el escalar
                 ' DENTRO del test. Este comentario decia que el cutout ni lo lee — falso desde que el
@@ -4117,6 +4358,11 @@ Public Class PreviewModel
         ' Shape-derived state (TintColor/ShowTexture/...) still resolves to the BASE shape, matching
         ' how ApplyMaterial reads MeshData.Shape directly (~2905-2925).
         Private _overlayMaterialCache As Dictionary(Of OverlayMaterialLayer, MaterialData)
+
+        ''' <summary>The transient MaterialData of an overlay layer (shared with RenderOverlayLayer).</summary>
+        Friend Function OverlayMaterialData(layer As OverlayMaterialLayer) As MaterialData
+            Return GetOverlayMaterialData(layer)
+        End Function
 
         Private Function GetOverlayMaterialData(layer As OverlayMaterialLayer) As MaterialData
             If _overlayMaterialCache Is Nothing Then _overlayMaterialCache = New Dictionary(Of OverlayMaterialLayer, MaterialData)
@@ -4211,12 +4457,9 @@ Public Class PreviewModel
             EnsureZapIndexBuffer()
             Dim faceMode = ResolveEffectiveFaceMode(MeshData.Shape, materialBase)
 
-            ' Coplanar decal: never write depth, depth-test Lequal so the coplanar overlay passes
-            ' against the base mesh's depth. ApplyMaterial already enabled blend (HasAlphaBlend) and
-            ' set DepthFunc(Lequal); reassert both here so the overlay never writes depth regardless
-            ' of the material's ZBufferWrite.
-            GL.DepthFunc(DepthFunction.Lequal)
-            GL.DepthMask(False)
+            ' Depth/blend/offset come from ApplyMaterial exactly as for any shape: the overlay is a shape of its
+            ' own in the engine (an F4EE / skee clone), routed by its material (decal or alpha list). Its
+            ' geometry and vertex path are the base's, so the coplanar depth is identical and LESS_EQUAL passes.
             ApplyFaceMode(faceMode)
             GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
 
@@ -4238,6 +4481,20 @@ Public Class PreviewModel
             GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
             GL.CullFace(TriangleFace.Back)
         End Sub
+
+        ''' <summary>What a blended draw adds to the coverage of the HDR target, from its SOURCE blend factor
+        ''' evaluated over an EMPTY destination (colour 0; alpha 1, the R11G11B10 target has no alpha): a
+        ''' factor that is 0 there (ZERO, DST_COLOR, ONE_MINUS_DST_ALPHA, SRC_ALPHA_SATURATE) means the draw
+        ''' adds no light of its own - it only scales what is behind - so it leaves the coverage (2); any
+        ''' other factor lets its own colour in, weighted by its alpha (1).</summary>
+        Private Shared Function CoverageModeForSourceFactor(src As BlendingFactor) As Integer
+            Select Case src
+                Case BlendingFactor.Zero, BlendingFactor.DstColor, BlendingFactor.OneMinusDstAlpha, BlendingFactor.SrcAlphaSaturate
+                    Return 2
+                Case Else
+                    Return 1
+            End Select
+        End Function
 
         Private Enum EffectiveFaceMode
             DrawCCW = 1
@@ -4373,6 +4630,43 @@ Public Class PreviewModel
             If isSSE Then
                 Dim sseEnvMaskId = material.FlowTexture_ID
                 If sseEnvMaskId <> 0 Then envmapMaskTextureId = sseEnvMaskId
+            End If
+
+            ' FO4: EACH SLOT IN THE COLOUR SPACE THE ENGINE LOADS IT. The flag is per material class and per
+            ' slot, passed to the texture set's loader (BSShaderTextureSet vtable+0x158 = 0x14216A1E0 ->
+            ' 0x142182420 -> 0x1417A3A60 -> MakeSRGB 0x14183E680):
+            '  - effect (BSEffectShaderMaterial, 0x1422249CE..C52): base, palette, cube sRGB; normal, mask raw.
+            '  - lighting (every BSLightingShaderMaterial class; common part 0x1421D3C60): slot 0 diffuse sRGB
+            '    (ALSO with greyscale-to-palette: the prepass re-encodes its index, pow(t0.g, 1/2.2) in b09
+            '    rec2985), 1 normal raw, 2 glow raw, 3 greyscale palette sRGB, 7 smooth-spec raw; Envmap/Eye/
+            '    MultiLayerParallax (0x1421CF8C0 / 0x1421D00A0 / 0x1421D3330) slot 4 cube sRGB; Face (0x1421D15C0)
+            '    slot 5 raw. The env mask (slot 5) is raw.
+            ' The paths are the ones the *_ID properties resolve, so a slot whose id came from elsewhere (the eye
+            ' env-mask swap, a composer) is left alone; SSE stays on its raw pipeline.
+            If isSSE Then
+                ' SSE: the legacy loader never promotes a texture to sRGB (0x14101FED0 maps to UNORM/SNORM/FLOAT only;
+                ' an authored _SRGB DDS keeps its own SRV, 0x14101F616): every slot is read raw, whatever role
+                ' registered the path's storage. ColorSpaceView(False) gives exactly that (authored sRGB stays sRGB).
+                Dim tpS = Function(p As String) FO4UnifiedMaterial_Class.CorrectTexturePath(p)
+                diffuseTextureId = material.SlotTextureInColorSpace(tpS(materialBase.Diffuse_or_Base_Texture), diffuseTextureId, False)
+                normalTextureId = material.SlotTextureInColorSpace(tpS(materialBase.NormalTexture), normalTextureId, False)
+                greyscaleTextureId = material.SlotTextureInColorSpace(tpS(materialBase.GreyscaleTexture), greyscaleTextureId, False)
+                envmapTextureId = material.SlotTextureInColorSpace(material.EnvmapTexturePath, envmapTextureId, False)
+                envmapMaskTextureId = material.SlotTextureInColorSpace(tpS(materialBase.FlowTexture), envmapMaskTextureId, False)
+                glowTextureId = material.SlotTextureInColorSpace(tpS(materialBase.GlowTexture), glowTextureId, False)
+                smoothSpecTextureId = material.SlotTextureInColorSpace(tpS(materialBase.SmoothSpecTexture), smoothSpecTextureId, False)
+                lightingTextureId = material.SlotTextureInColorSpace(tpS(materialBase.LightingTexture), lightingTextureId, False)
+            Else
+                Dim tp = Function(p As String) FO4UnifiedMaterial_Class.CorrectTexturePath(p)
+                diffuseTextureId = material.SlotTextureInColorSpace(tp(materialBase.Diffuse_or_Base_Texture), diffuseTextureId, True)
+                normalTextureId = material.SlotTextureInColorSpace(tp(materialBase.NormalTexture), normalTextureId, False)
+                greyscaleTextureId = material.SlotTextureInColorSpace(tp(materialBase.GreyscaleTexture), greyscaleTextureId, True)
+                envmapTextureId = material.SlotTextureInColorSpace(material.EnvmapTexturePath, envmapTextureId, True)
+                envmapMaskTextureId = material.SlotTextureInColorSpace(tp(materialBase.EnvmapMaskTexture), envmapMaskTextureId, False)
+                If Not materialBase.IsBGEM() Then
+                    glowTextureId = material.SlotTextureInColorSpace(tp(materialBase.GlowTexture), glowTextureId, False)
+                    smoothSpecTextureId = material.SlotTextureInColorSpace(tp(materialBase.SmoothSpecTexture), smoothSpecTextureId, False)
+                End If
             End If
 
             Dim hasBacklightTexture As Boolean = materialBase.BackLighting
@@ -4654,7 +4948,7 @@ Public Class PreviewModel
             shader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
             shader.SetVector2("uvScale", New Vector2(materialBase.UScale, materialBase.VScale))
             ' Umbral de alpha (solo necesario si usás discard por transparencia)
-            shader.SetFloat("alphaThreshold", materialBase.AlphaTestRef / 255)
+            shader.SetFloat("alphaThreshold", material.AlphaTestThreshold)
 
             '===============================
             ' ?? TOGGLES DE EFECTOS Y SOMBREADO
@@ -4707,9 +5001,11 @@ Public Class PreviewModel
             shader.SetFloat("shininess", materialBase.Smoothness)
             ' SSE: exponente de glossiness CRUDO (shad.Glossiness), no reconstruido por el shader.
             If isSSE Then shader.SetFloat("glossiness", materialBase.NifGlossiness)
-            shader.SetVector3("specularColor", Shader_Base_Class.Color_to_Vector_Linear(materialBase.SpecularColor))
+            ' FO4 SetupMaterial powf(2.2)s the material colours (DAT_142475358); SSE's pipeline is raw (no gamma
+            ' constant anywhere in its setup, raw cbuffer writes).
+            shader.SetVector3("specularColor", Shader_Base_Class.MaterialColor(materialBase.SpecularColor, isSSE))
             shader.SetFloat("specularStrength", materialBase.SpecularMult)
-            shader.SetVector3("emissiveColor", Shader_Base_Class.Color_to_Vector_Linear(materialBase.EmittanceColor))
+            shader.SetVector3("emissiveColor", Shader_Base_Class.MaterialColor(materialBase.EmittanceColor, isSSE))
             shader.SetFloat("emissiveMultiple", materialBase.EmittanceMult)
             shader.SetFloat("fresnelPower", materialBase.FresnelPower)
             shader.SetFloat("subsurfaceRolloff", materialBase.SubsurfaceLightingRolloff)
@@ -4729,14 +5025,15 @@ Public Class PreviewModel
             shader.SetBool("bRimlight", materialBase.RimLighting)
             shader.SetFloat("rimlightPower", materialBase.RimPower)
             shader.SetBool("bDoubleSided", materialBase.TwoSided)
-            shader.SetBool("bDiffuseIsColor", materialBase.IsColorDiffuse())
 
             ' SkinTint / HairTint tint color.
             ' FO4 (engine): SkinTint = the per-actor SKIN TONE soft-lit at render (the FaceGen genetic-blend
             '   pass writes it to material+0xC0 for every SkinTint shape; SetupMaterial case 5 gamma-corrects
             '   pow 2.2 -> cb1[1]). Source = the per-mesh SkinToneColor (NPC) or the material SkinTintColor (WM).
             '   The body diffuse stays UNTONED (no bake). Hair = HairTintColor.
-            ' Skyrim (SSE): SkinTint forces White (no-op); Hair = HairTintColor.
+            ' Skyrim (SSE): SkinTint = technique 5, albedo = softlight(t0, tintColor) x rgbFix (PS idx 8577) with the
+            '   material tintColor CRUDE (QNAM/255 on skin, key 7 or the template's (1,1,1) on skee layers). NOT a
+            '   white no-op: with t = 1 the albedo is 2a - a^2. Hair = HairTintColor.
             Dim hasTint As Boolean = materialBase.SkinTint OrElse materialBase.Hair
             ' "Ya está": if the skin tone is already baked into this mesh's diffuse (FaceTint composite,
             ' or Skyrim legacy body bake), the shader's own SkinTint soft-light must be a no-op for it —
@@ -4766,7 +5063,9 @@ Public Class PreviewModel
                                         Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale)))
                 Else
                     tint = materialBase.HairTintColor
-                    tintVec = Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale))
+                    ' SSE copies the hair colour into cb1[1] raw; FO4 powf(2.2)s it in SetupMaterial.
+                    tintVec = If(isSSE, ScaledTintSrgb(tint, materialBase.TintColorScale),
+                                        Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale)))
                 End If
                 shader.SetVector3("tintColor", tintVec)
             End If
@@ -4833,19 +5132,40 @@ Public Class PreviewModel
             shader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
             shader.SetBool("bEffectFalloffColor", materialBase.FalloffColorEnabled)
             shader.SetBool("bEffectGreyscaleAlpha", materialBase.GrayscaleToPaletteAlpha)
-            shader.SetFloat("effectLightingInfluence", If(materialBase.EffectLightingEnabled, materialBase.LightingInfluence, 0.0F))
             shader.SetVector4("effectFalloffParams", New OpenTK.Mathematics.Vector4(materialBase.FalloffStartAngle, materialBase.FalloffStopAngle, materialBase.FalloffStartOpacity, materialBase.FalloffStopOpacity))
-            ' BGEM (BSEffectShader) is a separate shader family; the BSLighting linear pipeline does
-            ' NOT touch its color path (would mix linear color with the un-decoded sRGB base texture).
-            ' Keep effectBaseColor in the legacy space; the BGEM block + C3 are gated !bIsEffectShader.
-            shader.SetVector3("effectBaseColor", Shader_Base_Class.Color_to_Vector(materialBase.BaseColor))
-            ' BGEM output alpha = diffuse.a * cb1[0].w(BaseColor.a) * cb2[13].w(PropertyColor.w) (rec1026).
-            ' En el formato BGEM el BaseColor field es RGB-only y la opacidad la lleva el common Alpha
-            ' (bgem.Alpha): el app YA aliasa BaseColor.A = ClampByte(bgem.Alpha) -> son LA MISMA propiedad,
-            ' NO multiplicar (seria alpha^2). cb1[0].w (BaseColor field .a) = 1.0; el alpha real = el
-            ' common Alpha = PropertyColor.w (cb2[13].w). effectBaseColorAlpha = materialBase.Alpha.
+            ' FO4 effect falloff per vertex (Vertex_FO4) when the DRAWN geometry has vertex normals: the geometry is
+            ' this mesh's (MeshData), whose own material says whether it is model-space-normal (no vertex normals),
+            ' also when the material bound here is an overlay layer's.
+            Dim geometryHasNormals = Not (MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals)
+            shader.SetBool("bVertexFalloff", isBGEM AndAlso (materialBase.FalloffEnabled OrElse materialBase.FalloffColorEnabled) AndAlso geometryHasNormals)
+            ' Output alpha = diffuse.a * cb1[0].w * cb2[13].w (i1385). cb1[0].w = kBaseColor.a = the FILE Alpha (the
+            ' parser stores it at data+0x60 and ApplyMaterialData builds kBaseColor from it, 0x14216C065..C185,
+            ' 0x1421717EF..1835); cb2[13].w = the property's fAlpha = 1.0 (ctor 0x1421688FB, never written by
+            ' ApplyMaterialData). The app aliases BaseColor.A to the same file Alpha: it enters ONCE.
             shader.SetFloat("effectBaseColorAlpha", materialBase.Alpha)
             shader.SetFloat("effectBaseColorScale", materialBase.BaseColorScale)
+            If isSSE Then
+                ' SSE SetupMaterial of the effect property (FO4UnifiedMaterial_Class.EngineSseEffectConstants), raw.
+                ' The palette branch is the shader's bGreyscaleColor: same predicate (bit 19 = flag + greyscale tex).
+                Dim ssePalette = materialBase.GrayscaleToPaletteColor AndAlso greyscaleTextureId <> 0
+                Dim ks = FO4UnifiedMaterial_Class.EngineSseEffectConstants(materialBase.BaseColor, materialBase.BaseColorScale, ssePalette,
+                                                                          materialBase.LightingInfluence, materialBase.EffectLightingEnabled)
+                shader.SetVector3("effectBaseColor", ks.BaseColor)
+                shader.SetFloat("effectLightingInfluence", ks.Influence)
+                shader.SetBool("bEffectLighting", ks.LightingTechnique)
+                shader.SetVector3("effectLight", SsePreviewWeather.SkyrimClearDay.EffectLight)
+            Else
+                ' FO4 SetupMaterial of the effect material (FO4UnifiedMaterial_Class.EngineEffectConstants). The
+                ' palette branch is the shader's bGreyscaleColor: same predicate.
+                Dim palette = materialBase.GrayscaleToPaletteColor AndAlso greyscaleTextureId <> 0
+                Dim k = FO4UnifiedMaterial_Class.EngineEffectConstants(materialBase.BaseColor, materialBase.BaseColorScale, palette,
+                                                                       materialBase.LightingInfluence, materialBase.EffectLightingEnabled)
+                shader.SetVector3("effectBaseColor", k.BaseColorLinear)
+                shader.SetFloat("effectLightingInfluence", k.InfluenceByte / 255.0F)
+                shader.SetBool("bEffectLighting", k.LightingTechnique)
+                shader.SetVector3("effectDLightColor", Fo4PreviewWeather.CommonwealthClearDay.DLightColor(Fo4ImageSpace.PreviewDay))
+                shader.SetFloat("effectEnvMinLod", materialBase.EnvmapMinLOD)
+            End If
 
             '
 
@@ -4870,6 +5190,7 @@ Public Class PreviewModel
             Dim writeDepth As Boolean = ResolveDepthWriteEnabled(materialBase, hasAlphaBlend, hasAlphaTest, MeshData.Shape.Wireframe)
             GL.DepthMask(writeDepth)
             ' === Blending / Alpha Test / Wireframe ===
+            Dim coverageMode As Integer = 0
             If MeshData.Shape.Wireframe Then
                 ' Pasada en modo wireframe
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line)
@@ -4881,6 +5202,7 @@ Public Class PreviewModel
                 GL.Enable(EnableCap.Blend)
                 Dim blend = material.Calculate_Blending()
                 GL.BlendFunc(CType(blend(0), BlendingFactor), CType(blend(1), BlendingFactor))
+                coverageMode = CoverageModeForSourceFactor(CType(blend(0), BlendingFactor))
             ElseIf hasAlphaTest Then
                 ' Alpha test (recorte)
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
@@ -4890,6 +5212,11 @@ Public Class PreviewModel
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
                 GL.Disable(EnableCap.Blend)
             End If
+            ' Coverage of the HDR target (attachment 1, see SceneTargets): blended draws accumulate it
+            ' over-style (ONE, ONE_MINUS_SRC_ALPHA) whatever their colour blend is; glBlendFunc above set
+            ' every draw buffer, so attachment 1 is set again after it. Display targets have no buffer 1.
+            If coverageMode <> 0 Then GL.BlendFunc(1, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
+            shader.SetInt("uCoverageMode", coverageMode)
 
             Dim polygonOffset = ResolvePolygonOffset(materialBase)
             If polygonOffset.Enabled Then
@@ -4920,7 +5247,7 @@ Public Class PreviewModel
                 Dim dId = CInt(material.DiffuseTexture_ID)
                 Dim dMin = TexParamOrMinus1(dId, GetTextureParameter.TextureMinFilter)
                 Dim dMax = TexParamOrMinus1(dId, GetTextureParameter.TextureMaxLevel)
-                Logger.LogLazy(Function() $"[DRAW-STATE] shape='{shpD}' idx={MeshData.Idx} blend={hasAlphaBlend}({blendPair(0)},{blendPair(1)}) test={hasAlphaTest} thr={materialBase.AlphaTestRef} matAlpha={materialBase.Alpha:F3} depthWrite={writeDepth} | tex D={dId} N={material.NormalTexture_ID} inner={material.InnerLayerTexture_ID} | vColor: show={vcShow} data={vcData} tree={vcTree} ⇒ bShowVertexColor={vcShow AndAlso vcData} bShowVertexAlpha={vcShow AndAlso vcData AndAlso Not vcTree} | sampler D: minFilter={dMin} maxLevel={dMax} | hair={materialBase.Hair} spec={materialBase.SpecularEnabled}x{materialBase.SpecularMult:F2} gloss={materialBase.NifGlossiness:F2} foldedKey='{material.SseFoldedDiffuseKey}'")
+                Logger.LogLazy(Function() $"[DRAW-STATE] shape='{shpD}' idx={MeshData.Idx} blend={hasAlphaBlend}({blendPair(0)},{blendPair(1)}) test={hasAlphaTest} thr={material.AlphaTestThreshold * 255.0F:F0} matAlpha={materialBase.Alpha:F3} depthWrite={writeDepth} | tex D={dId} N={material.NormalTexture_ID} inner={material.InnerLayerTexture_ID} | vColor: show={vcShow} data={vcData} tree={vcTree} ⇒ bShowVertexColor={vcShow AndAlso vcData} bShowVertexAlpha={vcShow AndAlso vcData AndAlso Not vcTree} | sampler D: minFilter={dMin} maxLevel={dMax} | hair={materialBase.Hair} spec={materialBase.SpecularEnabled}x{materialBase.SpecularMult:F2} gloss={materialBase.NifGlossiness:F2} foldedKey='{material.SseFoldedDiffuseKey}'")
             End If
         End Sub
 
@@ -5201,7 +5528,7 @@ Public Class PreviewModel
             If previa.Texture_ID <> 0 Then
                 Dim aId = previa.Texture_ID, aP = path
                 Logger.LogLazy(Function() $"[AUDIT-ORPHAN] subida fallida sobre una clave con textura viva del loader: se libera el handle {aId} de '{aP}'")
-                Try : GL.DeleteTexture(previa.Texture_ID) : Catch : End Try
+                Try : previa.ReleaseViews() : GL.DeleteTexture(previa.Texture_ID) : Catch : End Try
             End If
         End If
         Textures_Dictionary.Remove(path)
@@ -5386,6 +5713,7 @@ Public Class PreviewModel
                             Dim old As Texture_Loaded_Class = Nothing
                             If Textures_Dictionary.TryGetValue(path, old) AndAlso old IsNot Nothing AndAlso
                                old.Texture_ID > 0 AndAlso old.Texture_ID <> result.Texture_ID Then
+                                old.ReleaseViews()
                                 GL.DeleteTexture(old.Texture_ID)
                             End If
                             ' DIAGNOSTICO (Logger.Enabled): QUE ARCHIVO quedo detras de CADA nombre de textura GL.
@@ -5527,6 +5855,9 @@ Public Class PreviewModel
 
         ' — Eliminar texturas cargadas —
         Dim seen As New HashSet(Of UInteger)
+        For Each t In Textures_Dictionary.Values
+            t?.ReleaseViews()
+        Next
         For Each texID In Textures_Dictionary.Values.Select(Function(pf) pf.Texture_ID)
             If texID > 0 AndAlso Not seen.Contains(texID) Then
                 GL.DeleteTexture(texID)
@@ -5590,6 +5921,9 @@ Public Class PreviewModel
             Next
             ' — Eliminar texturas cargadas —
             Dim seen As New HashSet(Of UInteger)
+            For Each t In Textures_Dictionary.Values.Where(Function(pf) pf.Path.Equals(Cual, StringComparison.OrdinalIgnoreCase))
+                t.ReleaseViews()
+            Next
             For Each texID In Textures_Dictionary.Values.Where(Function(pf) pf.Path.Equals(Cual, StringComparison.OrdinalIgnoreCase)).Select(Function(pf) pf.Texture_ID)
                 If texID > 0 AndAlso Not seen.Contains(texID) Then
                     GL.DeleteTexture(texID)
@@ -5630,6 +5964,7 @@ Public Class PreviewModel
         OpaqueMeshes.Clear()
         CutoutMeshes.Clear()
         DecalMeshes.Clear()
+        DecalBlendedMeshes.Clear()
         BlendedMeshes.Clear()
         BlendedDepthBuffer.Clear()
         MarkRenderBucketsDirty()
@@ -5648,7 +5983,11 @@ Public Class PreviewModel
 
     Structure MeshDepth
         Public Mesh As RenderableMesh
+        ''' <summary>Nothing = the mesh's own draw; else one of its overlay layers.</summary>
+        Public Layer As OverlayMaterialLayer
         Public Depth As Single
+        ''' <summary>Insertion order: the tie-break of the stable back-to-front sort.</summary>
+        Public Seq As Integer
     End Structure
 
     ''' <summary>El rig de luces ya resuelto a uniforms: 4 colores linealizados (pow 2.2) + el ambient
@@ -5760,16 +6099,21 @@ Public Class PreviewModel
         ' Ver PreviewLightRig.AmbientGroundLevel para la medicion que lo destapo.
         ' (El comentario va ACA y no en el inicializador: una linea de comentario entre dos miembros de un
         '  `With {}` corta la continuacion implicita y el parser tira BC30370.)
+        ' The rig is authored in perceptual (display) values; FO4's pipeline is linear (decode them), SSE's is raw
+        ' (use them as authored, like every SSE light colour the engine uploads).
+        Dim rawRig = ParentControl IsNot Nothing AndAlso ParentControl.CurrentShader IsNot Nothing AndAlso
+                     ParentControl.CurrentShader Is ParentControl.SharedSSEShader
+        Dim lc = Function(v As Vector3) If(rawRig, v, Shader_Base_Class.Vector_to_Linear(v))
         _frameLights = New LightRigUniforms With {
-            .AmbientSky = Shader_Base_Class.Vector_to_Linear(rig.AmbientSkyDiffuse()),
-            .AmbientGround = Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()) * rig.AmbientGroundLevel,
-            .KeyDiffuse = Shader_Base_Class.Vector_to_Linear(rig.KeyLight.Diffuse()),
+            .AmbientSky = lc(rig.AmbientSkyDiffuse()),
+            .AmbientGround = lc(rig.AmbientGroundDiffuse()) * rig.AmbientGroundLevel,
+            .KeyDiffuse = lc(rig.KeyLight.Diffuse()),
             .KeyDir = kd,
-            .Fill0Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillLeft.Diffuse()),
+            .Fill0Diffuse = lc(rig.FillLeft.Diffuse()),
             .Fill0Dir = f0,
-            .Fill1Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillRight.Diffuse()),
+            .Fill1Diffuse = lc(rig.FillRight.Diffuse()),
             .Fill1Dir = f1,
-            .BackDiffuse = Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()),
+            .BackDiffuse = lc(rig.BackLight.Diffuse()),
             .BackDir = bd
         }
 
@@ -6066,7 +6410,7 @@ Public Class PreviewModel
             If mb Is Nothing OrElse Not mb.CastShadows Then Continue For
             ' Los DECAL son overlays coplanares sobre otra superficie: en un mapa de profundidad no
             ' aportan silueta, solo z-fighting con la malla que ya esta abajo.
-            If mb.Decal Then Continue For
+            If mb.RendersAsDecal() Then Continue For
             casters.Add(mesh)
         Next
         If casters.Count = 0 Then SoltarMapasDeSombra() : Exit Sub
@@ -6136,9 +6480,10 @@ Public Class PreviewModel
         ' glGet de framebuffer son los que fuerzan a varios drivers a vaciar la lista de comandos diferida
         ' — y el caller hacia justo uno por frame, mas otro del viewport, mas un array de 4 Integer de
         ' basura de GC en el camino de dibujo. Los dos valores ya se conocen: RenderAll solo es alcanzable
-        ' desde RenderScene, que dibuja contra el framebuffer 0, y el viewport es lastW/lastH (los fija
-        ' ResizeViewport y son los mismos con los que se armo la proyeccion de este frame).
-        Const prevFbo As Integer = 0
+        ' desde RenderScene, que dibuja contra el SCENE TARGET del control (o el framebuffer 0 si no se pudo
+        ' alocar), y el viewport es lastW/lastH (los fija ResizeViewport y son los mismos con los que se armo
+        ' la proyeccion de este frame).
+        Dim prevFbo As Integer = ParentControl.SceneFramebuffer
 
         For capa = 0 To _shadowCount - 1
             ' El mapa del PERSONAJE usa la capa entera: viewport = lado reservado, escala de UV 1.0. La
@@ -6409,7 +6754,26 @@ Public Class PreviewModel
     End Sub
 
     Public Property FloorOffset As Double = -0.00F
+    ''' <summary>True while PreviewControl.RenderScene draws a frame into the HDR target of the FO4 post: the
+    ''' floor and the ground catcher write linear radiance, and what is drawn in display values (wireframes)
+    ''' is held back for <see cref="RenderDisplayOverlays"/>.</summary>
+    Friend Property FrameIsHdr As Boolean
+
+    ''' <summary>Wireframe meshes held back by an HDR frame, in the order RenderAll reached them.</summary>
+    Private ReadOnly _displayOverlays As New List(Of RenderableMesh)
+
+    ''' <summary>Draws, on the display target after the post, what an HDR frame held back: the wireframe
+    ''' meshes (display-space colours by construction - a texture or a flat tint with WireAlpha - that the
+    ''' image-space law must not touch). Depth-tested against the scene's depth.</summary>
+    Friend Sub RenderDisplayOverlays(projection As Matrix4, camera As OrbitCamera)
+        For Each mesh In _displayOverlays
+            mesh.Render(projection, camera)
+        Next
+        _displayOverlays.Clear()
+    End Sub
+
     Public Sub RenderAll(projection As Matrix4, camera As OrbitCamera)
+        _displayOverlays.Clear()
         ' O4.1: Process pending background texture uploads (Phase 2) each frame
         ProcessPendingTextureUploads()
 
@@ -6446,7 +6810,7 @@ Public Class PreviewModel
         ' stop rendering all meshes whose VBOs are still valid just because the CPU-side shapedata
         ' was evicted by the LRU, which is an unnecessary regression in render quality.
 
-        If RenderBucketsDirty OrElse (OpaqueMeshes.Count + CutoutMeshes.Count + DecalMeshes.Count + BlendedMeshes.Count) <> meshes.Count Then
+        If RenderBucketsDirty OrElse (OpaqueMeshes.Count + CutoutMeshes.Count + DecalMeshes.Count + DecalBlendedMeshes.Count + BlendedMeshes.Count) <> meshes.Count Then
             RebuildRenderBuckets()
 
             ' SACADO: el re-orden de OPAQUE y CUTOUT por `DiffuseTexture_ID` (era la optimizacion "O3.5",
@@ -6510,13 +6874,24 @@ Public Class PreviewModel
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
             mesh.Render(projection, camera)
         Next
-        ' 3. DECAL — overlay coplanar ocluido por depth de escena
-        If DecalMeshes.Count > 0 Then
-            For Each mesh In DecalMeshes
-                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-                mesh.Render(projection, camera)
-            Next
-        End If
+        ' OVERLAY LAYERS (LooksMenu / RaceMenu): each layer is a shape of its own in the engine and goes to the
+        ' group its MATERIAL routes it to, like any shape (no final pass): opaque, cutout, opaque decal, blended
+        ' decal, or the alpha list keyed with its base shape's depth (the clone shares the base's bound).
+        CollectOverlayItems()
+        For Each it In _ovlOpaque : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+        For Each it In _ovlCutout : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+
+        ' 3. DECAL — opaque decals, then blended decals (and decal overlay layers) in their own group.
+        For Each mesh In DecalMeshes
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
+            mesh.Render(projection, camera)
+        Next
+        For Each it In _ovlDecal : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+        For Each mesh In DecalBlendedMeshes
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
+            mesh.Render(projection, camera)
+        Next
+        For Each it In _ovlDecalBlended : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
 
         ' 3b. RECEPTOR DE SUELO — la silueta del personaje sobre el plano del piso.
         ' EL ORDEN ES ESTE Y NO OTRO: despues de OPAQUE/CUTOUT/DECAL para que el personaje lo tape por
@@ -6534,40 +6909,81 @@ Public Class PreviewModel
                                  TextureUnit.Texture15, 0.0F,
                                  PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
             SubirAporteDelSuelo(ParentControl.SharedGroundShadowShader)
+            ParentControl.SharedGroundShadowShader.Use()
+            ParentControl.SharedGroundShadowShader.SetBool("bHdrTarget", FrameIsHdr)
+            ' The ratio goes to the display background through the game's display encode: FO4 pow(1/2.2), SSE raw.
+            ParentControl.SharedGroundShadowShader.SetFloat("uDisplayExponent",
+                If(ParentControl.CurrentShader Is ParentControl.SharedSSEShader, 1.0F, 1.0F / 2.2F))
+            If FrameIsHdr Then ParentControl.SetGroundCatcherOutputs(True)
             _groundQuad.Render(ParentControl.SharedGroundShadowShader, vp, _groundQuadCenter, _groundQuadHalf)
+            If FrameIsHdr Then ParentControl.SetGroundCatcherOutputs(False)
         End If
 
-        ' 4. BLENDED — requiere ordenamiento por profundidad.
-        ' (Was an early `Exit Sub` when empty; now a guarded block so the overlay pass 5 below still
-        ' runs even with zero blended meshes — tattoos live on the OPAQUE skin body, not a blended mesh.)
-        If BlendedMeshes.Count > 0 Then
-            BlendedDepthBuffer.Clear()
-
-            For Each mesh In BlendedMeshes
-                ' O3.3: Frustum cull blended meshes too
-                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-                Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
-                BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
-            Next
-            BlendedDepthBuffer.Sort(Function(a, b) b.Depth.CompareTo(a.Depth))
-            For Each item In BlendedDepthBuffer
+        ' 4. BLENDED — back to front, STABLE on equal keys (FO4 alpha list: bottom-up merge sort that keeps the
+        ' left run first on equal keys, 0x14221DBD0/DBD2). Overlay layers that blend join this list with their
+        ' base shape's key, after the blended meshes in insertion order.
+        BlendedDepthBuffer.Clear()
+        Dim seq = 0
+        For Each mesh In BlendedMeshes
+            ' O3.3: Frustum cull blended meshes too
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
+            Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
+            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z, .Seq = seq}) : seq += 1
+        Next
+        For Each it In _ovlBlended
+            Dim viewPos = Vector3.TransformPosition(it.Mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
+            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = it.Mesh, .Layer = it.Layer, .Depth = -viewPos.Z, .Seq = seq}) : seq += 1
+        Next
+        Dim ordered = BlendedDepthBuffer.OrderByDescending(Function(d) d.Depth).ThenBy(Function(d) d.Seq).ToList()
+        For Each item In ordered
+            If FrameIsHdr AndAlso item.Layer Is Nothing AndAlso item.Mesh.MeshData.Shape IsNot Nothing AndAlso item.Mesh.MeshData.Shape.Wireframe Then
+                _displayOverlays.Add(item.Mesh)
+            ElseIf item.Layer Is Nothing Then
                 item.Mesh.Render(projection, camera)
-            Next
-        End If
+            Else
+                item.Mesh.RenderOverlayLayer(projection, camera, item.Layer)
+            End If
+        Next
+    End Sub
 
-        ' 5. OVERLAY LAYERS (LooksMenu/tattoos) — drawn LAST, after every base mesh, as coplanar
-        ' decals over each shape's already-deformed geometry (RenderableMesh.RenderOverlayLayer).
-        ' INERTNESS: when no shape carries OverlayLayers (every Wardrobe_Manager render, every NPC
-        ' render with no tattoos), MeshData.Shape.OverlayLayers is Nothing/empty for all meshes, so
-        ' this loop binds nothing and draws nothing — behavior is identical to before this pass existed.
+    Private Structure OverlayItem
+        Public Mesh As RenderableMesh
+        Public Layer As OverlayMaterialLayer
+    End Structure
+    Private ReadOnly _ovlOpaque As New List(Of OverlayItem)
+    Private ReadOnly _ovlCutout As New List(Of OverlayItem)
+    Private ReadOnly _ovlDecal As New List(Of OverlayItem)
+    Private ReadOnly _ovlDecalBlended As New List(Of OverlayItem)
+    Private ReadOnly _ovlBlended As New List(Of OverlayItem)
+
+    ''' <summary>Routes every overlay layer of the visible shapes to its group with the SAME rule as
+    ''' RebuildRenderBuckets (decal before blend before test), from the layer's own material. List order is kept
+    ''' (meshes in model order, layers in the resolver's draw order). No layers: every list empty (Wardrobe
+    ''' Manager, NPCs without overlays).</summary>
+    Private Sub CollectOverlayItems()
+        _ovlOpaque.Clear() : _ovlCutout.Clear() : _ovlDecal.Clear() : _ovlDecalBlended.Clear() : _ovlBlended.Clear()
         For Each mesh In meshes
+            If mesh Is Nothing OrElse mesh.MeshData Is Nothing Then Continue For
             Dim layers = mesh.MeshData.Shape?.OverlayLayers
             If layers Is Nothing OrElse layers.Count = 0 Then Continue For
-            ' Frustum-cull like the other passes (same AABB as the base shape — geometry is shared).
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-            ' List order = draw order (app pre-sorts by LooksMenu priority ascending).
             For Each layer In layers
-                mesh.RenderOverlayLayer(projection, camera, layer)
+                If layer Is Nothing OrElse layer.Material Is Nothing Then Continue For
+                Dim md = mesh.OverlayMaterialData(layer)
+                Dim it As New OverlayItem With {.Mesh = mesh, .Layer = layer}
+                If md.MaterialBase Is Nothing Then Continue For
+                Dim decal = md.MaterialBase.RendersAsDecal()
+                If decal AndAlso md.HasAlphaBlend Then
+                    _ovlDecalBlended.Add(it)
+                ElseIf decal Then
+                    _ovlDecal.Add(it)
+                ElseIf md.HasAlphaBlend Then
+                    _ovlBlended.Add(it)
+                ElseIf md.HasAlphaTest Then
+                    _ovlCutout.Add(it)
+                Else
+                    _ovlOpaque.Add(it)
+                End If
             Next
         Next
     End Sub
@@ -6688,15 +7104,15 @@ Public Class FloorRenderer
         shader.SetMatrix4("matModel", model)
         shader.SetFloat("tileStep", safeStep)
         shader.SetFloat("floorHalfSize", safeSize * 0.5F)
-        shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(background))
-        ' Las DOS perillas del fade radial. El piso se funde contra el fondo en el horizonte, asi que
-        ' tiene que evaluar la misma funcion en el mismo pixel; con fade = 0 backgroundAt() devuelve
-        ' backgroundColor tal cual y el piso queda identico a como estaba.
-        shader.SetFloat("backFade", ParentControl.BackgroundFadeUnit)
-        shader.SetVector2("viewportSize", ParentControl.ViewportSizeGl)
-        ParentControl.AplicarUniformsDireccionalesPublico(shader)
-        shader.SetVector3("backgroundLinear", Shader_Base_Class.Color_to_Vector_Linear(background))
-        shader.SetVector3("groutColorLinear", Shader_Base_Class.Color_to_Vector_Linear(Color))
+        ' El fondo COMPLETO, de la misma funcion que el quad de fondo y la pasada de post: el piso se funde
+        ' contra el fondo en el horizonte y tiene que evaluar la misma funcion en el mismo pixel.
+        ParentControl.SubirUniformsDeFondo(shader)
+        Dim hdr = ParentControl.Model.FrameIsHdr
+        shader.SetBool("bHdrTarget", hdr)
+        ' The floor's colours live in the space of the game's scene (FO4 linear, SSE raw).
+        Dim sseFrame = ParentControl.CurrentShader Is ParentControl.SharedSSEShader
+        shader.SetVector3("backgroundLinear", Shader_Base_Class.MaterialColor(background, sseFrame))
+        shader.SetVector3("groutColorLinear", Shader_Base_Class.MaterialColor(Color, sseFrame))
         shader.SetVector3("cameraPosition", camera.GetEyePosition())
         shader.SetVector3("ambientSky", lights.AmbientSky)
         shader.SetVector3("ambientGround", lights.AmbientGround)
@@ -6705,7 +7121,8 @@ Public Class FloorRenderer
             upLighting += lights.DifusoDeLuz(i) * Math.Max(lights.DirDeLuz(i).Z, 0.0F)
         Next
         Dim upLuma = Shader_Base_Class.Luma(upLighting)
-        shader.SetFloat("floorExposure", Math.Clamp(0.72F / Math.Max(upLuma, 0.001F), 0.55F, 1.8F))
+        ' Display target only: the HDR frame is exposed by the post (the image space's auto exposure).
+        shader.SetFloat("floorExposure", If(hdr, 1.0F, Math.Clamp(0.72F / Math.Max(upLuma, 0.001F), 0.55F, 1.8F)))
         For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
             shader.SetVector3($"lightDiffuse[{i}]", lights.DifusoDeLuz(i))
             shader.SetVector3($"lightDirection[{i}]", lights.DirDeLuz(i))

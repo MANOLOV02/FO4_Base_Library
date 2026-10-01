@@ -150,14 +150,20 @@ Public Class FilesDictionary_class
         End Property
         Public Function GetBytes() As Byte()
             Dim cached As Byte() = Nothing
-            Dim weakRef As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+            Dim weakRef As EntradaCache = Nothing
+            ' El sello del suelto se lee UNA vez y sirve a las dos puntas: valida el acierto y, si no hay
+            ' acierto, abre el bracket de la lectura de abajo.
+            Dim rutaSuelto As String = If(IsLosseFile, IO.Path.Combine(FO4Path, Me.FullPath), Nothing)
+            Dim sello0 As SelloSuelto? = If(IsLosseFile, SelloSuelto.Leer(rutaSuelto), Nothing)
             If FilesDictionary_class._bytesCache.TryGetValue(FullPath, weakRef) AndAlso
                weakRef.Datos IsNot Nothing AndAlso weakRef.Datos.TryGetTarget(cached) Then
                 If IsLosseFile Then
                     ' EL CENTINELA SE VERIFICA. Aceptar cualquier valor cacheado bajo este `FullPath` deja
                     ' que un suelto consuma bytes publicados por un ARCHIVE: hay una ventana en la que el
                     ' caché tiene los bytes del BA2 y el diccionario ya pasó a un ganador suelto.
-                    If weakRef.Token Is Nothing AndAlso weakRef.Gen = FilesDictionary_class.GenSuelto Then Return cached
+                    ' Y EL SELLO TAMBIEN: sin él, un suelto sobrescrito en disco devolvía los bytes viejos.
+                    If weakRef.Token Is Nothing AndAlso weakRef.Gen = FilesDictionary_class.GenSuelto AndAlso
+                       SelloSuelto.Iguales(weakRef.Sello, sello0) Then Return cached
                 Else
                     ' LA CONDICION ES TRIPLE: cache.Gen == ArchiveGen == GENERACION VIGENTE. Las dos
                     ' primeras solas NO alcanzan — son dos copias VIEJAS que siguen coincidiendo entre sí
@@ -178,10 +184,14 @@ Public Class FilesDictionary_class
             End If
 
             Dim result As Byte()
+            Dim selloPublicable As SelloSuelto? = Nothing
 
             If IsLosseFile Then
-                If IO.File.Exists(IO.Path.Combine(FO4Path, Me.FullPath)) = False Then Return Array.Empty(Of Byte)
-                result = IO.File.ReadAllBytes(IO.Path.Combine(FO4Path, Me.FullPath))
+                If Not sello0.HasValue Then Return Array.Empty(Of Byte)
+                result = IO.File.ReadAllBytes(rutaSuelto)
+                ' CIERRE DEL BRACKET, igual que el del archive: si el archivo cambió mientras se leía, estos
+                ' bytes no son de ningún sello — se devuelven, pero NO se publican.
+                If SelloSuelto.Iguales(sello0, SelloSuelto.Leer(rutaSuelto)) Then selloPublicable = sello0
             Else
                 ' Por el pool de readers: abrir y cerrar el .ba2 en cada lectura es el costo que evita.
                 Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
@@ -226,10 +236,13 @@ Public Class FilesDictionary_class
             End If
 
             If result IsNot Nothing AndAlso result.Length > 0 Then
-                FilesDictionary_class._bytesCache(FullPath) =
-                    If(IsLosseFile,
-                       (New WeakReference(Of Byte())(result), FilesDictionary_class.GenSuelto, Nothing),
-                       (New WeakReference(Of Byte())(result), Me.ArchiveGen, Me.GenToken))
+                If IsLosseFile Then
+                    If selloPublicable.HasValue Then
+                        FilesDictionary_class._bytesCache(FullPath) = New EntradaCache(result, FilesDictionary_class.GenSuelto, Nothing, selloPublicable)
+                    End If
+                Else
+                    FilesDictionary_class._bytesCache(FullPath) = New EntradaCache(result, Me.ArchiveGen, Me.GenToken, Nothing)
+                End If
             End If
 
             Return result
@@ -298,11 +311,45 @@ Public Class FilesDictionary_class
     ''' que esa generacion siga VIGENTE. La comparacion es triple y la tercera pata sale de
     ''' <see cref="File_Location.GenToken"/> —una referencia al contador vivo—, no de `ContentGenOf`: asi el
     ''' acierto de cache no paga el `Path.Combine` que aloca ni los dos lookups en la ruta mas caliente.</para>
-    ''' <para>Los SUELTOS no participan: no tienen archive del cual derivar generación. Se publican con
-    ''' <see cref="GenSuelto"/> y el lector los acepta sin comparar.</para></summary>
-    Private Shared ReadOnly _bytesCache As New ConcurrentDictionary(Of String, (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken))(StringComparer.OrdinalIgnoreCase)
+    ''' <para>Los SUELTOS no tienen archive del cual derivar generación: se publican con
+    ''' <see cref="GenSuelto"/> y su sello es la IDENTIDAD DEL ARCHIVO EN DISCO (ver <see cref="SelloSuelto"/>).
+    ''' Antes se aceptaban sin comparar nada, y un suelto SOBRESCRITO devolvía los bytes viejos mientras el
+    ''' WeakReference siguiera vivo: el "Save" de material del editor de WM releía el archivo recién grabado y
+    ''' mostraba los valores de antes.</para></summary>
+    Private Shared ReadOnly _bytesCache As New ConcurrentDictionary(Of String, EntradaCache)(StringComparer.OrdinalIgnoreCase)
 
-    ''' <summary>Generación con la que se publican los bytes de un archivo SUELTO. No se compara nunca.</summary>
+    Private Structure EntradaCache
+        Public Datos As WeakReference(Of Byte())
+        Public Gen As Integer
+        Public Token As ArchiveGenToken
+        ''' <summary>Sólo SUELTOS: el archivo en disco del que salieron los bytes. En entradas de archive, Nothing.</summary>
+        Public Sello As SelloSuelto?
+        Public Sub New(datos As Byte(), gen As Integer, token As ArchiveGenToken, sello As SelloSuelto?)
+            Me.Datos = New WeakReference(Of Byte())(datos)
+            Me.Gen = gen
+            Me.Token = token
+            Me.Sello = sello
+        End Sub
+    End Structure
+
+    ''' <summary>Identidad de un suelto en disco: fecha de última escritura (UTC, ticks de 100 ns de NTFS) y
+    ''' largo. Cualquier escritura —la de WM por <c>EscrituraEnElLugar</c>, que reescribe EN EL LUGAR, o la de
+    ''' un editor externo— mueve la fecha, así que un acierto con el mismo sello es el mismo contenido.</summary>
+    Private Structure SelloSuelto
+        Public Ticks As Long
+        Public Largo As Long
+        Public Shared Function Leer(ruta As String) As SelloSuelto?
+            Dim fi As New IO.FileInfo(ruta)
+            If Not fi.Exists Then Return Nothing
+            Return New SelloSuelto With {.Ticks = fi.LastWriteTimeUtc.Ticks, .Largo = fi.Length}
+        End Function
+        Public Shared Function Iguales(a As SelloSuelto?, b As SelloSuelto?) As Boolean
+            Return a.HasValue AndAlso b.HasValue AndAlso a.Value.Ticks = b.Value.Ticks AndAlso a.Value.Largo = b.Value.Largo
+        End Function
+    End Structure
+
+    ''' <summary>Generación con la que se publican los bytes de un archivo SUELTO. Su vigencia la da el
+    ''' <see cref="SelloSuelto"/>, no este valor.</summary>
     Private Const GenSuelto As Integer = Integer.MinValue
 
     ' Pool de readers: reusa instancias de `BethesdaReader` en vez de abrir y cerrar en cada lectura.
@@ -698,7 +745,7 @@ Public Class FilesDictionary_class
         For Each kvpCache In _bytesCache
             Dim dummy As Byte() = Nothing
             If kvpCache.Value.Datos Is Nothing OrElse Not kvpCache.Value.Datos.TryGetTarget(dummy) Then
-                Dim fuera As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+                Dim fuera As EntradaCache = Nothing
                 _bytesCache.TryRemove(kvpCache.Key, fuera)
             End If
         Next
@@ -1068,7 +1115,7 @@ Public Class FilesDictionary_class
                                                ' Cierre del bracket: sólo ahora se publica, y sólo si nadie invalidó.
                                                If ContentGenOf(archivePath) = gen0 Then
                                                    For Each s In staged
-                                                       _bytesCache(s.Path) = (New WeakReference(Of Byte())(s.Bytes), s.Gen, s.Token)
+                                                       _bytesCache(s.Path) = New EntradaCache(s.Bytes, s.Gen, s.Token, Nothing)
                                                    Next
                                                Else
                                                    For Each item In group.Value
@@ -1721,7 +1768,7 @@ Public Class FilesDictionary_class
                 IndexDictionaryKey(normalized)
                 Threading.Interlocked.Increment(_scanGeneration)   ' cambio de contenido: ver ScanGeneration
                 ' Clear stale byte cache for this entry
-                Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+                Dim dummy As EntradaCache = Nothing
                 _bytesCache.TryRemove(normalized, dummy)
                 Return True
             End If
@@ -1763,7 +1810,7 @@ Public Class FilesDictionary_class
             If habia AndAlso Not existing.IsLosseFile Then PushOverriddenEntryUnlocked(normalized, existing)
 
             IndexDictionaryKey(normalized)
-            Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+            Dim dummy As EntradaCache = Nothing
             _bytesCache.TryRemove(normalized, dummy)
         End SyncLock
     End Sub
@@ -1779,7 +1826,7 @@ Public Class FilesDictionary_class
             ' no llega hasta aca con nada que quitar, pero el bump de mas es inocuo y no esta en un
             ' camino caliente como el de AddOrUpdate).
             Threading.Interlocked.Increment(_scanGeneration)
-            Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+            Dim dummy As EntradaCache = Nothing
             _bytesCache.TryRemove(normalized, dummy)
 
             ' Try to restore a previously overridden entry

@@ -12,7 +12,18 @@ Imports NiflySharp.Blocks
 ''' </summary>
 Public Module MaterialResolver
 
-    Public Function TryLoadMaterialFromDictionary(materialPath As String, fallbackMaterial As FO4UnifiedMaterial_Class, shap As NiflySharp.INiShape, nif As Nifcontent_Class_Manolo) As FO4UnifiedMaterial_Class
+    ''' <summary>True when <paramref name="rawPath"/> names a material file the dictionary resolves (loose or
+    ''' archive). The engine skips ApplyMaterialData when the file does not load (Fallout4.exe 0x1402565BE), so a
+    ''' shape whose material file is missing keeps its NIF inline shader and alpha.</summary>
+    Public Function IsMaterialFileResolvable(rawPath As String) As Boolean
+        If String.IsNullOrEmpty(rawPath) Then Return False
+        Return FilesDictionary_class.Dictionary.ContainsKey(FO4UnifiedMaterial_Class.CorrectMaterialPath(rawPath))
+    End Function
+
+    ''' <param name="engineApplyArg3">Third argument of the engine's ApplyMaterialData for this load: True for a
+    ''' material swap (Fallout4.exe 0x140256672), False for a normal NIF load.</param>
+    Public Function TryLoadMaterialFromDictionary(materialPath As String, fallbackMaterial As FO4UnifiedMaterial_Class, shap As NiflySharp.INiShape, nif As Nifcontent_Class_Manolo,
+                                                  Optional engineApplyArg3 As Boolean = False) As FO4UnifiedMaterial_Class
         Dim logEnabled = Logger.Enabled
         Dim rawPathLog = If(logEnabled, If(materialPath, ""), Nothing)
         Dim correctedPath = FO4UnifiedMaterial_Class.CorrectMaterialPath(materialPath)
@@ -47,7 +58,7 @@ Public Module MaterialResolver
 
         Try
             Dim material As New FO4UnifiedMaterial_Class()
-            material.Deserialize(loc.GetBytes(), correctedPath, materialType, shap, nif)
+            material.Deserialize(loc.GetBytes(), correctedPath, materialType, shap, nif, engineApplyArg3)
             If logEnabled Then
                 Dim lookupKeyLog = correctedPath
                 Dim loadedAt = material.AlphaTest.ToString()
@@ -96,7 +107,7 @@ Public Module MaterialResolver
 
         Dim rawPath = If(relatedMaterial.path, "")
         Dim materialPath = FO4UnifiedMaterial_Class.CorrectMaterialPath(relatedMaterial.path)
-        Dim containsKey = FilesDictionary_class.Dictionary.ContainsKey(materialPath)
+        Dim containsKey = IsMaterialFileResolvable(relatedMaterial.path)
         Dim hasResolvableMaterial = relatedMaterial.path <> "" AndAlso containsKey
 
         If logEnabled Then

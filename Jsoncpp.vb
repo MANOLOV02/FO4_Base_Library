@@ -188,6 +188,42 @@ Public Module Jsoncpp
         Return r
     End Function
 
+    ''' <summary><c>operator[](const char*)</c> no-const (:970-994, resolveReference): null/ausente ⇒ se vuelve objeto y
+    ''' el miembro nace null (⇒ un <see cref="JsonElement"/> Undefined, que aca vale null); objeto ⇒ el miembro (con clave
+    ''' repetida gana la ULTIMA, json_reader.cpp:433) o null si no esta; array/escalar/string ⇒ lanza
+    ''' (<paramref name="ok"/> = False).</summary>
+    Public Function Miembro(el As JsonElement, key As String, ByRef ok As Boolean) As JsonElement
+        ok = True
+        Dim r As New JsonElement()
+        Select Case el.ValueKind
+            Case JsonValueKind.Null, JsonValueKind.Undefined
+            Case JsonValueKind.Object
+                For Each prop In el.EnumerateObject()
+                    If String.Equals(prop.Name, key, StringComparison.Ordinal) Then r = prop.Value
+                Next
+            Case Else
+                ok = False
+        End Select
+        Return r
+    End Function
+
+    ''' <summary><c>isMember(key)</c> (:1090-1093) con el <c>operator[]</c> const (:1003-1015): null/ausente ⇒ false;
+    ''' objeto ⇒ si tiene la clave (un miembro presente con valor null CUENTA); array/escalar/string ⇒ lanza
+    ''' (<paramref name="ok"/> = False).</summary>
+    Public Function IsMember(el As JsonElement, key As String, ByRef ok As Boolean) As Boolean
+        ok = True
+        Select Case el.ValueKind
+            Case JsonValueKind.Null, JsonValueKind.Undefined : Return False
+            Case JsonValueKind.Object
+                For Each prop In el.EnumerateObject()
+                    If String.Equals(prop.Name, key, StringComparison.Ordinal) Then Return True
+                Next
+                Return False
+            Case Else
+                ok = False : Return False
+        End Select
+    End Function
+
     ''' <summary>range-for sobre un <c>Json::Value</c> (:1284-1402): array ⇒ sus elementos; objeto ⇒ sus VALORES en
     ''' orden <c>strcmp</c> de clave; null/escalar/string ⇒ vacio (no lanza).</summary>
     Public Function Valores(el As JsonElement) As List(Of JsonElement)

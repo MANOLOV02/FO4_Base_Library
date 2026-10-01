@@ -1,0 +1,669 @@
+﻿Imports OpenTK.Graphics.OpenGL4
+Imports OpenTK.Mathematics
+
+''' <summary>THE FO4 IMAGE SPACE THE PREVIEW SHOWS: the post-process constants of one IMGS record.
+''' <para>Canonical choice of the preview (a static studio has no weather): the DAY image space of the vanilla
+''' weather CommonwealthClear (WTHR 0x0002B52A), IMGS <c>CW_ClearDAY_MAY19</c> (0x00216A9C) of Fallout4.esm.
+''' Every value below is that record's data, read from the plugin (field order of HNAM per xEdit's IMGS
+''' definition, mapped to the ImageSpaceManager offsets the engine reads, 0x14220A730):</para>
+''' <list type="bullet">
+''' <item>HNAM = (EyeAdaptSpeed 3.0, TonemapE 0.02, BloomThreshold 0.5, BloomScale 0.2, AutoExposureMax 3.25,
+''' AutoExposureMin 1.6, SunlightScale 4.5, SkyScale 2.4, MiddleGray 0.18) - ISM+0x80..0xA0.</item>
+''' <item>CNAM = (Saturation 1, Brightness 1, Contrast 1) - ISM+0xA4/0xA8/0xAC; TNAM tint amount 0 - ISM+0xB0.</item>
+''' <item>TX00 = <c>Textures\Effects\LUTs\LUT_CW_ClearDAY.DDS</c> (Fallout4 - Misc.ba2; 115 of the 293 vanilla
+''' IMGS use it).</item>
+''' </list>
+''' <para>Holes, declared and not filled: bloom (the preview has no bloom pass: 0), the weights of the four LUT
+''' slots (one LUT, weight 1), and the eye-adaptation history (steady state: adapted = current mean).</para></summary>
+Friend NotInheritable Class Fo4ImageSpace
+    Public ReadOnly TonemapE As Single
+    Public ReadOnly AutoExposureMax As Single
+    Public ReadOnly AutoExposureMin As Single
+    Public ReadOnly MiddleGray As Single
+    ''' <summary>HNAM SunlightScale (ISM+0x98): scales the sun's DLightColor (0x1422265DA..643).</summary>
+    Public ReadOnly SunlightScale As Single
+    Public ReadOnly Saturation As Single
+    Public ReadOnly Brightness As Single
+    Public ReadOnly Contrast As Single
+    Public ReadOnly TintColor As Vector3
+    Public ReadOnly TintAmount As Single
+    Public ReadOnly LutPath As String
+
+    Private Sub New(tonemapE As Single, aeMax As Single, aeMin As Single, middleGray As Single, sunlightScale As Single,
+                    saturation As Single, brightness As Single, contrast As Single,
+                    tintColor As Vector3, tintAmount As Single, lutPath As String)
+        Me.TonemapE = tonemapE : AutoExposureMax = aeMax : AutoExposureMin = aeMin : Me.MiddleGray = middleGray
+        Me.SunlightScale = sunlightScale
+        Me.Saturation = saturation : Me.Brightness = brightness : Me.Contrast = contrast
+        Me.TintColor = tintColor : Me.TintAmount = tintAmount : Me.LutPath = lutPath
+    End Sub
+
+    ''' <summary>IMGS CW_ClearDAY_MAY19 (Fallout4.esm 0x00216A9C). See the class summary.</summary>
+    Public Shared ReadOnly PreviewDay As New Fo4ImageSpace(
+        tonemapE:=0.02F, aeMax:=3.25F, aeMin:=1.6F, middleGray:=0.18F, sunlightScale:=4.5F,
+        saturation:=1.0F, brightness:=1.0F, contrast:=1.0F,
+        tintColor:=Vector3.Zero, tintAmount:=0.0F,
+        lutPath:="Textures\Effects\LUTs\LUT_CW_ClearDAY.DDS")
+
+    ''' <summary>The constants of PS i3700 (cb2[1..3]) for this image space.</summary>
+    Public Sub Upload(post As Shader_Base_Class)
+        post.SetVector4("hdrExposure", New Vector4(AutoExposureMax, AutoExposureMin, MiddleGray, EffectiveTonemapE))
+        post.SetVector3("hdrCinematic", New Vector3(Saturation, Brightness, Contrast))
+        post.SetVector4("hdrTint", New Vector4(TintColor, TintAmount))
+    End Sub
+
+    ''' <summary>The E the tonemap receives: the record's TonemapE when it is &lt;= 1, else 0.02
+    ''' (0x14220A7B1..A838; 27 vanilla IMGS carry E &gt; 1 and get 0.02).</summary>
+    Public ReadOnly Property EffectiveTonemapE As Single
+        Get
+            Return If(TonemapE <= 1.0F, TonemapE, 0.02F)
+        End Get
+    End Property
+End Class
+
+''' <summary>THE FO4 WEATHER THE PREVIEW SHOWS, for what the effect shader reads from it.
+''' <para>Canonical choice of the preview: WTHR CommonwealthClear (Fallout4.esm 0x0002B52A), DAY, whose image
+''' space is <see cref="Fo4ImageSpace.PreviewDay"/>. Its Effect Lighting colour for the day is (150, 150, 150).</para>
+''' <para>DLightColor (cb of the BSEffect PS, the LIGHTING technique's directional term) =
+''' powf(sun colour, 2.2) * sun dimmer * ImageSpace SunlightScale (0x1422265DA..643, light+0x17C..0x184, +0x144,
+''' ISM+0x98); the sun colour of an effect is the weather's Effect Lighting. Hole, declared: the dimmer
+''' (light+0x144) is not traced -> 1.</para></summary>
+Friend NotInheritable Class Fo4PreviewWeather
+    ''' <summary>Effect Lighting of the day, as the record stores it (bytes 0..255).</summary>
+    Public ReadOnly EffectLighting As Vector3
+
+    Private Sub New(effectLighting As Vector3)
+        Me.EffectLighting = effectLighting
+    End Sub
+
+    ''' <summary>WTHR CommonwealthClear (0x0002B52A), day.</summary>
+    Public Shared ReadOnly CommonwealthClearDay As New Fo4PreviewWeather(New Vector3(150.0F, 150.0F, 150.0F))
+
+    ''' <summary>The effect shader's DLightColor under this weather and image space (linear).</summary>
+    Public Function DLightColor(imgs As Fo4ImageSpace) As Vector3
+        Dim lin = Shader_Base_Class.Vector_to_Linear(EffectLighting / 255.0F)
+        Return lin * imgs.SunlightScale
+    End Function
+End Class
+
+''' <summary>THE SKYRIM SE WEATHER THE PREVIEW SHOWS, for what the effect shader reads from it.
+''' <para>Canonical choice of the preview: WTHR SkyrimClear_A (Skyrim.esm 0x0010E1F2), DAY (NAM0 time-of-day 1),
+''' whose day image space (IMSP[1]) is IMGS ISSkyrimClearDAY (0x00012F88). Data read from the plugin:
+''' Effect Lighting (NAM0 entry 9, xEdit wbDefinitionsCommon) day = (160, 167, 169); ISSkyrimClearDAY HNAM =
+''' (EyeAdaptSpeed 45, BloomBlurRadius 7, BloomThreshold 0.65, BloomScale 4, ReceiveBloomThreshold 0.625,
+''' White 1.0, SunlightScale 2.7, SkyScale 0.235, EyeAdaptStrength 5), CNAM (Saturation 1.0, Brightness 1.035,
+''' Contrast 1.25), TNAM (amount 0.42, rgb 0.894, 0.839, 0.773).</para>
+''' <para>The effect PS's light (cb2[7]) = sun colour(+0x14C) * sun fade(+0x134) * ISM+0xE0 (SetupGeometry
+''' 0x141557435..748F); the Sky update copies the weather's Effect Lighting into sun+0x14C (0x14041C879..C88F);
+''' ISM+0xE0 = HNAM SunlightScale (HNAM order: +0xD8 ReceiveBloomThreshold, +0xDC White, +0xE0 SunlightScale).
+''' SSE's pipeline is raw: no powf. Holes, declared: the sun fade (1 when not fading) and the NAM0 -&gt; Sky
+''' interpolation between times of day (the preview sits at the day key).</para></summary>
+Friend NotInheritable Class SsePreviewWeather
+    ''' <summary>Effect Lighting of the day, bytes 0..255.</summary>
+    Public ReadOnly EffectLighting As Vector3
+    ''' <summary>HNAM SunlightScale of the day image space.</summary>
+    Public ReadOnly SunlightScale As Single
+
+    Private Sub New(effectLighting As Vector3, sunlightScale As Single)
+        Me.EffectLighting = effectLighting : Me.SunlightScale = sunlightScale
+    End Sub
+
+    ''' <summary>WTHR SkyrimClear_A (0x0010E1F2), day, with IMGS ISSkyrimClearDAY (0x00012F88).</summary>
+    Public Shared ReadOnly SkyrimClearDay As New SsePreviewWeather(New Vector3(160.0F, 167.0F, 169.0F), 2.7F)
+
+    ''' <summary>cb2[7] of the SSE effect PS under this weather (raw).</summary>
+    Public ReadOnly Property EffectLight As Vector3
+        Get
+            Return EffectLighting / 255.0F * SunlightScale
+        End Get
+    End Property
+End Class
+
+''' <summary>THE SKYRIM SE IMAGE SPACE THE PREVIEW SHOWS: IMGS ISSkyrimClearDAY (Skyrim.esm 0x00012F88), the day
+''' image space of WTHR SkyrimClear_A (<see cref="SsePreviewWeather"/>). Values read from the plugin: HNAM
+''' ReceiveBloomThreshold 0.625, White 1.0; CNAM Saturation 1.0, Brightness 1.035, Contrast 1.25; TNAM amount 0.42,
+''' rgb (0.894, 0.839, 0.773).
+''' <para>Mapped to the HDR PS 12545 by ImageSpaceEffectHDR (0x14153D860, SetVector 0x14152B170 index k -&gt; cb2[k+1]):
+''' cb2[2] = (ReceiveBloomThreshold ISM+0xD8, Reinhard 1 / (1.1 White)^2 (White ISM+0xDC), bUseFilmicCurve);
+''' cb2[3] = (Saturation ISM+0xEC + [0x1420D7CF0], 0, Contrast ISM+0xF4 (-0.3 if byte 0x14343635E), Brightness
+''' ISM+0xF0 (+0.25 if that byte)); cb2[4] = (tint rgb ISM+0xFC..0x104, amount ISM+0xF8). The filmic flag
+''' [0x1420D7DC8] is 0 in the binary and no installed INI sets it: Reinhard. Holes, declared at their static values:
+''' the saturation boost [0x1420D7CF0] = 0 and the byte 0x14343635E = 0. The display exponent cb12[42].x is 1 under
+''' the user's SkyrimPrefs.ini (fGamma=1.0).</para></summary>
+Friend NotInheritable Class SseImageSpace
+    Public ReadOnly ReceiveBloomThreshold As Single
+    Public ReadOnly White As Single
+    Public ReadOnly Saturation As Single
+    Public ReadOnly Brightness As Single
+    Public ReadOnly Contrast As Single
+    Public ReadOnly TintColor As Vector3
+    Public ReadOnly TintAmount As Single
+
+    Private Sub New(receiveBloomThreshold As Single, white As Single, saturation As Single, brightness As Single,
+                    contrast As Single, tintColor As Vector3, tintAmount As Single)
+        Me.ReceiveBloomThreshold = receiveBloomThreshold : Me.White = white : Me.Saturation = saturation
+        Me.Brightness = brightness : Me.Contrast = contrast : Me.TintColor = tintColor : Me.TintAmount = tintAmount
+    End Sub
+
+    ''' <summary>IMGS ISSkyrimClearDAY (0x00012F88).</summary>
+    Public Shared ReadOnly SkyrimClearDay As New SseImageSpace(
+        receiveBloomThreshold:=0.625F, white:=1.0F, saturation:=1.0F, brightness:=1.035F, contrast:=1.25F,
+        tintColor:=New Vector3(0.894F, 0.839F, 0.773F), tintAmount:=0.42F)
+
+    ''' <summary>The constants of PS 12545 (cb2[2..4]) and the display exponent.</summary>
+    Public Sub Upload(post As Shader_Base_Class)
+        Dim w = 1.1F * White
+        post.SetVector4("sseHdr", New Vector4(ReceiveBloomThreshold, 1.0F / (w * w), 0.0F, 0.0F))
+        post.SetVector4("sseCinematic", New Vector4(Saturation, 0.0F, Contrast, Brightness))
+        post.SetVector4("sseTint", New Vector4(TintColor, TintAmount))
+        post.SetFloat("sseDisplayExponent", 1.0F)
+    End Sub
+End Class
+
+''' <summary>GLSL OF THE FO4 POST PROCESS, IN ONE PLACE.
+''' <para>ASCII ONLY AND NO DOUBLE QUOTES: these are VB <c>Const String</c>s (a quote closes the literal and a
+''' non-ASCII character breaks the compile at runtime). The <c>glsl-ascii</c> gate sweeps them.</para></summary>
+Friend Module PostProcessShaderSource
+
+    ''' <summary>Luminance weights of the engine's image space shaders: the eye-adaptation CS (i3720/i3722)
+    ''' and the cinematic stage of the HDR PS (i3700) both use (0.2125, 0.7154, 0.0721).</summary>
+    Friend Const LumWeightsGlsl As String = "const vec3 LUM_W = vec3(0.2125, 0.7154, 0.0721);"
+
+    ''' <summary>Pass 1 of the mean luminance: one 16x16 group per tile, each writes (sum lum*w, sum w).
+    ''' Engine: arithmetic mean of the luminance with 4:1 tree reductions (CS i3720/i3722), Inf/NaN zeroed
+    ''' (PS i3710) - no log average. PREVIEW DECISION (declared): the mean is taken over the ACTOR's pixels,
+    ''' weighted by actor coverage (the background and the floor are UI and do not exist in the engine's
+    ''' frame); the engine samples a grid of its scene target, the preview takes every pixel.</summary>
+    Friend Const Compute_LumPartials As String =
+"#version 430
+layout(local_size_x = 16, local_size_y = 16) in;
+
+uniform sampler2D texScene;
+uniform sampler2D texCoverage;
+
+layout(std430, binding = 7) writeonly buffer LumPartials { vec2 partials[]; };
+
+shared vec2 acc[256];
+
+" & LumWeightsGlsl & "
+
+void main()
+{
+    ivec2 size = textureSize(texCoverage, 0);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    vec2 v = vec2(0.0);
+    if (p.x < size.x && p.y < size.y)
+    {
+        vec4 cov = texelFetch(texCoverage, p, 0);
+        if (cov.g > 0.0)
+        {
+            // The scene target holds radiance premultiplied by the composite coverage (r).
+            float l = dot(texelFetch(texScene, p, 0).rgb / cov.r, LUM_W);
+            // i3710: a non-finite luminance counts as 0.
+            if (isnan(l) || isinf(l)) l = 0.0;
+            v = vec2(l * cov.g, cov.g);
+        }
+    }
+    uint i = gl_LocalInvocationIndex;
+    acc[i] = v;
+    barrier();
+    for (uint s = 128u; s > 0u; s >>= 1)
+    {
+        if (i < s) acc[i] += acc[i + s];
+        barrier();
+    }
+    if (i == 0u)
+        partials[gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x] = acc[0];
+}"
+
+    ''' <summary>Pass 2: one group folds every partial into the mean. No actor pixel: mean 0, and the
+    ''' exposure law itself takes it to AutoExposureMax (MG / (0 + 0.001) clamped).</summary>
+    Friend Const Compute_LumResolve As String =
+"#version 430
+layout(local_size_x = 256) in;
+
+uniform int partialCount;
+
+layout(std430, binding = 7) readonly buffer LumPartials { vec2 partials[]; };
+layout(std430, binding = 8) writeonly buffer LumResult { float avgLum; };
+
+shared vec2 acc[256];
+
+void main()
+{
+    uint i = gl_LocalInvocationIndex;
+    vec2 v = vec2(0.0);
+    for (uint k = i; k < uint(partialCount); k += 256u)
+        v += partials[k];
+    acc[i] = v;
+    barrier();
+    for (uint s = 128u; s > 0u; s >>= 1)
+    {
+        if (i < s) acc[i] += acc[i + s];
+        barrier();
+    }
+    if (i == 0u)
+        avgLum = (acc[0].y > 0.0) ? acc[0].x / acc[0].y : 0.0;
+}"
+
+    ''' <summary>THE FO4 POST LAW: ImageSpace HDR (PS i3700) followed by GammaCorrectLUT (PS i3648), then the
+    ''' UI composite over the preview background.
+    ''' <para>i3700 (constants from ImageSpaceEffectHDR, 0x14220A730; cb2[1] = (AEMax, AEMin, MiddleGray, E)):
+    ''' exposure = min(max(MG / (avgLum + 0.001), AEMin), AEMax); x = (scene + bloom) * exposure;
+    ''' H(z) = (z (0.15 z + 0.05) + 0.2 E) / (z (0.15 z + 0.5) + 0.06) - E / 0.3; c = H(2x) / H(11.2) (the PS
+    ''' carries W = 11.2 folded into the literals 19.376 and 0.040856); cinematic: l = dot(c, LUM_W);
+    ''' c = lerp(l, c, Saturation); c = lerp(c, l * Tint, TintAmount); c = lerp(avgLum, Brightness * c, Contrast).</para>
+    ''' <para>i3648: g = pow(c, 0.454545); out = sum of LUT_i(g * 0.9375 + 0.03125) * w_i over 16^3 LUTs, written
+    ''' to the UNORM swapchain (saturate). One LUT, weight 1 (weights NOT PROVEN); without a LUT, out = g.</para>
+    ''' <para>Holes: bloom = 0; the t3.w bypass of i3700 (pixels flagged 4) has no analog here.</para>
+    ''' <para>PREVIEW COMPOSITE (declared, not engine): the background is UI. The scene target carries the
+    ''' coverage of what was drawn (r) and the ground-shadow factor that fell on the background (target 2);
+    ''' the post maps the un-premultiplied radiance through the law and mixes it over the background in
+    ''' display space with that coverage.</para></summary>
+    Friend Const Fragment_PostFo4 As String =
+"#version 430
+
+out vec4 FragColor;
+" & BackgroundFadeSource.Fade_Helper & "
+uniform sampler2D texScene;
+uniform sampler2D texCoverage;
+uniform sampler2D texBgShadow;
+uniform sampler3D texLut;
+uniform float lutWeight;
+// x AutoExposureMax, y AutoExposureMin, z MiddleGray, w TonemapE (cb2[1] of i3700)
+uniform vec4 hdrExposure;
+// x Saturation, y Brightness, z Contrast (cb2[2].x / .w / .z of i3700)
+uniform vec3 hdrCinematic;
+// rgb tint colour, w tint amount (cb2[3] of i3700)
+uniform vec4 hdrTint;
+
+layout(std430, binding = 8) readonly buffer LumResult { float avgLum; };
+
+" & LumWeightsGlsl & "
+
+vec3 hable(in vec3 z, in float e)
+{
+    return (z * (0.15 * z + 0.05) + 0.2 * e) / (z * (0.15 * z + 0.5) + 0.06) - e / 0.3;
+}
+
+void main()
+{
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec4 cov = texelFetch(texCoverage, p, 0);
+    vec3 bg = backgroundAt(gl_FragCoord.xy) * texelFetch(texBgShadow, p, 0).rgb;
+    if (cov.r <= 0.0)
+    {
+        FragColor = vec4(bg, 1.0);
+        return;
+    }
+    vec3 scene = texelFetch(texScene, p, 0).rgb / cov.r;
+
+    // ---- i3700: ImageSpace HDR ----
+    float lavg = avgLum;
+    float e = hdrExposure.w;
+    float exposure = min(max(hdrExposure.z / (lavg + 0.001), hdrExposure.y), hdrExposure.x);
+    vec3 x = scene * exposure;
+    vec3 c = hable(2.0 * x, e) / hable(vec3(11.2), e);
+    float l = dot(c, LUM_W);
+    c = mix(vec3(l), c, hdrCinematic.x);
+    c = mix(c, l * hdrTint.rgb, hdrTint.w);
+    c = mix(vec3(lavg), hdrCinematic.y * c, hdrCinematic.z);
+
+    // ---- i3648: GammaCorrectLUT ----
+    // pow of a negative is NaN in the engine (HLSL) and undefined here; with the image space in use
+    // (Contrast 1) c is never negative.
+    vec3 g = pow(c, vec3(0.454545));
+    vec3 o = (lutWeight > 0.0) ? texture(texLut, g * 0.9375 + 0.03125).rgb * lutWeight : g;
+    o = clamp(o, 0.0, 1.0);
+
+    FragColor = vec4(mix(bg, o, cov.r), 1.0);
+}"
+
+    ''' <summary>THE SKYRIM SE POST LAW: ImageSpace HDR PS 12545 (Fade twin 12546), transcribed, then the UI composite
+    ''' over the background like the FO4 pass.
+    ''' <para>lum = max(dot(scene, LUM_W), 1e-5); L = lum * t2.y / t2.x; Reinhard Lt = L (1 + L cb2[2].y) / (1 + L);
+    ''' c = scene * Lt / lum + bloom * sat(cb2[2].x - Lt); l = dot(c, LUM_W); c = l + cb2[3].x (c - l);
+    ''' c = lerp(c, l * cb2[4].rgb, cb2[4].w); c = t2.x + cb2[3].z (cb2[3].w c - t2.x); out = pow(sat(c), cb12[42].x).</para>
+    ''' <para>t2 is the eye-adaptation texture: its x and y are the SAME mean luminance (PS 12550 writes
+    ''' dot(scene, LUM_W) into x, y and z of the first level and 12549 / 12552 average it down), adapted toward the
+    ''' frame's value at two different speeds (PS 12551 / 12553). In the steady state the preview shows, both equal
+    ''' the mean: t2.y / t2.x = 1 and t2.x = the mean (the same actor-weighted mean as the FO4 pass). Hole: bloom = 0.</para></summary>
+    Friend Const Fragment_PostSse As String =
+"#version 430
+
+out vec4 FragColor;
+" & BackgroundFadeSource.Fade_Helper & "
+uniform sampler2D texScene;
+uniform sampler2D texCoverage;
+uniform sampler2D texBgShadow;
+// x ReceiveBloomThreshold, y 1/(1.1 White)^2 (cb2[2])
+uniform vec4 sseHdr;
+// x Saturation, z Contrast, w Brightness (cb2[3])
+uniform vec4 sseCinematic;
+// rgb tint, w amount (cb2[4])
+uniform vec4 sseTint;
+// cb12[42].x
+uniform float sseDisplayExponent;
+
+layout(std430, binding = 8) readonly buffer LumResult { float avgLum; };
+
+" & LumWeightsGlsl & "
+
+void main()
+{
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec4 cov = texelFetch(texCoverage, p, 0);
+    vec3 bg = backgroundAt(gl_FragCoord.xy) * texelFetch(texBgShadow, p, 0).rgb;
+    if (cov.r <= 0.0)
+    {
+        FragColor = vec4(bg, 1.0);
+        return;
+    }
+    vec3 scene = texelFetch(texScene, p, 0).rgb / cov.r;
+    float adapted = avgLum;                       // t2.x = t2.y in the steady state
+
+    float lum = max(dot(LUM_W, scene), 0.00001);
+    float L = lum * (adapted / adapted);          // lum * t2.y / t2.x
+    float Lt = (L * sseHdr.y + 1.0) * L / (L + 1.0);
+    vec3 c = scene * (Lt / lum);                  // + bloom * sat(cb2[2].x - Lt): no bloom pass (hole)
+    float l = dot(c, LUM_W);
+    c = sseCinematic.x * (c - vec3(l)) + vec3(l);
+    c = sseTint.w * (l * sseTint.rgb - c) + c;
+    c = sseCinematic.z * (sseCinematic.w * c - vec3(adapted)) + vec3(adapted);
+    vec3 o = pow(clamp(c, 0.0, 1.0), vec3(sseDisplayExponent));
+
+    FragColor = vec4(mix(bg, o, cov.r), 1.0);
+}"
+
+End Module
+
+''' <summary>Program of the SSE post pass: fullscreen triangle of the background + <see cref="PostProcessShaderSource.Fragment_PostSse"/>.</summary>
+Public Class PostProcess_Sse_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(BackgroundFadeSource.Vertex_Background, PostProcessShaderSource.Fragment_PostSse)
+    End Sub
+End Class
+
+''' <summary>Program of the FO4 post pass: fullscreen triangle of the background + <see cref="PostProcessShaderSource.Fragment_PostFo4"/>.</summary>
+Public Class PostProcess_Fo4_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(BackgroundFadeSource.Vertex_Background, PostProcessShaderSource.Fragment_PostFo4)
+    End Sub
+End Class
+
+''' <summary>Compute program, pass 1 of the mean luminance.</summary>
+Public Class Luminance_Partials_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(PostProcessShaderSource.Compute_LumPartials)
+    End Sub
+End Class
+
+''' <summary>Compute program, pass 2 of the mean luminance.</summary>
+Public Class Luminance_Resolve_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(PostProcessShaderSource.Compute_LumResolve)
+    End Sub
+End Class
+
+''' <summary>THE FRAME TARGETS OF ONE PREVIEW (one GL context).
+''' <para>HDR target (the engine's forward target is R11G11B10_FLOAT, 0x142233F0A / 0x1421F9412):
+''' attachment 0 = linear radiance R11F_G11F_B10F; attachment 1 = coverage RGBA8 (r composite, g actor);
+''' attachment 2 = RGBA8 ground-shadow factor on the background (UI, cleared to 1, drawn only by the ground
+''' catcher). Display target: RGBA8, what is presented and what every read (capture, pixel probe) reads.
+''' One depth/stencil renderbuffer (24/8, like the window's) is shared by both, so what is drawn after the
+''' post (wireframes) depth-tests against the scene.</para>
+''' <para>Allocated lazily by the first frame (a control that never renders allocates nothing), reallocated
+''' on resize, freed with the control.</para></summary>
+Friend NotInheritable Class SceneTargets
+    Private Const LumGroup As Integer = 16
+
+    Private _w As Integer, _h As Integer
+    Private _hdrFbo As Integer, _displayFbo As Integer
+    Private _sceneTex As Integer, _coverageTex As Integer, _bgShadowTex As Integer
+    Private _displayRb As Integer, _depthRb As Integer
+    Private _lumPartials As Integer, _lumResult As Integer, _partialCount As Integer
+    Private _lutTex As Integer
+    Private _lutPath As String
+
+    Public ReadOnly Property HdrFramebuffer As Integer
+        Get
+            Return _hdrFbo
+        End Get
+    End Property
+
+    Public ReadOnly Property DisplayFramebuffer As Integer
+        Get
+            Return _displayFbo
+        End Get
+    End Property
+
+    Public Function Ensure(w As Integer, h As Integer) As Boolean
+        If w <= 0 OrElse h <= 0 Then Return False
+        If _displayFbo <> 0 AndAlso w = _w AndAlso h = _h Then Return True
+        FreeFrame()
+
+        _depthRb = GL.GenRenderbuffer()
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _depthRb)
+        GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Depth24Stencil8, w, h)
+        _displayRb = GL.GenRenderbuffer()
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _displayRb)
+        GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Rgba8, w, h)
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, 0)
+
+        _sceneTex = NewTarget(SizedInternalFormat.R11fG11fB10f, w, h)
+        _coverageTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
+        _bgShadowTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
+
+        _displayFbo = GL.GenFramebuffer()
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _displayFbo)
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, _displayRb)
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _depthRb)
+        Dim ok = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) = FramebufferErrorCode.FramebufferComplete
+
+        _hdrFbo = GL.GenFramebuffer()
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _hdrFbo)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _sceneTex, 0)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment1, TextureTarget.Texture2D, _coverageTex, 0)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment2, TextureTarget.Texture2D, _bgShadowTex, 0)
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _depthRb)
+        GL.DrawBuffers(2, SceneDrawBuffers)
+        ok = ok AndAlso GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) = FramebufferErrorCode.FramebufferComplete
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+
+        _partialCount = ((w + LumGroup - 1) \ LumGroup) * ((h + LumGroup - 1) \ LumGroup)
+        _lumPartials = GL.GenBuffer()
+        GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _lumPartials)
+        GL.BufferData(BufferTarget.ShaderStorageBuffer, _partialCount * 8, IntPtr.Zero, BufferUsageHint.DynamicCopy)
+        _lumResult = GL.GenBuffer()
+        GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _lumResult)
+        GL.BufferData(BufferTarget.ShaderStorageBuffer, 4, IntPtr.Zero, BufferUsageHint.DynamicCopy)
+        GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
+
+        If Not ok Then
+            FreeFrame()
+            Return False
+        End If
+        _w = w : _h = h
+        Return True
+    End Function
+
+    Private Shared ReadOnly SceneDrawBuffers As DrawBuffersEnum() =
+        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.ColorAttachment2}
+
+    Private Shared Function NewTarget(fmt As SizedInternalFormat, w As Integer, h As Integer) As Integer
+        Dim t As Integer
+        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
+        GL.TextureStorage2D(t, 1, fmt, w, h)
+        GL.TextureParameter(t, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
+        GL.TextureParameter(t, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
+        GL.TextureParameter(t, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+        GL.TextureParameter(t, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        Return t
+    End Function
+
+    ''' <summary>Binds the HDR target and clears it: radiance 0, coverage 0, background shadow 1, depth 1.
+    ''' Leaves attachments 0 and 1 as the draw buffers (2 is written only by the ground catcher).</summary>
+    Public Sub BeginHdr()
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _hdrFbo)
+        GL.Viewport(0, 0, _w, _h)
+        GL.DrawBuffers(3, SceneDrawBuffers)
+        GL.ClearBuffer(ClearBuffer.Color, 0, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
+        GL.ClearBuffer(ClearBuffer.Color, 1, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
+        GL.ClearBuffer(ClearBuffer.Color, 2, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
+        GL.Clear(ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit)
+        GL.DrawBuffers(2, SceneDrawBuffers)
+    End Sub
+
+    ''' <summary>The ground catcher also writes its display-space factor on the background (attachment 2).</summary>
+    Public Sub SetGroundCatcherOutputs(enabled As Boolean)
+        GL.DrawBuffers(If(enabled, 3, 2), SceneDrawBuffers)
+    End Sub
+
+    ''' <summary>Binds the display target (viewport set, nothing cleared).</summary>
+    Public Sub BindDisplay()
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _displayFbo)
+        GL.Viewport(0, 0, _w, _h)
+    End Sub
+
+    ''' <summary>Mean luminance of the HDR target into the result buffer (GPU only, no readback).</summary>
+    Public Sub ReduceLuminance(partials As Shader_Base_Class, resolve As Shader_Base_Class)
+        partials.Use()
+        GL.BindTextureUnit(0, _sceneTex)
+        GL.BindTextureUnit(1, _coverageTex)
+        partials.SetInt("texScene", 0)
+        partials.SetInt("texCoverage", 1)
+        GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 7, _lumPartials)
+        GL.DispatchCompute((_w + LumGroup - 1) \ LumGroup, (_h + LumGroup - 1) \ LumGroup, 1)
+        GL.MemoryBarrier(MemoryBarrierFlags.ShaderStorageBarrierBit)
+
+        resolve.Use()
+        resolve.SetInt("partialCount", _partialCount)
+        GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, _lumResult)
+        GL.DispatchCompute(1, 1, 1)
+        GL.MemoryBarrier(MemoryBarrierFlags.ShaderStorageBarrierBit)
+        GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 7, 0)
+        GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, 0)
+        GL.BindTextureUnit(0, 0)
+        GL.BindTextureUnit(1, 0)
+        GL.UseProgram(0)
+    End Sub
+
+    ''' <summary>The post pass into the display target: the image-space law over the HDR target, composited
+    ''' over the background. <paramref name="setBackground"/> uploads the background uniforms (the same
+    ''' ones the background quad receives). <paramref name="emptyVao"/> is the attribute-less VAO of the
+    ''' fullscreen triangle: the core profile rejects a draw with no VAO bound (GL_INVALID_OPERATION, and the
+    ''' display target keeps the previous frame).</summary>
+    Public Sub Composite(post As Shader_Base_Class, uploadImageSpace As Action(Of Shader_Base_Class), lutPath As String,
+                         setBackground As Action(Of Shader_Base_Class), emptyVao As Integer)
+        BindDisplay()
+        post.Use()
+        GL.Disable(EnableCap.DepthTest)
+        GL.DepthMask(False)
+        GL.Disable(EnableCap.Blend)
+        GL.Disable(EnableCap.CullFace)
+
+        Dim lut = If(String.IsNullOrEmpty(lutPath), 0, EnsureLut(lutPath))
+        GL.BindTextureUnit(0, _sceneTex)
+        GL.BindTextureUnit(1, _coverageTex)
+        GL.BindTextureUnit(2, _bgShadowTex)
+        GL.BindTextureUnit(3, lut)
+        post.SetInt("texScene", 0)
+        post.SetInt("texCoverage", 1)
+        post.SetInt("texBgShadow", 2)
+        post.SetInt("texLut", 3)
+        post.SetFloat("lutWeight", If(lut <> 0, 1.0F, 0.0F))
+        uploadImageSpace(post)
+        setBackground(post)
+        GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, _lumResult)
+
+        GL.BindVertexArray(emptyVao)
+        GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
+        GL.BindVertexArray(0)
+
+        GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, 0)
+        ' The targets are attachments again next frame: no unit may keep them bound (feedback loop).
+        For u = 0 To 3
+            GL.BindTextureUnit(u, 0)
+        Next
+        GL.UseProgram(0)
+        GL.DepthMask(True)
+        GL.Enable(EnableCap.DepthTest)
+        GL.Enable(EnableCap.CullFace)
+    End Sub
+
+    ''' <summary>Copies the display target to the window's framebuffer (same size: 1:1, Nearest).</summary>
+    Public Sub Present()
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _displayFbo)
+        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0)
+        GL.BlitFramebuffer(0, 0, _w, _h, 0, 0, _w, _h, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+    End Sub
+
+    ''' <summary>The image space's LUT as the engine samples it: a 16^3 volume, UNORM (raw, no sRGB), linear
+    ''' filter, clamped. The legacy 256x16 RGB24 file is unfolded with the layout of the game's identity LUT
+    ''' (Textures\Effects\ColorLUT.dds measured: r = x mod 16, g = y, b = x div 16). Retried every frame while
+    ''' the data dictionary cannot give the file (returns 0 = no LUT).</summary>
+    Private Function EnsureLut(path As String) As Integer
+        If _lutTex <> 0 AndAlso String.Equals(_lutPath, path, StringComparison.OrdinalIgnoreCase) Then Return _lutTex
+        If _lutTex <> 0 Then GL.DeleteTexture(_lutTex) : _lutTex = 0
+        _lutPath = Nothing
+        If String.IsNullOrEmpty(path) Then Return 0
+        Dim bytes As Byte() = Nothing
+        Try : bytes = FilesDictionary_class.GetBytes(path) : Catch : Return 0 : End Try
+        If bytes Is Nothing OrElse bytes.Length = 0 Then Return 0
+        Dim dec = FaceTintCpuCompositor.DecodeDds(bytes)
+        If dec Is Nothing OrElse dec.Rgba8 Is Nothing OrElse dec.Width <> 256 OrElse dec.Height <> 16 Then Return 0
+
+        Dim vol(16 * 16 * 16 * 3 - 1) As Byte
+        For b = 0 To 15
+            For g = 0 To 15
+                For r = 0 To 15
+                    Dim src = (g * 256 + b * 16 + r) * 4
+                    Dim dst = ((b * 16 + g) * 16 + r) * 3
+                    vol(dst) = dec.Rgba8(src) : vol(dst + 1) = dec.Rgba8(src + 1) : vol(dst + 2) = dec.Rgba8(src + 2)
+                Next
+            Next
+        Next
+        Dim t As Integer
+        GL.CreateTextures(TextureTarget.Texture3D, 1, t)
+        GL.TextureStorage3D(t, 1, SizedInternalFormat.Rgb8, 16, 16, 16)
+        Dim prevUnpack As Integer
+        GL.GetInteger(GetPName.UnpackAlignment, prevUnpack)
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
+        GL.TextureSubImage3D(t, 0, 0, 0, 0, 16, 16, 16, PixelFormat.Rgb, PixelType.UnsignedByte, vol)
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, prevUnpack)
+        GL.TextureParameter(t, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
+        GL.TextureParameter(t, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+        GL.TextureParameter(t, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+        GL.TextureParameter(t, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        GL.TextureParameter(t, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
+        _lutTex = t
+        _lutPath = path
+        Return t
+    End Function
+
+    Private Sub FreeFrame()
+        If _hdrFbo <> 0 Then GL.DeleteFramebuffer(_hdrFbo) : _hdrFbo = 0
+        If _displayFbo <> 0 Then GL.DeleteFramebuffer(_displayFbo) : _displayFbo = 0
+        If _sceneTex <> 0 Then GL.DeleteTexture(_sceneTex) : _sceneTex = 0
+        If _coverageTex <> 0 Then GL.DeleteTexture(_coverageTex) : _coverageTex = 0
+        If _bgShadowTex <> 0 Then GL.DeleteTexture(_bgShadowTex) : _bgShadowTex = 0
+        If _displayRb <> 0 Then GL.DeleteRenderbuffer(_displayRb) : _displayRb = 0
+        If _depthRb <> 0 Then GL.DeleteRenderbuffer(_depthRb) : _depthRb = 0
+        If _lumPartials <> 0 Then GL.DeleteBuffer(_lumPartials) : _lumPartials = 0
+        If _lumResult <> 0 Then GL.DeleteBuffer(_lumResult) : _lumResult = 0
+        _partialCount = 0
+        _w = 0 : _h = 0
+    End Sub
+
+    ''' <summary>Frees every GL object (the context must be current).</summary>
+    Public Sub Free()
+        FreeFrame()
+        If _lutTex <> 0 Then GL.DeleteTexture(_lutTex) : _lutTex = 0
+        _lutPath = Nothing
+    End Sub
+End Class

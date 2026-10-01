@@ -316,6 +316,30 @@ Public Class Nifcontent_Class_Manolo
         Return extraDataId
     End Function
 
+    ''' <summary>The shapes in the ENGINE's scene traversal order: pre-order from the root node, each node's
+    ''' children in their stored order (skee64 VisitObjects, NifUtils.cpp:629-647 — what GetFirstShaderType
+    ''' :900-927 walks to pick "the first" geometry of a shader type). Not the block order of the file.</summary>
+    Public Function ShapesEnOrdenDeEscena() As List(Of INiShape)
+        Dim result As New List(Of INiShape)
+        Dim root = GetRootNode()
+        If root Is Nothing Then Return result
+        Dim visitados As New HashSet(Of INiObject)
+        Dim visitar As Action(Of INiObject) = Nothing
+        visitar = Sub(blk As INiObject)
+                      If blk Is Nothing OrElse Not visitados.Add(blk) Then Return
+                      Dim shp = TryCast(blk, INiShape)
+                      If shp IsNot Nothing Then result.Add(shp) : Return
+                      Dim node = TryCast(blk, NiNode)
+                      If node Is Nothing OrElse node.Children Is Nothing Then Return
+                      For Each ch In node.Children.References
+                          If ch Is Nothing OrElse ch.Index < 0 OrElse ch.Index >= Blocks.Count Then Continue For
+                          visitar(Blocks(ch.Index))
+                      Next
+                  End Sub
+        visitar(root)
+        Return result
+    End Function
+
     Public Function GetRelatedMaterial(shap As INiShape) As RelatedMaterial_Class
         Dim prefix = MaterialsPrefix
         Dim shad = GetShader(shap)
@@ -355,7 +379,10 @@ Public Class Nifcontent_Class_Manolo
 
 
         Dim material As New FO4UnifiedMaterial_Class
-        If fullpath = "" Then
+        ' A named material file that does not resolve: the engine skips ApplyMaterialData (Fallout4.exe 0x1402565BE)
+        ' and the shape keeps its NIF inline shader and alpha. Build from the shader; KEEP .path so a save does not
+        ' erase the material name the NIF carries.
+        If fullpath = "" OrElse Not MaterialResolver.IsMaterialFileResolvable(prefix & fullpath) Then
             createFromShader(material)
         Else
             ' Pass shap+Me so Deserialize can: (a) seed the three alpha fields from the NIF's

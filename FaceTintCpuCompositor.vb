@@ -116,45 +116,35 @@ Public Module FaceTintCpuCompositor
         Return FastPow.Pow1(Clamp01(c), FastPow.G22)
     End Function
 
-    ''' <summary>LUT byte→byte de <see cref="G22DiffuseBgraToLinearInPlace"/>. BIT-IDENTICA a calcularlo,
-    ''' no una aproximacion: la entrada de esa conversion es SIEMPRE <c>unByte / 255.0</c>, o sea EXACTAMENTE
-    ''' 256 valores posibles, y la salida es un byte. Tabular el dominio ENTERO con la MISMA expresion y el
-    ''' MISMO redondeo (<c>Math.Round</c> sin overload = ToEven, igual que antes) da por enumeracion exhaustiva
-    ''' el mismo byte para las 256 entradas — no hay forma de que difiera.
-    ''' <para>Cambia TRES <c>Math.Pow</c> por pixel por tres lecturas de tabla. Corre en cada refresh del
-    ''' render en modo CPU-skinning, sobre el diffuse de la cara a resolucion nativa.</para></summary>
-    ' Sin `Shared`: esto es un Module, sus miembros ya lo son implícitamente. El inicializador corre en el
-    ' constructor estático del módulo ⇒ la tabla está completa antes del primer uso, con la garantía de
-    ' thread-safety del CLR (no hace falta lock ni doble chequeo).
-    Private ReadOnly _g22ToLinByteLut As Byte() = BuildG22ToLinByteLut()
-
-    Private Function BuildG22ToLinByteLut() As Byte()
-        Dim lut(255) As Byte
-        For b As Integer = 0 To 255
-            ' MISMA expresion que tenia el loop: G22ToLin1(byte / 255.0) * 255.0, Math.Round (ToEven), CByte.
-            lut(b) = CByte(MathF.Round(G22ToLin1(CSng(b / 255.0)) * 255.0F, MidpointRounding.ToEven))
-        Next
-        Return lut
-    End Function
-
-    Public Sub G22DiffuseBgraToLinearInPlace(bgra As Byte())
-        If bgra Is Nothing Then Return
+    ''' <summary>BGRA de bytes → RGBA float (AoS, [0,1]) con el color llevado de <paramref name="fromSpace"/> a
+    ''' <paramref name="toSpace"/> por la MISMA <see cref="Cvt1"/> del compositor; el alpha va crudo (byte/255).
+    ''' <para>POR QUE FLOAT Y NO BYTES. El render en vivo de FO4 por CPU convertía el diffuse compuesto (G22) a
+    ''' lineal EN BYTES antes de subirlo: en lineal los oscuros tienen muy pocos escalones (G22 0..~50 cae en
+    ''' 0..~3), así que tonos distintos colapsaban al mismo byte y el preview salía hasta 14 niveles más
+    ''' escalonado que el bake en las sombras (medido sobre CompanionPiper: max 14, 7.139 texels ≥2, y la
+    ''' simulación de ese redondeo lo reproduce texel por texel). En float no se pierde ningún escalón.</para>
+    ''' <para>La entrada son bytes ⇒ EXACTAMENTE 256 valores posibles por canal: se tabulan con la misma
+    ''' <see cref="Cvt1"/> (bit-idéntico a calcularla por texel) y el costo es una lectura de tabla.</para></summary>
+    Public Function BgraToRgbaUnitInSpace(bgra As Byte(), fromSpace As Integer, toSpace As Integer) As Single()
+        If bgra Is Nothing Then Return Nothing
         Dim n = bgra.Length \ 4
-        ' Paralelo por rangos: in-place PURAMENTE POR PIXEL (cada i lee y escribe SOLO bgra(i*4..i*4+2), el
-        ' alpha ni se toca) => sin lectura cruzada pese a ser in-place, y BIT-IDENTICO al serial.
-        ' La tabla (ver _g22ToLinByteLut) reemplaza los tres Math.Pow por pixel; el resultado es el mismo
-        ' byte por enumeracion exhaustiva del dominio (256 entradas), no por aproximacion.
-        Dim lut = _g22ToLinByteLut
+        Dim lut(255) As Single
+        For b As Integer = 0 To 255
+            lut(b) = Cvt1(ByteToUnit(b), fromSpace, toSpace)
+        Next
+        Dim alfa = ByteToUnit
+        Dim f(n * 4 - 1) As Single
+        ' Paralelo por rangos: puramente por pixel, escrituras disjuntas ⇒ bit-idéntico al serial.
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
                 For i = range.Item1 To range.Item2 - 1
-                    bgra(i * 4) = lut(bgra(i * 4))                  ' B
-                    bgra(i * 4 + 1) = lut(bgra(i * 4 + 1))          ' G
-                    bgra(i * 4 + 2) = lut(bgra(i * 4 + 2))          ' R
+                    Dim o = i * 4
+                    f(o) = lut(bgra(o + 2)) : f(o + 1) = lut(bgra(o + 1)) : f(o + 2) = lut(bgra(o)) : f(o + 3) = alfa(bgra(o + 3))
                 Next
             End Sub)
-    End Sub
+        Return f
+    End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToG221(c As Single) As Single
@@ -189,7 +179,7 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>cvt agnóstico entre espacios (0=linear 1=srgb 2=g22) via linear. = shader cvt().</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function Cvt1(c As Single, fromS As Integer, toS As Integer) As Single
+    Friend Function Cvt1(c As Single, fromS As Integer, toS As Integer) As Single
         If fromS = toS Then Return c
         Return LinToSpace1(SpaceToLin1(c, fromS), toS)
     End Function
@@ -2694,7 +2684,7 @@ Public Module FaceTintCpuCompositor
     ''' por pixel, y durante un tiempo se dio por imposible porque FastPow era de exponente CONSTANTE. Lo
     ''' resuelve <c>FastPow.PowVarV</c>, que hace el split de Dekker EN RUNTIME.</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function SoftLightV(model As Integer, d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+    Friend Function SoftLightV(model As Integer, d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
         d = Clamp01V(d) : s = Clamp01V(s)
         Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F), half = VBroadcast(0.5F)
         Select Case model

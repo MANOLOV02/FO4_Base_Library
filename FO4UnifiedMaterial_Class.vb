@@ -340,6 +340,12 @@ Public Class FO4UnifiedMaterial_Class
         copy._alphaBlendEnabled = _alphaBlendEnabled
         copy._blendFunctionSource = _blendFunctionSource
         copy._blendFunctionDest = _blendFunctionDest
+        copy._nifAlphaPresent = _nifAlphaPresent
+        copy._nifAlphaFlags = _nifAlphaFlags
+        copy._nifAlphaThreshold = _nifAlphaThreshold
+        copy._materialPayloadApplied = _materialPayloadApplied
+        copy._nifIsFo4 = _nifIsFo4
+        copy._applyArg3 = _applyArg3
         copy._skinTintAlpha = _skinTintAlpha
         copy._NifGlossiness = _NifGlossiness
         copy._NifGlossinessFromShader = _NifGlossinessFromShader
@@ -505,6 +511,22 @@ Public Class FO4UnifiedMaterial_Class
     Private _blendFunctionDest As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
     Private _suppressAutoPromotion As Boolean = False
 
+    ' ESTADO QUE NECESITA LA LEY DEL MOTOR para resolver el alfa (ResolveEngineAlpha). Son CAMPOS PRIVADOS y no
+    ' propiedades a proposito: GetDifferences/IsDirty comparan por reflexion TODAS las propiedades publicas, y esto
+    ' es procedencia de la carga, no un valor editable. Clone los copia.
+    '   _nifAlpha*            = el NiAlphaProperty del NIF tal como vino (flags crudos y umbral), antes de que el
+    '                           material lo pise: el motor lo conserva intacto cuando el BGSM no pide ni blend ni test.
+    '   _materialPayloadApplied = el payload binario del .bgsm/.bgem se deserializo de verdad (no vacio, no JSON).
+    '   _nifIsFo4             = el NIF es de FO4 (en SSE no hay archivo de material: manda el NIF).
+    '   _applyArg3            = tercer argumento de ApplyMaterialData con el que el motor aplica ESTE material:
+    '                           True en material swap (0x140256672) y en los overlays de F4EE; False en la carga normal.
+    Private _nifAlphaPresent As Boolean = False
+    Private _nifAlphaFlags As UShort = 0
+    Private _nifAlphaThreshold As Byte = 0
+    Private _materialPayloadApplied As Boolean = False
+    Private _nifIsFo4 As Boolean = False
+    Private _applyArg3 As Boolean = False
+
     <Category("Opacity")>
     <DefaultValue(AlphaBlendModeType.Unknown)>
     Public Property AlphaBlendMode As MaterialLib.BaseMaterialFile.AlphaBlendModeType
@@ -614,13 +636,6 @@ Public Class FO4UnifiedMaterial_Class
         HairTint = 5
         Eye = 6
     End Enum
-
-    ''' <summary>True si el slot diffuse es una textura de COLOR (sRGB), no datos. Excluye
-    ''' greyscale-to-palette (usa baseMap.g como indice de LUT) y BGEM. Gatea el decode
-    ''' sRGB-&gt;lineal in-shader (C1; el engine samplea t0 como SRV sRGB).</summary>
-    Public Function IsColorDiffuse() As Boolean
-        Return Not GrayscaleToPaletteColor AndAlso Not IsBGEM()
-    End Function
 
     ''' <summary>Tipo efectivo por la prioridad del factory del engine (FUN_142163BE0).
     ''' BGEM devuelve Default (su render va por el path bIsEffectShader, no por este tipo).</summary>
@@ -3326,6 +3341,173 @@ Public Class FO4UnifiedMaterial_Class
         Return AlphaBlendModeType.Unknown
     End Function
 
+    Public Structure MaterialFileBlend
+        Public Byte0 As Boolean
+        Public Src As NiflySharp.Enums.AlphaFunction
+        Public Dst As NiflySharp.Enums.AlphaFunction
+    End Structure
+
+    ''' <summary>The EXACT bytes a .bgsm/.bgem stores for an alpha-blend mode (blend byte, src, dst), as MaterialLib
+    ''' reads and writes them (BaseMaterialFile.cs:363-427: Unknown (0,6,7), None (0,0,0), Standard (1,6,7),
+    ''' Additive (1,6,0), Multiplicative (1,4,1)). The src/dst words use the NiAlphaProperty AlphaFunction numbering.
+    ''' Distinct from CanonicalTuple, which is the EDITOR/WRITER meaning of the enum.</summary>
+    Public Shared Function MaterialFileBlendTuple(mode As AlphaBlendModeType) As MaterialFileBlend
+        Select Case mode
+            Case AlphaBlendModeType.None
+                Return New MaterialFileBlend With {.Byte0 = False, .Src = CType(0, NiflySharp.Enums.AlphaFunction), .Dst = CType(0, NiflySharp.Enums.AlphaFunction)}
+            Case AlphaBlendModeType.Standard
+                Return New MaterialFileBlend With {.Byte0 = True, .Src = CType(6, NiflySharp.Enums.AlphaFunction), .Dst = CType(7, NiflySharp.Enums.AlphaFunction)}
+            Case AlphaBlendModeType.Additive
+                Return New MaterialFileBlend With {.Byte0 = True, .Src = CType(6, NiflySharp.Enums.AlphaFunction), .Dst = CType(0, NiflySharp.Enums.AlphaFunction)}
+            Case AlphaBlendModeType.Multiplicative
+                Return New MaterialFileBlend With {.Byte0 = True, .Src = CType(4, NiflySharp.Enums.AlphaFunction), .Dst = CType(1, NiflySharp.Enums.AlphaFunction)}
+            Case Else
+                Return New MaterialFileBlend With {.Byte0 = False, .Src = CType(6, NiflySharp.Enums.AlphaFunction), .Dst = CType(7, NiflySharp.Enums.AlphaFunction)}
+        End Select
+    End Function
+
+    ''' <summary>Exact copy of the alpha state (blend-mode enum, the three blend fields, test, threshold), restored
+    ''' WITHOUT the setters' re-classification. For callers that mutate alpha temporarily (gates) and must put the
+    ''' material back exactly as loaded: going through AlphaBlendEnabled re-classifies the enum, and the enum is
+    ''' what ResolveEngineAlpha reads.</summary>
+    Public Structure AlphaStateSnapshot
+        Public Mode As AlphaBlendModeType
+        Public Enabled As Boolean
+        Public Src As NiflySharp.Enums.AlphaFunction
+        Public Dst As NiflySharp.Enums.AlphaFunction
+        Public Test As Boolean
+        Public TestRef As Byte
+    End Structure
+
+    Public Function CaptureAlphaState() As AlphaStateSnapshot
+        Return New AlphaStateSnapshot With {.Mode = Underlying_Material.AlphaBlendMode, .Enabled = _alphaBlendEnabled,
+                                            .Src = _blendFunctionSource, .Dst = _blendFunctionDest,
+                                            .Test = Underlying_Material.AlphaTest, .TestRef = Underlying_Material.AlphaTestRef}
+    End Function
+
+    Public Sub RestoreAlphaState(s As AlphaStateSnapshot)
+        Underlying_Material.AlphaBlendMode = s.Mode
+        _alphaBlendEnabled = s.Enabled
+        _blendFunctionSource = s.Src
+        _blendFunctionDest = s.Dst
+        Underlying_Material.AlphaTest = s.Test
+        Underlying_Material.AlphaTestRef = s.TestRef
+    End Sub
+
+    ''' <summary>Take the WHOLE alpha state of another material loaded for the same shape (a TXST MNAM override):
+    ''' blend enum, blend fields, test, threshold, and the provenance ResolveEngineAlpha needs (payload applied,
+    ''' game, ApplyMaterialData argument). Copying only some fields would mix the override's enum with this
+    ''' material's provenance.</summary>
+    Public Sub AdoptAlphaFrom(other As FO4UnifiedMaterial_Class)
+        RestoreAlphaState(other.CaptureAlphaState())
+        _materialPayloadApplied = other._materialPayloadApplied
+        _nifIsFo4 = other._nifIsFo4
+        _applyArg3 = other._applyArg3
+        _nifAlphaPresent = other._nifAlphaPresent
+        _nifAlphaFlags = other._nifAlphaFlags
+        _nifAlphaThreshold = other._nifAlphaThreshold
+    End Sub
+
+    ''' <summary>Does the engine route this material as a DECAL? The Decal byte of the material file sets the
+    ''' property's decal bits 26/27 only when ApplyMaterialData runs with its 3rd argument False (Fallout4.exe
+    ''' 1.11.240.0, 0x14216B12A..B156). LooksMenu overlays (F4EE OverlayInterface.cpp:171-172) and material swaps
+    ''' (0x140256672) pass True, so their Decal is ignored. A Function on purpose (GetDifferences reflects
+    ''' public properties).</summary>
+    Public Function RendersAsDecal() As Boolean
+        Return Underlying_Material.Decal AndAlso Not _applyArg3
+    End Function
+
+    Public Structure EngineAlphaState
+        Public Blend As Boolean
+        Public Src As NiflySharp.Enums.AlphaFunction
+        Public Dst As NiflySharp.Enums.AlphaFunction
+        Public Test As Boolean
+        Public Threshold As Byte
+    End Structure
+
+    ''' <summary>The alpha state the ENGINE renders this material with. A Function (not a property) on purpose:
+    ''' GetDifferences/IsDirty reflect public properties.
+    ''' <para>FO4 with a material file applied (Fallout4.exe 1.11.240.0, ApplyMaterialData 0x1421715E0, alpha part
+    ''' 0x1421718BD..19EE): blend = the file's blend byte, cleared when the 3rd argument is True on a BSLighting
+    ''' material without Decal (0x1421718BD..18E6). Neither test nor blend: the NIF NiAlphaProperty survives intact
+    ''' when its blend bit is set (0x1421718F5..1902), else it is detached and the shape is opaque (0x142171908..1916).
+    ''' Otherwise the property is rewritten from the file: src/dst words, bit0 = blend, bit9 = AlphaTest,
+    ''' threshold = AlphaTestRef (0x142171954..19CC). The material Alpha is not read here.</para>
+    ''' <para>Everything else (SSE, FO4 NIF-inline shader, no payload): the NIF state the fields already hold.</para></summary>
+    Public Function ResolveEngineAlpha() As EngineAlphaState
+        Return EngineAlphaLaw(_materialPayloadApplied AndAlso _nifIsFo4, Underlying_Material.AlphaBlendMode,
+                              TypeOf Underlying_Material Is BGSM, Underlying_Material.Decal, _applyArg3,
+                              Underlying_Material.AlphaTest, Underlying_Material.AlphaTestRef,
+                              _nifAlphaPresent, _nifAlphaFlags, _nifAlphaThreshold,
+                              New EngineAlphaState With {.Blend = _alphaBlendEnabled, .Src = _blendFunctionSource, .Dst = _blendFunctionDest,
+                                                         .Test = Underlying_Material.AlphaTest, .Threshold = Underlying_Material.AlphaTestRef})
+    End Function
+
+    ''' <summary>The pure law behind ResolveEngineAlpha (one place, testable without a NIF: Tools\ParityGate
+    ''' `alpha-engine-law`). <paramref name="fo4MaterialApplied"/> = a material file payload was applied on a FO4 NIF;
+    ''' otherwise <paramref name="nifState"/> (the NIF's own alpha state) is returned unchanged.</summary>
+    ''' <summary>THE CONSTANTS A FO4 EFFECT MATERIAL GIVES ITS PIXEL SHADER (SetupMaterial of BSEffectShaderMaterial).
+    ''' <list type="bullet">
+    ''' <item>cb1[0].rgb = powf(BaseColor.rgb * BaseColorScale, 2.2); with greyscale-to-palette colour
+    ''' powf(BaseColor.rgb, 2.2) and BaseColorScale goes to cb1[1].x instead (0x142225A18 test, 0x142225A6A..A9C
+    ''' multiply by +0x84, 0x142225AA8..B11 powf 2.2 @0x14247D3B8, 0x142225A25..A4A palette branch).</item>
+    ''' <item>LightingInfluence travels as a BYTE: (int)trunc(LI * 255) stored in a byte (0x142171806), read back as
+    ''' byte / 255 (0x142225B2E..B4B).</item>
+    ''' <item>The LIGHTING technique bit needs EffectLighting AND that byte &gt; 0 (0x1421784B5, 0x1421775CD..609).</item>
+    ''' </list></summary>
+    Public Shared Function EngineEffectConstants(baseColor As Color, baseColorScale As Single, paletteColor As Boolean,
+                                                 lightingInfluence As Single, effectLighting As Boolean) As (BaseColorLinear As OpenTK.Mathematics.Vector3, InfluenceByte As Integer, LightingTechnique As Boolean)
+        Dim rgb As New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F)
+        If Not paletteColor Then rgb *= baseColorScale
+        Dim lin As New OpenTK.Mathematics.Vector3(CSng(Math.Pow(rgb.X, 2.2)), CSng(Math.Pow(rgb.Y, 2.2)), CSng(Math.Pow(rgb.Z, 2.2)))
+        Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
+        Return (lin, liByte, effectLighting AndAlso liByte > 0)
+    End Function
+
+    ''' <summary>THE CONSTANTS AN SSE EFFECT SHADER PROPERTY GIVES ITS PIXEL SHADER (SetupMaterial 0x141556C40).
+    ''' <list type="bullet">
+    ''' <item>cb1[0].rgb = BaseColor.rgb * BaseColorScale (0x141556F29..F5B); with palette colour (technique bit 19)
+    ''' cb1[0] = BaseColor raw and cb1[1].x = BaseColorScale (0x141556F10..F24). SSE is raw: no powf.</item>
+    ''' <item>LightingInfluence: LoadBinary writes the byte into +0x81 ONLY when it is not 0 (0x14152952D) over a
+    ''' constructor value of 0xFF, so a 0 in the file reads as 255; cb1[2].x = byte / 255 (0x141556F5F..F86).</item>
+    ''' <item>LIGHTING (technique bit 16) = SLSF2 Effect_Lighting AND byte [0x1420D6D70] != 0 (static 1)
+    ''' (0x14152A377..A39B).</item>
+    ''' </list></summary>
+    Public Shared Function EngineSseEffectConstants(baseColor As Color, baseColorScale As Single, paletteColor As Boolean,
+                                                    lightingInfluence As Single, effectLighting As Boolean) As (BaseColor As OpenTK.Mathematics.Vector3, Influence As Single, LightingTechnique As Boolean)
+        Dim rgb As New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F)
+        If Not paletteColor Then rgb *= baseColorScale
+        Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
+        If liByte = 0 Then liByte = &HFF
+        Return (rgb, liByte / 255.0F, effectLighting)
+    End Function
+
+    Public Shared Function EngineAlphaLaw(fo4MaterialApplied As Boolean, fileMode As AlphaBlendModeType, isBgsm As Boolean,
+                                          decal As Boolean, applyArg3 As Boolean, fileTest As Boolean, fileTestRef As Byte,
+                                          nifPresent As Boolean, nifFlags As UShort, nifThreshold As Byte,
+                                          nifState As EngineAlphaState) As EngineAlphaState
+        If Not fo4MaterialApplied Then Return nifState
+        Dim f = MaterialFileBlendTuple(fileMode)
+        ' 0x1421718BD..18E6: blend = file byte0, cleared for arg3 on a BSLighting material without Decal.
+        Dim blend = f.Byte0 AndAlso Not (applyArg3 AndAlso isBgsm AndAlso Not decal)
+        If Not fileTest AndAlso Not blend Then
+            ' 0x1421718F5..1902: a NIF property with its blend bit set survives intact.
+            If nifPresent AndAlso (nifFlags And 1US) <> 0 Then
+                ' NiAlphaProperty flags: bit0 blend, bits1-4 src, bits5-8 dst, bit9 test (nif.xml AlphaFlags).
+                Return New EngineAlphaState With {
+                    .Blend = True,
+                    .Src = CType((nifFlags >> 1) And &HFUS, NiflySharp.Enums.AlphaFunction),
+                    .Dst = CType((nifFlags >> 5) And &HFUS, NiflySharp.Enums.AlphaFunction),
+                    .Test = (nifFlags And &H200US) <> 0,
+                    .Threshold = nifThreshold}
+            End If
+            ' 0x142171908..1916: detached -> opaque.
+            Return New EngineAlphaState With {.Blend = False, .Src = f.Src, .Dst = f.Dst, .Test = False, .Threshold = 0}
+        End If
+        ' 0x142171954..19CC: rewritten from the file.
+        Return New EngineAlphaState With {.Blend = blend, .Src = f.Src, .Dst = f.Dst, .Test = fileTest, .Threshold = fileTestRef}
+    End Function
+
     ' P4 — Flags shader SIEMPRE game-aware. HasFlagSF1/SF2 y SetFlagSF1/SF2 (NiflySharp, ShaderHelper)
     ' YA hacen el branch por shad.Type, pero castean el valor que se les pasa al enum del juego en uso;
     ' pasar un Fallout4ShaderPropertyFlags* incondicional escribe/lee el BIT correcto solo si SK comparte
@@ -3651,6 +3833,11 @@ Public Class FO4UnifiedMaterial_Class
         If shap IsNot Nothing AndAlso Not IsNothing(shap.AlphaPropertyRef) AndAlso shap.AlphaPropertyRef.Index <> -1 Then
             alp = TryCast(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
         End If
+        ' Snapshot crudo para ResolveEngineAlpha (el motor conserva el NiAlphaProperty del NIF cuando el BGSM no
+        ' pide ni blend ni test: Fallout4.exe 0x1421718F5..1902).
+        _nifAlphaPresent = alp IsNot Nothing
+        _nifAlphaFlags = If(alp Is Nothing, 0US, alp.Flags.Value)
+        _nifAlphaThreshold = If(alp Is Nothing, CByte(0), alp.Threshold)
         If alp Is Nothing Then
             Underlying_Material.AlphaTest = False
             Underlying_Material.AlphaTestRef = 128
@@ -4207,6 +4394,26 @@ Public Class FO4UnifiedMaterial_Class
         End If
     End Sub
 
+    ''' <summary>The 9 texture-set strings this (lighting) material puts on a SKYRIM shader texture set: the same
+    ''' writer as the NIF save path, so the slot mapping is the one the read uses. Nothing for an effect material.</summary>
+    Friend Function SkyrimTextureSetSlots() As String()
+        Dim bg = TryCast(Underlying_Material, BGSM)
+        If bg Is Nothing Then Return Nothing
+        Dim ts As New BSShaderTextureSet()
+        WriteBgsmTexturesToTextureSet(bg, ts, True, "")
+        Return ts.Textures.Select(Function(t) If(t?.Content, "")).ToArray()
+    End Function
+
+    ''' <summary>Pads a texture set to its full slot count (the same helper the save path uses).</summary>
+    Friend Shared Sub EnsureTextureSetSlots(texset As BSShaderTextureSet)
+        EnsureShaderTextureSetSlots(texset)
+    End Sub
+
+    ''' <summary>Sets or clears the Decal flag of a shader with the flag value of ITS game.</summary>
+    Friend Shared Sub SetDecalFlag(shad As INiShader, value As Boolean)
+        ShaderHelper.SetFlagSF1(shad, DecalFlagValue(shad), value)
+    End Sub
+
     Private Shared Sub EnsureShaderTextureSetSlots(texset As BSShaderTextureSet)
         If IsNothing(texset) Then Exit Sub
 
@@ -4337,7 +4544,11 @@ Public Class FO4UnifiedMaterial_Class
         End If
 
     End Sub
-    Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
+    Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
+                           Optional engineApplyArg3 As Boolean = False)
+        _applyArg3 = engineApplyArg3
+        _nifIsFo4 = Nif IsNot Nothing AndAlso Nif.Header IsNot Nothing AndAlso Nif.Header.Version.IsFO4
+        _materialPayloadApplied = False
         ' LA SIEMBRA DEL BIT VA PRIMERO, ANTES DE TODO `Exit Sub`/`Return` DE ESTE METODO.
         ' Este dato NO viene del payload del material: viene del SHADER DEL NIF. Ponerlo despues de un
         ' early-return lo convierte en un LECTOR CON GUARDA contra un ESCRITOR SIN GUARDA
@@ -4406,17 +4617,19 @@ Public Class FO4UnifiedMaterial_Class
                         Throw New Exception("Unsupported type in Deserialize.")
                 End Select
                 Underlying_Material.Deserialize(reader)
+                _materialPayloadApplied = True
                 reader.Close()
             End Using
             ms.Close()
         End Using
-        ' Step 3: apply the canonical-vs-Unknown rule:
+        ' Step 3: apply the canonical-vs-Unknown rule to the EDITABLE/WRITER fields:
         '   - Canonical (None/Standard/Additive/Multiplicative): BGSM wins. Overwrite the three
         '     fields with the canonical tuple (discards what Step 1 read from the NIF).
-        '   - Unknown: BGSM serializer hardcodes (0,6,7) and can't carry the actual state, so
-        '     the NIF wins. Leave the three fields as Step 1 set them (or as a prior caller did).
-        '     Round-trip preservation: Underlying_Material.AlphaBlendMode stays Unknown, so a
-        '     subsequent Save round-trips the BGSM disk byte tuple verbatim.
+        '   - Unknown = the file bytes are exactly (0,6,7) (MaterialLib throws on any other unknown tuple,
+        '     BaseMaterialFile.cs:363-387). The three fields keep the NIF state so a Save round-trips the
+        '     NIF and the BGSM verbatim.
+        ' What the ENGINE renders is NOT these fields: see ResolveEngineAlpha (the BGSM overrides the NIF
+        ' alpha property, byte0 = blend, Fallout4.exe 0x1421718BD..19EE). The renderer reads that function.
         Dim mode = Underlying_Material.AlphaBlendMode
         If mode <> AlphaBlendModeType.Unknown Then
             Dim t = CanonicalTuple(mode)
@@ -4450,8 +4663,9 @@ Public Class FO4UnifiedMaterial_Class
         ' themselves — but no external caller uses it (all go through the Diccionario overload).
     End Sub
 
-    Public Sub Deserialize(Diccionario As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
-        Deserialize(FilesDictionary_class.GetBytes(Diccionario), type, shap, Nif)
+    Public Sub Deserialize(Diccionario As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
+                           Optional engineApplyArg3 As Boolean = False)
+        Deserialize(FilesDictionary_class.GetBytes(Diccionario), type, shap, Nif, engineApplyArg3)
         ResolveSidecarJson(Diccionario, type)
         ' Fresh load (including sidecar) → clean state.
         ClearDirty()
@@ -4463,8 +4677,9 @@ Public Class FO4UnifiedMaterial_Class
     ''' ClearDirty. Lets a caller that has already located the dictionary entry pass the bytes directly
     ''' (avoiding a redundant dictionary lookup) without dropping the sidecar. The extra String parameter
     ''' disambiguates this from the <c>(Byte(), Type, …)</c> overload.</summary>
-    Public Sub Deserialize(memory As Byte(), diccionarioForSidecar As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
-        Deserialize(memory, type, shap, Nif)
+    Public Sub Deserialize(memory As Byte(), diccionarioForSidecar As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
+                           Optional engineApplyArg3 As Boolean = False)
+        Deserialize(memory, type, shap, Nif, engineApplyArg3)
         ResolveSidecarJson(diccionarioForSidecar, type)
         ' Fresh load (including sidecar) → clean state.
         ClearDirty()

@@ -120,7 +120,10 @@ Public Module ShapeMaterialOverrides
                         Exit For
                     End If
 
-                    Dim newMaterial = MaterialResolver.TryLoadMaterialFromDictionary(targetPath, relatedMaterial.material, shape.NifShape, shape.NifContent)
+                    ' Material swap: the engine applies the swapped-in material with ApplyMaterialData(..., True)
+                    ' (Fallout4.exe 0x140256390 -> call at 0x140256672).
+                    Dim newMaterial = MaterialResolver.TryLoadMaterialFromDictionary(targetPath, relatedMaterial.material, shape.NifShape, shape.NifContent,
+                                                                                     engineApplyArg3:=True)
                     If newMaterial IsNot Nothing Then
                         relatedMaterial.material = newMaterial
                         relatedMaterial.path = FO4UnifiedMaterial_Class.CorrectMaterialPath(targetPath)
