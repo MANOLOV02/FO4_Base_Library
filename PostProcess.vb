@@ -88,11 +88,14 @@ End Class
 
 ''' <summary>THE SKYRIM SE WEATHER THE PREVIEW SHOWS, for what the effect shader reads from it.
 ''' <para>Canonical choice of the preview: WTHR SkyrimClear_A (Skyrim.esm 0x0010E1F2), DAY (NAM0 time-of-day 1),
-''' whose day image space (IMSP[1]) is IMGS ISSkyrimClearDAY (0x00012F88). Data read from the plugin:
-''' Effect Lighting (NAM0 entry 9, xEdit wbDefinitionsCommon) day = (160, 167, 169); ISSkyrimClearDAY HNAM =
-''' (EyeAdaptSpeed 45, BloomBlurRadius 7, BloomThreshold 0.65, BloomScale 4, ReceiveBloomThreshold 0.625,
-''' White 1.0, SunlightScale 2.7, SkyScale 0.235, EyeAdaptStrength 5), CNAM (Saturation 1.0, Brightness 1.035,
-''' Contrast 1.25), TNAM (amount 0.42, rgb 0.894, 0.839, 0.773).</para>
+''' whose day image space (IMSP[1]) is IMGS ISSkyrimClearDAY (0x00012F88). Data read from the WINNING record:
+''' both records are overridden by Update.esm and by no other plugin of the load order (measured over the 98
+''' installed plugins, 2026-10-01; the winner is the last override, xEdit wbImplementation.pas). Update.esm:
+''' Effect Lighting (NAM0 entry 9, xEdit wbDefinitionsCommon) day = (105, 114, 118); ISSkyrimClearDAY HNAM =
+''' (EyeAdaptSpeed 45, BloomBlurRadius 7, BloomThreshold 0.8, BloomScale 4, ReceiveBloomThreshold 0.8,
+''' White 1.0, SunlightScale 2.8, SkyScale 0.05, EyeAdaptStrength 5), CNAM (Saturation 1.5, Brightness 1.135,
+''' Contrast 1.4), TNAM (amount 0.42, rgb 0.894, 0.839, 0.773). (Skyrim.esm's base record, which loses:
+''' EL (160, 167, 169), HNAM 0.65/0.625/2.7/0.235, CNAM 1.0/1.035/1.25.)</para>
 ''' <para>The effect PS's light (cb2[7]) = sun colour(+0x14C) * sun fade(+0x134) * ISM+0xE0 (SetupGeometry
 ''' 0x141557435..748F); the Sky update copies the weather's Effect Lighting into sun+0x14C (0x14041C879..C88F);
 ''' ISM+0xE0 = HNAM SunlightScale (HNAM order: +0xD8 ReceiveBloomThreshold, +0xDC White, +0xE0 SunlightScale).
@@ -109,7 +112,7 @@ Friend NotInheritable Class SsePreviewWeather
     End Sub
 
     ''' <summary>WTHR SkyrimClear_A (0x0010E1F2), day, with IMGS ISSkyrimClearDAY (0x00012F88).</summary>
-    Public Shared ReadOnly SkyrimClearDay As New SsePreviewWeather(New Vector3(160.0F, 167.0F, 169.0F), 2.7F)
+    Public Shared ReadOnly SkyrimClearDay As New SsePreviewWeather(New Vector3(105.0F, 114.0F, 118.0F), 2.8F)
 
     ''' <summary>cb2[7] of the SSE effect PS under this weather (raw).</summary>
     Public ReadOnly Property EffectLight As Vector3
@@ -120,9 +123,9 @@ Friend NotInheritable Class SsePreviewWeather
 End Class
 
 ''' <summary>THE SKYRIM SE IMAGE SPACE THE PREVIEW SHOWS: IMGS ISSkyrimClearDAY (Skyrim.esm 0x00012F88), the day
-''' image space of WTHR SkyrimClear_A (<see cref="SsePreviewWeather"/>). Values read from the plugin: HNAM
-''' ReceiveBloomThreshold 0.625, White 1.0; CNAM Saturation 1.0, Brightness 1.035, Contrast 1.25; TNAM amount 0.42,
-''' rgb (0.894, 0.839, 0.773).
+''' image space of WTHR SkyrimClear_A (<see cref="SsePreviewWeather"/>). Values read from the WINNING record
+''' (Update.esm, see <see cref="SsePreviewWeather"/>): HNAM ReceiveBloomThreshold 0.8, White 1.0; CNAM Saturation
+''' 1.5, Brightness 1.135, Contrast 1.4; TNAM amount 0.42, rgb (0.894, 0.839, 0.773).
 ''' <para>Mapped to the HDR PS 12545 by ImageSpaceEffectHDR (0x14153D860, SetVector 0x14152B170 index k -&gt; cb2[k+1]):
 ''' cb2[2] = (ReceiveBloomThreshold ISM+0xD8, Reinhard 1 / (1.1 White)^2 (White ISM+0xDC), bUseFilmicCurve);
 ''' cb2[3] = (Saturation ISM+0xEC + [0x1420D7CF0], 0, Contrast ISM+0xF4 (-0.3 if byte 0x14343635E), Brightness
@@ -147,7 +150,7 @@ Friend NotInheritable Class SseImageSpace
 
     ''' <summary>IMGS ISSkyrimClearDAY (0x00012F88).</summary>
     Public Shared ReadOnly SkyrimClearDay As New SseImageSpace(
-        receiveBloomThreshold:=0.625F, white:=1.0F, saturation:=1.0F, brightness:=1.035F, contrast:=1.25F,
+        receiveBloomThreshold:=0.8F, white:=1.0F, saturation:=1.5F, brightness:=1.135F, contrast:=1.4F,
         tintColor:=New Vector3(0.894F, 0.839F, 0.773F), tintAmount:=0.42F)
 
     ''' <summary>The constants of PS 12545 (cb2[2..4]) and the display exponent.</summary>
