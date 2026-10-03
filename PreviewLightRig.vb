@@ -180,7 +180,7 @@ Public Structure PreviewLightRig
     ' (se traba el preview despues de aplicar un preset) no apunta al preset.
     '
     ' Consecuencia deliberada: tocar estas tres marca el combo de presets como "Custom", porque el rig
-    ' efectivamente dejo de coincidir con el preset. Ver RigCoincide.
+    ' efectivamente dejo de coincidir con el preset. Ver Coincide.
 
     ''' <summary>Radio del kernel de PCF en TEXELES del mapa. Fraccionario: la parte entera son los taps y
     ''' el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo. Acotado a
@@ -213,11 +213,60 @@ Public Structure PreviewLightRig
     ''' <para>Se busca POR NOMBRE y no por índice: reordenar <see cref="Presets"/> —cosa que pasa cada vez
     ''' que se agrega uno— cambiaría el default en silencio. Si el nombre no estuviera, cae al primero.</para></summary>
     Public Shared Function Defaults() As PreviewLightRig
+        Return DefaultPreset().Rig
+    End Function
+
+    ''' <summary>The preset Reset applies (Portrait).</summary>
+    Public Shared Function DefaultPreset() As LightRigPreset
         Dim ps = Presets()
         For Each p In ps
-            If String.Equals(p.Name, "Portrait", StringComparison.OrdinalIgnoreCase) Then Return p.Rig
+            If String.Equals(p.Name, "Portrait", StringComparison.OrdinalIgnoreCase) Then Return p
         Next
-        Return ps(0).Rig
+        Return ps(0)
+    End Function
+
+    ' Comparación con tolerancia, NO igualdad exacta: el viaje por la UI cuantiza los colores a 8 bits
+    ' (swatch = System.Drawing.Color), así que aplicar un preset y releerlo devuelve p.ej. 0.58 -> 148/255
+    ' = 0.5803922. Con Equals el combo se deseleccionaría solo apenas se aplica el preset. Epsilon = un
+    ' paso de 8 bits (1/255) con margen.
+    Friend Const RigMatchEpsilon As Single = 0.005F
+
+    Friend Shared Function CasiIgual(a As Single, b As Single) As Boolean
+        Return Math.Abs(a - b) <= RigMatchEpsilon
+    End Function
+
+    Friend Shared Function ColorCoincide(a As RigColor, b As RigColor) As Boolean
+        Return CasiIgual(a.R, b.R) AndAlso CasiIgual(a.G, b.G) AndAlso CasiIgual(a.B, b.B)
+    End Function
+
+    Friend Shared Function LuzCoincide(a As PreviewLight, b As PreviewLight) As Boolean
+        ' El azimut se compara MODULO 360: 0 y 360 son la misma dirección y el NUD deja escribir los dos.
+        ' Sin esto, aplicar un preset con azimut 0 y que el control redondee a 360 deseleccionaba el combo.
+        ' `dAz` ES la diferencia angular en [0,180], y la resta cruda daria 360 para el mismo rayo.
+        ' LA TOLERANCIA ES LA MISMA EN LOS DOS EJES. Aflojar sólo el azimut para absorber el redondeo del
+        ' control no absorbe nada —la elevación sola ya manda el combo a "Custom"— y encima tapa el problema
+        ' real, que es que el modelo se cuantice. De eso se ocupa AnguloDesdeNud; acá alcanza el epsilon.
+        Dim dAz As Single = Math.Abs(((a.AzimuthDeg - b.AzimuthDeg) Mod 360.0F + 540.0F) Mod 360.0F - 180.0F)
+        ' EL FLAG DE CASTEO ENTRA EN LA COMPARACION. Sin esto, prender la sombra de un fill dejaba el
+        ' combo diciendo "Studio" cuando el rig ya NO es Studio — y Apply habilitado, o sea un click de
+        ' distancia de perder el cambio sin aviso.
+        Return CasiIgual(a.Strength, b.Strength) AndAlso ColorCoincide(a.Color, b.Color) AndAlso
+               dAz <= RigMatchEpsilon AndAlso CasiIgual(a.ElevationDeg, b.ElevationDeg) AndAlso
+               a.CastsShadow = b.CastsShadow
+    End Function
+
+    ' Compartida con el menu contextual del preview: los dos lugares deben decidir "preset activo"
+    ' con exactamente la misma tolerancia (incluida la cuantizacion de colores de la UI).
+    Public Shared Function Coincide(a As PreviewLightRig, b As PreviewLightRig) As Boolean
+        Return LuzCoincide(a.KeyLight, b.KeyLight) AndAlso LuzCoincide(a.FillLeft, b.FillLeft) AndAlso
+               LuzCoincide(a.FillRight, b.FillRight) AndAlso LuzCoincide(a.BackLight, b.BackLight) AndAlso
+               CasiIgual(a.AmbientIntensity, b.AmbientIntensity) AndAlso
+               CasiIgual(a.AmbientGroundLevel, b.AmbientGroundLevel) AndAlso
+               ColorCoincide(a.AmbientSkyColor, b.AmbientSkyColor) AndAlso
+               ColorCoincide(a.AmbientGroundColor, b.AmbientGroundColor) AndAlso
+               CasiIgual(a.ShadowSoftnessTexels, b.ShadowSoftnessTexels) AndAlso
+               CasiIgual(a.ShadowDarkness, b.ShadowDarkness) AndAlso
+               a.ShadowOnGround = b.ShadowOnGround
     End Function
 
     ''' <summary>Sets de luces predefinidos. Cada uno es un ESCENARIO coherente (dirección + temperatura
@@ -258,8 +307,8 @@ Public Structure PreviewLightRig
         ' estudio y la simetria es el punto), Portrait con key + fill izquierdo, y Sunny day / Full moon /
         ' Sunset solo con la key. Agregar una casilla mas a un preset le sube la VRAM a todo el que lo aplique.
         Return New LightRigPreset() {
-            New LightRigPreset("Studio",
-                "Studio Setting, 4 directional lights simetrics with all casting shadows.",
+            New LightRigPreset("Studio", "Day",
+                "Studio: four symmetric directional lights, all casting shadows.",
                 New PreviewLightRig With {
                     .KeyLight = New PreviewLight(1.0F, azimuthDeg:=0.0F, elevationDeg:=45.0F, color:=RigColor.White, castsShadow:=True),
                     .FillLeft = New PreviewLight(0.25F, azimuthDeg:=270.0F, elevationDeg:=45.0F, color:=RigColor.White, castsShadow:=True),
@@ -272,7 +321,7 @@ Public Structure PreviewLightRig
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
                     .ShadowOnGround = False}),
-            New LightRigPreset("Sunny day",
+            New LightRigPreset("Sunny day", "Day",
                 "Sunny day: Hard high sun from the upper right blue sky as fill and a warm bounce off the ground.",
                 New PreviewLightRig With {
                     .KeyLight = New PreviewLight(1.25F, azimuthDeg:=315.0F, elevationDeg:=45.0F, color:=New RigColor(1.0F, 0.96F, 0.9F), castsShadow:=True),
@@ -286,7 +335,7 @@ Public Structure PreviewLightRig
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
                     .ShadowOnGround = True}),
-            New LightRigPreset("Full moon",
+            New LightRigPreset("Full moon", "Night",
                 "Full moon: Dark night with a full moon over the sky.",
                 New PreviewLightRig With {
                     .KeyLight = New PreviewLight(2.0F, azimuthDeg:=75.0F, elevationDeg:=75.0F, color:=New RigColor(0.97F, 0.98F, 1.0F), castsShadow:=True),
@@ -300,8 +349,8 @@ Public Structure PreviewLightRig
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
                     .ShadowOnGround = True}),
-            New LightRigPreset("Portrait",
-                "Portrait: Key from the left, high enough to shape the cheekbone, fill oposite offset, off-axis hair kicker and a dark ground so the body falls into shadow.",
+            New LightRigPreset("Portrait", "Day",
+                "Portrait: Key from the left, high enough to shape the cheekbone, fill opposite offset, off-axis hair kicker and a dark ground so the body falls into shadow.",
                 New PreviewLightRig With {
                     .KeyLight = New PreviewLight(1.35F, azimuthDeg:=35.0F, elevationDeg:=35.0F, color:=New RigColor(1.0F, 0.97F, 0.93F), castsShadow:=True),
                     .FillLeft = New PreviewLight(0.45F, azimuthDeg:=325.0F, elevationDeg:=35.0F, color:=New RigColor(1.0F, 0.97F, 0.93F), castsShadow:=True),
@@ -314,7 +363,7 @@ Public Structure PreviewLightRig
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
                     .ShadowOnGround = False}),
-            New LightRigPreset("Sunset",
+            New LightRigPreset("Sunset", "Sunset",
                 "Sunset: Almost dark with a warm glow from the setting sun.",
                 New PreviewLightRig With {
                     .KeyLight = New PreviewLight(1.75F, azimuthDeg:=60.0F, elevationDeg:=15.0F, color:=New RigColor(1.0F, 0.8F, 0.8F), castsShadow:=True),
@@ -350,14 +399,34 @@ End Structure
 ''' guarda el rig resuelto, así que editar un preset aplicado no lo "desaplica" ni lo rompe.</summary>
 Public Structure LightRigPreset
     Public ReadOnly Property Name As String
+    ''' <summary>The moment of the day the preset shows, on the game's default (clear) weather. App choice, not
+    ''' the engine (user decision 2-oct-2026): Studio/Portrait/Sunny day = Day, Full moon = Night, Sunset = Sunset.</summary>
+    Public ReadOnly Property Moment As String
     Public ReadOnly Property Description As String
     Public ReadOnly Property Rig As PreviewLightRig
 
-    Public Sub New(name As String, description As String, rig As PreviewLightRig)
+    Public Sub New(name As String, moment As String, description As String, rig As PreviewLightRig)
         _Name = name
+        _Moment = moment
         _Description = description
         _Rig = rig
     End Sub
+
+    ''' <summary>THE ONE WAY TO APPLY A PRESET (dialog, preview context menu, Reset): the rig of the active game and
+    ''' its weather+moment. The post and effect-light options are not the preset's (user decision).</summary>
+    Public Sub ApplyTo(cfg As Config_App)
+        cfg.SetActiveLights(Rig)
+        Dim isSse = cfg.Game = Config_App.Game_Enum.Skyrim
+        cfg.SetPreviewImaging(isSse, cfg.PreviewImaging(isSse).WithWeather(PreviewImagingSettings.DefaultKey(isSse).AtMoment(Moment)))
+    End Sub
+
+    ''' <summary>Whether the config shows THIS preset: its rig (PreviewLightRig.Coincide) and its weather+moment.</summary>
+    Public Function MatchesConfig(cfg As Config_App) As Boolean
+        Dim isSse = cfg.Game = Config_App.Game_Enum.Skyrim
+        Dim s = cfg.PreviewImaging(isSse)
+        Return PreviewLightRig.Coincide(Rig, cfg.ActiveLights()) AndAlso
+               New PreviewImagingKey(s.WeatherPlugin, s.WeatherObjectId, s.Moment).Equals(PreviewImagingSettings.DefaultKey(isSse).AtMoment(Moment))
+    End Function
 
     ''' <summary>Lo que muestra el combo del diálogo.</summary>
     Public Overrides Function ToString() As String

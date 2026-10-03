@@ -87,6 +87,11 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>ParityGate</_Parameter1>
     </AssemblyAttribute>
+    <!-- Tools/PreviewImagingTableGen: genera y verifica PreviewImagingTable.Generated.vb con LA MISMA
+         lectura que el refresco en runtime (PreviewImagingTable.ReadFromPlugins, Friend). -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>PreviewImagingTableGen</_Parameter1>
+    </AssemblyAttribute>
     <!-- Idem: ObtsRoundTripSelfTest (386 lineas) vivia en ESP/ DE ESTA LIB y no lo llamaba NINGUNA de las
          tres apps — solo esta probe. Se mudo el 2026-08-08 y llega a ParseOBTSPayload / BuildObtsPayload
          (Friend) desde afuera, que era la unica razon por la que estaba adentro. -->

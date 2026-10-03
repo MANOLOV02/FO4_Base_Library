@@ -391,6 +391,13 @@ Public Class BSTriShapeGeometry
         _tri.SetTangents(bitangents)
     End Sub
 
+    Public Sub EnsureNormalChannels(normals As Boolean, tangents As Boolean) Implements IShapeGeometry.EnsureNormalChannels
+        ' El dato por vertice (BSVertexData.Normal/Tangent/BitangentX..Z) existe siempre en memoria; el
+        ' VertexDesc decide si se serializa. CalcDataSizes (NifFile save) recalcula el stride.
+        If normals AndAlso Not _tri.HasNormals Then _tri.HasNormals = True
+        If tangents AndAlso Not _tri.HasTangents Then _tri.HasTangents = True
+    End Sub
+
     Public Sub SetUVs(uvs As List(Of TexCoord)) Implements IShapeGeometry.SetUVs
         ' NiflySharp BSTriShape.SetUVs takes List<Vector3> (U, V, ignored Z).  TexCoord is a
         ' 2-component struct so we project it into a Vector3 with Z=0 — same convention used

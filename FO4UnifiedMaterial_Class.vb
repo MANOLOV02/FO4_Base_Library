@@ -85,17 +85,7 @@ Public Class FO4UnifiedMaterialDescriptor
             Dim gate As FieldGate = Nothing
             Dim hasGate = FO4UnifiedMaterial_Class.FieldGates.TryGetValue(prop.Name, gate)
 
-            ' Applies-to: table if present, else fall back to the BGSMOnly/BGEMOnly attributes.
-            Dim appliesTo As FieldApplies
-            If hasGate Then
-                appliesTo = gate.AppliesTo
-            ElseIf prop.Attributes(GetType(BGSMOnlyAttribute)) IsNot Nothing Then
-                appliesTo = FieldApplies.BGSM
-            ElseIf prop.Attributes(GetType(BGEMOnlyAttribute)) IsNot Nothing Then
-                appliesTo = FieldApplies.BGEM
-            Else
-                appliesTo = FieldApplies.Both
-            End If
+            Dim appliesTo As FieldApplies = FO4UnifiedMaterial_Class.AplicaA(prop)
 
             If appliesTo = FieldApplies.BGSM AndAlso Not isBgsm Then Continue For
             If appliesTo = FieldApplies.BGEM AndAlso Not isBgem Then Continue For
@@ -344,6 +334,7 @@ Public Class FO4UnifiedMaterial_Class
         copy._nifAlphaFlags = _nifAlphaFlags
         copy._nifAlphaThreshold = _nifAlphaThreshold
         copy._materialPayloadApplied = _materialPayloadApplied
+        copy._fileBlendRaw = _fileBlendRaw
         copy._nifIsFo4 = _nifIsFo4
         copy._applyArg3 = _applyArg3
         copy._skinTintAlpha = _skinTintAlpha
@@ -358,6 +349,95 @@ Public Class FO4UnifiedMaterial_Class
         copy.NpcDiffuseAlphaTest = NpcDiffuseAlphaTest
         copy.VetoAlphaPropertyCreation = VetoAlphaPropertyCreation
         Return copy
+    End Function
+
+    ''' <summary>Copia del wrapper para OTRA shape (Split / Clone de WM): <see cref="Clone"/> + el snapshot de
+    ''' limpieza clonado, asi el duplicado queda sucio o limpio igual que el original.
+    ''' <para>Ley: "una copia por shape, como en la carga" — dos shapes que nombran el mismo .bgsm cargan dos
+    ''' objetos. <see cref="Clone"/> NO copia el snapshot a proposito (lo usa <see cref="ClearDirty"/> para FABRICAR
+    ''' el snapshot); por eso esto es otra funcion y no un cambio de <see cref="Clone"/>.</para></summary>
+    Public Function DuplicarConEstado() As FO4UnifiedMaterial_Class
+        Dim copy = Clone()
+        copy._cleanSnapshot = If(_cleanSnapshot Is Nothing, Nothing, _cleanSnapshot.Clone())
+        Return copy
+    End Function
+
+    ''' <summary>El material equivalente en la OTRA familia de shader (BGSM ⇄ BGEM), para la conversion
+    ''' Lighting ⇄ Effect de una shape.
+    ''' <para>QUE se copia: toda propiedad publica R/W, visible en el grid y sin indice cuya clasificacion
+    ''' <see cref="AplicaA"/> sea Both — la misma equivalencia que la clase ya declara para el grid
+    ''' (<see cref="Diffuse_or_Base_Texture"/> ↔ Diffuse/BaseTexture, <see cref="GreyscaleTexture"/> ↔
+    ''' Greyscale/GrayscaleTexture, <see cref="EnvmapMaskTexture"/> ↔ sidecar/EnvmapMaskTexture...). Lo que no es Both
+    ''' queda en el default de <c>MaterialLib</c> (<c>BGSM/BGEM.SetDefaults</c>), que es la fuente del objeto nuevo.</para>
+    ''' <para>EXCLUSIONES, todas desde declaraciones de la clase: <see cref="NifShaderOnlyPropertyNames"/> (el tipo
+    ''' de shader se deriva abajo), las <c>ReadOnly(True)</c> (Version: la fija el lector del bloque nuevo) y el grupo
+    ''' <see cref="AlphaStatePropertyNames"/>, cuyos setters se reclasifican entre si y se transporta entero.</para>
+    ''' <para>ALPHA: se siembra del alpha que DIBUJA EL MOTOR (<see cref="ResolveEngineAlpha"/>), no de los campos:
+    ''' en FO4 con archivo aplicado el archivo reescribe el NiAlphaProperty (0x1421718BD..19EE) y, al pasar a
+    ''' embebido, el bloque inline pasa a ser la ley (<see cref="EngineAlphaLaw"/>).</para>
+    ''' <para><paramref name="vocabularioSk"/> = el bloque DESTINO habla el vocabulario de Skyrim (eje del bloque,
+    ''' nunca Config_App). En SK no hay cita del motor para derivar el tipo desde los flags (el CK de SSE preserva el
+    ''' tipo), asi que EnvironmentMapping y Glowmap NO se copian y el tipo queda Default: perdida declarada. En FO4 el
+    ''' tipo se deriva con la prioridad del factory (<see cref="ResolveEffectiveType"/>, FUN_142163BE0), porque sin
+    ''' archivo de material "el enum inline del NIF ES el tipo" y asi preview y juego coinciden.</para></summary>
+    Public Function ConvertidoA(tipoDestino As Type, vocabularioSk As Boolean) As FO4UnifiedMaterial_Class
+        If tipoDestino Is Underlying_Material.GetType() Then
+            Throw New ArgumentException($"The material is already {tipoDestino.Name}.", NameOf(tipoDestino))
+        End If
+        Dim conv As New FO4UnifiedMaterial_Class()
+        If tipoDestino Is GetType(BGSM) Then
+            conv.Underlying_Material = New BGSM()
+        ElseIf tipoDestino Is GetType(BGEM) Then
+            conv.Underlying_Material = NewBgemNormalized()
+        Else
+            Throw New ArgumentException($"Unsupported material type {tipoDestino.Name}.", NameOf(tipoDestino))
+        End If
+
+        Dim excluidas As New HashSet(Of String)(NifShaderOnlyPropertyNames, StringComparer.Ordinal)
+        excluidas.UnionWith(AlphaStatePropertyNames.Values)
+        If vocabularioSk Then
+            excluidas.Add(NameOf(EnvironmentMapping))
+            excluidas.Add(NameOf(Glowmap))
+        End If
+        For Each p In GetType(FO4UnifiedMaterial_Class).GetProperties(BindingFlags.Public Or BindingFlags.Instance)
+            If Not p.CanRead OrElse Not p.CanWrite Then Continue For
+            If p.GetIndexParameters().Length <> 0 Then Continue For
+            If excluidas.Contains(p.Name) Then Continue For
+            Dim br = p.GetCustomAttribute(Of BrowsableAttribute)()
+            If br IsNot Nothing AndAlso Not br.Browsable Then Continue For
+            Dim ro = p.GetCustomAttribute(Of ReadOnlyAttribute)()
+            If ro IsNot Nothing AndAlso ro.IsReadOnly Then Continue For
+            If AplicaA(p) <> FieldApplies.Both Then Continue For
+            p.SetValue(conv, p.GetValue(Me, Nothing), Nothing)
+        Next
+
+        Dim motor = ResolveEngineAlpha()
+        conv.RestoreAlphaState(New AlphaStateSnapshot With {
+            .Mode = ClassifyTuple(motor.Blend, motor.Src, motor.Dst),
+            .Enabled = motor.Blend, .Src = motor.Src, .Dst = motor.Dst,
+            .Test = motor.Test, .TestRef = motor.Threshold})
+
+        If tipoDestino Is GetType(BGSM) AndAlso Not vocabularioSk Then
+            conv._NifShaderType = TipoDeShaderDelFactory(conv.ResolveEffectiveType())
+        End If
+        Return conv
+    End Function
+
+    ''' <summary>El <c>BSLightingShaderType</c> que corresponde a cada material del factory de FO4
+    ''' (<see cref="ResolveEffectiveType"/>, FUN_142163BE0). ⛔ SEDE UNICA de este mapeo en la libreria.
+    ''' <para>Hay un segundo dueño PREEXISTENTE con otro orden de prioridad en el bake de FaceGen
+    ''' (FO4_NPC_Manager FaceGenBuilder.vb, rama del tipo horneado). El bake es capitulo cerrado y no se toca; en su
+    ''' dominio los dos ordenes no se contradicen ("el resto nunca coexiste").</para></summary>
+    Public Shared Function TipoDeShaderDelFactory(t As EffectiveLightingType) As NiflySharp.Enums.BSLightingShaderType
+        Select Case t
+            Case EffectiveLightingType.Eye : Return NiflySharp.Enums.BSLightingShaderType.EyeEnvmap
+            Case EffectiveLightingType.Envmap : Return NiflySharp.Enums.BSLightingShaderType.EnvironmentMap
+            Case EffectiveLightingType.Glowmap : Return NiflySharp.Enums.BSLightingShaderType.GlowShader
+            Case EffectiveLightingType.Face : Return NiflySharp.Enums.BSLightingShaderType.FaceTint
+            Case EffectiveLightingType.SkinTint : Return NiflySharp.Enums.BSLightingShaderType.SkinTint
+            Case EffectiveLightingType.HairTint : Return NiflySharp.Enums.BSLightingShaderType.HairTint
+            Case Else : Return NiflySharp.Enums.BSLightingShaderType.Default
+        End Select
     End Function
 
     ' NIF ShaderType — not part of BGSM/BGEM file format, stored here as runtime field
@@ -516,7 +596,7 @@ Public Class FO4UnifiedMaterial_Class
     ' es procedencia de la carga, no un valor editable. Clone los copia.
     '   _nifAlpha*            = el NiAlphaProperty del NIF tal como vino (flags crudos y umbral), antes de que el
     '                           material lo pise: el motor lo conserva intacto cuando el BGSM no pide ni blend ni test.
-    '   _materialPayloadApplied = el payload binario del .bgsm/.bgem se deserializo de verdad (no vacio, no JSON).
+    '   _materialPayloadApplied = el payload del .bgsm/.bgem (binario o JSON) se deserializo de verdad (no vacio).
     '   _nifIsFo4             = el NIF es de FO4 (en SSE no hay archivo de material: manda el NIF).
     '   _applyArg3            = tercer argumento de ApplyMaterialData con el que el motor aplica ESTE material:
     '                           True en material swap (0x140256672) y en los overlays de F4EE; False en la carga normal.
@@ -524,6 +604,9 @@ Public Class FO4UnifiedMaterial_Class
     Private _nifAlphaFlags As UShort = 0
     Private _nifAlphaThreshold As Byte = 0
     Private _materialPayloadApplied As Boolean = False
+    ''' <summary>The file's blend pair when MaterialLib cannot represent it (MaterialFileReader); applies while the mode
+    ''' stays Unknown.</summary>
+    Private _fileBlendRaw As MaterialFileReader.BlendCrudoArchivo
     Private _nifIsFo4 As Boolean = False
     Private _applyArg3 As Boolean = False
 
@@ -3197,6 +3280,31 @@ Public Class FO4UnifiedMaterial_Class
 
     Public Shared ReadOnly FieldGates As Dictionary(Of String, FieldGate) = BuildFieldGates()
 
+    ''' <summary>A que tipo de material pertenece una propiedad del wrapper: la tabla <see cref="FieldGates"/> si la
+    ''' nombra, si no los atributos <see cref="BGSMOnlyAttribute"/> / <see cref="BGEMOnlyAttribute"/>, y si no Both.
+    ''' <para>⛔ SEDE UNICA. La usan el grid (<c>FO4UnifiedMaterialDescriptor.FilterProperties</c>) y la conversion
+    ''' de familia de shader (<see cref="ConvertidoA"/>). Dos copias de esta clasificacion envejecen distinto y la
+    ''' conversion copiaria campos que el grid ya no muestra (o al reves).</para></summary>
+    Public Shared Function AplicaA(prop As PropertyDescriptor) As FieldApplies
+        Return AplicaA(prop.Name,
+                       prop.Attributes(GetType(BGSMOnlyAttribute)) IsNot Nothing,
+                       prop.Attributes(GetType(BGEMOnlyAttribute)) IsNot Nothing)
+    End Function
+
+    Public Shared Function AplicaA(prop As PropertyInfo) As FieldApplies
+        Return AplicaA(prop.Name,
+                       prop.GetCustomAttribute(Of BGSMOnlyAttribute)() IsNot Nothing,
+                       prop.GetCustomAttribute(Of BGEMOnlyAttribute)() IsNot Nothing)
+    End Function
+
+    Private Shared Function AplicaA(nombre As String, bgsmOnly As Boolean, bgemOnly As Boolean) As FieldApplies
+        Dim gate As FieldGate = Nothing
+        If FieldGates.TryGetValue(nombre, gate) Then Return gate.AppliesTo
+        If bgsmOnly Then Return FieldApplies.BGSM
+        If bgemOnly Then Return FieldApplies.BGEM
+        Return FieldApplies.Both
+    End Function
+
     Private Shared Function BuildFieldGates() As Dictionary(Of String, FieldGate)
         Dim g As New Dictionary(Of String, FieldGate)(StringComparer.Ordinal)
 
@@ -3379,6 +3487,20 @@ Public Class FO4UnifiedMaterial_Class
         Public TestRef As Byte
     End Structure
 
+    ''' <summary>Las propiedades publicas que exponen cada campo de <see cref="AlphaStateSnapshot"/>
+    ''' (campo del snapshot → propiedad del wrapper). ⛔ SEDE UNICA del "grupo alpha": la conversion de familia
+    ''' (<see cref="ConvertidoA"/>) lo excluye de la copia por reflexion porque sus setters reclasifican entre si, y
+    ''' lo transporta entero con <see cref="RestoreAlphaState"/>. Un gate por reflexion verifica que cubre
+    ''' EXACTAMENTE los campos del snapshot.</summary>
+    Public Shared ReadOnly AlphaStatePropertyNames As IReadOnlyDictionary(Of String, String) =
+        New Dictionary(Of String, String)(StringComparer.Ordinal) From {
+            {NameOf(AlphaStateSnapshot.Mode), NameOf(AlphaBlendMode)},
+            {NameOf(AlphaStateSnapshot.Enabled), NameOf(AlphaBlendEnabled)},
+            {NameOf(AlphaStateSnapshot.Src), NameOf(BlendFunctionSource)},
+            {NameOf(AlphaStateSnapshot.Dst), NameOf(BlendFunctionDest)},
+            {NameOf(AlphaStateSnapshot.Test), NameOf(AlphaTest)},
+            {NameOf(AlphaStateSnapshot.TestRef), NameOf(AlphaTestRef)}}
+
     Public Function CaptureAlphaState() As AlphaStateSnapshot
         Return New AlphaStateSnapshot With {.Mode = Underlying_Material.AlphaBlendMode, .Enabled = _alphaBlendEnabled,
                                             .Src = _blendFunctionSource, .Dst = _blendFunctionDest,
@@ -3401,12 +3523,27 @@ Public Class FO4UnifiedMaterial_Class
     Public Sub AdoptAlphaFrom(other As FO4UnifiedMaterial_Class)
         RestoreAlphaState(other.CaptureAlphaState())
         _materialPayloadApplied = other._materialPayloadApplied
+        _fileBlendRaw = other._fileBlendRaw
         _nifIsFo4 = other._nifIsFo4
         _applyArg3 = other._applyArg3
         _nifAlphaPresent = other._nifAlphaPresent
         _nifAlphaFlags = other._nifAlphaFlags
         _nifAlphaThreshold = other._nifAlphaThreshold
     End Sub
+
+    ''' <summary>FO4 y el payload binario de un .bgsm/.bgem se aplico de verdad: es la condicion con la que el motor
+    ''' deja que el archivo mande sobre el bloque inline (la misma que usa <see cref="ResolveEngineAlpha"/>). Function a
+    ''' proposito: GetDifferences refleja propiedades.</summary>
+    Public Function ArchivoFo4Aplicado() As Boolean
+        Return _materialPayloadApplied AndAlso _nifIsFo4
+    End Function
+
+    ''' <summary>La shape NOMBRA un archivo de material que el motor aplicaria, pero la app no pudo leer su payload
+    ''' (archivo vacio): el wrapper quedo con los defaults del tipo, NO con los datos del archivo.
+    ''' Function a proposito: GetDifferences refleja propiedades.</summary>
+    Public Function ArchivoNombradoIlegible() As Boolean
+        Return _MaterialFileApplied AndAlso Not _materialPayloadApplied
+    End Function
 
     ''' <summary>Does the engine route this material as a DECAL? The Decal byte of the material file sets the
     ''' property's decal bits 26/27 only when ApplyMaterialData runs with its 3rd argument False (Fallout4.exe
@@ -3440,12 +3577,10 @@ Public Class FO4UnifiedMaterial_Class
                               Underlying_Material.AlphaTest, Underlying_Material.AlphaTestRef,
                               _nifAlphaPresent, _nifAlphaFlags, _nifAlphaThreshold,
                               New EngineAlphaState With {.Blend = _alphaBlendEnabled, .Src = _blendFunctionSource, .Dst = _blendFunctionDest,
-                                                         .Test = Underlying_Material.AlphaTest, .Threshold = Underlying_Material.AlphaTestRef})
+                                                         .Test = Underlying_Material.AlphaTest, .Threshold = Underlying_Material.AlphaTestRef},
+                              If(_fileBlendRaw IsNot Nothing AndAlso Underlying_Material.AlphaBlendMode = AlphaBlendModeType.Unknown, _fileBlendRaw.Blend, CType(Nothing, MaterialFileBlend?)))
     End Function
 
-    ''' <summary>The pure law behind ResolveEngineAlpha (one place, testable without a NIF: Tools\ParityGate
-    ''' `alpha-engine-law`). <paramref name="fo4MaterialApplied"/> = a material file payload was applied on a FO4 NIF;
-    ''' otherwise <paramref name="nifState"/> (the NIF's own alpha state) is returned unchanged.</summary>
     ''' <summary>THE CONSTANTS A FO4 EFFECT MATERIAL GIVES ITS PIXEL SHADER (SetupMaterial of BSEffectShaderMaterial).
     ''' <list type="bullet">
     ''' <item>cb1[0].rgb = powf(BaseColor.rgb * BaseColorScale, 2.2); with greyscale-to-palette colour
@@ -3482,12 +3617,17 @@ Public Class FO4UnifiedMaterial_Class
         Return (rgb, liByte / 255.0F, effectLighting)
     End Function
 
+    ''' <summary>The pure law behind ResolveEngineAlpha (one place, testable without a NIF: Tools\ParityGate
+    ''' `alpha-engine-law`). <paramref name="fo4MaterialApplied"/> = a material file payload was applied on a FO4 NIF;
+    ''' otherwise <paramref name="nifState"/> (the NIF's own alpha state) is returned unchanged.</summary>
     Public Shared Function EngineAlphaLaw(fo4MaterialApplied As Boolean, fileMode As AlphaBlendModeType, isBgsm As Boolean,
                                           decal As Boolean, applyArg3 As Boolean, fileTest As Boolean, fileTestRef As Byte,
                                           nifPresent As Boolean, nifFlags As UShort, nifThreshold As Byte,
-                                          nifState As EngineAlphaState) As EngineAlphaState
+                                          nifState As EngineAlphaState,
+                                          Optional fileRaw As MaterialFileBlend? = Nothing) As EngineAlphaState
         If Not fo4MaterialApplied Then Return nifState
-        Dim f = MaterialFileBlendTuple(fileMode)
+        ' The file's (blend, src, dst): its raw bytes when MaterialLib could not represent them, else the enum's tuple.
+        Dim f = If(fileRaw.HasValue, fileRaw.Value, MaterialFileBlendTuple(fileMode))
         ' 0x1421718BD..18E6: blend = file byte0, cleared for arg3 on a BSLighting material without Decal.
         Dim blend = f.Byte0 AndAlso Not (applyArg3 AndAlso isBgsm AndAlso Not decal)
         If Not fileTest AndAlso Not blend Then
@@ -3537,7 +3677,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' es el vocabulario de flags del BLOQUE, y un NIF puede traer bloques de shader distintos.</para>
     ''' <para>No-op para todo shader leído de disco (`BeforeSync` ya le puso el `Type`): medido en
     ''' stream 83 → SK, 100 → SK, 130 → FO4.</para></summary>
-    Private Shared Sub EnsureShaderGameType(shad As INiShader, Nif As Nifcontent_Class_Manolo)
+    Friend Shared Sub EnsureShaderGameType(shad As INiShader, Nif As Nifcontent_Class_Manolo)
         If shad Is Nothing OrElse Nif Is Nothing Then Exit Sub
         If shad.Type <> NiflySharp.Helpers.ShaderHelper.ShaderGameType.None Then Exit Sub
         Dim streamVer = Nif.Header.Version.StreamVersion
@@ -3676,8 +3816,16 @@ Public Class FO4UnifiedMaterial_Class
         alp.Flags.DestinationBlendMode = _blendFunctionDest
     End Sub
 
+    ''' <summary>El material pide un NiAlphaProperty (blend o test). ⛔ SEDE UNICA: es la condicion con la que
+    ''' <see cref="WriteAlphaPropertyToShape"/> crea/conserva o borra el bloque, y la que usa la conversion de familia
+    ''' de shader para decidir si borra el alpha antes del escritor. Function a proposito: GetDifferences refleja
+    ''' propiedades.</summary>
+    Public Function NecesitaBloqueAlpha() As Boolean
+        Return _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
+    End Function
+
     Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo)
-        Dim needAlphaProperty = _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
+        Dim needAlphaProperty = NecesitaBloqueAlpha()
         If needAlphaProperty Then
             Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
@@ -4137,13 +4285,8 @@ Public Class FO4UnifiedMaterial_Class
         Try
             Dim bytes = FilesDictionary_class.GetBytes(key)
             If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
-            Dim m As New BGSM
-            Using ms As New MemoryStream(bytes)
-                Using rd As New BinaryReader(ms)
-                    m.Deserialize(rd)
-                End Using
-            End Using
-            Return m
+            ' As the engine reads it (binary or JSON, a raw blend pair tolerated): MaterialFileReader.
+            Return DirectCast(MaterialFileReader.Leer(bytes, GetType(BGSM)).Material, BGSM)
         Catch
             Return Nothing
         End Try
@@ -4574,27 +4717,6 @@ Public Class FO4UnifiedMaterial_Class
         ' archivo vacio son igual de "material aplicado" para el motor.
         _MaterialFileApplied = True
         If Memory.Length = 0 Then Exit Sub
-        ' P5 — JSON payload guard. A handful of vanilla materials (5 BGEM in Fallout4 - Startup.ba2)
-        ' are stored as JSON text, not the binary BGSM/BGEM layout. MaterialLib's binary Deserialize
-        ' would throw on them. If the first non-whitespace byte is '{', degrade with grace: leave a
-        ' fresh default instance of the requested type and return cleanly (no throw). The three alpha
-        ' fields keep their constructor defaults; the caller's ClearDirty (Deserialize(Diccionario))
-        ' still runs.
-        Dim firstByteIdx = 0
-        While firstByteIdx < Memory.Length AndAlso (Memory(firstByteIdx) = AscW(" "c) OrElse Memory(firstByteIdx) = AscW(vbTab) OrElse Memory(firstByteIdx) = AscW(vbCr) OrElse Memory(firstByteIdx) = AscW(vbLf))
-            firstByteIdx += 1
-        End While
-        If firstByteIdx < Memory.Length AndAlso Memory(firstByteIdx) = AscW("{"c) Then
-            Select Case type
-                Case GetType(BGSM)
-                    Underlying_Material = New BGSM
-                Case GetType(BGEM)
-                    Underlying_Material = NewBgemNormalized()
-                Case Else
-                    Throw New Exception("Unsupported type in Deserialize.")
-            End Select
-            Return
-        End If
         ' Step 1: seed the three independent alpha fields from the NIF's NiAlphaProperty.
         ' Required so the Unknown branch below can preserve the NIF state (BGSM Unknown can't
         ' carry the alpha state independently — the byte tuple is hardcoded to (0,6,7) by ME).
@@ -4603,25 +4725,13 @@ Public Class FO4UnifiedMaterial_Class
         ' de arriba. Cuando el shader nombra un .bgem/.bgsm, GetRelatedMaterial llama ACA y NUNCA a
         ' Create_From_Shader, asi que sembrarlo solo alla no alcanzaba; y el .bgem no tiene el campo,
         ' con lo cual el bit del NIF es su UNICA sede.)
-        ' Step 2: deserialize the BGSM/BGEM payload. Reassigns Underlying_Material — anything
-        ' Step 1 wrote into Underlying_Material (AlphaTest, AlphaBlendMode, etc.) is discarded;
-        ' only the three private backing fields survive.
-        Using ms As New MemoryStream(Memory)
-            Using reader As New BinaryReader(ms)
-                Select Case type
-                    Case GetType(BGSM)
-                        Underlying_Material = New BGSM
-                    Case GetType(BGEM)
-                        Underlying_Material = New BGEM
-                    Case Else
-                        Throw New Exception("Unsupported type in Deserialize.")
-                End Select
-                Underlying_Material.Deserialize(reader)
-                _materialPayloadApplied = True
-                reader.Close()
-            End Using
-            ms.Close()
-        End Using
+        ' Step 2: read the payload as the engine does (MaterialFileReader: binary or JSON - the 5 vanilla BGEM of
+        ' Fallout4 - Startup.ba2 are JSON and win over their binary twins - and a blend pair MaterialLib cannot
+        ' represent kept raw). Reassigns Underlying_Material: only the three private backing fields of Step 1 survive.
+        Dim lectura = MaterialFileReader.Leer(Memory, type)
+        Underlying_Material = lectura.Material
+        _fileBlendRaw = lectura.BlendCrudo
+        _materialPayloadApplied = True
         ' Step 3: apply the canonical-vs-Unknown rule to the EDITABLE/WRITER fields:
         '   - Canonical (None/Standard/Additive/Multiplicative): BGSM wins. Overwrite the three
         '     fields with the canonical tuple (discards what Step 1 read from the NIF).
@@ -4631,7 +4741,17 @@ Public Class FO4UnifiedMaterial_Class
         ' What the ENGINE renders is NOT these fields: see ResolveEngineAlpha (the BGSM overrides the NIF
         ' alpha property, byte0 = blend, Fallout4.exe 0x1421718BD..19EE). The renderer reads that function.
         Dim mode = Underlying_Material.AlphaBlendMode
-        If mode <> AlphaBlendModeType.Unknown Then
+        If _fileBlendRaw IsNot Nothing Then
+            ' The file's own pair (not one of MaterialLib's tuples): the engine copies it as it is.
+            _suppressAutoPromotion = True
+            Try
+                _alphaBlendEnabled = _fileBlendRaw.Blend.Byte0
+                _blendFunctionSource = _fileBlendRaw.Blend.Src
+                _blendFunctionDest = _fileBlendRaw.Blend.Dst
+            Finally
+                _suppressAutoPromotion = False
+            End Try
+        ElseIf mode <> AlphaBlendModeType.Unknown Then
             Dim t = CanonicalTuple(mode)
             _suppressAutoPromotion = True
             Try
@@ -4795,7 +4915,7 @@ Public Class FO4UnifiedMaterial_Class
         ' Con el lote, si CUALQUIERA de las dos etapas falla se restauran las anteriores en orden
         ' inverso: el par queda CONSISTENTE-VIEJO y el estado mixto deja de existir.
         Using lote = BSA_BA2_Library_DLL.EscrituraEnElLugar.NuevoLote()
-            lote.Guardar(filePath, Sub(fs) SerializarMaterial(bgsm, fs))
+            lote.Guardar(filePath, Sub(fs) MaterialFileReader.Escribir(bgsm, _fileBlendRaw, fs))
             ' Sidecar carries fields the v2 binary cannot persist: the runtime envmap-mask path
             ' (NIF slot 5, FO4) plus the Skyrim-container (option (b)) flow (slot 5) / lighting
             ' (slot 6) textures. Each key is written only when non-empty.
@@ -4814,7 +4934,7 @@ Public Class FO4UnifiedMaterial_Class
         If bgem Is Nothing Then
             Throw New InvalidOperationException("Save_To_Bgem: Underlying_Material is not a BGEM (" & Underlying_Material?.GetType().Name & ")")
         End If
-        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) SerializarMaterial(bgem, fs))
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) MaterialFileReader.Escribir(bgem, _fileBlendRaw, fs))
         ClearDirty()
     End Sub
 

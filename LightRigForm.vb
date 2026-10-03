@@ -85,9 +85,10 @@ Partial Public Class LightRigForm
                                     End Sub
         AddHandler Me.FormClosing, Sub(s2, e2)
                                        ' HACEN FALTA LOS DOS MECANISMOS, uno por familia de control.
-                                       ' `ValidateChildren()` SI SIRVE — para los 16 TinySliderTextBox
-                                       ' del diálogo (los 8 azimut/elevación, las 4 intensidades, ambiente,
-                                       ' ground level y los 2 de sombras): ésos commitean en
+                                       ' `ValidateChildren()` SI SIRVE — para los TinySliderTextBox del
+                                       ' diálogo (los 8 azimut/elevación, las 4 intensidades, ambiente,
+                                       ' ground level, los 2 de sombras, el fade del fondo y el de efectos de
+                                       ' Rendering): ésos commitean en
                                        ' `_textBox.Validating`, que es exactamente lo que ValidateChildren
                                        ' dispara. Lo saqué generalizando una medición que valía sólo para
                                        ' NumericUpDown, y con eso rompí el commit de TODA la pestaña Lights:
@@ -167,63 +168,20 @@ Partial Public Class LightRigForm
 
     ''' <summary>Selecciona en el combo el preset que coincide con el rig actual, o "Custom" si el
     ''' usuario editó a mano. El combo nunca queda vacío ni miente sobre lo que se está viendo.</summary>
-    Private Sub SincronizarComboConRig(rig As PreviewLightRig)
-        Dim idx = Array.FindIndex(_presets, Function(p) RigCoincide(p.Rig, rig))
+    Private Sub SincronizarComboConRig()
+        Dim idx = Array.FindIndex(_presets, Function(p) p.MatchesConfig(Config_App.Current))
         If idx < 0 Then idx = CustomIndex
         If cmbPreset.SelectedIndex <> idx Then cmbPreset.SelectedIndex = idx
         ActualizarTooltipPreset()
     End Sub
 
-    ' Comparación con tolerancia, NO igualdad exacta: el viaje por la UI cuantiza los colores a 8 bits
-    ' (swatch = System.Drawing.Color), así que aplicar un preset y releerlo devuelve p.ej. 0.58 -> 148/255
-    ' = 0.5803922. Con Equals el combo se deseleccionaría solo apenas se aplica el preset. Epsilon = un
-    ' paso de 8 bits (1/255) con margen.
-    Private Const RigMatchEpsilon As Single = 0.005F
-
-    Private Shared Function CasiIgual(a As Single, b As Single) As Boolean
-        Return Math.Abs(a - b) <= RigMatchEpsilon
-    End Function
-
-    Private Shared Function ColorCoincide(a As RigColor, b As RigColor) As Boolean
-        Return CasiIgual(a.R, b.R) AndAlso CasiIgual(a.G, b.G) AndAlso CasiIgual(a.B, b.B)
-    End Function
-
-    Private Shared Function LuzCoincide(a As PreviewLight, b As PreviewLight) As Boolean
-        ' El azimut se compara MODULO 360: 0 y 360 son la misma dirección y el NUD deja escribir los dos.
-        ' Sin esto, aplicar un preset con azimut 0 y que el control redondee a 360 deseleccionaba el combo.
-        ' `dAz` ES la diferencia angular en [0,180], y la resta cruda daria 360 para el mismo rayo.
-        ' LA TOLERANCIA ES LA MISMA EN LOS DOS EJES. Aflojar sólo el azimut para absorber el redondeo del
-        ' control no absorbe nada —la elevación sola ya manda el combo a "Custom"— y encima tapa el problema
-        ' real, que es que el modelo se cuantice. De eso se ocupa AnguloDesdeNud; acá alcanza el epsilon.
-        Dim dAz As Single = Math.Abs(((a.AzimuthDeg - b.AzimuthDeg) Mod 360.0F + 540.0F) Mod 360.0F - 180.0F)
-        ' EL FLAG DE CASTEO ENTRA EN LA COMPARACION. Sin esto, prender la sombra de un fill dejaba el
-        ' combo diciendo "Studio" cuando el rig ya NO es Studio — y Apply habilitado, o sea un click de
-        ' distancia de perder el cambio sin aviso.
-        Return CasiIgual(a.Strength, b.Strength) AndAlso ColorCoincide(a.Color, b.Color) AndAlso
-               dAz <= RigMatchEpsilon AndAlso CasiIgual(a.ElevationDeg, b.ElevationDeg) AndAlso
-               a.CastsShadow = b.CastsShadow
-    End Function
-
-    ' Compartida con el menu contextual del preview: los dos lugares deben decidir "preset activo"
-    ' con exactamente la misma tolerancia (incluida la cuantizacion de colores de la UI).
-    Friend Shared Function RigCoincide(a As PreviewLightRig, b As PreviewLightRig) As Boolean
-        Return LuzCoincide(a.KeyLight, b.KeyLight) AndAlso LuzCoincide(a.FillLeft, b.FillLeft) AndAlso
-               LuzCoincide(a.FillRight, b.FillRight) AndAlso LuzCoincide(a.BackLight, b.BackLight) AndAlso
-               CasiIgual(a.AmbientIntensity, b.AmbientIntensity) AndAlso
-               CasiIgual(a.AmbientGroundLevel, b.AmbientGroundLevel) AndAlso
-               ColorCoincide(a.AmbientSkyColor, b.AmbientSkyColor) AndAlso
-               ColorCoincide(a.AmbientGroundColor, b.AmbientGroundColor) AndAlso
-               CasiIgual(a.ShadowSoftnessTexels, b.ShadowSoftnessTexels) AndAlso
-               CasiIgual(a.ShadowDarkness, b.ShadowDarkness) AndAlso
-               a.ShadowOnGround = b.ShadowOnGround
-    End Function
-
     Private Sub ActualizarTooltipPreset()
         Dim esPreset = cmbPreset.SelectedIndex >= 0 AndAlso cmbPreset.SelectedIndex < _presets.Length
         Dim descr = If(esPreset,
-                       _presets(cmbPreset.SelectedIndex).Description,
+                       _presets(cmbPreset.SelectedIndex).Description & $" Also sets {_presets(cmbPreset.SelectedIndex).Moment} on the clear weather.",
                        "The current rig does not match any preset (you edited it by hand). Nothing to apply.")
         ToolTip1.SetToolTip(cmbPreset, descr)
+        lblPresetInfo.Text = descr
         btnApplyPreset.Enabled = esPreset
     End Sub
 
@@ -290,7 +248,7 @@ Partial Public Class LightRigForm
 
         CargarPestanaRender()
 
-        SincronizarComboConRig(rig)
+        SincronizarComboConRig()
     End Sub
 
     ''' <summary>Modelo -> UI de la pestana Rendering. Todo sale de Config_App (la libreria), que es
@@ -341,6 +299,7 @@ Partial Public Class LightRigForm
         cmbFloorColor.SelectedColor = Config_App.Current.RenderGridColor()
         ActualizarHabilitadoPiso()
 
+        CargarImagen()
         CargarVistaDebug()
     End Sub
 
@@ -391,6 +350,69 @@ Partial Public Class LightRigForm
         ActualizarDetalleVistaDebug()
     End Sub
 
+    ''' <summary>Modelo -&gt; UI del grupo "Image space &amp; effects": del juego activo, de Config_App y de la tabla.</summary>
+    Private Sub CargarImagen()
+        Dim prev = _preventchanges
+        _preventchanges = True
+        Dim isSse = Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+        Dim s = Config_App.Current.PreviewImaging(isSse)
+        Dim row = PreviewImagingTable.Resolve(isSse, s)
+        _climas = PreviewImagingTable.Rows(isSse).GroupBy(Function(r) r.Key.AtMoment("")).Select(Function(g) g.First()).ToArray()
+        cmbWeather.Items.Clear()
+        For Each r In _climas
+            cmbWeather.Items.Add($"{r.WeatherEdid}  [{r.Key.Plugin} {r.Key.ObjectId:X6}]")
+        Next
+        cmbWeather.SelectedIndex = Array.FindIndex(_climas, Function(r) r.Key.AtMoment("").Equals(row.Key.AtMoment("")))
+        CargarMomentos(isSse, row.Key)
+        chkApplyPost.Checked = s.ApplyPostProcess
+        tEffectVsKey.Value = s.EffectLightVsKey
+        ' A weather whose sun is black has no proportion to keep: the control does not apply, and the reason is said
+        ' where it can be read (a disabled control shows no tooltip): in the weather's tooltip below.
+        tEffectVsKey.Enabled = row.EffectFollowsKey
+        lblEffectVsKey.Enabled = row.EffectFollowsKey
+        Dim sinSol = If(row.EffectFollowsKey, "", vbCrLf & "This time of day has no sun: effects take the weather's own light and 'Effects vs key' does not apply.")
+        Dim src = If(row.FromLoadOrder, $"Values: load order (WTHR from {row.WeatherSource}, IMGS from {row.ImageSpaceSource})",
+                     "Values: game table (vanilla + DLC)")
+        Dim lutInfo = ""
+        If Not row.IsSse Then
+            Dim lut = row.Fo4ImageSpace.LutPath
+            If String.IsNullOrEmpty(lut) Then
+                lutInfo = "LUT: none in the record"
+            Else
+                ' THE post's own answer (SceneTargets.LutVolume, the one EnsureLut uses).
+                lutInfo = If(SceneTargets.LutVolume(lut) Is Nothing, $"LUT: {lut} not usable, post without LUT", $"LUT: {lut}")
+            End If
+        End If
+        ToolTip1.SetToolTip(cmbWeather, "Vanilla weathers of the game (DLC included). The effect shaders' light and the post-process come from the chosen weather and time of day." &
+                            vbCrLf & vbCrLf & $"Image space: {row.ImageSpaceEdid} [{row.ImageSpacePlugin} {row.ImageSpaceObjectId:X6}]" &
+                            vbCrLf & src & If(lutInfo = "", "", vbCrLf & lutInfo) & sinSol)
+        grpImaging.Enabled = Shader_Base_Class.DebugView = ShaderDebugView.None
+        _preventchanges = prev
+    End Sub
+
+    Private _climas As PreviewImagingRow() = Array.Empty(Of PreviewImagingRow)()
+    Private _momentos As String() = Array.Empty(Of String)()
+
+    Private Sub CargarMomentos(isSse As Boolean, key As PreviewImagingKey)
+        _momentos = PreviewImagingTable.MomentOrder.Where(Function(m) PreviewImagingTable.Find(isSse, key.AtMoment(m)) IsNot Nothing).ToArray()
+        cmbMoment.Items.Clear()
+        For Each m In _momentos : cmbMoment.Items.Add(m) : Next
+        cmbMoment.SelectedIndex = Array.IndexOf(_momentos, key.Moment)
+    End Sub
+
+    ''' <summary>UI -&gt; modelo del grupo: escribe la elección del juego activo y repinta (es un uniform y la
+    ''' pasada de post; no toca geometría).</summary>
+    Private Sub VolcarImagen(key As PreviewImagingKey)
+        Dim isSse = Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+        Dim s = Config_App.Current.PreviewImaging(isSse).WithWeather(key)
+        s.ApplyPostProcess = chkApplyPost.Checked
+        s.EffectLightVsKey = CSng(tEffectVsKey.Value)
+        Config_App.Current.SetPreviewImaging(isSse, s)
+        CargarImagen()
+        SincronizarComboConRig()
+        RaiseEvent LightsChanged()
+    End Sub
+
     ''' <summary>El texto de abajo del combo: dice QUE SE VE en la vista elegida. Es la explicacion que
     ''' pidio el usuario, y va al lado del control en vez de escondida en un tooltip porque estas vistas
     ''' se leen mirando el render y el cartel a la vez.</summary>
@@ -434,6 +456,10 @@ Partial Public Class LightRigForm
         Config_App.Current.Settings_Camara = Config_App.Default_CameraSettings
         Config_App.Current.Settings_RenderGrid = Config_App.Default_RenderGrid_Settings
         Config_App.Current.Setting_RenderGridColor = Color.FromKnownColor(KnownColor.LightGray).Name
+        Dim isSse = Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+        Config_App.Current.SetPreviewImaging(isSse, PreviewImagingSettings.Defaults(isSse))
+        ' The moment is part of what a preset is (LightRigPreset.MatchesConfig): the preset combo follows it.
+        SincronizarComboConRig()
         ' La vista de depuracion tambien vuelve a su default, que es None. No se toca Config_App porque
         ' esta no se persiste: el default se repone sobre la propiedad misma (ver Shader_Base_Class).
         ' Se escribe ACA y no adentro de `CargarPestanaRender`: ese metodo es modelo -> UI y lo llaman
@@ -680,8 +706,38 @@ Partial Public Class LightRigForm
                                                          Dim i = cmbDebugView.SelectedIndex
                                                          If i < 0 OrElse i >= VistasDebug.Length Then Return
                                                          Shader_Base_Class.DebugView = VistasDebug(i).Vista
+                                                         grpImaging.Enabled = Shader_Base_Class.DebugView = ShaderDebugView.None
                                                          RaiseEvent LightsChanged()
                                                      End Sub
+
+        AddHandler cmbWeather.SelectedIndexChanged, Sub(sender, e)
+                                                       If _preventchanges OrElse cmbWeather.SelectedIndex < 0 Then Return
+                                                       Dim w = _climas(cmbWeather.SelectedIndex).Key
+                                                       Dim isSse = Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+                                                       ' Same moment if the new weather has it, else its first.
+                                                       Dim cur = Config_App.Current.PreviewImaging(isSse).Moment
+                                                       Dim m = If(PreviewImagingTable.Find(isSse, w.AtMoment(cur)) IsNot Nothing, cur,
+                                                                  PreviewImagingTable.MomentOrder.First(Function(x) PreviewImagingTable.Find(isSse, w.AtMoment(x)) IsNot Nothing))
+                                                       VolcarImagen(w.AtMoment(m))
+                                                   End Sub
+        AddHandler cmbMoment.SelectedIndexChanged, Sub(sender, e)
+                                                      If _preventchanges OrElse cmbMoment.SelectedIndex < 0 OrElse cmbWeather.SelectedIndex < 0 Then Return
+                                                      VolcarImagen(_climas(cmbWeather.SelectedIndex).Key.AtMoment(_momentos(cmbMoment.SelectedIndex)))
+                                                  End Sub
+        AddHandler chkApplyPost.CheckedChanged, Sub(sender, e)
+                                                    If _preventchanges OrElse cmbWeather.SelectedIndex < 0 OrElse cmbMoment.SelectedIndex < 0 Then Return
+                                                    VolcarImagen(_climas(cmbWeather.SelectedIndex).Key.AtMoment(_momentos(cmbMoment.SelectedIndex)))
+                                                End Sub
+        ' The share only writes its field and repaints: dragging fires ValueChanged on every mouse move, and
+        ' VolcarImagen rebuilds both combos and reads the LUT.
+        AddHandler tEffectVsKey.ValueChanged, Sub(sender, e)
+                                                  If _preventchanges Then Return
+                                                  Dim isSse = Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+                                                  Dim s = Config_App.Current.PreviewImaging(isSse)
+                                                  s.EffectLightVsKey = CSng(tEffectVsKey.Value)
+                                                  Config_App.Current.SetPreviewImaging(isSse, s)
+                                                  RaiseEvent LightsChanged()
+                                              End Sub
 
         AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
         AddHandler tBackFade.ValueChanged, AddressOf BackgroundFadeChanged
@@ -750,7 +806,7 @@ Partial Public Class LightRigForm
         Config_App.Current.SetActiveLights(rig)
         ' Mover la elevacion de la key puede habilitar o deshabilitar el receptor de suelo.
         ActualizarAvisoDeSuelo()
-        SincronizarComboConRig(rig)
+        SincronizarComboConRig()
         RaiseEvent LightsChanged()
     End Sub
 
@@ -988,7 +1044,9 @@ Partial Public Class LightRigForm
 
     Private Sub BtnApplyPreset_Click(sender As Object, e As EventArgs) Handles btnApplyPreset.Click
         If cmbPreset.SelectedIndex < 0 OrElse cmbPreset.SelectedIndex >= _presets.Length Then Return   ' "Custom"
-        AplicarRig(_presets(cmbPreset.SelectedIndex).Rig)
+        _presets(cmbPreset.SelectedIndex).ApplyTo(Config_App.Current)
+        AplicarRig(Config_App.Current.ActiveLights())
+        CargarImagen()
     End Sub
 
     Private Sub BtnReset_Click(sender As Object, e As EventArgs) Handles btnReset.Click
@@ -1017,7 +1075,9 @@ Partial Public Class LightRigForm
         Dim anclajeDefault = New Config_App().Setting_LightsFollowCamera
         Config_App.Current.Setting_LightsFollowCamera = anclajeDefault
         chkLightsFollowCamera.Checked = anclajeDefault
-        AplicarRig(PreviewLightRig.Defaults())
+        PreviewLightRig.DefaultPreset().ApplyTo(Config_App.Current)
+        AplicarRig(Config_App.Current.ActiveLights())
+        CargarImagen()
     End Sub
 
 

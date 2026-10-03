@@ -1162,6 +1162,8 @@ Partial Public Class LoadOrderPreflight_Form
             End If
 
             LoadedPluginManager = pm
+            ' The preview's weather/moment table: the rows it has take this load order's winners.
+            PreviewImagingTable.RefreshFromLoadOrder(pm, Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
 
             ' --- Archive load: Fill_DictionaryAsync reports (stage, value, max) and discovers the
             ' archive+loose count itself from the Data folder, emitting it on its first tick (which

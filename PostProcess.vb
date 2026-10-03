@@ -1,7 +1,8 @@
 ﻿Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
-''' <summary>THE FO4 IMAGE SPACE THE PREVIEW SHOWS: the post-process constants of one IMGS record.
+''' <summary>THE FO4 IMAGE SPACE OF THE DEFAULT ROW OF THE PREVIEW'S WEATHER TABLE (PreviewImagingTable shows the row the
+''' user picks): the post-process constants of one IMGS record.
 ''' <para>Canonical choice of the preview (a static studio has no weather): the DAY image space of the vanilla
 ''' weather CommonwealthClear (WTHR 0x0002B52A), IMGS <c>CW_ClearDAY_MAY19</c> (0x00216A9C) of Fallout4.esm.
 ''' Every value below is that record's data, read from the plugin (field order of HNAM per xEdit's IMGS
@@ -29,7 +30,7 @@ Friend NotInheritable Class Fo4ImageSpace
     Public ReadOnly TintAmount As Single
     Public ReadOnly LutPath As String
 
-    Private Sub New(tonemapE As Single, aeMax As Single, aeMin As Single, middleGray As Single, sunlightScale As Single,
+    Friend Sub New(tonemapE As Single, aeMax As Single, aeMin As Single, middleGray As Single, sunlightScale As Single,
                     saturation As Single, brightness As Single, contrast As Single,
                     tintColor As Vector3, tintAmount As Single, lutPath As String)
         Me.TonemapE = tonemapE : AutoExposureMax = aeMax : AutoExposureMin = aeMin : Me.MiddleGray = middleGray
@@ -49,7 +50,10 @@ Friend NotInheritable Class Fo4ImageSpace
     Public Sub Upload(post As Shader_Base_Class)
         post.SetVector4("hdrExposure", New Vector4(AutoExposureMax, AutoExposureMin, MiddleGray, EffectiveTonemapE))
         post.SetVector3("hdrCinematic", New Vector3(Saturation, Brightness, Contrast))
-        post.SetVector4("hdrTint", New Vector4(TintColor, TintAmount))
+        ' cb2[3] of i3700 = (TintColor * TintAmount, TintAmount): the engine premultiplies when it copies the image
+        ' space into the ISM (0x1421efcd0, rcx = ISM+0x80 from 0x142186312) and uploads +0xB4..+0xBC, +0xB0
+        ' (SetVector(2) at 0x14220a8f2). Fallout4.exe 1.11.240.0.
+        post.SetVector4("hdrTint", New Vector4(TintColor * TintAmount, TintAmount))
     End Sub
 
     ''' <summary>The E the tonemap receives: the record's TonemapE when it is &lt;= 1, else 0.02
@@ -61,58 +65,73 @@ Friend NotInheritable Class Fo4ImageSpace
     End Property
 End Class
 
-''' <summary>THE FO4 WEATHER THE PREVIEW SHOWS, for what the effect shader reads from it.
+''' <summary>THE FO4 WEATHER OF THE DEFAULT ROW OF THE PREVIEW'S WEATHER TABLE (PreviewImagingTable), for what the effect
+''' shader reads from it.
 ''' <para>Canonical choice of the preview: WTHR CommonwealthClear (Fallout4.esm 0x0002B52A), DAY, whose image
-''' space is <see cref="Fo4ImageSpace.PreviewDay"/>. Its Effect Lighting colour for the day is (150, 150, 150).</para>
+''' space is <see cref="Fo4ImageSpace.PreviewDay"/>. Its Effect Lighting colour for the day is (150, 150, 150) and its
+''' Sunlight (225, 225, 225).</para>
 ''' <para>DLightColor (cb of the BSEffect PS, the LIGHTING technique's directional term) =
 ''' powf(sun colour, 2.2) * sun dimmer * ImageSpace SunlightScale (0x1422265DA..643, light+0x17C..0x184, +0x144,
 ''' ISM+0x98); the sun colour of an effect is the weather's Effect Lighting. Hole, declared: the dimmer
-''' (light+0x144) is not traced -> 1.</para></summary>
+''' (light+0x144) is not traced -> 1.</para>
+''' <para>The sun's light (the directional the lit shaders receive) = powf(Sunlight, 2.2) * fade * SunlightScale
+''' (0x14223C47F; Tools/re-docs/DISENO_CLIMA_Y_HORA_PREVIEW_2026-10-01.md 2.4): the same image-space factor as
+''' DLightColor.</para></summary>
 Friend NotInheritable Class Fo4PreviewWeather
-    ''' <summary>Effect Lighting of the day, as the record stores it (bytes 0..255).</summary>
+    ''' <summary>Effect Lighting of the moment, as the record stores it (bytes 0..255).</summary>
     Public ReadOnly EffectLighting As Vector3
+    ''' <summary>Sunlight of the moment (NAM0 colour type 4), bytes 0..255.</summary>
+    Public ReadOnly Sunlight As Vector3
 
-    Private Sub New(effectLighting As Vector3)
-        Me.EffectLighting = effectLighting
+    ' The Effect Lighting argument stays FIRST: Tools/FabricGen/vbglsl.py reads the first Vector3 of CommonwealthClearDay.
+    Friend Sub New(effectLighting As Vector3, sunlight As Vector3)
+        Me.EffectLighting = effectLighting : Me.Sunlight = sunlight
     End Sub
 
     ''' <summary>WTHR CommonwealthClear (0x0002B52A), day.</summary>
-    Public Shared ReadOnly CommonwealthClearDay As New Fo4PreviewWeather(New Vector3(150.0F, 150.0F, 150.0F))
+    Public Shared ReadOnly CommonwealthClearDay As New Fo4PreviewWeather(New Vector3(150.0F, 150.0F, 150.0F), New Vector3(225.0F, 225.0F, 225.0F))
 
     ''' <summary>The effect shader's DLightColor under this weather and image space (linear).</summary>
     Public Function DLightColor(imgs As Fo4ImageSpace) As Vector3
         Dim lin = Shader_Base_Class.Vector_to_Linear(EffectLighting / 255.0F)
         Return lin * imgs.SunlightScale
     End Function
+
+    ''' <summary>The sun's light under this weather and image space (linear, fade 1).</summary>
+    Public Function SunLightColor(imgs As Fo4ImageSpace) As Vector3
+        Return Shader_Base_Class.Vector_to_Linear(Sunlight / 255.0F) * imgs.SunlightScale
+    End Function
 End Class
 
-''' <summary>THE SKYRIM SE WEATHER THE PREVIEW SHOWS, for what the effect shader reads from it.
-''' <para>Canonical choice of the preview: WTHR SkyrimClear_A (Skyrim.esm 0x0010E1F2), DAY (NAM0 time-of-day 1),
-''' whose day image space (IMSP[1]) is IMGS ISSkyrimClearDAY (0x00012F88). Data read from the WINNING record:
-''' both records are overridden by Update.esm and by no other plugin of the load order (measured over the 98
-''' installed plugins, 2026-10-01; the winner is the last override, xEdit wbImplementation.pas). Update.esm:
-''' Effect Lighting (NAM0 entry 9, xEdit wbDefinitionsCommon) day = (105, 114, 118); ISSkyrimClearDAY HNAM =
-''' (EyeAdaptSpeed 45, BloomBlurRadius 7, BloomThreshold 0.8, BloomScale 4, ReceiveBloomThreshold 0.8,
-''' White 1.0, SunlightScale 2.8, SkyScale 0.05, EyeAdaptStrength 5), CNAM (Saturation 1.5, Brightness 1.135,
-''' Contrast 1.4), TNAM (amount 0.42, rgb 0.894, 0.839, 0.773). (Skyrim.esm's base record, which loses:
-''' EL (160, 167, 169), HNAM 0.65/0.625/2.7/0.235, CNAM 1.0/1.035/1.25.)</para>
+''' <summary>THE SKYRIM SE WEATHER OF THE DEFAULT ROW OF THE PREVIEW'S WEATHER TABLE (PreviewImagingTable), for what the
+''' effect shader reads from it.
+''' <para>Canonical choice of the preview (user choice, 3-oct-2026): WTHR SkyrimClearSN_A (Skyrim.esm 0x0010E1F0), DAY
+''' (NAM0 time-of-day 1), whose day image space (IMSP[1]) is IMGS ISSkyrimClearDAY_SN (0x0010A212). Data read from the
+''' WINNING record of each (Update.esm for both; the winner is the last override, xEdit wbImplementation.pas), the
+''' same read Tools/PreviewImagingTableGen does, which checks these literals against the plugins on every run:
+''' Effect Lighting (NAM0 entry 9, xEdit wbDefinitionsCommon) day = (96, 104, 106); ISSkyrimClearDAY_SN HNAM
+''' SunlightScale 2.1 (the rest of the image space: <see cref="SseImageSpace.SkyrimClearSnDay"/>).</para>
 ''' <para>The effect PS's light (cb2[7]) = sun colour(+0x14C) * sun fade(+0x134) * ISM+0xE0 (SetupGeometry
 ''' 0x141557435..748F); the Sky update copies the weather's Effect Lighting into sun+0x14C (0x14041C879..C88F);
 ''' ISM+0xE0 = HNAM SunlightScale (HNAM order: +0xD8 ReceiveBloomThreshold, +0xDC White, +0xE0 SunlightScale).
 ''' SSE's pipeline is raw: no powf. Holes, declared: the sun fade (1 when not fading) and the NAM0 -&gt; Sky
-''' interpolation between times of day (the preview sits at the day key).</para></summary>
+''' interpolation between times of day (the preview sits at the day key).</para>
+''' <para>The sun's light = Sunlight * fade * SunlightScale, raw (DirLightColor, 0x141549AE5; Tools/re-docs/
+''' DISENO_CLIMA_Y_HORA_PREVIEW_2026-10-01.md 2.4). Update.esm's day Sunlight = (159, 143, 132).</para></summary>
 Friend NotInheritable Class SsePreviewWeather
-    ''' <summary>Effect Lighting of the day, bytes 0..255.</summary>
+    ''' <summary>Effect Lighting of the moment, bytes 0..255.</summary>
     Public ReadOnly EffectLighting As Vector3
-    ''' <summary>HNAM SunlightScale of the day image space.</summary>
+    ''' <summary>HNAM SunlightScale of the moment's image space.</summary>
     Public ReadOnly SunlightScale As Single
+    ''' <summary>Sunlight of the moment (NAM0 colour type 4), bytes 0..255.</summary>
+    Public ReadOnly Sunlight As Vector3
 
-    Private Sub New(effectLighting As Vector3, sunlightScale As Single)
-        Me.EffectLighting = effectLighting : Me.SunlightScale = sunlightScale
+    Friend Sub New(effectLighting As Vector3, sunlightScale As Single, sunlight As Vector3)
+        Me.EffectLighting = effectLighting : Me.SunlightScale = sunlightScale : Me.Sunlight = sunlight
     End Sub
 
-    ''' <summary>WTHR SkyrimClear_A (0x0010E1F2), day, with IMGS ISSkyrimClearDAY (0x00012F88).</summary>
-    Public Shared ReadOnly SkyrimClearDay As New SsePreviewWeather(New Vector3(105.0F, 114.0F, 118.0F), 2.8F)
+    ''' <summary>WTHR SkyrimClearSN_A (0x0010E1F0), day, with IMGS ISSkyrimClearDAY_SN (0x0010A212).</summary>
+    Public Shared ReadOnly SkyrimClearSnDay As New SsePreviewWeather(New Vector3(96.0F, 104.0F, 106.0F), 2.1F, New Vector3(159.0F, 143.0F, 132.0F))
 
     ''' <summary>cb2[7] of the SSE effect PS under this weather (raw).</summary>
     Public ReadOnly Property EffectLight As Vector3
@@ -120,12 +139,19 @@ Friend NotInheritable Class SsePreviewWeather
             Return EffectLighting / 255.0F * SunlightScale
         End Get
     End Property
+
+    ''' <summary>The sun's light under this weather (raw, fade 1).</summary>
+    Public ReadOnly Property SunLightColor As Vector3
+        Get
+            Return Sunlight / 255.0F * SunlightScale
+        End Get
+    End Property
 End Class
 
-''' <summary>THE SKYRIM SE IMAGE SPACE THE PREVIEW SHOWS: IMGS ISSkyrimClearDAY (Skyrim.esm 0x00012F88), the day
-''' image space of WTHR SkyrimClear_A (<see cref="SsePreviewWeather"/>). Values read from the WINNING record
-''' (Update.esm, see <see cref="SsePreviewWeather"/>): HNAM ReceiveBloomThreshold 0.8, White 1.0; CNAM Saturation
-''' 1.5, Brightness 1.135, Contrast 1.4; TNAM amount 0.42, rgb (0.894, 0.839, 0.773).
+''' <summary>THE SKYRIM SE IMAGE SPACE OF THE DEFAULT ROW OF THE PREVIEW'S WEATHER TABLE (PreviewImagingTable): IMGS ISSkyrimClearDAY_SN (Skyrim.esm 0x0010A212), the day
+''' image space of WTHR SkyrimClearSN_A (<see cref="SsePreviewWeather"/>). Values read from the WINNING record
+''' (Update.esm, see <see cref="SsePreviewWeather"/>): HNAM ReceiveBloomThreshold 0.8, White 1.075; CNAM Saturation
+''' 2.0, Brightness 1.2, Contrast 1.35; TNAM amount 0.72, rgb (0.8862745, 0.9137255, 0.9137255).
 ''' <para>Mapped to the HDR PS 12545 by ImageSpaceEffectHDR (0x14153D860, SetVector 0x14152B170 index k -&gt; cb2[k+1]):
 ''' cb2[2] = (ReceiveBloomThreshold ISM+0xD8, Reinhard 1 / (1.1 White)^2 (White ISM+0xDC), bUseFilmicCurve);
 ''' cb2[3] = (Saturation ISM+0xEC + [0x1420D7CF0], 0, Contrast ISM+0xF4 (-0.3 if byte 0x14343635E), Brightness
@@ -142,24 +168,26 @@ Friend NotInheritable Class SseImageSpace
     Public ReadOnly TintColor As Vector3
     Public ReadOnly TintAmount As Single
 
-    Private Sub New(receiveBloomThreshold As Single, white As Single, saturation As Single, brightness As Single,
+    Friend Sub New(receiveBloomThreshold As Single, white As Single, saturation As Single, brightness As Single,
                     contrast As Single, tintColor As Vector3, tintAmount As Single)
         Me.ReceiveBloomThreshold = receiveBloomThreshold : Me.White = white : Me.Saturation = saturation
         Me.Brightness = brightness : Me.Contrast = contrast : Me.TintColor = tintColor : Me.TintAmount = tintAmount
     End Sub
 
-    ''' <summary>IMGS ISSkyrimClearDAY (0x00012F88).</summary>
-    Public Shared ReadOnly SkyrimClearDay As New SseImageSpace(
-        receiveBloomThreshold:=0.8F, white:=1.0F, saturation:=1.5F, brightness:=1.135F, contrast:=1.4F,
-        tintColor:=New Vector3(0.894F, 0.839F, 0.773F), tintAmount:=0.42F)
+    ''' <summary>IMGS ISSkyrimClearDAY_SN (0x0010A212).</summary>
+    Public Shared ReadOnly SkyrimClearSnDay As New SseImageSpace(
+        receiveBloomThreshold:=0.8F, white:=1.075F, saturation:=2.0F, brightness:=1.2F, contrast:=1.35F,
+        tintColor:=New Vector3(0.8862745F, 0.9137255F, 0.9137255F), tintAmount:=0.72F)
 
     ''' <summary>The constants of PS 12545 (cb2[2..4]) and the display exponent.</summary>
     Public Sub Upload(post As Shader_Base_Class)
         Dim w = 1.1F * White
         post.SetVector4("sseHdr", New Vector4(ReceiveBloomThreshold, 1.0F / (w * w), 0.0F, 0.0F))
         post.SetVector4("sseCinematic", New Vector4(Saturation, 0.0F, Contrast, Brightness))
-        post.SetVector4("sseTint", New Vector4(TintColor, TintAmount))
-        post.SetFloat("sseDisplayExponent", 1.0F)
+        ' cb2[4] of PS 12545 = (TintColor * TintAmount, TintAmount): premultiplied on the copy into the ISM
+        ' (0x141536f80, ISM+0xFC..0x104) and uploaded by SetVector(3) at 0x14153dae6. SkyrimSE.exe 1.7.104.0.
+        post.SetVector4("sseTint", New Vector4(TintColor * TintAmount, TintAmount))
+        post.SetFloat("sseDisplayExponent", Shader_Base_Class.DisplayExponent(True))
     End Sub
 End Class
 
@@ -412,6 +440,48 @@ Public Class Luminance_Resolve_Shader_Class
     End Sub
 End Class
 
+''' <summary>THE SCENE DEPTH THE EFFECT SHADERS' SOFT FADE READS (one GL context), as the engine binds it to t3: FO4 the
+''' world's depth (logical depth-stencil 1, 0x1422250D0 -&gt; 0x14183A530), SSE the post-z-prepass copy (depth-stencil 7,
+''' 0x141556AD5). Both hold the opaque geometry already drawn; the preview copies its depth after the OPAQUE and CUTOUT
+''' groups (Render.RenderAll), with ONE mechanism for the three frame paths (HDR target, display target, window): a
+''' copy from the framebuffer being drawn. A copy and not the live depth: FO4 effects in the alpha list write depth
+''' (ResolveDepthWriteEnabled), and sampling the attachment being written is a feedback loop; the engine reads a
+''' read-only view (0x14183C863). Tools/re-docs/DISENO_SOFT_EFFECTS_2026-10-03.md.</summary>
+Friend NotInheritable Class SceneDepthCopy
+    Private _tex As Integer, _w As Integer, _h As Integer
+
+    Public ReadOnly Property Texture As Integer
+        Get
+            Return _tex
+        End Get
+    End Property
+
+    ''' <summary>Copies the depth of framebuffer <paramref name="fbo"/> (0 = the window), w x h from the origin.</summary>
+    Public Sub CopyFrom(fbo As Integer, w As Integer, h As Integer)
+        If w <= 0 OrElse h <= 0 Then Return
+        If _tex = 0 OrElse w <> _w OrElse h <> _h Then
+            Free()
+            GL.CreateTextures(TextureTarget.Texture2D, 1, _tex)
+            ' Same format as the frame's depth (Depth24Stencil8, SceneTargets and the window): a depth copy needs it.
+            GL.TextureStorage2D(_tex, 1, SizedInternalFormat.Depth24Stencil8, w, h)
+            GL.TextureParameter(_tex, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
+            GL.TextureParameter(_tex, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
+            GL.TextureParameter(_tex, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+            GL.TextureParameter(_tex, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+            GL.TextureParameter(_tex, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
+            _w = w : _h = h
+        End If
+        ' The read framebuffer is the one being drawn (RenderScene binds both): the copy reads its depth buffer.
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fbo)
+        GL.CopyTextureSubImage2D(_tex, 0, 0, 0, 0, 0, w, h)
+    End Sub
+
+    Public Sub Free()
+        If _tex <> 0 Then GL.DeleteTexture(_tex) : _tex = 0
+        _w = 0 : _h = 0
+    End Sub
+End Class
+
 ''' <summary>THE FRAME TARGETS OF ONE PREVIEW (one GL context).
 ''' <para>HDR target (the engine's forward target is R11G11B10_FLOAT, 0x142233F0A / 0x1421F9412):
 ''' attachment 0 = linear radiance R11F_G11F_B10F; attachment 1 = coverage RGBA8 (r composite, g actor);
@@ -614,23 +684,8 @@ Friend NotInheritable Class SceneTargets
         If _lutTex <> 0 AndAlso String.Equals(_lutPath, path, StringComparison.OrdinalIgnoreCase) Then Return _lutTex
         If _lutTex <> 0 Then GL.DeleteTexture(_lutTex) : _lutTex = 0
         _lutPath = Nothing
-        If String.IsNullOrEmpty(path) Then Return 0
-        Dim bytes As Byte() = Nothing
-        Try : bytes = FilesDictionary_class.GetBytes(path) : Catch : Return 0 : End Try
-        If bytes Is Nothing OrElse bytes.Length = 0 Then Return 0
-        Dim dec = FaceTintCpuCompositor.DecodeDds(bytes)
-        If dec Is Nothing OrElse dec.Rgba8 Is Nothing OrElse dec.Width <> 256 OrElse dec.Height <> 16 Then Return 0
-
-        Dim vol(16 * 16 * 16 * 3 - 1) As Byte
-        For b = 0 To 15
-            For g = 0 To 15
-                For r = 0 To 15
-                    Dim src = (g * 256 + b * 16 + r) * 4
-                    Dim dst = ((b * 16 + g) * 16 + r) * 3
-                    vol(dst) = dec.Rgba8(src) : vol(dst + 1) = dec.Rgba8(src + 1) : vol(dst + 2) = dec.Rgba8(src + 2)
-                Next
-            Next
-        Next
+        Dim vol = LutVolume(path)
+        If vol Is Nothing Then Return 0
         Dim t As Integer
         GL.CreateTextures(TextureTarget.Texture3D, 1, t)
         GL.TextureStorage3D(t, 1, SizedInternalFormat.Rgb8, 16, 16, 16)
@@ -647,6 +702,29 @@ Friend NotInheritable Class SceneTargets
         _lutTex = t
         _lutPath = path
         Return t
+    End Function
+
+    ''' <summary>The 16^3 RGB volume of a legacy 256x16 LUT (layout of the game's identity LUT, see EnsureLut), or Nothing
+    ''' when the data dictionary cannot give the file, it does not decode or it is not 256x16: THE one answer to "does the
+    ''' post use this LUT", shared by EnsureLut and the Rendering tab.</summary>
+    Friend Shared Function LutVolume(path As String) As Byte()
+        If String.IsNullOrEmpty(path) Then Return Nothing
+        Dim bytes As Byte() = Nothing
+        Try : bytes = FilesDictionary_class.GetBytes(path) : Catch : Return Nothing : End Try
+        If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
+        Dim dec = FaceTintCpuCompositor.DecodeDds(bytes)
+        If dec Is Nothing OrElse dec.Rgba8 Is Nothing OrElse dec.Width <> 256 OrElse dec.Height <> 16 Then Return Nothing
+        Dim vol(16 * 16 * 16 * 3 - 1) As Byte
+        For b = 0 To 15
+            For g = 0 To 15
+                For r = 0 To 15
+                    Dim src = (g * 256 + b * 16 + r) * 4
+                    Dim dst = ((b * 16 + g) * 16 + r) * 3
+                    vol(dst) = dec.Rgba8(src) : vol(dst + 1) = dec.Rgba8(src + 1) : vol(dst + 2) = dec.Rgba8(src + 2)
+                Next
+            Next
+        Next
+        Return vol
     End Function
 
     Private Sub FreeFrame()

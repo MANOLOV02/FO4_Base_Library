@@ -403,6 +403,20 @@ Public Class NiTriShapeGeometry
         d.Tangents = bitangents
     End Sub
 
+    Public Sub EnsureNormalChannels(normals As Boolean, tangents As Boolean) Implements IShapeGeometry.EnsureNormalChannels
+        Dim d = GetData()
+        If d Is Nothing Then Throw New InvalidOperationException("NiTriShape family shape without geometry data.")
+        If normals AndAlso Not d.HasNormals Then d.HasNormals = True
+        ' SSE: _dataFlags es Nothing y el setter va por BSGeometryDataFlags.HasTangents. La rama NBT
+        ' (NiGeometryData.SetTangentsFlag) es de versiones que WM no abre.
+        If tangents AndAlso Not d.HasTangents Then d.HasTangents = True
+        ' Con _dataFlags presente el setter NO prende las tangentes (deja elegir el metodo NBT): no se elige
+        ' uno a ciegas, se falla ruidoso.
+        If (normals AndAlso Not d.HasNormals) OrElse (tangents AndAlso Not d.HasTangents) Then
+            Throw New NotSupportedException("This NiTriShape data version does not allow enabling normals/tangents.")
+        End If
+    End Sub
+
     Public Sub SetUVs(uvs As List(Of TexCoord)) Implements IShapeGeometry.SetUVs
         Dim d = GetData()
         If d Is Nothing OrElse uvs Is Nothing Then Return

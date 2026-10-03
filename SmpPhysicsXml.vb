@@ -122,4 +122,105 @@ Public NotInheritable Class SmpPhysicsXml
         Next
         Return salida
     End Function
+
+    ''' <summary>Renombra en el XML la shape <paramref name="viejo"/> a <paramref name="nuevo"/> en los MISMOS dos tags y
+    ''' con la MISMA comparacion que <see cref="NombresDeShape"/> (Trim + OrdinalIgnoreCase: los nombres del motor son
+    ''' BSFixedString, sin mayusculas — SystemBuilder.cpp:347-348; el Trim es la regla existente de NombresDeShape).
+    ''' <para>⛔ CONTRATO: el string de salida es el de entrada salvo los spans CRUDOS de los valores renombrados. No se
+    ''' re-serializa el documento (XmlDocument cambiaria comillas, entidades, elementos vacios y la declaracion). La
+    ''' codificacion y el BOM del archivo los decide quien lo escribe (Save del proyecto), no esta funcion.</para>
+    ''' <para>Ubicacion: <c>IXmlLineInfo</c> da linea/columna del NOMBRE del atributo, contando como un salto
+    ''' <c>\r\n</c>, <c>\r</c> o <c>\n</c> (normalizacion de fin de linea, XML 1.0 §2.11) y columnas en chars del
+    ''' texto; desde ahi se escanea <c>name</c>, espacios, <c>=</c>, espacios y la comilla hasta el valor crudo. La
+    ''' decision usa el valor DECODIFICADO; se reemplaza el span crudo (entidades incluidas), conservando los espacios
+    ''' literales alrededor del nucleo.</para></summary>
+    ''' <returns>(xml resultante, valores renombrados, si el XML se pudo parsear). Si no parsea, se devuelve el
+    ''' original intacto con Parseo = False.</returns>
+    Public Shared Function RenombrarShape(xml As String, viejo As String, nuevo As String) As (Xml As String, Cambios As Integer, Parseo As Boolean)
+        If String.IsNullOrEmpty(xml) Then Return (xml, 0, True)
+        If String.IsNullOrWhiteSpace(viejo) Then Throw New ArgumentException("The old name cannot be empty.", NameOf(viejo))
+        If String.IsNullOrEmpty(nuevo) Then Throw New ArgumentException("The new name cannot be empty.", NameOf(nuevo))
+        Dim objetivo = viejo.Trim()
+
+        Dim inicios As New List(Of Integer) From {0}
+        Dim i = 0
+        While i < xml.Length
+            Dim c = xml(i)
+            If c = ControlChars.Cr Then
+                If i + 1 < xml.Length AndAlso xml(i + 1) = ControlChars.Lf Then i += 1
+                inicios.Add(i + 1)
+            ElseIf c = ControlChars.Lf Then
+                inicios.Add(i + 1)
+            End If
+            i += 1
+        End While
+
+        Dim spans As New List(Of (Inicio As Integer, Largo As Integer, Comilla As Char))
+        Try
+            ' DTD prohibido: la MISMA definicion de "parseable" que NombresDeShape (XDocument.Parse lo prohibe).
+            Dim opciones As New System.Xml.XmlReaderSettings With {.DtdProcessing = System.Xml.DtdProcessing.Prohibit}
+            Using sr As New IO.StringReader(xml)
+                Using rd = System.Xml.XmlReader.Create(sr, opciones)
+                    Dim info = DirectCast(rd, System.Xml.IXmlLineInfo)
+                    While rd.Read()
+                        If rd.NodeType <> System.Xml.XmlNodeType.Element Then Continue While
+                        Dim ln = rd.LocalName
+                        If Not (ln.Equals("per-vertex-shape", StringComparison.OrdinalIgnoreCase) OrElse
+                                ln.Equals("per-triangle-shape", StringComparison.OrdinalIgnoreCase)) Then Continue While
+                        If Not rd.MoveToAttribute("name") Then Continue While
+                        If String.Equals(rd.Value.Trim(), objetivo, StringComparison.OrdinalIgnoreCase) Then
+                            spans.Add(ValorCrudoDelAtributo(xml, inicios(info.LineNumber - 1) + info.LinePosition - 1, "name"))
+                        End If
+                        rd.MoveToElement()
+                    End While
+                End Using
+            End Using
+        Catch ex As System.Xml.XmlException
+            Return (xml, 0, False)
+        Catch ex As InvalidOperationException
+            ' La posicion que da el lector no cae en el atributo (p.ej. un U+FEFF inicial que el lector salta): no se
+            ' puede ubicar el span crudo sin adivinar. Es "no se pudo", nunca una excepcion para el llamador (Merge
+            ' llama a mitad de camino y su contrato es no lanzar).
+            Return (xml, 0, False)
+        End Try
+
+        Dim sb As New Text.StringBuilder(xml)
+        For Each s In spans.OrderByDescending(Function(x) x.Inicio)
+            Dim crudo = xml.Substring(s.Inicio, s.Largo)
+            Dim delante = crudo.Length - crudo.TrimStart(EspaciosXml).Length
+            Dim detras = crudo.Length - crudo.TrimEnd(EspaciosXml).Length
+            Dim largoNucleo = Math.Max(0, s.Largo - delante - detras)
+            sb.Remove(s.Inicio + delante, largoNucleo)
+            sb.Insert(s.Inicio + delante, EscaparValorDeAtributo(nuevo, s.Comilla))
+        Next
+        Return (sb.ToString(), spans.Count, True)
+    End Function
+
+    Private Shared ReadOnly EspaciosXml As Char() = {" "c, ControlChars.Tab, ControlChars.Cr, ControlChars.Lf}
+
+    ''' <summary>Desde <paramref name="offsetNombre"/> (primer char del nombre del atributo) escanea
+    ''' <c>nombre S? = S? comilla valor comilla</c> (XML 1.0 [41] Attribute, [25] Eq) y devuelve el span del valor crudo.</summary>
+    Private Shared Function ValorCrudoDelAtributo(xml As String, offsetNombre As Integer, nombre As String) As (Inicio As Integer, Largo As Integer, Comilla As Char)
+        If String.CompareOrdinal(xml, offsetNombre, nombre, 0, nombre.Length) <> 0 Then
+            Throw New InvalidOperationException($"The XML reader position does not point to the '{nombre}' attribute.")
+        End If
+        Dim j = offsetNombre + nombre.Length
+        While j < xml.Length AndAlso EspaciosXml.Contains(xml(j)) : j += 1 : End While
+        If j >= xml.Length OrElse xml(j) <> "="c Then Throw New InvalidOperationException($"Malformed '{nombre}' attribute.")
+        j += 1
+        While j < xml.Length AndAlso EspaciosXml.Contains(xml(j)) : j += 1 : End While
+        If j >= xml.Length OrElse (xml(j) <> """"c AndAlso xml(j) <> "'"c) Then Throw New InvalidOperationException($"Malformed '{nombre}' attribute.")
+        Dim comilla = xml(j)
+        Dim inicio = j + 1
+        Dim fin = xml.IndexOf(comilla, inicio)
+        If fin < 0 Then Throw New InvalidOperationException($"Malformed '{nombre}' attribute.")
+        Return (inicio, fin - inicio, comilla)
+    End Function
+
+    ''' <summary>Valor de atributo escapado para ir entre <paramref name="comilla"/> (XML 1.0 [10] AttValue: ni
+    ''' <c>&lt;</c>, ni <c>&amp;</c> suelto, ni la comilla que lo delimita).</summary>
+    Private Shared Function EscaparValorDeAtributo(valor As String, comilla As Char) As String
+        Dim s = valor.Replace("&", "&amp;").Replace("<", "&lt;")
+        Return If(comilla = """"c, s.Replace("""", "&quot;"), s.Replace("'", "&apos;"))
+    End Function
 End Class

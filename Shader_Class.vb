@@ -153,25 +153,19 @@ uniform vec3 ambientSky;
 uniform vec3 ambientGround;
 uniform vec3 lightDiffuse[4];
 uniform vec3 lightDirection[4];
-// true: the frame goes through the FO4 post (PostProcess.vb). The floor then writes its LINEAR radiance,
-// premultiplied by its fade, and the fade as coverage: the post exposes, tonemaps and composites it over the
-// background like the rest of the frame (floorExposure arrives as 1). false: the display target of a frame
-// without post (SSE, debug views): the floor tonemaps, encodes and fades to the background itself.
+// true: the frame goes through the game's post (PostProcess.vb). The floor then writes its radiance in the
+// scene space, premultiplied by its fade, and the fade as coverage: the post exposes, tonemaps and composites
+// it over the background like the rest of the frame (floorExposure arrives as 1). false: the display target
+// of a frame without post (post off, debug views): the floor applies the 2.3.8 tail (LegacyDisplaySource) and
+// fades to the background itself.
 uniform bool bHdrTarget;
+// Exponent from the scene space to linear for the 2.3.8 curve: FO4 1 (linear scene), SSE 2.2 (raw scene).
+// 2.3.8 fed the floor linear colours in both games (old Render.vb:6698). Shader_Base_Class.SceneToLinearExponent.
+uniform float uSceneToLinear;
 
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 CoverageOut;
-" & BackgroundFadeSource.Fade_Helper & "
-vec3 tonemap(in vec3 x)
-{
-    const float A = 0.15;
-    const float B = 0.50;
-    const float C = 0.10;
-    const float D = 0.20;
-    const float E = 0.02;
-    const float F = 0.30;
-    return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
-}
+" & BackgroundFadeSource.Fade_Helper & LegacyDisplaySource.Tonemap_Glsl & "
 
 vec3 lightAt(in vec3 nrm, in vec3 viewDir, in float detail)
 {
@@ -242,7 +236,7 @@ void main()
         CoverageOut = vec4(floorFade, 0.0, 0.0, 1.0);
         return;
     }
-    vec3 displayColor = pow(max(tonemap(linearColor) / tonemap(vec3(1.0)), vec3(0.0)), vec3(1.0 / 2.2));
+    vec3 displayColor = legacyLitDisplay(linearColor, uSceneToLinear);
     // EL FONDO SE EVALUA EN ESTE PIXEL, no como color plano: con el fade radial encendido el quad de
     // fondo detras del piso no es uniforme, y fundir contra una constante dejaba una COSTURA justo en
     // la banda del horizonte. Misma funcion, mismas coordenadas de pantalla, mismo resultado.
@@ -640,9 +634,16 @@ uniform float effectBaseColorAlpha;
 uniform float effectBaseColorScale;
 // LIGHTING technique bit: EffectLighting on AND byte(LightingInfluence) > 0 (0x1421775CD..609, 0x142171806).
 uniform bool bEffectLighting;
-// The LIGHTING technique's light (i1385): the sum of up to 4 point lights + DLightColor, no N.L, no shadow, no
-// ambient. The preview has no point lights: DLightColor of the preview weather (Fo4PreviewWeather), linear.
+// The LIGHTING technique's light L (i1385): the sum of up to 4 point lights + DLightColor, no N.L, no shadow, no
+// ambient. The preview has no point lights; L = DLightColor of the chosen weather and moment kept in the game's
+// proportion to the preview key (PreviewImagingRow.EffectLightForKey), linear. Flat: one value per draw.
 uniform vec3 effectDLightColor;
+// MULTBLEND technique of the effect (see the effect block).
+uniform bool bEffectMultBlend;
+// Post off (Apply post-process unchecked) and not a debug view: this shader applies the 2.3.8 display law
+// itself (see the tail of the lit block). uSceneToLinear = Shader_Base_Class.SceneToLinearExponent.
+uniform bool bLegacyDisplay;
+uniform float uSceneToLinear;
 // Mip the effect samples its cube at: max(uiMinLOD, EnvmapMinLOD) (0x142225C6E..C75), sampler MIN_MAG_LINEAR_MIP_POINT
 // with MinLOD = MaxLOD (0x141856390). uiMinLOD = 0 for a resident texture.
 uniform float effectEnvMinLod;
@@ -875,6 +876,7 @@ vec3 skinToneSoftLight(in vec3 base, in vec3 tone)
 	return pow(max(slR, 0.0), vec3(2.2));
 }
 
+" & LegacyDisplaySource.Tonemap_Glsl & SoftEffectSource.Soft_Glsl & "
 // isKeyLight = esta luz hace de la UNICA direccional del motor (el sol). El rig del preview tiene 4
 // luces (key + 2 de relleno + una TRASERA dedicada), pero el forward de FO4 tiene UNA direccional mas
 // un loop de luces PUNTUALES, y hay terminos que el motor aplica SOLO a la direccional.
@@ -1211,9 +1213,8 @@ void main(void)
 		// `Fragment_SSE` tenia la MISMA trampa y se arreglo igual, en el mismo lote. Alli tambien
 		// `if (bLightEnabled)` abre y CIERRA antes de `if (bIsEffectShader)` -- son hermanos --, y el
 		// effect leia `normal` en DOS sitios que no cuelgan de bLightEnabled: el
-		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap (el
-		// tercero, el mix con outDiffuse, si esta bajo un bLightEnabled interno). Verificado contando
-		// profundidad de llaves, no por indentacion. Si se toca uno de los dos fragments, tocar el otro.
+		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap. Verificado
+		// contando profundidad de llaves, no por indentacion. Si se toca uno de los dos fragments, tocar el otro.
 		
 		// Arranca neutra (en shapes MSN mv_tbn es degenerada -> se usa la matriz objeto->vista)
 		if (bModelSpace)
@@ -1599,18 +1600,20 @@ void main(void)
 
 		// Effect Shader (BGEM = BSEffectShader, block b05), reconstructed EXACT from the GAME:
 		// base rec1026, VC rec1083, recolor-color rec1103, recolor-alpha rec0905, envmap rec0761.
-		// Engine pixel order (all LINEAR; NO PS tonemap/encode -- ADD/MULT/PREMULT blend = render-state):
+		// Engine pixel order (all LINEAR; NO PS tonemap/encode). The blend STATE comes from the alpha property's src/dst
+		// (Render: Fo4EffectBlend); MULTBLEND also changes the PS (below); PREMULTIPLY is never set in world rendering
+		// (global byte 0x143E5E345, written only by Interface3D); ADDBLEND's PS term is the fog (none here):
 		//   base.rgb = diffuse.rgb*BaseColor ; base.a = diffuse.a*BaseColor.a
 		//   [ENVMAP]  base.rgb += cube(reflect(V,N)) * EnvmapScale * normal.a * envMask.r   (rec0761 L62-66)
 		//   [VERTEX COLOR, only when mesh has them = rec1083 VC]: base.rgba *= pow(vColor.rgba,2.2)  (COLOR0 = mesh vColor, MULTIPLY)
 			//   [RECOLOR-COLOR] base.rgb = palette(U=pow(diffuse.g,1/2.2), V=RAW BaseColor.r*falloff) * BaseColorScale  (rec1103 ignores COLOR0)
 		//   eff = lerp(base, PropertyColor*base, LightingInfluence)
 		//   alpha = base.a*PropertyColor.w ; [RECOLOR-ALPHA] alpha = palette(U=diffuse.a, V=pow(BaseColor.a,1/2.2)*falloff).a
-		//   o0.rgb = lerp(eff, COLOR1.rgb, COLOR1.w)  <-- COLOR1 (v3) = VS-synthesized soft-particle DISTANCE falloff (rec0039 VS L72-78 / rec1083 PS L41-42), NOT the mesh vertex color. No preview analog -> NOT replicated.
+		//   o0.rgb = lerp(eff, COLOR1.rgb, COLOR1.w)  <-- COLOR1 (v3) = the FOG, built by the VS from cb12[41..46] (Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md), NOT the mesh vertex color. The preview has no fog -> NOT replicated.
 		// PropertyColor (cb2[13], runtime light tint) -> rig light (outDiffuse+ambient); PropertyColor.w ~ 1.
 		// BaseColorScale (cb1[1]) is the PALETTE scale ONLY -- it is NOT a base multiplier (rec0512 has none).
 		// Vertex color (COLOR0) is applied below ONLY as a MULTIPLY on base rgb+alpha (rec1083). There is
-		// NO final lerp toward the mesh vColor -- the engine's final lerp targets COLOR1 (the distance falloff), not COLOR0.
+		// NO final lerp toward the mesh vColor -- the engine's final lerp targets COLOR1 (the fog), not COLOR0.
 		if (bIsEffectShader)
 		{
 			// base = diffuse * BaseColor, with VC (vertex color) modulation when the mesh has vertex
@@ -1636,6 +1639,12 @@ void main(void)
 				effFalloff = mix(effectFalloffParams.z, effectFalloffParams.w, ft);
 			}
 			
+			// SOFT (technique bit 12, softFo4 in SoftEffectSource): it scales the base alpha (before PropertyColor.w and the
+			// alpha test) and the palette V of both recolors; with palette ALPHA the output alpha is palette.a (not scaled
+			// again). Hole, declared: PARTICLE_DISTORTION (soft on palette.a instead of V) is not rendered by the preview.
+			float effSoft = bSoftEffect ? softFo4() : 1.0;
+			effAlpha *= effSoft;
+
 			// Grayscale->palette recolor. COLOR(0x2000) replaces rgb; ALPHA(0x4000) replaces alpha; both=0x6000.
 			// U = pow(base.channel,1/2.2) for COLOR (rec1103 L38-40: the base slot is sRGB, so the sample is
 			//   linear and the pow re-encodes it), raw base.alpha for ALPHA (rec0905 L32).
@@ -1651,7 +1660,7 @@ void main(void)
 			if (bGreyscaleColor)
 			{
 				float palU = pow(max(baseMap.g, 0.0), 1.0/2.2);
-				float palV = pow(max(effectBaseColor.r, 0.0), 1.0/2.2) * vcRecolorR * effFalloff;
+				float palV = pow(max(effectBaseColor.r, 0.0), 1.0/2.2) * vcRecolorR * effFalloff * effSoft;
 				effRgb = colorLookup(palU, palV).rgb * effectBaseColorScale;   // * BaseColorScale (PaletteColorScale)
 			}
 			
@@ -1669,19 +1678,28 @@ void main(void)
 			if (bEffectGreyscaleAlpha)
 			{
 				float palUa = baseMap.a;                                        // alpha index = diffuse.alpha (rec0905)
-				float palVa = pow(max(effectBaseColorAlpha, 0.0), 1.0/2.2) * vcRecolorA * effFalloff;
+				float palVa = pow(max(effectBaseColorAlpha, 0.0), 1.0/2.2) * vcRecolorA * effFalloff * effSoft;
 				effAlpha = colorLookup(palUa, palVa).a;
 			}
 			
 			// RGB_FALLOFF (0x200000) multiplies rgb; FALLOFF (0x10) multiplies alpha.
 			if (bEffectFalloffColor && !bGreyscaleColor) effRgb *= effFalloff; // recolor already folds falloff into palette V (rec0550) -> avoid falloff^2
-			if (bEffectFalloff)      effAlpha *= effFalloff;
+			// With palette ALPHA the output alpha IS palette.a, whose V already carries the falloff (rec0905, rec0927): no
+			// second multiply.
+			if (bEffectFalloff && !bEffectGreyscaleAlpha) effAlpha *= effFalloff;
 			
 			// LIGHTING technique (i1385): c = lerp(b, L * b, LI), L = point lights + DLightColor, no N.L.
 			// Without it the PS lerps toward PropertyColor.rgb * b with PropertyColor = 1 (an effect property's
 			// external emittance is null, 0x1421774F4 / 0x142226F0D..F9F): c = b.
 			if (bEffectLighting)
 				effRgb = mix(effRgb, effRgb * effectDLightColor, effectLightingInfluence);
+
+			// MULTBLEND (technique bit 6: src DEST_COLOR or dst SRC_COLOR, not the decal pair 4/7; 0x142178150): the PS
+			// writes 1 + a*(c - 1) = lerp(1, c, a) with the FINAL alpha (rec1099 L33-37, rec1035), so where the effect is
+			// transparent it multiplies the destination by 1 (neutral) instead of by its colour. The fog term of that
+			// permutation (lerp(c, 1, saturate(1.5 * fog.a))) is a no-op without fog.
+			if (bEffectMultBlend)
+				effRgb = vec3(1.0) + effAlpha * (effRgb - vec3(1.0));
 			
 			// NO emissive add: the engine b05 BGEM family has NO emissive term (verified -- none of the b05
 			// PS sample a glow or add an emissive). A glow on an effect material is its base color + the
@@ -1714,6 +1732,16 @@ void main(void)
 		// colas escriben lineal a o0 (`mad o0.xyz, ...` sin curva, sin pow, sin _sat); los PS de b05 (BGEM)
 		// tampoco. El tonemap, el encode y la LUT son POST-PROCESO sobre el buffer compuesto (ImageSpace HDR
 		// i3700 + GammaCorrectLUT i3648): los hace la pasada de PostProcess.vb, no este shader.
+		// POST OFF (bLegacyDisplay): THE 2.3.8 DISPLAY TAIL, NOT THE ENGINE, applied to the value in the space
+		// 2.3.8 gave it. Lit: linear then and now -> Hable / Hable(1), then 1/2.2. Effect (BGEM): 2.3.8 composed
+		// it in display space with no curve and no encode; it is linear now -> only 1/2.2.
+		if (bLegacyDisplay)
+		{
+			if (bIsEffectShader)
+				color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(1.0 / 2.2));
+			else
+				color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
+		}
 	}
 	else
 	{
@@ -2318,8 +2346,12 @@ uniform float effectBaseColorAlpha;
 uniform float effectBaseColorScale;
 // LIGHTING technique (bit 16): Effect_Lighting AND a static byte that is 1 (0x14152A377..A39B).
 uniform bool bEffectLighting;
-// cb2[7] of the effect PS: the preview weather's effect light (SsePreviewWeather), raw.
+// L of the effect PS (cb2[7] + up to 4 point lights, no N.L): the effect light of the chosen weather and moment kept
+// in the game's proportion to the preview key (PreviewImagingRow.EffectLightForKey), raw. Flat: one value per draw.
 uniform vec3 effectLight;
+// APP OPTION, NOT THE ENGINE: see Fragment_FO4 (bLegacyDisplay, uSceneToLinear).
+uniform bool bLegacyDisplay;
+uniform float uSceneToLinear;
 // The falloff arrives from the VS (vEffectFalloff), see Vertex_SSE.
 uniform bool bVertexFalloff;
 in float vEffectFalloff;
@@ -2518,6 +2550,14 @@ vec3 TorranceSparrow(float NdotL, float NdotH, float NdotV, float VdotH, vec3 co
 }
 
 
+" & LegacyDisplaySource.Tonemap_Glsl & SoftEffectSource.Soft_Glsl & SseLitTailSource.Tail_Glsl & "
+// SSE MULTBLEND (technique bit 11 = NiAlphaProperty dest blend SRC_COLOR, 0x14152A4BE..A570): the soft
+// permutation has no 0.003 discard (census of the 3216 PS: discard <=> SOFT and not MULTBLEND,
+// Tools/re-docs/RE_SSE_EFFECT_BIT11_2026-10-03.md).
+uniform bool bSseMultBlend;
+// SSE MULTBLEND_DECAL (technique bit 22 = src DEST_COLOR + dst INV_SRC_ALPHA, same builder).
+uniform bool bSseMultBlendDecal;
+// invFrameBufferRange (sseInvFramebufferRange) and the lighting output tail: SseLitTailSource.
 void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 outDiffuse, inout vec3 outSpec)
 {
 	vec3 halfDir = normalize(lightDir + viewDir);
@@ -2738,8 +2778,7 @@ void main(void)
 		// Motivo: `if (bIsEffectShader)` NO esta anidado bajo bLightEnabled -- es su HERMANO, los dos
 		// cuelgan de `if (!bWireframe)`; bLightEnabled ABRE y CIERRA antes de que el effect empiece.
 		// Y el effect lee `normal` en DOS sitios que no cuelgan de bLightEnabled: el
-		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap (el
-		// tercero, el mix con outDiffuse, si esta bajo un bLightEnabled interno). Con la semilla adentro,
+		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap. Con la semilla adentro,
 		// `bLightEnabled = False` dejaba `normal` en vec3(0.0): el falloff salia constante en toda la
 		// malla y el cubemap se sampleaba a lo largo del rayo de camara en vez de la reflexion.
 		// No explotaba porque `SetBool(bLightEnabled, True)` es el UNICO call-site del arbol.
@@ -3021,6 +3060,13 @@ void main(void)
 			{
 				color.rgb *= mix(vec3(1.0), tintColor, vColor.g);
 			}
+
+			// OUTPUT TAIL of every SSE lighting PS (6924/6924; Tools/re-docs/RE_SSE_LIGHTING_PREPASS_FOGTAIL_2026-10-03.md 2):
+			// out = min(t*Y + C, lit) - t*Y*Z, t = lit - k*f, f = lerp(lit, fogColor, fogF), k = invFrameBufferRange.
+			// cb12[42]: Y = 1; Z = sseLitTailZ (0 opaque, 1 translucent group 1). No fog in the preview (user decision,
+			// 3-oct-2026): f = lit. Opaque: out = lit - max(0, k*lit - C) (identity up to C/k, compressed above);
+			// translucent: out = min(C, k*lit).
+			color.rgb = sseLitTail(color.rgb, color.rgb, 1.0, sseLitTailZ);
 		}
 
 		// SSE BSEffectShader (the effect PS family, permutations 0x42 / 0x10042 / 0x10153 / 0x90073 / 0x100042 /
@@ -3031,8 +3077,8 @@ void main(void)
 		//            palette(U = tex.a, V = falloff * bc.a * vc.a).a, not multiplied again.
 		//   light  : LIGHTING c = lerp(c, c * L, cb1[2].x), L = 4 point lights (none here) + cb2[7]; without
 		//            it lerp(c, c * PropertyColor, cb1[2].x) with PropertyColor (1,1,1) for a NIF effect = c.
-		// Holes, declared: the soft-particle depth fade (0x40042, needs scene depth), the fog tail and the
-		// FramebufferRange factor (TEXCOORD5.w).
+		//   tail   : SOFT (bit 18) on the alpha, then rgb * invFrameBufferRange (TEXCOORD5) unless MULTBLEND /
+		//            MULTBLEND_DECAL; no clamp. The fog lerp before it is the identity here (no fog in the preview).
 		if (bIsEffectShader)
 		{
 			float effFalloff = 1.0;
@@ -3049,11 +3095,23 @@ void main(void)
 			vec3 effRgb = bGreyscaleColor
 				? colorLookup(baseMap.g, effectBaseColor.r * vColor.r).rgb * effectBaseColorScale
 				: baseMap.rgb * effectBaseColor * vColor.rgb;
+			// SOFT (idx 795 L40-58; palette alpha idx 1045): it scales the accumulated alpha A, or with palette
+			// alpha the V coordinate before the lookup, never rgb; discard when A*soft < 0.003 unless MULTBLEND.
+			float softA = bEffectGreyscaleAlpha ? effFalloff * aBase : baseMap.a * effFalloff * aBase;
+			if (bSoftEffect)
+			{
+				float soft = softSse();
+				if (!bSseMultBlend && softA * soft - 0.003 < 0.0)
+					discard;
+				softA *= soft;
+			}
 			float effAlpha = bEffectGreyscaleAlpha
-				? colorLookup(baseMap.a, effFalloff * aBase).a
-				: baseMap.a * effFalloff * aBase;
+				? colorLookup(baseMap.a, softA).a
+				: softA;
 			if (bEffectLighting)
 				effRgb = mix(effRgb, effRgb * effectLight, effectLightingInfluence);
+			if (!bSseMultBlend && !bSseMultBlendDecal)
+				effRgb *= sseInvFramebufferRange;
 			color = vec4(effRgb, effAlpha);
 		}
 
@@ -3069,6 +3127,17 @@ void main(void)
 
 		// RAW, LIKE THE ENGINE: SSE's PS (lighting and effect) write their colour with no curve and no encode, into
 		// the R11G11B10 HDR target; the curve is the post (ImageSpace HDR PS 12545, PostProcess.vb).
+		// POST OFF (bLegacyDisplay): THE 2.3.8 DISPLAY TAIL, NOT THE ENGINE, applied to the value in the space
+		// 2.3.8 gave it. Lit: 2.3.8 shaded it LINEAR (sRGB-SRV diffuse) and encoded 1/2.2; the SSE value is raw
+		// (display) now -> to linear (2.2), Hable / Hable(1), 1/2.2. Effect: 2.3.8 tonemapped its display-space
+		// value with no encode; raw now -> Hable / Hable(1).
+		if (bLegacyDisplay)
+		{
+			if (bIsEffectShader)
+				color.rgb = tonemap(max(color.rgb, vec3(0.0))) / tonemap(vec3(1.0));
+			else
+				color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
+		}
 	}
 	else
 	{
@@ -3262,6 +3331,119 @@ if (bHide)
         MyBase.New(Vertex_SSE, Fragment_SSE)
     End Sub
 End Class
+''' <summary>THE SOFT FADE OF THE EFFECT SHADERS (FO4 technique bit 12, SSE bit 18; SLSF1 bit 30 = BGEM SoftEnabled), the
+''' part both engines share: the scene depth behind the pixel and the base factor. Each fragment adds its own game's
+''' terms. Tools/re-docs/RE_BGEM_SOFT_FO4_2026-10-03.md, RE_BGEM_SOFT_SSE_2026-10-03.md. ASCII only (GLSL).</summary>
+''' <summary>SSE invFrameBufferRange and THE OUTPUT TAIL OF THE SSE LIGHTING PS, in one place (Fragment_SSE calls it; the
+''' gate ShadowGate --lit-tail runs this same text). Tools/re-docs/RE_SSE_LIGHTING_PREPASS_FOGTAIL_2026-10-03.md 2.
+''' ASCII only (GLSL).</summary>
+Friend Module SseLitTailSource
+    Friend Const Tail_Glsl As String = "
+// invFrameBufferRange k (BSShaderManager::State+0x9C, Address Library 390951; world value 1/1.2, .data 0x1420D694C).
+// Effect PS: the VS passes it (cb0[1].w -> TEXCOORD5) and 3207 of the 3216 effect PS multiply rgb by it - all but the
+// MULTBLEND (7) and MULTBLEND_DECAL (2) ones; alpha untouched (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md
+// Q3). Lighting PS: cb0[0].w (0x14154C010), read by sseLitTail.
+uniform float sseInvFramebufferRange;
+// C of the lighting tail: cb0[1].z = fLightingOutputColourClampPostSpec in the SPECULAR / AMBIENT_SPECULAR permutations,
+// cb0[1].x = ...PostLit otherwise (SetupTechnique 0x141547D20; Render.vb SseLightingOutputClamp*).
+uniform float sseLitOutputClamp;
+// Z of the tail = cb12[42].z of the list the shape is drawn in: 0 in the opaque world pass (render flags 0x41 / 0x51),
+// 1 in the alpha finish's lists 7 (group 9) and 0x10 (group 1, the translucent lighting pass), which are drawn with
+// flags | 4 (0x14151F87E..F88C, 0x14151FB80; Tools/re-docs/RE_SSE_PASS_GROUPS_DEPTH_2026-10-03.md 3). Render.vb
+// SseLitTailZ decides it per shape.
+uniform float sseLitTailZ;
+
+// The tail of all 6924 SSE lighting PS, in the bytecode's order (idx 4027 / 4030):
+//   t = lit - f*k ; out = min(t*Y + C, lit) - t*Y*Z
+// lit = colour * vertex colour, f = lerp(lit, COLOR1.rgb, COLOR1.a) (the fog), Y = cb12[42].y = (flags & 2) ? 0 : 1,
+// Z = cb12[42].z = (flags & 4) ? 1 : 0 (0x14100AE80). World render: Y = 1 in every list (bit 1 never set).
+vec3 sseLitTail(vec3 lit, vec3 f, float Y, float Z)
+{
+	vec3 t = lit - f * sseInvFramebufferRange;
+	return min(t * Y + vec3(sseLitOutputClamp), lit) - t * Y * Z;
+}
+"
+End Module
+
+Friend Module SoftEffectSource
+    Friend Const Soft_Glsl As String = "
+// SOFT. uNearFar = (n, f) of the frame's projection (FO4 CameraData.y = n / .z = f - n, 0x1422253CD; SSE cb0[0].y/.z,
+// 0x141556A3D). texSceneDepth = the scene depth copied after the opaque groups (SceneDepthCopy; FO4 t3 = depth 1,
+// SSE t3 = depth 7), read unfiltered at the pixel (t3.Load(SV_Position.xy)). softDepth = S, raw (FO4 material +0x80,
+// SSE +0x68; default 100).
+uniform bool bSoftEffect;
+uniform float softDepth;
+uniform vec2 uNearFar;
+uniform sampler2D texSceneDepth;
+
+// The factor both engines compute (FO4 b05 rec1027 L35-49, SSE idx 795 L40-58), as the bytecode writes it:
+// K = f*n/S (CPU: FO4 cb1[2].y 0x142225B50, SSE cb1[2].y 0x141556F8F), the pixel's w/S from the VS (FO4 TEXCOORD5.z,
+// SSE v1.w; w = 1 / gl_FragCoord.w in a perspective projection), saturate(K / ((1 - d)(f - n) + n) - w/S).
+// S = 0: the engine divides with no guard (inf - inf = NaN) and D3D saturate(NaN) = 0, so the effect vanishes;
+// GLSL leaves clamp(NaN) undefined, hence the explicit branch.
+float softBase(out float wOverS)
+{
+	float n = uNearFar.x;
+	float f = uNearFar.y;
+	wOverS = (1.0 / gl_FragCoord.w) / softDepth;
+	if (softDepth == 0.0)
+		return 0.0;
+	float d = texelFetch(texSceneDepth, ivec2(gl_FragCoord.xy), 0).r;
+	float K = f * n / softDepth;
+	return clamp(K / ((1.0 - d) * (f - n) + n) - wOverS, 0.0, 1.0);
+}
+
+// SSE: the base factor alone (idx 795 L40-58).
+float softSse()
+{
+	float wOverS;
+	return softBase(wOverS);
+}
+
+// FO4: the base factor times the near term (rec1027 L35-49, all 311 SOFT PS), constants literal from the bytecode:
+// nearS = K / (n(f - n) + n), t = saturate((saturate(w/S - nearS) - 0.075) * 2.352941), soft = a * t*t*(3 - 2t).
+float softFo4()
+{
+	float wOverS;
+	float a = softBase(wOverS);
+	float n = uNearFar.x;
+	float K = uNearFar.y * n / softDepth;
+	float nearS = K / (n * (uNearFar.y - n) + n);
+	float t = clamp((clamp(wOverS - nearS, 0.0, 1.0) - 0.075) * 2.352941, 0.0, 1.0);
+	return a * t * t * (3.0 - 2.0 * t);
+}
+"
+End Module
+
+''' <summary>THE DISPLAY CURVE OF 2.3.8 (Hable, A..F = .15/.50/.10/.20/.02/.30) and its lit tail, in ONE place (each
+''' fragment keeps its own effect tail, since 2.3.8 treated the effect differently per game). It is NOT the
+''' engine: the game tonemaps in its post (PostProcess.vb). It is the law of the frames that do not go through
+''' that post - the floor of a direct frame and the post-off tail of Fragment_FO4/Fragment_SSE - and it is
+''' the curve those frames had in 2.3.8 (user decision, 2-oct-2026). ASCII only, no double quotes.</summary>
+Friend Module LegacyDisplaySource
+    Friend Const Tonemap_Glsl As String = "
+vec3 tonemap(in vec3 x)
+{
+    const float A = 0.15;
+    const float B = 0.50;
+    const float C = 0.10;
+    const float D = 0.20;
+    const float E = 0.02;
+    const float F = 0.30;
+    return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+
+// THE 2.3.8 DISPLAY TAIL OF A LIT VALUE: 2.3.8 shaded lit surfaces and the floor in LINEAR, tonemapped them with
+// Hable / Hable(1) and encoded 1/2.2. toLinear = exponent from the current scene space to linear: 1 for FO4
+// (linear scene), 2.2 for SSE (raw scene).
+vec3 legacyLitDisplay(in vec3 x, in float toLinear)
+{
+    vec3 lin = pow(max(x, vec3(0.0)), vec3(toLinear));
+    return pow(max(tonemap(lin) / tonemap(vec3(1.0)), vec3(0.0)), vec3(1.0 / 2.2));
+}
+"
+End Module
+
 ''' <summary>El fragment del pase de profundidad del shadow map. UNA sola fuente para los dos juegos:
 ''' lo unico que hace es el alpha-test, y esa ley NO es la misma en FO4 y en SSE (ver bLeySse).
 ''' <para>NO LLEVA VERTEX SHADER PROPIO, y eso es el punto. El blend de skinning tiene CINCO sitios
@@ -4007,6 +4189,21 @@ Public MustInherit Class Shader_Base_Class
     ''' DAT_142475358 = 2.2), SSE raw (its setup has no gamma constant).</summary>
     Public Shared Function MaterialColor(color As Color, isSSE As Boolean) As Vector3
         Return If(isSSE, Color_to_Vector(color), Color_to_Vector_Linear(color))
+    End Function
+
+    ''' <summary>THE GAME'S DISPLAY ENCODE as an exponent, for the ground shadow and the SSE post: FO4 1/2.2 (the value
+    ''' the ground shadow already used), SSE 1 (fGamma = 1.0, cb12[42].x of PS 12545). ⛔ NOT the only owner:
+    ''' Fragment_PostFo4 writes i3648's DXBC literal 0.454545 itself (PostProcess.vb:318), which differs from 1/2.2F in
+    ''' the 7th decimal; that shader is read verbatim by Tools/FabricGen and is not touched.</summary>
+    Public Shared Function DisplayExponent(isSSE As Boolean) As Single
+        Return If(isSSE, 1.0F, 1.0F / 2.2F)
+    End Function
+
+    ''' <summary>FROM THE GAME'S SCENE SPACE TO LINEAR, as an exponent: FO4 1 (the scene is linear: MaterialColor uses
+    ''' Color_to_Vector_Linear), SSE 2.2 (the scene is raw: MaterialColor uses Color_to_Vector). It feeds the 2.3.8 tail of
+    ''' the frames without post (LegacyDisplaySource.legacyLitDisplay): fragments and floor read it from here.</summary>
+    Public Shared Function SceneToLinearExponent(isSSE As Boolean) As Single
+        Return If(isSSE, 2.2F, 1.0F)
     End Function
 
     Public Shared Function Vector_to_Linear(v As Vector3) As Vector3

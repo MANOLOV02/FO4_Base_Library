@@ -535,7 +535,8 @@ Public Class SkinningHelper
     ''' bones with DeltaTransform=Nothing collapse to bind. Callers that want a "render bind
     ''' regardless of stored pose" call <see cref="SkeletonInstance.Reset"/> on the instance
     ''' first (they are responsible for the side effect on shared instances).</param>
-    Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, singleboneskinning As Boolean, RecalculateNormals As Boolean, Optional skeleton As SkeletonInstance = Nothing) As SkinnedGeometry
+    Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, singleboneskinning As Boolean, RecalculateNormals As Boolean, Optional skeleton As SkeletonInstance = Nothing,
+                                                  Optional geometriaSinNormales As Boolean = False) As SkinnedGeometry
         Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
         Dim shapeGeom = shape.Geometry
         If shapeGeom Is Nothing Then Throw New InvalidOperationException("IRenderableShape.Geometry is null")
@@ -1002,7 +1003,7 @@ Public Class SkinningHelper
         ' `Setting_TBN` es una Structure devuelta POR VALOR desde una Property, así que esto es una COPIA
         ' y mutarla no toca el config del usuario. (Verificado: Config_Class.vb:520.)
         If Not (RecalculateNormals OrElse Not shapeGeom.HasNormals) Then opts.KeepExistingNormals = True
-        RecalcTBN.RecalcularParaShape(geo, shape, opts)
+        RecalcTBN.RecalcularParaShape(geo, shape, opts, geometriaSinNormales)
         Return geo
     End Function
 
@@ -2333,8 +2334,14 @@ Public Class RecalcTBN
     ''' </summary>
     Public Shared Function RecalcularParaShape(ByRef geo As SkinnedGeometry,
                                                shape As IRenderableShape,
-                                               ByVal opts As TBNOptions) As List(Of Integer)
+                                               ByVal opts As TBNOptions,
+                                               Optional geometriaSinNormales As Boolean = False) As List(Of Integer)
         AplicarRestriccionesDelAutor(opts, shape)
+        ' HECHO MEDIDO por el llamador: la geometria NO traia normales (el canal se acaba de activar y esta en
+        ' cero). El lock del autor ("no me toques las normales") no tiene nada que conservar; conservar ceros deja
+        ' normales basura. Va DESPUES de la ley del autor, asi el suavizado de costura y el IgnoreAuthoredRestrictions
+        ' del usuario siguen por la via de siempre. Default False: build y render sin cambio.
+        If geometriaSinNormales Then opts.KeepExistingNormals = False
         Return KernelTBN(geo, opts)
     End Function
 

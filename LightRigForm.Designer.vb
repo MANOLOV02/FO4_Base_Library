@@ -138,6 +138,15 @@ Partial Class LightRigForm
         lblDebugView = New Label()
         cmbDebugView = New ComboBox()
         lblDebugViewHelp = New Label()
+        grpImaging = New GroupBox()
+        lblWeather = New Label()
+        cmbWeather = New ComboBox()
+        lblMoment = New Label()
+        cmbMoment = New ComboBox()
+        chkApplyPost = New CheckBox()
+        lblEffectVsKey = New Label()
+        tEffectVsKey = New TinySliderTextBox()
+        lblPresetInfo = New Label()
         btnResetRender = New Button()
         ToolTip1 = New ToolTip(components)
         grpKey.SuspendLayout()
@@ -163,6 +172,7 @@ Partial Class LightRigForm
         CType(nudFloorSize, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudFloorStep, ComponentModel.ISupportInitialize).BeginInit()
         grpShaderDebug.SuspendLayout()
+        grpImaging.SuspendLayout()
         SuspendLayout()
         ' 
         ' grpKey
@@ -177,7 +187,7 @@ Partial Class LightRigForm
         grpKey.Controls.Add(chkCastKey)
         grpKey.Location = New Point(12, 12)
         grpKey.Name = "grpKey"
-        grpKey.Size = New Size(418, 118)
+        grpKey.Size = New Size(418, 119)
         grpKey.TabIndex = 0
         grpKey.TabStop = False
         grpKey.Text = "Key Light"
@@ -302,9 +312,9 @@ Partial Class LightRigForm
         grpFillL.Controls.Add(tL_El)
         grpFillL.Controls.Add(btnFillLColor)
         grpFillL.Controls.Add(chkCastFillL)
-        grpFillL.Location = New Point(12, 142)
+        grpFillL.Location = New Point(12, 141)
         grpFillL.Name = "grpFillL"
-        grpFillL.Size = New Size(418, 118)
+        grpFillL.Size = New Size(418, 119)
         grpFillL.TabIndex = 1
         grpFillL.TabStop = False
         grpFillL.Text = "Fill Left"
@@ -429,9 +439,9 @@ Partial Class LightRigForm
         grpFillR.Controls.Add(tR_El)
         grpFillR.Controls.Add(btnFillRColor)
         grpFillR.Controls.Add(chkCastFillR)
-        grpFillR.Location = New Point(12, 272)
+        grpFillR.Location = New Point(12, 270)
         grpFillR.Name = "grpFillR"
-        grpFillR.Size = New Size(418, 118)
+        grpFillR.Size = New Size(418, 119)
         grpFillR.TabIndex = 2
         grpFillR.TabStop = False
         grpFillR.Text = "Fill Right"
@@ -556,9 +566,9 @@ Partial Class LightRigForm
         grpBack.Controls.Add(tB_El)
         grpBack.Controls.Add(btnBackColor)
         grpBack.Controls.Add(chkCastBack)
-        grpBack.Location = New Point(12, 402)
+        grpBack.Location = New Point(12, 399)
         grpBack.Name = "grpBack"
-        grpBack.Size = New Size(418, 118)
+        grpBack.Size = New Size(418, 119)
         grpBack.TabIndex = 3
         grpBack.TabStop = False
         grpBack.Text = "Back Light"
@@ -678,9 +688,10 @@ Partial Class LightRigForm
         grpPresets.Controls.Add(lblPreset)
         grpPresets.Controls.Add(cmbPreset)
         grpPresets.Controls.Add(btnApplyPreset)
-        grpPresets.Location = New Point(444, 400)
+        grpPresets.Controls.Add(lblPresetInfo)
+        grpPresets.Location = New Point(444, 408)
         grpPresets.Name = "grpPresets"
-        grpPresets.Size = New Size(418, 59)
+        grpPresets.Size = New Size(418, 110)
         grpPresets.TabIndex = 6
         grpPresets.TabStop = False
         grpPresets.Text = "Rig"
@@ -712,15 +723,23 @@ Partial Class LightRigForm
         btnApplyPreset.Text = "Apply"
         ToolTip1.SetToolTip(btnApplyPreset, "Load the selected preset into every control below.")
         btnApplyPreset.UseVisualStyleBackColor = True
+        '
+        ' lblPresetInfo
+        '
+        lblPresetInfo.ForeColor = SystemColors.GrayText
+        lblPresetInfo.Location = New Point(11, 57)
+        lblPresetInfo.Name = "lblPresetInfo"
+        lblPresetInfo.Size = New Size(396, 46)
+        lblPresetInfo.TabIndex = 2
         ' 
         ' btnReset
         ' 
         btnReset.ImageAlign = ContentAlignment.MiddleRight
         btnReset.ImageKey = "AgtReload"
         btnReset.ImageList = IconsSmall
-        btnReset.Location = New Point(444, 468)
+        btnReset.Location = New Point(444, 528)
         btnReset.Name = "btnReset"
-        btnReset.Size = New Size(414, 25)
+        btnReset.Size = New Size(418, 27)
         btnReset.TabIndex = 2
         btnReset.Text = "Reset Lighting to default"
         btnReset.TextImageRelation = TextImageRelation.ImageBeforeText
@@ -853,9 +872,9 @@ Partial Class LightRigForm
         grpBackground.Controls.Add(chkBackDirectional)
         grpBackground.Controls.Add(lblBackFade)
         grpBackground.Controls.Add(tBackFade)
-        grpBackground.Location = New Point(444, 110)
+        grpBackground.Location = New Point(444, 114)
         grpBackground.Name = "grpBackground"
-        grpBackground.Size = New Size(418, 104)
+        grpBackground.Size = New Size(418, 100)
         grpBackground.TabIndex = 6
         grpBackground.TabStop = False
         grpBackground.Text = "Background"
@@ -930,7 +949,7 @@ Partial Class LightRigForm
         grpShadows.Controls.Add(tShadowSoft)
         grpShadows.Controls.Add(lblShadowStrength)
         grpShadows.Controls.Add(tShadowStrength)
-        grpShadows.Location = New Point(444, 220)
+        grpShadows.Location = New Point(444, 224)
         grpShadows.Name = "grpShadows"
         grpShadows.Size = New Size(418, 174)
         grpShadows.TabIndex = 7
@@ -1050,7 +1069,7 @@ Partial Class LightRigForm
         TabsMain.Location = New Point(0, 0)
         TabsMain.Name = "TabsMain"
         TabsMain.SelectedIndex = 0
-        TabsMain.Size = New Size(874, 568)
+        TabsMain.Size = New Size(874, 595)
         TabsMain.TabIndex = 0
         ' 
         ' TabLights
@@ -1070,7 +1089,7 @@ Partial Class LightRigForm
         TabLights.Location = New Point(4, 24)
         TabLights.Name = "TabLights"
         TabLights.Padding = New Padding(3)
-        TabLights.Size = New Size(866, 540)
+        TabLights.Size = New Size(866, 567)
         TabLights.TabIndex = 0
         TabLights.Text = "Lights and shadows"
         ' 
@@ -1084,12 +1103,13 @@ Partial Class LightRigForm
         TabRender.Controls.Add(grpCamera)
         TabRender.Controls.Add(grpFloor)
         TabRender.Controls.Add(grpShaderDebug)
+        TabRender.Controls.Add(grpImaging)
         TabRender.Controls.Add(btnResetRender)
         TabRender.ImageKey = "Thumbnail"
         TabRender.Location = New Point(4, 24)
         TabRender.Name = "TabRender"
         TabRender.Padding = New Padding(3)
-        TabRender.Size = New Size(866, 540)
+        TabRender.Size = New Size(866, 567)
         TabRender.TabIndex = 1
         TabRender.Text = "Rendering"
         ' 
@@ -1105,10 +1125,10 @@ Partial Class LightRigForm
         grpNormals.Controls.Add(nudSeamAngle)
         grpNormals.Controls.Add(lblEpsPos)
         grpNormals.Controls.Add(nudEpsPos)
-        grpNormals.Location = New Point(8, 132)
+        grpNormals.Location = New Point(444, 12)
         grpNormals.Name = "grpNormals"
         grpNormals.Size = New Size(418, 170)
-        grpNormals.TabIndex = 0
+        grpNormals.TabIndex = 4
         grpNormals.TabStop = False
         grpNormals.Text = "Normals and tangents"
         ' 
@@ -1223,10 +1243,10 @@ Partial Class LightRigForm
         grpWeld.Controls.Add(nudWeldPos)
         grpWeld.Controls.Add(lblWeldUv)
         grpWeld.Controls.Add(nudWeldUv)
-        grpWeld.Location = New Point(8, 308)
+        grpWeld.Location = New Point(444, 192)
         grpWeld.Name = "grpWeld"
         grpWeld.Size = New Size(418, 148)
-        grpWeld.TabIndex = 1
+        grpWeld.TabIndex = 5
         grpWeld.TabStop = False
         grpWeld.Text = "Welding"
         ' 
@@ -1312,10 +1332,10 @@ Partial Class LightRigForm
         grpSkin.Controls.Add(chkSingleBone)
         grpSkin.Controls.Add(chkHiddenSegments)
         grpSkin.Controls.Add(chkShowHelperShapes)
-        grpSkin.Location = New Point(8, 6)
+        grpSkin.Location = New Point(12, 160)
         grpSkin.Name = "grpSkin"
         grpSkin.Size = New Size(418, 120)
-        grpSkin.TabIndex = 2
+        grpSkin.TabIndex = 1
         grpSkin.TabStop = False
         grpSkin.Text = "Skinning"
         ' 
@@ -1364,10 +1384,10 @@ Partial Class LightRigForm
         grpCamera.Controls.Add(chkResetAngles)
         grpCamera.Controls.Add(chkResetZoom)
         grpCamera.Controls.Add(chkFreezeCamera)
-        grpCamera.Location = New Point(440, 6)
+        grpCamera.Location = New Point(12, 290)
         grpCamera.Name = "grpCamera"
-        grpCamera.Size = New Size(418, 120)
-        grpCamera.TabIndex = 3
+        grpCamera.Size = New Size(418, 100)
+        grpCamera.TabIndex = 2
         grpCamera.TabStop = False
         grpCamera.Text = "Camera"
         ' 
@@ -1410,10 +1430,10 @@ Partial Class LightRigForm
         grpFloor.Controls.Add(nudFloorStep)
         grpFloor.Controls.Add(lblFloorColor)
         grpFloor.Controls.Add(cmbFloorColor)
-        grpFloor.Location = New Point(440, 132)
+        grpFloor.Location = New Point(12, 400)
         grpFloor.Name = "grpFloor"
-        grpFloor.Size = New Size(418, 144)
-        grpFloor.TabIndex = 4
+        grpFloor.Size = New Size(418, 118)
+        grpFloor.TabIndex = 3
         grpFloor.TabStop = False
         grpFloor.Text = "Floor"
         ' 
@@ -1497,10 +1517,10 @@ Partial Class LightRigForm
         grpShaderDebug.Controls.Add(lblDebugView)
         grpShaderDebug.Controls.Add(cmbDebugView)
         grpShaderDebug.Controls.Add(lblDebugViewHelp)
-        grpShaderDebug.Location = New Point(440, 282)
+        grpShaderDebug.Location = New Point(444, 350)
         grpShaderDebug.Name = "grpShaderDebug"
-        grpShaderDebug.Size = New Size(418, 152)
-        grpShaderDebug.TabIndex = 5
+        grpShaderDebug.Size = New Size(418, 168)
+        grpShaderDebug.TabIndex = 6
         grpShaderDebug.TabStop = False
         grpShaderDebug.Text = "Shader debug view"
         '
@@ -1526,21 +1546,110 @@ Partial Class LightRigForm
         '
         lblDebugViewHelp.Location = New Point(11, 52)
         lblDebugViewHelp.Name = "lblDebugViewHelp"
-        lblDebugViewHelp.Size = New Size(395, 90)
+        lblDebugViewHelp.Size = New Size(395, 106)
         lblDebugViewHelp.TabIndex = 2
+        '
+        ' grpImaging
+        '
+        grpImaging.Controls.Add(lblWeather)
+        grpImaging.Controls.Add(cmbWeather)
+        grpImaging.Controls.Add(lblMoment)
+        grpImaging.Controls.Add(cmbMoment)
+        grpImaging.Controls.Add(chkApplyPost)
+        grpImaging.Controls.Add(lblEffectVsKey)
+        grpImaging.Controls.Add(tEffectVsKey)
+        grpImaging.Location = New Point(12, 12)
+        grpImaging.Name = "grpImaging"
+        grpImaging.Size = New Size(418, 138)
+        grpImaging.TabIndex = 0
+        grpImaging.TabStop = False
+        grpImaging.Text = "Image space && effects"
+        '
+        ' lblWeather
+        '
+        lblWeather.AutoSize = True
+        lblWeather.Location = New Point(11, 27)
+        lblWeather.Name = "lblWeather"
+        lblWeather.TabIndex = 0
+        lblWeather.Text = "Weather:"
+        '
+        ' cmbWeather
+        '
+        cmbWeather.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbWeather.Location = New Point(90, 23)
+        cmbWeather.Name = "cmbWeather"
+        cmbWeather.Size = New Size(316, 23)
+        cmbWeather.TabIndex = 1
+        '
+        ' lblMoment
+        '
+        lblMoment.AutoSize = True
+        lblMoment.Location = New Point(11, 56)
+        lblMoment.Name = "lblMoment"
+        lblMoment.TabIndex = 2
+        lblMoment.Text = "Time of day:"
+        '
+        ' cmbMoment
+        '
+        cmbMoment.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbMoment.Location = New Point(90, 52)
+        cmbMoment.Name = "cmbMoment"
+        cmbMoment.Size = New Size(316, 23)
+        cmbMoment.TabIndex = 3
+        '
+        ' chkApplyPost
+        '
+        chkApplyPost.AutoSize = True
+        chkApplyPost.Location = New Point(11, 84)
+        chkApplyPost.Name = "chkApplyPost"
+        chkApplyPost.TabIndex = 4
+        chkApplyPost.Text = "Apply post-process (engine replica)"
+        ToolTip1.SetToolTip(chkApplyPost, "On: the frame goes through the game's post-process (exposure, tonemap, LUT) as the engine does. Off: the 2.3.8 look - a fixed curve per shader, no exposure, no LUT.")
+        chkApplyPost.UseVisualStyleBackColor = True
+        '
+        ' lblEffectVsKey
+        '
+        lblEffectVsKey.AutoSize = True
+        lblEffectVsKey.Location = New Point(11, 112)
+        lblEffectVsKey.Name = "lblEffectVsKey"
+        lblEffectVsKey.TabIndex = 5
+        lblEffectVsKey.Text = "Effects vs key"
+        '
+        ' tEffectVsKey
+        '
+        tEffectVsKey.AccentColor = SystemColors.HotTrack
+        tEffectVsKey.BackColor = SystemColors.Control
+        tEffectVsKey.DisplayFormat = "0%"
+        tEffectVsKey.InputScale = 0.01R
+        tEffectVsKey.LargeChange = 0.25R
+        tEffectVsKey.Location = New Point(90, 106)
+        tEffectVsKey.Maximum = 2R
+        tEffectVsKey.MinimumSize = New Size(100, 24)
+        tEffectVsKey.Name = "tEffectVsKey"
+        tEffectVsKey.ShowTicks = True
+        tEffectVsKey.Size = New Size(316, 28)
+        tEffectVsKey.SmallChange = 0.05R
+        tEffectVsKey.TabIndex = 6
+        tEffectVsKey.TextBoxTextAlign = HorizontalAlignment.Right
+        tEffectVsKey.ThumbColor = SystemColors.HotTrack
+        tEffectVsKey.ThumbRadius = 4F
+        tEffectVsKey.TickFrequency = 0.25R
+        tEffectVsKey.TrackColor = SystemColors.ControlDark
+        tEffectVsKey.Value = 1R
+        ToolTip1.SetToolTip(tEffectVsKey, "Light of effect shaders (BGEM) with Effect Lighting, as a share of the game's. 100% = the game's proportion: the weather's effect light keeps, against the key light, the ratio it has against the sun in that weather and time of day. Flat, no direction, like the engine. Not used by weathers without sun (the weather's own light applies).")
         '
         ' btnResetRender
         '
         btnResetRender.ImageAlign = ContentAlignment.MiddleRight
         btnResetRender.ImageKey = "AgtReload"
         btnResetRender.ImageList = IconsSmall
-        btnResetRender.Location = New Point(440, 442)
+        btnResetRender.Location = New Point(444, 528)
         btnResetRender.Name = "btnResetRender"
         btnResetRender.Size = New Size(418, 27)
-        btnResetRender.TabIndex = 6
+        btnResetRender.TabIndex = 7
         btnResetRender.Text = "Reset rendering to defaults"
         btnResetRender.TextImageRelation = TextImageRelation.ImageBeforeText
-        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera, floor and the shader debug view -- to its default. Lights and shadows are on the other tab and are not touched.")
+        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera, floor, image space & effects and the shader debug view -- to its default. Lights and shadows are on the other tab and are not touched; the preset shown there follows the time of day this resets.")
         btnResetRender.UseVisualStyleBackColor = True
         ' 
         ' LightRigForm
@@ -1548,7 +1657,7 @@ Partial Class LightRigForm
         AutoScaleDimensions = New SizeF(7F, 15F)
         AutoScaleMode = AutoScaleMode.Font
         AutoScroll = True
-        ClientSize = New Size(874, 568)
+        ClientSize = New Size(874, 595)
         Controls.Add(TabsMain)
         FormBorderStyle = FormBorderStyle.FixedDialog
         MaximizeBox = False
@@ -1591,6 +1700,8 @@ Partial Class LightRigForm
         grpFloor.PerformLayout()
         grpShaderDebug.ResumeLayout(False)
         grpShaderDebug.PerformLayout()
+        grpImaging.ResumeLayout(False)
+        grpImaging.PerformLayout()
         CType(nudFloorSize, ComponentModel.ISupportInitialize).EndInit()
         CType(nudFloorStep, ComponentModel.ISupportInitialize).EndInit()
         ResumeLayout(False)
@@ -1683,6 +1794,15 @@ Partial Class LightRigForm
     Friend WithEvents lblDebugView As Label
     Friend WithEvents cmbDebugView As ComboBox
     Friend WithEvents lblDebugViewHelp As Label
+    Friend WithEvents grpImaging As GroupBox
+    Friend WithEvents lblWeather As Label
+    Friend WithEvents cmbWeather As ComboBox
+    Friend WithEvents lblMoment As Label
+    Friend WithEvents cmbMoment As ComboBox
+    Friend WithEvents chkApplyPost As CheckBox
+    Friend WithEvents lblEffectVsKey As Label
+    Friend WithEvents tEffectVsKey As TinySliderTextBox
+    Friend WithEvents lblPresetInfo As Label
     Friend WithEvents grpShadows As GroupBox
     Friend WithEvents chkShadows As CheckBox
     Friend WithEvents chkCastKey As CheckBox

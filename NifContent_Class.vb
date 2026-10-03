@@ -219,64 +219,112 @@ Public Class Nifcontent_Class_Manolo
     ''' <para>Se usa <c>shader.References</c> como fuente en vez de enumerar campos a mano: ya trae
     ''' texture set + controller + extraData + extraDataList, y el controlador además ENCADENA
     ''' (NextController → interpolador → NiFloatData). Una lista escrita a mano envejece mal.</para>
-    ''' <para>Un CICLO no se borra (cada miembro se ve referenciado). Mismo comportamiento que
-    ''' <c>RemoveUnreferencedBlocks</c>, o sea sin regresión.</para>
+    ''' <para>CONSCIENTE DE CICLOS: un shader con controller se ve "referenciado" por el Target de su propio
+    ''' controller (IsBlockReferenced cuenta punteros). La clausura se decide con <see cref="BorrarConClausura"/>:
+    ''' se borra todo lo que sólo es alcanzado desde adentro de la propia clausura. El shader es CANDIDATO, no
+    ''' raíz: si una shape hermana lo referencia, sobrevive él y todo lo que cuelga de él (la conducta de antes).</para>
     ''' <para>Devuelve la cantidad de bloques borrados (shader incluido). 0 = no había shader.</para></summary>
     Public Function RemoveShaderAndOrphanClosure(shape As INiShape) As Integer
-        Dim bs = TryCast(shape, NiflySharp.Blocks.BSTriShape)
-        If bs Is Nothing Then Throw New NotSupportedException("RemoveShaderAndOrphanClosure requires a BSTriShape family shape.")
+        ' Las dos familias (BSTriShape y NiGeometry), siempre que ni el shader ni el alpha vengan por la lista
+        ' Properties: ver AdmiteReapuntarPorRef, el predicado unico de re-apuntado.
+        If Not AdmiteReapuntarPorRef(shape) Then
+            Throw New NotSupportedException($"'{shape?.Name?.String}': the shape does not allow re-pointing its shader by reference.")
+        End If
+        Dim shaderRef = RefDeShaderEscribible(shape)
         Dim shader = TryCast(GetShader(shape), NiObject)
+        ' Soltar el ref del shape ANTES de calcular la clausura. .Clear() deja Index = -1, que es EXACTAMENTE el
+        ' estado que produce leer del disco un NIF con -1; con Nothing el ref sale de References y el Clone de la
+        ' shape copia null, un estado que ningún NIF leído produce.
+        If shaderRef IsNot Nothing Then shaderRef.Clear()
+        If shader Is Nothing Then Return 0
+        Return BorrarConClausura(Nothing, {shader})
+    End Function
 
-        ' 1) resolver a OBJETOS todo lo que el shader referencia, ANTES de borrar nada: después no hay
-        '    cómo navegar del shape al shader ni del shader a su clausura.
-        Dim pendientes As New List(Of NiObject)
-        If shader IsNot Nothing Then
-            For Each r In shader.References
-                If r Is Nothing OrElse r.IsEmpty() Then Continue For
-                Dim b = GetBlock(Of NiObject)(r)
-                If b IsNot Nothing Then pendientes.Add(b)
-            Next
-        End If
+    ''' <summary>Quita el NiAlphaProperty de la shape (ref en Clear(), -1) y borra su clausura huérfana (cadena de
+    ''' controllers, interpoladores) con la misma ley de ciclos. El bloque es CANDIDATO: si otra shape lo comparte,
+    ''' queda para ella.</summary>
+    Private Function RemoveAlphaAndOrphanClosure(shape As INiShape) As Integer
+        Dim alp = GetBlock(Of NiAlphaProperty)(shape.AlphaPropertyRef)
+        If alp Is Nothing Then Return 0
+        shape.AlphaPropertyRef.Clear()
+        Return BorrarConClausura(Nothing, {alp})
+    End Function
 
-        ' 2) soltar el ref del shape. .Clear() deja Index = -1, que es EXACTAMENTE el estado que produce
-        '    leer del disco un NIF con -1; con Nothing el ref sale de References y el Clone de la shape
-        '    copia null, un estado que ningún NIF leído produce.
-        bs.ShaderPropertyRef.Clear()
+    ''' <summary>Borra una shape y SOLO su clausura huérfana (lo que referenciaba y ya nadie de afuera alcanza), sin
+    ''' el barrido de archivo entero de <c>RemoveUnreferencedBlocks</c>, que se llevaría los huérfanos PREEXISTENTES
+    ''' del NIF. La shape es la RAÍZ: se borra incondicional (un ptr entrante a ella lo limpia RemoveBlock).</summary>
+    Private Function RemoveShapeAndOrphanClosure(shape As INiShape) As Integer
+        Dim obj = TryCast(shape, NiObject)
+        If obj Is Nothing Then Return 0
+        Dim hijos As New List(Of NiObject)
+        For Each r In obj.References
+            If r Is Nothing OrElse r.IsEmpty() Then Continue For
+            Dim b = GetBlock(Of NiObject)(r)
+            If b IsNot Nothing Then hijos.Add(b)
+        Next
+        Return BorrarConClausura(obj, hijos)
+    End Function
 
-        ' 3) el shader, y después su clausura
+    ''' <summary>⛔ LEY ÚNICA del borrado de una clausura, CONSCIENTE DE CICLOS.
+    ''' <para>Candidato = todo lo alcanzable por REFS desde <paramref name="inicio"/> (sin pasar por la raíz).
+    ''' Internos = candidato ∪ {raíz}. Punto fijo: sale del candidato todo bloque con una ref o un ptr ENTRANTE desde
+    ''' un bloque que no sea interno (un hermano que comparte, un bloque preexistente). Se borra la raíz (si hay) y
+    ''' lo que quede del candidato: el ciclo shader ↔ Target de su controller se va, lo compartido queda.</para>
+    ''' <para>TODO POR OBJETO, nunca por índice: <c>RemoveBlock</c> reindexa todo <c>Index &gt; index</c>.</para></summary>
+    Private Function BorrarConClausura(raiz As NiObject, inicio As IEnumerable(Of NiObject)) As Integer
+        Dim candidato = ClausuraHuerfana(raiz, inicio)
         Dim borrados As Integer = 0
-        If shader IsNot Nothing AndAlso Not IsBlockReferenced(shader) Then
-            If RemoveBlock(shader) Then borrados += 1
-        End If
-        borrados += BorrarClausuraHuerfana(pendientes)
+        If raiz IsNot Nothing AndAlso RemoveBlock(raiz) Then borrados += 1
+        For Each b In candidato
+            Dim idx As Integer
+            If GetBlockIndex(b, idx) AndAlso RemoveBlock(b) Then borrados += 1
+        Next
         Return borrados
     End Function
 
-    ''' <summary>Worklist del borrado de clausura. DEDUPE POR REFERENCIA: un bloque puede estar
-    ''' encolado dos veces (un <c>ExtraDataList</c> que liste el mismo <c>NiExtraData</c> dos veces es
-    ''' legal). En la segunda visita ya no está en el archivo, <c>IsBlockReferenced</c> devuelve False, y
-    ''' leer sus <c>References</c> resolvería ÍNDICES PODRIDOS al bloque que hoy ocupa esa ranura — la
-    ''' misma corrupción que evita el "todo por objeto". Termina siempre: sólo se encola tras un
-    ''' <c>RemoveBlock</c> exitoso, y los borrados están acotados por el <c>Blocks.Count</c> inicial.</summary>
-    Private Function BorrarClausuraHuerfana(pendientes As List(Of NiObject)) As Integer
-        Dim vistos As New HashSet(Of NiObject)(System.Collections.Generic.ReferenceEqualityComparer.Instance)
-        Dim borrados As Integer = 0
-        Dim i As Integer = 0
-        While i < pendientes.Count
-            Dim b = pendientes(i)
-            i += 1
-            If b Is Nothing OrElse Not vistos.Add(b) Then Continue While
-            Dim idx As Integer
-            If Not GetBlockIndex(b, idx) Then Continue While      ' ya no está en el archivo
-            If IsBlockReferenced(b) Then Continue While
-            For Each r In b.References                             ' capturar ANTES de borrar
+    ''' <summary>La DECISION de <see cref="BorrarConClausura"/>, pura (no muta nada): que bloques de la clausura de
+    ''' <paramref name="inicio"/> se irian si se borrara <paramref name="raiz"/> (o si se soltara el ref que los
+    ''' engancha, cuando la raiz es el dueño de ese ref). La usan el borrado real y los avisos que tienen que contar
+    ''' exactamente lo que se va a borrar.</summary>
+    Friend Function ClausuraHuerfana(raiz As NiObject, inicio As IEnumerable(Of NiObject)) As HashSet(Of NiObject)
+        Dim cmp = System.Collections.Generic.ReferenceEqualityComparer.Instance
+        Dim candidato As New HashSet(Of NiObject)(cmp)
+        Dim pila As New Stack(Of NiObject)(inicio.Where(Function(x) x IsNot Nothing))
+        While pila.Count > 0
+            Dim b = pila.Pop()
+            If Object.ReferenceEquals(b, raiz) OrElse Not candidato.Add(b) Then Continue While
+            For Each r In b.References
                 If r Is Nothing OrElse r.IsEmpty() Then Continue For
                 Dim hijo = GetBlock(Of NiObject)(r)
-                If hijo IsNot Nothing Then pendientes.Add(hijo)
+                If hijo IsNot Nothing Then pila.Push(hijo)
             Next
-            If RemoveBlock(b) Then borrados += 1
         End While
-        Return borrados
+
+        Dim entrantes As New Dictionary(Of NiObject, List(Of NiObject))(cmp)
+        For Each x In Blocks.OfType(Of NiObject)()
+            For Each r In x.References.Concat(x.Pointers)
+                If r Is Nothing OrElse r.IsEmpty() Then Continue For
+                Dim destino = GetBlock(Of NiObject)(r)
+                If destino Is Nothing OrElse Not candidato.Contains(destino) Then Continue For
+                Dim l As List(Of NiObject) = Nothing
+                If Not entrantes.TryGetValue(destino, l) Then l = New List(Of NiObject) : entrantes(destino) = l
+                l.Add(x)
+            Next
+        Next
+        Dim cambio = True
+        While cambio
+            cambio = False
+            For Each b In candidato.ToList()
+                Dim l As List(Of NiObject) = Nothing
+                If Not entrantes.TryGetValue(b, l) Then Continue For
+                If l.Any(Function(x) Not (Object.ReferenceEquals(x, raiz) OrElse candidato.Contains(x))) Then
+                    candidato.Remove(b)
+                    cambio = True
+                End If
+            Next
+        End While
+
+        Return candidato
     End Function
 
     ''' <summary>Hermano simétrico de <see cref="SetShapeHidden"/>: APAGA el bit 0 (hidden).
@@ -450,21 +498,7 @@ Public Class Nifcontent_Class_Manolo
                     FO4UnifiedMaterial_Class.EscribirCastShadowsEnShader(shad, mat.CastShadows, fo4:=True)
                 End If
             Case Config_App.Game_Enum.Skyrim
-                Dim saveAction As Action
-                Select Case shad.GetType
-                    Case GetType(BSLightingShaderProperty)
-                        Dim typed = CType(shad, BSLightingShaderProperty)
-                        saveAction = Sub() mat.Save_To_Shader(Me, shap, typed, mat.NifShaderType, mat.EnvmapMaskTexture)
-                    Case GetType(BSEffectShaderProperty)
-                        Dim typed = CType(shad, BSEffectShaderProperty)
-                        saveAction = Sub() mat.Save_To_Shader(Me, shap, typed)
-                    Case Else
-#If DEBUG Then
-                        Debugger.Break()
-#End If
-                        Throw New Exception
-                End Select
-                saveAction()
+                EscribirMaterialEnShader(shap, shad, mat)
                 DirectCast(shad, BSShaderProperty).Name.String = MatPath   ' común a ambos cases
         End Select
     End Sub
@@ -542,9 +576,14 @@ Public Class Nifcontent_Class_Manolo
 
     ''' <summary>Serialize the NIF to a byte array (in-memory save) — used by headless bakes/compares that
     ''' don't want a disk file. Mirrors Save_As_Manolo but to a MemoryStream via NifFile.Save(Stream).</summary>
-    Public Function Save_To_Bytes_Manolo() As Byte()
+    ''' <param name="normalizar">False = NO aplicar las dos normalizaciones que NifFile.Save hace EN EL LUGAR sobre el
+    ''' NIF vivo (NiflySharp NifFile.cs:367-371): RemoveUnreferencedBlocks y PrettySortBlocks. Las dos cambian los
+    ''' indices de los bloques. Lo usa la simulacion de la conversion de shader: no puede alterar el NIF del editor si
+    ''' el usuario cancela, y necesita que los indices de la copia coincidan con los del vivo. Default True = la
+    ''' conducta de siempre.</param>
+    Public Function Save_To_Bytes_Manolo(Optional normalizar As Boolean = True) As Byte()
         Using ms As New IO.MemoryStream()
-            If MyBase.Save(ms) <> 0 Then Throw New Exception("Error saving NIF to bytes")
+            If MyBase.Save(ms, New NiflySharp.NifFileSaveOptions With {.RemoveUnreferencedBlocks = normalizar, .SortBlocks = normalizar}) <> 0 Then Throw New Exception("Error saving NIF to bytes")
             Return ms.ToArray()
         End Using
     End Function
@@ -564,8 +603,17 @@ Public Class Nifcontent_Class_Manolo
         End Get
     End Property
 
+    ''' <summary>Borra la shape y lo que quede sin referenciar. ANTES saca de las secuencias los ControlledBlock que
+    ''' la animan y su entrada de todo NiDefaultAVObjectPalette (ley inversa de CopiarAnimacionAlClon, misma regla
+    ''' de match): si no, esos bloques siguen referenciando sus controllers —que por eso no se van con
+    ''' RemoveUnreferencedBlocks— con un NodeName que ya no existe y un palette que apunta a un puntero invalido.
+    ''' Vale para TODOS los llamadores (WM y el export de escena de NPC Manager).
+    ''' <para>La shape y su clausura se van con <see cref="RemoveShapeAndOrphanClosure"/> (consciente de ciclos: el
+    ''' shader con controller ya no queda huérfano por el Target de su propio controller); el barrido de archivo entero
+    ''' que seguía se conserva para no cambiar la conducta con los huérfanos PREEXISTENTES del NIF.</para></summary>
     Public Sub RemoveShape_Manolo(Shape As INiShape)
-        Me.RemoveBlock(Shape)
+        QuitarAnimacionDeShape(Shape)
+        RemoveShapeAndOrphanClosure(Shape)
         Me.RemoveUnreferencedBlocks()
     End Sub
     Public Shared Sub Merge_Shapes_Original(DestNif As Nifcontent_Class_Manolo, SrcNif As Nifcontent_Class_Manolo, MergeClothesData As Boolean)
@@ -836,6 +884,19 @@ Public Class Nifcontent_Class_Manolo
         ' El camino de clone de BSDynamicTriShape lo cubre el roundtrip TestNifFile_Skinned_Dynamic_SE:
         ' los _vertices dinámicos quedan en sync con vertData vía CalcDynamicData.
         Dim destShape = Me.CloneShape(srcShape, destShapeName, srcNif)
+
+        ' MISMO ARCHIVO: punteros de la clausura clonada que siguen apuntando a la shape ORIGINAL pasan al clon.
+        ' CloneBlocksRec (NiflySharp NifFile.cs:658-691, transcripcion 1:1 de nifly NifFile.cpp:1280-1319) sólo
+        ' re-apunta los punteros que valen el índice del HIJO DIRECTO; un controller colgado de la propia shape
+        ' (Target = shape) y el resto de la clausura quedan apuntando a la shape fuente — el clon nunca se anima.
+        ' ⛔ SOLO srcNif Is Me: entre archivos el índice de la shape fuente no significa nada en el destino, y ese
+        ' camino lo usa el bake (capítulo cerrado): deuda declarada, sin cambiar un byte.
+        If destShape IsNot Nothing AndAlso Object.ReferenceEquals(srcNif, Me) Then
+            Dim idxSrc As Integer, idxDest As Integer
+            If GetBlockIndex(srcShape, idxSrc) AndAlso GetBlockIndex(destShape, idxDest) Then
+                ReapuntarPunterosDeClausura(DirectCast(destShape, NiObject), idxSrc, idxDest)
+            End If
+        End If
 
         ' Preservar el ExtraDataList de la shape (REGLA GENERAL, no solo ECED). NiflySharp.CloneShape
         ' hace srcShape.Clone() que copia las REFS del ExtraDataList (índices) pero NO re-clona los

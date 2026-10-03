@@ -144,6 +144,16 @@ Public Interface IShapeGeometry
     Sub SetNormals(normals As List(Of SysNumerics.Vector3))
     Sub SetTangents(tangents As List(Of SysNumerics.Vector3))
     Sub SetBitangents(bitangents As List(Of SysNumerics.Vector3))
+
+    ''' <summary>
+    ''' Activa (nunca apaga) los canales de normales y/o tangentes del formato de vertice, para que un
+    ''' recalculo posterior tenga donde escribir. BSTriShape family: bits <c>Normals</c> / <c>Tangents</c>
+    ''' del VertexDesc. NiTriShape family: <c>NiGeometryData.HasNormals</c> / <c>HasTangents</c> (en SSE va
+    ''' por BSGeometryDataFlags; las listas se dimensionan a NumVertices). Un canal ya activo no se toca, asi
+    ''' que lo que el autor ya traia queda byte-identico.
+    ''' </summary>
+    Sub EnsureNormalChannels(normals As Boolean, tangents As Boolean)
+
     Sub SetUVs(uvs As List(Of TexCoord))
     Sub SetVertexColors(colors As List(Of Color4))
     Sub SetEyeData(eyeData As List(Of Single))

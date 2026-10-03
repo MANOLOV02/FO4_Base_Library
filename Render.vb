@@ -1610,7 +1610,27 @@ Public Class PreviewControl
     ' front/back buffer timing). Allocated lazily by the first frame (a control that never renders - the bake
     ' runner's context - allocates nothing), reallocated on resize, freed in Clean.
     Private ReadOnly _targets As New SceneTargets()
+    Private ReadOnly _sceneDepth As New SceneDepthCopy()
     Private _frameFbo As Integer = 0
+
+    ''' <summary>Copies the depth of the framebuffer being drawn for the effects' SOFT fade (see SceneDepthCopy).</summary>
+    Friend Sub CopySceneDepth()
+        _sceneDepth.CopyFrom(_frameFbo, Me.Width, Me.Height)
+    End Sub
+
+    ''' <summary>The copied scene depth (0 before the first copy).</summary>
+    Friend ReadOnly Property SceneDepthTexture As Integer
+        Get
+            Return _sceneDepth.Texture
+        End Get
+    End Property
+
+    ''' <summary>Near and far of the projection this frame draws with (UpdateProjection sets both with it).</summary>
+    Friend ReadOnly Property FrameNearFar As Vector2
+        Get
+            Return New Vector2(lastNear, lastFar)
+        End Get
+    End Property
     Private _statusDrawnInFrame As Boolean
 
     ''' <summary>The framebuffer RenderScene is drawing into right now (HDR target, display target, or 0).
@@ -1626,12 +1646,13 @@ Public Class PreviewControl
         _targets.SetGroundCatcherOutputs(enabled)
     End Sub
 
-    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: i3700 + i3648; SSE: 12545) unless a shader debug
+    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: i3700 + i3648; SSE: 12545) unless the user turned the post off (Rendering tab) or a shader debug
     ''' view is on (a debug view shows raw values: it is drawn straight to the display target, 8-bit exact).
     ''' Returns the post program of the game drawing the frame, or Nothing for a direct frame.</summary>
     Private Function FramePostProgram() As Shader_Base_Class
         If _bgVao = 0 OrElse CurrentShader Is Nothing OrElse SharedLumPartialsShader Is Nothing OrElse
-           SharedLumResolveShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None Then Return Nothing
+           SharedLumResolveShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None OrElse
+           Not _Model.FrameImaging.Settings.ApplyPostProcess Then Return Nothing
         If CurrentShader Is SharedActiveShader Then Return SharedPostFo4Shader
         If CurrentShader Is SharedSSEShader Then Return SharedPostSseShader
         Return Nothing
@@ -1668,6 +1689,8 @@ Public Class PreviewControl
         ApplyResize(False)
         Me.EnsureContextCurrent()
         Dim offscreen = _targets.Ensure(Me.Width, Me.Height)
+        ' The weather/moment and the two options of THIS frame, for the game of the shader that draws it.
+        _Model.ResolveFrameImaging(CurrentShader Is SharedSSEShader)
         Dim postProgram = If(offscreen, FramePostProgram(), Nothing)
         Dim hdr = postProgram IsNot Nothing
         _statusDrawnInFrame = False
@@ -1696,10 +1719,11 @@ Public Class PreviewControl
             ' A status card drawn during the frame (textures still loading) is already in the display target.
             If hdr AndAlso Not _statusDrawnInFrame Then
                 _targets.ReduceLuminance(SharedLumPartialsShader, SharedLumResolveShader)
+                Dim row = _Model.FrameImaging.Row
                 If postProgram Is SharedPostSseShader Then
-                    _targets.Composite(postProgram, AddressOf SseImageSpace.SkyrimClearDay.Upload, Nothing, AddressOf SubirUniformsDeFondo, _bgVao)
+                    _targets.Composite(postProgram, AddressOf row.SseImageSpace.Upload, Nothing, AddressOf SubirUniformsDeFondo, _bgVao)
                 Else
-                    _targets.Composite(postProgram, AddressOf Fo4ImageSpace.PreviewDay.Upload, Fo4ImageSpace.PreviewDay.LutPath, AddressOf SubirUniformsDeFondo, _bgVao)
+                    _targets.Composite(postProgram, AddressOf row.Fo4ImageSpace.Upload, row.Fo4ImageSpace.LutPath, AddressOf SubirUniformsDeFondo, _bgVao)
                 End If
                 _frameFbo = _targets.DisplayFramebuffer
                 ' What is drawn in display values (wireframes) goes on top of the post, depth-tested
@@ -1714,6 +1738,7 @@ Public Class PreviewControl
     End Sub
     Private Shared Sub FinishRenderFrame()
         GL.DepthMask(True)
+        GL.ColorMask(True, True, True, True)
         GL.Disable(EnableCap.Blend)
     End Sub
 
@@ -1723,8 +1748,8 @@ Public Class PreviewControl
     ''' <c>Color.Empty</c> si el punto cae fuera o si no hay contexto.
     '''
     ''' <para>[!] Lo que devuelve es el pixel TAL COMO SE VE: iluminado y pasado por la ley de display
-    ''' (FO4: la pasada de post de PostProcess.vb, exposicion + Hable + gamma + LUT; SSE: el tonemap y el
-    ''' encode de su fragment). NO es albedo, NO es lineal y NO es el tono del material. Cualquier consumidor que compare dos
+    ''' (el post del juego de PostProcess.vb, o con el post apagado la cola de 2.3.8 de LegacyDisplaySource).
+    ''' NO es albedo, NO es lineal y NO es el tono del material. Cualquier consumidor que compare dos
     ''' muestras esta comparando resultados finales, que es exactamente para lo que existe.</para>
     '''
     ''' <para>Misma disciplina de estado que <see cref="CaptureBitmap"/>: se CAPTURA y se DEVUELVE el
@@ -2173,16 +2198,15 @@ Public Class PreviewControl
         menu.Items.Add(lightsFollowCamera)
 
         Dim presetsMenu As New ToolStripMenuItem("Light Preset")
-        Dim activeRig = Config_App.Current.ActiveLights()
         For Each preset In PreviewLightRig.Presets()
             ' Copia local deliberada: el handler sobrevive a esta iteracion del For Each.
             Dim selectedPreset = preset
             Dim presetItem As New ToolStripMenuItem(selectedPreset.Name) With {
-                .Checked = LightRigForm.RigCoincide(selectedPreset.Rig, activeRig),
+                .Checked = selectedPreset.MatchesConfig(Config_App.Current),
                 .ToolTipText = selectedPreset.Description
             }
             AddHandler presetItem.Click, Sub()
-                                             Config_App.Current.SetActiveLights(selectedPreset.Rig)
+                                             selectedPreset.ApplyTo(Config_App.Current)
                                              UpdateRequired = True
                                          End Sub
             presetsMenu.DropDownItems.Add(presetItem)
@@ -2536,6 +2560,7 @@ Public Class PreviewControl
         End If
 
         _targets.Free()
+        _sceneDepth.Free()
 
         If SharedShadowFO4Shader IsNot Nothing Then
             SharedShadowFO4Shader.Dispose()
@@ -4073,8 +4098,13 @@ Public Class PreviewModel
             Return materialBase.ZBufferTest OrElse (hasAlphaBlend = False)
         End Function
 
-        Private Shared Function ResolveDepthWriteEnabled(materialBase As FO4UnifiedMaterial_Class, hasAlphaBlend As Boolean, hasAlphaTest As Boolean, isWireframe As Boolean) As Boolean
+        Friend Shared Function ResolveDepthWriteEnabled(materialBase As FO4UnifiedMaterial_Class, hasAlphaBlend As Boolean, hasAlphaTest As Boolean, isWireframe As Boolean) As Boolean
             If isWireframe Then Return False
+            ' FO4 SOFT binds the depth buffer as an SRV, and the draw then uses the alternate depth view (0x14183C863 ->
+            ' 0x141823E07..E91): D3D11 cannot bind a resource as SRV and writable DSV at once, so a soft effect never
+            ' writes depth.
+            If materialBase IsNot Nothing AndAlso materialBase.IsBGEM() AndAlso materialBase.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft AndAlso
+               Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Fallout4 Then Return False
             If hasAlphaBlend Then
                 ' FO4 EFFECT shader drawn in the alpha list (not a decal): the pass default is test LESS_EQUAL +
                 ' WRITE (0x142221DE1, effect restore 0x142227830) and the effect setup keeps it when ZTest and
@@ -4094,10 +4124,29 @@ Public Class PreviewModel
             If materialBase Is Nothing Then Return True
             Return materialBase.ZBufferWrite
         End Function
+        ''' <summary>An effect whose technique has no shader in the game's cache is not drawn. FO4: MULTBLEND_DECAL and
+        ''' ADD+MULT, the lookup returns 0 and the draw is skipped (0x142231AE0, 0x14221FB9F; Fo4EffectBlend). SSE: SOFT +
+        ''' MULTBLEND_DECAL (src DEST_COLOR + dst INV_SRC_ALPHA; bits 18 and 22 set independently, 0x14152A5B8 / 0x14152A57C):
+        ''' 0x440042 exists as neither VS nor PS, BeginTechnique 0x141579120 fails and the pass renderer 0x141560340 skips it
+        ''' (Tools/re-docs/RE_SSE_ZPREPASS_BGSM_JSON_2026-10-03.md, C).</summary>
+        Private Function EngineSkipsEffectDraw(mb As FO4UnifiedMaterial_Class) As Boolean
+            If mb Is Nothing OrElse Not mb.IsBGEM() Then Return False
+            Dim ea = mb.ResolveEngineAlpha()
+            Return EffectDrawSkipped(TypeOf Me.ParentModel.ParentControl.CurrentShader Is Shader_Class_SSE, mb.SoftEnabled, ea.Blend, ea.Src, ea.Dst)
+        End Function
+
+        ''' <summary>The law of <see cref="EngineSkipsEffectDraw"/>, pure (gate `effect-draw-skip`).</summary>
+        Friend Shared Function EffectDrawSkipped(isSse As Boolean, soft As Boolean, blendBit As Boolean,
+                                                 src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As Boolean
+            If isSse Then Return soft AndAlso src = NiflySharp.Enums.AlphaFunction.DEST_COLOR AndAlso dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
+            Return Fo4EffectBlend(blendBit, src, dst).Skip
+        End Function
+
         Public Sub Render(projection As Matrix4, ByRef camera As OrbitCamera)
 
             If Not HelperShapeGate.IsShapeDrawable(MeshData.Shape) Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
+            If EngineSkipsEffectDraw(MeshData.Material?.MaterialBase) Then Exit Sub
             '=============================== MATRICES ===============================
             Dim model As Matrix4 = MeshData.Transform
             Dim view As Matrix4 = camera.GetViewMatrix()
@@ -4416,6 +4465,7 @@ Public Class PreviewModel
             If layer Is Nothing OrElse layer.Material Is Nothing Then Exit Sub
             If Not HelperShapeGate.IsShapeDrawable(MeshData.Shape) Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
+            If EngineSkipsEffectDraw(OverlayMaterialData(layer).MaterialBase) Then Exit Sub
 
             '=============================== MATRICES (identical to Render) ===============================
             Dim model As Matrix4 = MeshData.Transform
@@ -4487,6 +4537,67 @@ Public Class PreviewModel
         ''' factor that is 0 there (ZERO, DST_COLOR, ONE_MINUS_DST_ALPHA, SRC_ALPHA_SATURATE) means the draw
         ''' adds no light of its own - it only scales what is behind - so it leaves the coverage (2); any
         ''' other factor lets its own colour in, weighted by its alpha (1).</summary>
+
+        ''' <summary>THE FO4 EFFECT SHADER'S BLEND, from the alpha property's src/dst (the .bgem's copied into it,
+        ''' 0x142171954..19CC; a NIF-inline shape keeps its own). Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md.
+        ''' <list type="bullet">
+        ''' <item>Pass mode (0x1422301E0), only these pairs (src, dst) with the blend bit set; any other pair draws with
+        ''' blending OFF: (6,7) -&gt; 1; (6,0) (0,0) (6,9) -&gt; 2; (1,2) (4,1) -&gt; 3; (0,7) -&gt; 4. Without the blend bit:
+        ''' mode 1 when the property alpha is below 1, else off (the app's hasAlphaBlend already says which).</item>
+        ''' <item>Modes (table 0x141855180, op ADD): 1 SRC_ALPHA/INV_SRC_ALPHA; 2 SRC_ALPHA/ONE; 3 colour DEST_COLOR/ZERO,
+        ''' alpha ONE/ZERO; 4 ONE/INV_SRC_ALPHA.</item>
+        ''' <item>Technique (0x142178150): MULTBLEND_DECAL = (4,7), MULTBLEND = dst 2 or src 4 otherwise, ADDBLEND = dst 0.
+        ''' No PS exists for MULTBLEND_DECAL nor for ADD+MULT (4,0): the lookup returns 0 (0x142231AE0) and the draw is
+        ''' skipped (0x14221FB9F).</item>
+        ''' </list>
+        ''' PREMULTIPLY (mode 4 forced) is never set in world rendering (0x143E5E345, Interface3D only): not applied.
+        ''' World effects write RGB only (0x1421D5C22): the colour mask in ApplyMaterial. ENVCUBE (mode 2) does not reach a
+        ''' NIF effect (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md).</summary>
+        ''' <summary>SSE invFrameBufferRange in world rendering: BSShaderManager::State+0x9C, initial .data value at
+        ''' 0x1420D694C = 1/1.2; its only writers are the UI render 0x14116AC80 (1.0 while it draws, then restored) and the
+        ''' console command SetFramebufferRange (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md Q3).</summary>
+        Friend Const SseInvFrameBufferRangeWorld As Single = 1.0F / 1.2F
+        ''' <summary>The SSE lighting PS output clamp C: fLightingOutputColourClampPostLit / PostSpec:General, copied by the
+        ''' BSLightingShader ctor 0x141547210 (0x141547454..47C) and written to cb0[1].x / .z by SetupTechnique 0x141547D20
+        ''' (0x141548619..656); the Setting objects 0x1420D8CF8 / 0x1420D8D28 hold 1.0 in .data, the installed
+        ''' SkyrimPrefs.ini too (Tools/re-docs/RE_SSE_LIGHTING_PREPASS_FOGTAIL_2026-10-03.md 2.2).</summary>
+        Friend Const SseLightingOutputClampPostLit As Single = 1.0F
+        Friend Const SseLightingOutputClampPostSpec As Single = 1.0F
+
+        ''' <summary>cb12[42].z the SSE lighting PS output tail sees for a shape: 1 when BSLightingShaderProperty::
+        ''' GetRenderPasses (0x14151A160) puts it in group 1 - translucent (materialAlpha * fade &lt; 1 or NiAlphaProperty
+        ''' blend; HasAlphaBlend, fade 1 in the preview), not a decal - which the main accumulator routes to list 0x10
+        ''' (table 0x14151E840) and the alpha finish draws with flags | 4 (0x14151FB80); 0 otherwise (opaque groups in
+        ''' the opaque finish, flags 0x41 / 0x51; decals in lists 3 / 4). Group 9 (Z = 1 too) needs currentFade &lt; 1
+        ''' (0x14151A8FC..ACFF), which the preview never has. Effects do not read cb12[42].
+        ''' (Tools/re-docs/RE_SSE_PASS_GROUPS_DEPTH_2026-10-03.md 2-4.)</summary>
+        Friend Shared Function SseLitTailZ(isEffect As Boolean, isDecal As Boolean, translucent As Boolean) As Single
+            Return If(Not isEffect AndAlso Not isDecal AndAlso translucent, 1.0F, 0.0F)
+        End Function
+
+        Friend Shared Function Fo4EffectBlend(blendBit As Boolean, src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As (Skip As Boolean, MultBlend As Boolean, Enabled As Boolean, ColorSrc As BlendingFactor, ColorDst As BlendingFactor, AlphaSrc As BlendingFactor, AlphaDst As BlendingFactor)
+            Dim s = CInt(src), d = CInt(dst)
+            Dim multDecal = s = 4 AndAlso d = 7
+            Dim mult = Not multDecal AndAlso (d = 2 OrElse s = 4)
+            Dim add = d = 0
+            Dim skip = multDecal OrElse (mult AndAlso add)
+            If Not blendBit Then
+                Return (skip, mult, True, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
+            End If
+            Select Case True
+                Case s = 6 AndAlso d = 7
+                    Return (skip, mult, True, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
+                Case (s = 6 AndAlso d = 0) OrElse (s = 0 AndAlso d = 0) OrElse (s = 6 AndAlso d = 9)
+                    Return (skip, mult, True, BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.SrcAlpha, BlendingFactor.One)
+                Case (s = 1 AndAlso d = 2) OrElse (s = 4 AndAlso d = 1)
+                    Return (skip, mult, True, BlendingFactor.DstColor, BlendingFactor.Zero, BlendingFactor.One, BlendingFactor.Zero)
+                Case s = 0 AndAlso d = 7
+                    Return (skip, mult, True, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha)
+                Case Else
+                    Return (skip, mult, False, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One, BlendingFactor.Zero)
+            End Select
+        End Function
+
         Private Shared Function CoverageModeForSourceFactor(src As BlendingFactor) As Integer
             Select Case src
                 Case BlendingFactor.Zero, BlendingFactor.DstColor, BlendingFactor.OneMinusDstAlpha, BlendingFactor.SrcAlphaSaturate
@@ -5144,6 +5255,10 @@ Public Class PreviewModel
             ' ApplyMaterialData). The app aliases BaseColor.A to the same file Alpha: it enters ONCE.
             shader.SetFloat("effectBaseColorAlpha", materialBase.Alpha)
             shader.SetFloat("effectBaseColorScale", materialBase.BaseColorScale)
+            ' The LIGHTING light: the weather's effect light kept in the game's proportion to the frame's key
+            ' (PreviewImagingRow.EffectLightForKey; the key in the space the lit shaders get it, FrameLights).
+            Dim effectL = Me.ParentModel.FrameImaging.Row.EffectLightForKey(Me.ParentModel.FrameLights.KeyDiffuse,
+                                                                            Me.ParentModel.FrameImaging.Settings.EffectLightVsKey)
             If isSSE Then
                 ' SSE SetupMaterial of the effect property (FO4UnifiedMaterial_Class.EngineSseEffectConstants), raw.
                 ' The palette branch is the shader's bGreyscaleColor: same predicate (bit 19 = flag + greyscale tex).
@@ -5153,7 +5268,7 @@ Public Class PreviewModel
                 shader.SetVector3("effectBaseColor", ks.BaseColor)
                 shader.SetFloat("effectLightingInfluence", ks.Influence)
                 shader.SetBool("bEffectLighting", ks.LightingTechnique)
-                shader.SetVector3("effectLight", SsePreviewWeather.SkyrimClearDay.EffectLight)
+                shader.SetVector3("effectLight", effectL)
             Else
                 ' FO4 SetupMaterial of the effect material (FO4UnifiedMaterial_Class.EngineEffectConstants). The
                 ' palette branch is the shader's bGreyscaleColor: same predicate.
@@ -5163,9 +5278,54 @@ Public Class PreviewModel
                 shader.SetVector3("effectBaseColor", k.BaseColorLinear)
                 shader.SetFloat("effectLightingInfluence", k.InfluenceByte / 255.0F)
                 shader.SetBool("bEffectLighting", k.LightingTechnique)
-                shader.SetVector3("effectDLightColor", Fo4PreviewWeather.CommonwealthClearDay.DLightColor(Fo4ImageSpace.PreviewDay))
+                shader.SetVector3("effectDLightColor", effectL)
                 shader.SetFloat("effectEnvMinLod", materialBase.EnvmapMinLOD)
             End If
+            ' SOFT (FO4 technique bit 12 / SSE bit 18 = SLSF1 bit 30, the BGEM's SoftEnabled; no setting can turn it
+            ' off, and the preview is not first person): the fade reads the scene depth copied this frame. Before the
+            ' copy (OPAQUE / CUTOUT groups) there is none: no fade (hole, see RenderAll).
+            Dim softOn = isBGEM AndAlso materialBase.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft
+            If softOn AndAlso Not isSSE Then
+                ' FO4 reads the LIVE depth (logical depth 1, bound read-only while it is an SRV, 0x14183C863): all that was
+                ' drawn before this effect. Copy it when something wrote depth since the last copy.
+                If Me.ParentModel.FrameDepthDirty Then
+                    Me.ParentModel.ParentControl.CopySceneDepth()
+                    Me.ParentModel.FrameDepthDirty = False
+                    Me.ParentModel.FrameSceneDepthValid = True
+                End If
+            End If
+            ' SSE reads the copy RenderAll took after the opaque groups; an effect drawn before it (OPAQUE / CUTOUT)
+            ' waits on the z-prepass question (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md).
+            softOn = softOn AndAlso Me.ParentModel.FrameSceneDepthValid
+            shader.SetBool("bSoftEffect", softOn)
+            ' FO4 MULTBLEND (technique bit 6) changes the PS (Fo4EffectBlend).
+            If Not isSSE Then
+                Dim eaM = materialBase.ResolveEngineAlpha()
+                shader.SetBool("bEffectMultBlend", isBGEM AndAlso Fo4EffectBlend(eaM.Blend, eaM.Src, eaM.Dst).MultBlend)
+            End If
+            ' SSE MULTBLEND (technique bit 11): an alpha property whose dest blend is SRC_COLOR (0x14152A4BE..A570).
+            If isSSE Then
+                ' Technique bits of the SSE effect (0x14152A4BE..A570): MULTBLEND (11) = dest SRC_COLOR, MULTBLEND_DECAL (22) =
+                ' src DEST_COLOR + dest INV_SRC_ALPHA. MULTBLEND drops the soft 0.003 discard; both drop invFrameBufferRange.
+                Dim eaS = materialBase.ResolveEngineAlpha()
+                shader.SetBool("bSseMultBlend", isBGEM AndAlso eaS.Dst = NiflySharp.Enums.AlphaFunction.SRC_COLOR)
+                shader.SetBool("bSseMultBlendDecal", isBGEM AndAlso eaS.Src = NiflySharp.Enums.AlphaFunction.DEST_COLOR AndAlso eaS.Dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA)
+                ' The preview is a world render: the world value (the UI render 0x14116AC80 sets 1.0 only while it draws).
+                shader.SetFloat("sseInvFramebufferRange", SseInvFrameBufferRangeWorld)
+                ' The lighting tail's C: PostSpec in the SPECULAR permutations (SLSF1 Specular), PostLit otherwise; Z by the
+                ' list the shape lands in.
+                shader.SetFloat("sseLitOutputClamp", If(materialBase.SpecularEnabled, SseLightingOutputClampPostSpec, SseLightingOutputClampPostLit))
+                shader.SetFloat("sseLitTailZ", SseLitTailZ(isBGEM, materialBase.RendersAsDecal(), material.HasAlphaBlend))
+            End If
+            If softOn Then
+                shader.SetFloat("softDepth", materialBase.SoftDepth)
+                shader.SetVector2("uNearFar", Me.ParentModel.ParentControl.FrameNearFar)
+                shader.BindTexture("texSceneDepth", Me.ParentModel.ParentControl.SceneDepthTexture, TextureUnit.Texture9)
+            End If
+            ' Post off (PreviewImagingSettings) = the frame is direct and the fragment applies the 2.3.8 display law,
+            ' unless a debug view wants the raw values.
+            shader.SetBool("bLegacyDisplay", Not Me.ParentModel.FrameIsHdr AndAlso Shader_Base_Class.DebugView = ShaderDebugView.None)
+            shader.SetFloat("uSceneToLinear", Shader_Base_Class.SceneToLinearExponent(isSSE))
 
             '
 
@@ -5189,6 +5349,10 @@ Public Class PreviewModel
             ' === Depth Write ===
             Dim writeDepth As Boolean = ResolveDepthWriteEnabled(materialBase, hasAlphaBlend, hasAlphaTest, MeshData.Shape.Wireframe)
             GL.DepthMask(writeDepth)
+            If writeDepth Then Me.ParentModel.FrameDepthDirty = True
+            ' FO4 world effects write RGB only (0x1421D5C22; DECAL forces the same): the target's alpha is left alone.
+            Dim fo4Effect = materialBase IsNot Nothing AndAlso materialBase.IsBGEM() AndAlso Not isSSE
+            GL.ColorMask(0, True, True, True, Not fo4Effect)
             ' === Blending / Alpha Test / Wireframe ===
             Dim coverageMode As Integer = 0
             If MeshData.Shape.Wireframe Then
@@ -5196,6 +5360,20 @@ Public Class PreviewModel
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line)
                 GL.Enable(EnableCap.Blend)
                 GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
+            ElseIf hasAlphaBlend AndAlso materialBase IsNot Nothing AndAlso materialBase.IsBGEM() AndAlso Not isSSE Then
+                ' FO4 effect: the engine's blend table (Fo4EffectBlend); the draw is skipped before this when the
+                ' engine has no PS for it (Render).
+                GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+                Dim ea = materialBase.ResolveEngineAlpha()
+                Dim fb = Fo4EffectBlend(ea.Blend, ea.Src, ea.Dst)
+                If fb.Enabled Then
+                    GL.Enable(EnableCap.Blend)
+                    GL.BlendFuncSeparate(CType(fb.ColorSrc, BlendingFactorSrc), CType(fb.ColorDst, BlendingFactorDest),
+                                         CType(fb.AlphaSrc, BlendingFactorSrc), CType(fb.AlphaDst, BlendingFactorDest))
+                    coverageMode = CoverageModeForSourceFactor(fb.ColorSrc)
+                Else
+                    GL.Disable(EnableCap.Blend)
+                End If
             ElseIf hasAlphaBlend Then
                 ' Blending estándar
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
@@ -6043,6 +6221,20 @@ Public Class PreviewModel
     ''' las direcciones salvo que se apague. Con el flag apagado no cambia ni una.</para></summary>
     Private _frameLights As LightRigUniforms
 
+    ''' <summary>La imagen del frame en curso: la elección persistida del juego que dibuja y su fila de la tabla.
+    ''' La resuelve RenderScene una vez por frame, antes de decidir el post; la leen el post, ApplyMaterial y el
+    ''' piso.</summary>
+    Friend ReadOnly Property FrameImaging As (Settings As PreviewImagingSettings, Row As PreviewImagingRow, IsSse As Boolean)
+
+    Friend Sub ResolveFrameImaging(isSse As Boolean)
+        Dim s = Config_App.Current.PreviewImaging(isSse)
+        Dim row = PreviewImagingTable.Resolve(isSse, s)
+        If row Is Nothing OrElse row.IsSse <> isSse Then
+            Throw New InvalidOperationException("PreviewImagingTable: no row of the drawing game (imaging-table gate).")
+        End If
+        _FrameImaging = (s, row, isSse)
+    End Sub
+
     Friend ReadOnly Property FrameLights As LightRigUniforms
         Get
             Return _frameLights
@@ -6774,6 +6966,11 @@ Public Class PreviewModel
 
     Public Sub RenderAll(projection As Matrix4, camera As OrbitCamera)
         _displayOverlays.Clear()
+        ' SOFT's scene depth: nothing copied yet this frame, and the depth buffer is "written" (cleared, then the floor).
+        FrameSceneDepthValid = False
+        FrameDepthDirty = True
+        ' A FO4 effect draw masks the alpha of draw buffer 0 (ApplyMaterial): every frame starts with all channels.
+        GL.ColorMask(True, True, True, True)
         ' O4.1: Process pending background texture uploads (Phase 2) each frame
         ProcessPendingTextureUploads()
 
@@ -6881,6 +7078,16 @@ Public Class PreviewModel
         For Each it In _ovlOpaque : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
         For Each it In _ovlCutout : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
 
+        ' SCENE DEPTH for SSE's SOFT fade: SSE reads kPOST_ZPREPASS_COPY (depth-stencil 7, 0x141539F65), a copy of the
+        ' opaque depth, not the live buffer: one copy here, after OPAQUE / CUTOUT and their layers (the floor before
+        ' them). Decals lie on those surfaces, so the depth is the same before or after them. FO4 reads the LIVE depth
+        ' instead: its copy is taken per soft draw (ApplyMaterial). Only when something drawn after this point is a
+        ' soft effect.
+        If TypeOf ParentControl.CurrentShader Is Shader_Class_SSE AndAlso FrameHasSoftAfterOpaque() Then
+            ParentControl.CopySceneDepth()
+            FrameSceneDepthValid = True
+        End If
+
         ' 3. DECAL — opaque decals, then blended decals (and decal overlay layers) in their own group.
         For Each mesh In DecalMeshes
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
@@ -6913,7 +7120,7 @@ Public Class PreviewModel
             ParentControl.SharedGroundShadowShader.SetBool("bHdrTarget", FrameIsHdr)
             ' The ratio goes to the display background through the game's display encode: FO4 pow(1/2.2), SSE raw.
             ParentControl.SharedGroundShadowShader.SetFloat("uDisplayExponent",
-                If(ParentControl.CurrentShader Is ParentControl.SharedSSEShader, 1.0F, 1.0F / 2.2F))
+                Shader_Base_Class.DisplayExponent(ParentControl.CurrentShader Is ParentControl.SharedSSEShader))
             If FrameIsHdr Then ParentControl.SetGroundCatcherOutputs(True)
             _groundQuad.Render(ParentControl.SharedGroundShadowShader, vp, _groundQuadCenter, _groundQuadHalf)
             If FrameIsHdr Then ParentControl.SetGroundCatcherOutputs(False)
@@ -6950,6 +7157,35 @@ Public Class PreviewModel
         Public Mesh As RenderableMesh
         Public Layer As OverlayMaterialLayer
     End Structure
+
+    ''' <summary>True after the scene depth was copied in THIS frame (RenderAll for SSE, ApplyMaterial for FO4).</summary>
+    Friend Property FrameSceneDepthValid As Boolean
+
+    ''' <summary>Something wrote depth since the last scene-depth copy (set at the frame start - clear and floor - and by
+    ''' every draw that writes depth, ApplyMaterial): FO4's SOFT reads the live depth, so it copies again only then.</summary>
+    Friend Property FrameDepthDirty As Boolean
+
+    ''' <summary>GATE ONLY (no UI): True turns the scene-depth copy off, so every effect draws without SOFT. ShadowGate
+    ''' --soft-scene compares a frame with and without it.</summary>
+    Friend Shared GateDisableSoft As Boolean = False
+
+    ''' <summary>An effect with SOFT (SLSF1 bit 30 / BGEM SoftEnabled) among what RenderAll draws after the opaque
+    ''' groups: the decal and blended buckets and their overlay layers.</summary>
+    Private Function FrameHasSoftAfterOpaque() As Boolean
+        If GateDisableSoft Then Return False
+        Dim soft = Function(mb As FO4UnifiedMaterial_Class) mb IsNot Nothing AndAlso mb.IsBGEM() AndAlso mb.SoftEnabled
+        For Each lista In {DecalMeshes, DecalBlendedMeshes, BlendedMeshes}
+            For Each m In lista
+                If soft(m?.MeshData?.Material?.MaterialBase) Then Return True
+            Next
+        Next
+        For Each lista In {_ovlDecal, _ovlDecalBlended, _ovlBlended}
+            For Each it In lista
+                If it.Mesh IsNot Nothing AndAlso soft(it.Mesh.OverlayMaterialData(it.Layer).MaterialBase) Then Return True
+            Next
+        Next
+        Return False
+    End Function
     Private ReadOnly _ovlOpaque As New List(Of OverlayItem)
     Private ReadOnly _ovlCutout As New List(Of OverlayItem)
     Private ReadOnly _ovlDecal As New List(Of OverlayItem)
@@ -7109,6 +7345,8 @@ Public Class FloorRenderer
         ParentControl.SubirUniformsDeFondo(shader)
         Dim hdr = ParentControl.Model.FrameIsHdr
         shader.SetBool("bHdrTarget", hdr)
+        ' The 2.3.8 curve of a direct frame wants linear: FO4 scene linear, SSE raw (Shader_Base_Class.SceneToLinearExponent).
+        shader.SetFloat("uSceneToLinear", Shader_Base_Class.SceneToLinearExponent(ParentControl.CurrentShader Is ParentControl.SharedSSEShader))
         ' The floor's colours live in the space of the game's scene (FO4 linear, SSE raw).
         Dim sseFrame = ParentControl.CurrentShader Is ParentControl.SharedSSEShader
         shader.SetVector3("backgroundLinear", Shader_Base_Class.MaterialColor(background, sseFrame))

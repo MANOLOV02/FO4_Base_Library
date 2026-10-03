@@ -491,6 +491,29 @@ Public Class Config_App
         End If
     End Sub
 
+    ' === Imagen del preview, POR JUEGO (misma convención que el rig y las sombras): clima+hora, post y luz de
+    ' efectos. Clave nueva: un config.json que no la trae se queda con Defaults() completo. ⛔ Es una Structure:
+    ' al agregarle un campo, RENOMBRAR la clave (ver Setting_ShadowMaps16_*).
+    ' JSON keys renamed (2): the struct changed a field (EffectLightFromRig -> EffectLightVsKey), and an old key would
+    ' read the new Single as 0. The property names stay (other tools set them by name).
+    <System.Text.Json.Serialization.JsonPropertyName("Setting_PreviewImaging2_FO4")>
+    Public Property Setting_PreviewImaging_FO4 As PreviewImagingSettings = PreviewImagingSettings.Defaults(False)
+    <System.Text.Json.Serialization.JsonPropertyName("Setting_PreviewImaging2_SSE")>
+    Public Property Setting_PreviewImaging_SSE As PreviewImagingSettings = PreviewImagingSettings.Defaults(True)
+
+    ''' <summary>La imagen del preview de un juego. Value-type: devuelve una COPIA.</summary>
+    Public Function PreviewImaging(isSse As Boolean) As PreviewImagingSettings
+        Return If(isSse, Setting_PreviewImaging_SSE, Setting_PreviewImaging_FO4)
+    End Function
+
+    Public Sub SetPreviewImaging(isSse As Boolean, s As PreviewImagingSettings)
+        If isSse Then
+            Setting_PreviewImaging_SSE = s
+        Else
+            Setting_PreviewImaging_FO4 = s
+        End If
+    End Sub
+
     Private _color As Color = Color.DarkGray
     Private _colorGrod As Color = Color.White
 
