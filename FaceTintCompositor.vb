@@ -469,7 +469,7 @@ Public Module FaceTintCompositor
     ''' léxico sobre strings constantes —da EXACTAMENTE lo mismo en toda máquina— y acá corría en el proceso
     ''' del usuario en cada primer bake. Sigue siendo obligatorio antes de publicar.</remarks>
     Friend Function AllShaderSources() As (Name As String, Text As String)()
-        Return New (Name As String, Text As String)() {
+        Return (New (Name As String, Text As String)() {
             ("FACETINT-VERTEX", VertexShaderSource),
             ("FACETINT-FRAGMENT", FragmentShaderSource),
             ("RENDER-FO4-VERTEX", Shader_Class_Fo4.Vertex_FO4),
@@ -491,13 +491,46 @@ Public Module FaceTintCompositor
             ("LEGACY-DISPLAY-TONEMAP", LegacyDisplaySource.Tonemap_Glsl),
             ("SOFT-EFFECT", SoftEffectSource.Soft_Glsl),
             ("SSE-LIT-TAIL", SseLitTailSource.Tail_Glsl),
+            ("SSE-PREPASS", SsePrepassSource.Prepass_Glsl),
+            ("REFRACTION-VERTEX", RefractionSource.Vertex_Glsl),
+            ("REFRACTION-NORMALS-FRAGMENT", RefractionSource.Normals_Fragment),
+            ("REFRACTION-IS-VERTEX", RefractionSource.ImageSpace_Vertex),
+            ("REFRACTION-IS-FRAGMENT", RefractionSource.ImageSpace_Fragment),
+            ("SSE-COMPOSITE-FRAGMENT", SseCompositeSource.Fragment),
+            ("SSE-SAO-VERTEX", SseSaoSource.Vs_Fullscreen),
+            ("SSE-SAO-CAMERAZ", SseSaoSource.Fragment_CameraZ),
+            ("SSE-SAO-MINIFY", SseSaoSource.Fragment_Minify),
+            ("SSE-SAO-MINIFY-CONTRAST", SseSaoSource.Fragment_MinifyContrast),
+            ("SSE-SAO-RAWAO", SseSaoSource.Fragment_RawAO),
+            ("SSE-SAO-BLURH", SseSaoSource.Fragment_BlurH),
+            ("SSE-SAO-BLURV", SseSaoSource.Fragment_BlurV),
+            ("SSE-SAO-HEADER430DERIV", SseSaoSource.Header430Deriv),
+            ("SSE-SAO-PRELUDE", SseSaoSource.Prelude),
+            ("SSE-SAO-MINIFYCOMMON", SseSaoSource.MinifyCommon),
+            ("SSE-SAO-BLURCOMMON", SseSaoSource.BlurCommon),
+            ("SSE-SAO-BODY_CAMERAZ", SseSaoSource.Body_CameraZ),
+            ("SSE-SAO-BODY_MINIFY", SseSaoSource.Body_Minify),
+            ("SSE-SAO-BODY_MINIFYCONTRAST", SseSaoSource.Body_MinifyContrast),
+            ("SSE-SAO-BODY_RAWAO", SseSaoSource.Body_RawAO),
+            ("SSE-SAO-BODY_BLURH", SseSaoSource.Body_BlurH),
+            ("SSE-SAO-BODY_BLURV", SseSaoSource.Body_BlurV),
+            ("SSE-AONRM-ENGINEFRAME_GLSL", SseAoNormalSource.EngineFrame_Glsl),
+            ("SSE-AONRM-VS_GLSL", SseAoNormalSource.Vs_Glsl),
+            ("SSE-AONRM-PS_GLSL", SseAoNormalSource.Ps_Glsl),
             ("BACKGROUND-VERTEX", BackgroundFadeSource.Vertex_Background),
             ("BACKGROUND-FRAGMENT", BackgroundFadeSource.Fragment_Background),
             ("POST-FO4-FRAGMENT", PostProcessShaderSource.Fragment_PostFo4),
             ("POST-LUM-WEIGHTS", PostProcessShaderSource.LumWeightsGlsl),
             ("POST-SSE-FRAGMENT", PostProcessShaderSource.Fragment_PostSse),
             ("LUMINANCE-PARTIALS-COMPUTE", PostProcessShaderSource.Compute_LumPartials),
-            ("LUMINANCE-RESOLVE-COMPUTE", PostProcessShaderSource.Compute_LumResolve)}
+            ("LUMINANCE-RESOLVE-COMPUTE", PostProcessShaderSource.Compute_LumResolve),
+            ("D3D11-SEMANTICS", D3d11SemanticsSource.Glsl),
+            ("SHADOW-WORLDDIR", ShadowDepthShaderSource.WorldDirGlsl),
+            ("FO4-DEFERRED-APP-LINEARZ", Fo4DeferredAppSource.Fragment_LinearZ),
+            ("FO4-DEFERRED-APP-FULLSCREEN", Fo4DeferredAppSource.Vertex_Fullscreen),
+            ("FO4-DEFERRED-APP-RESOLVE", Fo4DeferredAppSource.Fragment_DirectResolve),
+            ("FO4-DEFERRED-APP-DECALBASE", Fo4DeferredAppSource.Fragment_DecalBase)}).
+            Concat(Fo4DeferredSource.AllSources()).Concat(Fo4GBufferSource.AllSources()).ToArray()
     End Function
 
     Private Const VertexShaderSource As String = "#version 430

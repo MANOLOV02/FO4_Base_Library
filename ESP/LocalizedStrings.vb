@@ -534,27 +534,10 @@ Friend NotInheritable Class LocalizedStringResolver
     End Sub
 
     Private Shared Function ReadLanguageFromIni() As String
-        ' GAME-AWARE: FO4 = My Games\Fallout4\Fallout4[Custom/Prefs].ini; SSE = My Games\Skyrim Special
-        ' Edition\Skyrim[Custom/Prefs].ini. Hardcoding Fallout4 read the wrong game's language on SSE.
-        ' VR folder selection (and VR's game-root fallback) lives in PluginManager.ResolveGameIniPath,
-        ' which picks the folder from the configured exe. The ini FILE names are the same in VR.
+        ' sLanguage:General is a MAIN setting: the game reads it from Skyrim.ini / Fallout4.ini, then *Custom.ini (and SSE's
+        ' Data\<plugin>.ini), the last that has it wins (GameIniSettings, RE_REFRACTION_BOTH_2026-10-03.md 8). GAME-AWARE.
         Dim isSse = (Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
-        Dim iniFiles = If(isSse,
-            {PluginManager.ResolveGameIniPath("SkyrimCustom.ini"), PluginManager.ResolveGameIniPath("Skyrim.ini"), PluginManager.ResolveGameIniPath("SkyrimPrefs.ini")},
-            {PluginManager.ResolveGameIniPath("Fallout4Custom.ini"), PluginManager.ResolveGameIniPath("Fallout4.ini"), PluginManager.ResolveGameIniPath("Fallout4Prefs.ini")})
-
-        For Each iniPath In iniFiles
-            If Not File.Exists(iniPath) Then Continue For
-
-            For Each rawLine In File.ReadLines(iniPath)
-                Dim line = rawLine.Trim()
-                If line.StartsWith("sLanguage=", StringComparison.OrdinalIgnoreCase) Then
-                    Return line.Substring("sLanguage=".Length).Trim()
-                End If
-            Next
-        Next
-
-        Return ""
+        Return If(GameIniSettings.GetValue(isSse, GameIniSettings.IniList.Main, "General", "sLanguage"), "")
     End Function
 
     Private Shared Function ExtractLanguageFromResource(resourcePath As String) As String

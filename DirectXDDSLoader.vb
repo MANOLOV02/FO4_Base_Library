@@ -192,6 +192,30 @@ Public Module DirectXDDSLoader
 
     ''' <summary>The sRGB/UNORM twin of a GL internal format, for the formats the upload promotes (the same
     ''' table as the promotion in CreateOpenGL_FromTextureLoaded_PBO, both directions).</summary>
+    ''' <summary>The sRGB internal format of a GL storage format: its twin when the storage is UNORM, itself when it is already sRGB
+    ''' or has no twin (BC4/BC5/float: MakeSRGB has none either). The same table as the upload promotion (one owner).</summary>
+    Friend Function SrgbTwinOf(fmt As Integer) As Integer
+        Dim isSrgb As Boolean, twin As Integer
+        If Not TwinColorSpaceFormat(fmt, isSrgb, twin) Then Return fmt
+        Return If(isSrgb, fmt, twin)
+    End Function
+
+    ''' <summary>The DXGI byte Fallout 4's MakeSRGB 0x14183E680 (dl = 1) writes into tex+0x2D for a colour slot (jump table over
+    ''' 0x1B..0x62, 0x14183E6CF..0x14183E6F4; Tools/re-docs/RE_FO4_WORLD_ENVMAP_2026-10-03.md 16.2): the UNORM / TYPELESS / UINT /
+    ''' SNORM / SINT forms go to their _SRGB code, every other code is kept (0x14183E725).</summary>
+    Friend Function MakeSrgbDxgi(dxgi As Integer) As Integer
+        Select Case dxgi
+            Case &H1B, &H1C, &H1E, &H1F, &H20 : Return &H1D   ' R8G8B8A8 -> R8G8B8A8_UNORM_SRGB
+            Case &H46, &H47 : Return &H48                     ' BC1 -> BC1_UNORM_SRGB
+            Case &H49, &H4A : Return &H4B                     ' BC2 -> BC2_UNORM_SRGB
+            Case &H4C, &H4D : Return &H4E                     ' BC3 -> BC3_UNORM_SRGB
+            Case &H57 : Return &H5B                           ' B8G8R8A8_UNORM -> _SRGB
+            Case &H58 : Return &H5D                           ' B8G8R8X8_UNORM -> _SRGB
+            Case &H61, &H62 : Return &H63                     ' BC7 -> BC7_UNORM_SRGB
+            Case Else : Return dxgi
+        End Select
+    End Function
+
     Private Function TwinColorSpaceFormat(fmt As Integer, ByRef isSrgb As Boolean, ByRef twin As Integer) As Boolean
         Select Case fmt
             Case &H8058 : isSrgb = False : twin = &H8C43                                  ' RGBA8 -> SRGB8_ALPHA8

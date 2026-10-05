@@ -328,6 +328,7 @@ Public Class FO4UnifiedMaterial_Class
         ' que arreglo la lectura convertiria una perdida silenciosa en una escritura destructiva.
         copy._castShadowsDelNif = _castShadowsDelNif
         copy._alphaBlendEnabled = _alphaBlendEnabled
+        copy._wetnessAsBaked = _wetnessAsBaked
         copy._blendFunctionSource = _blendFunctionSource
         copy._blendFunctionDest = _blendFunctionDest
         copy._nifAlphaPresent = _nifAlphaPresent
@@ -601,6 +602,13 @@ Public Class FO4UnifiedMaterial_Class
     '   _applyArg3            = tercer argumento de ApplyMaterialData con el que el motor aplica ESTE material:
     '                           True en material swap (0x140256672) y en los overlays de F4EE; False en la carga normal.
     Private _nifAlphaPresent As Boolean = False
+    ''' <summary>The shape's NIF carried a NiAlphaProperty (read where the alpha state is seeded from the NIF). SSE's
+    ''' pass law tells "no NiAlphaProperty" apart from "one with blend and test off" (SseRenderPassLaw).</summary>
+    Friend ReadOnly Property NifAlphaPropertyPresent As Boolean
+        Get
+            Return _nifAlphaPresent
+        End Get
+    End Property
     Private _nifAlphaFlags As UShort = 0
     Private _nifAlphaThreshold As Byte = 0
     Private _materialPayloadApplied As Boolean = False
@@ -1217,8 +1225,10 @@ Public Class FO4UnifiedMaterial_Class
     ''' queda SIN el bloque que el motor SI le pone).</para>
     ''' <para>Esto es un HECHO del record del NPC (flag ACBS Diffuse Alpha Test 0x01000000), con un unico
     ''' consumidor: el bit F4SPF2 Alpha_Test. Ese bit NO es funcion del material y la lib no puede derivarlo.</para>
+    ''' <para>Nothing (el default) = sin informar: no hay record (Wardrobe Manager, todo guardado que no sea de NPC
+    ''' Manager) y el bit del bloque queda como vino. NpcMaterialResolver lo informa SIEMPRE.</para>
     <Browsable(False)>
-    Public Property NpcDiffuseAlphaTest As Boolean
+    Public Property NpcDiffuseAlphaTest As Boolean?
 
     ''' <summary><b>Intención del CONSUMIDOR sobre la EXISTENCIA del NiAlphaProperty.</b> True = no estrenar
     ''' un bloque que el shape fuente no traía (el round-trip de los que sí lo traían no se toca).
@@ -1576,9 +1586,11 @@ Public Class FO4UnifiedMaterial_Class
             End Select
         End Set
     End Property
+    ' Fallout 4: the backlight is Back Light Power with no condition, bBackLighting is not read (0x14216B92E..938).
     <Category("Lighting")>
     <BGSMOnly()>
     <DefaultValue(False)>
+    <Description("Fallout 4 ignores this switch: the backlight is Back Light Power (0 = off). Used by Skyrim SE.")>
     Public Property BackLighting As Boolean
         Get
             Select Case Underlying_Material.GetType
@@ -1625,6 +1637,7 @@ Public Class FO4UnifiedMaterial_Class
     <Category("Lighting")>
     <BGSMOnly()>
     <DefaultValue(False)>
+    <Description("Fallout 4: no render use of this switch is known (the world's deferred lighting does not read it). Kept in a .bgsm material file; used by Skyrim SE.")>
     Public Property RimLighting As Boolean
         Get
             Select Case Underlying_Material.GetType
@@ -1645,9 +1658,14 @@ Public Class FO4UnifiedMaterial_Class
             End Select
         End Set
     End Property
+    ' Fallout 4: fRimPower is copied to the material (+0xB0, 0x14216B91E); no render consumer of +0xB0 found (the forward's
+    ' LightingEffectParams, constant 27, not traced); in a NIF block
+    ' Rimlight Power is the format marker of Backlight Power (nif.xml, LoadBinary 0x1421CE98A), always FLT_MAX from the CK and from
+    ' Save_To_Shader (stream 130..139).
     <Category("Lighting")>
     <BGSMOnly()>
     <DefaultValue(2.0F)>
+    <Description("Fallout 4: no render use of this value is known (the world's deferred lighting does not read it). In a Fallout 4 NIF the Creation Kit and this app always write FLT_MAX here. Kept in a .bgsm material file; used by Skyrim SE.")>
     Public Property RimPower As Single
         Get
             Select Case Underlying_Material.GetType
@@ -3551,7 +3569,14 @@ Public Class FO4UnifiedMaterial_Class
     ''' (0x140256672) pass True, so their Decal is ignored. A Function on purpose (GetDifferences reflects
     ''' public properties).</summary>
     Public Function RendersAsDecal() As Boolean
-        Return Underlying_Material.Decal AndAlso Not _applyArg3
+        Return Underlying_Material.Decal AndAlso EngineAppliesDecalBits()
+    End Function
+
+    ''' <summary>Does the engine's applicator write the property's decal bits 26/27 from this material's Decal byte? Only when
+    ''' ApplyMaterialData's 3rd argument is 0 (0x14216B12A..0x14216B156; 0x1421715FC / 0x142171671 pass it as the applicator's 5th
+    ''' argument). A Function on purpose (GetDifferences reflects public properties).</summary>
+    Public Function EngineAppliesDecalBits() As Boolean
+        Return Not _applyArg3
     End Function
 
     Public Structure EngineAlphaState
@@ -3560,6 +3585,15 @@ Public Class FO4UnifiedMaterial_Class
         Public Dst As NiflySharp.Enums.AlphaFunction
         Public Test As Boolean
         Public Threshold As Byte
+        ''' <summary>The geometry has a NiAlphaProperty ([geom+0x130] non-null): the FO4 deferred technique reads it
+        ''' (GetRenderPasses 0x14217A457, 0x14217A50C..0x14217A55E, 0x14217A83A).</summary>
+        Public Present As Boolean
+
+        ''' <summary>The property's flags word as the engine reads it (nif.xml AlphaFlags): bit 0 blend, bits 1-4 src, bits 5-8
+        ''' dst, bit 9 test.</summary>
+        Public Function NiFlags() As Integer
+            Return If(Blend, 1, 0) Or ((CInt(Src) And &HF) << 1) Or ((CInt(Dst) And &HF) << 5) Or If(Test, &H200, 0)
+        End Function
     End Structure
 
     ''' <summary>The alpha state the ENGINE renders this material with. A Function (not a property) on purpose:
@@ -3577,7 +3611,8 @@ Public Class FO4UnifiedMaterial_Class
                               Underlying_Material.AlphaTest, Underlying_Material.AlphaTestRef,
                               _nifAlphaPresent, _nifAlphaFlags, _nifAlphaThreshold,
                               New EngineAlphaState With {.Blend = _alphaBlendEnabled, .Src = _blendFunctionSource, .Dst = _blendFunctionDest,
-                                                         .Test = Underlying_Material.AlphaTest, .Threshold = Underlying_Material.AlphaTestRef},
+                                                         .Test = Underlying_Material.AlphaTest, .Threshold = Underlying_Material.AlphaTestRef,
+                                                         .Present = _nifAlphaPresent OrElse _alphaBlendEnabled OrElse Underlying_Material.AlphaTest},
                               If(_fileBlendRaw IsNot Nothing AndAlso Underlying_Material.AlphaBlendMode = AlphaBlendModeType.Unknown, _fileBlendRaw.Blend, CType(Nothing, MaterialFileBlend?)))
     End Function
 
@@ -3639,13 +3674,14 @@ Public Class FO4UnifiedMaterial_Class
                     .Src = CType((nifFlags >> 1) And &HFUS, NiflySharp.Enums.AlphaFunction),
                     .Dst = CType((nifFlags >> 5) And &HFUS, NiflySharp.Enums.AlphaFunction),
                     .Test = (nifFlags And &H200US) <> 0,
-                    .Threshold = nifThreshold}
+                    .Threshold = nifThreshold, .Present = True}
             End If
             ' 0x142171908..1916: detached -> opaque.
-            Return New EngineAlphaState With {.Blend = False, .Src = f.Src, .Dst = f.Dst, .Test = False, .Threshold = 0}
+            Return New EngineAlphaState With {.Blend = False, .Src = f.Src, .Dst = f.Dst, .Test = False, .Threshold = 0, .Present = False}
         End If
-        ' 0x142171954..19CC: rewritten from the file.
-        Return New EngineAlphaState With {.Blend = blend, .Src = f.Src, .Dst = f.Dst, .Test = fileTest, .Threshold = fileTestRef}
+        ' 0x142171954..19CC: rewritten from the file (taken, or created when the NIF had none: Tools/re-docs/
+        ' FIX_DESIGN_OVERLAYS_COLOR_2026-09-30.md 3).
+        Return New EngineAlphaState With {.Blend = blend, .Src = f.Src, .Dst = f.Dst, .Test = fileTest, .Threshold = fileTestRef, .Present = True}
     End Function
 
     ' P4 — Flags shader SIEMPRE game-aware. HasFlagSF1/SF2 y SetFlagSF1/SF2 (NiflySharp, ShaderHelper)
@@ -3894,14 +3930,14 @@ Public Class FO4UnifiedMaterial_Class
                 .Facegen = If(IsSkShader(shad), shad.IsTypeFaceTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Face) <> 0),
                 .Hair = If(IsSkShader(shad), shad.IsTypeHairTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair) <> 0),
                 .SkinTint = If(IsSkShader(shad), shad.IsTypeSkinTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Skin_Tint) <> 0),
-                .BackLighting = If(IsSkShader(shad), shad.HasBacklight, shad.BacklightPower > 0.0F),
-                .BackLightPower = shad.BacklightPower,
+                .BackLighting = If(IsSkShader(shad), shad.HasBacklight, Fo4NifBacklightPower(shad) > 0.0F),
+                .BackLightPower = If(IsSkShader(shad), shad.BacklightPower, Fo4NifBacklightPower(shad)),
                 .SpecularEnabled = shad.HasSpecular,
                 .SpecularColor = NifColor3ToMaterialRgb(shad.SpecularColor),
                 .SpecularMult = shad.SpecularStrength,
                 .Glowmap = shad.HasGlowmap,
                 .Tree = shad.HasTreeAnim,
-                .SubsurfaceLighting = If(IsSkShader(shad), shad.HasSoftlight, shad.SubsurfaceRolloff > 0.0F),
+                .SubsurfaceLighting = If(IsSkShader(shad), shad.HasSoftlight, shad.SubsurfaceRolloff <> 0.0F),
                 .RimLighting = If(IsSkShader(shad), shad.HasRimlight, shad.RimlightPower < Single.MaxValue),
                 .RimPower = shad.RimlightPower,
                 .GrayscaleToPaletteColor = shad.HasGreyscaleToPaletteColor,
@@ -4078,7 +4114,9 @@ Public Class FO4UnifiedMaterial_Class
         ApplyAlphaPropertyFromNif(shap, Nif)
         ClearDirty()
     End Sub
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty)
+    ''' <param name="transcription">The bake / export transcription that cuts the material file link: the material's colours are
+    ''' written as resolved (byte-identical to the closed bake). Outside a transcription the block keeps a colour nobody changed.</param>
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty, Optional transcription As Boolean = False)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGEM)
         ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
@@ -4100,7 +4138,7 @@ Public Class FO4UnifiedMaterial_Class
         shad.UVScale = New TexCoord(Mat.UScale, Mat.VScale)
         shad.HasEnvironmentMapping = Mat.EnvironmentMapping
         shad.EnvironmentMapScale = Mat.EnvironmentMappingMaskScale
-        shad.EmittanceColor = MaterialRgbToNifColor3(Mat.EmittanceColor)
+        shad.EmittanceColor = NifColor3ForSave(shad.EmittanceColor, Mat.EmittanceColor, keepBlock:=Not transcription)
         EnsureNiString4(shad.SourceTexture, Mat.BaseTexture)
         EnsureNiString4(shad.NormalTexture, Mat.NormalTexture)
         EnsureNiString4(shad.GreyscaleTexture, Mat.GrayscaleTexture)
@@ -4110,12 +4148,7 @@ Public Class FO4UnifiedMaterial_Class
         EnsureNiString4(shad.ReflectanceTexture, Mat.SpecularTexture)
         EnsureNiString4(shad.EmitGradientTexture, Mat.GlowTexture)
 
-        Dim bcColor = Me.BaseColor
-        shad.BaseColor = New NiflySharp.Structs.Color4(
-            bcColor.R / 255.0F,
-            bcColor.G / 255.0F,
-            bcColor.B / 255.0F,
-            Mat.Alpha)
+        shad.BaseColor = NifColor4ForSave(shad.BaseColor, Mat.BaseColor, Mat.Alpha, keepBlock:=Not transcription)
         shad.BaseColorScale = Mat.BaseColorScale
         shad.FalloffStartAngle = Mat.FalloffStartAngle
         shad.FalloffStopAngle = Mat.FalloffStopAngle
@@ -4235,6 +4268,25 @@ Public Class FO4UnifiedMaterial_Class
         End If
         Return _resolvedWetnessCache
     End Function
+    ''' <summary>User decision rev-43 b: in the NPC Manager preview a FaceGen part (a head part) draws with the wetness the FaceGen
+    ''' bake writes inline (ResolvedWetness*), the values the engine reads from the baked NIF. Set by NpcMaterialResolver; the bake
+    ''' does not read it. Sub / Function on purpose: GetDifferences reflects public properties.</summary>
+    Public Sub MarkWetnessAsBaked()
+        _wetnessAsBaked = True
+    End Sub
+    Private _wetnessAsBaked As Boolean
+
+    ''' <summary>The WetnessControl values the FO4 G-buffer constants read (mat+0x94..0xA8): ResolvedWetness* for a part marked by
+    ''' MarkWetnessAsBaked, the material's own otherwise.</summary>
+    Public Function EngineWetness() As (SpecScale As Single, SpecPowerScale As Single, SpecMinvar As Single, EnvMapScale As Single, FresnelPower As Single, Metalness As Single)
+        If _wetnessAsBaked Then
+            Dim r = ResolvedWetness()
+            Return (r(0), r(1), r(2), r(3), r(4), r(5))
+        End If
+        Return (WetnessControlSpecScale, WetnessControlSpecPowerScale, WetnessControlSpecMinvar, WetnessControlEnvMapScale,
+                WetnessControlFresnelPower, WetnessControlMetalness)
+    End Function
+
     Private Shared Function SameRawWetness(a As Single(), b As Single()) As Boolean
         If a Is Nothing OrElse b Is Nothing Then Return False
         For i = 0 To 5
@@ -4267,7 +4319,7 @@ Public Class FO4UnifiedMaterial_Class
                 rootPath = If(bgsm.Facegen OrElse bgsm.SkinTint, SkinWetTemplate, DefaultWetTemplate)
                 defaultApplied = True
             End If
-            Dim key = MaterialsPrefix & CorrectMaterialPath(rootPath).StripPrefix(MaterialsPrefix)
+            Dim key = MaterialKeyOf(rootPath)
             If Not seen.Add(key.ToLowerInvariant()) Then Exit While   ' cycle guard (incl. default self-ref)
             Dim parent = LoadBgsmByKey(key)
             If parent Is Nothing Then Exit While
@@ -4281,9 +4333,46 @@ Public Class FO4UnifiedMaterial_Class
         End While
         Return eff
     End Function
+    ''' <summary>The archive key of a material path a material file or a NIF names (the engine prepends "materials" to the name,
+    ''' 0x1417A9B86..0x1417A9B92).</summary>
+    Private Shared Function MaterialKeyOf(path As String) As String
+        Return MaterialsPrefix & CorrectMaterialPath(path).StripPrefix(MaterialsPrefix)
+    End Function
+
+    Private _engineRootName As String = Nothing
+    Private _engineRootBytes As Byte()
+    Private _engineRootWetness As Single()
+
+    ''' <summary>The root material's six raw WetnessControl values (SpecScale, SpecPowerScale, SpecMinvar, EnvMapScale, FresnelPower,
+    ''' Metalness: [res+0x20]+0x3C..0x50, 0x1421CE216..0x1421CE31C) as the engine loads it for the -1 completion (one level, no chain);
+    ''' Nothing when it does not load (the -1 stay). Cached by name AND by the archive bytes' identity (FilesDictionary drops its bytes
+    ''' cache entry when the file changes, so a root edited in the session is read again).</summary>
+    Friend Function EngineRootWetness(rootName As String) As Single()
+        Dim bytes = FilesDictionary_class.GetBytes(MaterialKeyOf(rootName))
+        If _engineRootName IsNot Nothing AndAlso String.Equals(rootName, _engineRootName, StringComparison.OrdinalIgnoreCase) AndAlso
+           ReferenceEquals(bytes, _engineRootBytes) Then Return _engineRootWetness
+        Dim root = BgsmFromBytes(bytes)
+        _engineRootName = rootName
+        _engineRootBytes = bytes
+        _engineRootWetness = If(root Is Nothing, Nothing,
+                                {root.WetnessControlSpecScale, root.WetnessControlSpecPowerScale, root.WetnessControlSpecMinvar,
+                                 root.WetnessControlEnvMapScale, root.WetnessControlFresnelPower, root.WetnessControlMetalness})
+        Return _engineRootWetness
+    End Function
+
+    ''' <summary>rev-43 b: this part draws with the wetness the FaceGen bake writes (MarkWetnessAsBaked; EngineWetness returns it).</summary>
+    Friend Function WetnessIsBaked() As Boolean
+        Return _wetnessAsBaked
+    End Function
+
     Private Shared Function LoadBgsmByKey(key As String) As BGSM
+        Return BgsmFromBytes(FilesDictionary_class.GetBytes(key))
+    End Function
+
+    ''' <summary>A material file's bytes as the engine reads them (binary or JSON, a raw blend pair tolerated: MaterialFileReader);
+    ''' Nothing when empty or unreadable.</summary>
+    Private Shared Function BgsmFromBytes(bytes As Byte()) As BGSM
         Try
-            Dim bytes = FilesDictionary_class.GetBytes(key)
             If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
             ' As the engine reads it (binary or JSON, a raw blend pair tolerated): MaterialFileReader.
             Return DirectCast(MaterialFileReader.Leer(bytes, GetType(BGSM)).Material, BGSM)
@@ -4309,22 +4398,23 @@ Public Class FO4UnifiedMaterial_Class
     ''' <para>El guard NO puede suprimir un valor derivado: `SkinTintColor` y `HairTintColor` del material
     ''' son EL MISMO campo del BGSM (ver el getter de SkinTintColor), así que cuando el resolver escribe el
     ''' tono de piel del actor (ver <c>NpcMaterialResolver</c>) el valor DIFIERE del que trae el shader y el guard
-    ''' no salta. Sólo saltea cuando escribir sería un no-op salvo por la cuantización. Y por eso el
-    ''' HairTintColor de Save_To_Shader se escribe SIEMPRE y no lleva guard: ése es un valor DERIVADO del CLFM
-    ''' del NPC (2 × CLFM, paridad con el CK — verificado byte-exacto: NPC 0x00016F04 → CLFM
-    ''' HairColor12BlackTrue (16,18,18) → NIF horneado (32,36,36)/255). Preservarlo sería el bug.</para></summary>
+    ''' no salta. Sólo saltea cuando escribir sería un no-op salvo por la cuantización. El guard es el del escritor
+    ''' único de colores del guardado (NifColor3ForSave). El HairTintColor de Save_To_Shader en una TRANSCRIPCIÓN (bake /
+    ''' export) se escribe SIEMPRE, sin guard: ahí es un valor DERIVADO del CLFM del NPC (2 × CLFM, paridad con el CK —
+    ''' verificado byte-exacto: NPC 0x00016F04 → CLFM HairColor12BlackTrue (16,18,18) → NIF horneado (32,36,36)/255) y el
+    ''' material no se leyó de ese bloque. Fuera de una transcripción lleva el guard.</para></summary>
     Public Sub WriteSkinTintToShader(shad As BSLightingShaderProperty)
         If shad Is Nothing Then Return
         Dim mat = TryCast(Underlying_Material, BGSM)
         If mat Is Nothing OrElse Not mat.SkinTint Then Return
-        Dim skinTintUntouched As Boolean =
-            Me.TintColorScale = 1.0F AndAlso
-            NifColor3ToMaterialRgb(shad.SkinTintColor) = mat.HairTintColor
-        If Not skinTintUntouched Then shad.SkinTintColor = MaterialRgbToNifColor3(mat.HairTintColor, Me.TintColorScale)
+        shad.SkinTintColor = NifColor3ForSave(shad.SkinTintColor, mat.HairTintColor, Me.TintColorScale)
         shad.SkinTintAlpha = Me.SkinTintAlpha
     End Sub
 
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
+    ''' <param name="transcription">The bake / export transcription that cuts the material file link: wetness written completed
+    ''' and the material's colours written as resolved (byte-identical to the closed bake). Outside a transcription the block
+    ''' keeps a colour nobody changed and its own wetness.</param>
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
         ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
@@ -4345,7 +4435,7 @@ Public Class FO4UnifiedMaterial_Class
         shad.UVOffset = New TexCoord(Mat.UOffset, Mat.VOffset)
         shad.UVScale = New TexCoord(Mat.UScale, Mat.VScale)
         shad.Emissive = Mat.EmitEnabled
-        shad.EmissiveColor = MaterialRgbToNifColor4(Mat.EmittanceColor, 0.0F)
+        shad.EmissiveColor = NifColor4ForSave(shad.EmissiveColor, Mat.EmittanceColor, 0.0F, keepBlock:=Not transcription)
         shad.EmissiveMultiple = Mat.EmittanceMult
         shad.Alpha = Mat.Alpha
         ' Sin downgrade EnvironmentMap→Default cuando falta la textura: lo refuta vanilla (50.303 shapes
@@ -4407,8 +4497,7 @@ Public Class FO4UnifiedMaterial_Class
             End Select
         End If
         ' TintColorScale sube el ×2 del pelo SSE al dominio FLOAT (el storage BGSM es de bytes, techo 1.0).
-        Dim hairTintNifColor = MaterialRgbToNifColor3(Mat.HairTintColor, Me.TintColorScale)
-        shad.HairTintColor = hairTintNifColor
+        shad.HairTintColor = NifColor3ForSave(shad.HairTintColor, Mat.HairTintColor, Me.TintColorScale, keepBlock:=Not transcription)
         ' El skin-tone tiene UN solo escritor, compartido con el export a NIF: WriteSkinTintToShader.
         WriteSkinTintToShader(shad)
         shad.HasBacklight = Mat.BackLighting
@@ -4424,7 +4513,7 @@ Public Class FO4UnifiedMaterial_Class
         shad.BacklightPower = If(Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso Not Mat.BackLighting,
                                  0.0F, Mat.BackLightPower)
         shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
-        shad.SpecularColor = MaterialRgbToNifColor3(Mat.SpecularColor)
+        shad.SpecularColor = NifColor3ForSave(shad.SpecularColor, Mat.SpecularColor, keepBlock:=Not transcription)
         shad.SpecularStrength = Mat.SpecularMult
         shad.HasGlowmap = Mat.Glowmap
         shad.HasTreeAnim = Mat.Tree
@@ -4446,13 +4535,25 @@ Public Class FO4UnifiedMaterial_Class
         shad.UseScreenSpaceReflections = Mat.ScreenSpaceReflections
         shad.WetnessControl_UseSSR = Mat.WetnessControlScreenSpaceReflections
         shad.RefractionStrength = Mat.RefractionPower
+        ' Wetness: the material's own values - an untouched -1 stays -1 and the engine completes it from the root material at load
+        ' (0x1421CE1B0). A transcription that cuts the .bgsm link (bake / export, transcription) writes them completed, as
+        ' the CK's FaceGen carries them. Census of the save on unedited vanilla NIFs: 55 468 FO4 shapes were rewritten.
         Dim wet = shad.Wetness
-        wet.SpecScale = Me.ResolvedWetnessControlSpecScale
-        wet.SpecPower = Me.ResolvedWetnessControlSpecPowerScale
-        wet.MinVar = Me.ResolvedWetnessControlSpecMinvar
-        wet.EnvMapScale = Me.ResolvedWetnessControlEnvMapScale
-        wet.FresnelPower = Me.ResolvedWetnessControlFresnelPower
-        wet.Metalness = Me.ResolvedWetnessControlMetalness
+        If transcription Then
+            wet.SpecScale = Me.ResolvedWetnessControlSpecScale
+            wet.SpecPower = Me.ResolvedWetnessControlSpecPowerScale
+            wet.MinVar = Me.ResolvedWetnessControlSpecMinvar
+            wet.EnvMapScale = Me.ResolvedWetnessControlEnvMapScale
+            wet.FresnelPower = Me.ResolvedWetnessControlFresnelPower
+            wet.Metalness = Me.ResolvedWetnessControlMetalness
+        Else
+            wet.SpecScale = Mat.WetnessControlSpecScale
+            wet.SpecPower = Mat.WetnessControlSpecPowerScale
+            wet.MinVar = Mat.WetnessControlSpecMinvar
+            wet.EnvMapScale = Mat.WetnessControlEnvMapScale
+            wet.FresnelPower = Mat.WetnessControlFresnelPower
+            wet.Metalness = Mat.WetnessControlMetalness
+        End If
         shad.Wetness = wet
 
         ' P4: game-aware. For FO4 (the byte-faithful FaceGen path) these helpers return the same
@@ -4496,13 +4597,16 @@ Public Class FO4UnifiedMaterial_Class
             ' lo pone en UNA sola shape. Espejarlo incondicionalmente lo pone en 3465 shapes donde el CK no
             ' lo pone.
             ' El árbitro real es el flag de record ACBS\Diffuse Alpha Test, pero eso NO se decide acá: la lib
-            ' sólo TRANSPORTA el HECHO del record vía NpcDiffuseAlphaTest. False (el default) = bit limpio,
-            ' que es el comportamiento de todo consumidor que no sea el bake de FO4.
+            ' sólo TRANSPORTA el HECHO del record vía NpcDiffuseAlphaTest. Sin informar (Nothing, todo consumidor que no
+            ' sea NPC Manager: no hay record) = el bit del bloque queda como vino (censo del guardado: 37 shapes vanilla
+            ' lo perdían); True / False = el hecho del record.
             ' Ley completa y evidencia: 40-bake-leyes-fo4.md §8.
-            If Me.NpcDiffuseAlphaTest Then
-                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
-            Else
-                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
+            If Me.NpcDiffuseAlphaTest.HasValue Then
+                If Me.NpcDiffuseAlphaTest.Value Then
+                    shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
+                Else
+                    shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
+                End If
             End If
             If Mat.SkewSpecularAlpha Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha
@@ -4511,13 +4615,17 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
         If IsNothing(shad.TextureSetRef) OrElse shad.TextureSetRef.Index = -1 Then
-            Dim texset1 = New BSShaderTextureSet
-            shad.TextureSetRef = New NiBlockRef(Of BSShaderTextureSet) With {.Index = Nif.AddBlock(texset1)}
-            texset1.Textures = New List(Of NiString4)
+            ' A block without a texture set reads as a material with no texture; it gets one only when the material has a
+            ' texture to write (census of the save on unedited vanilla NIFs: 14 FO4 blocks got an empty one).
+            Dim texset1 As New BSShaderTextureSet With {.Textures = New List(Of NiString4)}
+            WriteBgsmTexturesToTextureSet(Mat, texset1, IsSkShader(shad), envmapMaskPath)
+            If texset1.Textures.Any(Function(t) Not String.IsNullOrEmpty(t?.Content)) Then
+                shad.TextureSetRef = New NiBlockRef(Of BSShaderTextureSet) With {.Index = Nif.AddBlock(texset1)}
+            End If
+        Else
+            Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
+            WriteBgsmTexturesToTextureSet(Mat, texset, IsSkShader(shad), envmapMaskPath)
         End If
-
-        Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
-        WriteBgsmTexturesToTextureSet(Mat, texset, IsSkShader(shad), envmapMaskPath)
         WriteAlphaPropertyToShape(shap, Nif)
     End Sub
     ''' <summary>
@@ -4629,18 +4737,12 @@ Public Class FO4UnifiedMaterial_Class
             ' not slot 6. Do not cross-assign. SSE dual-purpose handled below.
         End If
 
-        ' Slot 6 (SSE dual-purpose): lightmask OR TINTMASK. For a FaceTint head (Facegen), slot 6 is the
-        ' facegen TINT MASK (the baked facetint _d) — the engine's FaceTint technique samples it over the
-        ' diffuse. It must land on its OWN field (InnerLayerTexture), NOT LightingTexture, because slot 2's
-        ' subsurface (_sk) already occupies LightingTexture — otherwise the facetint is lost/clobbered (WM
-        ' dropped it, leaving the head without its tint). Game-gated (SSE) + facegen-gated. FO4: untouched.
-        If isSkyrim Then
-            If mat.Facegen Then
-                mat.InnerLayerTexture = texset.Textures(textset_LightingTexture).Content
-            ElseIf String.IsNullOrEmpty(mat.LightingTexture) Then
-                mat.LightingTexture = texset.Textures(textset_LightingTexture).Content
-            End If
-        End If
+        ' Slot 6 (SSE): its OWN field, InnerLayerTexture, always. nif.xml declares it the inner layer of a MultiLayerParallax;
+        ' on a FaceTint head it is the facegen TINT MASK (the baked facetint _d) the engine's FaceTint technique samples over
+        ' the diffuse - the same field. It is never slot 2's lightmask (LightingTexture): read there it was lost on save
+        ' (census of the save on unedited vanilla NIFs: 150 MultiLayerParallax with soft / rim light lost it, 1 had it moved to
+        ' slot 2). Vanilla SSE carriers: 3150 FaceTint, 662 MultiLayerParallax, 1 Default. FO4: untouched.
+        If isSkyrim Then mat.InnerLayerTexture = texset.Textures(textset_LightingTexture).Content
     End Sub
 
     Private Shared Sub WriteBgsmTexturesToTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSkyrim As Boolean, envmapMaskPath As String)
@@ -4671,20 +4773,12 @@ Public Class FO4UnifiedMaterial_Class
         ' ignores the Soft_Lighting flag (engine does subsurface unconditionally for technique 4).
         If isSkyrim AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
             texset.Textures(textset_GlowTexture).Content = mat.LightingTexture
-            ' Slot 6: a FaceTint head keeps its TINT MASK (facetint) from InnerLayerTexture; else clear (the
-            ' _sk subsurface lives on slot 2 via LightingTexture). Mirror of the read. Game+facegen gated.
-            texset.Textures(textset_LightingTexture).Content = If(mat.Facegen, mat.InnerLayerTexture, "")
         Else
             texset.Textures(textset_GlowTexture).Content = mat.GlowTexture
-            ' Slot 6: SSE writes LightingTexture; FO4 has no sampler here, so we
-            ' clear slot 6 explicitly. Without this, reusing a texset from a SSE
-            ' source NIF on a FO4 save would leave stale data behind.
-            If isSkyrim Then
-                texset.Textures(textset_LightingTexture).Content = mat.LightingTexture
-            Else
-                texset.Textures(textset_LightingTexture).Content = ""
-            End If
         End If
+        ' Slot 6: SSE = InnerLayerTexture, mirror of the read. FO4 has no sampler here, so it is cleared explicitly: without this,
+        ' reusing a texset from an SSE source NIF on a FO4 save would leave stale data behind.
+        texset.Textures(textset_LightingTexture).Content = If(isSkyrim, mat.InnerLayerTexture, "")
 
     End Sub
     Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
@@ -4997,6 +5091,14 @@ Public Class FO4UnifiedMaterial_Class
         Return CType((CUInt(c.R) << 16) Or (CUInt(c.G) << 8) Or CUInt(c.B), UInteger)
     End Function
 
+    ''' <summary>The Backlight Power a Fallout 4 engine reads from an inline block: only with Rimlight Power FLT_MAX or NaN, else 0
+    ''' (LoadBinary 0x1421CE98A..9B8; nif.xml serialises the field under the same condition, so for a block read from disk it is
+    ''' the stored value). Applied once at read: from here on the material has the .bgsm law (backlight = power).</summary>
+    Private Shared Function Fo4NifBacklightPower(shad As BSLightingShaderProperty) As Single
+        Dim rim = shad.RimlightPower
+        Return If(rim = Single.MaxValue OrElse Single.IsNaN(rim), shad.BacklightPower, 0.0F)
+    End Function
+
     Private Shared Function MaterialRgbToNifColor3(rgb As UInteger, Optional scale As Single = 1.0F) As NiflySharp.Structs.Color3
         rgb = rgb And &HFFFFFFUI
         Dim r = ((rgb >> 16) And &HFF)
@@ -5017,6 +5119,7 @@ Public Class FO4UnifiedMaterial_Class
     End Function
     Private Shared Function ClampByte(value As Single) As Integer
         If value > Integer.MaxValue Then Return 255
+        If value < Integer.MinValue Then Return 0
         Return Math.Min(255, Math.Max(0, CInt(value)))
     End Function
     Private Shared Function NifColor3ToMaterialRgb(color As NiflySharp.Structs.Color3) As UInteger
@@ -5029,6 +5132,26 @@ Public Class FO4UnifiedMaterial_Class
         Return CType((CUInt(ClampByte(color.R * 255)) << 16) Or
                      (CUInt(ClampByte(color.G * 255)) << 8) Or
                      CUInt(ClampByte(color.B * 255)), UInteger)
+    End Function
+
+    ''' <summary>The Color3 the save writes for a material colour. The material stores 3 bytes, the NIF a float per channel: when
+    ''' reading the block's current colour gives the material's bytes, nobody changed it and the block keeps its exact value (a
+    ''' rewrite would re-quantise it, and cut a component above 1 to 1 - census of the save on unedited vanilla NIFs). Otherwise
+    ''' the material's colour. Only with scale 1: with another scale read and write are not inverse.
+    ''' <para>keepBlock False - a transcription (bake / export): the material was NOT read from this block, it is the resolved
+    ''' one - writes the material's colour always, the closed bake's bytes.</para></summary>
+    Private Shared Function NifColor3ForSave(current As NiflySharp.Structs.Color3, rgb As UInteger, Optional scale As Single = 1.0F,
+                                             Optional keepBlock As Boolean = True) As NiflySharp.Structs.Color3
+        If keepBlock AndAlso scale = 1.0F AndAlso NifColor3ToMaterialRgb(current) = (rgb And &HFFFFFFUI) Then Return current
+        Return MaterialRgbToNifColor3(rgb, scale)
+    End Function
+
+    ''' <summary><see cref="NifColor3ForSave"/> for a Color4: the same rule on R, G, B; the alpha is the caller's.</summary>
+    Private Shared Function NifColor4ForSave(current As NiflySharp.Structs.Color4, rgb As UInteger, alpha As Single,
+                                             Optional keepBlock As Boolean = True) As NiflySharp.Structs.Color4
+        If keepBlock AndAlso NifColor4ToMaterialRgb(current) = (rgb And &HFFFFFFUI) Then Return New NiflySharp.Structs.Color4(current.R, current.G, current.B, alpha)
+        Dim c = MaterialRgbToNifColor3(rgb)
+        Return New NiflySharp.Structs.Color4(c.R, c.G, c.B, alpha)
     End Function
 
     ' Dominio representable del par Smoothness (FO4) <-> Glossiness (SSE) = exp2(Smoothness*10+1) y su

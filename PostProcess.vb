@@ -416,6 +416,453 @@ Public Class PostProcess_Sse_Shader_Class
     End Sub
 End Class
 
+''' <summary>The refraction-normals pass of each game: its game's VS (the shape's skinning and position, plus the
+''' RefractionSource vertex terms) and the normals PS.</summary>
+Public Class Refraction_Normals_Sse_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(Shader_Class_SSE.Vertex_SSE, RefractionSource.Normals_Fragment)
+    End Sub
+End Class
+
+Public Class Refraction_Normals_Fo4_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(Shader_Class_Fo4.Vertex_FO4, RefractionSource.Normals_Fragment)
+    End Sub
+End Class
+
+''' <summary>ISRefraction (both games; the constants per game, RefractionLaw.ImageSpaceConstants).</summary>
+Public Class Refraction_ImageSpace_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(RefractionSource.ImageSpace_Vertex, RefractionSource.ImageSpace_Fragment)
+    End Sub
+End Class
+
+''' <summary>THE FULL-SCREEN TRIANGLE OF EVERY IMAGE-SPACE PASS (the post, ISRefraction, the SSE SAO and its composite), in one
+''' place: the caller binds its framebuffer, uses <paramref name="program"/> and sets its inputs; Draw turns the depth test, the
+''' depth write, the blend and the culling off, draws the attribute-less triangle (the core profile needs a VAO bound), unbinds
+''' texture units 0..unitsUsed-1 (targets are attachments again later: no unit may keep them, feedback loop) and leaves the program
+''' unbound and the culling ENABLED, the state the scene draws expect. The depth test / write and the blend are restored by the
+''' caller (each one knows what follows).</summary>
+Friend NotInheritable Class FullscreenPass
+    Private Sub New()
+    End Sub
+
+    ''' <param name="writesDepth">The program writes gl_FragDepth into the bound depth buffer: the depth test on with ALWAYS (GL updates
+    ''' the depth buffer only while the test is enabled) and writes on. Otherwise depth off.</param>
+    Friend Shared Sub Draw(program As Shader_Base_Class, emptyVao As Integer, unitsUsed As Integer, Optional writesDepth As Boolean = False)
+        If writesDepth Then
+            GL.Enable(EnableCap.DepthTest)
+            GL.DepthFunc(DepthFunction.Always)
+            GL.DepthMask(True)
+        Else
+            GL.Disable(EnableCap.DepthTest)
+            GL.DepthMask(False)
+        End If
+        GL.Disable(EnableCap.Blend)
+        GL.Disable(EnableCap.CullFace)
+        GL.BindVertexArray(emptyVao)
+        GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
+        GL.BindVertexArray(0)
+        For u = 0 To unitsUsed - 1 : GL.BindTextureUnit(u, 0) : Next
+        GL.UseProgram(0)
+        GL.Enable(EnableCap.CullFace)
+    End Sub
+End Class
+
+''' <summary>A FULL-SCREEN PASS OVER THE FRAME'S COLOUR (attachment 0 of a framebuffer, or the window's back buffer): the colour is
+''' copied first (t0 "texScene", bilinear, clamped) and the program writes the frame. The image-space passes of the engines that read
+''' the scene they write (ISRefraction, the SSE SAO composite) go through it.</summary>
+Friend NotInheritable Class SceneColorPass
+    Private _copy As Integer, _fmt As SizedInternalFormat, _w As Integer, _h As Integer
+
+    Public Sub Apply(program As Shader_Base_Class, targetFbo As Integer, fmt As SizedInternalFormat, w As Integer, h As Integer,
+                     emptyVao As Integer, bindInputs As Action(Of Shader_Base_Class))
+        If _copy = 0 OrElse w <> _w OrElse h <> _h OrElse fmt <> _fmt Then
+            If _copy <> 0 Then GL.DeleteTexture(_copy)
+            GL.CreateTextures(TextureTarget.Texture2D, 1, _copy)
+            GL.TextureStorage2D(_copy, 1, fmt, w, h)
+            For Each prm In {TextureParameterName.TextureMinFilter, TextureParameterName.TextureMagFilter}
+                GL.TextureParameter(_copy, prm, CInt(TextureMinFilter.Linear))
+            Next
+            For Each prm In {TextureParameterName.TextureWrapS, TextureParameterName.TextureWrapT}
+                GL.TextureParameter(_copy, prm, CInt(TextureWrapMode.ClampToEdge))
+            Next
+            _fmt = fmt : _w = w : _h = h
+        End If
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo)
+        GL.ReadBuffer(If(targetFbo = 0, ReadBufferMode.Back, ReadBufferMode.ColorAttachment0))
+        GL.CopyTextureSubImage2D(_copy, 0, 0, 0, 0, 0, w, h)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo)
+        If targetFbo <> 0 Then GL.DrawBuffer(DrawBufferMode.ColorAttachment0) Else GL.DrawBuffer(DrawBufferMode.Back)
+        GL.Viewport(0, 0, w, h)
+        GL.ColorMask(True, True, True, True)
+        program.Use()
+        GL.BindTextureUnit(0, _copy)
+        program.SetInt("texScene", 0)
+        bindInputs?.Invoke(program)
+        FullscreenPass.Draw(program, emptyVao, 4)
+        GL.DepthMask(True)
+        GL.Enable(EnableCap.DepthTest)
+    End Sub
+
+    Public Sub Free()
+        If _copy <> 0 Then GL.DeleteTexture(_copy) : _copy = 0
+        _w = 0 : _h = 0
+    End Sub
+End Class
+
+''' <summary>THE SKYRIM SE SAO COMPOSITE over the opaque scene (Tools/re-docs/AUDIT_SSE_RE_2026-10-03.md, follow-up 2): the world
+''' render runs it after the opaque finish (decals and list 0xD included) and before the alpha finish (0x141539F10 -> 0x141541F40,
+''' 0x14153A1CA), ISSAOCompositeSAOFog PS 16004 with the default INIs (bSAOEnable 1, bSAOApplyFog 1): per geometry pixel
+''' saturate(lerp(ao * (scene + ssr), fogColor, F) * invFrameBufferRange); a sky pixel (depth >= 0.999999) gets saturate(ao *
+''' (scene + ssr)), no fog and no invFBR. The preview: no fog (user decision), no SSR and no snow terms, and no AO pass (not
+''' computed by the preview). The engine's geometry is the meshes; the preview's background and its floor are app elements the
+''' engine does not have (the floor is matched to the background at the horizon): a pixel no mesh drew (coverage g = 0, which
+''' only mesh draws write) is left as it is.</summary>
+Public Class Sse_Opaque_Composite_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(RefractionSource.ImageSpace_Vertex, SseCompositeSource.Fragment)
+    End Sub
+End Class
+
+''' <summary>One pass of the Skyrim SE SAO: the full-screen VS of the transcription + one of SseSaoSource's six fragments.</summary>
+Public Class Sse_Sao_Pass_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New(fragment As String)
+        MyBase.New(SseSaoSource.Vs_Fullscreen, fragment)
+    End Sub
+End Class
+
+''' <summary>The six SAO programs (CameraZ 15997, Minify 16006, MinifyContrast 16008, RawAO 16012, BlurH 15991, BlurV 15993).</summary>
+Friend NotInheritable Class SseSaoPrograms
+    Friend ReadOnly CameraZ As Sse_Sao_Pass_Shader_Class
+    Friend ReadOnly Minify As Sse_Sao_Pass_Shader_Class
+    Friend ReadOnly MinifyContrast As Sse_Sao_Pass_Shader_Class
+    Friend ReadOnly RawAO As Sse_Sao_Pass_Shader_Class
+    Friend ReadOnly BlurH As Sse_Sao_Pass_Shader_Class
+    Friend ReadOnly BlurV As Sse_Sao_Pass_Shader_Class
+
+    Friend Sub New()
+        Me.New(Nothing)
+    End Sub
+
+    ''' <summary>GATE ONLY with <paramref name="gateMutation"/> (ShadowGate --sse-sao-law mutants): each fragment text goes through it.</summary>
+    Friend Sub New(gateMutation As Func(Of String, String))
+        Dim m = If(gateMutation, Function(s As String) s)
+        ' A pass that does not compile or link throws out of here after releasing the ones already built (v4 B-rev-05).
+        Try
+            CameraZ = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_CameraZ))
+            Minify = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_Minify))
+            MinifyContrast = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_MinifyContrast))
+            RawAO = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_RawAO))
+            BlurH = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_BlurH))
+            BlurV = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_BlurV))
+        Catch
+            Dispose()
+            Throw
+        End Try
+    End Sub
+
+    Friend Sub Dispose()
+        For Each p As Shader_Base_Class In {CameraZ, Minify, MinifyContrast, RawAO, BlurH, BlurV}
+            p?.Dispose()
+        Next
+    End Sub
+End Class
+
+''' <summary>THE TARGETS AND THE RUN OF THE SKYRIM SE SAO (Tools/re-docs/RE_SAO_BOTH_2026-10-03.md 1.5): CameraZ into level 0 of an
+''' R32F pyramid (RT 0x31/0x32), Minify / MinifyContrast into levels 1..min(4, n-1) (RawAO reads mips &lt;= 4), RawAO 16012 into an
+''' RGBA8 target (RT 0x3E), BlurH into RT 0x42 and BlurV into kSAO (RT 0x2E). Every pass runs under
+''' glClipControl(UPPER_LEFT): the SAO targets are in D3D row order and only the two scene inputs (depth, normals) are flipped on
+''' read (SseSaoSource.Prelude). The samplers are the engine's table (RE 1.5): FILT 0 point, FILT 1 bilinear mip-point, FILT 2
+''' trilinear, all CLAMP; the blurs inherit the RawAO slot-0 sampler (FILT 2).</summary>
+Friend NotInheritable Class SseSaoTargets
+    Private _w As Integer, _h As Integer, _levels As Integer
+    Private _pyramid As Integer
+    Private _views As Integer()
+    Private _ao As Integer, _blurH As Integer, _kSao As Integer
+    Private _fbo As Integer
+    Private _sFilt0 As Integer, _sFilt1 As Integer, _sFilt2 As Integer
+
+    ''' <summary>GATE ONLY (ShadowGate --sse-sao-law mutant): run the passes without glClipControl(UPPER_LEFT).</summary>
+    Friend Shared GateNoClipControl As Boolean
+
+    ''' <summary>kSAO, in D3D row order (0 before the first Run).</summary>
+    Public ReadOnly Property KSaoTexture As Integer
+        Get
+            Return _kSao
+        End Get
+    End Property
+
+    ''' <summary>GATE ONLY: the CameraZ / Minify pyramid, the raw AO and the BlurH output of the last Run.</summary>
+    Friend ReadOnly Property PyramidTexture As Integer
+        Get
+            Return _pyramid
+        End Get
+    End Property
+    Friend ReadOnly Property RawAoTexture As Integer
+        Get
+            Return _ao
+        End Get
+    End Property
+    Friend ReadOnly Property BlurHTexture As Integer
+        Get
+            Return _blurH
+        End Get
+    End Property
+    Friend ReadOnly Property Levels As Integer
+        Get
+            Return _levels
+        End Get
+    End Property
+
+    Private Shared Function NewSampler(minF As TextureMinFilter, magF As TextureMagFilter, maxLod As Single) As Integer
+        Dim s = GL.GenSampler()
+        GL.SamplerParameter(s, SamplerParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+        GL.SamplerParameter(s, SamplerParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        GL.SamplerParameter(s, SamplerParameterName.TextureMinFilter, CInt(minF))
+        GL.SamplerParameter(s, SamplerParameterName.TextureMagFilter, CInt(magF))
+        GL.SamplerParameter(s, SamplerParameterName.TextureMinLod, -Single.MaxValue)
+        GL.SamplerParameter(s, SamplerParameterName.TextureMaxLod, maxLod)
+        GL.SamplerParameter(s, SamplerParameterName.TextureCompareMode, CInt(TextureCompareMode.None))
+        Return s
+    End Function
+
+    Private Shared Function NewTex(fmt As SizedInternalFormat, levels As Integer, w As Integer, h As Integer) As Integer
+        Dim t As Integer
+        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
+        GL.TextureStorage2D(t, levels, fmt, w, h)
+        Return t
+    End Function
+
+    Private Sub Ensure(w As Integer, h As Integer)
+        If _fbo <> 0 AndAlso w = _w AndAlso h = _h Then Return
+        Free()
+        _levels = SseSaoConstants.PyramidLevels(w, h)
+        _pyramid = NewTex(SizedInternalFormat.R32f, _levels, w, h)
+        ReDim _views(_levels - 1)
+        For i = 0 To _levels - 1
+            _views(i) = GL.GenTexture()
+            GL.TextureView(_views(i), TextureTarget.Texture2D, _pyramid, PixelInternalFormat.R32f, i, 1, 0, 1)
+        Next
+        _ao = NewTex(SizedInternalFormat.Rgba8, 1, w, h)
+        _blurH = NewTex(SizedInternalFormat.Rgba8, 1, w, h)
+        _kSao = NewTex(SizedInternalFormat.Rgba8, 1, w, h)
+        _fbo = GL.GenFramebuffer()
+        _sFilt0 = NewSampler(TextureMinFilter.NearestMipmapNearest, TextureMagFilter.Nearest, 0.0F)
+        _sFilt1 = NewSampler(TextureMinFilter.LinearMipmapNearest, TextureMagFilter.Linear, 0.0F)
+        _sFilt2 = NewSampler(TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, Single.MaxValue)
+        _w = w : _h = h
+    End Sub
+
+    Private Sub Target(tex As Integer, level As Integer, w As Integer, h As Integer)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, level)
+        GL.DrawBuffer(DrawBufferMode.ColorAttachment0)
+        GL.Viewport(0, 0, w, h)
+    End Sub
+
+    Private Shared Sub Cb12(p As Shader_Base_Class, with41 As Boolean, with44 As Boolean)
+        If with41 Then p.SetVector4("uCB12_41", SseSaoConstants.Cb12_41)
+        p.SetVector4("uCB12_43", SseSaoConstants.Cb12_43)
+        If with44 Then p.SetVector4("uCB12_44", SseSaoConstants.Cb12_44)
+    End Sub
+
+    ''' <summary>The five passes of 0x141541F40 over <paramref name="depthTex"/> (the scene depth copy, LOWER_LEFT) and
+    ''' <paramref name="normalsTex"/> (the SAO normals target, LOWER_LEFT), W x H; leaves kSAO. The caller rebinds its framebuffer
+    ''' and viewport. <paramref name="frustum"/> = NiCamera viewFrustum (left, right, top, bottom) of the frame's projection.</summary>
+    Public Sub Run(progs As SseSaoPrograms, depthTex As Integer, normalsTex As Integer, w As Integer, h As Integer,
+                   near As Single, far As Single, frustum As Vector4, emptyVao As Integer)
+        If w <= 0 OrElse h <= 0 Then Return
+        Ensure(w, h)
+        GL.ColorMask(True, True, True, True)
+        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.NegativeOneToOne)
+        Try
+            ' 1. CameraZ (15997) -> pyramid level 0.
+            Target(_pyramid, 0, w, h)
+            progs.CameraZ.Use()
+            progs.CameraZ.SetVector4("g_ClipInfos", SseSaoConstants.CameraZClipInfos(near, far, SseSaoConstants.DofMaxDepthParticipation))
+            Cb12(progs.CameraZ, False, True)
+            GL.BindTextureUnit(0, depthTex)
+            GL.BindSampler(0, _sFilt0)
+            FullscreenPass.Draw(progs.CameraZ, emptyVao, 1)
+
+            ' 2. Minify / MinifyContrast (16006 / 16008) -> level i from level i-1 (one view per level: no feedback loop).
+            Dim contrastDone = False
+            For i = 1 To _levels - 1
+                Dim contrast = SseSaoConstants.MinifyUsesContrast(i, h, contrastDone)
+                If contrast Then contrastDone = True
+                Dim p As Shader_Base_Class = If(contrast, CType(progs.MinifyContrast, Shader_Base_Class), progs.Minify)
+                Target(_pyramid, i, Math.Max(1, w >> i), Math.Max(1, h >> i))
+                p.Use()
+                Dim res As Vector4, dynBits As UInteger
+                SseSaoConstants.MinifyConstants(i, w, h, res, dynBits)
+                p.SetVector4("g_RenderTargetResolution", res)
+                p.SetVector4("g_UseDynamicSampling", New Vector4(BitConverter.UInt32BitsToSingle(dynBits), 0.0F, 0.0F, 0.0F))
+                If contrast Then p.SetVector4("g_ContrastParams", New Vector4(SseSaoConstants.ContrastScale(SseSaoConstants.DofCenterWeight), 0.0F, 0.0F, 0.0F))
+                Cb12(p, True, False)
+                GL.BindTextureUnit(0, _views(i - 1))
+                GL.BindSampler(0, If(i <= 4, _sFilt0, _sFilt1))
+                FullscreenPass.Draw(p, emptyVao, 1)
+            Next
+
+            ' 3. RawAO (16012) -> _ao. t0 = the whole pyramid (FILT 2), t1 = the normals (FILT 1).
+            Target(_ao, 0, w, h)
+            progs.RawAO.Use()
+            Dim k = SseSaoConstants.RawAOConstants(frustum.X, frustum.Y, frustum.Z, frustum.W, near, far, w, h)
+            progs.RawAO.SetVector4("g_ProjInfos", k.ProjInfos)
+            progs.RawAO.SetVector4("g_SSAOInfos", k.SsaoInfos)
+            progs.RawAO.SetVector4("g_ScreenInfos", k.ScreenInfos)
+            progs.RawAO.SetVector4("g_SSAOInfos2", k.SsaoInfos2)
+            Cb12(progs.RawAO, False, True)
+            GL.BindTextureUnit(0, _pyramid)
+            GL.BindSampler(0, _sFilt2)
+            GL.BindTextureUnit(1, normalsTex)
+            GL.BindSampler(1, _sFilt1)
+            FullscreenPass.Draw(progs.RawAO, emptyVao, 2)
+
+            ' 4. BlurH (15991) -> _blurH; 5. BlurV (15993) -> kSAO. Slot 0 keeps the RawAO sampler (FILT 2).
+            RunBlurs(progs, _ao, w, h, emptyVao)
+        Finally
+            GL.BindSampler(0, 0)
+            GL.BindSampler(1, 0)
+            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)
+        End Try
+    End Sub
+
+    ''' <summary>BlurH from <paramref name="aoTex"/> into _blurH, BlurV into kSAO; slot 0 with the inherited FILT 2 sampler.</summary>
+    Private Sub RunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
+        GL.BindSampler(0, _sFilt2)
+        Dim blur = SseSaoConstants.BlurScreenInfos(w, h)
+        Target(_blurH, 0, w, h)
+        progs.BlurH.Use()
+        progs.BlurH.SetVector4("g_BlurScreenInfos", blur)
+        Cb12(progs.BlurH, False, True)
+        GL.BindTextureUnit(0, aoTex)
+        FullscreenPass.Draw(progs.BlurH, emptyVao, 1)
+
+        Target(_kSao, 0, w, h)
+        progs.BlurV.Use()
+        progs.BlurV.SetVector4("g_BlurScreenInfos", blur)
+        Cb12(progs.BlurV, False, True)
+        GL.BindTextureUnit(0, _blurH)
+        FullscreenPass.Draw(progs.BlurV, emptyVao, 1)
+    End Sub
+
+    ''' <summary>GATE ONLY (ShadowGate --sse-sao-law): the two blur passes over a given RGBA8 AO texture (w x h, D3D row order).</summary>
+    Friend Sub GateRunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
+        Ensure(w, h)
+        GL.ColorMask(True, True, True, True)
+        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.NegativeOneToOne)
+        Try
+            RunBlurs(progs, aoTex, w, h, emptyVao)
+        Finally
+            GL.BindSampler(0, 0)
+            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)
+        End Try
+    End Sub
+
+    Public Sub Free()
+        If _fbo <> 0 Then GL.DeleteFramebuffer(_fbo) : _fbo = 0
+        If _views IsNot Nothing Then
+            For Each v In _views
+                If v <> 0 Then GL.DeleteTexture(v)
+            Next
+            _views = Nothing
+        End If
+        For Each t In {_pyramid, _ao, _blurH, _kSao}
+            If t <> 0 Then GL.DeleteTexture(t)
+        Next
+        _pyramid = 0 : _ao = 0 : _blurH = 0 : _kSao = 0
+        For Each s In {_sFilt0, _sFilt1, _sFilt2}
+            If s <> 0 Then GL.DeleteSampler(s)
+        Next
+        _sFilt0 = 0 : _sFilt1 = 0 : _sFilt2 = 0
+        _w = 0 : _h = 0 : _levels = 0
+    End Sub
+End Class
+
+''' <summary>THE REFRACTION TARGETS OF ONE PREVIEW (Tools/re-docs/RE_REFRACTION_BOTH_2026-10-03.md).
+''' <para>Normals: SSE RT 0xD kREFRACTION_NORMALS = R8G8B8A8_UNORM (0x14153B73F..759: saturates, 1/255 steps); FO4 logical RT
+''' 0xE = R11G11B10_FLOAT (0x142233E88..ECC: no alpha - it samples as 1 -, negatives to 0). Cleared to (0.5, 0.5, 0, 0) on the
+''' first bind of the frame; the pass tests against the frame's depth (the shared depth renderbuffer of the offscreen
+''' targets, or a copy of the window's depth). Scene copy: what ISRefraction samples as t0 while it writes the frame.</para></summary>
+Friend NotInheritable Class RefractionTargets
+    Private _normalsTex As Integer, _normalsFmt As SizedInternalFormat, _fbo As Integer
+    Private _depthCopy As New SceneDepthCopy()
+    Private ReadOnly _pass As New SceneColorPass()
+    Private _w As Integer, _h As Integer
+
+    Public ReadOnly Property NormalsTexture As Integer
+        Get
+            Return _normalsTex
+        End Get
+    End Property
+
+    ''' <summary>Binds the normals target (allocated / reallocated for the game and size), with <paramref name="depthRb"/>
+    ''' (the offscreen frame's depth renderbuffer) or, when 0, a copy of <paramref name="frameFbo"/>'s depth, and clears it.</summary>
+    Public Sub BeginNormals(isSse As Boolean, w As Integer, h As Integer, depthRb As Integer, frameFbo As Integer)
+        Dim fmt = If(isSse, SizedInternalFormat.Rgba8, SizedInternalFormat.R11fG11fB10f)
+        If _normalsTex = 0 OrElse w <> _w OrElse h <> _h OrElse fmt <> _normalsFmt Then
+            FreeNormals()
+            GL.CreateTextures(TextureTarget.Texture2D, 1, _normalsTex)
+            GL.TextureStorage2D(_normalsTex, 1, fmt, w, h)
+            For Each prm In {TextureParameterName.TextureMinFilter, TextureParameterName.TextureMagFilter}
+                GL.TextureParameter(_normalsTex, prm, CInt(TextureMinFilter.Nearest))
+            Next
+            For Each prm In {TextureParameterName.TextureWrapS, TextureParameterName.TextureWrapT}
+                GL.TextureParameter(_normalsTex, prm, CInt(TextureWrapMode.ClampToEdge))
+            Next
+            _fbo = GL.GenFramebuffer()
+            _normalsFmt = fmt : _w = w : _h = h
+        End If
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _normalsTex, 0)
+        If depthRb <> 0 Then
+            GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, depthRb)
+        Else
+            _depthCopy.CopyFrom(frameFbo, w, h)
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, TextureTarget.Texture2D, _depthCopy.Texture, 0)
+        End If
+        GL.DrawBuffer(DrawBufferMode.ColorAttachment0)
+        GL.Viewport(0, 0, w, h)
+        GL.ColorMask(True, True, True, True)
+        GL.ClearBuffer(ClearBuffer.Color, 0, New Single() {0.5F, 0.5F, 0.0F, 0.0F})
+    End Sub
+
+    ''' <summary>ISRefraction over attachment 0 of <paramref name="targetFbo"/> (0 = the window's back buffer): the scene is
+    ''' copied first (t0, bilinear) and the pass writes the frame (t1 = the normals, nearest).</summary>
+    Public Sub ApplyImageSpace(program As Shader_Base_Class, isSse As Boolean, targetFbo As Integer, sceneFmt As SizedInternalFormat,
+                               w As Integer, h As Integer, emptyVao As Integer)
+        Dim k = RefractionLaw.ImageSpaceConstants(isSse)
+        _pass.Apply(program, targetFbo, sceneFmt, w, h, emptyVao,
+                    Sub(prog)
+                        GL.BindTextureUnit(1, _normalsTex)
+                        prog.SetInt("texRefractNormals", 1)
+                        prog.SetFloat("refractOffsetScale", k.OffsetScale)
+                        prog.SetBool("bRefractSceneAlpha", k.SceneAlpha)
+                        prog.SetVector4("refractTint", k.Tint)
+                    End Sub)
+    End Sub
+
+    Private Sub FreeNormals()
+        If _fbo <> 0 Then GL.DeleteFramebuffer(_fbo) : _fbo = 0
+        If _normalsTex <> 0 Then GL.DeleteTexture(_normalsTex) : _normalsTex = 0
+        _w = 0 : _h = 0
+    End Sub
+
+    Public Sub Free()
+        FreeNormals()
+        _depthCopy.Free()
+        _pass.Free()
+    End Sub
+End Class
+
 ''' <summary>Program of the FO4 post pass: fullscreen triangle of the background + <see cref="PostProcessShaderSource.Fragment_PostFo4"/>.</summary>
 Public Class PostProcess_Fo4_Shader_Class
     Inherits Shader_Base_Class
@@ -445,7 +892,7 @@ End Class
 ''' 0x141556AD5). Both hold the opaque geometry already drawn; the preview copies its depth after the OPAQUE and CUTOUT
 ''' groups (Render.RenderAll), with ONE mechanism for the three frame paths (HDR target, display target, window): a
 ''' copy from the framebuffer being drawn. A copy and not the live depth: FO4 effects in the alpha list write depth
-''' (ResolveDepthWriteEnabled), and sampling the attachment being written is a feedback loop; the engine reads a
+''' (Fo4RenderPassLaw / RenderableMesh.ResolveColourDepthState), and sampling the attachment being written is a feedback loop; the engine reads a
 ''' read-only view (0x14183C863). Tools/re-docs/DISENO_SOFT_EFFECTS_2026-10-03.md.</summary>
 Friend NotInheritable Class SceneDepthCopy
     Private _tex As Integer, _w As Integer, _h As Integer
@@ -497,6 +944,8 @@ Friend NotInheritable Class SceneTargets
     Private _w As Integer, _h As Integer
     Private _hdrFbo As Integer, _displayFbo As Integer
     Private _sceneTex As Integer, _coverageTex As Integer, _bgShadowTex As Integer
+    ''' <summary>Attachment 3: the SSE SAO normals target (o2 of the opaque MRT, R8G8B8A8_UNORM; RE_SAO_BOTH 7.1, 11).</summary>
+    Private _aoNormalTex As Integer
     Private _displayRb As Integer, _depthRb As Integer
     Private _lumPartials As Integer, _lumResult As Integer, _partialCount As Integer
     Private _lutTex As Integer
@@ -511,6 +960,34 @@ Friend NotInheritable Class SceneTargets
     Public ReadOnly Property DisplayFramebuffer As Integer
         Get
             Return _displayFbo
+        End Get
+    End Property
+
+    ''' <summary>Attachment 0 of the HDR target, the linear radiance (0 before the first Ensure).</summary>
+    Public ReadOnly Property SceneTexture As Integer
+        Get
+            Return _sceneTex
+        End Get
+    End Property
+
+    ''' <summary>Attachment 1 of the HDR target, the coverage (0 before the first Ensure).</summary>
+    Public ReadOnly Property CoverageTexture As Integer
+        Get
+            Return _coverageTex
+        End Get
+    End Property
+
+    ''' <summary>Attachment 3 of the HDR target, the SSE SAO normals (0 before the first Ensure).</summary>
+    Public ReadOnly Property AoNormalTexture As Integer
+        Get
+            Return _aoNormalTex
+        End Get
+    End Property
+
+    ''' <summary>The depth/stencil renderbuffer both targets share (0 before the first Ensure).</summary>
+    Public ReadOnly Property DepthRenderbuffer As Integer
+        Get
+            Return _depthRb
         End Get
     End Property
 
@@ -530,6 +1007,7 @@ Friend NotInheritable Class SceneTargets
         _sceneTex = NewTarget(SizedInternalFormat.R11fG11fB10f, w, h)
         _coverageTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
         _bgShadowTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
+        _aoNormalTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
 
         _displayFbo = GL.GenFramebuffer()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _displayFbo)
@@ -542,6 +1020,7 @@ Friend NotInheritable Class SceneTargets
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _sceneTex, 0)
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment1, TextureTarget.Texture2D, _coverageTex, 0)
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment2, TextureTarget.Texture2D, _bgShadowTex, 0)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment3, TextureTarget.Texture2D, _aoNormalTex, 0)
         GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _depthRb)
         GL.DrawBuffers(2, SceneDrawBuffers)
         ok = ok AndAlso GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) = FramebufferErrorCode.FramebufferComplete
@@ -565,7 +1044,10 @@ Friend NotInheritable Class SceneTargets
     End Function
 
     Private Shared ReadOnly SceneDrawBuffers As DrawBuffersEnum() =
-        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.ColorAttachment2}
+        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.ColorAttachment2, DrawBuffersEnum.ColorAttachment3}
+    ''' <summary>An SSE frame with the post, from BeginHdr to the SAO: radiance, coverage and the SAO normals (draw buffer 3).</summary>
+    Private Shared ReadOnly SceneDrawBuffersAo As DrawBuffersEnum() =
+        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.None, DrawBuffersEnum.ColorAttachment3}
 
     Private Shared Function NewTarget(fmt As SizedInternalFormat, w As Integer, h As Integer) As Integer
         Dim t As Integer
@@ -578,17 +1060,19 @@ Friend NotInheritable Class SceneTargets
         Return t
     End Function
 
-    ''' <summary>Binds the HDR target and clears it: radiance 0, coverage 0, background shadow 1, depth 1.
-    ''' Leaves attachments 0 and 1 as the draw buffers (2 is written only by the ground catcher).</summary>
-    Public Sub BeginHdr()
+    ''' <summary>Binds the HDR target and clears it: radiance 0, coverage 0, background shadow 1, SAO normals (0.5, 0.5, 0, 0)
+    ''' (the engine's clear of the normals RT, RE_SAO_BOTH 7.1), depth 1. Leaves attachments 0 and 1 as the draw buffers (2 is
+    ''' written only by the ground catcher), plus 3 when <paramref name="aoNormals"/> (an SSE frame: until the SAO runs).</summary>
+    Public Sub BeginHdr(aoNormals As Boolean)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _hdrFbo)
         GL.Viewport(0, 0, _w, _h)
-        GL.DrawBuffers(3, SceneDrawBuffers)
+        GL.DrawBuffers(4, SceneDrawBuffers)
         GL.ClearBuffer(ClearBuffer.Color, 0, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
         GL.ClearBuffer(ClearBuffer.Color, 1, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
         GL.ClearBuffer(ClearBuffer.Color, 2, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
+        GL.ClearBuffer(ClearBuffer.Color, 3, New Single() {0.5F, 0.5F, 0.0F, 0.0F})
         GL.Clear(ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit)
-        GL.DrawBuffers(2, SceneDrawBuffers)
+        If aoNormals Then GL.DrawBuffers(4, SceneDrawBuffersAo) Else GL.DrawBuffers(2, SceneDrawBuffers)
     End Sub
 
     ''' <summary>The ground catcher also writes its display-space factor on the background (attachment 2).</summary>
@@ -634,10 +1118,6 @@ Friend NotInheritable Class SceneTargets
                          setBackground As Action(Of Shader_Base_Class), emptyVao As Integer)
         BindDisplay()
         post.Use()
-        GL.Disable(EnableCap.DepthTest)
-        GL.DepthMask(False)
-        GL.Disable(EnableCap.Blend)
-        GL.Disable(EnableCap.CullFace)
 
         Dim lut = If(String.IsNullOrEmpty(lutPath), 0, EnsureLut(lutPath))
         GL.BindTextureUnit(0, _sceneTex)
@@ -653,19 +1133,11 @@ Friend NotInheritable Class SceneTargets
         setBackground(post)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, _lumResult)
 
-        GL.BindVertexArray(emptyVao)
-        GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
-        GL.BindVertexArray(0)
-
+        ' The targets are attachments again next frame: FullscreenPass unbinds the four units.
+        FullscreenPass.Draw(post, emptyVao, 4)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, 0)
-        ' The targets are attachments again next frame: no unit may keep them bound (feedback loop).
-        For u = 0 To 3
-            GL.BindTextureUnit(u, 0)
-        Next
-        GL.UseProgram(0)
         GL.DepthMask(True)
         GL.Enable(EnableCap.DepthTest)
-        GL.Enable(EnableCap.CullFace)
     End Sub
 
     ''' <summary>Copies the display target to the window's framebuffer (same size: 1:1, Nearest).</summary>
@@ -733,6 +1205,7 @@ Friend NotInheritable Class SceneTargets
         If _sceneTex <> 0 Then GL.DeleteTexture(_sceneTex) : _sceneTex = 0
         If _coverageTex <> 0 Then GL.DeleteTexture(_coverageTex) : _coverageTex = 0
         If _bgShadowTex <> 0 Then GL.DeleteTexture(_bgShadowTex) : _bgShadowTex = 0
+        If _aoNormalTex <> 0 Then GL.DeleteTexture(_aoNormalTex) : _aoNormalTex = 0
         If _displayRb <> 0 Then GL.DeleteRenderbuffer(_displayRb) : _displayRb = 0
         If _depthRb <> 0 Then GL.DeleteRenderbuffer(_depthRb) : _depthRb = 0
         If _lumPartials <> 0 Then GL.DeleteBuffer(_lumPartials) : _lumPartials = 0
