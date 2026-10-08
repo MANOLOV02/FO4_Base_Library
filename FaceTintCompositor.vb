@@ -529,7 +529,8 @@ Public Module FaceTintCompositor
             ("FO4-DEFERRED-APP-LINEARZ", Fo4DeferredAppSource.Fragment_LinearZ),
             ("FO4-DEFERRED-APP-FULLSCREEN", Fo4DeferredAppSource.Vertex_Fullscreen),
             ("FO4-DEFERRED-APP-RESOLVE", Fo4DeferredAppSource.Fragment_DirectResolve),
-            ("FO4-DEFERRED-APP-DECALBASE", Fo4DeferredAppSource.Fragment_DecalBase)}).
+            ("FO4-DEFERRED-APP-DECALBASE", Fo4DeferredAppSource.Fragment_DecalBase),
+            ("FO4-DEFERRED-APP-DECALBASESURFACE", Fo4DeferredAppSource.Fragment_DecalBaseSurface)}).
             Concat(Fo4DeferredSource.AllSources()).Concat(Fo4GBufferSource.AllSources()).ToArray()
     End Function
 

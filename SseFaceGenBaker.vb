@@ -735,7 +735,7 @@ Public Module SseFaceGenBaker
         For ci = 0 To FoldGoldenCases.Length - 1
             Dim got = FoldGoldenActual(ci)
             If got Is Nothing Then
-                sb.AppendLine($"        {{ *** caso {ci}: prólogo/cuerpo/cola divergen *** }},")
+                sb.AppendLine($"        {{ *** case {ci}: prologue/body/tail diverge *** }},")
             Else
                 sb.AppendLine($"        {{&H{BitConverter.SingleToInt32Bits(got(0)):X8}I, " &
                               $"&H{BitConverter.SingleToInt32Bits(got(1)):X8}I, " &
@@ -842,12 +842,12 @@ Public Module SseFaceGenBaker
         nanAcc(6) = Single.NaN
         Try
             RgbaFloatToBgraBytes(nanAcc, 4)
-            Return "RgbaFloatToBgraBytes: un NaN NO tiró OverflowException (el vector se lo tragó)"
+            Return "RgbaFloatToBgraBytes: a NaN did NOT throw OverflowException (the vector path swallowed it)"
         Catch ex As Exception
             If TypeOf ex IsNot OverflowException AndAlso
                Not (TypeOf ex Is AggregateException AndAlso
                     DirectCast(ex, AggregateException).InnerExceptions.Any(Function(e) TypeOf e Is OverflowException)) Then
-                Return $"RgbaFloatToBgraBytes: con NaN tiró {ex.GetType().Name}, se esperaba OverflowException"
+                Return $"RgbaFloatToBgraBytes: NaN threw {ex.GetType().Name}, OverflowException was expected"
             End If
         End Try
         Return ""

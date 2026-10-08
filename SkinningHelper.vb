@@ -85,6 +85,22 @@ Public Structure SkinnedGeometry
     Public ParentGlobalTransform As Matrix4d
     Public BoneMatsBind() As Matrix4d   ' bind-pose matrices
     Public BoneMatsPose() As Matrix4d  ' pose matrices
+    ''' <summary>O-PT (chunk C8): each palette bone's posed global (without skin-to-bone) and the skin root's - what
+    ''' EngineWorldBound.Centre places the bone spheres with. Written where BoneMatsPose is.</summary>
+    Public BoneWorldPose() As Transform_Class
+    Public SkinRootPose As Transform_Class
+    ''' <summary>D-L6: per palette bone, the local box of the vertices it weighs (&gt; 0); BoneBoxesValid = built for the current
+    ''' Vertices; BoneBoxesUsable = every vertex has a weight &gt; 0 (else the exact box is used).</summary>
+    Public BoneBoxMin() As Vector3
+    Public BoneBoxMax() As Vector3
+    Public BoneBoxesValid As Boolean
+    Public BoneBoxesUsable As Boolean
+    ''' <summary>S-83A (chunk C8): the order the game draws this shape's triangles in (indices into Indices / 3), Nothing = data order.</summary>
+    Public DrawTriangleOrder() As Integer
+    ''' <summary>S-83A (rev-03): the Indices array DrawTriangleOrder was computed for. A later replacement of Indices
+    ''' (MorphingHelper.RemoveZaps compacts them in place of a re-extraction) makes the order unusable: the draw then uses the data
+    ''' order (Render.vb DrawOrderTriangles / DrawOrderIndices test ReferenceEquals).</summary>
+    Public DrawTriangleOrderFor() As UInteger
     Public VertexColors() As Vector4
     Public VertexMask() As Single
     Public Indices() As UInteger
@@ -476,7 +492,7 @@ Public Class SkinningHelper
         FastGeom.StoreMatrix(m1, a, 0) : FastGeom.StoreMatrix(m2, b2, 0)
         For e = 0 To FastGeom.MatDoubles - 1
             If BitConverter.DoubleToInt64Bits(a(e)) <> BitConverter.DoubleToInt64Bits(b2(e)) Then
-                Return $"[skin-blend-vacio] elemento {e} difiere con paleta vacia"
+                Return $"[skin-blend-empty] element {e} differs with an empty palette"
             End If
         Next
         If BlendBoneMatrices(Nothing, idx, 0, 4, precomputed, flatPal) <> precomputed(0) Then
@@ -634,6 +650,7 @@ Public Class SkinningHelper
         ' 3) Calcular matrices bind-pose y pose actual
         Dim matsBind(bones.Count - 1) As Matrix4d
         Dim matsPose(bones.Count - 1) As Matrix4d
+        Dim boneWorld(bones.Count - 1) As Transform_Class
         For k = 0 To bones.Count - 1
             Dim localT = boneTrans(k)
             Dim boneName = bones(k).Name.String
@@ -656,6 +673,7 @@ Public Class SkinningHelper
                 poseT = bindT
                 matsPose(k) = matsBind(k)
             End If
+            boneWorld(k) = poseT
 
             ' [SKIN-MAT] DIAG A/B: skin-matrix REAL de render por shape/hueso (poseT ∘ localT = world de un
             ' vértice bone-local-origin). Comparar OFF (baseline) vs ON (rebind) revela qué shapes/huesos
@@ -848,7 +866,7 @@ Public Class SkinningHelper
                     Mtot = Matrix4d.Identity
                 Else
                     ' (A) Unskinned puro: shape.T/R/S × parent chain.
-                    Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
+                    Mtot = ShapeGlobalTransform(shape)
                 End If
 
                 perVertexMtot.Llenar(AMatrix4(Mtot))
@@ -932,6 +950,10 @@ Public Class SkinningHelper
             .ParentGlobalTransform = GlobalTransform,
             .BoneMatsBind = matsBind,
             .BoneMatsPose = matsPose,
+            .BoneWorldPose = If(shape.IsSkinned AndAlso bones.Count > 0, boneWorld, Nothing),
+            .SkinRootPose = SkinRootWorld(shape, effectiveSkel, Nothing, singleboneskinning),
+            .DrawTriangleOrder = shapeGeom.GetEngineDrawTriangleOrder(),
+            .DrawTriangleOrderFor = flatIndices,
             .Indices = flatIndices,
             .VertexColors = vtxColors,
             .Eyedata = If(shapeGeom.HasEyeData, shapeGeom.GetEyeData().ToArray(), New Single(vertexCount - 1) {}),
@@ -1025,6 +1047,12 @@ Public Class SkinningHelper
         FastSkin.UnVertice(m, p, vn, vt, vb, msn, pos, nrm, tan, bit)
     End Sub
 
+    ''' <summary>Puente a la ley de posicion de <see cref="FastSkin"/> sobre un punto (FastSkin.Punto): el centro de reflexion
+    ''' del ojo SSE con skinning de CPU (Render.vb EyeCentresForUpload, S-O1).</summary>
+    Friend Shared Function FastSkinPunto(m As Matrix4, p As Vector3d) As Vector3
+        Return FastSkin.Punto(m, p)
+    End Function
+
     ''' <summary>Puente al kernel de <see cref="FastSkin"/>. Existe para que Render.vb no tenga que
     ''' conocer un Module aparte: el punto de entrada del skinning de CPU sigue siendo SkinningHelper.
     ''' </summary>
@@ -1039,6 +1067,39 @@ Public Class SkinningHelper
             FastSkin.TransformarDirecto(mats, lv, ln, lt, lb, msn, n, posOut, nrmOut, tanOut, bitOut)
         End If
     End Sub
+
+    ''' <summary>O-PT: the posed global of the shape's skin root (NiSkinInstance / BSSkin_Instance SkeletonRoot) by the bones' own rule:
+    ''' the skeleton bone of that name (posed; bind in single-bone mode), else the NIF node. Nothing without a skin root.</summary>
+    Friend Shared Function SkinRootWorld(shape As IRenderableShape, skel As SkeletonInstance, cache As SkeletonGlobalTransformCache,
+                                         singleBone As Boolean) As Transform_Class
+        Dim nif = shape?.NifContent
+        Dim ns = shape?.NifShape
+        If nif Is Nothing OrElse ns?.SkinInstanceRef Is Nothing OrElse ns.SkinInstanceRef.IsEmpty() Then Return Nothing
+        Dim skin = nif.GetBlock(ns.SkinInstanceRef)
+        Dim root As NiAVObject = Nothing
+        Dim a = TryCast(skin, NiSkinInstance)
+        If a IsNot Nothing Then root = nif.GetBlock(a.SkeletonRoot)
+        Dim b = TryCast(skin, BSSkin_Instance)
+        If b IsNot Nothing Then root = nif.GetBlock(b.SkeletonRoot)
+        Dim rootNode = TryCast(root, NiNode)
+        If rootNode Is Nothing Then Return Nothing
+        Dim bone As HierarchiBone_class = Nothing
+        Dim es = If(skel, SkeletonInstance.Default)
+        If es IsNot Nothing AndAlso es.SkeletonDictionary.TryGetValue(rootNode.Name.String, bone) Then
+            Return If(singleBone, CachedBindMount(bone, cache), CachedDisplay(bone, cache))
+        End If
+        Return Transform_Class.GetGlobalTransform(rootNode, nif)
+    End Function
+
+    ''' <summary>THE world transform of a shape's own NIF block: shape T/R/S x the parent chain (Outfit Studio Anim.cpp:692-704
+    ''' GetTransformShapeToGlobal). The one place the RENDER composes it: ExtractSkinnedGeometry and RecomputeGPUBoneMatrices
+    ''' place an unskinned shape with it (uploaded as its single bone); Render.vb SseLitSpace takes the SSE lighting PS's model
+    ''' space from it when the shape has no single placement. EspacioDeShape, SkinBakeMath, FaceGenBuildPipeline,
+    ''' NifContent_Class and FO4_FaceTint_CLI (SkinnedPositions) compose the same transform on their own (a separate
+    ''' unification, not this one).</summary>
+    Friend Shared Function ShapeGlobalTransform(shape As IRenderableShape) As Matrix4d
+        Return Transform_Class.GetGlobalTransform(shape?.Geometry?.BackingShape, shape?.NifContent).ToMatrix4d()
+    End Function
 
     ''' <summary>Matrix4d -> Matrix4. Se usa al GUARDAR en <c>PerVertexSkinMatrix</c>: el blend sigue
     ''' evaluandose en Double (es la ley canonica, con su self-test SIMD bit a bit), y lo unico que baja
@@ -1943,6 +2004,34 @@ Public Class SkinningHelper
         geo.Maxv = maxV
     End Sub
 
+    ''' <summary>D-L6: per palette bone, the local box of the vertices with a weight &gt; 0 on it (GPUBoneIndices / GPUBoneWeights,
+    ''' 4 slots per vertex - the same buffers the shader blends). BoneBoxesUsable = False when a vertex has no weight &gt; 0.</summary>
+    Public Shared Sub BuildBoneBoxes(ByRef geo As SkinnedGeometry)
+        Dim nB = geo.GPUBoneMatrices.Length
+        ReDim geo.BoneBoxMin(nB - 1) : ReDim geo.BoneBoxMax(nB - 1)
+        For k = 0 To nB - 1
+            geo.BoneBoxMin(k) = New Vector3(Single.MaxValue) : geo.BoneBoxMax(k) = New Vector3(Single.MinValue)
+        Next
+        Dim usable = geo.GPUBoneWeights IsNot Nothing AndAlso geo.GPUBoneWeights.Length >= geo.Vertices.Length * 4
+        If usable Then
+            For v = 0 To geo.Vertices.Length - 1
+                Dim p As New Vector3(CSng(geo.Vertices(v).X), CSng(geo.Vertices(v).Y), CSng(geo.Vertices(v).Z))
+                Dim any = False
+                For j = 0 To 3
+                    If geo.GPUBoneWeights(v * 4 + j) <= 0.0F Then Continue For
+                    Dim k = CInt(geo.GPUBoneIndices(v * 4 + j))
+                    If k < 0 OrElse k >= nB Then Continue For
+                    geo.BoneBoxMin(k) = Vector3.ComponentMin(geo.BoneBoxMin(k), p)
+                    geo.BoneBoxMax(k) = Vector3.ComponentMax(geo.BoneBoxMax(k), p)
+                    any = True
+                Next
+                If Not any Then usable = False : Exit For
+            Next
+        End If
+        geo.BoneBoxesUsable = usable
+        geo.BoneBoxesValid = True
+    End Sub
+
     Public Shared Sub InvalidateWorldCache(ByRef geo As SkinnedGeometry)
         geo.WorldCacheValid = False
         geo.CachedWorldVertices = Nothing
@@ -2065,11 +2154,14 @@ Public Class SkinningHelper
                 Dim matPose = poseT.ComposeTransforms(localT).ToMatrix4d()
                 geo.BoneMatsBind(k) = matBind
                 geo.BoneMatsPose(k) = matPose
+                If geo.BoneWorldPose Is Nothing OrElse geo.BoneWorldPose.Length <> bones.Count Then ReDim geo.BoneWorldPose(bones.Count - 1)
+                geo.BoneWorldPose(k) = poseT
             Next
 
             ' La paleta se arma DESPUES del loop y con BuildPosePalette, no inline: es la misma
             ' fórmula que usan Extract y la recomposición perezosa, y tiene que salir del mismo sitio.
             ' Cuesta una segunda pasada sobre ≤60 huesos.
+            geo.SkinRootPose = SkinRootWorld(shape, effectiveSkel, globalCache, singleboneskinning)
             precomputedBoneMatrices = BuildPosePalette(geo.BoneMatsPose, GlobalTransform)
             For k = 0 To bones.Count - 1
                 Dim m = precomputedBoneMatrices(k)
@@ -2129,7 +2221,7 @@ Public Class SkinningHelper
                 Mtot = Matrix4d.Identity
             Else
                 ' (3) Unskinned puro: shape.T/R/S + parent chain.
-                Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
+                Mtot = ShapeGlobalTransform(shape)
             End If
 
             geo.GPUBoneMatrices(0) = New Matrix4(

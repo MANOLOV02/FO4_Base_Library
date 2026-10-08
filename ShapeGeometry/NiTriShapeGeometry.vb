@@ -275,6 +275,56 @@ Public Class NiTriShapeGeometry
         Return New List(Of Single)()
     End Function
 
+    ''' <summary>S-83A (D-L5): Skyrim SE loads a NiTriShape with a skin and a NiSkinPartition (bsver 72..100, 0x140EE5E3C/E54) as a
+    ''' BSTriShape (0x14101B070) and draws it partition by partition (0x141560519 -&gt; 0x140F08460 -&gt; 0x140F084C0 -&gt; 0x14100BCD0): the
+    ''' triangles of partition 0, then 1, ..., each in its own order, through its VertexMap. Nothing (data order) when the law does
+    ''' not apply or when the partitions are not the data's triangle set (an edit with stale partitions; declared) or use strips (0 in
+    ''' the corpus, declared).</summary>
+    Public Function GetEngineDrawTriangleOrder() As Integer() Implements IShapeGeometry.GetEngineDrawTriangleOrder
+        If TypeOf _shape IsNot NiTriShape OrElse Not _shape.IsSkinned Then Return Nothing
+        Dim bsver = _nif.Header?.Version?.StreamVersion
+        If Not bsver.HasValue OrElse bsver.Value < 72UI OrElse bsver.Value > 100UI Then Return Nothing
+        Dim part = ResolvePartition(ResolveSkinInstance())
+        If part?.Partitions Is Nothing OrElse part.Partitions.Count = 0 Then Return Nothing
+        Dim parts As New List(Of (Map As IList(Of UShort), Tris As IList(Of Triangle)))
+        For Each p In part.Partitions
+            If p.NumStrips <> 0 OrElse p.VertexMap Is Nothing OrElse p.Triangles Is Nothing Then Return Nothing
+            parts.Add((p.VertexMap, p.Triangles))
+        Next
+        Return EngineTriangleOrder(GetTriangles(), parts)
+    End Function
+
+    ''' <summary>S-83A, pure (gate draw-order-law): the data triangle each partition triangle is, in partition order. Triangles are
+    ''' matched ORIENTED (same winding: a cyclic rotation; the corpus has the same oriented multiset in 265 of 265). Nothing when a
+    ''' partition triangle has no unused data triangle or the counts differ.</summary>
+    Friend Shared Function EngineTriangleOrder(dataTris As IList(Of Triangle), parts As IList(Of (Map As IList(Of UShort), Tris As IList(Of Triangle)))) As Integer()
+        Dim key = Function(a As Integer, b As Integer, c As Integer) As (Integer, Integer, Integer)
+                      If a <= b AndAlso a <= c Then Return (a, b, c)
+                      If b <= a AndAlso b <= c Then Return (b, c, a)
+                      Return (c, a, b)
+                  End Function
+        Dim pool As New Dictionary(Of (Integer, Integer, Integer), Queue(Of Integer))
+        For i = 0 To dataTris.Count - 1
+            Dim t = dataTris(i)
+            Dim k = key(t.V1, t.V2, t.V3)
+            Dim q As Queue(Of Integer) = Nothing
+            If Not pool.TryGetValue(k, q) Then q = New Queue(Of Integer) : pool(k) = q
+            q.Enqueue(i)
+        Next
+        Dim order As New List(Of Integer)(dataTris.Count)
+        For Each p In parts
+            For Each t In p.Tris
+                If t.V1 >= p.Map.Count OrElse t.V2 >= p.Map.Count OrElse t.V3 >= p.Map.Count Then Return Nothing
+                Dim k = key(p.Map(t.V1), p.Map(t.V2), p.Map(t.V3))
+                Dim q As Queue(Of Integer) = Nothing
+                If Not pool.TryGetValue(k, q) OrElse q.Count = 0 Then Return Nothing
+                order.Add(q.Dequeue())
+            Next
+        Next
+        If order.Count <> dataTris.Count Then Return Nothing
+        Return order.ToArray()
+    End Function
+
     Public Function GetTriangles() As List(Of Triangle) Implements IShapeGeometry.GetTriangles
         Dim d = GetData()
         If d Is Nothing Then Return New List(Of Triangle)()

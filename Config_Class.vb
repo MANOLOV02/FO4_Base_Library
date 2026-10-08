@@ -258,6 +258,12 @@ Public Class Config_App
         Return Current.Setting_ShowHelperShapes.GetValueOrDefault(DefaultShowHelperShapes.GetValueOrDefault(True))
     End Function
 
+    ''' <summary>Casilla "Show errors" (pestaña Rendering del diálogo de luces, grupo Notices; decisión del usuario 6-oct-2026):
+    ''' muestra u oculta TODO el aviso del cuadro (PreviewControl.DrawPreviewGapNotice). Sólo el DIBUJO: el censo del cuadro
+    ''' (PreviewModel.FrameNoticeLines) corre igual. Default True en todas las apps; una config sin la clave deserializa a este
+    ''' default (ParityGate preview-notice-laws).</summary>
+    Public Property Setting_ShowErrors As Boolean = True
+
     Public Property Setting_RecalculateNormals As Boolean = True
 
     ''' <summary>El rig de luces gira CON la cámara en vez de quedar fijo al mundo.

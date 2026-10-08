@@ -180,6 +180,12 @@ Public Class RenderIntent
     Public Property FloorOffset As Double = 0
     Public Property ResetCamera As Boolean = True
     Public Property RecalculateNormals As Boolean = True
+    ''' <summary>The view draws, for editing, the shapes the game builds no pass for because of their material alpha 0 (C2 v3 L5,
+    ''' MaterialData.PreviewAlpha): True in a piece / picker / record-editor view, where what the user picks or edits has to be seen;
+    ''' False (default) in a composite view - an NPC or an outfit as the game shows it, a bake, a gate scene -, where they are not
+    ''' drawn, as in the game (L1c). The frame's notice lists them either way. Set once by the host right after it creates the
+    ''' control; ClearDirty does not touch it (user rule: composite = fidelity, piece / picker = editable with a notice).</summary>
+    Public Property DrawEngineSkippedForEditing As Boolean = False
 
     ' ── Pluggable resolvers (Nothing = skip that step) ──
     Public Property SkeletonResolver As ISkeletonResolver

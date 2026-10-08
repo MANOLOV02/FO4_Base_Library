@@ -28,22 +28,33 @@ void main()
 "
 
     ''' <summary>POST OFF (direct frame, user rule: the material goes always): the composite's radiance through the 2.3.8 display tail
-    ''' that Fragment_FO4 applied to lit surfaces (LegacyDisplaySource, one copy). Drawn at z = 1 with GREATER: only engine geometry.</summary>
+    ''' that Fragment_FO4 applied to lit surfaces (LegacyDisplaySource, one copy). Drawn at z = 1 with GREATER: only engine geometry.
+    ''' With the translucent decals' base in the frame (uCoverageBlend; user decision 7-oct-2026, DecalBaseTarget): the radiance is
+    ''' premultiplied by the composite's coverage (rev-19, as the post reads it, Fragment_PostFo4); un-premultiplied, through the
+    ''' tail, and mixed over the background already in the display target with that coverage (blend colour SRC_ALPHA /
+    ''' ONE_MINUS_SRC_ALPHA, alpha ZERO / ONE: the display's alpha stays the frame's, RunDirectResolve): the post's mix(bg, o, cov).
+    ''' Coverage 0: the background stays. Without the base: coverage 1, no blend.</summary>
     Friend Const Fragment_DirectResolve As String = "#version 430
 layout(binding = 0) uniform sampler2D texScene;
+layout(binding = 1) uniform sampler2D texCoverage;
 uniform float uSceneToLinear;
+uniform bool uCoverageBlend;
 out vec4 oColor;
 " & LegacyDisplaySource.Tonemap_Glsl & "
 void main()
 {
     vec3 c = texelFetch(texScene, ivec2(gl_FragCoord.xy), 0).rgb;
-    oColor = vec4(legacyLitDisplay(c, uSceneToLinear), 1.0);
+    float cov = uCoverageBlend ? texelFetch(texCoverage, ivec2(gl_FragCoord.xy), 0).r : 1.0;
+    if (cov <= 0.0)
+        discard;
+    oColor = vec4(legacyLitDisplay(c / cov, uSceneToLinear), cov);
 }
 "
 
-    ''' <summary>The two full-screen steps of the translucent decals' base (user decision 5-oct-2026; Fo4DeferredTargets.BeginDecalBase /
-    ''' EndDecalBase), on the auxiliary depth/stencil target. Mark (uOnlyEmpty): where the G-buffer depth copied before the translucent
-    ''' decals holds the stage's clear value 1.0 (BeginGBuffer, 0x1421F3151..0x1421F3164: nothing behind), the constant depth uDepth
+    ''' <summary>The two full-screen steps of the translucent decals' base, both games (user decisions 5-oct-2026 and 7-oct-2026;
+    ''' DecalBaseTarget.Begin / Fill), on the auxiliary depth/stencil target. Mark (uOnlyEmpty): where the frame depth copied before the
+    ''' translucent decals holds its clear value 1.0 (FO4 BeginGBuffer, 0x1421F3151..0x1421F3164; SSE SceneTargets.BeginHdr / the
+    ''' display clear: nothing behind), the constant depth uDepth
     ''' (0.0) - the stencil op marks the pixel; elsewhere discarded. Fill (not uOnlyEmpty): the constant depth uDepth (1.0) on every
     ''' pixel the stencil test lets through. Only the exact constants 0.0 and 1.0 are written (GL 4.6 2.3.5.2: both are integers once
     ''' scaled by 2^24 - 1); a decal's depth is never written by this program. texelFetch at gl_FragCoord: the copy has the
@@ -52,11 +63,91 @@ void main()
 layout(binding = 0) uniform sampler2D tDepthBefore;
 uniform bool uOnlyEmpty;
 uniform float uDepth;
+layout(location = 0) out vec4 oCoverage;   // DecalBaseTarget's coverage target (Fallout 4, mark only; masked otherwise)
 void main()
 {
     if (uOnlyEmpty && texelFetch(tDepthBefore, ivec2(gl_FragCoord.xy), 0).x != 1.0)
         discard;
     gl_FragDepth = uDepth;
+    oCoverage = vec4(0.0);
+}
+"
+
+    ''' <summary>The base SURFACE of a translucent decal in the G-buffer (user decisions 7-oct-2026; DecalBaseTarget): drawn with the
+    ''' decal's geometry on the pixels whose base it gives (after every depth draw: depth EQUAL, stencil CoveredBit and not
+    ''' SurfacedBit), it writes what the G-buffer of a plain surface holds there as a PREMULTIPLIED layer of the decal's opacity a
+    ''' (decision 3: the base follows the decal's alpha), so that the deferred lights and composites shade it like any other surface
+    ''' (RE_FO4_DEFERRED_FRAME 6, 15.1) and composite 2 hands the post the coverage of base and decals (DecalBaseTarget.CoverageTexture):
+    ''' <list type="bullet">
+    ''' <item>a (uBaseOpacity = RenderableMesh.DecalBaseOpacity): 0 (the decal's RT 0 draw is unblended) -&gt; 1; 1 (blended, whatever
+    ''' its factors: user decision 7-oct-2026, review rev-06) -&gt; the colour-output alpha of the farthest painting fragment
+    ''' (tBaseAlpha, written by the depth draws into an RGBA16 UNORM target, which clamps it to [0, 1] and rounds it to 16 bits,
+    ''' GL 4.6 2.3.5.2; the clamp here states the law - the fixed-point RT 0 blend clamps the alpha, GL 4.6 17.3.6 - for any format).
+    ''' Premultiplied, the base gives a decal of any blend exactly "decal over a surface B": SRC_ALPHA / INV_SRC_ALPHA a D + (1 - a) a B
+    ''' over coverage a; Skyrim SE's MULTBLEND_DECAL DEST_COLOR / INV_SRC_ALPHA (D a B + (1 - a) a B) / a = (D + 1 - a) B; Fallout 4's
+    ''' mode 6 DEST_COLOR / ZERO D a B / a = D B (a colour source factor adds no coverage: the base's a is the pixel's coverage).
+    ''' Stacked decals: a is the FARTHEST painting decal's (the one whose depth the base takes).</item>
+    ''' <item>o0 (RT 0x1A, SRGB): rgb = a x the preview's background at the pixel as the FO4 scene's material colours (powf 2.2,
+    ''' Shader_Base_Class.MaterialColor; the floor's backgroundLinear): the albedo premultiplied, kept so by the decals' SRC_ALPHA
+    ''' blend over it (a_d D + (1 - a_d) a B); the lights and composite 1 are linear in the albedo (3 albedo t5, DF 4.3), so the
+    ''' composited radiance is premultiplied by the coverage the post divides by (Fragment_PostFo4). .w = SpecularParam.z of a
+    ''' plain surface = 0 (no back light). The pixel is read in GL rows: the stage draws under UPPER_LEFT (D3D rows, AppMain),
+    ''' backgroundAt wants the rows of the display (PostProcess.vb Fragment_PostFo4), so y = H - y.</item>
+    ''' <item>o1 (RT 0x1B): the decal's geometric normal with the records' encode (rec2762 L75-91: engine view = (x, y, -z_gl),
+    ''' z = min(z, 0), normalised, xy / sqrt(8 - 8 z) + 0.5), NOT premultiplied (a direction: the decals blend theirs over it as the
+    ''' engine blends a decal's over a surface's). Geometric normal = AppMain's and Fragment_FO4's geoNormal law: the interpolated
+    ''' vertex normal (mv_tbn column 2), flipped on back faces of a double-sided shape; MSN: the map's normal (v_msnMatrix * t1.rbg,
+    ''' Fragment_FO4's MSN branch).</item>
+    ''' <item>o2 (RT 0x1D) = 0: no SSR mask, no cube, no envmap, cb2[5].x = 0 (rec2762 L92-107 with zero constants).</item>
+    ''' <item>o3 (RT 0x1E) = (0, 0, 0, 1): no gloss, no specular, SpecularParam.w = 0; id 255 = the default of the 245 PS
+    ''' (mov o3.w, 1.0; RE_FO4_DEFERRED_FRAME 6, ids).</item>
+    ''' <item>o4 (RT 0x1F) = 0: no emissive.</item>
+    ''' <item>oShadow (app RT, propuesta B): Fo4GBufferSource.AppShadowFactors with AppMain's inputs - the geometric normal gn and the
+    ''' written o1.xy; its law takes the decoded o1 for an MSN shape - the one shadow composition of that RT, input law included
+    ''' (review rev-07). bModelSpace is declared there.</item>
+    ''' <item>oCoverage (DecalBaseTarget's coverage target, attachment 6 of its surface framebuffer): a, accumulated over-style with
+    ''' the decals' coverage draws (blend ONE / ONE_MINUS_SRC_ALPHA on that buffer only): the base is one more layer of the coverage
+    ''' composite 2 hands the post, as the radiance is premultiplied by it.</item>
+    ''' </list>
+    ''' The decals then blend over it with their own state (write mode 1 = RGB: o0.w and o3.w stay the base's).</summary>
+    Friend Const Fragment_DecalBaseSurface As String = "#version 430
+" & BackgroundFadeSource.Fade_Helper & "
+in mat3 mv_tbn;
+in mat3 v_msnMatrix;
+in vec2 vUV;
+in vec3 vWorldPos;
+uniform vec2 uvScale;
+uniform vec2 uvOffset;
+uniform bool bDoubleSided;
+uniform int uBaseOpacity;            // RenderableMesh.DecalBaseOpacity: 0 (unblended) -> 1, 1 (blended) -> the decal's alpha
+layout(binding = 1) uniform sampler2D t1;    // the record's normal map (Fo4GBufferSource t1): read only for an MSN shape
+layout(binding = 2) uniform sampler2D tBaseAlpha;   // DecalBaseTarget.AlphaTexture (RGBA16 UNORM, .a): the farthest painting decal's alpha
+layout(location = 0) out vec4 o0;    // RT 0x1A  R8G8B8A8_UNORM_SRGB
+layout(location = 1) out vec4 o1;    // RT 0x1B  R16G16_UNORM
+layout(location = 2) out vec4 o2;    // RT 0x1D  R8G8B8A8_UNORM
+layout(location = 3) out vec4 o3;    // RT 0x1E  R8G8B8A8_UNORM
+layout(location = 4) out vec4 o4;    // RT 0x1F  R8G8B8A8_UNORM_SRGB
+layout(location = 5) out vec4 oShadow;   // APP: shadow factor of each rig light (propuesta B)
+layout(location = 6) out vec4 oCoverage; // APP: the base's opacity a into DecalBaseTarget's coverage target (blended ONE / ONE_MINUS_SRC_ALPHA)
+" & Fo4GBufferSource.AppShadowFactors & "
+" & D3d11SemanticsSource.Glsl & "
+void main()
+{
+    vec3 gn = bModelSpace ? normalize(v_msnMatrix * (texture(t1, vUV * uvScale + uvOffset).rbg * 2.0 - 1.0))
+                          : normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
+    if (bDoubleSided && !gl_FrontFacing) gn = -gn;
+    float a = (uBaseOpacity == 0) ? 1.0 : clamp(texelFetch(tBaseAlpha, ivec2(gl_FragCoord.xy), 0).a, 0.0, 1.0);
+    vec3 bg = backgroundAt(vec2(gl_FragCoord.x, viewportSize.y - gl_FragCoord.y));
+    o0 = vec4(a * pow(bg, vec3(2.2)), 0.0);
+    vec3 n = vec3(gn.x, gn.y, d3d_min(-gn.z, 0.0));
+    n = n * d3d_rsq(dot(n, n));
+    float s = d3d_sqrt(n.z * -8.0 + 8.0);
+    o1 = vec4(d3d_div(n.x, s) + 0.5, d3d_div(n.y, s) + 0.5, 0.0, 0.0);
+    o2 = vec4(0.0);
+    o3 = vec4(0.0, 0.0, 0.0, 1.0);
+    o4 = vec4(0.0);
+    oShadow = appShadowFactors(vWorldPos, gn, o1.xy);
+    oCoverage = vec4(a);
 }
 "
 End Module
@@ -75,7 +166,7 @@ End Class
 ''' "not drawn"). A start program that does not compile or link throws out of the constructor after releasing the ones already
 ''' built (rev-50: the control then runs without the FO4 deferred frame and says why).</summary>
 Friend NotInheritable Class Fo4DeferredPrograms
-    Friend ReadOnly Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase As Fo4_Deferred_Shader_Class
+    Friend ReadOnly Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase, DecalBaseSurface As Fo4_Deferred_Shader_Class
     ''' <summary>PS id -&gt; the record programs built so far (Vertex_FO4 + Fo4GBufferSource.FragmentOf), and the records whose build
     ''' failed with the error text.</summary>
     Private ReadOnly _gbuffer As New Dictionary(Of UInteger, Fo4_Deferred_Shader_Class)
@@ -103,6 +194,7 @@ Friend NotInheritable Class Fo4DeferredPrograms
             LinearZ = Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_LinearZ)
             DirectResolve = Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DirectResolve)
             DecalBase = Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DecalBase)
+            DecalBaseSurface = Build(Shader_Class_Fo4.Vertex_FO4, Fo4DeferredAppSource.Fragment_DecalBaseSurface)
 #If DEBUG Then
             ' Debug (user decision 5-oct-2026): every record of the closed list built at start; the first failure throws.
             For Each id In Fo4GBufferSource.Records.Keys
@@ -172,14 +264,15 @@ Friend NotInheritable Class Fo4DeferredPrograms
     End Sub
 
     ''' <summary>GATE ONLY (ShadowGate --fo4-deferred-law mutants): a copy of these programs with the one of role
-    ''' <paramref name="role"/> (Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase) replaced.
+    ''' <paramref name="role"/> (Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase,
+    ''' DecalBaseSurface) replaced.
     ''' The copy owns nothing: its Dispose releases no program.</summary>
     Friend Function GateWith(role As String, program As Fo4_Deferred_Shader_Class) As Fo4DeferredPrograms
         Return New Fo4DeferredPrograms(Me, role, program)
     End Function
 
     Private Sub New(src As Fo4DeferredPrograms, role As String, program As Fo4_Deferred_Shader_Class)
-        If Not {"Sun", "SunShadow", "Fill", "Ambient", "Composite1", "Composite2", "LinearZ", "DirectResolve", "DecalBase"}.Contains(role) Then
+        If Not {"Sun", "SunShadow", "Fill", "Ambient", "Composite1", "Composite2", "LinearZ", "DirectResolve", "DecalBase", "DecalBaseSurface"}.Contains(role) Then
             Throw New ArgumentException("no deferred program role " & role)
         End If
         Sun = If(role = "Sun", program, src.Sun)
@@ -191,6 +284,7 @@ Friend NotInheritable Class Fo4DeferredPrograms
         LinearZ = If(role = "LinearZ", program, src.LinearZ)
         DirectResolve = If(role = "DirectResolve", program, src.DirectResolve)
         DecalBase = If(role = "DecalBase", program, src.DecalBase)
+        DecalBaseSurface = If(role = "DecalBaseSurface", program, src.DecalBaseSurface)
         _gbufferSource = src
     End Sub
 
@@ -219,11 +313,28 @@ End Structure
 
 ''' <summary>THE TARGETS AND THE NON-G-BUFFER PASSES OF THE FO4 DEFERRED FRAME (Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md 1, 2,
 ''' 3, 4, 15, 17): the G-buffer RTs 0x1A/0x1B/0x1D/0x1E/0x1F, the app's shadow RT, the D3D-order depth/stencil, the light RTs
-''' 0x21/0x22, RT 2, RT 0x28 (t15). Everything up to composite 1 is in D3D row order (glClipControl UPPER_LEFT, propuesta A).</summary>
+''' 0x21/0x22, RT 2, RT 0x28 (t15). The whole frame up to the end of the forward stage is in D3D row order (glClipControl
+''' UPPER_LEFT, propuesta A; composite 2 and the forward stage too since the zfight-overlay fix, 8-oct-2026: one orientation for
+''' everything that tests against the G-buffer depth, as in the game), and MirrorRows turns the frame's targets to GL rows at the
+''' end of that stage (PreviewControl.EndFo4Stage).</summary>
 Friend NotInheritable Class Fo4DeferredTargets
     Private _w As Integer, _h As Integer
-    Private _albedo, _normal, _env, _gloss, _emit, _shadow, _depth, _depthCopy, _lightD, _lightS, _rt2, _linZ, _decalBase As Integer
-    Private _fboG, _fboL, _fboC1, _fboZ, _fboBase As Integer
+    Private _albedo, _normal, _env, _gloss, _emit, _shadow, _depth, _depthCopy, _lightD, _lightS, _rt2, _linZ As Integer
+    Private _fboG, _fboL, _fboC1, _fboZ As Integer
+    ''' <summary>MirrorRows: one scratch image per format it turns (R11F_G11F_B10F, RGBA8, D24S8) and its read / draw framebuffers.</summary>
+    Private _mirR11, _mirRgba8, _mirDs, _fboMirSrc, _fboMirDst As Integer
+    ''' <summary>The translucent decals' base (BeginDecalBase / EndDecalBase), with its alpha and coverage targets.</summary>
+    Private ReadOnly _base As New DecalBaseTarget(deferred:=True)
+    ''' <summary>This frame's G-buffer stage drew the base (BeginDecalBase succeeded since BeginGBuffer): composite 2 takes the coverage
+    ''' of its pixels from it and the direct resolve mixes by the coverage.</summary>
+    Private _baseDrawn As Boolean
+
+    ''' <summary>The translucent decals' base target (the base draws bind its framebuffers; gates read its textures).</summary>
+    Friend ReadOnly Property DecalBase As DecalBaseTarget
+        Get
+            Return _base
+        End Get
+    End Property
     Private _quadVao, _quadVbo, _triVao, _triVbo, _emptyVao As Integer
     Private _point, _cubeSampler As Integer
     Private Shared ReadOnly GBufferBuffers As DrawBuffersEnum() = {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1,
@@ -234,18 +345,22 @@ Friend NotInheritable Class Fo4DeferredTargets
     Friend Shared GateNoUpperLeft As Boolean = False
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True draws the G-buffer without FRAMEBUFFER_SRGB.</summary>
     Friend Shared GateNoGBufferSrgb As Boolean = False
-    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True blits the G-buffer depth without the y mirror.</summary>
-    Friend Shared GateBlitNoMirror As Boolean = False
+    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True blits the G-buffer depth mirrored in y (the row order of
+    ''' the forward stage before the zfight-overlay fix).</summary>
+    Friend Shared GateBlitMirror As Boolean = False
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-decal-base mutant. True keeps the NEAREST translucent decal as the base (the
     ''' mark writes 1.0, the base draws LESS - RenderableMesh.ApplyDecalBaseState) instead of the farthest.</summary>
     Friend Shared GateDecalBaseNearest As Boolean = False
+    ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface mutant "no mix" (review rev-02). True: the direct resolve (post
+    ''' off) takes coverage 1 on every pixel (uCoverageBlend False) in a frame with the translucent decals' base.</summary>
+    Friend Shared GateDirectResolveNoCoverage As Boolean = False
 
     ''' <summary>GATE ONLY: the textures of the deferred targets, by role (ShadowGate --fo4-deferred-law / --fo4-deferred-scene).</summary>
     Friend ReadOnly Property GateTextures As (Albedo As Integer, Normal As Integer, Env As Integer, Gloss As Integer, Emit As Integer,
                                               Shadow As Integer, Depth As Integer, LightD As Integer, LightS As Integer, Rt2 As Integer,
                                               LinZ As Integer, DecalBase As Integer)
         Get
-            Return (_albedo, _normal, _env, _gloss, _emit, _shadow, _depth, _lightD, _lightS, _rt2, _linZ, _decalBase)
+            Return (_albedo, _normal, _env, _gloss, _emit, _shadow, _depth, _lightD, _lightS, _rt2, _linZ, _base.AuxTexture)
         End Get
     End Property
 
@@ -280,10 +395,6 @@ Friend NotInheritable Class Fo4DeferredTargets
         _lightS = Tex(SizedInternalFormat.R11fG11fB10f, w, h)       ' RT 0x22 (RGBSPEC = 1, rev-24)
         _rt2 = Tex(SizedInternalFormat.R11fG11fB10f, w, h)          ' RT 2
         _linZ = Tex(SizedInternalFormat.R32f, w, h)                 ' RT 0x28 mip 0
-        ' App: the auxiliary depth/stencil of the translucent decals' base (BeginDecalBase / EndDecalBase), DS 1's format: the copy
-        ' in (CopyImageSubData, same format) and the depth blit back (GL 4.6 18.3.1: formats must match) need it; its stencil is its own.
-        _decalBase = Tex(SizedInternalFormat.Depth24Stencil8, w, h)
-        GL.TextureParameter(_decalBase, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
         Dim ok = True
         GL.CreateFramebuffers(1, _fboG)
         For i = 0 To 5
@@ -304,11 +415,12 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.CreateFramebuffers(1, _fboZ)
         GL.NamedFramebufferTexture(_fboZ, FramebufferAttachment.ColorAttachment0, _linZ, 0)
         ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboZ, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
-        GL.CreateFramebuffers(1, _fboBase)
-        GL.NamedFramebufferTexture(_fboBase, FramebufferAttachment.DepthStencilAttachment, _decalBase, 0)
-        GL.NamedFramebufferDrawBuffer(_fboBase, DrawBufferMode.None)
-        GL.NamedFramebufferReadBuffer(_fboBase, ReadBufferMode.None)
-        ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboBase, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        ok = ok AndAlso _base.Ensure(w, h)
+        _mirR11 = Tex(SizedInternalFormat.R11fG11fB10f, w, h)
+        _mirRgba8 = Tex(SizedInternalFormat.Rgba8, w, h)
+        _mirDs = Tex(SizedInternalFormat.Depth24Stencil8, w, h)
+        GL.CreateFramebuffers(1, _fboMirSrc)
+        GL.CreateFramebuffers(1, _fboMirDst)
         ' The light quad (-1,1,0) (-1,-1,0) (1,-1,0) (1,1,0) (0x142246595..0x142246669) and the composite triangle (-1,1,1) (-1,-3,1)
         ' (3,1,1) (DF 4.4, 0x142216600).
         _quadVao = GL.GenVertexArray() : _quadVbo = GL.GenBuffer()
@@ -360,6 +472,7 @@ Friend NotInheritable Class Fo4DeferredTargets
         Next
         GL.ClearNamedFramebuffer(_fboG, ClearBuffer.Color, 5, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
         GL.ClearNamedFramebuffer(_fboG, ClearBufferCombined.DepthStencil, 0, 1.0F, 0)
+        _baseDrawn = False
         GL.Enable(EnableCap.FramebufferSrgb)
         If GateNoGBufferSrgb Then GL.Disable(EnableCap.FramebufferSrgb)
         GL.Disable(IndexedEnableCap.Blend, 5)
@@ -378,75 +491,38 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.BindSampler(7, 0)
     End Sub
 
-    ''' <summary>The G-buffer depth into the copy the passes that read it sample (the feedback loop, propuesta A.3): EndGBuffer's
-    ''' copy for the lights and composites, and BeginDecalBase's of the depth before the translucent decals.</summary>
+    ''' <summary>The G-buffer depth into the copy the lights and composites sample (the feedback loop, propuesta A.3; the translucent
+    ''' decals' base mark reads the same texture, DecalBaseTarget.Begin copying the depth before the decals into it): CopyImageSubData,
+    ''' raw texels (GL 4.6 18.3.2: "does not perform general-purpose conversions such as scaling, resizing, blending, color-space, or
+    ''' format conversions. It should be considered to operate in a manner similar to a CPU memcpy").</summary>
     Private Sub CopyDepth()
-        CopyDepthInto(_depthCopy)
+        GL.CopyImageSubData(_depth, ImageTarget.Texture2D, 0, 0, 0, 0, _depthCopy, ImageTarget.Texture2D, 0, 0, 0, 0, _w, _h, 1)
     End Sub
 
-    ''' <summary>The G-buffer depth/stencil texels into <paramref name="dst"/> (D24S8, the G-buffer's size): CopyImageSubData, raw texels
-    ''' (GL 4.6 18.3.2: "does not perform general-purpose conversions such as scaling, resizing, blending, color-space, or format
-    ''' conversions. It should be considered to operate in a manner similar to a CPU memcpy").</summary>
-    Private Sub CopyDepthInto(dst As Integer)
-        GL.CopyImageSubData(_depth, ImageTarget.Texture2D, 0, 0, 0, 0, dst, ImageTarget.Texture2D, 0, 0, 0, 0, _w, _h, 1)
-    End Sub
+    ''' <summary>Opens the base pass of the translucent decals (user decisions 5-oct-2026 and 7-oct-2026; an app pass, Fallout 4 has
+    ''' none: its group-3 decals test LESS_EQUAL without writing, Fo4RenderPassLaw, so over the clear depth they fail and the lights
+    ''' and composites skip the pixel, LightState / RunComposite1 / RunComposite2). DecalBaseTarget.Begin on the G-buffer depth
+    ''' (no depth of a decal goes through a float, user order) with the six G-buffer RTs as the base surface's targets
+    ''' (Fo4DeferredAppSource.Fragment_DecalBaseSurface); the mark reads this target's depth copy (_depthCopy: the copy the lights
+    ''' and composites sample, taken again by EndGBuffer - the frame keeps one sampled D24S8 copy, review rev-03). False when that
+    ''' target is incomplete: nothing bound, no base.</summary>
+    Public Function BeginDecalBase(progs As Fo4DeferredPrograms) As Boolean
+        _baseDrawn = _base.Begin(progs.DecalBase, _depth, ImageTarget.Texture2D, _depthCopy,
+                                 {(_albedo, False), (_normal, False), (_env, False), (_gloss, False), (_emit, False), (_shadow, False)},
+                                 GateDecalBaseNearest)
+        Return _baseDrawn
+    End Function
 
-    ''' <summary>Opens the base pass of the translucent decals (user decision 5-oct-2026; an app pass, Fallout 4 has none: its group-3
-    ''' decals test LESS_EQUAL without writing, Fo4RenderPassLaw, so over the clear depth they fail and the lights and composites skip
-    ''' the pixel, LightState / RunComposite1 / RunComposite2). No depth of a decal goes through a float (user order):
-    ''' <list type="number">
-    ''' <item>CopyDepth (the mark reads it) and CopyDepthInto the auxiliary target (CopyImageSubData, GL 4.6 18.3.2: raw texels, "a
-    ''' CPU memcpy"); then the auxiliary stencil - the copied one - cleared to 0 (GL 4.6 17.4.3).</item>
-    ''' <item>Mark: Fragment_DecalBase with uOnlyEmpty and uDepth 0.0, depth ALWAYS + write (GL 4.6 17.3.4), stencil ALWAYS ref 1,
-    ''' REPLACE on depth pass (GL 4.6 17.3.3): where nothing is behind, depth 0.0 (exact, GL 4.6 2.3.5.2) and stencil 1.</item>
-    ''' </list>
-    ''' Leaves the base state for the caller's draws (RenderableMesh.Render decalBase: own program, colour masked, GREATER + write):
-    ''' stencil test "1 &lt;= stencil" (LEQUAL ref 1, GL 4.6 17.3.3: passes on the mark and on every value a decal left there,
-    ''' fails where nothing was marked), INCR on depth pass. The decal depth is written by rasterisation: the same value its colour
-    ''' draw rasterises (GL 4.6 Appendix A, rule 2: the depth / stencil / colour-mask state does not change the fragment's z).</summary>
-    Public Sub BeginDecalBase(progs As Fo4DeferredPrograms)
-        CopyDepth()
-        GL.DepthMask(True)
-        GL.StencilMask(&HFF)
-        CopyDepthInto(_decalBase)
-        GL.ClearNamedFramebuffer(_fboBase, ClearBuffer.Stencil, 0, New Integer() {0})
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboBase)
-        GL.Viewport(0, 0, _w, _h)
-        GL.Enable(EnableCap.StencilTest)
-        GL.StencilFunc(StencilFunction.Always, 1, &HFF)
-        GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Replace)
-        progs.DecalBase.Use()
-        progs.DecalBase.SetBool("uOnlyEmpty", True)
-        progs.DecalBase.SetFloat("uDepth", If(GateDecalBaseNearest, 1.0F, 0.0F))
-        GL.BindTextureUnit(0, _depthCopy) : GL.BindSampler(0, _point)
-        FullscreenPass.Draw(progs.DecalBase, _emptyVao, 1, writesDepth:=True)
-        GL.BindSampler(0, 0)
-        GL.StencilFunc(StencilFunction.Lequal, 1, &HFF)
-        GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Incr)
-    End Sub
-
-    ''' <summary>Closes the base pass:
-    ''' <list type="number">
-    ''' <item>Fill: Fragment_DecalBase without uOnlyEmpty, uDepth 1.0, stencil EQUAL 1 (marked and covered by no decal), depth ALWAYS +
-    ''' write: those pixels get the clear value 1.0 back (exact, GL 4.6 2.3.5.2).</item>
-    ''' <item>The auxiliary depth blitted back into the G-buffer depth, DEPTH only, NEAREST, same rectangle, same format (GL 4.6 18.3.1;
-    ''' "Color, depth, and stencil masks ... are ignored"): where something was behind it is the G-buffer's own value, copied and
-    ''' blitted back; the G-buffer stencil is not in the mask, so it is not overwritten.</item>
-    ''' </list>
-    ''' Leaves the G-buffer bound, LESS_EQUAL, stencil test off, for the translucent decals, which then draw unchanged.</summary>
+    ''' <summary>Closes the base pass: DecalBaseTarget.Fill (the marked pixels no decal took get 1.0 back), Close, and the auxiliary
+    ''' depth blitted back into the G-buffer depth (DecalBaseTarget.BlitDepthTo: where something was behind it is the G-buffer's own
+    ''' value, copied and blitted back; the G-buffer stencil is not in the mask). Leaves the G-buffer bound, LESS_EQUAL, stencil
+    ''' test off, for the translucent decals, which then draw unchanged.</summary>
     Public Sub EndDecalBase(progs As Fo4DeferredPrograms)
-        GL.StencilFunc(StencilFunction.Equal, 1, &HFF)
-        GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Keep)
-        progs.DecalBase.Use()
-        progs.DecalBase.SetBool("uOnlyEmpty", False)
-        progs.DecalBase.SetFloat("uDepth", 1.0F)
-        FullscreenPass.Draw(progs.DecalBase, _emptyVao, 0, writesDepth:=True)
-        GL.Disable(EnableCap.StencilTest)
-        GL.DepthMask(True)
-        GL.BlitNamedFramebuffer(_fboBase, _fboG, 0, 0, _w, _h, 0, 0, _w, _h, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest)
+        _base.Fill(progs.DecalBase)
+        _base.Close()
+        _base.BlitDepthTo(_fboG)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboG)
         GL.Viewport(0, 0, _w, _h)
-        GL.DepthFunc(DepthFunction.Lequal)
     End Sub
 
     Private Sub BindGBufferInputs()
@@ -544,18 +620,53 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.BindVertexArray(_triVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
         For Each u In {0, 3, 4, 5, 6} : GL.BindTextureUnit(u, 0) : GL.BindSampler(u, 0) : Next
         GL.UseProgram(0)
-        GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)   ' end of the D3D-order stage (propuesta A)
     End Sub
 
-    ''' <summary>The G-buffer depth/stencil into the GL-order target's (mirrored in y, NEAREST: an exact copy, propuesta A.4).</summary>
+    ''' <summary>The G-buffer depth/stencil into the scene target's, straight (NEAREST, same format: an exact copy): the scene target
+    ''' stays in D3D rows through composite 2 and the forward stage (the zfight-overlay fix, 8-oct-2026: the forward draws rasterise
+    ''' in the orientation this depth was written in, so an overlay on its body's geometry gets the body's depth bit for bit).
+    ''' GateBlitMirror: the old mirrored blit.</summary>
     Public Sub BlitDepthTo(targetFbo As Integer)
-        If GateBlitNoMirror Then GL.BlitNamedFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, 0, _w, _h, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, BlitFramebufferFilter.Nearest) : Return
-        GL.BlitNamedFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, _h, _w, 0,
+        If GateBlitMirror Then GL.BlitNamedFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, _h, _w, 0, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, BlitFramebufferFilter.Nearest) : Return
+        GL.BlitNamedFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, 0, _w, _h,
                                 ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, BlitFramebufferFilter.Nearest)
     End Sub
 
-    ''' <summary>Composite pass 2 (3495) into the scene target (LOWER_LEFT, GREATER at z = 1 against the mirrored depth; draw buffers
-    ''' {A0, A1} = radiance and coverage, rev-19).</summary>
+    ''' <summary>One image of the frame turned between D3D and GL row order, in place (PreviewControl: the frame's targets at the end
+    ''' of the D3D-order stage, and the post-off display's background into it): blitted mirrored in y into the scratch image of its
+    ''' format (NEAREST, same size and format: nothing converted), then copied back raw (CopyImageSubData, GL 4.6 18.3.2: "a manner
+    ''' similar to a CPU memcpy"). <paramref name="format"/> is the image's: R11F_G11F_B10F, RGBA8 or DEPTH24_STENCIL8 (depth and
+    ''' stencil together). The frame's own framebuffers are not touched (the image is attached to this class's pair).</summary>
+    Public Sub MirrorRows(image As Integer, target As ImageTarget, format As SizedInternalFormat)
+        Dim isDs = format = SizedInternalFormat.Depth24Stencil8
+        Dim scratch As Integer
+        Select Case format
+            Case SizedInternalFormat.R11fG11fB10f : scratch = _mirR11
+            Case SizedInternalFormat.Rgba8 : scratch = _mirRgba8
+            Case SizedInternalFormat.Depth24Stencil8 : scratch = _mirDs
+            Case Else : Throw New ArgumentException($"MirrorRows: no scratch image of format {format}", NameOf(format))
+        End Select
+        Dim att = If(isDs, FramebufferAttachment.DepthStencilAttachment, FramebufferAttachment.ColorAttachment0)
+        Dim attach = Sub(fbo As Integer, img As Integer, tgt As ImageTarget)
+                         If tgt = ImageTarget.Renderbuffer Then
+                             GL.NamedFramebufferRenderbuffer(fbo, att, RenderbufferTarget.Renderbuffer, img)
+                         Else
+                             GL.NamedFramebufferTexture(fbo, att, img, 0)
+                         End If
+                     End Sub
+        attach(_fboMirSrc, image, target)
+        attach(_fboMirDst, scratch, ImageTarget.Texture2D)
+        GL.NamedFramebufferReadBuffer(_fboMirSrc, If(isDs, ReadBufferMode.None, ReadBufferMode.ColorAttachment0))
+        GL.NamedFramebufferDrawBuffer(_fboMirDst, If(isDs, DrawBufferMode.None, DrawBufferMode.ColorAttachment0))
+        Dim mask = If(isDs, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, ClearBufferMask.ColorBufferBit)
+        GL.BlitNamedFramebuffer(_fboMirSrc, _fboMirDst, 0, 0, _w, _h, 0, _h, _w, 0, mask, BlitFramebufferFilter.Nearest)
+        GL.CopyImageSubData(scratch, ImageTarget.Texture2D, 0, 0, 0, 0, image, target, 0, 0, 0, 0, _w, _h, 1)
+        attach(_fboMirSrc, 0, target)
+        attach(_fboMirDst, 0, ImageTarget.Texture2D)
+    End Sub
+
+    ''' <summary>Composite pass 2 (3495) into the scene target (D3D rows, still UPPER_LEFT: GREATER at z = 1 against the G-buffer depth
+    ''' blitted straight; draw buffers {A0, A1} = radiance and coverage, rev-19).</summary>
     Public Sub RunComposite2(progs As Fo4DeferredPrograms, f As Fo4DeferredFrame, sceneFbo As Integer, envArray As Integer)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, sceneFbo)
         GL.NamedFramebufferDrawBuffers(sceneFbo, 2, LightBuffers)
@@ -568,7 +679,8 @@ Friend NotInheritable Class Fo4DeferredTargets
         Dim p = progs.Composite2
         p.Use()
         p.SetVector4("VPOSOffset", New Vector4(1.0F / f.W, 1.0F / f.H, 1.0F, 1.0F))
-        p.SetFloat("uViewportH", f.H)
+        ' The translucent decals' base (user decision 7-oct-2026): the coverage of its pixels, DecalBaseTarget.CoverageTexture at unit 11.
+        p.SetBool("uDecalBaseCoverage", _baseDrawn)
         p.SetVector4("SSSSSParams", New Vector4(4.0F, 2.5F, 9.0F, 0.0F))   ' DF 17.2
         p.SetVector4("SSLRParams0", New Vector4(1.0F, 0, 0, 0))
         p.SetVector4("SSLRParams1", New Vector4(0, 0, 1.0F, 0))
@@ -576,38 +688,48 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.BindTextureUnit(1, _normal) : GL.BindTextureUnit(2, _env) : GL.BindTextureUnit(3, _gloss) : GL.BindTextureUnit(4, _emit)
         GL.BindTextureUnit(5, _lightD) : GL.BindTextureUnit(6, _lightS) : GL.BindTextureUnit(7, _depthCopy)
         GL.BindTextureUnit(8, envArray) : GL.BindTextureUnit(10, _rt2) : GL.BindTextureUnit(15, _linZ)
-        For Each u In {1, 2, 3, 4, 5, 6, 7, 10, 15} : GL.BindSampler(u, _point) : Next
+        GL.BindTextureUnit(11, _base.CoverageTexture)
+        For Each u In {1, 2, 3, 4, 5, 6, 7, 10, 11, 15} : GL.BindSampler(u, _point) : Next
         GL.BindSampler(8, _cubeSampler)
         GL.BindVertexArray(_triVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
-        For Each u In {1, 2, 3, 4, 5, 6, 7, 8, 10, 15} : GL.BindTextureUnit(u, 0) : GL.BindSampler(u, 0) : Next
+        For Each u In {1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 15} : GL.BindTextureUnit(u, 0) : GL.BindSampler(u, 0) : Next
         GL.UseProgram(0)
         GL.DepthMask(True) : GL.DepthFunc(DepthFunction.Lequal) : GL.Enable(EnableCap.CullFace)
     End Sub
 
-    ''' <summary>Post off: the composited radiance onto the display target through the 2.3.8 display tail (propuesta C).</summary>
-    Public Sub RunDirectResolve(progs As Fo4DeferredPrograms, sceneTex As Integer, displayFbo As Integer, sceneToLinear As Single)
+    ''' <summary>Post off: the composited radiance onto the display target through the 2.3.8 display tail (propuesta C). With the
+    ''' translucent decals' base in the frame, mixed over the background by the composite's coverage (<paramref name="coverageTex"/>,
+    ''' Fo4DeferredAppSource.Fragment_DirectResolve): blend colour SRC_ALPHA / ONE_MINUS_SRC_ALPHA, alpha ZERO / ONE (review rev-01: the
+    ''' display target's alpha is the frame's - CaptureBitmap reads it, Format32bppArgb - not the coverage's); without it, unblended
+    ''' as before. GateDirectResolveNoCoverage: the mutant without the mix (uCoverageBlend False).</summary>
+    Public Sub RunDirectResolve(progs As Fo4DeferredPrograms, sceneTex As Integer, coverageTex As Integer, displayFbo As Integer, sceneToLinear As Single)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, displayFbo)
         GL.Viewport(0, 0, _w, _h)
         GL.Enable(EnableCap.DepthTest) : GL.DepthFunc(DepthFunction.Greater) : GL.DepthMask(False)
         GL.Disable(EnableCap.Blend) : GL.Disable(EnableCap.CullFace)
+        If _baseDrawn Then GL.Enable(EnableCap.Blend) : GL.BlendFuncSeparate(BlendingFactorSrc.SrcAlpha, BlendingFactorDest.OneMinusSrcAlpha, BlendingFactorSrc.Zero, BlendingFactorDest.One)
         progs.DirectResolve.Use()
         progs.DirectResolve.SetFloat("uSceneToLinear", sceneToLinear)
-        GL.BindTextureUnit(0, sceneTex)
+        progs.DirectResolve.SetBool("uCoverageBlend", _baseDrawn AndAlso Not GateDirectResolveNoCoverage)
+        GL.BindTextureUnit(0, sceneTex) : GL.BindTextureUnit(1, coverageTex)
         GL.BindVertexArray(_emptyVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
-        GL.BindTextureUnit(0, 0) : GL.UseProgram(0)
+        GL.BindTextureUnit(0, 0) : GL.BindTextureUnit(1, 0) : GL.UseProgram(0)
+        GL.Disable(EnableCap.Blend)
         GL.DepthMask(True) : GL.DepthFunc(DepthFunction.Lequal) : GL.Enable(EnableCap.CullFace)
     End Sub
 
     Public Sub Free()
-        For Each fb In {_fboG, _fboL, _fboC1, _fboZ, _fboBase}
+        For Each fb In {_fboG, _fboL, _fboC1, _fboZ, _fboMirSrc, _fboMirDst}
             If fb <> 0 Then GL.DeleteFramebuffer(fb)
         Next
-        _fboG = 0 : _fboL = 0 : _fboC1 = 0 : _fboZ = 0 : _fboBase = 0
-        For Each t In {_albedo, _normal, _env, _gloss, _emit, _shadow, _depth, _depthCopy, _lightD, _lightS, _rt2, _linZ, _decalBase}
+        _fboG = 0 : _fboL = 0 : _fboC1 = 0 : _fboZ = 0 : _fboMirSrc = 0 : _fboMirDst = 0
+        For Each t In {_albedo, _normal, _env, _gloss, _emit, _shadow, _depth, _depthCopy, _lightD, _lightS, _rt2, _linZ, _mirR11, _mirRgba8, _mirDs}
             If t <> 0 Then GL.DeleteTexture(t)
         Next
+        _mirR11 = 0 : _mirRgba8 = 0 : _mirDs = 0
         _albedo = 0 : _normal = 0 : _env = 0 : _gloss = 0 : _emit = 0 : _shadow = 0 : _depth = 0 : _depthCopy = 0
-        _lightD = 0 : _lightS = 0 : _rt2 = 0 : _linZ = 0 : _decalBase = 0
+        _lightD = 0 : _lightS = 0 : _rt2 = 0 : _linZ = 0
+        _base.Free()
         For Each v In {_quadVao, _triVao, _emptyVao}
             If v <> 0 Then GL.DeleteVertexArray(v)
         Next

@@ -21,6 +21,8 @@ Friend Module SamplerLaw
         Glow = 6
         Lightmask = 7
         Detail = 8
+        Height = 11
+        InnerLayer = 12
     End Enum
 
     Friend Const FiltInherit As Integer = -1
@@ -44,6 +46,8 @@ Friend Module SamplerLaw
         Public Facegen As Boolean
         ''' <summary>FO4 effect env cube: the material's Env Map Min LOD byte (+0xB6).</summary>
         Public EnvMapMinLod As Integer
+        ''' <summary>SSE lighting technique type (SseRenderPassLaw.LitTechniqueType): 3 Parallax binds t3, 11 MultiLayerParallax t8; -1 none.</summary>
+        Public LitType As Integer
     End Structure
 
     Friend Function Slots(s As SamplerInputs) As List(Of SlotSampler)
@@ -69,6 +73,9 @@ Friend Module SamplerLaw
                 ' rim / soft / subsurface t12: FaceGen writes aniso, otherwise the slot keeps the frame's last filter.
                 add(AppUnit.Lightmask, 12, m, If(s.Facegen, 3, FiltInherit), 0)
                 add(AppUnit.Detail, 4, m, 3, 0)
+                ' Parallax t3 height / MultiLayerParallax t8 inner layer: mat / aniso (0x141548A07, 0x141547F0A..F24; 0x141548EF5, 0x141547F8D..FE0).
+                If s.LitType = 3 Then add(AppUnit.Height, 3, m, 3, 0)
+                If s.LitType = 11 Then add(AppUnit.InnerLayer, 8, m, 3, 0)
             End If
         ElseIf s.IsEffect Then
             ' BSEffectShader 0x1422250D0 / 0x142225650: t0 base (mat+0xB4) / aniso; t4 palette 0 / one mip; t5 env cube 0 / one mip at

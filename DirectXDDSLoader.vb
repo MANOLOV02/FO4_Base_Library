@@ -72,7 +72,7 @@ Public Module DirectXDDSLoader
             Dim capacidad As Long = CLng(Math.Abs(bd.Stride)) * bd.Height
             If lvl.Data.Length > capacidad Then
                 Throw New InvalidDataException(
-                    $"El nivel 0 trae {lvl.Data.Length} bytes y el bitmap GDI+ sólo admite {capacidad}.")
+                    $"Mip level 0 has {lvl.Data.Length} bytes and the GDI+ bitmap only holds {capacidad}.")
             End If
             Marshal.Copy(lvl.Data, 0, bd.Scan0, lvl.Data.Length)
         Finally

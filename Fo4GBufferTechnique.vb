@@ -13,6 +13,14 @@
 ''' corpus shapes against the census).</summary>
 Friend Module Fo4GBufferTechnique
 
+    ''' <summary>The technique bits the G-buffer's SetupMaterial binds textures by (0x142204140) and C4's slot law reads
+    ''' (EngineDefaultTextureLaw.Fo4LightingContext): one definition, used by Technique below and by MaterialData.</summary>
+    Friend Const TechTexture As UInteger = 1UI << 1          ' t0 / t1 / t2 (0x14220442B..0x142204620)
+    Friend Const TechEye As UInteger = 1UI << 6
+    Friend Const TechGlowMap As UInteger = 1UI << 14         ' t3 (0x1422074DB..51F)
+    Friend Const TechGradientRemap As UInteger = 1UI << 26   ' t5 (0x14220462A..706)
+    Friend Const TechFace As UInteger = 1UI << 31            ' t8 (0x142204EB0..FCC)
+
     Private Function Bit(v As ULong, n As Integer) As Boolean
         Return ((v >> n) And 1UL) <> 0UL
     End Function
@@ -127,6 +135,11 @@ Friend Module Fo4GBufferTechnique
         Return (f, m)
     End Function
 
+    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-gbuffer-scenes (10 z0). True leaves the alpha branch (0x14217A147) out of Technique,
+    ''' so a lighting shape of drawn alpha 0 reaches the G-buffer with AdditionalAlphaMaskRef.z = 0 - a state the engine reaches only
+    ''' for a decal through t130 (group 0/7) - to trace the record's dither at z = 0 (hallazgos v2-N2).</summary>
+    Friend GateIgnoreAlphaBranch As Boolean = False
+
     ''' <summary>GetRenderPasses 0x14217A050, deferred constructor. <paramref name="alphaFlags"/> = the NiAlphaProperty flags after
     ''' the BGSM alpha law (0x1421718BD..9EE; the app's ResolveEngineAlpha), Nothing without the property. <paramref name="bted"/> =
     ''' the geometry carries the "BTED" extra data (0x142507510). The preview's runtime state (notas 1.1): fade 1, prop+0x64 = 1,
@@ -137,9 +150,17 @@ Friend Module Fo4GBufferTechnique
                               ByRef group As Integer, Optional ByRef noPass As Fo4RenderPassLaw.Fo4NoPass = Fo4RenderPassLaw.Fo4NoPass.None) As UInteger?
         noPass = Fo4RenderPassLaw.Fo4NoPass.None
         Dim decal = (f And &HC000000UL) <> 0UL
+        ' 0x14217A13E call [rax+0x198] (material +0x80) / 0x14217A144 ucomiss / 0x14217A147 je 0x14217A227 -> 0x14217A22A and r12d,
+        ' 0xC000000 / jne: alpha 0 or NaN without decal bits clears the list (0x14217A237), BEFORE the blend and refraction branches
+        ' below. matAlpha is the alpha the preview draws (MaterialData.PreviewAlpha): the raw one - no technique, as in the game - or,
+        ' in a view that draws for editing, the shown one (C2 v3 L1c / L5).
+        If Not GateIgnoreAlphaBranch AndAlso Fo4RenderPassLaw.LightingAlphaSkipsPasses(False, matAlpha, decal) Then
+            noPass = Fo4RenderPassLaw.Fo4NoPass.LightingAlphaZero
+            Return Nothing
+        End If
         Dim blend = alphaFlags.HasValue AndAlso (alphaFlags.Value And 1) <> 0
-        ' 0x14217A16A..0x14217A184 as read by the app: NOT VERIFIED, its consequence contradicts the game (RE_FO4_PASS_GROUPS_DEPTH 8.1,
-        ' under re-examination); followed for now, the shape is listed in the frame's notice.
+        ' 0x14217A16A..0x14217A184 (RE_FO4_PASS_GROUPS_DEPTH 8.1), measured in the running game (AUDIT row F-BD: empty pass list,
+        ' never drawn); the shape is listed in the frame's notice.
         If blend AndAlso Not decal Then
             noPass = Fo4RenderPassLaw.Fo4NoPass.LightingBlendWithoutDecal
             Return Nothing
@@ -162,7 +183,7 @@ Friend Module Fo4GBufferTechnique
                 End If
             End If
         End If
-        Dim t As UInteger = If(Bit(f, 12), &H2002UI, &H1AUI)                              ' 0x14217A721..0x14217A748
+        Dim t As UInteger = If(Bit(f, 12), &H2000UI Or TechTexture, &H18UI Or TechTexture)   ' 0x14217A721..0x14217A748 (0x2002 / 0x1A)
         If Bit(f, 1) Then t = t Or 4UI                                                    ' 0x14217A74B..0x14217A75F
         If Bit(f, 37) Then t = t Or 1UI                                                   ' 0x14217A762..0x14217A772
         If Bit(f, 14) Then t = t Or &H20UI                                                ' 0x14217A775..0x14217A788
@@ -172,18 +193,18 @@ Friend Module Fo4GBufferTechnique
         If Bit(f, 1) AndAlso bted Then t = t Or (1UI << 30)                               ' 0x14217A802..0x14217A81B
         If Bit(f, 61) Then t = t Or (1UI << 10)                                           ' 0x14217A820..0x14217A841
         If alphaFlags.HasValue AndAlso ((alphaFlags.Value >> 9) And 1) <> 0 Then t = t Or (1UI << 8)   ' 0x14217A83A..0x14217A858
-        If Bit(f, 38) Then t = t Or (1UI << 14)                                           ' 0x14217A85C..0x14217A878
+        If Bit(f, 38) Then t = t Or TechGlowMap                                           ' 0x14217A85C..0x14217A878
         If Bit(f, 55) Then t = t Or (1UI << 16)                                           ' 0x14217A87B..0x14217A894
         If Bit(f, 60) Then t = t Or (1UI << 23)                                           ' 0x14217A897..0x14217A8B0
         If Bit(f, 28) Then t = t Or (1UI << 12)                                           ' 0x14217A8B3..0x14217A8C3
-        If Bit(f, 10) AndAlso (vertexDesc And &H4010000000000000UL) <> 0UL Then t = t Or &H80000040UI   ' 0x14217A8CA..0x14217A8E8
+        If Bit(f, 10) AndAlso (vertexDesc And &H4010000000000000UL) <> 0UL Then t = t Or TechFace Or TechEye   ' 0x14217A8CA..0x14217A8E8
         If Bit(f, 18) Then t = t Or (1UI << 17)                                           ' 0x14217A8EF..0x14217A90E
         If Bit(f, 21) Then t = t Or (1UI << 18)                                           ' 0x14217A912..0x14217A923
         If Bit(f, 54) Then t = t Or &H10800UI                                             ' 0x14217A926..0x14217A941
         If (f And &H800002000000UL) = &H800002000000UL Then t = t Or &H280040UI           ' 0x14217A944..0x14217A955
         If Bit(f, 40) Then t = t Or &H400040UI                                            ' 0x14217A958..0x14217A973
         ' bit 7: property RTTI 0x143E5F270 (grass), never a BSLightingShaderProperty.
-        If (f And &H200410UL) = &H10UL Then t = t Or (1UI << 26)                          ' 0x14217A984..0x14217A997
+        If (f And &H200410UL) = &H10UL Then t = t Or TechGradientRemap                    ' 0x14217A984..0x14217A997
         ' bit 24 from effectData: none; bits 27/28: geometry type <> 0xF and vfunc[0x1F8] null (ENV 12.1).
         If decal Then                                                                     ' 0x14217A9F6..0x14217AA37
             If Not t130 OrElse Bit(f, 49) Then

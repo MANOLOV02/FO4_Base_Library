@@ -286,6 +286,7 @@ Partial Public Class LightRigForm
         ' inspeccion util en las dos, y NO comparte semantica con la oclusion por segmento.
         ' GetValueOrDefault, NUNCA el ternario If(): con un Nullable devuelve HasValue=True.
         chkShowHelperShapes.Checked = Config_App.ShowHelperShapesEfectivo()
+        chkShowErrors.Checked = Config_App.Current.Setting_ShowErrors
 
         chkResetAngles.Checked = Config_App.Current.Settings_Camara.ResetAngles
         chkResetZoom.Checked = Config_App.Current.Settings_Camara.ResetZoom
@@ -453,6 +454,7 @@ Partial Public Class LightRigForm
         ' Vuelve a "el usuario no eligio" ⇒ manda el default de la app. Reponer un literal le
         ' prenderia los helpers a NPC Manager, que es un visor.
         Config_App.Current.Setting_ShowHelperShapes = Nothing
+        Config_App.Current.Setting_ShowErrors = True
         Config_App.Current.Settings_Camara = Config_App.Default_CameraSettings
         Config_App.Current.Settings_RenderGrid = Config_App.Default_RenderGrid_Settings
         Config_App.Current.Setting_RenderGridColor = Color.FromKnownColor(KnownColor.LightGray).Name
@@ -642,6 +644,14 @@ Partial Public Class LightRigForm
                                                           End Sub
         AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarUIenModelo()
         AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarUIenModelo()
+
+        ' "Show errors" (grupo Notices): sólo cambia el aviso del cuadro, así que REPINTA (LightsChanged). No va por
+        ' VolcarRenderEnModelo: ese levanta RenderSettingsChanged, que en los hosts rearma la geometría.
+        AddHandler chkShowErrors.CheckedChanged, Sub(sender, e)
+                                                     If _preventchanges Then Return
+                                                     Config_App.Current.Setting_ShowErrors = chkShowErrors.Checked
+                                                     RaiseEvent LightsChanged()
+                                                 End Sub
 
         ' Pestana Rendering: todo escribe en Config_App al vuelo, igual que las luces.
         For Each c In New CheckBox() {chkRecalcNormals, chkRepairNaN, chkNormalize, chkDeterministic,

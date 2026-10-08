@@ -394,7 +394,9 @@ void main()
     float adapted = avgLum;                       // t2.x = t2.y in the steady state
 
     float lum = max(dot(LUM_W, scene), 0.00001);
-    float L = lum * (adapted / adapted);          // lum * t2.y / t2.x
+    // lum * t2.y / t2.x. Guard: with no shape pixel in frame the shape-only mean is 0 and 0/0 is NaN, which the clamp below
+    // turns black (the floor alone went black). 0/0 -> 1, the value the ratio has for every other mean here (t2.x = t2.y).
+    float L = lum * ((adapted > 0.0) ? adapted / adapted : 1.0);
     float Lt = (L * sseHdr.y + 1.0) * L / (L + 1.0);
     vec3 c = scene * (Lt / lum);                  // + bloom * sat(cb2[2].x - Lt): no bloom pass (hole)
     float l = dot(c, LUM_W);
@@ -946,6 +948,8 @@ Friend NotInheritable Class SceneTargets
     Private _sceneTex As Integer, _coverageTex As Integer, _bgShadowTex As Integer
     ''' <summary>Attachment 3: the SSE SAO normals target (o2 of the opaque MRT, R8G8B8A8_UNORM; RE_SAO_BOTH 7.1, 11).</summary>
     Private _aoNormalTex As Integer
+    ''' <summary>Attachment 4: kSNOW_SPECALPHA (RT 0x70, R8G8_UNORM, 0x14153B87B..8A3 / 0x14153BA78..A89).</summary>
+    Private _snowSpecAlphaTex As Integer
     Private _displayRb As Integer, _depthRb As Integer
     Private _lumPartials As Integer, _lumResult As Integer, _partialCount As Integer
     Private _lutTex As Integer
@@ -978,9 +982,30 @@ Friend NotInheritable Class SceneTargets
     End Property
 
     ''' <summary>Attachment 3 of the HDR target, the SSE SAO normals (0 before the first Ensure).</summary>
+    ''' <summary>Attachment 2 of the HDR target: the ground catcher's display-space factor on the background (RGBA8).</summary>
+    Public ReadOnly Property BgShadowTexture As Integer
+        Get
+            Return _bgShadowTex
+        End Get
+    End Property
+
     Public ReadOnly Property AoNormalTexture As Integer
         Get
             Return _aoNormalTex
+        End Get
+    End Property
+
+    ''' <summary>Attachment 4 of the HDR target, kSNOW_SPECALPHA (RT 0x70, R8G8_UNORM; 0 before the first Ensure).</summary>
+    Public ReadOnly Property SnowSpecAlphaTexture As Integer
+        Get
+            Return _snowSpecAlphaTex
+        End Get
+    End Property
+
+    ''' <summary>The display target's colour renderbuffer (0 before the first Ensure).</summary>
+    Public ReadOnly Property DisplayRenderbuffer As Integer
+        Get
+            Return _displayRb
         End Get
     End Property
 
@@ -1008,6 +1033,7 @@ Friend NotInheritable Class SceneTargets
         _coverageTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
         _bgShadowTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
         _aoNormalTex = NewTarget(SizedInternalFormat.Rgba8, w, h)
+        _snowSpecAlphaTex = NewTarget(SizedInternalFormat.Rg8, w, h)
 
         _displayFbo = GL.GenFramebuffer()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _displayFbo)
@@ -1021,6 +1047,7 @@ Friend NotInheritable Class SceneTargets
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment1, TextureTarget.Texture2D, _coverageTex, 0)
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment2, TextureTarget.Texture2D, _bgShadowTex, 0)
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment3, TextureTarget.Texture2D, _aoNormalTex, 0)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment4, TextureTarget.Texture2D, _snowSpecAlphaTex, 0)
         GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _depthRb)
         GL.DrawBuffers(2, SceneDrawBuffers)
         ok = ok AndAlso GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) = FramebufferErrorCode.FramebufferComplete
@@ -1044,10 +1071,13 @@ Friend NotInheritable Class SceneTargets
     End Function
 
     Private Shared ReadOnly SceneDrawBuffers As DrawBuffersEnum() =
-        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.ColorAttachment2, DrawBuffersEnum.ColorAttachment3}
-    ''' <summary>An SSE frame with the post, from BeginHdr to the SAO: radiance, coverage and the SAO normals (draw buffer 3).</summary>
+        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.ColorAttachment2, DrawBuffersEnum.ColorAttachment3,
+         DrawBuffersEnum.ColorAttachment4}
+    ''' <summary>An SSE frame with the post, from BeginHdr to the SAO: radiance, coverage, the SAO normals (draw buffer 3) and
+    ''' kSNOW_SPECALPHA (draw buffer 4).</summary>
     Private Shared ReadOnly SceneDrawBuffersAo As DrawBuffersEnum() =
-        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.None, DrawBuffersEnum.ColorAttachment3}
+        {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.None, DrawBuffersEnum.ColorAttachment3,
+         DrawBuffersEnum.ColorAttachment4}
 
     Private Shared Function NewTarget(fmt As SizedInternalFormat, w As Integer, h As Integer) As Integer
         Dim t As Integer
@@ -1061,18 +1091,21 @@ Friend NotInheritable Class SceneTargets
     End Function
 
     ''' <summary>Binds the HDR target and clears it: radiance 0, coverage 0, background shadow 1, SAO normals (0.5, 0.5, 0, 0)
-    ''' (the engine's clear of the normals RT, RE_SAO_BOTH 7.1), depth 1. Leaves attachments 0 and 1 as the draw buffers (2 is
-    ''' written only by the ground catcher), plus 3 when <paramref name="aoNormals"/> (an SSE frame: until the SAO runs).</summary>
+    ''' (the engine's clear of the normals RT, RE_SAO_BOTH 7.1), kSNOW_SPECALPHA 0 (0x1406575EA..678), depth 1. Leaves attachments 0
+    ''' and 1 as the draw buffers (2 is written only by the ground catcher), plus 3 and 4 when <paramref name="aoNormals"/> (an SSE
+    ''' frame: until the SAO runs).</summary>
     Public Sub BeginHdr(aoNormals As Boolean)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _hdrFbo)
         GL.Viewport(0, 0, _w, _h)
-        GL.DrawBuffers(4, SceneDrawBuffers)
+        GL.DrawBuffers(5, SceneDrawBuffers)
+        GL.ColorMask(4, True, True, True, True)   ' ClearBuffer honours the mask: the last draw of the previous frame may have masked it
         GL.ClearBuffer(ClearBuffer.Color, 0, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
         GL.ClearBuffer(ClearBuffer.Color, 1, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
         GL.ClearBuffer(ClearBuffer.Color, 2, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
         GL.ClearBuffer(ClearBuffer.Color, 3, New Single() {0.5F, 0.5F, 0.0F, 0.0F})
+        GL.ClearBuffer(ClearBuffer.Color, 4, New Single() {0.0F, 0.0F, 0.0F, 0.0F})   ' RT 0x70 cleared 0 (0x1406575EA..678)
         GL.Clear(ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit)
-        If aoNormals Then GL.DrawBuffers(4, SceneDrawBuffersAo) Else GL.DrawBuffers(2, SceneDrawBuffers)
+        If aoNormals Then GL.DrawBuffers(5, SceneDrawBuffersAo) Else GL.DrawBuffers(2, SceneDrawBuffers)
     End Sub
 
     ''' <summary>The ground catcher also writes its display-space factor on the background (attachment 2).</summary>
@@ -1206,6 +1239,7 @@ Friend NotInheritable Class SceneTargets
         If _coverageTex <> 0 Then GL.DeleteTexture(_coverageTex) : _coverageTex = 0
         If _bgShadowTex <> 0 Then GL.DeleteTexture(_bgShadowTex) : _bgShadowTex = 0
         If _aoNormalTex <> 0 Then GL.DeleteTexture(_aoNormalTex) : _aoNormalTex = 0
+        If _snowSpecAlphaTex <> 0 Then GL.DeleteTexture(_snowSpecAlphaTex) : _snowSpecAlphaTex = 0
         If _displayRb <> 0 Then GL.DeleteRenderbuffer(_displayRb) : _displayRb = 0
         If _depthRb <> 0 Then GL.DeleteRenderbuffer(_depthRb) : _depthRb = 0
         If _lumPartials <> 0 Then GL.DeleteBuffer(_lumPartials) : _lumPartials = 0

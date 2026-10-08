@@ -256,10 +256,7 @@ Friend Module FastSkin
     Friend Sub UnVertice(m As Matrix4, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
                          msn As Boolean,
                          ByRef pos As Vector3, ByRef nrm As Vector3, ByRef tan As Vector3, ByRef bit As Vector3)
-        Dim px = CSng(p.X), py = CSng(p.Y), pz = CSng(p.Z)
-        pos = New Vector3(px * m.M11 + py * m.M21 + pz * m.M31 + m.M41,
-                          px * m.M12 + py * m.M22 + pz * m.M32 + m.M42,
-                          px * m.M13 + py * m.M23 + pz * m.M33 + m.M43)
+        pos = Punto(m, p)
         Dim c11 = m.M22 * m.M33 - m.M23 * m.M32
         Dim c12 = m.M23 * m.M31 - m.M21 * m.M33
         Dim c13 = m.M21 * m.M32 - m.M22 * m.M31
@@ -297,6 +294,16 @@ Friend Module FastSkin
             bit = Rotar(vb.X, vb.Y, vb.Z, m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33)
         End If
     End Sub
+
+    ''' <summary>THE POSITION LAW of <see cref="UnVertice"/>, on one point: the local point rounded to Single, then accumulated in
+    ''' Single (rows of OpenTK's Matrix4). One place for every point that has to land where the CPU-skinned vertices land: the
+    ''' vertex itself (UnVertice) and the SSE eye's reflection centre (Render.vb EyeCentresForUpload, S-O1).</summary>
+    Friend Function Punto(m As Matrix4, p As Vector3d) As Vector3
+        Dim px = CSng(p.X), py = CSng(p.Y), pz = CSng(p.Z)
+        Return New Vector3(px * m.M11 + py * m.M21 + pz * m.M31 + m.M41,
+                           px * m.M12 + py * m.M22 + pz * m.M32 + m.M42,
+                           px * m.M13 + py * m.M23 + pz * m.M33 + m.M43)
+    End Function
 
     ''' <summary>EL CAMINO QUE GANA, y no es el vectorial. Trabaja DIRECTO sobre los arrays AoS: sin
     ''' aplanar a SoA, sin scatter, sin vectores.

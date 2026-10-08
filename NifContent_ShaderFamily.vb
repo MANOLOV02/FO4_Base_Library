@@ -128,11 +128,119 @@ Partial Public Class Nifcontent_Class_Manolo
     ''' shader y la de su NiAlphaProperty.</summary>
     Public Function CadenasDeShape(shape As INiShape) As (DeShape As List(Of NiTimeController), DeShader As List(Of NiTimeController), DeAlpha As List(Of NiTimeController))
         Dim deShape = CadenaDeControllers(shape.Controller)
-        Dim shad = TryCast(GetShader(shape), NiObjectNET)
-        Dim deShader = If(shad Is Nothing, New List(Of NiTimeController), CadenaDeControllers(shad.Controller))
+        Dim deShader = CadenaDeShader(shape)
         Dim alp = GetBlock(Of NiAlphaProperty)(shape.AlphaPropertyRef)
         Dim deAlpha = If(alp Is Nothing, New List(Of NiTimeController), CadenaDeControllers(alp.Controller))
         Return (deShape, deShader, deAlpha)
+    End Function
+
+    ''' <summary>The shader's controller chain of <paramref name="shape"/> - CadenasDeShape's DeShader, its one owner; empty without a
+    ''' shader. Read alone by MaterialData.ShaderChain (C10), once per frame and shape.</summary>
+    Public Function CadenaDeShader(shape As INiShape) As List(Of NiTimeController)
+        Dim shad = TryCast(GetShader(shape), NiObjectNET)
+        Return If(shad Is Nothing, New List(Of NiTimeController), CadenaDeControllers(shad.Controller))
+    End Function
+
+    ''' <summary>F-A0 / S-ND: the shape's shader alpha controller. Present: a BSLightingShaderPropertyFloatController on variable 12
+    ''' (Alpha) in the shader's controller chain - its update writes material +0x80, the alpha GetRenderPasses reads (Fallout4.exe
+    ''' 0x14224A7C0, var 12 -> +0x80 at 0x14224A9FD; SkyrimSE.exe 0x14157AC20, 0x14157AE1D). Max: the highest value its
+    ''' interpolators can output (nif.xml): the controller's own Interpolator and the Interpolator of every NiSequence ControlledBlock
+    ''' bound to it by its Controller ref (BloquesQueAnimanA, the one law); of an NiFloatInterpolator, its pose Value (nif.xml default
+    ''' -3.402823466e+38 = no pose, skipped) and every key of its NiFloatData. Other interpolators (NiBlendFloatInterpolator only blends
+    ''' its sequences' outputs) give no value. Nothing when no value is readable. Key maximum, not curve maximum: quadratic tangents
+    ''' can overshoot (not evaluated). Blocks bound by name only (no Controller ref) are not read.</summary>
+    Public Function LightingAlphaController(shape As INiShape) As (Present As Boolean, Max As Single?)
+        Return LightingAlphaController(shape, CadenasDeShape(shape).DeShader)
+    End Function
+
+    ''' <summary>LightingAlphaController on the shader chain the caller already walked (<paramref name="shaderChain"/> =
+    ''' CadenasDeShape(shape).DeShader; MaterialData.ShaderChain walks it once per frame for this and MaterialAtRest, C10 rev-07).</summary>
+    Public Function LightingAlphaController(shape As INiShape, shaderChain As List(Of NiTimeController)) As (Present As Boolean, Max As Single?)
+        Dim ctrls = shaderChain.Where(
+            Function(c) TypeOf c Is BSLightingShaderPropertyFloatController AndAlso
+                        DirectCast(c, BSLightingShaderPropertyFloatController).ControlledVariable = NiflySharp.Enums.LightingShaderControlledFloat.Alpha).ToList()
+        If ctrls.Count = 0 Then Return (False, Nothing)
+        Dim max As Single? = Nothing
+        Dim leer = Sub(interp As NiInterpolator)
+                       Dim fi = TryCast(interp, NiFloatInterpolator)
+                       If fi Is Nothing Then Return
+                       Dim vals As New List(Of Single)
+                       If fi.Value <> -Single.MaxValue Then vals.Add(fi.Value)
+                       Dim data = GetBlock(fi.Data)
+                       If data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing Then vals.AddRange(data.Data.Keys.Select(Function(k) k.Value))
+                       For Each v In vals
+                           If Not Single.IsNaN(v) AndAlso (Not max.HasValue OrElse v > max.Value) Then max = v
+                       Next
+                   End Sub
+        For Each c In ctrls
+            leer(GetBlock(DirectCast(c, NiSingleInterpController).Interpolator))
+        Next
+        For Each b In BloquesQueAnimanA(shape)
+            If b.Controller IsNot Nothing AndAlso ctrls.Contains(b.Controller) Then leer(GetBlock(b.Secuencia.ControlledBlocks(b.Indice).Interpolator))
+        Next
+        Return (True, max)
+    End Function
+
+    ''' <summary>C10: the shape's material at rest - what its active shader controllers write at the game clock's origin
+    ''' (ControllerRestLaw), from <paramref name="shaderChain"/> = CadenasDeShape(shape).DeShader (the engine's UpdateControllers of
+    ''' the property, 0x1416CF440; MaterialData.ShaderChain walks it once per frame, rev-07), in chain order (a later controller on the
+    ''' same variable wins, DEDUCED). Alpha (lighting 12, effect 5) is left to C2 (PreviewAlphaRule). Lighting vars 3..7 and 16..19 (FO4
+    ''' feature-gated; census: all manager-controlled, they write nothing) are not mapped. Friend: MaterialRest is the library's.</summary>
+    Friend Function MaterialAtRest(shaderChain As List(Of NiTimeController), isFo4 As Boolean) As MaterialRest
+        If shaderChain Is Nothing OrElse shaderChain.Count = 0 Then Return MaterialRest.None
+        Dim r As New MaterialRest()
+        Dim fdata = Function(i As NiInterpolator) If(TypeOf i Is NiFloatInterpolator, GetBlock(DirectCast(i, NiFloatInterpolator).Data), Nothing)
+        Dim pdata = Function(i As NiInterpolator) If(TypeOf i Is NiPoint3Interpolator, GetBlock(DirectCast(i, NiPoint3Interpolator).Data), Nothing)
+        For Each c In shaderChain
+            Dim sc = TryCast(c, NiSingleInterpController)
+            If sc Is Nothing Then Continue For
+            Dim interp = GetBlock(sc.Interpolator)
+            If TypeOf c Is BSEffectShaderPropertyFloatController OrElse TypeOf c Is BSLightingShaderPropertyFloatController Then
+                Dim v = ControllerRestLaw.FloatAtRest(sc, interp, fdata(interp))
+                If Not v.HasValue Then Continue For
+                Dim x = v.Value
+                If TypeOf c Is BSEffectShaderPropertyFloatController Then
+                    Select Case CInt(DirectCast(c, BSEffectShaderPropertyFloatController).ControlledVariable)
+                        Case 0 : r.SetValue(RestVariable.EffectEmissiveMultiple, x)
+                        Case 1 : r.SetValue(RestVariable.FalloffStartAngle, ControllerRestLaw.FalloffCos(x))
+                        Case 2 : r.SetValue(RestVariable.FalloffStopAngle, ControllerRestLaw.FalloffCos(x))
+                        Case 3 : r.SetValue(RestVariable.FalloffStartOpacity, x)
+                        Case 4 : r.SetValue(RestVariable.FalloffStopOpacity, x)
+                        Case 6 : r.SetValue(RestVariable.UOffset, x)
+                        Case 7 : r.SetValue(RestVariable.UScale, x)
+                        Case 8 : r.SetValue(RestVariable.VOffset, x)
+                        Case 9 : r.SetValue(RestVariable.VScale, x)
+                    End Select
+                Else
+                    Select Case CInt(DirectCast(c, BSLightingShaderPropertyFloatController).ControlledVariable)
+                        Case 0 : r.SetValue(RestVariable.Refraction, x)
+                        Case 8 : r.SetValue(RestVariable.EnvMapScale, x)
+                        Case 9 : r.SetValue(RestVariable.Glossiness, x)
+                        Case 10 : r.SetValue(RestVariable.SpecularStrength, x)
+                        Case 11 : r.SetValue(RestVariable.LightingEmissiveMultiple, x)
+                        Case 20 : r.SetValue(RestVariable.UOffset, x)
+                        Case 21 : r.SetValue(RestVariable.UScale, x)
+                        Case 22 : r.SetValue(RestVariable.VOffset, x)
+                        Case 23 : r.SetValue(RestVariable.VScale, x)
+                    End Select
+                End If
+            ElseIf TypeOf c Is BSEffectShaderPropertyColorController OrElse TypeOf c Is BSLightingShaderPropertyColorController Then
+                Dim v = ControllerRestLaw.Point3AtRest(sc, interp, pdata(interp))
+                If Not v.HasValue Then Continue For
+                Dim col As New OpenTK.Mathematics.Vector3(v.Value.X, v.Value.Y, v.Value.Z)
+                If TypeOf c Is BSEffectShaderPropertyColorController Then
+                    ' FO4 clamps each component below 0 to 0 (0x14224C165..19D); SSE writes it raw (0x14157C619).
+                    If isFo4 Then col = New OpenTK.Mathematics.Vector3(Math.Max(col.X, 0.0F), Math.Max(col.Y, 0.0F), Math.Max(col.Z, 0.0F))
+                    r.SetColour(RestVariable.EffectEmissiveColor, col)
+                Else
+                    Select Case CInt(DirectCast(c, BSLightingShaderPropertyColorController).ControlledColor)
+                        Case 0 : r.SetColour(RestVariable.SpecularColor, col)
+                        Case 1 : r.SetColour(RestVariable.LightingEmissiveColor, col)
+                    End Select
+                End If
+            End If
+        Next
+        Return r
     End Function
 
     ''' <summary>A que cadena pertenece un ControlledBlock que anima a la shape.</summary>

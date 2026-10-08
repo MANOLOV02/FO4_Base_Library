@@ -127,6 +127,8 @@ Partial Class LightRigForm
         chkResetZoom = New CheckBox()
         chkFreezeCamera = New CheckBox()
         grpFloor = New GroupBox()
+        grpNotices = New GroupBox()
+        chkShowErrors = New CheckBox()
         chkFloorEnabled = New CheckBox()
         lblFloorSize = New Label()
         nudFloorSize = New NumericUpDownCultura()
@@ -169,6 +171,7 @@ Partial Class LightRigForm
         grpSkin.SuspendLayout()
         grpCamera.SuspendLayout()
         grpFloor.SuspendLayout()
+        grpNotices.SuspendLayout()
         CType(nudFloorSize, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudFloorStep, ComponentModel.ISupportInitialize).BeginInit()
         grpShaderDebug.SuspendLayout()
@@ -1069,7 +1072,7 @@ Partial Class LightRigForm
         TabsMain.Location = New Point(0, 0)
         TabsMain.Name = "TabsMain"
         TabsMain.SelectedIndex = 0
-        TabsMain.Size = New Size(874, 595)
+        TabsMain.Size = New Size(874, 621)
         TabsMain.TabIndex = 0
         ' 
         ' TabLights
@@ -1089,7 +1092,7 @@ Partial Class LightRigForm
         TabLights.Location = New Point(4, 24)
         TabLights.Name = "TabLights"
         TabLights.Padding = New Padding(3)
-        TabLights.Size = New Size(866, 567)
+        TabLights.Size = New Size(866, 593)
         TabLights.TabIndex = 0
         TabLights.Text = "Lights and shadows"
         ' 
@@ -1105,11 +1108,12 @@ Partial Class LightRigForm
         TabRender.Controls.Add(grpShaderDebug)
         TabRender.Controls.Add(grpImaging)
         TabRender.Controls.Add(btnResetRender)
+        TabRender.Controls.Add(grpNotices)
         TabRender.ImageKey = "Thumbnail"
         TabRender.Location = New Point(4, 24)
         TabRender.Name = "TabRender"
         TabRender.Padding = New Padding(3)
-        TabRender.Size = New Size(866, 567)
+        TabRender.Size = New Size(866, 593)
         TabRender.TabIndex = 1
         TabRender.Text = "Rendering"
         ' 
@@ -1377,7 +1381,7 @@ Partial Class LightRigForm
         chkShowHelperShapes.Size = New Size(142, 19)
         chkShowHelperShapes.TabIndex = 3
         chkShowHelperShapes.Text = "Render hidden shapes"
-        ToolTip1.SetToolTip(chkShowHelperShapes, "Render whole shapes the NIF marks as not drawn: no shader property (collisions, markers, emitter volumes) or the NiAVObject hidden flag (weapon blood, screen glows, baked headwear occlusion).")
+        ToolTip1.SetToolTip(chkShowHelperShapes, "Render whole shapes the NIF marks as not drawn: no shader property (collisions, markers, emitter volumes), the NiAVObject hidden flag (weapon blood, screen glows, baked headwear occlusion), or a hidden node above them (damage stages out of range). Shapes the game culls by their bound: not drawn in a composite view, drawn in a piece view; the frame's notice lists them.")
         ' 
         ' grpCamera
         ' 
@@ -1420,6 +1424,26 @@ Partial Class LightRigForm
         chkFreezeCamera.TabIndex = 2
         chkFreezeCamera.Text = "Completely freeze camera on model change"
         ToolTip1.SetToolTip(chkFreezeCamera, "Keep the camera fully frozen when the loaded NIF changes (be sure to uncheck it for different size nifs).")
+        ' 
+        ' grpNotices
+        ' 
+        grpNotices.Controls.Add(chkShowErrors)
+        grpNotices.Location = New Point(12, 528)
+        grpNotices.Name = "grpNotices"
+        grpNotices.Size = New Size(418, 52)
+        grpNotices.TabIndex = 8
+        grpNotices.TabStop = False
+        grpNotices.Text = "Notices"
+        ' 
+        ' chkShowErrors
+        ' 
+        chkShowErrors.AutoSize = True
+        chkShowErrors.Location = New Point(11, 22)
+        chkShowErrors.Name = "chkShowErrors"
+        chkShowErrors.Size = New Size(87, 19)
+        chkShowErrors.TabIndex = 0
+        chkShowErrors.Text = "Show errors"
+        ToolTip1.SetToolTip(chkShowErrors, "Show the notice at the top-left of the preview: what the preview cannot draw, what the game does not draw, and what the game does not draw but the preview draws so it can be edited. Off hides the whole notice; nothing else changes.")
         ' 
         ' grpFloor
         ' 
@@ -1649,7 +1673,7 @@ Partial Class LightRigForm
         btnResetRender.TabIndex = 7
         btnResetRender.Text = "Reset rendering to defaults"
         btnResetRender.TextImageRelation = TextImageRelation.ImageBeforeText
-        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera, floor, image space & effects and the shader debug view -- to its default. Lights and shadows are on the other tab and are not touched; the preset shown there follows the time of day this resets.")
+        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera, floor, notices, image space & effects and the shader debug view -- to its default. Lights and shadows are on the other tab and are not touched; the preset shown there follows the time of day this resets.")
         btnResetRender.UseVisualStyleBackColor = True
         ' 
         ' LightRigForm
@@ -1657,7 +1681,7 @@ Partial Class LightRigForm
         AutoScaleDimensions = New SizeF(7F, 15F)
         AutoScaleMode = AutoScaleMode.Font
         AutoScroll = True
-        ClientSize = New Size(874, 595)
+        ClientSize = New Size(874, 621)
         Controls.Add(TabsMain)
         FormBorderStyle = FormBorderStyle.FixedDialog
         MaximizeBox = False
@@ -1698,6 +1722,8 @@ Partial Class LightRigForm
         grpCamera.PerformLayout()
         grpFloor.ResumeLayout(False)
         grpFloor.PerformLayout()
+        grpNotices.ResumeLayout(False)
+        grpNotices.PerformLayout()
         grpShaderDebug.ResumeLayout(False)
         grpShaderDebug.PerformLayout()
         grpImaging.ResumeLayout(False)
@@ -1782,6 +1808,8 @@ Partial Class LightRigForm
     Friend WithEvents chkResetZoom As CheckBox
     Friend WithEvents chkFreezeCamera As CheckBox
     Friend WithEvents grpFloor As GroupBox
+    Friend WithEvents grpNotices As GroupBox
+    Friend WithEvents chkShowErrors As CheckBox
     Friend WithEvents btnResetRender As Button
     Friend WithEvents chkFloorEnabled As CheckBox
     Friend WithEvents lblFloorSize As Label

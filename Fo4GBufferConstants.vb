@@ -6,10 +6,6 @@ Imports OpenTK.Mathematics
 ''' Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md 7, 8, 14, 18; RE_FO4_WORLD_ENVMAP_2026-10-03.md 2.3, 11, 12.</summary>
 Friend Module Fo4GBufferConstants
 
-    Private Function Lit(bits As UInteger) As Single
-        Return BitConverter.UInt32BitsToSingle(bits)
-    End Function
-
     ''' <summary>SpecularParam (constant 1), 0x14220762B..0x142207693: x = Smoothness (0.22 fLODLandSpecPower with technique bit 9),
     ''' y = SpecularMult only with property bit 0 (else 0; DF 7), z = fBackLightPower (mat+0xB4), w = SSS rolloff (mat+0xAC).</summary>
     Friend Function SpecularParam(technique As UInteger, flags As ULong, smoothness As Single, specularMult As Single,
@@ -38,14 +34,14 @@ Friend Module Fo4GBufferConstants
 
     ''' <summary>EmissiveColor.xyz (constant 2), 0x142207432..0x1422074D6: pow(colour * mult, 2.2) per channel (DF 14; the reader puts
     ''' black when bEmitEnabled = 0, DF 18.1). .w: the alpha-test / blend-discard reference, written when the technique has ALPHA_TEST
-    ''' (bit 8) or the NiAlphaProperty blends (0x142207340..0x14220737D): ref * 1/255 (0x3B808081) + 0x3B80802C, or + 0x3C008056 when
-    ''' ref = 4 (0x142207354..0x142207371); otherwise 0.</summary>
+    ''' (bit 8) or the NiAlphaProperty blends (0x142207340..0x14220737D): Fo4RenderPassLaw.MainPassAlphaThreshold(ref) (the one owner
+    ''' of ref * 0x3B808081 + 0x3B80802C, + 0x3C008056 for ref 4, 0x142207354..0x142207371); otherwise 0.</summary>
     Friend Function EmissiveColor(emitColor As Vector3, emitMult As Single, technique As UInteger, alphaBlend As Boolean, alphaRef As Byte) As Vector4
         Dim c = emitColor * emitMult
         Dim p = New Vector3(CSng(Math.Pow(c.X, 2.2)), CSng(Math.Pow(c.Y, 2.2)), CSng(Math.Pow(c.Z, 2.2)))
         Dim w = 0.0F
         If (technique And (1UI << 8)) <> 0UI OrElse alphaBlend Then
-            w = alphaRef * Lit(&H3B808081UI) + If(alphaRef = 4, Lit(&H3C008056UI), Lit(&H3B80802CUI))
+            w = Fo4RenderPassLaw.MainPassAlphaThreshold(alphaRef)
         End If
         Return New Vector4(p, w)
     End Function

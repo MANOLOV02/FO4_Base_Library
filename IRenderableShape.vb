@@ -84,7 +84,11 @@ Public Interface IRenderableShape
     ''' <b>"Render hidden shapes"</b> / <b>"Make shape hidden"</b>.</para>
     ''' <para>Y por eso NO se puede partir este predicado por intención: el bit no guarda POR QUÉ está
     ''' oculta. Distinguir "pelo bajo casco" de "sangre de arma" exigiría contexto que el archivo no
-    ''' tiene (y que Wardrobe Manager, abriendo un NIF suelto, nunca va a tener).</para></summary>
+    ''' tiene (y que Wardrobe Manager, abriendo un NIF suelto, nunca va a tener).</para>
+    ''' <para>⛔ Es el bit PROPIO. Un nodo ancestro oculto (o un nodo de rango fuera de rango) y un bound de radio 0 también hacen
+    ''' que el motor no la dibuje, pero eso NO entra acá: lo decide <see cref="NifSceneVisibility"/> y lo aplican el gate de DIBUJO
+    ''' y el de OCLUSOR (<see cref="HelperShapeGate.IsShapeDrawable"/>, <see cref="HelperShapeGate.IsOccluderCandidate"/>). El
+    ''' exporter y los botones de WM siguen con el bit propio.</para></summary>
     ReadOnly Property IsHelperShape As Boolean
     ReadOnly Property ShapeBones As IReadOnlyList(Of NiNode)
     ReadOnly Property ShapeBoneTransforms As IReadOnlyList(Of Transform_Class)

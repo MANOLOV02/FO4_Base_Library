@@ -3,6 +3,8 @@ Imports System.IO
 ''' <summary>THE GAME'S OWN INI SETTINGS, read like the game reads them (Tools/re-docs/RE_REFRACTION_BOTH_2026-10-03.md 8): one
 ''' place for every value the app takes from the installed Skyrim*.ini / Fallout4*.ini (the folder PluginManager.ResolveGameIniPath
 ''' resolves).
+''' <para>User decision 3-oct-2026: the render reads NO engine Setting from these files (exe .data values or app values,
+''' RefractionLaw.LodScale, SseRenderPassLaw.ImprovedSnowExeDefault); this module serves only sLanguage (LocalizedStrings).</para>
 ''' <list type="bullet">
 ''' <item>Every setting belongs to ONE list and is read only from that list's files, at startup (SSE 0x140652AB0, FO4
 ''' 0x140C2FFF0): MAIN (INISettingCollection) = Skyrim.ini / Fallout4.ini, then SkyrimCustom.ini / Fallout4Custom.ini, then (SSE

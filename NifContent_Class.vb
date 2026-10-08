@@ -1157,6 +1157,30 @@ Public Class Nifcontent_Class_Manolo
         Return result
     End Function
 
+    ''' <summary>C-PC: the shape is a precombined one - an NiExtraData named "PCD" in its extra data list, the name Fallout4.exe looks
+    ''' up (0x14048F3D0 -> 0x1416BD5D0, "PCD" at 0x142915148). Its blocks are BSPackedCombined[Shared]GeomDataExtra, which NiflySharp
+    ''' has no class for (NiUnknown, NifFile.cs:279): their first field is NiExtraData's name, a string index. Measured (re2/cpc): the
+    ''' 1,072,150 such shapes all name it "PCD" and all have data size 0 - the geometry lives in the .csg. The lookup's case rule is not
+    ''' traced (0x1416BC3A0): compared Ordinal, as measured.</summary>
+    Public Function HasPrecombinedData(shape As INiShape) As Boolean
+        Dim net = TryCast(shape, NiObjectNET)
+        If net?.ExtraDataList Is Nothing Then Return False
+        For Each ref In net.ExtraDataList.References
+            If ref Is Nothing OrElse ref.Index < 0 OrElse ref.Index >= Blocks.Count Then Continue For
+            Dim block = Blocks(ref.Index)
+            Dim name As String = Nothing
+            Dim ed = TryCast(block, NiExtraData)
+            If ed IsNot Nothing Then
+                name = ed.Name?.String
+            Else
+                Dim raw = TryCast(block, NiUnknown)?.Data
+                If raw IsNot Nothing AndAlso raw.Length >= 4 Then name = Header.GetString(BitConverter.ToInt32(raw, 0))
+            End If
+            If String.Equals(name, "PCD", StringComparison.Ordinal) Then Return True
+        Next
+        Return False
+    End Function
+
     ''' <summary>SSE per-partition skin occlusion — the engine-faithful analog of FO4's per-segment
     ''' <see cref="BSTriShapeGeometry.ComputeHiddenTriangles"/>. Byte-level RE of SkyrimSE.exe
     ''' (ApplyOcclusionToGeometry 0x1403C56B0 → SetPartitionVisible 0x14021A530, see

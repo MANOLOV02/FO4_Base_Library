@@ -3588,11 +3588,18 @@ Public Class FO4UnifiedMaterial_Class
         ''' <summary>The geometry has a NiAlphaProperty ([geom+0x130] non-null): the FO4 deferred technique reads it
         ''' (GetRenderPasses 0x14217A457, 0x14217A50C..0x14217A55E, 0x14217A83A).</summary>
         Public Present As Boolean
+        ''' <summary>nif.xml AlphaFlags bit 15 "Editor Alpha Threshold". With a material file applied the engine writes it from
+        ''' the file byte +0x8D (0x1421719CF..19EE): the BGSM reader stores bEnableEditorAlphaRef there (0x14216CE75, lighting
+        ''' branch only); the file object's ctor leaves it 0 (0x14216A5D8), so a BGEM gives 0. Otherwise the NIF bit.</summary>
+        Public EditorAlphaThreshold As Boolean
 
         ''' <summary>The property's flags word as the engine reads it (nif.xml AlphaFlags): bit 0 blend, bits 1-4 src, bits 5-8
-        ''' dst, bit 9 test.</summary>
+        ''' dst, bit 9 test, bit 15 editor alpha threshold. Bits 10-14 are not part of the state: the engine keeps the block's
+        ''' own (masks 0xFFE1/0xFE1F/0xFFFE/0xFDFF, 0x142171958..19A4), and a block it creates starts at 0x00EC (ctor
+        ''' 0x142176880), so they are 0 there.</summary>
         Public Function NiFlags() As Integer
-            Return If(Blend, 1, 0) Or ((CInt(Src) And &HF) << 1) Or ((CInt(Dst) And &HF) << 5) Or If(Test, &H200, 0)
+            Return If(Blend, 1, 0) Or ((CInt(Src) And &HF) << 1) Or ((CInt(Dst) And &HF) << 5) Or If(Test, &H200, 0) Or
+                   If(EditorAlphaThreshold, &H8000, 0)
         End Function
     End Structure
 
@@ -3612,8 +3619,10 @@ Public Class FO4UnifiedMaterial_Class
                               _nifAlphaPresent, _nifAlphaFlags, _nifAlphaThreshold,
                               New EngineAlphaState With {.Blend = _alphaBlendEnabled, .Src = _blendFunctionSource, .Dst = _blendFunctionDest,
                                                          .Test = Underlying_Material.AlphaTest, .Threshold = Underlying_Material.AlphaTestRef,
-                                                         .Present = _nifAlphaPresent OrElse _alphaBlendEnabled OrElse Underlying_Material.AlphaTest},
-                              If(_fileBlendRaw IsNot Nothing AndAlso Underlying_Material.AlphaBlendMode = AlphaBlendModeType.Unknown, _fileBlendRaw.Blend, CType(Nothing, MaterialFileBlend?)))
+                                                         .Present = _nifAlphaPresent OrElse _alphaBlendEnabled OrElse Underlying_Material.AlphaTest,
+                                                         .EditorAlphaThreshold = (_nifAlphaFlags And &H8000US) <> 0},
+                              If(_fileBlendRaw IsNot Nothing AndAlso Underlying_Material.AlphaBlendMode = AlphaBlendModeType.Unknown, _fileBlendRaw.Blend, CType(Nothing, MaterialFileBlend?)),
+                              TypeOf Underlying_Material Is BGSM AndAlso DirectCast(Underlying_Material, BGSM).EnableEditorAlphaRef)
     End Function
 
     ''' <summary>THE CONSTANTS A FO4 EFFECT MATERIAL GIVES ITS PIXEL SHADER (SetupMaterial of BSEffectShaderMaterial).
@@ -3627,7 +3636,15 @@ Public Class FO4UnifiedMaterial_Class
     ''' </list></summary>
     Public Shared Function EngineEffectConstants(baseColor As Color, baseColorScale As Single, paletteColor As Boolean,
                                                  lightingInfluence As Single, effectLighting As Boolean) As (BaseColorLinear As OpenTK.Mathematics.Vector3, InfluenceByte As Integer, LightingTechnique As Boolean)
-        Dim rgb As New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F)
+        Return EngineEffectConstants(New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F), baseColorScale,
+                                     paletteColor, lightingInfluence, effectLighting)
+    End Function
+
+    ''' <summary>EngineEffectConstants on the base colour as the engine stores it (+0x48..0x50, floats): the file's 8-bit colour / 255, or
+    ''' a colour controller's value at rest (C10).</summary>
+    Public Shared Function EngineEffectConstants(baseColor As OpenTK.Mathematics.Vector3, baseColorScale As Single, paletteColor As Boolean,
+                                                 lightingInfluence As Single, effectLighting As Boolean) As (BaseColorLinear As OpenTK.Mathematics.Vector3, InfluenceByte As Integer, LightingTechnique As Boolean)
+        Dim rgb = baseColor
         If Not paletteColor Then rgb *= baseColorScale
         Dim lin As New OpenTK.Mathematics.Vector3(CSng(Math.Pow(rgb.X, 2.2)), CSng(Math.Pow(rgb.Y, 2.2)), CSng(Math.Pow(rgb.Z, 2.2)))
         Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
@@ -3645,7 +3662,15 @@ Public Class FO4UnifiedMaterial_Class
     ''' </list></summary>
     Public Shared Function EngineSseEffectConstants(baseColor As Color, baseColorScale As Single, paletteColor As Boolean,
                                                     lightingInfluence As Single, effectLighting As Boolean) As (BaseColor As OpenTK.Mathematics.Vector3, Influence As Single, LightingTechnique As Boolean)
-        Dim rgb As New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F)
+        Return EngineSseEffectConstants(New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F), baseColorScale,
+                                        paletteColor, lightingInfluence, effectLighting)
+    End Function
+
+    ''' <summary>EngineSseEffectConstants on the base colour as the engine stores it (floats): the file's colour / 255, or a colour
+    ''' controller's value at rest (C10, raw in Skyrim SE).</summary>
+    Public Shared Function EngineSseEffectConstants(baseColor As OpenTK.Mathematics.Vector3, baseColorScale As Single, paletteColor As Boolean,
+                                                    lightingInfluence As Single, effectLighting As Boolean) As (BaseColor As OpenTK.Mathematics.Vector3, Influence As Single, LightingTechnique As Boolean)
+        Dim rgb = baseColor
         If Not paletteColor Then rgb *= baseColorScale
         Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
         If liByte = 0 Then liByte = &HFF
@@ -3659,7 +3684,8 @@ Public Class FO4UnifiedMaterial_Class
                                           decal As Boolean, applyArg3 As Boolean, fileTest As Boolean, fileTestRef As Byte,
                                           nifPresent As Boolean, nifFlags As UShort, nifThreshold As Byte,
                                           nifState As EngineAlphaState,
-                                          Optional fileRaw As MaterialFileBlend? = Nothing) As EngineAlphaState
+                                          Optional fileRaw As MaterialFileBlend? = Nothing,
+                                          Optional fileEditorAlphaRef As Boolean = False) As EngineAlphaState
         If Not fo4MaterialApplied Then Return nifState
         ' The file's (blend, src, dst): its raw bytes when MaterialLib could not represent them, else the enum's tuple.
         Dim f = If(fileRaw.HasValue, fileRaw.Value, MaterialFileBlendTuple(fileMode))
@@ -3674,14 +3700,17 @@ Public Class FO4UnifiedMaterial_Class
                     .Src = CType((nifFlags >> 1) And &HFUS, NiflySharp.Enums.AlphaFunction),
                     .Dst = CType((nifFlags >> 5) And &HFUS, NiflySharp.Enums.AlphaFunction),
                     .Test = (nifFlags And &H200US) <> 0,
-                    .Threshold = nifThreshold, .Present = True}
+                    .Threshold = nifThreshold, .Present = True,
+                    .EditorAlphaThreshold = (nifFlags And &H8000US) <> 0}
             End If
             ' 0x142171908..1916: detached -> opaque.
             Return New EngineAlphaState With {.Blend = False, .Src = f.Src, .Dst = f.Dst, .Test = False, .Threshold = 0, .Present = False}
         End If
         ' 0x142171954..19CC: rewritten from the file (taken, or created when the NIF had none: Tools/re-docs/
         ' FIX_DESIGN_OVERLAYS_COLOR_2026-09-30.md 3).
-        Return New EngineAlphaState With {.Blend = blend, .Src = f.Src, .Dst = f.Dst, .Test = fileTest, .Threshold = fileTestRef, .Present = True}
+        ' 0x1421719CF..19EE: bit 15 from the file byte +0x8D (BGSM bEnableEditorAlphaRef; 0 for a BGEM).
+        Return New EngineAlphaState With {.Blend = blend, .Src = f.Src, .Dst = f.Dst, .Test = fileTest, .Threshold = fileTestRef, .Present = True,
+                                          .EditorAlphaThreshold = fileEditorAlphaRef}
     End Function
 
     ' P4 — Flags shader SIEMPRE game-aware. HasFlagSF1/SF2 y SetFlagSF1/SF2 (NiflySharp, ShaderHelper)
@@ -3852,15 +3881,56 @@ Public Class FO4UnifiedMaterial_Class
         alp.Flags.DestinationBlendMode = _blendFunctionDest
     End Sub
 
+    ''' <summary>Transcription (bake / export, the NIF loses its material file link) of a shape whose source NIF has NO
+    ''' NiAlphaProperty: who decides the block. <c>CkRule</c> = the CK FaceGen bake rule (0x00EC + test, threshold 0, and
+    ''' <see cref="VetoAlphaPropertyCreation"/>), measured against the CK (40-bake-leyes-fo4 §8: Valentine, DiMA): bake and
+    ''' face export. <c>Engine</c> = the block the engine creates when it applies the file (ctor 0x142176880 then
+    ''' 0x142171954..19EE, <see cref="ResolveEngineAlpha"/>): export of every non-face shape (user decision 6-oct-2026: there
+    ''' is no CK reference there and the game showed the original with that alpha).</summary>
+    Public Enum TranscriptionAlphaCreation
+        CkRule = 0
+        Engine = 1
+    End Enum
+
     ''' <summary>El material pide un NiAlphaProperty (blend o test). ⛔ SEDE UNICA: es la condicion con la que
-    ''' <see cref="WriteAlphaPropertyToShape"/> crea/conserva o borra el bloque, y la que usa la conversion de familia
-    ''' de shader para decidir si borra el alpha antes del escritor. Function a proposito: GetDifferences refleja
-    ''' propiedades.</summary>
+    ''' <see cref="WriteAlphaPropertyToShape"/> crea/conserva o borra el bloque FUERA de una transcripcion, y la que usa la
+    ''' conversion de familia de shader para decidir si borra el alpha antes del escritor. En una transcripcion con archivo FO4
+    ''' aplicado manda el estado del motor (<see cref="ResolveEngineAlpha"/>().Present), no esta funcion. Function a proposito:
+    ''' GetDifferences refleja propiedades.</summary>
     Public Function NecesitaBloqueAlpha() As Boolean
         Return _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
     End Function
 
-    Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo)
+    Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo, Optional transcription As Boolean = False,
+                                         Optional creation As TranscriptionAlphaCreation = TranscriptionAlphaCreation.CkRule)
+        ' TRANSCRIPCION (bake / export: el NIF pierde el link al archivo de material). Desde ahi el motor lee SOLO este bloque,
+        ' asi que lleva el estado que el motor resuelve al aplicar el archivo (ResolveEngineAlpha, 0x1421718BD..19EE), no los
+        ' campos del editor: con un .bgsm (0,6,7) los campos guardan el blend del NIF y con un MSWP (arg3) no apagan el blend;
+        ' el horneado quedaba con blend y sin decal, que el motor no dibuja (medido en vivo 6-oct-2026). Bits 10-14 del bloque
+        ' se conservan como hace el motor (0x142171958..19A4). Sin bloque en el shape fuente decide `creation`.
+        If transcription AndAlso ArchivoFo4Aplicado() Then
+            Dim motor = ResolveEngineAlpha()
+            If shap.AlphaPropertyRef IsNot Nothing AndAlso shap.AlphaPropertyRef.Index <> -1 Then
+                If Not motor.Present Then
+                    Nif.RemoveBlock(shap.AlphaPropertyRef.Index)
+                    Return
+                End If
+                Dim alpMotor = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
+                alpMotor.Flags.Value = CUShort((alpMotor.Flags.Value And &H7C00US) Or CUShort(motor.NiFlags()))
+                alpMotor.Threshold = motor.Threshold
+                Return
+            End If
+            If creation = TranscriptionAlphaCreation.Engine Then
+                ' The engine creates the block (ctor 0x142176880: 0x00EC, threshold 0) and rewrites it from the file, so bits
+                ' 10-14 end at 0: the block is NiFlags() and the file's threshold. No veto: the engine has none.
+                If Not motor.Present Then Return
+                Dim alpNuevo As New NiAlphaProperty
+                shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(alpNuevo)}
+                alpNuevo.Flags.Value = CUShort(motor.NiFlags())
+                alpNuevo.Threshold = motor.Threshold
+                Return
+            End If
+        End If
         Dim needAlphaProperty = NecesitaBloqueAlpha()
         If needAlphaProperty Then
             Dim createdNew = False
@@ -4115,8 +4185,11 @@ Public Class FO4UnifiedMaterial_Class
         ClearDirty()
     End Sub
     ''' <param name="transcription">The bake / export transcription that cuts the material file link: the material's colours are
-    ''' written as resolved (byte-identical to the closed bake). Outside a transcription the block keeps a colour nobody changed.</param>
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty, Optional transcription As Boolean = False)
+    ''' written as resolved (byte-identical to the closed bake) and the NiAlphaProperty carries the engine's alpha state
+    ''' (WriteAlphaPropertyToShape). Outside a transcription the block keeps a colour nobody changed.</param>
+    ''' <param name="alphaCreation">Transcription of a shape without a source NiAlphaProperty: see TranscriptionAlphaCreation.</param>
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty, Optional transcription As Boolean = False,
+                              Optional alphaCreation As TranscriptionAlphaCreation = TranscriptionAlphaCreation.CkRule)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGEM)
         ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
@@ -4193,7 +4266,7 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
 
-        WriteAlphaPropertyToShape(shap, Nif)
+        WriteAlphaPropertyToShape(shap, Nif, transcription, alphaCreation)
     End Sub
 
     <Browsable(False)>
@@ -4411,10 +4484,13 @@ Public Class FO4UnifiedMaterial_Class
         shad.SkinTintAlpha = Me.SkinTintAlpha
     End Sub
 
-    ''' <param name="transcription">The bake / export transcription that cuts the material file link: wetness written completed
-    ''' and the material's colours written as resolved (byte-identical to the closed bake). Outside a transcription the block
-    ''' keeps a colour nobody changed and its own wetness.</param>
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False)
+    ''' <param name="transcription">The bake / export transcription that cuts the material file link: wetness written completed,
+    ''' the material's colours written as resolved (byte-identical to the closed bake) and the NiAlphaProperty carrying the
+    ''' engine's alpha state (WriteAlphaPropertyToShape). Outside a transcription the block keeps a colour nobody changed and its
+    ''' own wetness.</param>
+    ''' <param name="alphaCreation">Transcription of a shape without a source NiAlphaProperty: see TranscriptionAlphaCreation.</param>
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False,
+                              Optional alphaCreation As TranscriptionAlphaCreation = TranscriptionAlphaCreation.CkRule)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
         ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
@@ -4626,7 +4702,7 @@ Public Class FO4UnifiedMaterial_Class
             Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
             WriteBgsmTexturesToTextureSet(Mat, texset, IsSkShader(shad), envmapMaskPath)
         End If
-        WriteAlphaPropertyToShape(shap, Nif)
+        WriteAlphaPropertyToShape(shap, Nif, transcription, alphaCreation)
     End Sub
     ''' <summary>
     ''' Sync a shader's NiString4 texture slot with a target content string. If the

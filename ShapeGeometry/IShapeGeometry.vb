@@ -112,6 +112,9 @@ Public Interface IShapeGeometry
 
     ''' <summary>Triangle list (V1,V2,V3 are vertex indices into the position array).</summary>
     Function GetTriangles() As List(Of Triangle)
+    ''' <summary>S-83A (chunk C8): the order the game draws this shape's triangles in, as indices into GetTriangles(); Nothing = the data
+    ''' order. The edit API (GetTriangles, zap and occlusion masks) keeps the data order; only the draw is permuted.</summary>
+    Function GetEngineDrawTriangleOrder() As Integer()
 
     ''' <summary>
     ''' Per-vertex bone influences in flat layout (4 slots / vertex padded with zeros).

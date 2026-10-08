@@ -116,7 +116,7 @@ Namespace Canon
 
         ''' <summary>Nombre del nodo que recoge los bytes de un subrecord que ningun campo declarado
         ''' describe. Existe para que esos bytes sean visibles en el arbol en vez de viajar escondidos.</summary>
-        Public Const BytesSinDescribir As String = "Bytes sin describir"
+        Public Const BytesSinDescribir As String = "Undescribed bytes"
 
         Public Overrides Function Parse(ctx As WbContext, subs As IList(Of SubrecordData), ByRef pos As Integer, parent As WbNode) As WbNode
             Dim sr = subs(pos)

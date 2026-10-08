@@ -1928,7 +1928,7 @@ Public Class FilesDictionary_class
                 Dim fallaMontaje = ProcessBa2File(absolutePath, sourceOrder, noopProgress, added)
                 If fallaMontaje IsNot Nothing Then
                     Throw New IOException(
-                        $"No se pudo montar '{archiveFileName}': {fallaMontaje.Message}", fallaMontaje)
+                        $"Could not mount '{archiveFileName}': {fallaMontaje.Message}", fallaMontaje)
                 End If
 
                 ' Index only the keys touched by this archive instead of rebuilding the entire search index.

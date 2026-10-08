@@ -198,6 +198,20 @@ Public NotInheritable Class GamePathsResolver
         Return none
     End Function
 
+    ''' <summary>El primer exe canónico de <paramref name="game"/> que existe en <paramref name="dir"/>,
+    ''' en el orden de <see cref="CanonicalExes"/>; <c>""</c> si no hay ninguno. Para quien conoce la
+    ''' carpeta del juego (la que contiene <c>Data</c>) y necesita el exe que el resto de la librería
+    ''' toma de <c>Config_App.Current.FO4ExePath</c> — el .ccc, la variante, los .ini.</summary>
+    Public Shared Function CanonicalExeIn(dir As String, game As Config_App.Game_Enum) As String
+        If String.IsNullOrEmpty(dir) Then Return ""
+        For Each c In CanonicalExes
+            If c.Game <> game Then Continue For
+            Dim candidato = Path.Combine(dir, c.Name)
+            If File.Exists(candidato) Then Return candidato
+        Next
+        Return ""
+    End Function
+
     ''' <summary>True cuando el exe configurado es el build de VR. Sale de <see cref="IdentifyExe"/> y NO
     ''' de un <c>EndsWith("VR")</c> sobre la ruta, así que un <c>skse64_loader.exe</c> al lado de
     ''' <c>SkyrimVR.exe</c> también da True.</summary>

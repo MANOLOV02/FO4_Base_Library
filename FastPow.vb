@@ -217,7 +217,7 @@ Public Module FastPow
         Try
             s = PowVar1(x, y)
         Catch ex As Exception
-            Return $"WidthParity PowVar: el ESCALAR tiró {ex.GetType().Name} con x={x} y={y} — tiene que devolver un valor"
+            Return $"WidthParity PowVar: the SCALAR path threw {ex.GetType().Name} with x={x} y={y} — it must return a value"
         End Try
         Dim v256 = PowVarV256(Vector256.Create(x), Vector256.Create(y)).GetElement(0)
         Dim vv = PowVarV(New Vector(Of Single)(x), New Vector(Of Single)(y))(0)

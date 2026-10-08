@@ -5,9 +5,8 @@
 ''' <para>DFLight3323 l.62: rig fill = directional light: L constant (D)</para>
 ''' <para>DFLight3323 fill shadow: fill shadow factor multiplies o0/o1 (rev-21 b)</para>
 ''' <para>DFLight3323 shadow uniforms: fill shadow inputs</para>
-''' <para>DFComposite3495 SV_Position: composite 2 in LOWER_LEFT: SV_Position = (x, H - y) (A.5)</para>
-''' <para>DFComposite3495 coverage: coverage output and viewport height (rev-19, A.5)</para>
-''' <para>DFComposite3495 coverage write: coverage = 1 on every composited pixel, right after line 50 (rev-19; 3495 has no discard and one ret)</para>
+''' <para>DFComposite3495 coverage: coverage output and the decals' base coverage (rev-19, user decision 7-oct-2026)</para>
+''' <para>DFComposite3495 coverage write: coverage right after line 50: 1 on every composited pixel, the decals' base coverage on its pixels (rev-19, user decision 7-oct-2026; 3495 has no discard and one ret)</para>
 ''' ASCII only (GLSL).</summary>
 Friend Module Fo4DeferredSource
     Friend Const Header430 As String = "#version 430
@@ -698,7 +697,8 @@ uniform vec4 SSLRParams0;                       // cb0[1]: only .x read (fSSLRIn
 uniform vec4 SSLRParams1;                       // cb0[2]: only .z read (fSSLRBlendingPower 1.0)
 layout(location = 0) out vec4 o0;               // -> RT 1 (GL_R11F_G11F_B10F)
 layout(location = 1) out vec4 coverageOut;      // APP: the post's coverage of an engine-geometry pixel (rev-19)
-uniform float uViewportH;                       // APP: the target height (A.5)
+layout(binding = 11) uniform sampler2D AppDecalBaseCoverage;   // APP: the translucent decals' base coverage (DecalBaseTarget, D3D rows)
+uniform bool uDecalBaseCoverage;               // APP: this frame drew that base (Fo4DeferredTargets.BeginDecalBase)
 
 // One SSS tap = the repeated instruction block 120..134 (and 137..151, 154..168, 170..184, 187..201, 203..217,
 // 220..234, 236..250, 253..267, 270..282; the last one has no else because its result register r3 already holds the
@@ -726,10 +726,12 @@ vec3 Fo4SssTap(vec2 uvi, vec3 r3c, float r0z, float r0w)
 void main()
 {
     vec4 r0, r1, r2, r3, r4, r5, r6, r7, r8, r9;
-    // App deviation (A.5): pass 2 runs LOWER_LEFT into the GL-order scene target; SV_Position of the D3D row order is
-    // (x, H - y_gl), exact at pixel centres. Every read below is a D3D uv on a D3D-order texture.
-    r0.xy = vec2(gl_FragCoord.x, uViewportH - gl_FragCoord.y) * VPOSOffset.xy;   // 50  mul r0.xy, v0.xyxx, cb2[0].xyxx
-    coverageOut = vec4(1.0);   // APP (rev-19): every pixel this PS runs on passed GREATER at z = 1: it is engine geometry
+    // Pass 2 runs UPPER_LEFT like the whole stage (the zfight-overlay fix, 8-oct-2026): gl_FragCoord.xy == SV_Position.xy.
+    r0.xy = gl_FragCoord.xy * VPOSOffset.xy;          // 50  mul r0.xy, v0.xyxx, cb2[0].xyxx
+    // APP (rev-19): every pixel this PS runs on passed GREATER at z = 1: it is engine geometry, coverage 1. On the pixels the
+    // translucent decals' base gave (user decision 7-oct-2026), the coverage the base and the decals accumulated there
+    // (DecalBaseTarget: 1 on every other pixel; D3D rows, as this pass).
+    coverageOut = uDecalBaseCoverage ? vec4(texelFetch(AppDecalBaseCoverage, ivec2(gl_FragCoord.xy), 0).a) : vec4(1.0);
     r1.xyz = textureLod(t3, r0.xy, 0.0).xyw;          // 51  sample_l r1.xyz, r0.xyxx, t3.xywz, s3, l(0) -> (gloss, spec, id)
     r0.z = textureLod(t7, r0.xy, 0.0).x;              // 52  sample_l r0.z, r0.xyxx, t7.yzxw, s7, l(0)   (depth)
     bool m53 = FO4_L_0_01 >= r0.z;                    // 53  ge r0.w, l(0.010000), r0.z   (first-person range)

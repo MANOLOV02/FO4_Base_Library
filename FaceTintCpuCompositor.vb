@@ -3485,13 +3485,13 @@ Public Module FaceTintCpuCompositor
         Dim nanOut(7) As Byte
         Try
             PackUnitRgbaToBgraRoundDouble(nanAcc, nanOut, 2)
-            Return "PackUnitRgbaToBgraRoundDouble: un NaN NO tiro OverflowException (el vector se lo trago)"
+            Return "PackUnitRgbaToBgraRoundDouble: a NaN did NOT throw OverflowException (the vector path swallowed it)"
         Catch ex As Exception
             ' Parallel.ForEach envuelve en AggregateException; lo que importa es que NO pase en silencio.
             If TypeOf ex IsNot OverflowException AndAlso
                Not (TypeOf ex Is AggregateException AndAlso
                     DirectCast(ex, AggregateException).InnerExceptions.Any(Function(e) TypeOf e Is OverflowException)) Then
-                Return $"PackUnitRgbaToBgraRoundDouble: con NaN tiro {ex.GetType().Name}, se esperaba OverflowException"
+                Return $"PackUnitRgbaToBgraRoundDouble: NaN threw {ex.GetType().Name}, OverflowException was expected"
             End If
         End Try
         Return ""

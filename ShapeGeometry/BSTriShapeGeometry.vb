@@ -286,6 +286,12 @@ Public Class BSTriShapeGeometry
         Return If(_tri.EyeData?.ToList(), New List(Of Single)())
     End Function
 
+    ''' <summary>S-83A: a BSTriShape is drawn in its data order (bsver 100 with skin: NifFile concatenates the partitions' triangles as
+    ''' the game, NifFile.cs:445-468 - row S-83A, no divergence).</summary>
+    Public Function GetEngineDrawTriangleOrder() As Integer() Implements IShapeGeometry.GetEngineDrawTriangleOrder
+        Return Nothing
+    End Function
+
     Public Function GetTriangles() As List(Of Triangle) Implements IShapeGeometry.GetTriangles
         Return If(_tri.Triangles?.ToList(), New List(Of Triangle)())
     End Function
