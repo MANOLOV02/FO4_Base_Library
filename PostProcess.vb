@@ -981,7 +981,6 @@ Friend NotInheritable Class SceneTargets
         End Get
     End Property
 
-    ''' <summary>Attachment 3 of the HDR target, the SSE SAO normals (0 before the first Ensure).</summary>
     ''' <summary>Attachment 2 of the HDR target: the ground catcher's display-space factor on the background (RGBA8).</summary>
     Public ReadOnly Property BgShadowTexture As Integer
         Get
@@ -989,6 +988,7 @@ Friend NotInheritable Class SceneTargets
         End Get
     End Property
 
+    ''' <summary>Attachment 3 of the HDR target, the SSE SAO normals (0 before the first Ensure).</summary>
     Public ReadOnly Property AoNormalTexture As Integer
         Get
             Return _aoNormalTex

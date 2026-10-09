@@ -1930,10 +1930,14 @@ Public Class PreviewControl
     ''' <summary>Opens Fallout 4's G-buffer stage (Fo4DeferredTargets.BeginGBuffer: D3D row order, every RT cleared) and the envmap
     ''' array's period (the frame, Fo4EnvMapArray).</summary>
     Friend Sub BeginFo4GBuffer()
-        _fo4RowsD3D = False
         _fo4Period += 1
         Fo4EnvMap.BeginPeriod(_fo4Period)
         _fo4.BeginGBuffer()
+        ' The D3D-order stage opens: from here to EndFo4Stage the frame's rows are D3D (one owner, _fo4RowsD3D). Post off: the
+        ' display target holds the background RenderScene painted in GL rows (PaintBackground): into D3D rows; EndFo4Stage turns
+        ' it back. Post on: the scene targets were cleared uniformly (BeginHdr), so their turn at the stage's end is exact either way.
+        If _frameFbo <> _targets.HdrFramebuffer Then _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
+        _fo4RowsD3D = True
     End Sub
 
     ''' <summary>Fallout 4's G-buffer stage: the base pass of the translucent decals opens (Fo4DeferredTargets.BeginDecalBase), its
@@ -1998,9 +2002,6 @@ Public Class PreviewControl
         Fo4EnvMap.CopyQueued()
         _fo4.RunComposite1(SharedFo4Deferred, frame)
         _fo4.BlitDepthTo(_targets.HdrFramebuffer)
-        ' Post off: the display target holds the background RenderScene painted in GL rows (PaintBackground): into D3D rows.
-        If _frameFbo <> _targets.HdrFramebuffer Then _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
-        _fo4RowsD3D = True
         _fo4.RunComposite2(SharedFo4Deferred, frame, _targets.HdrFramebuffer, Fo4EnvMap.Texture)
         If _frameFbo <> _targets.HdrFramebuffer Then
             _fo4.RunDirectResolve(SharedFo4Deferred, _targets.SceneTexture, _targets.CoverageTexture, _frameFbo, Shader_Base_Class.SceneToLinearExponent(False))
@@ -2035,8 +2036,8 @@ Public Class PreviewControl
         GL.Disable(EnableCap.FramebufferSrgb)
     End Sub
 
-    ''' <summary>The frame is between composite 2 and the end of Fallout 4's D3D-order stage (FinishFo4Deferred .. EndFo4Stage): its
-    ''' targets hold D3D rows, and the background is evaluated in them (SubirUniformsDeFondo, backgroundRowsD3D).</summary>
+    ''' <summary>The frame is in Fallout 4's D3D-order stage (BeginFo4GBuffer .. EndFo4Stage): its targets hold D3D rows, and the
+    ''' background is evaluated in them (SubirUniformsDeFondo, backgroundRowsD3D) - the one owner of that fact.</summary>
     Private _fo4RowsD3D As Boolean
 
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True makes EndFo4Stage do nothing.</summary>
@@ -2108,6 +2109,10 @@ Public Class PreviewControl
 
     ''' <summary>Binds the framebuffer reads come from (the scene target, or the window's default one when the
     ''' scene target could not be allocated) and returns the previous read binding and read buffer to restore.</summary>
+    ''' <summary>The last frame drawn left its radiance in the HDR target whole: it was drawn into it and composited by the
+    ''' post (no status card in its place: textures still loading) - what CaptureSceneLinear reads.</summary>
+    Private _lastFrameHdrScene As Boolean
+
     Private Function BindSceneForRead(fallback As ReadBufferMode) As (PrevFbo As Integer, PrevBuffer As Integer)
         Dim prevFbo As Integer = 0, prevBuf As Integer = CInt(ReadBufferMode.Back)
         Try
@@ -2142,6 +2147,7 @@ Public Class PreviewControl
         Dim postProgram = If(offscreen, FramePostProgram(), Nothing)
         Dim hdr = postProgram IsNot Nothing
         _statusDrawnInFrame = False
+        _lastFrameHdrScene = False
         If hdr Then
             ' Linear radiance + coverage; the background is composited by the post (it is UI).
             _targets.BeginHdr(CurrentShader Is SharedSSEShader)
@@ -2183,6 +2189,7 @@ Public Class PreviewControl
                     _targets.Composite(postProgram, AddressOf row.Fo4ImageSpace.Upload, row.Fo4ImageSpace.LutPath, AddressOf SubirUniformsDeFondo, _bgVao)
                 End If
                 _frameFbo = _targets.DisplayFramebuffer
+                _lastFrameHdrScene = True
                 If Not isSse Then ApplyRefraction(False, _targets.DisplayFramebuffer, SizedInternalFormat.Rgba8)
                 ' What is drawn in display values (wireframes) goes on top of the post, depth-tested
                 ' against the scene's depth (shared by both targets).
@@ -2372,9 +2379,9 @@ Public Class PreviewControl
         Return (Color.FromArgb(CInt(sumA \ n), CInt(sumR \ n), CInt(sumG \ n), CInt(sumB \ n)), spread, img)
     End Function
 
-    Public Function CaptureBitmap() As Bitmap
-        If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
-
+    ''' <summary>Makes the context current, applies a pending resize and draws a pending frame, so a capture reads the
+    ''' frame the control shows (CaptureBitmap, CaptureSceneLinear).</summary>
+    Private Sub DrawPendingFrame()
         Me.EnsureContextCurrent()
         ApplyResize(True)
 
@@ -2386,6 +2393,44 @@ Public Class PreviewControl
             SwapBuffers()
             FinishRenderFrame()
         End If
+    End Sub
+
+    ''' <summary>The last frame's scene radiance before the image space: the HDR target's attachment 0 (R11G11B10F; linear
+    ''' for Fallout 4 - Shader_Base_Class.SceneToLinearExponent), the background not in it (the post composites it), as
+    ''' Width x Height RGB floats in GL row order (bottom row first: EndFo4Stage leaves the target in GL rows). Nothing when
+    ''' the frame did not leave it there whole (_lastFrameHdrScene: no post program, or a status card drawn in its place).
+    ''' Draws a pending frame first, like CaptureBitmap; reads only.</summary>
+    Public Function CaptureSceneLinear() As Single()
+        If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
+        DrawPendingFrame()
+        If Not _lastFrameHdrScene OrElse _targets.SceneTexture = 0 Then Return Nothing
+        Dim prevPackAlignment As Integer = 4
+        Try
+            GL.GetInteger(GetPName.PackAlignment, prevPackAlignment)
+        Catch
+        End Try
+        Dim px(Me.Width * Me.Height * 3 - 1) As Single
+        Try
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 4)
+            GL.GetTextureImage(_targets.SceneTexture, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.Float, px.Length * 4, px)
+        Finally
+            GL.PixelStore(PixelStoreParameter.PackAlignment, prevPackAlignment)
+        End Try
+        Return px
+    End Function
+
+    ''' <summary>The last frame's notice lines (PreviewModel.FrameNoticeLines: what it did not draw as the game does - the
+    ''' preview's gaps, the game's own undrawn shapes, missing textures...), whether or not the window shows them
+    ''' (Setting_ShowErrors: DrawPreviewGapNotice draws them on the window, not into the captured target). Empty without a
+    ''' model. Reads only.</summary>
+    Public Function FrameNotices() As IReadOnlyList(Of String)
+        If _Model Is Nothing Then Return Array.Empty(Of String)()
+        Return _Model.FrameNoticeLines()
+    End Function
+
+    Public Function CaptureBitmap() As Bitmap
+        If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
+        DrawPendingFrame()
 
         Dim bmp As New Bitmap(Me.Width, Me.Height, Imaging.PixelFormat.Format32bppArgb)
         Dim rect As New Rectangle(0, 0, bmp.Width, bmp.Height)

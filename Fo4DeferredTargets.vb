@@ -137,7 +137,7 @@ void main()
                           : normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
     if (bDoubleSided && !gl_FrontFacing) gn = -gn;
     float a = (uBaseOpacity == 0) ? 1.0 : clamp(texelFetch(tBaseAlpha, ivec2(gl_FragCoord.xy), 0).a, 0.0, 1.0);
-    vec3 bg = backgroundAt(vec2(gl_FragCoord.x, viewportSize.y - gl_FragCoord.y));
+    vec3 bg = backgroundAt(gl_FragCoord.xy);
     o0 = vec4(a * pow(bg, vec3(2.2)), 0.0);
     vec3 n = vec3(gn.x, gn.y, d3d_min(-gn.z, 0.0));
     n = n * d3d_rsq(dot(n, n));
@@ -658,11 +658,23 @@ Friend NotInheritable Class Fo4DeferredTargets
         attach(_fboMirDst, scratch, ImageTarget.Texture2D)
         GL.NamedFramebufferReadBuffer(_fboMirSrc, If(isDs, ReadBufferMode.None, ReadBufferMode.ColorAttachment0))
         GL.NamedFramebufferDrawBuffer(_fboMirDst, If(isDs, DrawBufferMode.None, DrawBufferMode.ColorAttachment0))
-        Dim mask = If(isDs, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, ClearBufferMask.ColorBufferBit)
-        GL.BlitNamedFramebuffer(_fboMirSrc, _fboMirDst, 0, 0, _w, _h, 0, _h, _w, 0, mask, BlitFramebufferFilter.Nearest)
-        GL.CopyImageSubData(scratch, ImageTarget.Texture2D, 0, 0, 0, 0, image, target, 0, 0, 0, 0, _w, _h, 1)
-        attach(_fboMirSrc, 0, target)
-        attach(_fboMirDst, 0, ImageTarget.Texture2D)
+        Try
+            ' Never copy back from a blit that did not happen: an incomplete pair would leave the scratch's old rows, and
+            ' CopyImageSubData would write them over the frame silently. The blit honours the scissor (GL 4.6 18.3.1) and this
+            ' runs from a Finally after whatever state an aborted stage left: off.
+            Dim src = GL.CheckNamedFramebufferStatus(_fboMirSrc, FramebufferTarget.ReadFramebuffer)
+            Dim dst = GL.CheckNamedFramebufferStatus(_fboMirDst, FramebufferTarget.DrawFramebuffer)
+            If src <> FramebufferStatus.FramebufferComplete OrElse dst <> FramebufferStatus.FramebufferComplete Then
+                Throw New InvalidOperationException($"MirrorRows: incomplete framebuffer (source {src}, scratch {dst}) for {format}")
+            End If
+            GL.Disable(EnableCap.ScissorTest)
+            Dim mask = If(isDs, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, ClearBufferMask.ColorBufferBit)
+            GL.BlitNamedFramebuffer(_fboMirSrc, _fboMirDst, 0, 0, _w, _h, 0, _h, _w, 0, mask, BlitFramebufferFilter.Nearest)
+            GL.CopyImageSubData(scratch, ImageTarget.Texture2D, 0, 0, 0, 0, image, target, 0, 0, 0, 0, _w, _h, 1)
+        Finally
+            attach(_fboMirSrc, 0, target)
+            attach(_fboMirDst, 0, ImageTarget.Texture2D)
+        End Try
     End Sub
 
     ''' <summary>Composite pass 2 (3495) into the scene target (D3D rows, still UPPER_LEFT: GREATER at z = 1 against the G-buffer depth
