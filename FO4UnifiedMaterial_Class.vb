@@ -344,11 +344,10 @@ Public Class FO4UnifiedMaterial_Class
         ' Multiplicador runtime del tint (convención ×2 del pelo SSE): vive en el wrapper, no en el
         ' BGSM, así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el ×2.
         copy.TintColorScale = TintColorScale
-        ' Decisión de escritura del alpha-test: vive en el wrapper (NO en el BGSM), así que el loop de
-        ' reflexión de arriba no lo alcanza. Sin esto un clon perdería el bit F4SPF2 Alpha_Test y el veto de
-        ' creación de la NiAlphaProperty. Ver NpcDiffuseAlphaTest.
+        ' Hecho del record del NPC: vive en el wrapper (NO en el BGSM), así que el loop de reflexión de arriba no
+        ' lo alcanza. Sin esto un clon perdería el escritor de alfa de la cara (ResolveEngineAlpha) y el bit F4SPF2
+        ' Alpha_Test. Ver NpcDiffuseAlphaTest.
         copy.NpcDiffuseAlphaTest = NpcDiffuseAlphaTest
-        copy.VetoAlphaPropertyCreation = VetoAlphaPropertyCreation
         Return copy
     End Function
 
@@ -1201,7 +1200,14 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    ''' <summary><b>Decision del CONSUMIDOR sobre el alpha-test de la geometria que se ESCRIBE.</b> La libreria
+    ''' <summary><b>HECHO del record: esta forma es la del head part de CARA de un NPC con ACBS Diffuse Alpha Test
+    ''' (0x01000000).</b> Es la condicion del escritor de alfa de la cabeza del motor (Fallout4.exe 1.11.240,
+    ''' 0x1406EEA90): BSLightingShaderProperty (RTTI 0x143E5DCD0, 0x1406EEB93..BA6) + head part tipo 1 Face
+    ''' (0x1406EEBB8) + NPC con el bit (test byte [npc+0x73],1 @0x1406EEC0D) => prende SF2 Alpha_Test (0x1406EEC1E) y
+    ''' engancha un NiAlphaProperty NUEVO 0x02EC umbral 0 (0x1406EEC23..C7D). La lib lo aplica en
+    ''' <see cref="ResolveEngineAlpha"/> (preview y transcripcion) y en el bit SF2 de Save_To_Shader.
+    ''' <para>Lo que sigue es la historia de la decision de escritura del bit; vale para el bit SF2.</para>
+    ''' <para>La libreria
     ''' es agnostica: no sabe que es un NPC, un head part ni un texture set, solo recibe una decision.
     ''' <para>Existe porque esta MEDIDO que la decision NO es funcion del material: sobre los 1489 NIFs
     ''' horneados por el CK (16.883 shapes) el bit Alpha_Test esta puesto en EXACTAMENTE 1 shape, mientras que
@@ -1215,30 +1221,13 @@ Public Class FO4UnifiedMaterial_Class
     ''' lo haria, pero no existe ni un caso (el unico consumidor que pone True es el bake FO4 y su unico NPC con
     ''' el flag tiene material CON alpha).</para>
     ''' <para>Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.</para></summary>
-    ''' <para>⛔ NO volver a mezclarlo con el VETO de creacion del NiAlphaProperty en un solo tri-estado, ni
-    ''' hacerlo viajar por el camino de TEXTURAS: asignado dentro de la rama del MNAM de
+    ''' <para>⛔ NO hacerlo viajar por el camino de TEXTURAS: asignado dentro de la rama del MNAM de
     ''' ApplyTextureSetOverrides se EVAPORA cuando el TXST no trae MNAM (medido: 1.757 NPC en FO4, y SIEMPRE
-    ''' en SSE, cuyo TXST no tiene MNAM). El veto vive en <see cref="VetoAlphaPropertyCreation"/>.</para>
-    ''' <para>MEDIDO sobre el 100% de los head parts de los dos juegos: dejar que el MATERIAL gobierne las DOS
-    ''' direcciones coincide con el motor (ApplyMaterialToGeometry 0x142169BB0: aloca si el material pide
-    ''' alpha, desprende si no). Diferencia total contra el CK: SSE 0 shapes, FO4 1 shape (AikeaHeadband, que
-    ''' queda SIN el bloque que el motor SI le pone).</para>
-    ''' <para>Esto es un HECHO del record del NPC (flag ACBS Diffuse Alpha Test 0x01000000), con un unico
-    ''' consumidor: el bit F4SPF2 Alpha_Test. Ese bit NO es funcion del material y la lib no puede derivarlo.</para>
+    ''' en SSE, cuyo TXST no tiene MNAM).</para>
     ''' <para>Nothing (el default) = sin informar: no hay record (Wardrobe Manager, todo guardado que no sea de NPC
     ''' Manager) y el bit del bloque queda como vino. NpcMaterialResolver lo informa SIEMPRE.</para>
     <Browsable(False)>
     Public Property NpcDiffuseAlphaTest As Boolean?
-
-    ''' <summary><b>Intención del CONSUMIDOR sobre la EXISTENCIA del NiAlphaProperty.</b> True = no estrenar
-    ''' un bloque que el shape fuente no traía (el round-trip de los que sí lo traían no se toca).
-    ''' <para>Separado de <see cref="NpcDiffuseAlphaTest"/> a propósito: en un único <c>Boolean?</c>, `Nothing`
-    ''' significa a la vez "sin opinión" y "comportamiento por defecto", y no se puede expresar el veto sin
-    ''' arrastrar el hecho del record (ni al revés).</para>
-    ''' <para>Default False = fabrica ⇒ sólo cambia de comportamiento el consumidor que lo prenda
-    ''' explícitamente.</para></summary>
-    <Browsable(False)>
-    Public Property VetoAlphaPropertyCreation As Boolean
 
     <Category("Opacity")>
     <DefaultValue(CType(128, Byte))>
@@ -3534,21 +3523,6 @@ Public Class FO4UnifiedMaterial_Class
         Underlying_Material.AlphaTestRef = s.TestRef
     End Sub
 
-    ''' <summary>Take the WHOLE alpha state of another material loaded for the same shape (a TXST MNAM override):
-    ''' blend enum, blend fields, test, threshold, and the provenance ResolveEngineAlpha needs (payload applied,
-    ''' game, ApplyMaterialData argument). Copying only some fields would mix the override's enum with this
-    ''' material's provenance.</summary>
-    Public Sub AdoptAlphaFrom(other As FO4UnifiedMaterial_Class)
-        RestoreAlphaState(other.CaptureAlphaState())
-        _materialPayloadApplied = other._materialPayloadApplied
-        _fileBlendRaw = other._fileBlendRaw
-        _nifIsFo4 = other._nifIsFo4
-        _applyArg3 = other._applyArg3
-        _nifAlphaPresent = other._nifAlphaPresent
-        _nifAlphaFlags = other._nifAlphaFlags
-        _nifAlphaThreshold = other._nifAlphaThreshold
-    End Sub
-
     ''' <summary>FO4 y el payload binario de un .bgsm/.bgem se aplico de verdad: es la condicion con la que el motor
     ''' deja que el archivo mande sobre el bloque inline (la misma que usa <see cref="ResolveEngineAlpha"/>). Function a
     ''' proposito: GetDifferences refleja propiedades.</summary>
@@ -3613,6 +3587,29 @@ Public Class FO4UnifiedMaterial_Class
     ''' threshold = AlphaTestRef (0x142171954..19CC). The material Alpha is not read here.</para>
     ''' <para>Everything else (SSE, FO4 NIF-inline shader, no payload): the NIF state the fields already hold.</para></summary>
     Public Function ResolveEngineAlpha() As EngineAlphaState
+        Return EngineFaceGenAlphaWriter(FaceGenAlphaWriterApplies(), ResolveEngineAlphaFromMaterial())
+    End Function
+
+    ''' <summary>The engine's head alpha writer runs on this shape: FO4 NIF, BSLighting material and
+    ''' <see cref="NpcDiffuseAlphaTest"/> = True (face head part of an NPC with ACBS Diffuse Alpha Test). See
+    ''' EngineFaceGenAlphaWriter. A Function on purpose (GetDifferences reflects public properties).</summary>
+    Public Function FaceGenAlphaWriterApplies() As Boolean
+        Return _nifIsFo4 AndAlso NpcDiffuseAlphaTest.GetValueOrDefault() AndAlso TypeOf Underlying_Material Is BGSM
+    End Function
+
+    ''' <summary>THE HEAD ALPHA WRITER (Fallout4.exe 1.11.240, per-geometry head pass 0x1406EEA90): when it runs it allocates a
+    ''' NEW NiAlphaProperty (inline ctor 0x1406EEC23..C55: flags 0x00EC, threshold 0), sets flags = (flags And 0xFEED) Or
+    ''' 0x02EC (0x1406EEC5A..C75) and attaches it (0x1406EEC7D), replacing whatever the material application left. Pure, so
+    ''' the gates call it without a NIF.</summary>
+    Public Shared Function EngineFaceGenAlphaWriter(applies As Boolean, materialState As EngineAlphaState) As EngineAlphaState
+        If Not applies Then Return materialState
+        Return New EngineAlphaState With {.Blend = False, .Src = NiflySharp.Enums.AlphaFunction.SRC_ALPHA,
+                                          .Dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA, .Test = True, .Threshold = 0,
+                                          .Present = True, .EditorAlphaThreshold = False}
+    End Function
+
+    ''' <summary>The alpha state the material application leaves (ApplyMaterialData; see ResolveEngineAlpha).</summary>
+    Private Function ResolveEngineAlphaFromMaterial() As EngineAlphaState
         Return EngineAlphaLaw(_materialPayloadApplied AndAlso _nifIsFo4, Underlying_Material.AlphaBlendMode,
                               TypeOf Underlying_Material Is BGSM, Underlying_Material.Decal, _applyArg3,
                               Underlying_Material.AlphaTest, Underlying_Material.AlphaTestRef,
@@ -3881,17 +3878,6 @@ Public Class FO4UnifiedMaterial_Class
         alp.Flags.DestinationBlendMode = _blendFunctionDest
     End Sub
 
-    ''' <summary>Transcription (bake / export, the NIF loses its material file link) of a shape whose source NIF has NO
-    ''' NiAlphaProperty: who decides the block. <c>CkRule</c> = the CK FaceGen bake rule (0x00EC + test, threshold 0, and
-    ''' <see cref="VetoAlphaPropertyCreation"/>), measured against the CK (40-bake-leyes-fo4 §8: Valentine, DiMA): bake and
-    ''' face export. <c>Engine</c> = the block the engine creates when it applies the file (ctor 0x142176880 then
-    ''' 0x142171954..19EE, <see cref="ResolveEngineAlpha"/>): export of every non-face shape (user decision 6-oct-2026: there
-    ''' is no CK reference there and the game showed the original with that alpha).</summary>
-    Public Enum TranscriptionAlphaCreation
-        CkRule = 0
-        Engine = 1
-    End Enum
-
     ''' <summary>El material pide un NiAlphaProperty (blend o test). ⛔ SEDE UNICA: es la condicion con la que
     ''' <see cref="WriteAlphaPropertyToShape"/> crea/conserva o borra el bloque FUERA de una transcripcion, y la que usa la
     ''' conversion de familia de shader para decidir si borra el alpha antes del escritor. En una transcripcion con archivo FO4
@@ -3901,14 +3887,15 @@ Public Class FO4UnifiedMaterial_Class
         Return _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
     End Function
 
-    Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo, Optional transcription As Boolean = False,
-                                         Optional creation As TranscriptionAlphaCreation = TranscriptionAlphaCreation.CkRule)
+    Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo, Optional transcription As Boolean = False)
         ' TRANSCRIPCION (bake / export: el NIF pierde el link al archivo de material). Desde ahi el motor lee SOLO este bloque,
         ' asi que lleva el estado que el motor resuelve al aplicar el archivo (ResolveEngineAlpha, 0x1421718BD..19EE), no los
         ' campos del editor: con un .bgsm (0,6,7) los campos guardan el blend del NIF y con un MSWP (arg3) no apagan el blend;
         ' el horneado quedaba con blend y sin decal, que el motor no dibuja (medido en vivo 6-oct-2026). Bits 10-14 del bloque
         ' se conservan como hace el motor (0x142171958..19A4). Sin bloque en el shape fuente decide `creation`.
-        If transcription AndAlso ArchivoFo4Aplicado() Then
+        ' Sin bloque en el shape fuente, el bloque es el que crea el motor: ApplyMaterialData (ctor 0x142176880 +
+        ' 0x142171954..19EE) o el escritor de la cabeza (0x1406EEA90), los dos dentro de ResolveEngineAlpha.
+        If transcription AndAlso (ArchivoFo4Aplicado() OrElse FaceGenAlphaWriterApplies()) Then
             Dim motor = ResolveEngineAlpha()
             If shap.AlphaPropertyRef IsNot Nothing AndAlso shap.AlphaPropertyRef.Index <> -1 Then
                 If Not motor.Present Then
@@ -3916,39 +3903,28 @@ Public Class FO4UnifiedMaterial_Class
                     Return
                 End If
                 Dim alpMotor = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
-                alpMotor.Flags.Value = CUShort((alpMotor.Flags.Value And &H7C00US) Or CUShort(motor.NiFlags()))
+                ' ApplyMaterialData keeps bits 10-14 of the block it rewrites (0x142171958..19A4); the head writer attaches a NEW
+                ' block (0x1406EEC23..C7D), so nothing of the old one survives.
+                Dim kept As UShort = If(FaceGenAlphaWriterApplies(), 0US, CUShort(alpMotor.Flags.Value And &H7C00US))
+                alpMotor.Flags.Value = CUShort(kept Or CUShort(motor.NiFlags()))
                 alpMotor.Threshold = motor.Threshold
                 Return
             End If
-            If creation = TranscriptionAlphaCreation.Engine Then
-                ' The engine creates the block (ctor 0x142176880: 0x00EC, threshold 0) and rewrites it from the file, so bits
-                ' 10-14 end at 0: the block is NiFlags() and the file's threshold. No veto: the engine has none.
-                If Not motor.Present Then Return
-                Dim alpNuevo As New NiAlphaProperty
-                shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(alpNuevo)}
-                alpNuevo.Flags.Value = CUShort(motor.NiFlags())
-                alpNuevo.Threshold = motor.Threshold
-                Return
-            End If
+            ' The engine creates the block (ctor 0x142176880 / inline 0x1406EEC23: 0x00EC, threshold 0) and rewrites it, so bits
+            ' 10-14 end at 0: the block is NiFlags() and the resolved threshold.
+            If Not motor.Present Then Return
+            Dim alpNuevo As New NiAlphaProperty
+            shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(alpNuevo)}
+            alpNuevo.Flags.Value = CUShort(motor.NiFlags())
+            alpNuevo.Threshold = motor.Threshold
+            Return
         End If
         Dim needAlphaProperty = NecesitaBloqueAlpha()
         If needAlphaProperty Then
             Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
-                ' VETO DE FABRICACIÓN — NO BORRARLO. El A/B del corpus lo refuta en una sola corrida:
-                ' DLCCoast.esm/00004639 (DiMA) pasa de 26 a 27 bloques porque su
-                ' shape 'SynthHeadGen2' recibió un NiAlphaProperty. Es EL caso contra el que se midió la ley
-                ' del bake — "DiMA no debe recibir NiAlphaProperty" (paridad CK). Fue el ÚNICO NIF que se
-                ' movió de los 2.877 de FO4 (SSE: 0 de 4.460), o sea que el veto tiene exactamente un
-                ' consumidor real y es load-bearing.
-                ' Y ojo con la auditoría estática: mirar el BGSM que NOMBRA el NIF da AlphaTest=False para
-                ' la cabeza de DiMA. El bake NO usa ese material sino el RESUELTO (cadena TXST→MNAM), que sí
-                ' pide alpha. Medir la fuente equivocada fue lo que hizo creer que este veto era inalcanzable.
-                ' ESTRENAR un NiAlphaProperty que el shape fuente NO traía es una decisión que el material NO
-                ' puede tomar: AlphaTest=True es condición NECESARIA pero no suficiente (10.995 shapes
-                ' horneados por el CK tienen el bloque sin que su material lo dicte, y a la inversa el CK NO
-                ' fabrica salvo bajo su propia regla de dominio).
-                If Me.VetoAlphaPropertyCreation Then Return
+                ' (El viejo veto de DiMA ya no existe: su causa era el alfa del MNAM del TXST adoptado por la cara, que el
+                ' motor nunca aplica. Una transcripcion FO4 con archivo o con el escritor de la cabeza no llega aca.)
                 shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
                 createdNew = True
             End If
@@ -4083,6 +4059,8 @@ Public Class FO4UnifiedMaterial_Class
     End Sub
 
     Private Sub ApplyAlphaPropertyFromNif(shap As INiShape, Nif As Nifcontent_Class_Manolo)
+        ' The game of the NIF, also for a shape without a material file (NIF-inline shader): FaceGenAlphaWriterApplies needs it.
+        _nifIsFo4 = Nif IsNot Nothing AndAlso Nif.Header IsNot Nothing AndAlso Nif.Header.Version.IsFO4
         Dim alp As NiAlphaProperty = Nothing
         If shap IsNot Nothing AndAlso Not IsNothing(shap.AlphaPropertyRef) AndAlso shap.AlphaPropertyRef.Index <> -1 Then
             alp = TryCast(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
@@ -4187,9 +4165,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' <param name="transcription">The bake / export transcription that cuts the material file link: the material's colours are
     ''' written as resolved (byte-identical to the closed bake) and the NiAlphaProperty carries the engine's alpha state
     ''' (WriteAlphaPropertyToShape). Outside a transcription the block keeps a colour nobody changed.</param>
-    ''' <param name="alphaCreation">Transcription of a shape without a source NiAlphaProperty: see TranscriptionAlphaCreation.</param>
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty, Optional transcription As Boolean = False,
-                              Optional alphaCreation As TranscriptionAlphaCreation = TranscriptionAlphaCreation.CkRule)
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty, Optional transcription As Boolean = False)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGEM)
         ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
@@ -4266,7 +4242,7 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
 
-        WriteAlphaPropertyToShape(shap, Nif, transcription, alphaCreation)
+        WriteAlphaPropertyToShape(shap, Nif, transcription)
     End Sub
 
     <Browsable(False)>
@@ -4488,9 +4464,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' the material's colours written as resolved (byte-identical to the closed bake) and the NiAlphaProperty carrying the
     ''' engine's alpha state (WriteAlphaPropertyToShape). Outside a transcription the block keeps a colour nobody changed and its
     ''' own wetness.</param>
-    ''' <param name="alphaCreation">Transcription of a shape without a source NiAlphaProperty: see TranscriptionAlphaCreation.</param>
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False,
-                              Optional alphaCreation As TranscriptionAlphaCreation = TranscriptionAlphaCreation.CkRule)
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
         ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
@@ -4677,12 +4651,12 @@ Public Class FO4UnifiedMaterial_Class
             ' sea NPC Manager: no hay record) = el bit del bloque queda como vino (censo del guardado: 37 shapes vanilla
             ' lo perdían); True / False = el hecho del record.
             ' Ley completa y evidencia: 40-bake-leyes-fo4.md §8.
-            If Me.NpcDiffuseAlphaTest.HasValue Then
-                If Me.NpcDiffuseAlphaTest.Value Then
-                    shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
-                Else
-                    shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
-                End If
+            ' SET: el mismo escritor 0x1406EEA90 que pone el bloque 0x02EC (0x142169460(prop, 0x39, 1) @0x1406EEC1E): una sola sede,
+            ' FaceGenAlphaWriterApplies, para sus dos efectos. CLEAR: ley del CK medida (el bit en 1 sola shape de todo FO4).
+            If FaceGenAlphaWriterApplies() Then
+                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
+            ElseIf Me.NpcDiffuseAlphaTest.HasValue AndAlso Not Me.NpcDiffuseAlphaTest.Value Then
+                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
             End If
             If Mat.SkewSpecularAlpha Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha
@@ -4702,7 +4676,7 @@ Public Class FO4UnifiedMaterial_Class
             Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
             WriteBgsmTexturesToTextureSet(Mat, texset, IsSkShader(shad), envmapMaskPath)
         End If
-        WriteAlphaPropertyToShape(shap, Nif, transcription, alphaCreation)
+        WriteAlphaPropertyToShape(shap, Nif, transcription)
     End Sub
     ''' <summary>
     ''' Sync a shader's NiString4 texture slot with a target content string. If the
