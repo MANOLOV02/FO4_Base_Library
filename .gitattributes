@@ -1,0 +1,4 @@
+# Generated GLSL texts (Fo4GBufferBlocks.glsl.txt: the embedded resource of Fo4GBufferSource.ProgramText) are checked byte for
+# byte by gate G0 (Tools/ShaderTranscription/fo4-gbuffer/gen_fo4_sources.py --check), which writes them with LF: no end-of-line
+# conversion.
+*.glsl.txt -text

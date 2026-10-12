@@ -125,6 +125,11 @@ Public Structure SkinnedGeometry
     ' marca si PerVertexSkinMatrix está al día; si no, EnsurePerVertexSkinMatrix lo recompone lazy desde
     ' BoneMatsPose cuando un lector (bounds/picking/export/occlusion) realmente lo pide.
     Public PerVertexMatrixValid As Boolean
+    ''' <summary>PerVertexSkinMatrix holds the engine's blend (Fo4EngineSkin.BlendSkin, Fallout 4's view: UsesEngineLaw) of the palette
+    ''' GPUBoneMatrices holds, vertex by vertex - written with it by its three writers (ExtractSkinnedGeometry, RecomputeGPUBoneMatrices,
+    ''' EnsurePerVertexSkinMatrix: FillPerVertexSkinMatrix's result). The engine stage's CPU route reuses it instead of blending again
+    ''' (RenderableMesh.EngineSharesViewSkin).</summary>
+    Public PerVertexIsEngineBlend As Boolean
 End Structure
 Public Structure MorphData
     Public index As UInteger
@@ -220,17 +225,14 @@ Public Class SkinningHelper
         Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
         Dim nUsed As Integer = 0
 
-        ' SIN Array.Clear. `TryComputeWeights` llena `ckW` cuando devuelve True, y cuando devuelve False
+        ' SIN Array.Clear. `TryEngineWeights` llena `ckW` cuando devuelve True, y cuando devuelve False
         ' el contenido no se lee: limpiarlo por vertice eran 130.500 clears por frame de un buffer que o se
         ' sobrescribe entero o se ignora.
-        ' EL GATE DEL CK SE PREGUNTA ANTES DE LLAMAR. `TryComputeWeights` arranca con
-        ' `If Not Enabled Then Return False`, y `Enabled` es False por default: sin este corto-circuito se
-        ' pagaba UNA LLAMADA NO INLINEADA POR VERTICE —130.500 por frame— para que devolviera False en la
-        ' primera linea. El `AndAlso` garantiza que ni se evalue.
+        ' LA LEY DEL MOTOR EN FALLOUT 4, SIEMPRE (decisión del usuario 12-oct-2026, D21: sin casilla): Fo4EngineSkin.TryEngineWeights
+        ' (Fallout 4 y 4 slots; Skyrim SE sigue con la normalizada de abajo).
         Dim ckW = sc.CkW
-        If EngineSkinWeightNormalization.Enabled AndAlso available >= EngineSkinWeightNormalization.Slots AndAlso
-           EngineSkinWeightNormalization.TryComputeWeights(boneWeights, baseIdx, wpv, ckW) Then
-            For j = 0 To EngineSkinWeightNormalization.Slots - 1
+        If available >= Fo4EngineSkin.Slots AndAlso Fo4EngineSkin.TryEngineWeights(boneWeights, baseIdx, wpv, ckW) Then
+            For j = 0 To Fo4EngineSkin.Slots - 1
                 If ckW(j) > 0.0F Then
                     Dim idxc = boneIndices(baseIdx + j)
                     If idxc >= 0 AndAlso idxc < precomputed.Length Then
@@ -285,7 +287,7 @@ Public Class SkinningHelper
             Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
         End If
         Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
-        Dim sc = GetBlendScratch(Math.Max(available, EngineSkinWeightNormalization.Slots))
+        Dim sc = GetBlendScratch(Math.Max(available, Fo4EngineSkin.Slots))
 
         If flatPal IsNot Nothing Then
             Dim listo = BlendEnScratch(boneWeights, boneIndices, baseIdx, wpv, precomputed, flatPal, sc)
@@ -298,9 +300,8 @@ Public Class SkinningHelper
         ' vectorial contra escalar DENTRO del camino de la paleta, con FastGeom.ForzarEscalarS.
         Dim nUsed As Integer = 0
         Dim ckW = sc.CkW
-        If EngineSkinWeightNormalization.Enabled AndAlso available >= EngineSkinWeightNormalization.Slots AndAlso
-           EngineSkinWeightNormalization.TryComputeWeights(boneWeights, baseIdx, wpv, ckW) Then
-            For j = 0 To EngineSkinWeightNormalization.Slots - 1
+        If available >= Fo4EngineSkin.Slots AndAlso Fo4EngineSkin.TryEngineWeights(boneWeights, baseIdx, wpv, ckW) Then
+            For j = 0 To Fo4EngineSkin.Slots - 1
                 If ckW(j) > 0.0F Then
                     Dim idxc = boneIndices(baseIdx + j)
                     If idxc >= 0 AndAlso idxc < precomputed.Length Then
@@ -342,8 +343,8 @@ Public Class SkinningHelper
         Public Sub Grow(slots As Integer)
             Dim n = Math.Max(1, slots)
             ' CkW siempre tiene al menos los slots del CK: el call site lo indexa por esos, no por `slots`.
-            If CkW Is Nothing OrElse CkW.Length < EngineSkinWeightNormalization.Slots Then
-                ReDim CkW(EngineSkinWeightNormalization.Slots - 1)
+            If CkW Is Nothing OrElse CkW.Length < Fo4EngineSkin.Slots Then
+                ReDim CkW(Fo4EngineSkin.Slots - 1)
             End If
             If Idx Is Nothing OrElse Idx.Length < n Then
                 ReDim Idx(n - 1)
@@ -502,14 +503,11 @@ Public Class SkinningHelper
             Return "[skin-blend-wpv0] wpv=0 no devolvio precomputed(0)"
         End If
 
-        ' LA RAMA DEL GATE DEL MOTOR. `EngineSkinWeightNormalization.Enabled` es False por default, asi que
-        ' TryComputeWeights sale temprano y todo lo de arriba ejercita SOLO la rama normal.
-        ' SE CORRE SOLO SI EL USUARIO YA LA TIENE PRENDIDA —que es cuando esa rama le importa a SU bake— y NO
-        ' se toca la global: un test no muta estado de produccion en caliente en una app que se distribuye. Si
-        ' algo tira entre el Set y el Finally, o si otro hilo lee la propiedad en esa ventana, el bake sale con
-        ' una ley que el usuario no eligio. El caso FORZADO (prenderla para cubrir la rama con el default
-        ' apagado) es un gate de BUILD y vive en Tools/ParityGate, que si puede mutar lo que quiera.
-        If EngineSkinWeightNormalization.Enabled Then
+        ' LA RAMA DE LA LEY DEL MOTOR (Fo4EngineSkin.UsesEngineLaw: Fallout 4, 4 slots). Se corre cuando el juego activo es
+        ' Fallout 4, que es cuando esa rama hornea; NO se toca el juego activo: un test no muta estado de produccion en
+        ' caliente. Cubrir las dos ramas en un mismo proceso (cambiando el juego) es un gate de BUILD y vive en
+        ' Tools/ParityGate.
+        If Fo4EngineSkin.UsesEngineLaw(Fo4EngineSkin.Slots) Then
             For iter As Integer = 0 To 499
                 For s = 0 To wgt.Length - 1
                     wgt(s) = CType(pesos(CInt(NextB() Mod CULng(pesos.Length))), System.Half)
@@ -721,6 +719,7 @@ Public Class SkinningHelper
         Dim gpuBoneIdx(vertexCount * 4 - 1) As Byte
         Dim gpuBoneWgt(vertexCount * 4 - 1) As Single
         Dim gpuBoneMats() As Matrix4 = Nothing
+        Dim perVertexEsMotor As Boolean = False   ' SkinnedGeometry.PerVertexIsEngineBlend: the multibone branch's motorVista
 
         ' Branching predicate: shape.IsSkinned (parity con Outfit Studio Anim.cpp:692, 706,
         ' GLSurface.cpp:1247 — IsSkinned() es !skinInstanceRef.IsEmpty()). NO usamos bones.Length
@@ -761,44 +760,51 @@ Public Class SkinningHelper
                 ' Suit. Los cuatro, ya probados en FillPerVertexSkinMatrix:
                 '   1. delegate por vertice -> se llama desde un bucle por RANGOS
                 '   2. `Dim ckWg(3) As Single` adentro = alocacion en heap POR VERTICE -> al scratch por hilo
-                '   3. `TryComputeWeights` sin corto-circuito de `Enabled` (que es False por default)
+                '   3. la ley del motor por vertice sin corto-circuito de la compuerta (hoy Fo4EngineSkin.UsesEngineLaw)
                 '   4. `AMatrix4(Mtot)` -> Matrix4 intermedia -> indexador -> 12 escrituras
+                ' LA VISTA DE FALLOUT 4 (D21): la matriz por vértice y los pesos de GPU de Vertex_FO4 van por la ley del motor
+                ' (Fo4EngineSkin), siempre. Ver FillPerVertexSkinMatrix.
+                Dim motorVista = hasSkin AndAlso Fo4EngineSkin.UsesEngineLaw(skinWpv)
+                perVertexEsMotor = motorVista
+                Dim filasMotor As Vector4() = Nothing
+                If motorVista Then Fo4EngineSkin.PaletteRows(precomputedBoneMatrices, filasMotor)
                 Dim skinningBody As Action(Of Integer, BlendScratch) = Sub(i, scE)
                                                              Dim Mtot As Matrix4d
                                                              Dim baseIdx = i * 4
+
+                                                             If motorVista Then
+                                                                 ' Los cuatro pesos del motor (w3 = 1 - sat) tal cual, y los índices del NIF: Vertex_FO4
+                                                                 ' los suma en el orden del VS del motor (Shader_Class Vertex_FO4).
+                                                                 Dim r0, r1, r2 As Vector4, s As Single
+                                                                 Fo4EngineSkin.BlendSkin(filasMotor, skinFlatIdx, skinFlatWgt, i * 4, scE.CkW, r0, r1, r2, s)
+                                                                 For j = 0 To 3
+                                                                     gpuBoneIdx(baseIdx + j) = skinFlatIdx(i * 4 + j)
+                                                                     gpuBoneWgt(baseIdx + j) = scE.CkW(j)
+                                                                 Next
+                                                                 perVertexMtot.EstablecerDesdeFilas(i, r0, r1, r2)
+                                                                 Return
+                                                             End If
 
                                                              If hasSkin Then
                                                                  Dim baseSkin = i * skinWpv
                                                                  Mtot = BlendBoneMatrices(skinFlatWgt, skinFlatIdx, baseSkin, skinWpv, precomputedBoneMatrices, flatPalette)
 
-                                                                 ' GPU arrays: copy up to 4 slots, normalize weights to sum=1.
-                                                                 ' Normalizacion de pesos del MOTOR: el shader ya suma Σ w·bone SIN dividir, así que
-                                                                 ' alcanza con subir acá los pesos de la ley (w3 = 1−Σ, y 0 en vez de descartar, que es
-                                                                 ' lo mismo porque el shader saltea los ≤0) para que el GPU quede igual que el CPU.
-                                                                 ' Gate apagado (default) ⇒ se toma la rama normalizada de siempre, bit-idéntica.
-                                                                 Dim ckWg = scE.CkW
-                                                                 If EngineSkinWeightNormalization.Enabled AndAlso
-                                                                    EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseSkin, skinWpv, ckWg) Then
-                                                                     For j = 0 To 3
+                                                                 ' GPU arrays: copy up to 4 slots, normalize weights to sum=1 (the law of a skin without the
+                                                                 ' engine's: Skyrim SE or another slot count; Fallout 4's view took motorVista above).
+                                                                 Dim copySlots = Math.Min(4, skinWpv)
+                                                                 Dim localSumW As Double = 0
+                                                                 For j = 0 To copySlots - 1
+                                                                     localSumW += CType(skinFlatWgt(baseSkin + j), Double)
+                                                                 Next
+                                                                 For j = 0 To 3
+                                                                     If j < copySlots Then
                                                                          gpuBoneIdx(baseIdx + j) = skinFlatIdx(baseSkin + j)
-                                                                         gpuBoneWgt(baseIdx + j) = If(ckWg(j) > 0.0F, ckWg(j), 0.0F)
-                                                                     Next
-                                                                 Else
-                                                                     Dim copySlots = Math.Min(4, skinWpv)
-                                                                     Dim localSumW As Double = 0
-                                                                     For j = 0 To copySlots - 1
-                                                                         localSumW += CType(skinFlatWgt(baseSkin + j), Double)
-                                                                     Next
-                                                                     For j = 0 To 3
-                                                                         If j < copySlots Then
-                                                                             gpuBoneIdx(baseIdx + j) = skinFlatIdx(baseSkin + j)
-                                                                             gpuBoneWgt(baseIdx + j) = CSng(If(localSumW > 0, CType(skinFlatWgt(baseSkin + j), Double) / localSumW, 0))
-                                                                         Else
-                                                                             gpuBoneIdx(baseIdx + j) = 0
-                                                                             gpuBoneWgt(baseIdx + j) = 0.0F
-                                                                         End If
-                                                                     Next
-                                                                 End If
+                                                                         gpuBoneWgt(baseIdx + j) = CSng(If(localSumW > 0, CType(skinFlatWgt(baseSkin + j), Double) / localSumW, 0))
+                                                                     Else
+                                                                         gpuBoneIdx(baseIdx + j) = 0
+                                                                         gpuBoneWgt(baseIdx + j) = 0.0F
+                                                                     End If
+                                                                 Next
                                                              Else
                                                                  ' No per-vertex skin data — bind to bone 0 with full weight (same fallback as before).
                                                                  Mtot = If(precomputedBoneMatrices.Length > 0, precomputedBoneMatrices(0), Matrix4d.Identity)
@@ -817,13 +823,13 @@ Public Class SkinningHelper
                     ' Por RANGOS: el scratch se toma una vez por rango en vez de alocar por vertice.
                     Parallel.ForEach(RangosDe(vertexCount),
                         Sub(rango As Tuple(Of Integer, Integer))
-                            Dim scE = GetBlendScratch(Math.Max(skinWpv, EngineSkinWeightNormalization.Slots))
+                            Dim scE = GetBlendScratch(Math.Max(skinWpv, Fo4EngineSkin.Slots))
                             For i = rango.Item1 To rango.Item2 - 1
                                 skinningBody(i, scE)
                             Next
                         End Sub)
                 Else
-                    Dim scE = GetBlendScratch(Math.Max(skinWpv, EngineSkinWeightNormalization.Slots))
+                    Dim scE = GetBlendScratch(Math.Max(skinWpv, Fo4EngineSkin.Slots))
                     For i As Integer = 0 To vertexCount - 1
                         skinningBody(i, scE)
                     Next
@@ -974,6 +980,7 @@ Public Class SkinningHelper
              .GPUBoneMatrices = gpuBoneMats,
              .WorldCacheValid = False,
              .PerVertexMatrixValid = True,
+             .PerVertexIsEngineBlend = perVertexEsMotor,
              .ZapTopologyDirty = True
         }
 
@@ -1424,9 +1431,8 @@ Public Class SkinningHelper
                                 ' caso normal) las dos coinciden bit a bit, así que la divergencia sólo asoma
                                 ' donde Σw ≠ 1: es de las que pasan un gate y se ven en el bake.
                                 '
-                                ' Dos llamadas, una por paleta. `TryComputeWeights` se evalúa dos veces: es puro
-                                ' (lee pesos, escribe el buffer de salida) y sus 3 contadores Interlocked no los
-                                ' consume nadie, así que repetirlo no cambia ningún resultado.
+                                ' Dos llamadas, una por paleta. `TryEngineWeights` se evalúa dos veces: es puro
+                                ' (lee pesos, escribe el buffer de salida), así que repetirlo no cambia ningún resultado.
                                 ' `matsPose` y `matsBind` se dimensionan los dos con `bones.Count - 1`, así que el
                                 ' bound del índice es el mismo para las dos.
                                 Dim baseIdx = i * skinWpv
@@ -1798,7 +1804,7 @@ Public Class SkinningHelper
         ' "por las dudas": hoy seria un no-op demostrable, y codigo especulativo en un camino que
         ' corre por frame es ruido. Si algun dia esos dos valores pudieran diferir, lo que hace falta
         ' es un TEST que lo detecte, no una escritura preventiva.
-        FillPerVertexSkinMatrix(mats, geo.Skinning, BuildPosePalette(poseMats, geo.ParentGlobalTransform))
+        geo.PerVertexIsEngineBlend = FillPerVertexSkinMatrix(mats, geo.Skinning, BuildPosePalette(poseMats, geo.ParentGlobalTransform))
         geo.PerVertexMatrixValid = True
     End Sub
 
@@ -1823,15 +1829,37 @@ Public Class SkinningHelper
     ''' sin datos de skin per-vértice el world-cache, los bounds, el picking y el export leen matrices
     ''' rancias.</para>
     ''' </summary>
-    Friend Shared Sub FillPerVertexSkinMatrix(mats As SkinMatricesSoA, skinning As ShapeSkinningData, palette() As Matrix4d)
-        If mats Is Nothing OrElse palette Is Nothing Then Return
+    Friend Shared Function FillPerVertexSkinMatrix(mats As SkinMatricesSoA, skinning As ShapeSkinningData, palette() As Matrix4d) As Boolean
+        If mats Is Nothing OrElse palette Is Nothing Then Return False
         Dim vc = mats.Length
-        If vc = 0 Then Return
+        If vc = 0 Then Return False
         Dim flatIdx = skinning.BoneIndices
         Dim flatWgt = skinning.BoneWeights
         Dim wpv = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, 4)
         Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso skinning.VertexCount = vc)
         Dim sinSkin = If(palette.Length > 0, palette(0), Matrix4d.Identity)
+        ' LA VISTA DE FALLOUT 4 (decisión del usuario 12-oct-2026, D21): esta matriz alimenta el skinning de CPU de Vertex_FO4, la
+        ' sombra, el picking, los bounds y el world cache, y en FO4 va SIEMPRE por la ley del motor (Fo4EngineSkin.BlendSkin, la
+        ' misma función que el stream de la ruta CPU). Una sola compuerta para la vista y el horneado: Fo4EngineSkin.UsesEngineLaw.
+        If hasSkin AndAlso Fo4EngineSkin.UsesEngineLaw(wpv) Then
+            Dim rows As Vector4() = Nothing
+            Fo4EngineSkin.PaletteRows(palette, rows)
+            Dim motor As Action(Of Tuple(Of Integer, Integer)) =
+                Sub(rango)
+                    Dim w(3) As Single
+                    Dim r0, r1, r2 As Vector4, s As Single
+                    For i = rango.Item1 To rango.Item2 - 1
+                        Fo4EngineSkin.BlendSkin(rows, flatIdx, flatWgt, i * 4, w, r0, r1, r2, s)
+                        mats.EstablecerDesdeFilas(i, r0, r1, r2)
+                    Next
+                End Sub
+            If vc >= 500 Then
+                Parallel.ForEach(RangosDe(vc), motor)
+            Else
+                motor(Tuple.Create(0, vc))
+            End If
+            Return True
+        End If
         ' Paleta plana para el blend vectorial: una vez por shape, no por vértice. Ver FastGeom.
         Dim flatPalette = FastGeom.BuildFlatPaletteS(palette)
         ' SE RECORRE POR RANGOS, NO POR INDICE: `Parallel.For(0, vc, body)` con `body` como
@@ -1854,7 +1882,7 @@ Public Class SkinningHelper
                     ' El scratch se toma UNA vez por RANGO. `GetBlendScratch` es un acceso ThreadStatic
                     ' con una guarda de tamano, y hacerlo por vertice son 130.500 lookups por frame para
                     ' devolver siempre el mismo objeto: el rango entero corre en un solo hilo.
-                    Dim scR = GetBlendScratch(Math.Max(wpv, EngineSkinWeightNormalization.Slots))
+                    Dim scR = GetBlendScratch(Math.Max(wpv, Fo4EngineSkin.Slots))
                     ' SIN MEMO POR VERTICE PREVIO: MEDIDO y NEUTRO, con tendencia a costar. Reusar el blend
                     ' cuando la tupla (indices, pesos) repite la del vertice anterior toca al 14,0 % de los
                     ' vertices del Serena Battle Suit (18.205 de 130.180), pero las 8 comparaciones se pagan
@@ -1882,7 +1910,8 @@ Public Class SkinningHelper
         Else
             cuerpo(Tuple.Create(0, vc))
         End If
-    End Sub
+        Return False
+    End Function
 
     Public Shared Sub ComputeWorldSpaceCache(ByRef geo As SkinnedGeometry)
         EnsurePerVertexSkinMatrix(geo)   ' Option B: recompone PerVertexSkinMatrix si pass-2 se salteó
@@ -2185,7 +2214,7 @@ Public Class SkinningHelper
 
             If updatePerVertexSkin Then
                 ' UN SOLO cuerpo, compartido con la recomposición perezosa. Ver FillPerVertexSkinMatrix.
-                FillPerVertexSkinMatrix(perVertexSkinMatrix, localSkinning, precomputedBoneMatrices)
+                geo.PerVertexIsEngineBlend = FillPerVertexSkinMatrix(perVertexSkinMatrix, localSkinning, precomputedBoneMatrices)
                 geo.PerVertexMatrixValid = True
             Else
                 ' GPU-skin + animación + opaco: el shader skinnea del SSBO (GPUBoneMatrices ya
@@ -2231,6 +2260,7 @@ Public Class SkinningHelper
                 CSng(Mtot.M41), CSng(Mtot.M42), CSng(Mtot.M43), CSng(Mtot.M44))
             geo.PerVertexSkinMatrix.Llenar(AMatrix4(Mtot))
             geo.PerVertexMatrixValid = True   ' rama single-bone/unskinned: siempre se llena (barato)
+            geo.PerVertexIsEngineBlend = False
         End If
 
         ' Invalidate world-space cache so it gets recomputed on next access. SIEMPRE se invalida
@@ -4232,14 +4262,7 @@ Public Class RecalcTBN
     ''' <c>b/255*2-1</c>. El redondeo es a entero mas cercano.
     ''' </summary>
     Friend Shared Function NormalComoLaVeElCanonico(v As Vector3) As Vector3
-        Return New Vector3(ByteIdaYVuelta(v.X), ByteIdaYVuelta(v.Y), ByteIdaYVuelta(v.Z))
-    End Function
-
-    Private Shared Function ByteIdaYVuelta(c As Single) As Single
-        Dim b As Integer = CInt(Math.Round((c + 1.0F) / 2.0F * 255.0F, MidpointRounding.AwayFromZero))
-        If b < 0 Then b = 0
-        If b > 255 Then b = 255
-        Return CSng(b) / 255.0F * 2.0F - 1.0F
+        Return Fo4EngineVertexPacker.RoundTrip(v)   ' U1: the NIF writer's byte (H11), decoded as UNORM (one round trip, review rev-06 d)
     End Function
 
     ''' <summary>Sobrecarga en Single: la cadena del TBN trabaja entera en esta precision.</summary>

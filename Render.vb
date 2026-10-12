@@ -1937,8 +1937,6 @@ Public Class PreviewControl
     ''' surface program with the frame's background (SubirUniformsDeFondo: the one function the background's programs take it from).
     ''' False: no base this frame (the target is incomplete).</summary>
     Friend Function BeginFo4DecalBase() As Boolean
-        SharedFo4Deferred.DecalBaseSurface.Use()
-        SubirUniformsDeFondo(SharedFo4Deferred.DecalBaseSurface)
         Return _fo4.BeginDecalBase(SharedFo4Deferred)
     End Function
 
@@ -3455,6 +3453,8 @@ Public Class PreviewModel
         End Select
     End Function
 
+    Friend FrameEngineRows As (View As Vector4(), ViewProj As Vector4(), Eye As Vector4)
+
     ''' <summary>The frame is drawn with the Skyrim SE shader (and so with its pass law).</summary>
     Friend ReadOnly Property FrameIsSse As Boolean
         Get
@@ -3928,7 +3928,7 @@ Public Class PreviewModel
             End Function
 
             ''' <summary>The NIF block's vertexDesc (geom+0x148), 0 for a shape without one. Not IShapeGeometry.IsSkinned (it also reports the app's synthetic skinning).</summary>
-            Private Shared Function VertexDescValue(geo As NiflySharp.INiShape) As ULong
+            Friend Shared Function VertexDescValue(geo As NiflySharp.INiShape) As ULong
                 Dim tri = TryCast(geo, NiflySharp.Blocks.BSTriShape)
                 If tri Is Nothing OrElse tri.VertexDesc Is Nothing Then Return 0UL
                 Return tri.VertexDesc.Value
@@ -4239,6 +4239,17 @@ Public Class PreviewModel
                 Return d.HasValue AndAlso d.Value.Gap <> ""
             End Function
 
+            ''' <summary>Ola 2 (H5b): the owning renderable's engine layout carries UV2 / LAND data (RenderableMesh.EngineLayoutUnsupported),
+            ''' through the renderable that owns this material - the path Fo4GBufferPass reads the frame by.</summary>
+            Private Function EngineLayoutUnsupportedOf() As Boolean
+                Return ParentMeshData?.ParentMesh IsNot Nothing AndAlso ParentMeshData.ParentMesh.EngineLayoutUnsupported()
+            End Function
+
+            ''' <summary>Ola 2 v5: the owning renderable's vertex stage takes the CPU route (RenderableMesh.EngineCpuRoute, its one owner).</summary>
+            Private Function EngineCpuRouteOf() As Boolean
+                Return ParentMeshData?.ParentMesh IsNot Nothing AndAlso ParentMeshData.ParentMesh.EngineCpuRoute()
+            End Function
+
             ''' <summary>Is this a decal for the engine? A Fallout 4 lighting shape: bit 26 or 27 of its effective flags (Fo4Flags: the
             ''' applicator writes them from the Decal byte only when its 3rd argument is 0, a material swap / overlay keeps the NIF's;
             ''' GetRenderPasses tests flags AND 0xC000000, 0x14217A9F6). Otherwise (Skyrim SE, effects) the material's (RendersAsDecal).</summary>
@@ -4320,8 +4331,8 @@ Public Class PreviewModel
                                                   .Material = em}
                 If d.Gap = "" Then
                     Dim errorText As String = Nothing
-                    d.Program = programs.GBufferProgram(psId, errorText)
-                    If d.Program Is Nothing Then d.Gap = "program build failed: " & errorText
+                    d.Program = programs.GBufferProgram(New Fo4Technique(t.Value), errorText, EngineCpuRouteOf())
+                    If d.Program Is Nothing Then d.Gap = "program build failed: " & errorText Else If EngineLayoutUnsupportedOf() Then d.Gap = "vertex desc with UV2 / LAND data: NiflySharp does not read them (BSVertexData.Sync), the preview has no source"
                 End If
                 Return d
             End Function
@@ -4832,6 +4843,13 @@ Public Class PreviewModel
             If vboEyeCenter > 0 Then GL.DeleteBuffer(vboEyeCenter) : vboEyeCenter = 0
             If vboTangent > 0 Then GL.DeleteBuffer(vboTangent) : vboTangent = 0
             If vboBitangent > 0 Then GL.DeleteBuffer(vboBitangent) : vboBitangent = 0
+            If engineVbo > 0 Then GL.DeleteBuffer(engineVbo) : engineVbo = 0
+            If engineCpuVbo > 0 Then GL.DeleteBuffer(engineCpuVbo) : engineCpuVbo = 0
+            If engineVaoGbuf > 0 Then GL.DeleteVertexArray(engineVaoGbuf) : engineVaoGbuf = 0
+            If engineVaoPrepass > 0 Then GL.DeleteVertexArray(engineVaoPrepass) : engineVaoPrepass = 0
+            If engineVaoCpuTbn > 0 Then GL.DeleteVertexArray(engineVaoCpuTbn) : engineVaoCpuTbn = 0
+            If engineVaoCpuRows > 0 Then GL.DeleteVertexArray(engineVaoCpuRows) : engineVaoCpuRows = 0
+            If _paletteSsbo > 0 Then GL.DeleteBuffer(_paletteSsbo) : _paletteSsbo = 0
             If vboColorAlpha > 0 Then GL.DeleteBuffer(vboColorAlpha) : vboColorAlpha = 0
             If vboUVMaskWeight > 0 Then GL.DeleteBuffer(vboUVMaskWeight) : vboUVMaskWeight = 0
             If vboMask > 0 Then GL.DeleteBuffer(vboMask) : vboMask = 0
@@ -4914,6 +4932,385 @@ Public Class PreviewModel
         ''' <summary>S-W: what the positions VBO carries - the TREE_ANIM rest pose or not -, written by the full uploads (SetupMesh_GL, the
         ''' dense branch of UpdateSkinBuffers_GL); RefreshLeafPose_GL compares it with what the frame asks for.</summary>
         Private _vboLeafPose As Boolean
+        ''' <summary>Ola 2: this shape's FO4 uploads carry the NIF's precision (half positions when the vertex desc is not full precision;
+        ''' N/T/B through the writer's byte, Fo4EngineVertexPacker.RoundTrip). Set by SetupMesh_GL and RefreshLeafPose_GL for the frame's game.</summary>
+        Private _vboHalfPositions As Boolean
+        Private _vboQuantized As Boolean
+        Private Function WantsFo4Quantization() As Boolean
+            Return Not Me.ParentModel.FrameIsSse AndAlso MeshData.Shape?.NifShape IsNot Nothing
+        End Function
+        Private Function Q(v As Vector3) As Vector3
+            Return If(_vboQuantized, Fo4EngineVertexPacker.RoundTrip(v), v)
+        End Function
+        Private Function QuantizedOrSame(a() As Vector3) As Vector3()
+            If Not _vboQuantized OrElse a Is Nothing Then Return a
+            Dim r(a.Length - 1) As Vector3
+            For i = 0 To a.Length - 1 : r(i) = Fo4EngineVertexPacker.RoundTrip(a(i)) : Next
+            Return r
+        End Function
+
+        ' ---- Ola 2: the engine's vertex buffers (propuesta-v4 3.6 d, 3.7, H4) ----
+        Friend engineVbo, engineCpuVbo, engineVaoGbuf, engineVaoPrepass, engineVaoCpuTbn, engineVaoCpuRows As Integer
+        Private _engineDesc As ULong
+        Private _engineStage As Byte(), _engineCpuStage As Single()
+        ''' <summary>cb10 of this shape as the CPU route blends it (Fo4EngineSkin.PaletteRows: the same rows the GPU route binds).</summary>
+        Private _cpuPaletteRows As Vector4()
+        ''' <summary>The engine stage's attributes the CPU route reads (Fo4EngineVertexPacker.CpuRouteInputsOf of _engineDesc).</summary>
+        Private _engineCpuInputs As Fo4EngineVertexPacker.CpuRouteInputs
+        Private _engineMin As Integer = Integer.MaxValue, _engineMax As Integer = -1
+
+        ''' <summary>A shape whose vertex desc carries UV2 or LAND (flags 0x4 / 0x80, slot 0 or 1): NiflySharp does not read them
+        ''' (BSVertexData.Sync has no field), the app has no source: not drawn (0 corpus shapes).</summary>
+        Friend Function EngineLayoutUnsupported() As Boolean
+            Dim fl = _engineDesc >> 44
+            Return (fl And (&H4UL Or &H80UL Or (&H4UL << 10) Or (&H80UL << 10))) <> 0UL
+        End Function
+
+        Private Sub EngineVbo_Setup()
+            Dim n = MeshData.Meshgeometry.Vertices.Length
+            Dim stride = Fo4EngineVertexLayout.Stride(_engineDesc)
+            If n = 0 OrElse stride = 0 OrElse EngineLayoutUnsupported() Then Exit Sub
+            _engineStage = New Byte(n * stride - 1) {}
+            _engineCpuStage = New Single(n * Fo4EngineVertexPacker.CpuRouteFloats - 1) {}
+            _engineCpuInputs = Fo4EngineVertexPacker.CpuRouteInputsOf(_engineDesc)
+            engineVbo = GL.GenBuffer() : engineCpuVbo = GL.GenBuffer()
+            GL.BindBuffer(BufferTarget.ArrayBuffer, engineVbo)
+            GL.BufferData(BufferTarget.ArrayBuffer, _engineStage.Length, IntPtr.Zero, BufferUsageHint.DynamicDraw)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, engineCpuVbo)
+            GL.BufferData(BufferTarget.ArrayBuffer, _engineCpuStage.Length * 4, IntPtr.Zero, BufferUsageHint.DynamicDraw)
+            engineVaoGbuf = EngineVao(_engineDesc, Fo4CpuRouteLayout.None)
+            engineVaoPrepass = EngineVao(_engineDesc And If(PrepassAlphaTestOfThisShape(), Fo4EngineVertexLayout.PrepassAlphaMask, Fo4EngineVertexLayout.PrepassRigidMask), Fo4CpuRouteLayout.None)
+            engineVaoCpuTbn = EngineVao(_engineDesc, Fo4CpuRouteLayout.Tbn)
+            engineVaoCpuRows = EngineVao(_engineDesc, Fo4CpuRouteLayout.Rows)
+            Dim cpu = EngineCpuRoute()
+            If cpu Then RefreshCpuPaletteRows()
+            Dim w(3) As Single
+            For i = 0 To n - 1 : EngineVbo_One(i, cpu, w) : Next
+            EngineVbo_Flush()
+        End Sub
+
+        ''' <summary>A VAO over the engine buffer by Fo4EngineVertexLayout.Elements. <paramref name="cpuLayout"/> (a skinned VS's CPU route,
+        ''' Fo4GBufferSource.EffectiveCpuLayout): the CPU stream (Fo4EngineVertexPacker.PackCpuRoute / PackCpuRouteBlended) at locations 6 / 7 / 12 / 13
+        ''' (asm2glsl.CPU_LOC) in place of BLENDWEIGHT / BLENDINDICES, which a CPU-route VS never reads; the other engine attributes
+        ''' as the GPU route.</summary>
+        Private Function EngineVao(desc As ULong, cpuLayout As Fo4CpuRouteLayout) As Integer
+            Dim v = GL.GenVertexArray()
+            GL.BindVertexArray(v)
+            Dim stride = Fo4EngineVertexLayout.Stride(_engineDesc)
+            For Each e In Fo4EngineVertexLayout.Elements(desc)
+                Dim loc = CInt(e.Semantic)
+                If cpuLayout <> Fo4CpuRouteLayout.None AndAlso (e.Semantic = Fo4EngineVertexLayout.Sem.BlendWeight0 OrElse e.Semantic = Fo4EngineVertexLayout.Sem.BlendIndices0) Then Continue For
+                GL.BindBuffer(BufferTarget.ArrayBuffer, engineVbo)
+                GL.EnableVertexAttribArray(loc)
+                GL.VertexAttribPointer(loc, e.Components, e.GlType, e.Normalized, stride, e.Offset)
+            Next
+            If cpuLayout <> Fo4CpuRouteLayout.None Then
+                GL.BindBuffer(BufferTarget.ArrayBuffer, engineCpuVbo)
+                Dim cs = Fo4EngineVertexPacker.CpuRouteFloats * 4
+                For Each a In Fo4EngineVertexPacker.CpuRouteAttributes(cpuLayout)
+                    GL.EnableVertexAttribArray(a.Location)
+                    GL.VertexAttribPointer(a.Location, 4, VertexAttribPointerType.Float, False, cs, a.Offset)
+                Next
+            End If
+            ' The app's edit views (AppMain foot, H6b): mask at 14 and the bone weight at 15 from the app's own buffers.
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vboMask)
+            GL.EnableVertexAttribArray(14) : GL.VertexAttribPointer(14, 1, VertexAttribPointerType.Float, False, 4, 0)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vboUVMaskWeight)
+            GL.EnableVertexAttribArray(15) : GL.VertexAttribPointer(15, 1, VertexAttribPointerType.Float, False, 12, 8)
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            GL.BindVertexArray(0)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+            Return v
+        End Function
+
+        ''' <summary>Vertex <paramref name="i"/> from the app's live arrays (3.7: what the app's VBOs read today) into the engine stage,
+        ''' and with <paramref name="cpuSkin"/> the CPU route's stream from those same packed bytes (Fo4EngineVertexPacker.PackCpuRoute:
+        ''' the engine's blend, Fo4EngineSkin, over _cpuPaletteRows - RefreshCpuPaletteRows first). <paramref name="w"/>: a 4-Single
+        ''' scratch of the caller's thread.</summary>
+        Private Sub EngineVbo_One(i As Integer, cpuSkin As Boolean, w() As Single)
+            PackOne(i)
+            If cpuSkin Then Fo4EngineVertexPacker.PackCpuRoute(_engineCpuStage, i, _engineStage, _engineCpuInputs, _cpuPaletteRows, w)
+            MarkEngineVertex(i)
+        End Sub
+
+        ''' <summary>Vertex <paramref name="i"/> of the live arrays into the engine stage (Fo4EngineVertexPacker.PackVertex): the one
+        ''' packing of EngineVbo_One, EngineVbo_All and the shared CPU skin (review rev-06 a).</summary>
+        Private Sub PackOne(i As Integer)
+            Dim g = MeshData.Meshgeometry
+            Dim sk = g.Skinning
+            Dim uvw = g.Uvs_Weight(i)
+            Fo4EngineVertexPacker.PackVertex(_engineStage, _engineDesc, i, DrawPosition(i, Nothing), g.Normals(i), g.Tangents(i), g.Bitangents(i),
+                                             New Vector2(uvw.X, uvw.Y), g.VertexColors(i),
+                                             If(sk.WeightsPerVertex = 4, sk.BoneWeights, Nothing), If(sk.WeightsPerVertex = 4, sk.BoneIndices, Nothing), i * 4,
+                                             If(g.Eyedata IsNot Nothing AndAlso i < g.Eyedata.Length, g.Eyedata(i), 0.0F))
+        End Sub
+
+        Private Sub MarkEngineVertex(i As Integer)
+            If i < _engineMin Then _engineMin = i
+            If i > _engineMax Then _engineMax = i
+        End Sub
+
+        ''' <summary>The view's per-vertex skin matrix IS the engine's blend of this draw's cb10 rows, so the CPU route's stream and the
+        ''' legacy VBOs share one blend and one normal matrix per vertex (review note "performance"): the view skins this shape on the
+        ''' CPU (VistaSkinCpu; its matrices are current, PerVertexMatrixValid), they were written by the engine's blend of the palette
+        ''' GPUBoneMatrices holds (SkinnedGeometry.PerVertexIsEngineBlend), and cb10 = Fo4EngineSkin.PaletteRows(GPUBoneMatrices,
+        ''' MeshData.Transform) folds no transform (MeshData.Transform = Identity: OpenTK's product by the identity gives each element
+        ''' back - a -0 as +0). Otherwise (GPU skinning with the gate's forced route, another law, a transform) the stream blends
+        ''' cb10's rows itself (Fo4EngineVertexPacker.PackCpuRoute).</summary>
+        Private Function EngineSharesViewSkin() As Boolean
+            Dim g = MeshData.Meshgeometry
+            Return VistaSkinCpu() AndAlso g.PerVertexMatrixValid AndAlso g.PerVertexIsEngineBlend AndAlso MeshData.Transform = Matrix4.Identity
+        End Function
+
+        ''' <summary>The legacy VBOs' CPU skin of the dense upload (the inputs and outputs of FastSkin.TransformarDirecto), handed to
+        ''' EngineVbo_All when the stream shares the view's skin (EngineSharesViewSkin).</summary>
+        Private NotInheritable Class ViewSkinArrays
+            Friend Mats As SkinMatricesSoA
+            Friend Lv As Vector3d(), Ln As Vector3(), Lt As Vector3(), Lb As Vector3()
+            Friend Msn As Boolean
+            Friend PosOut As Vector3(), NrmOut As Vector3(), TanOut As Vector3(), BitOut As Vector3()
+        End Class
+
+        ''' <summary>One vertex of the shared CPU skin: the view's matrix and its normal matrix once (FastSkin.MatrizDeNormales), then the
+        ''' legacy law on the legacy inputs (FastSkin.UnVerticeCon, what TransformarDirecto and FastSkin.UnVertice do) and the CPU route's
+        ''' stream on the engine stage's bytes (Fo4EngineVertexPacker.PackCpuRouteBlended). PackOne(i) first: the stream reads them.</summary>
+        Private Sub SkinViewAndCpuRoute(i As Integer, mats As SkinMatricesSoA, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
+                                        msn As Boolean, w() As Single,
+                                        ByRef pos As Vector3, ByRef nrm As Vector3, ByRef tan As Vector3, ByRef bit As Vector3)
+            Dim m = mats(i)
+            Dim e = FastSkin.MatrizDeNormales(m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33)
+            FastSkin.UnVerticeCon(m, e, p, vn, vt, vb, msn, pos, nrm, tan, bit)
+            Fo4EngineVertexPacker.PackCpuRouteBlended(_engineCpuStage, i, _engineStage, _engineCpuInputs, m, e, w)
+        End Sub
+
+        ''' <summary>The CPU route's cb10: the rows the GPU route binds (BindEnginePalette), from the same bones and transform.</summary>
+        Private Sub RefreshCpuPaletteRows()
+            Fo4EngineSkin.PaletteRows(EnginePaletteBones(), MeshData.Transform, _cpuPaletteRows)
+        End Sub
+
+        ''' <summary>The dense upload: every vertex repacked from the live arrays, and the CPU route's stream from those bytes.</summary>
+        Private Sub EngineVbo_All(cpuSkin As Boolean, Optional view As ViewSkinArrays = Nothing)
+            Dim g = MeshData.Meshgeometry
+            If cpuSkin AndAlso view Is Nothing Then RefreshCpuPaletteRows()
+            ' Disjoint slices (vertex i writes _engineStage[i * stride ..], _engineCpuStage[i * CpuRouteFloats ..] and the legacy outputs'
+            ' [i] only) and DrawPosition(i, Nothing) only reads Vertices(i): parallel by ranges, the same pattern and threshold as the
+            ' float upload (RangosDe); the blend scratch is one per range.
+            Dim n = g.Vertices.Length
+            Dim packRange = Sub(r As Tuple(Of Integer, Integer))
+                                Dim w(3) As Single
+                                For i = r.Item1 To r.Item2 - 1
+                                    PackOne(i)
+                                    If view IsNot Nothing Then
+                                        SkinViewAndCpuRoute(i, view.Mats, view.Lv(i), view.Ln(i), view.Lt(i), view.Lb(i), view.Msn, w,
+                                                            view.PosOut(i), view.NrmOut(i), view.TanOut(i), view.BitOut(i))
+                                    ElseIf cpuSkin Then
+                                        Fo4EngineVertexPacker.PackCpuRoute(_engineCpuStage, i, _engineStage, _engineCpuInputs, _cpuPaletteRows, w)
+                                    End If
+                                Next
+                            End Sub
+            If n >= 2000 Then
+                Parallel.ForEach(SkinningHelper.RangosDe(n), packRange)
+            Else
+                packRange(Tuple.Create(0, n))
+            End If
+            _engineMin = 0 : _engineMax = g.Vertices.Length - 1
+            EngineVbo_Flush()
+        End Sub
+
+        Private Sub EngineVbo_Flush()
+            If _engineMax < 0 Then Exit Sub
+            Dim stride = Fo4EngineVertexLayout.Stride(_engineDesc)
+            Dim h = Runtime.InteropServices.GCHandle.Alloc(_engineStage, Runtime.InteropServices.GCHandleType.Pinned)
+            Dim hc = Runtime.InteropServices.GCHandle.Alloc(_engineCpuStage, Runtime.InteropServices.GCHandleType.Pinned)
+            Try
+                GL.BindBuffer(BufferTarget.ArrayBuffer, engineVbo)
+                GL.BufferSubData(BufferTarget.ArrayBuffer, New IntPtr(_engineMin * stride), (_engineMax - _engineMin + 1) * stride, h.AddrOfPinnedObject() + _engineMin * stride)
+                Dim cs = Fo4EngineVertexPacker.CpuRouteFloats * 4
+                GL.BindBuffer(BufferTarget.ArrayBuffer, engineCpuVbo)
+                GL.BufferSubData(BufferTarget.ArrayBuffer, New IntPtr(_engineMin * cs), (_engineMax - _engineMin + 1) * cs, hc.AddrOfPinnedObject() + _engineMin * cs)
+            Finally
+                h.Free() : hc.Free()
+            End Try
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+            _engineMin = Integer.MaxValue : _engineMax = -1
+        End Sub
+
+        Friend Function PrepassAlphaTestOfThisShape() As Boolean
+            Return Fo4RenderPassLaw.Classify(MeshData.Material.Fo4Inputs()).PrepassAlphaTest     ' the call Render.vb:6179-6181 makes today
+        End Function
+
+        ''' <summary>GATE ONLY (N1): the engine stage bytes of this shape.</summary>
+        Friend Function EngineStageBytes() As Byte()
+            Return _engineStage
+        End Function
+
+        ''' <summary>GATE ONLY (G5b): the engine stage's attributes the CPU route reads.</summary>
+        Friend Function EngineCpuInputs() As Fo4EngineVertexPacker.CpuRouteInputs
+            Return _engineCpuInputs
+        End Function
+
+        ''' <summary>GATE ONLY (N1): DrawPosition(i, Nothing) as a System.Numerics.Vector3.</summary>
+        Friend Function EngineDrawPositionF(i As Integer) As System.Numerics.Vector3
+            Dim v = DrawPosition(i, Nothing)
+            Return New System.Numerics.Vector3(CSng(v.X), CSng(v.Y), CSng(v.Z))
+        End Function
+
+        Private _paletteSsbo As Integer, _paletteCap As Integer, _paletteRows As Vector4()
+        ''' <summary>The bones of cb10: GPUBoneMatrices, or one identity bone for a shape without them (its VS reads no palette).</summary>
+        Private Function EnginePaletteBones() As Matrix4()
+            Return If(MeshData.Meshgeometry.GPUBoneMatrices Is Nothing, {Matrix4.Identity}, MeshData.Meshgeometry.GPUBoneMatrices)
+        End Function
+
+        ''' <summary>cb10 of the GPU route (3.6 d, 3.8): Fo4EngineSkin.PaletteRows of GPUBoneMatrices and MeshData.Transform. SSBO binding
+        ''' 10, length 3n rows (the engine's 3n-row buffer, 0x1422304B3..4E4); reads past it return 0 (d3d_cb10). The CPU route's
+        ''' programs read no palette (their blend is the CPU's, of the same rows: the view's per-vertex matrix when EngineSharesViewSkin, else
+        ''' RefreshCpuPaletteRows): nothing is bound.</summary>
+        Friend Sub BindEnginePalette(cpuRoute As Boolean)
+            If cpuRoute Then Exit Sub
+            Fo4EngineSkin.PaletteRows(EnginePaletteBones(), MeshData.Transform, _paletteRows)
+            If _paletteSsbo = 0 Then _paletteSsbo = GL.GenBuffer()
+            GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _paletteSsbo)
+            If _paletteCap < _paletteRows.Length * 16 Then
+                _paletteCap = _paletteRows.Length * 16
+                GL.BufferData(BufferTarget.ShaderStorageBuffer, _paletteCap, _paletteRows, BufferUsageHint.DynamicDraw)
+            Else
+                GL.BufferSubData(BufferTarget.ShaderStorageBuffer, IntPtr.Zero, _paletteRows.Length * 16, _paletteRows)
+            End If
+            GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 10, _paletteSsbo)
+        End Sub
+
+        ''' <summary>The view skins this shape on the CPU: CPU skinning chosen and the per-vertex skin (FastSkin) computed for it. A rigid
+        ''' shape (no PerVertexSkinMatrix) never does, whatever the setting. The base of the two owners below: the legacy VBOs'
+        ''' skinning (UpdateSkinBuffers_GL) reads it directly, the engine stage through EngineCpuRoute (review rev-05).</summary>
+        Friend Function VistaSkinCpu() As Boolean
+            Return Not Config_App.Current.Setting_GPUSkinning AndAlso MeshData.Meshgeometry.PerVertexSkinMatrix IsNot Nothing
+        End Function
+
+        ''' <summary>⛔ The one owner of "this shape's engine vertex stage takes the CPU route" (revisor-29, review rev-05): the gate's
+        ''' forced route or VistaSkinCpu. Setup, the CPU stream's three uploads (EngineVbo_Setup, the dense and the sparse branch of
+        ''' UpdateSkinBuffers_GL), the constants and the VAO read only this.</summary>
+        Friend Function EngineCpuRoute() As Boolean
+            Return GateForceEngineCpuRoute OrElse VistaSkinCpu()
+        End Function
+
+        ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant (revisor-29). True forces the CPU route on every shape.</summary>
+        Friend Shared GateForceEngineCpuRoute As Boolean = False
+
+        ''' <summary>The colour pass's draw of this shape (H6): a program with the engine's HS / DS draws 3-control-point patches
+        ''' (0x14181D60E: D3D11_PRIMITIVE_TOPOLOGY 0x23); every other program draws triangles, as before.</summary>
+        Private Sub DrawGbuf(p As Shader_Base_Class)
+            If p IsNot Nothing AndAlso p.HasTessellation Then
+                GL.PatchParameter(PatchParameterInt.PatchVertices, 3)                 ' 0x14181D60E: 3_CONTROL_POINT_PATCHLIST
+                GL.DrawElements(PrimitiveType.Patches, indexCount, DrawElementsType.UnsignedInt, 0)
+            Else
+                GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+            End If
+        End Sub
+
+        ''' <summary>The VAO of a G-buffer draw of technique <paramref name="technique"/>: the GPU route's, or on the CPU route the one of
+        ''' its VS's CPU layout (a rigid VS has one route: the GPU route's VAO).</summary>
+        Friend Function EngineVaoFor(cpuRoute As Boolean, technique As UInteger) As Integer
+            Select Case Fo4GBufferSource.EffectiveCpuLayout(New Fo4Technique(technique).Key().Vs, cpuRoute)
+                Case Fo4CpuRouteLayout.Tbn : Return engineVaoCpuTbn
+                Case Fo4CpuRouteLayout.Rows : Return engineVaoCpuRows
+                Case Else : Return engineVaoGbuf
+            End Select
+        End Function
+
+        ''' <summary>cb2 World of this geometry, the ONE writer of the G-buffer and the prepass: SetupGeometry 0x142205B77..0x142205BF0
+        ''' takes the geometry's world NiTransform (r14 + 0x70, 0x1422059AE: NiAVObject world - rotation rows x scale, translation)
+        ''' and writes its rows (0x142205C68..0x142205CA9); the prepass writes the same composition (0x141828AEC..B5F). The app's
+        ''' world of a rigid shape = its palette's one matrix (SkinningHelper.RecomputeGPUBoneMatrices: ShapeGlobalTransform, what
+        ''' Vertex_FO4 draws it with) x MeshData.Transform.</summary>
+        Friend Function EngineGeometryWorld() As Vector4()
+            If GateWorldIdentity Then Return Fo4GBufferConstants.EngineWorldRows(Matrix4.Identity)
+            Dim g = MeshData.Meshgeometry.GPUBoneMatrices
+            Return Fo4GBufferConstants.EngineWorldRows(If(g IsNot Nothing AndAlso g.Length > 0, g(0), Matrix4.Identity) * MeshData.Transform)
+        End Function
+
+        ''' <summary>GATE ONLY (no UI): ShadowGate --overlay-z-probe mutant. True draws an FO4 overlay with Vertex_FO4's own position
+        ''' (the law before 12-oct-2026) instead of its host's engine vertex stage (EnginePositions).</summary>
+        Friend Shared GateOverlayOwnPosition As Boolean = False
+
+        Private _enginePosBuffer As Integer, _enginePosCap As Integer, _enginePosFrame As Integer = -1
+
+        ''' <summary>The frame's notice for an overlay whose host is drawn by an engine stage that EnginePositions cannot capture (UI
+        ''' English).</summary>
+        Friend Const OverlayTessellatedHostNotice As String = "Overlay on a tessellated host: drawn with the app's position, not its host's engine stage"
+        Friend Const OverlayNoPositionProgramNotice As String = "Overlay whose host's engine stage could not be built for capture: drawn with the app's position, not its host's engine stage"
+
+        ''' <summary>THE POSITION OF AN FO4 OVERLAY (user decision 12-oct-2026): an overlay layer of this shape is, in the game, a clone
+        ''' that shares its skin (F4EE COPY_EXACT, ApplyMaterialData 0x1421715E0), drawn in the forward alpha list (0x1421D7120) by an
+        ''' effect VS whose position chain is this shape's G-buffer VS's instruction for instruction (b05 rec0042 against b09 rec2304,
+        ''' see Vertex_FO4's header), LESS_EQUAL with write and no bias: its depth is the body's. So the clip position of each vertex
+        ''' is this shape's own engine vertex stage's output - the same VS (Fo4DeferredPrograms.EnginePositionProgram), route, VAO,
+        ''' constants and palette as its G-buffer draw (BindEngineVertexStage) - captured by transform feedback once per frame and
+        ''' bound as SSBO 14 for Vertex_FO4 (bEnginePosition). False (Vertex_FO4's own position) outside Fallout 4's deferred frame, or
+        ''' when this shape has no engine G-buffer draw (a gap, a BGEM host): then its own draw is not an engine stage's either.</summary>
+        Friend Function EnginePositions() As Boolean
+            Dim pm = Me.ParentModel
+            If GateOverlayOwnPosition OrElse pm Is Nothing OrElse Not pm.FrameUsesFo4Deferred OrElse engineVbo = 0 Then Return False
+            Dim programs = pm.ParentControl.SharedFo4Deferred
+            Dim d = MeshData.Material.Fo4GBufferPass(programs)
+            If Not d.HasValue OrElse d.Value.Gap <> "" OrElse d.Value.Program Is Nothing Then Return False
+            Dim t = d.Value.Technique
+            Dim key = New Fo4Technique(t).Key()
+            ' The host IS drawn by an engine stage but its position cannot be captured: the overlay keeps the app's position, said so.
+            If key.Hs <> 0UI Then                                        ' a tessellated host: its last stage's vertices are not the mesh's
+                pm.ReportUndrawn(NoticeName(Nothing), OverlayTessellatedHostNotice, FrameNoticeKind.DrawnDifferently)
+                Return False
+            End If
+            Dim cpu = EngineCpuRoute()
+            Dim p = programs.EnginePositionProgram(key.Vs, cpu)
+            If p Is Nothing Then
+                pm.ReportUndrawn(NoticeName(Nothing), OverlayNoPositionProgramNotice, FrameNoticeKind.DrawnDifferently)
+                Return False
+            End If
+            Dim n = MeshData.Meshgeometry.Vertices.Length
+            If _enginePosFrame <> pm.FrameSerial OrElse pm.FrameSerial < 0 Then
+                If _enginePosBuffer = 0 Then _enginePosBuffer = GL.GenBuffer()
+                If _enginePosCap < n * 16 Then
+                    _enginePosCap = n * 16
+                    GL.BindBuffer(BufferTarget.TransformFeedbackBuffer, _enginePosBuffer)
+                    GL.BufferData(BufferTarget.TransformFeedbackBuffer, _enginePosCap, IntPtr.Zero, BufferUsageHint.DynamicCopy)
+                End If
+                p.Use()
+                BindEngineVertexStage(p, MeshData.Material, cpu, t)
+                GL.BindBufferRange(BufferRangeTarget.TransformFeedbackBuffer, 0, _enginePosBuffer, IntPtr.Zero, New IntPtr(n * 16))
+                GL.Enable(EnableCap.RasterizerDiscard)
+                GL.BindVertexArray(EngineVaoFor(cpu, t))
+                GL.BeginTransformFeedback(TransformFeedbackPrimitiveType.Points)
+                GL.DrawArrays(PrimitiveType.Points, 0, n)
+                GL.EndTransformFeedback()
+                GL.Disable(EnableCap.RasterizerDiscard)
+                GL.BindVertexArray(0)
+                GL.BindBufferBase(BufferRangeTarget.TransformFeedbackBuffer, 0, 0)
+                _enginePosFrame = pm.FrameSerial
+            End If
+            GL.BindBufferRange(BufferRangeTarget.ShaderStorageBuffer, 14, _enginePosBuffer, IntPtr.Zero, New IntPtr(n * 16))
+            Return True
+        End Function
+
+        ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-gbuffer-scenes (12) mutant. True binds World = the identity (the law before the
+        ''' fix of 12-oct-2026: MeshData.Transform alone).</summary>
+        Friend Shared GateWorldIdentity As Boolean = False
+
+        ''' <summary>The engine VS's constants of this draw (H6): World, TexcoordOffset, the frame rows, the palette, and the app foot's
+        ''' uniforms (mask / weight / zap). World only for a technique without bit 2 (rigid): SetupGeometry skips its block for a
+        ''' skinned technique (0x142205B6D test r15b, 4 / jne 0x142205CCA; r15d = the technique, 0x142205717) and no transcribed
+        ''' skinned VS reads it (0 of 122; 34 of the 42 rigid ones do).</summary>
+        Friend Sub BindEngineVertexStage(p As Shader_Base_Class, material As MaterialData, cpuRoute As Boolean, technique As UInteger)
+            If (technique And 4UI) = 0UI Then
+                p.SetVector4Array("World", EngineGeometryWorld())
+            End If
+            Dim uv = material.RestUv()
+            p.SetVector4("TexcoordOffset", Fo4GBufferConstants.TexcoordOffset(uv.Offset, uv.Scale))
+            Dim fr = Me.ParentModel.FrameEngineRows
+            p.SetVector4Array("cb12_view", fr.View)
+            p.SetVector4Array("cb12_viewproj", fr.ViewProj)
+            p.SetVector4("cb12_35", fr.Eye)
+            BindEnginePalette(cpuRoute)
+        End Sub
         ''' <summary>S-W: scratch of the CPU-skinning upload's displaced local positions (sized up, never down: the policy of _upPos,
         ''' EnsureUploadScratch).</summary>
         Private _upLeafPos() As Vector3d
@@ -4933,7 +5330,7 @@ Public Class PreviewModel
         ''' <paramref name="leafN"/> the TREE_ANIM rest pose (SseRenderPassLaw.LeafRestPosition = o2 of VS rec 3993) BEFORE skinning, as
         ''' VS rec 3994 does. The data (Meshgeometry.Vertices) is never displaced: what the user edits and saves is the NIF.</summary>
         Private Function DrawPosition(i As Integer, leafN As List(Of System.Numerics.Vector3)) As Vector3d
-            Dim v = MeshData.Meshgeometry.Vertices(i)
+            Dim v = Fo4EngineVertexPacker.HalfRound(MeshData.Meshgeometry.Vertices(i), Not _vboHalfPositions)   ' ola 2: the NIF's precision (FO4)
             If leafN Is Nothing Then Return v
             Dim n = leafN(i)
             Dim p = SseRenderPassLaw.LeafRestPosition(New Vector3(CSng(v.X), CSng(v.Y), CSng(v.Z)), New Vector3(n.X, n.Y, n.Z),
@@ -4955,7 +5352,8 @@ Public Class PreviewModel
             If MeshData Is Nothing Then Exit Sub
             Dim v = MeshData.Meshgeometry.Vertices
             If v Is Nothing OrElse v.Length = 0 OrElse vboPosition = 0 Then Exit Sub
-            If (LeafRawNormals() IsNot Nothing) = _vboLeafPose Then Exit Sub
+            If (LeafRawNormals() IsNot Nothing) = _vboLeafPose AndAlso WantsFo4Quantization() = _vboQuantized Then Exit Sub
+            _vboQuantized = WantsFo4Quantization() : _vboHalfPositions = _vboQuantized AndAlso ((MaterialData.VertexDescValue(MeshData.Shape.NifShape) >> 44) And &H400UL) = 0UL
             MeshData.Meshgeometry.dirtyVertexIndices.MarcarTodos(v.Length)
             Array.Fill(MeshData.Meshgeometry.dirtyVertexFlags, True)
             UpdateSkinBuffers_GL(recomputeBounds:=False)
@@ -4986,7 +5384,10 @@ Public Class PreviewModel
                 Const elementSize As Integer = 3 * 4
                 Dim vertexCount As Integer = MeshData.Meshgeometry.Vertices.Length
                 Dim totalBytes As Integer = vertexCount * elementSize
-                Dim cpuSkin As Boolean = Not gpuMode AndAlso MeshData.Meshgeometry.PerVertexSkinMatrix IsNot Nothing
+                Dim cpuSkin As Boolean = VistaSkinCpu()
+                ' The engine stage's CPU route (review rev-05): its one owner, EngineCpuRoute, for the stream's two uploads below.
+                Dim engineCpu As Boolean = EngineCpuRoute()
+                Dim engineDone As Boolean = False
 
                 ' O3.1: Smart threshold — full BufferSubData upload when >60% vertices are dirty
                 If MeshData.Meshgeometry.dirtyVertexIndices.Count > vertexCount * 0.6 Then
@@ -5006,10 +5407,10 @@ Public Class PreviewModel
                     If cpuSkin Then
                         ' CPU skinning: transform local ? world using PerVertexSkinMatrix
                         Dim mats = MeshData.Meshgeometry.PerVertexSkinMatrix
-                        Dim lv = If(leafN Is Nothing, MeshData.Meshgeometry.Vertices, LeafDrawPositions(leafN, vertexCount))
-                        Dim ln = MeshData.Meshgeometry.Normals
-                        Dim lt = MeshData.Meshgeometry.Tangents
-                        Dim lb = MeshData.Meshgeometry.Bitangents
+                        Dim lv = If(leafN Is Nothing AndAlso Not _vboHalfPositions, MeshData.Meshgeometry.Vertices, LeafDrawPositions(leafN, vertexCount))
+                        Dim ln = QuantizedOrSame(MeshData.Meshgeometry.Normals)
+                        Dim lt = QuantizedOrSame(MeshData.Meshgeometry.Tangents)
+                        Dim lb = QuantizedOrSame(MeshData.Meshgeometry.Bitangents)
                         Dim isMSN As Boolean = MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals
                         ' Normal matrix SIEMPRE POR VERTICE, para coincidir con el `skinNormalMat` per-vertex
                         ' del shader GPU. Cachear una sola cuando mats(0) == mats(vertexCount-1) es un falso
@@ -5019,8 +5420,16 @@ Public Class PreviewModel
                         ' (escalar y vectorial) que un gate compara BIT A BIT a los dos anchos de vector. Es el
                         ' hotpath del frame con skinning CPU: una inversa 3x3 por vertice/malla/frame en Double,
                         ' 9,3 ms de un frame de ~20 sobre 130.500 vertices, contra 1,3 ms de las 4 subidas de VBO.
-                        SkinningHelper.FastSkinTransformar(mats, lv, ln, lt, lb, isMSN, vertexCount,
-                                                           posF, nrmF, tanF, bitanF)
+                        If engineVbo > 0 AndAlso engineCpu AndAlso EngineSharesViewSkin() Then
+                            ' One blend and one normal matrix per vertex for the legacy VBOs and the CPU route's stream (review note
+                            ' "performance"): the engine stage is packed here, before the legacy uploads.
+                            EngineVbo_All(True, New ViewSkinArrays With {.Mats = mats, .Lv = lv, .Ln = ln, .Lt = lt, .Lb = lb, .Msn = isMSN,
+                                                                         .PosOut = posF, .NrmOut = nrmF, .TanOut = tanF, .BitOut = bitanF})
+                            engineDone = True
+                        Else
+                            SkinningHelper.FastSkinTransformar(mats, lv, ln, lt, lb, isMSN, vertexCount,
+                                                               posF, nrmF, tanF, bitanF)
+                        End If
                     Else
                         ' GPU skinning: upload local-space as-is
                         Dim gn = MeshData.Meshgeometry.Normals
@@ -5039,9 +5448,9 @@ Public Class PreviewModel
                                 For i = rango.Item1 To rango.Item2 - 1
                                     Dim vv = DrawPosition(i, leafN) : posF(i) = New Vector3(CSng(vv.X), CSng(vv.Y), CSng(vv.Z))
                                     ' N/T/B ya son Single: copia de struct, sin conversion.
-                                    nrmF(i) = gn(i)
-                                    tanF(i) = gt(i)
-                                    bitanF(i) = gb(i)
+                                    nrmF(i) = If(_vboQuantized, Fo4EngineVertexPacker.RoundTrip(gn(i)), gn(i))
+                                    tanF(i) = If(_vboQuantized, Fo4EngineVertexPacker.RoundTrip(gt(i)), gt(i))
+                                    bitanF(i) = If(_vboQuantized, Fo4EngineVertexPacker.RoundTrip(gb(i)), gb(i))
                                 Next
                             End Sub
                         If vertexCount >= 2000 Then
@@ -5087,6 +5496,7 @@ Public Class PreviewModel
                         _swSkinPhase.Restart()
                     End If
 
+                    If engineVbo > 0 AndAlso Not engineDone Then EngineVbo_All(engineCpu)
                     ' Clear all dirty flags since everything was updated.
                     ' `Array.Clear` Y NO UN BUCLE POR INDICE: para entrar a esta rama hacen falta MAS DEL 60 %
                     ' de los vertices sucios (~78.000 indices sobre el Serena Battle Suit), o sea 78.000 lecturas
@@ -5138,6 +5548,11 @@ Public Class PreviewModel
                 ' record _vboLeafPose: RefreshLeafPose_GL re-uploads everything when the state changed.
                 Dim sparseLeaf = LeafRawNormals()
                 Dim sparseIsMSN As Boolean = cpuSkin AndAlso MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals
+                ' The engine stage's CPU route: the view's blend when it is the engine's of cb10 (EngineSharesViewSkin), else its own blend
+                ' of cb10 as the GPU route binds it (one refresh per upload).
+                Dim engineShares As Boolean = engineVbo > 0 AndAlso engineCpu AndAlso cpuSkin AndAlso EngineSharesViewSkin()
+                If engineVbo > 0 AndAlso engineCpu AndAlso Not engineShares Then RefreshCpuPaletteRows()
+                Dim engineW(3) As Single
                 ' NOTA: la optimizacion de cachear cachedNM3 basada en comparar sparseMats(0)
                 ' con sparseMats(vertexCount-1) se removio — daba falsos positivos para
                 ' shapes donde primer y ultimo vertex comparten bone pero el medio no, y
@@ -5158,11 +5573,21 @@ Public Class PreviewModel
                         ' hacia que la misma malla saliera con una ley u otra segun cuantos vecinos se
                         ' hubieran ensuciado ese frame (el umbral del 60 % de mas arriba).
                         Dim pS As Vector3, nS As Vector3, tS As Vector3, bS As Vector3
-                        SkinningHelper.FastSkinUnVertice(sparseMats(i), DrawPosition(i, sparseLeaf),
-                                                         MeshData.Meshgeometry.Normals(i),
-                                                         MeshData.Meshgeometry.Tangents(i),
-                                                         MeshData.Meshgeometry.Bitangents(i),
-                                                         sparseIsMSN, pS, nS, tS, bS)
+                        If engineShares Then
+                            PackOne(i)
+                            SkinViewAndCpuRoute(i, sparseMats, DrawPosition(i, sparseLeaf),
+                                                Q(MeshData.Meshgeometry.Normals(i)),
+                                                Q(MeshData.Meshgeometry.Tangents(i)),
+                                                Q(MeshData.Meshgeometry.Bitangents(i)),
+                                                sparseIsMSN, engineW, pS, nS, tS, bS)
+                            MarkEngineVertex(i)
+                        Else
+                            SkinningHelper.FastSkinUnVertice(sparseMats(i), DrawPosition(i, sparseLeaf),
+                                                             Q(MeshData.Meshgeometry.Normals(i)),
+                                                             Q(MeshData.Meshgeometry.Tangents(i)),
+                                                             Q(MeshData.Meshgeometry.Bitangents(i)),
+                                                             sparseIsMSN, pS, nS, tS, bS)
+                        End If
                         buf(0) = pS.X : buf(1) = pS.Y : buf(2) = pS.Z
                         Marshal.Copy(buf, 0, baseP, 3)
                         buf(0) = nS.X : buf(1) = nS.Y : buf(2) = nS.Z
@@ -5176,18 +5601,19 @@ Public Class PreviewModel
                         Dim v = DrawPosition(i, sparseLeaf)
                         buf(0) = v.X : buf(1) = v.Y : buf(2) = v.Z
                         Marshal.Copy(buf, 0, baseP, 3)
-                        Dim n = MeshData.Meshgeometry.Normals(i)
+                        Dim n = Q(MeshData.Meshgeometry.Normals(i))
                         buf(0) = n.X : buf(1) = n.Y : buf(2) = n.Z
                         Marshal.Copy(buf, 0, baseN, 3)
-                        Dim t = MeshData.Meshgeometry.Tangents(i)
+                        Dim t = Q(MeshData.Meshgeometry.Tangents(i))
                         buf(0) = t.X : buf(1) = t.Y : buf(2) = t.Z
                         Marshal.Copy(buf, 0, baseT, 3)
-                        Dim b = MeshData.Meshgeometry.Bitangents(i)
+                        Dim b = Q(MeshData.Meshgeometry.Bitangents(i))
                         buf(0) = b.X : buf(1) = b.Y : buf(2) = b.Z
                         Marshal.Copy(buf, 0, baseB, 3)
                         Dim nPre = MeshData.Meshgeometry.Normals(i) : buf(0) = nPre.X : buf(1) = nPre.Y : buf(2) = nPre.Z : Marshal.Copy(buf, 0, ptrPre + offsetBytes, 3)
                     End If
 
+                    If engineVbo > 0 AndAlso Not engineShares Then EngineVbo_One(i, engineCpu, engineW)
                     MeshData.Meshgeometry.dirtyVertexFlags(i) = False
                 Next
 
@@ -5211,6 +5637,7 @@ Public Class PreviewModel
                 GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
 
                 MeshData.Meshgeometry.dirtyVertexIndices.Clear()
+                If engineVbo > 0 Then EngineVbo_Flush()
                 ' S-O1: the eye's reflection centres follow the positions (all of them: an eye is a few hundred vertices).
                 UploadEyeCenters_GL(cpuSkin)
                 ' Recompute AABB after sparse update — bounds are needed for frustum culling
@@ -5537,6 +5964,9 @@ Public Class PreviewModel
             vboMask = GL.GenBuffer()
 
             Dim count = MeshData.Meshgeometry.Vertices.Length
+            _vboQuantized = WantsFo4Quantization()
+            _vboHalfPositions = _vboQuantized AndAlso ((MaterialData.VertexDescValue(MeshData.Shape.NifShape) >> 44) And &H400UL) = 0UL
+            _engineDesc = If(_vboQuantized, MaterialData.VertexDescValue(MeshData.Shape.NifShape), 0UL)
 
             GL.BindVertexArray(vao)
 
@@ -5552,9 +5982,9 @@ Public Class PreviewModel
             ' creacion de buffers alocaba tres arrays float de la malla entera solo para convertir
             ' desde Double — 36 B por vertice de basura y un barrido de N por shape. El valor que sube
             ' a la GPU es exactamente el mismo: el ConvertAll hacia esa misma narrowing.
-            Dim nrmF() As Vector3 = MeshData.Meshgeometry.Normals
-            Dim tanF() As Vector3 = MeshData.Meshgeometry.Tangents
-            Dim bitanF() As Vector3 = MeshData.Meshgeometry.Bitangents
+            Dim nrmF() As Vector3 = QuantizedOrSame(MeshData.Meshgeometry.Normals)
+            Dim tanF() As Vector3 = QuantizedOrSame(MeshData.Meshgeometry.Tangents)
+            Dim bitanF() As Vector3 = QuantizedOrSame(MeshData.Meshgeometry.Bitangents)
 
             ' POSICIONES — DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboPosition)
@@ -5653,6 +6083,7 @@ Public Class PreviewModel
             ' EBO
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
             GL.BufferData(BufferTarget.ElementArrayBuffer, MeshData.Meshgeometry.Indices.Length * 4, DrawOrderIndices(), BufferUsageHint.StaticDraw)
+            If _vboQuantized Then EngineVbo_Setup()
             GL.BindVertexArray(0)
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
             indexCount = MeshData.Meshgeometry.Indices.Length
@@ -6173,15 +6604,7 @@ Public Class PreviewModel
                 shader.SetFloat("ssePrepassThrG", pass.PrepassThreshold)
                 shader.SetFloat("ssePrepassThrS", SseRenderPassLaw.SubgroupThreshold(inp))
             Else
-                ' FO4 (Fo4RenderPassLaw, 10): the 0x1A test; the vertex alpha the VS passes is the geometry's own when it
-                ' has a COLOR stream (the prepass ignores the display toggles of the lit pass).
-                Dim inp = material.Fo4Inputs()
-                Dim pass = Fo4RenderPassLaw.Classify(inp)
-                shader.SetBool("bFo4Prepass", True)
-                shader.SetBool("bFo4PrepassAlphaTest", pass.PrepassAlphaTest)
-                shader.SetBool("bFo4PrepassVertexAlpha", inp.HasColorStream)
-                shader.SetBool("bShowVertexAlpha", inp.HasColorStream)
-                shader.SetFloat("fo4PrepassThreshold", pass.PrepassThreshold)
+                Throw New InvalidOperationException("FO4 prepass: DrawFo4EnginePrepass (ola 2)")
             End If
             GL.Disable(EnableCap.Blend)
             GL.Disable(EnableCap.PolygonOffsetFill)     ' bias 0 in the prepass (14.3)
@@ -6189,6 +6612,35 @@ Public Class PreviewModel
             GL.Enable(EnableCap.DepthTest)
             GL.DepthFunc(SsePrepassDepthFunc)
             GL.DepthMask(True)
+        End Sub
+
+        ''' <summary>FO4 z-prepass (0x14181FAA0): engine VS 3928 without a PS (rigid, group 0x19) or VS 3929 + PS 3930 (alpha test, 0x1A),
+        ''' over the prepass VAO (desc masks 0x141828B77 / 0x141828E34); cb2[0..3] = World (0x141828AEC..B5F, the SAME EngineWorldRows),
+        ''' cb2[0].x = the threshold (0x141828F45..F65), cb2[0].y = 0 with a COLOR stream else 10000, cb2[4] = TexcoordOffset; colour off
+        ''' (write mode 0, 0x1421F3A3E). Skinned shapes never get here (mask 0x33480684, RE_FO4_PASS_GROUPS_DEPTH 10.4).</summary>
+        Private Sub DrawFo4EnginePrepass(material As MaterialData, faceMode As Integer)
+            Dim inp = material.Fo4Inputs()
+            Dim pass = Fo4RenderPassLaw.Classify(inp)
+            Dim progs = Me.ParentModel.ParentControl.SharedFo4Deferred
+            Dim p = If(pass.PrepassAlphaTest, progs.PrepassAlpha, progs.PrepassRigid)
+            p.Use()
+            Dim w = EngineGeometryWorld()
+            Dim uv = material.RestUv()
+            p.SetVector4Array("cb2", {New Vector4(w(0).X, w(0).Y, w(0).Z, w(0).W), w(1), w(2), w(3), Fo4GBufferConstants.TexcoordOffset(uv.Offset, uv.Scale)})
+            If pass.PrepassAlphaTest Then p.SetVector4("cb2_ps0", New Vector4(pass.PrepassThreshold, If(inp.HasColorStream, 0.0F, 10000.0F), 0.0F, 0.0F))
+            Dim fr = Me.ParentModel.FrameEngineRows
+            p.SetVector4Array("cb12_viewproj", fr.ViewProj)
+            p.SetVector4("cb12_35", fr.Eye)
+            GL.Disable(EnableCap.Blend)
+            GL.Disable(EnableCap.PolygonOffsetFill)
+            GL.ColorMask(False, False, False, False)
+            GL.Enable(EnableCap.DepthTest)
+            GL.DepthFunc(SsePrepassDepthFunc)
+            GL.DepthMask(True)
+            ApplyFaceMode(faceMode)
+            GL.BindVertexArray(engineVaoPrepass)
+            GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+            GL.BindVertexArray(0)
         End Sub
 
         ''' <summary>The base depth draw of a translucent decal (both games, PreviewModel.DrawOpaqueStage; user decisions 5-oct-2026 and
@@ -6351,16 +6803,20 @@ Public Class PreviewModel
                 shader.SetBool("uSseDecalBaseSurface", False)
                 GL.Disable(EnableCap.Blend)
             Else
-                If Not PreviewModel.GateDecalBaseNoSurface Then
+                ' A translucent decal drawn WITHOUT a G-buffer draw (an effect decal: no engine vertex stage until ola 3 transcribes the
+                ' effects) keeps the surface it had before ola 2 (user decision 12-oct-2026, D16: no regression of "a decal alone is seen
+                ' as laid on something"): Vertex_FO4 + Fragment_DecalBaseSurfaceEffect, the fixed program DecalBaseSurfaceEffect, with
+                ' the same constants as then (the background's were BeginFo4DecalBase's).
+                If Not gbuf.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
                     target.SurfaceDrawStencil()
-                    ' The six G-buffer RTs unblended (the premultiplied surface); the coverage target (buffer 6) accumulates a.
                     GL.Disable(EnableCap.Blend)
                     GL.Enable(IndexedEnableCap.Blend, 6)
                     GL.BlendFunc(6, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
                     GL.ColorMask(6, False, False, False, True)
-                    Dim p = pm.ParentControl.SharedFo4Deferred.DecalBaseSurface
+                    Dim p = pm.ParentControl.SharedFo4Deferred.DecalBaseSurfaceEffect
                     Dim mb = material.MaterialBase
                     p.Use()
+                    pm.ParentControl.SubirUniformsDeFondo(p)
                     p.SetMatrix4("matProjection", projection)
                     p.SetMatrix4("matView", view)
                     p.SetMatrix4("matModel", model)
@@ -6380,6 +6836,30 @@ Public Class PreviewModel
                     target.WithAlphaBound(2, Sub() GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0))
                     GL.Disable(EnableCap.Blend)
                 End If
+                If gbuf.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
+                    target.SurfaceDrawStencil()
+                    ' The six G-buffer RTs unblended (the premultiplied surface); the coverage target (buffer 6) accumulates a.
+                    GL.Disable(EnableCap.Blend)
+                    GL.Enable(IndexedEnableCap.Blend, 6)
+                    GL.BlendFunc(6, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
+                    GL.ColorMask(6, False, False, False, True)
+                    Dim p = pm.ParentControl.SharedFo4Deferred.DecalBaseSurfaceProgram(New Fo4Technique(gbuf.Value.Technique), EngineCpuRoute())
+                    If p Is Nothing Then Exit Sub
+                    Dim mb = material.MaterialBase
+                    p.Use()
+                    pm.ParentControl.SubirUniformsDeFondo(p)                       ' was BeginFo4DecalBase's (one program per tuple now)
+                    BindEngineVertexStage(p, material, EngineCpuRoute(), gbuf.Value.Technique)
+                    p.SetBool("bModelSpace", mb.ModelSpaceNormals)
+                    p.SetBool("bDoubleSided", mb.TwoSided)
+                    p.SetInt("uBaseOpacity", opacity)
+                    pm.EnsureFrameShadowUniforms(p)
+                    p.Use()
+                    target.WithAlphaBound(2, Sub()
+                                                 GL.BindVertexArray(EngineVaoFor(EngineCpuRoute(), gbuf.Value.Technique))
+                                                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                                             End Sub)
+                    GL.Disable(EnableCap.Blend)
+                End If
                 shader.Use()
                 Dim coverage = DecalCoverageMode(material, gbuf, False)
                 If coverage <> 2 AndAlso Not PreviewModel.GateDecalBaseNoCoverage Then
@@ -6394,7 +6874,7 @@ Public Class PreviewModel
                         GL.Enable(EnableCap.ColorLogicOp)
                         GL.LogicOp(LogicOp.Set)
                     End If
-                    GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                    DrawGbuf(shader)
                     GL.Disable(EnableCap.ColorLogicOp)
                     GL.LogicOp(LogicOp.Copy)
                     GL.Disable(EnableCap.Blend)
@@ -6408,7 +6888,7 @@ Public Class PreviewModel
         Private Function DecalBaseProgram(colour As Shader_Base_Class, ByRef gbuf As Fo4GBufferDraw?) As Shader_Base_Class
             If Not gbuf.HasValue Then Return colour
             Dim d = gbuf.Value
-            d.Program = Me.ParentModel.ParentControl.SharedFo4Deferred.DecalBaseProgram(Fo4GBufferTechnique.PixelShaderId(d.Technique))
+            d.Program = Me.ParentModel.ParentControl.SharedFo4Deferred.DecalBaseProgram(New Fo4Technique(d.Technique), EngineCpuRoute())
             gbuf = d
             Return d.Program
         End Function
@@ -6502,7 +6982,7 @@ Public Class PreviewModel
             End If
 
             '=============================== DRAW ===============================
-            GL.BindVertexArray(vao)
+            GL.BindVertexArray(If(gbuf.HasValue, EngineVaoFor(EngineCpuRoute(), gbuf.Value.Technique), vao))
             ' Clean CPU-side zap: filter the element buffer to drop zapped triangles before drawing,
             ' so indexCount is correct for the DrawElements calls below. Cheap (re-uploads only when
             ' the zapped vertex set changes); no-op when ApplyZaps is off or nothing is zapped.
@@ -6511,12 +6991,17 @@ Public Class PreviewModel
             Dim faceMode = ResolveDrawFaceMode(MeshData.Material)
             Dim writeDepth As Boolean = ResolveColourDepthState(MeshData.Material).Write
 
+            If ssePrepass AndAlso Not Me.ParentModel.FrameIsSse Then
+                DrawFo4EnginePrepass(MeshData.Material, faceMode)
+                If ssbo_BoneMatrices > 0 Then GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
+                Return
+            End If
             If ssePrepass Then
                 ApplySsePrepassState(shader, MeshData.Material)
                 ApplyFaceMode(faceMode)
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
                 UnbindMaterialSamplers()
-                shader.SetBool(If(Me.ParentModel.FrameIsSse, "bSsePrepass", "bFo4Prepass"), False)
+                shader.SetBool("bSsePrepass", False)
                 If ssbo_BoneMatrices > 0 Then GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
                 GL.DepthMask(True)
                 GL.DepthFunc(DepthFunction.Lequal)
@@ -6534,7 +7019,7 @@ Public Class PreviewModel
             If decalBase = DecalBaseStep.Depth Then
                 ApplyDecalBaseState(shader, MeshData.Material, gbuf)
                 ApplyFaceMode(faceMode)
-                GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                DrawGbuf(shader)
                 EndDecalBaseDraw(shader, gbuf)
             ElseIf decalBase = DecalBaseStep.Surface Then
                 ApplyFaceMode(faceMode)
@@ -6545,13 +7030,13 @@ Public Class PreviewModel
 
                 GL.CullFace(TriangleFace.Front)
                 GL.DepthMask(False)
-                GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                DrawGbuf(shader)
                 GL.CullFace(TriangleFace.Back)
                 GL.DepthMask(writeDepth)
-                GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                DrawGbuf(shader)
             Else
                 ApplyFaceMode(faceMode)
-                GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                DrawGbuf(shader)
             End If
 
             ' GPU Skinning: unbind SSBO after draw — prevents contamination of binding 0
@@ -6863,10 +7348,14 @@ Public Class PreviewModel
             ' Bind the LAYER's material (transient MaterialData with OverrideRelatedMaterial).
             Dim overlayMat = GetOverlayMaterialData(layer)
             Dim gbuf As Fo4GBufferDraw? = Nothing
+            ' The position of the overlay = this shape's engine vertex stage's (EnginePositions), captured before the overlay's
+            ' program is in use. DECLARED GAP until ola 3: the rest of the game's effect VS (colour, uv, falloff) is Vertex_FO4's.
+            Dim enginePos = Not ssePrepass AndAlso EnginePositions()
             Dim shader = ColourDrawProgram(overlayMat, ssePrepass, gbuf)
             If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
             If shader Is Nothing Then Exit Sub
             shader.Use()
+            shader.SetBool("bEnginePosition", enginePos)
             shader.SetMatrix4("matProjection", projection)
             shader.SetMatrix4("matView", view)
             shader.SetMatrix4("matModel", model)
@@ -6903,7 +7392,7 @@ Public Class PreviewModel
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
             End If
             UnbindMaterialSamplers()
-            If ssePrepass Then shader.SetBool(If(Me.ParentModel.FrameIsSse, "bSsePrepass", "bFo4Prepass"), False)
+            If ssePrepass Then shader.SetBool("bSsePrepass", False)
             If decalBase <> DecalBaseStep.None Then EndDecalBaseDraw(shader, gbuf)
             If Not ssePrepass AndAlso Me.ParentModel.FrameIsSse AndAlso overlayMat.SsePass().List = SseRenderPassLaw.SseList.Billboard Then
                 Me.ParentModel.FrameBillboardEffectDrawn = True
@@ -6912,6 +7401,12 @@ Public Class PreviewModel
             ' Unbind SSBO after draw — same hygiene as Render.
             If ssbo_BoneMatrices > 0 Then
                 GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
+            End If
+            ' The program is shared with every other Vertex_FO4 draw: the overlay's position source is reset with its SSBO.
+            If enginePos Then
+                shader.Use()
+                shader.SetBool("bEnginePosition", False)
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 14, 0)
             End If
 
             ' Restore GL state exactly like Render (~2787-2792). DepthFunc is intentionally left at
@@ -7821,7 +8316,6 @@ Public Class PreviewModel
                 shader.SetBool("bSseHairDepthWriteDecal", Not isBGEM AndAlso ssePass.HairDepthWriteDecal)
                 shader.SetBool("bSsePrepass", False)
             Else
-                shader.SetBool("bFo4Prepass", False)
                 ' FO4 colour pass: its alpha test and threshold (Fo4RenderPassLaw.ColourPassAlphaTest; an effect tests always,
                 ' 0 without a test). Overrides the generic upload. The shadow pass has its own writer (ShadowPassAlphaTest).
                 Dim atC = Fo4RenderPassLaw.ColourPassAlphaTest(isBGEM, CBool(hasAlphaTest), materialBase.ResolveEngineAlpha().Threshold)
@@ -8039,6 +8533,8 @@ Public Class PreviewModel
             Dim slice = If(bit(d.Flags, 7), Me.ParentModel.ParentControl.Fo4EnvMap.Register(material.EnvmapTexture()), -1)
             shader.SetVector4("CubeMapIdxR_EnvmapScaleG", Fo4GBufferConstants.CubeMapIdxEnvmapScale(d.Flags, slice, em.MaterialD0, w(3)))
             shader.SetVector4("cb12_30", Vector4.Zero)
+            Dim cpuRoute = EngineCpuRoute()
+            BindEngineVertexStage(shader, material, cpuRoute, t)
             ' ADDITIONAL_ALPHA_MASK (0x14220714B..0x142207340 and 0x1422072B8..0x1422072D9): the constant and t15 together.
             If Fo4GBufferConstants.HasAdditionalAlphaMask(t) Then
                 shader.SetVector4("AdditionalAlphaMaskRef", Fo4GBufferConstants.AdditionalAlphaMaskRef(d.Flags, em.Alpha))
@@ -9897,6 +10393,7 @@ Public Class PreviewModel
         ' O3.3: Compute view-projection matrix for frustum culling
         Dim viewMatrix = camera.GetViewMatrix()
         Dim vp As Matrix4 = viewMatrix * projection
+        FrameEngineRows = Fo4GBufferConstants.EngineFrameRows(viewMatrix, projection, camera.GetEyePosition())
         ' Los planos del frustum de la camara: constantes para los cinco bucles de abajo.
         RenderableMesh.ExtractFrustumPlanes(vp, _framePlanes)
 

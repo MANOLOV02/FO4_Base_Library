@@ -271,6 +271,17 @@ Public Class Shader_Class_Fo4
 // (GLSL 4.60 4.8.1). Every FO4 program is built on this one VS: Shader_Class_Fo4 (colour, prepass, effects), the G-buffer
 // records and their decal-base variants, the refraction normals, the shadow depth.
 invariant gl_Position;
+// FO4 OVERLAY POSITION (user decision 12-oct-2026): an overlay that is a clone of its host shape sharing the skin (LooksMenu /
+// F4EE COPY_EXACT) is drawn in the game by an effect VS whose position chain is the host's G-buffer VS's instruction for
+// instruction (b05 rec0042 against b09 rec2304: weights add / add_sat / 1 - x, ftoi(x * 765.01), (row - eye) mul / mad x 3 in
+// the order w1, w0, w2, w3, dp4 with (p, 1), dp4 with cb12[8..11]). The clip position is therefore the host's engine vertex
+// stage's own output, captured per vertex (RenderableMesh.EnginePositions) and read here by gl_VertexID. The rest of the
+// effect VS (colour, uv, falloff, ...) is not transcribed (ola 3): it stays this VS's (declared gap, Render.vb
+// RenderOverlayLayer).
+uniform bool bEnginePosition;
+layout(std430, binding = 14) readonly buffer EnginePositions {
+    vec4 enginePosition[];
+};
 uniform mat4 matProjection;
 uniform mat4 matView;
 uniform mat4 matModel;
@@ -309,17 +320,20 @@ uniform int uBoneCount;
 // SYNC: CPU/GPU skinning. The blend here has FIVE twin sites; changing weights,
 // fallback or matrix composition in one of them WITHOUT the others is a silent bug
 // (it compiles, throws nothing, and only the other path renders wrong):
-//   1. This shader block - DUPLICATED in the FO4 and the SSE vertex shader.
+//   1. The GPU blend: TWO texts, one per game's law - Vertex_FO4 (Fallout 4: the engine's order and weights) and
+//      Vertex_SSE (Skyrim SE: normalized weights); the normal law they apply after it, AppSkinLaw.Glsl, is ONE text
+//      included by both and by the transcribed engine VS (G-buffer).
 //   2. SkinningHelper.BlendBoneMatrices        (CPU blend, double precision)
 //   3. SkinningHelper.RecomputeGPUBoneMatrices (bone matrix composition -> SSBO)
-//   4. SkinningHelper.ExtractSkinnedGeometry   (GPU arrays: idx/weights, sum=1)
+//   4. SkinningHelper.ExtractSkinnedGeometry   (GPU arrays: idx/weights)
 //   5. Render.UpdateSkinBuffers_GL             (CPU pre-skin path)
-//   + SkinBakeMath / FaceGenBuildPipeline      (the bake, same formula)
-// Differences BY DESIGN (not drift):
-//   - GPU: float precision, weights pre-normalized at extract (sum=1).
-//   - CPU: double precision, normalized at runtime (1/sumW).
-//   - GPU applies transpose(inverse(mat3)) to N/T/B; CPU keeps them in local
-//     space and lets the shader transform them.
+//   + SkinBakeMath / FaceGenBuildPipeline      (the bake: the engine's weights, its own accumulation)
+// Fallout 4 (D21, user decision 12-oct-2026): view and bake use the engine's law (Fo4EngineSkin: w3 = 1 - sat(...); the view
+// blends in its order 1, 0, 2, 3, in Single), always. Skyrim SE / other slot counts: weights normalized at extract (sum=1) for the
+// GPU and at runtime (1/sumW, double) for the CPU.
+//   - N goes by the inverse-transpose of the blended 3x3 and T/B by the blended 3x3, in BOTH routes: GPU by AppSkinLaw.Glsl
+//     (this VS, the other game's VS and the transcribed engine VS), CPU by FastSkin.UnVertice / TransformarDirecto - the same law
+//     transcribed (AppSkinLaw summary).
 // Parity test: flip Setting_GPUSkinning on a posed/morphed shape - must look identical.
 // See memory 00-reglas-ui-y-vb.md (section 10) and 00-reglas-comentarios.md.
 
@@ -364,45 +378,10 @@ uniform bool bVertexFalloff;
 uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
 out float vEffectFalloff;
 
-vec3 colorRamp(in float value)
-{
-	float r;
-	float g;
-	float b;
-
-	if (value <= 0.0f)
-	{
-		r = g = b = 1.0;
-	}
-	else if (value <= 0.25)
-	{
-		r = 0.0;
-		b = 1.0;
-		g = value / 0.25;
-	}
-	else if (value <= 0.5)
-	{
-		r = 0.0;
-		g = 1.0;
-		b = 1.0 + (-1.0) * (value - 0.25) / 0.25;
-	}
-	else if (value <= 0.75)
-	{
-		r = (value - 0.5) / 0.25;
-		g = 1.0;
-		b = 0.0;
-	}
-	else
-	{
-		r = 1.0;
-		g = 1.0 + (-1.0) * (value - 0.75) / 0.25;
-		b = 0.0;
-	}
-
-	return vec3(r, g, b);
-}
+" & AppEditViewsSource.ColorRamp & "
 
 " & D3d11SemanticsSource.Glsl & "
+" & AppSkinLaw.Glsl & "
 " & RefractionSource.Vertex_Glsl & "
 void main(void)
 {
@@ -446,25 +425,28 @@ void main(void)
 
 	if (bGPUSkinning) {
 	    // GPU skinning: blend bone matrices
-	    ivec4 bIdx = clamp(ivec4(boneIndicesF), ivec4(0), ivec4(max(uBoneCount - 1, 0)));
+	    ivec4 bIdx = ivec4(boneIndicesF);
 	    vec4 bWgt = boneWeightsIn;
 
 	    mat4 skinMatrix = mat4(0.0);
-	    // Accumulate weighted bone matrices
-	    if (bWgt.x > 0.0) skinMatrix += bones[bIdx.x] * bWgt.x;
-	    if (bWgt.y > 0.0) skinMatrix += bones[bIdx.y] * bWgt.y;
-	    if (bWgt.z > 0.0) skinMatrix += bones[bIdx.z] * bWgt.z;
-	    if (bWgt.w > 0.0) skinMatrix += bones[bIdx.w] * bWgt.w;
+	    // Accumulate weighted bone matrices in the engine VS order (rec2304 L54-61: slot 1, 0, 2, 3; in Fallout 4's view the
+	    // weights are the engine's, Fo4EngineSkin.EngineWeights - D21). A zero weight or a bone outside the palette adds nothing
+	    // (the engine reads 0 past the bound rows, D3D11.3 7.5; the CPU blends skip them too).
+	    if (bWgt.y != 0.0 && bIdx.y >= 0 && bIdx.y < uBoneCount) skinMatrix = bones[bIdx.y] * bWgt.y + skinMatrix;
+	    if (bWgt.x != 0.0 && bIdx.x >= 0 && bIdx.x < uBoneCount) skinMatrix = bones[bIdx.x] * bWgt.x + skinMatrix;
+	    if (bWgt.z != 0.0 && bIdx.z >= 0 && bIdx.z < uBoneCount) skinMatrix = bones[bIdx.z] * bWgt.z + skinMatrix;
+	    if (bWgt.w != 0.0 && bIdx.w >= 0 && bIdx.w < uBoneCount) skinMatrix = bones[bIdx.w] * bWgt.w + skinMatrix;
 
 	    // Zero-weight fallback: first bone (matches CPU BlendBoneMatrices), then identity if no bones
 	    float totalWeight = bWgt.x + bWgt.y + bWgt.z + bWgt.w;
-	    if (totalWeight < 0.001) skinMatrix = (uBoneCount > 0) ? bones[bIdx.x] : mat4(1.0);
+	    if (totalWeight < 0.001) skinMatrix = (uBoneCount > 0) ? bones[clamp(bIdx.x, 0, uBoneCount - 1)] : mat4(1.0);
 
 	    skinnedPos = vec3(skinMatrix * vec4(vertexPosition, 1.0));
 
 	    // Correct normal matrix: transpose of inverse of upper-left 3x3
-	    mat3 skinNormalMat = transpose(inverse(mat3(skinMatrix)));
-	    skinnedNormal = normalize(skinNormalMat * vertexNormal);
+	    vec3 sr0 = vec3(skinMatrix[0][0], skinMatrix[1][0], skinMatrix[2][0]), sr1 = vec3(skinMatrix[0][1], skinMatrix[1][1], skinMatrix[2][1]), sr2 = vec3(skinMatrix[0][2], skinMatrix[1][2], skinMatrix[2][2]);
+	    mat3 skinNormalMat = appSkinNormalMatrix(sr0, sr1, sr2);   // AppSkinLaw (D2 / revisor-22): the one law text
+	    skinnedNormal = appSkinRotate(skinNormalMat, vertexNormal);
 	    // TANGENT AND BITANGENT GO WITH THE RAW MATRIX, not with the normal matrix. They are directions
 	    // ALONG the surface: they move the way the geometry moves. The inverse-transpose is the law of the
 	    // NORMAL and of nothing else -- applying it to the tangent pushes it out of the tangent plane as
@@ -493,7 +475,7 @@ void main(void)
 
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
-	gl_Position = matProjection * vec4(vPos, 1.0);
+	gl_Position = bEnginePosition ? enginePosition[gl_VertexID] : matProjection * vec4(vPos, 1.0);
 	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
@@ -665,14 +647,6 @@ uniform float alpha;
 uniform float WireAlpha;
 
 uniform float alphaThreshold;
-// FO4 Z-PREPASS draw of a lighting shape (Fo4RenderPassLaw; groups 0x19 / 0x1A, 0x14181FAA0): depth only.
-uniform bool bFo4Prepass;
-// 0x1A: discard tex.a * saturate(vc.a + y) - threshold < 0, threshold = Fo4RenderPassLaw.PrepassAlphaThreshold
-// (float32 ref * 0x3B808081 + 0x3B80802C), y = 0 with a COLOR stream, else 10000
-// (0x141828F45..F8D) - the vertex alpha counts only when the geometry has colours.
-uniform bool bFo4PrepassAlphaTest;
-uniform bool bFo4PrepassVertexAlpha;
-uniform float fo4PrepassThreshold;
 // Translucent-decal base depth draw of an effect decal (DecalBaseTarget; RenderableMesh.DecalBaseMode): the fragments its blend
 // leaves unchanged give no base. 0 / 2 keep every fragment that survives the effect's own discards; 1 discards alpha <= 0 (modes
 // 1/2, source SRC_ALPHA); 3 discards all; 4 discards alpha >= 1.
@@ -783,20 +757,6 @@ void main(void)
 {
 	viewDir = normalize(viewDirRaw);   // engine: rsq(dot(v6,v6)) por pixel, ver la nota del varying
     uv = vUV * uvScale + uvOffset;
-	if (bFo4Prepass)
-	{
-		if (bHide || (bApplyZap && ZappedVert == 1))
-			discard;
-		if (bFo4PrepassAlphaTest)
-		{
-			float texA = bShowTexture ? texture(texDiffuse, uv).a : 1.0;
-			float vcA = bFo4PrepassVertexAlpha ? clamp(vColor.a, 0.0, 1.0) : 1.0;
-			if (texA * vcA - fo4PrepassThreshold < 0.0)
-				discard;
-		}
-		fragColor = vec4(0.0);
-		return;
-	}
 	vec4 color = vColor;
 	// vColor RGB -> LINEAR (pow 2.2) before the lit-albedo multiply. The FO4 engine ALWAYS gamma-decodes
 	// the vertex color: BGSM does it in the VERTEX shader (forward rec1481 + deferred rec2288, both
@@ -1379,7 +1339,9 @@ uniform int uBoneCount;
 // SYNC: CPU/GPU skinning. The blend here has FIVE twin sites; changing weights,
 // fallback or matrix composition in one of them WITHOUT the others is a silent bug
 // (it compiles, throws nothing, and only the other path renders wrong):
-//   1. This shader block - DUPLICATED in the FO4 and the SSE vertex shader.
+//   1. The GPU blend: TWO texts, one per game's law - Vertex_FO4 (Fallout 4: the engine's order and weights) and
+//      Vertex_SSE (Skyrim SE: normalized weights); the normal law they apply after it, AppSkinLaw.Glsl, is ONE text
+//      included by both and by the transcribed engine VS (G-buffer).
 //   2. SkinningHelper.BlendBoneMatrices        (CPU blend, double precision)
 //   3. SkinningHelper.RecomputeGPUBoneMatrices (bone matrix composition -> SSBO)
 //   4. SkinningHelper.ExtractSkinnedGeometry   (GPU arrays: idx/weights, sum=1)
@@ -1388,8 +1350,9 @@ uniform int uBoneCount;
 // Differences BY DESIGN (not drift):
 //   - GPU: float precision, weights pre-normalized at extract (sum=1).
 //   - CPU: double precision, normalized at runtime (1/sumW).
-//   - GPU applies transpose(inverse(mat3)) to N/T/B; CPU keeps them in local
-//     space and lets the shader transform them.
+//   - N goes by the inverse-transpose of the blended 3x3 and T/B by the blended 3x3, in BOTH routes: GPU by AppSkinLaw.Glsl
+//     (this VS, the other game's VS and the transcribed engine VS), CPU by FastSkin.UnVertice / TransformarDirecto - the same law
+//     transcribed (AppSkinLaw summary).
 // Parity test: flip Setting_GPUSkinning on a posed/morphed shape - must look identical.
 // See memory 00-reglas-ui-y-vb.md (section 10) and 00-reglas-comentarios.md.
 
@@ -1431,46 +1394,11 @@ uniform bool bVertexFalloff;
 uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
 out float vEffectFalloff;
 
-vec3 colorRamp(in float value)
-{
-	float r;
-	float g;
-	float b;
-
-	if (value <= 0.0f)
-	{
-		r = g = b = 1.0;
-	}
-	else if (value <= 0.25)
-	{
-		r = 0.0;
-		b = 1.0;
-		g = value / 0.25;
-	}
-	else if (value <= 0.5)
-	{
-		r = 0.0;
-		g = 1.0;
-		b = 1.0 + (-1.0) * (value - 0.25) / 0.25;
-	}
-	else if (value <= 0.75)
-	{
-		r = (value - 0.5) / 0.25;
-		g = 1.0;
-		b = 0.0;
-	}
-	else
-	{
-		r = 1.0;
-		g = 1.0 + (-1.0) * (value - 0.75) / 0.25;
-		b = 0.0;
-	}
-
-	return vec3(r, g, b);
-}
+" & AppEditViewsSource.ColorRamp & "
 
 " & RefractionSource.Vertex_Glsl & "
 " & D3d11SemanticsSource.Glsl & SseAoNormalSource.EngineFrame_Glsl & SseAoNormalSource.Vs_Glsl & "
+" & AppSkinLaw.Glsl & "
 void main(void)
 {
 	// Initialization
@@ -1530,8 +1458,9 @@ void main(void)
 	    skinnedPos = vec3(skinMatrix * vec4(vertexPosition, 1.0));
 
 	    // Correct normal matrix: transpose of inverse of upper-left 3x3
-	    mat3 skinNormalMat = transpose(inverse(mat3(skinMatrix)));
-	    skinnedNormal = normalize(skinNormalMat * vertexNormal);
+	    vec3 sr0 = vec3(skinMatrix[0][0], skinMatrix[1][0], skinMatrix[2][0]), sr1 = vec3(skinMatrix[0][1], skinMatrix[1][1], skinMatrix[2][1]), sr2 = vec3(skinMatrix[0][2], skinMatrix[1][2], skinMatrix[2][2]);
+	    mat3 skinNormalMat = appSkinNormalMatrix(sr0, sr1, sr2);   // AppSkinLaw (D2 / revisor-22): the one law text
+	    skinnedNormal = appSkinRotate(skinNormalMat, vertexNormal);
 	    // TANGENT AND BITANGENT GO WITH THE RAW MATRIX, not with the normal matrix. They are directions
 	    // ALONG the surface: they move the way the geometry moves. The inverse-transpose is the law of the
 	    // NORMAL and of nothing else -- applying it to the tangent pushes it out of the tangent plane as
@@ -3689,13 +3618,18 @@ Public MustInherit Class Shader_Base_Class
         MyBase.Finalize()
     End Sub
 
-    Public Sub New(VertexShaderSource, FragmentShaderSource)
-        Dim vertexShader = CompileShader(ShaderType.VertexShader, VertexShaderSource)
-        Dim fragmentShader = CompileShader(ShaderType.FragmentShader, FragmentShaderSource)
-
+    ''' <param name="TransformFeedbackVaryings">GATE ONLY (ShadowGate G5b): the outputs the program captures by transform feedback,
+    ''' interleaved (OpenGL 4.6 11.1.2.1: declared before the link).</param>
+    Public Sub New(VertexShaderSource As String, FragmentShaderSource As String, Optional TessControlSource As String = Nothing,
+                   Optional TessEvaluationSource As String = Nothing, Optional TransformFeedbackVaryings As String() = Nothing)
+        Dim stages As New List(Of Integer) From {CompileShader(ShaderType.VertexShader, VertexShaderSource),
+                                                 CompileShader(ShaderType.FragmentShader, FragmentShaderSource)}
+        ' Ola 2: the engine's HS / DS of a tessellated technique (0x14181D4A0 binds them; topology 0x23, 0x14181D60E).
+        If TessControlSource IsNot Nothing Then stages.Add(CompileShader(ShaderType.TessControlShader, TessControlSource))
+        If TessEvaluationSource IsNot Nothing Then stages.Add(CompileShader(ShaderType.TessEvaluationShader, TessEvaluationSource))
         program = GL.CreateProgram()
-        GL.AttachShader(program, vertexShader)
-        GL.AttachShader(program, fragmentShader)
+        For Each s In stages : GL.AttachShader(program, s) : Next
+        If TransformFeedbackVaryings IsNot Nothing Then GL.TransformFeedbackVaryings(program, TransformFeedbackVaryings.Length, TransformFeedbackVaryings, TransformFeedbackMode.InterleavedAttribs)
         GL.LinkProgram(program)
 
         Dim linkStatus As Integer
@@ -3705,11 +3639,14 @@ Public MustInherit Class Shader_Base_Class
             Throw New Exception($"Shader program link error: {linkInfo}")
         End If
 
-        GL.DetachShader(program, vertexShader)
-        GL.DetachShader(program, fragmentShader)
-        GL.DeleteShader(vertexShader)
-        GL.DeleteShader(fragmentShader)
+        For Each s In stages
+            GL.DetachShader(program, s)
+            GL.DeleteShader(s)
+        Next
+        HasTessellation = TessControlSource IsNot Nothing
     End Sub
+    ''' <summary>The program draws GL_PATCHES of 3 control points (D3D11_PRIMITIVE_TOPOLOGY 0x23).</summary>
+    Public ReadOnly Property HasTessellation As Boolean
 
     ''' <summary>A compute program (one stage), with the same compile/link checks and uniform API.</summary>
     Protected Sub New(computeShaderSource As String)
@@ -3858,6 +3795,16 @@ Public MustInherit Class Shader_Base_Class
         If loc <> -1 Then
             GL.Uniform3(loc, value.X, value.Y, value.Z)
         End If
+    End Sub
+
+    Public Sub SetVector4Array(name As String, values As Vector4())
+        Dim loc As Integer = GetUniformLocationCached(name)
+        If loc = -1 OrElse values Is Nothing OrElse values.Length = 0 Then Exit Sub
+        Dim f(values.Length * 4 - 1) As Single
+        For i = 0 To values.Length - 1
+            f(4 * i) = values(i).X : f(4 * i + 1) = values(i).Y : f(4 * i + 2) = values(i).Z : f(4 * i + 3) = values(i).W
+        Next
+        GL.Uniform4(loc, values.Length, f)
     End Sub
 
     Public Sub SetVector4(name As String, value As Vector4)

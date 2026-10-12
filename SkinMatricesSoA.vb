@@ -107,6 +107,16 @@ Public NotInheritable Class SkinMatricesSoA
         Secciones(9)(i) = acc(12) : Secciones(10)(i) = acc(13) : Secciones(11)(i) = acc(14)
     End Sub
 
+    ''' <summary>Escribe las 12 secciones desde las tres FILAS del 3x4 del motor (Fo4EngineSkin.Blend / BlendSkin): la fila r del motor
+    ''' es la columna r de la Matrix4 de OpenTK (Fo4EngineSkin.MatrixOfRows), asi que M1r = fila r .x, M2r = .y, M3r = .z, M4r = .w.</summary>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Friend Sub EstablecerDesdeFilas(i As Integer, r0 As Vector4, r1 As Vector4, r2 As Vector4)
+        Secciones(0)(i) = r0.X : Secciones(1)(i) = r1.X : Secciones(2)(i) = r2.X
+        Secciones(3)(i) = r0.Y : Secciones(4)(i) = r1.Y : Secciones(5)(i) = r2.Y
+        Secciones(6)(i) = r0.Z : Secciones(7)(i) = r1.Z : Secciones(8)(i) = r2.Z
+        Secciones(9)(i) = r0.W : Secciones(10)(i) = r1.W : Secciones(11)(i) = r2.W
+    End Sub
+
     ''' <summary>Copia la matriz del vertice <paramref name="desde"/> al <paramref name="i"/>.
     ''' <para>Lo usa el memo por vertice-previo del blend: cuando dos vertices consecutivos tienen la
     ''' misma tupla (indices, pesos) el resultado es identico por construccion —el blend es funcion pura de

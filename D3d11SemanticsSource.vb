@@ -83,5 +83,13 @@ vec4 d3d_ld2d(sampler2D t, ivec2 p, int lod)
     if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, s))) return vec4(0.0);
     return texelFetch(t, p, lod);
 }
+// D3D11.3 22.12.7 udiv: division by 0 gives 0xFFFFFFFF in quotient and remainder.
+uint d3d_udivq(uint a, uint b) { return b == 0u ? 0xFFFFFFFFu : a / b; }
+uint d3d_udivr(uint a, uint b) { return b == 0u ? 0xFFFFFFFFu : a % b; }
+// D3D11.3 ftou: NaN -> 0, clamped to [0, 2^32-1], toward zero.
+uint d3d_ftou(float x) { if (!(x > 0.0)) return 0u; if (x >= 4294967296.0) return 0xFFFFFFFFu; return uint(x); }
+// D3D11.3 22.11.20 ubfe: width/offset & 31; width 0 -> 0; width+offset >= 32 -> value >> offset.
+int d3d_ubfe(int w, int o, int v) { uint wi = uint(w) & 31u, oi = uint(o) & 31u; if (wi == 0u) return 0;
+    if (wi + oi < 32u) return int((uint(v) << (32u - wi - oi)) >> (32u - wi)); return int(uint(v) >> oi); }
 "
 End Module

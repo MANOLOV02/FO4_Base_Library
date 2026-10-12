@@ -256,33 +256,57 @@ Friend Module FastSkin
     Friend Sub UnVertice(m As Matrix4, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
                          msn As Boolean,
                          ByRef pos As Vector3, ByRef nrm As Vector3, ByRef tan As Vector3, ByRef bit As Vector3)
-        pos = Punto(m, p)
-        Dim c11 = m.M22 * m.M33 - m.M23 * m.M32
-        Dim c12 = m.M23 * m.M31 - m.M21 * m.M33
-        Dim c13 = m.M21 * m.M32 - m.M22 * m.M31
-        Dim det = m.M11 * c11 + m.M12 * c12 + m.M13 * c13
-        Dim c21 = m.M13 * m.M32 - m.M12 * m.M33
-        Dim c22 = m.M11 * m.M33 - m.M13 * m.M31
-        Dim c23 = m.M12 * m.M31 - m.M11 * m.M32
-        Dim c31 = m.M12 * m.M23 - m.M13 * m.M22
-        Dim c32 = m.M13 * m.M21 - m.M11 * m.M23
-        Dim c33 = m.M11 * m.M22 - m.M12 * m.M21
+        UnVerticeCon(m, MatrizDeNormales(m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33), p, vn, vt, vb, msn, pos, nrm, tan, bit)
+    End Sub
+
+    ''' <summary>The inverse-transpose rows of a skin matrix's 3x3 (cofactors / det; the identity when EsDegenerada decides it is
+    ''' degenerate): the normal law of UnVertice, computed ONCE per vertex and per matrix. TransformarDirecto, UnVertice and the
+    ''' engine stage's CPU route (Fo4EngineVertexPacker.PackCpuRouteBlended, review note "performance": the legacy VBOs and the
+    ''' CPU-route stream of one vertex share it) read it from here.</summary>
+    Friend Structure MatrizNormal
+        Friend E11, E12, E13, E21, E22, E23, E31, E32, E33 As Single
+    End Structure
+
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Friend Function MatrizDeNormales(m11 As Single, m12 As Single, m13 As Single,
+                                     m21 As Single, m22 As Single, m23 As Single,
+                                     m31 As Single, m32 As Single, m33 As Single) As MatrizNormal
+        Dim c11 = m22 * m33 - m23 * m32
+        Dim c12 = m23 * m31 - m21 * m33
+        Dim c13 = m21 * m32 - m22 * m31
+        Dim det = m11 * c11 + m12 * c12 + m13 * c13
+        Dim c21 = m13 * m32 - m12 * m33
+        Dim c22 = m11 * m33 - m13 * m31
+        Dim c23 = m12 * m31 - m11 * m32
+        Dim c31 = m12 * m23 - m13 * m22
+        Dim c32 = m13 * m21 - m11 * m23
+        Dim c33 = m11 * m22 - m12 * m21
         Dim r As Single = 1.0F / det
-        If EsDegenerada(det, m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33) Then
+        If EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33) Then
             c11 = 1.0F : c12 = 0.0F : c13 = 0.0F
             c21 = 0.0F : c22 = 1.0F : c23 = 0.0F
             c31 = 0.0F : c32 = 0.0F : c33 = 1.0F
             r = 1.0F
         End If
-        Dim e11 = c11 * r, e12 = c12 * r, e13 = c13 * r
-        Dim e21 = c21 * r, e22 = c22 * r, e23 = c23 * r
-        Dim e31 = c31 * r, e32 = c32 * r, e33 = c33 * r
+        Dim e As MatrizNormal
+        e.E11 = c11 * r : e.E12 = c12 * r : e.E13 = c13 * r
+        e.E21 = c21 * r : e.E22 = c22 * r : e.E23 = c23 * r
+        e.E31 = c31 * r : e.E32 = c32 * r : e.E33 = c33 * r
+        Return e
+    End Function
+
+    ''' <summary>UnVertice with the normal matrix <paramref name="e"/> = MatrizDeNormales of <paramref name="m"/> already computed.</summary>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Friend Sub UnVerticeCon(m As Matrix4, e As MatrizNormal, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
+                            msn As Boolean,
+                            ByRef pos As Vector3, ByRef nrm As Vector3, ByRef tan As Vector3, ByRef bit As Vector3)
+        pos = Punto(m, p)
         If msn Then
-            nrm = New Vector3(e11, e12, e13)
-            tan = New Vector3(e21, e22, e23)
-            bit = New Vector3(e31, e32, e33)
+            nrm = New Vector3(e.E11, e.E12, e.E13)
+            tan = New Vector3(e.E21, e.E22, e.E23)
+            bit = New Vector3(e.E31, e.E32, e.E33)
         Else
-            nrm = Rotar(vn.X, vn.Y, vn.Z, e11, e12, e13, e21, e22, e23, e31, e32, e33)
+            nrm = Rotar(vn.X, vn.Y, vn.Z, e.E11, e.E12, e.E13, e.E21, e.E22, e.E23, e.E31, e.E32, e.E33)
             ' T Y B VAN CON LA MATRIZ CRUDA, NO CON LA DE NORMALES. Son direcciones SOBRE
             ' la superficie: se mueven como se mueve la geometria. La inversa-transpuesta es la
             ' ley de la NORMAL y solo de ella — aplicarsela a la tangente la saca del plano
@@ -346,34 +370,15 @@ Friend Module FastSkin
                                             px * m12 + py * m22 + pz * m32 + m42,
                                             px * m13 + py * m23 + pz * m33 + m43)
 
-                    Dim c11 = m22 * m33 - m23 * m32
-                    Dim c12 = m23 * m31 - m21 * m33
-                    Dim c13 = m21 * m32 - m22 * m31
-                    Dim det = m11 * c11 + m12 * c12 + m13 * c13
-                    Dim c21 = m13 * m32 - m12 * m33
-                    Dim c22 = m11 * m33 - m13 * m31
-                    Dim c23 = m12 * m31 - m11 * m32
-                    Dim c31 = m12 * m23 - m13 * m22
-                    Dim c32 = m13 * m21 - m11 * m23
-                    Dim c33 = m11 * m22 - m12 * m21
-                    Dim r As Single = 1.0F / det
-                    If EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33) Then
-                        c11 = 1.0F : c12 = 0.0F : c13 = 0.0F
-                        c21 = 0.0F : c22 = 1.0F : c23 = 0.0F
-                        c31 = 0.0F : c32 = 0.0F : c33 = 1.0F
-                        r = 1.0F
-                    End If
-                    Dim e11 = c11 * r, e12 = c12 * r, e13 = c13 * r
-                    Dim e21 = c21 * r, e22 = c22 * r, e23 = c23 * r
-                    Dim e31 = c31 * r, e32 = c32 * r, e33 = c33 * r
+                    Dim e = MatrizDeNormales(m11, m12, m13, m21, m22, m23, m31, m32, m33)
 
                     If msn Then
-                        nrmOut(i) = New Vector3(e11, e12, e13)
-                        tanOut(i) = New Vector3(e21, e22, e23)
-                        bitOut(i) = New Vector3(e31, e32, e33)
+                        nrmOut(i) = New Vector3(e.E11, e.E12, e.E13)
+                        tanOut(i) = New Vector3(e.E21, e.E22, e.E23)
+                        bitOut(i) = New Vector3(e.E31, e.E32, e.E33)
                     Else
                         Dim vn = ln(i), vt = lt(i), vb = lb(i)
-                        nrmOut(i) = Rotar(vn.X, vn.Y, vn.Z, e11, e12, e13, e21, e22, e23, e31, e32, e33)
+                        nrmOut(i) = Rotar(vn.X, vn.Y, vn.Z, e.E11, e.E12, e.E13, e.E21, e.E22, e.E23, e.E31, e.E32, e.E33)
                         ' T Y B VAN CON LA MATRIZ CRUDA, NO CON LA DE NORMALES. Son direcciones SOBRE
                         ' la superficie: se mueven como se mueve la geometria. La inversa-transpuesta es la
                         ' ley de la NORMAL y solo de ella — aplicarsela a la tangente la saca del plano

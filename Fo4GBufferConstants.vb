@@ -89,4 +89,27 @@ Friend Module Fo4GBufferConstants
                            If(envBit, materialD0, 0.0F),
                            wetEnvMapScale)
     End Function
+
+    ''' <summary>cb2 World rows (SetupGeometry 0x142205B77..CC1; the prepass writes the same composition, 0x141828AEC..B5F): row i =
+    ''' (R*scale row i, t_i) for the column-vector engine = column i of the OpenTK row-vector model; row 3 = (0, 0, 0, 1)
+    ''' (0x142205B8D). ONE function for the G-buffer and the prepass (revisor-19).</summary>
+    Friend Function EngineWorldRows(model As Matrix4) As Vector4()
+        Return {model.Column0, model.Column1, model.Column2, New Vector4(0.0F, 0.0F, 0.0F, 1.0F)}
+    End Function
+
+    ''' <summary>cb12 rows 0..2, 8..11 and 35 of the frame (writer 0x14181E1C0), revisor-26. R = the GL view's rotation (LookAt without
+    ''' translation), P = EngineCameraLaw.Perspective (built FOR the GL view: M34 = -1, z in [0, 1]). The engine VS takes
+    ''' o0.i = dp4(cb12[8+i], p - eye) (rec2273 L54-57) = column i of R * P; its view rows (rec2273 L69-79) are the engine view
+    ''' = GL view with z negated (BuildFo4DeferredFrame flipZ, Render.vb:10077): columns 0..2 of R * diag(1, 1, -1).</summary>
+    Friend Function EngineFrameRows(viewGl As Matrix4, projection As Matrix4, eye As Vector3) As (View As Vector4(), ViewProj As Vector4(), Eye As Vector4)
+        Dim r = viewGl.ClearTranslation()
+        Dim vp = r * projection
+        Dim rs = r * Matrix4.CreateScale(1.0F, 1.0F, -1.0F)
+        Return ({rs.Column0, rs.Column1, rs.Column2}, {vp.Column0, vp.Column1, vp.Column2, vp.Column3}, New Vector4(eye, 0.0F))
+    End Function
+
+    ''' <summary>cb1 TexcoordOffset (SetupMaterial 0x14220421F..296 / 0x142204325..39B): (offset.u, offset.v, scale.u, scale.v).</summary>
+    Friend Function TexcoordOffset(offset As Vector2, scale As Vector2) As Vector4
+        Return New Vector4(offset.X, offset.Y, scale.X, scale.Y)
+    End Function
 End Module

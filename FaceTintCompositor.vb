@@ -530,7 +530,12 @@ Public Module FaceTintCompositor
             ("FO4-DEFERRED-APP-FULLSCREEN", Fo4DeferredAppSource.Vertex_Fullscreen),
             ("FO4-DEFERRED-APP-RESOLVE", Fo4DeferredAppSource.Fragment_DirectResolve),
             ("FO4-DEFERRED-APP-DECALBASE", Fo4DeferredAppSource.Fragment_DecalBase),
-            ("FO4-DEFERRED-APP-DECALBASESURFACE", Fo4DeferredAppSource.Fragment_DecalBaseSurface)}).
+            ("FO4-DEFERRED-APP-DECALBASESURFACE", Fo4DeferredAppSource.Fragment_DecalBaseSurface),
+            ("FO4-DEFERRED-APP-DECALBASESURFACE-EFFECT", Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect),
+            ("FO4-DEFERRED-APP-DECALBASESURFACE-LAW", Fo4DeferredAppSource.DecalBaseSurfaceLaw),
+            ("FO4-DEFERRED-APP-POSITIONCAPTURE", Fo4DeferredAppSource.Fragment_PositionCapture),
+            ("APP-SKIN-LAW", AppSkinLaw.Glsl),
+            ("APP-EDIT-VIEWS-COLORRAMP", AppEditViewsSource.ColorRamp)}).
             Concat(Fo4DeferredSource.AllSources()).Concat(Fo4GBufferSource.AllSources()).ToArray()
     End Function
 

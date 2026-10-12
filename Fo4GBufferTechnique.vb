@@ -250,4 +250,33 @@ Friend Module Fo4GBufferTechnique
         If Not psIn AndAlso Not vsIn Then Return $"pixel shader 0x{ps:X8} and vertex shader 0x{vs:X8}"
         Return If(psIn, $"vertex shader 0x{vs:X8}", $"pixel shader 0x{ps:X8}")
     End Function
+
+    ''' <summary>id of the HS and of the DS (0x142273BB0 / 0x142273BE0, same body): AND 0xFFFEF7FF when bits 11 and 16 are both set,
+    ''' else the technique; 0 when bits 19 and 20 are clear (0x142273BC8..BD2).</summary>
+    Friend Function HullShaderId(technique As UInteger) As UInteger
+        Dim a = If((technique And &H10800UI) = &H10800UI, technique And &HFFFEF7FFUI, technique)
+        Return If((a And &H180000UI) = 0UI, 0UI, a)
+    End Function
 End Module
+
+''' <summary>A G-buffer technique (GetRenderPasses 0x14217A050). Its own type (revisor-25): a PS id (Fo4PsId) does not convert to it,
+''' so no caller derives the four program ids from a PS id.</summary>
+Friend Structure Fo4Technique
+    Friend ReadOnly Value As UInteger
+    Friend Sub New(value As UInteger)
+        Me.Value = value
+    End Sub
+    ''' <summary>SetupTechnique's four ids (0x142203573..0x1422035A5).</summary>
+    Friend Function Key() As (Vs As UInteger, Hs As UInteger, Ds As UInteger, Ps As UInteger)
+        Dim h = Fo4GBufferTechnique.HullShaderId(Value)
+        Return (Fo4GBufferTechnique.VertexShaderId(Value), h, h, Fo4GBufferTechnique.PixelShaderId(Value))
+    End Function
+End Structure
+
+''' <summary>A G-buffer PS id (technique AND 0xFFFFEFE7): the key of Fo4GBufferSource.Records.</summary>
+Friend Structure Fo4PsId
+    Friend ReadOnly Value As UInteger
+    Friend Sub New(value As UInteger)
+        Me.Value = value
+    End Sub
+End Structure
