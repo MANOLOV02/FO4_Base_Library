@@ -10,9 +10,10 @@ Imports FO4_Base_Library.Canon.CanonInterpretacion
 '''   1. DirectProperties of every applied combination (in record declaration order).
 '''   2. Then for each IncludedOmod (in walk order), its own Properties (same dispatch).
 '''
-''' SET vs ADD semantics fall out naturally from this order: each call to
-''' ShapeMaterialOverrides.ApplyMaterialSwap or ApplyColorRemap mutates the shape's current
-''' material in place, so a later ADD acts on whatever the previous SET left there.
+''' SET vs ADD semantics fall out naturally from this order: each ShapeMaterialOverrides.ApplyMaterialSwap
+''' mutates the shape's current material in place, so a later ADD acts on whatever the previous SET left
+''' there; a ColorRemappingIndex property accumulates into the instance's index (ola 0c pto 17), which
+''' ShapeMaterialOverrides.ApplyColorRemapIndex writes once per shape.
 ''' No vanilla case mixes SET+ADD inside a single combination's Properties (33 NPC_ cases
 ''' have multiple MSWPs of the same op kind), but the order-respecting walk handles both
 ''' cases uniformly.
@@ -35,7 +36,8 @@ Public Module OmodResolutionApplier
     Public Sub ApplyResolutionToShapes(res As ObjectTemplateResolver.CombinationResolution,
                                        formTypeContext As String,
                                        shapes As IEnumerable(Of IRenderableShape),
-                                       pm As PluginManager)
+                                       pm As PluginManager,
+                                       remap As ShapeMaterialOverrides.ColorRemapInputs)
         If res Is Nothing OrElse shapes Is Nothing OrElse pm Is Nothing Then Return
         If res.AppliedCombinations.Count = 0 AndAlso res.DirectProperties.Count = 0 AndAlso res.IncludedOmods.Count = 0 Then Return
 
@@ -55,7 +57,7 @@ Public Module OmodResolutionApplier
         ' (1) DirectProperties of applied combinations — walked in the order ObjectTemplateResolver
         ' produced them (which matches record declaration order).
         For Each prop In res.DirectProperties
-            ApplyOneProperty(prop, formTypeContext, shapeList, pm, "DIRECT")
+            ApplyOneProperty(prop, formTypeContext, shapeList, pm, "DIRECT", remap)
         Next
 
         ' (2) Properties carried by each IncludedOmod, in walk order.
@@ -86,7 +88,7 @@ Public Module OmodResolutionApplier
                 ' comparte con las Properties inline de una combinación. La clase generada declara las
                 ' dos, así que el cast no puede fallar; si fallara sería un defecto del generador y
                 ' conviene que se oiga.
-                ApplyOneProperty(DirectCast(prop, Canon.IBloque_Properties4), formTypeContext, shapeList, pm, $"OMOD:{omod.FormID:X8}")
+                ApplyOneProperty(DirectCast(prop, Canon.IBloque_Properties4), formTypeContext, shapeList, pm, $"OMOD:{omod.FormID:X8}", remap)
             Next
         Next
     End Sub
@@ -97,7 +99,8 @@ Public Module OmodResolutionApplier
                                  formTypeContext As String,
                                  shapes As IEnumerable(Of IRenderableShape),
                                  pm As PluginManager,
-                                 sourceTag As String)
+                                 sourceTag As String,
+                                 remap As ShapeMaterialOverrides.ColorRemapInputs)
         Dim prop = vista.LeerPropiedad()
         Dim logEnabled = Logger.Enabled
         ' Dispatch by (FormType context, PropertyIdx) — only visual properties produce side-effects.
@@ -130,41 +133,49 @@ Public Module OmodResolutionApplier
 
         Select Case dispatched
             Case "CREMAP"
-                ApplyColorRemapProp(prop, shapes, sourceTag)
+                ApplyColorRemapProp(prop, sourceTag, remap)
             Case "MSWP"
-                ApplyMswpProp(prop, shapes, pm, sourceTag)
+                ApplyMswpProp(prop, pm, sourceTag, remap)
         End Select
     End Sub
 
+    ''' <summary>Ola 0c pto 17 (resultado5 rev-03 cierre, rev-23): an OMOD MaterialSwaps property edits the instance's swap list (ARMO
+    ''' InstanceData vt+0x50 0x140461150 -&gt; [+0x18]) with the handler 0x140421B60's law (ShapeMaterialOverrides.EditInstanceSwaps), only
+    ''' when the form is an MSWP (0x140421B7B, form type 0x91); ShapeMaterialOverrides.ApplyModelMaterial applies the list after the
+    ''' model's swap, in order (0x140255F8E, 0x140255FB1..020).</summary>
     Private Sub ApplyMswpProp(prop As OMOD_Property,
-                              shapes As IEnumerable(Of IRenderableShape),
                               pm As PluginManager,
-                              sourceTag As String)
+                              sourceTag As String,
+                              remap As ShapeMaterialOverrides.ColorRemapInputs)
         Dim mswpFid = prop.Value1FormID
         If mswpFid = 0UI Then Return
-        Dim funcType As ShapeMaterialOverrides.MaterialSwapFunction
-        Select Case prop.FunctionType
-            Case 0 : funcType = ShapeMaterialOverrides.MaterialSwapFunction.SET
-            Case 1 : funcType = ShapeMaterialOverrides.MaterialSwapFunction.Remov
-            Case 2 : funcType = ShapeMaterialOverrides.MaterialSwapFunction.ADD
-            Case Else
-                Return
-        End Select
-        ShapeMaterialOverrides.ApplyMaterialSwap(mswpFid, funcType, shapes, pm)
+        Dim rec = pm?.GetRecord(mswpFid)
+        If rec Is Nothing OrElse rec.Header.Signature <> "MSWP" Then Return       ' 0x140421B7B: form type 0x91 only
+        ShapeMaterialOverrides.EditInstanceSwaps(remap.InstanceSwaps, CInt(prop.FunctionType), mswpFid)
     End Sub
 
+    ''' <summary>Ola 0c pto 17: an OMOD ColorRemappingIndex property accumulates into the instance's index (+0x44, read by vfunc +0x80,
+    ''' ARMO 0x1404612A0); ShapeMaterialOverrides.ApplyColorRemapIndex writes it once per shape. SET = the value; ADD = the current value
+    ''' + Value1. NOT TRACED (declared, user decision 12-oct-2026: future): the writer of +0x44 (the float property law SET / ADD /
+    ''' MUL_ADD) - an ADD with no value yet and MUL_ADD are not applied, and logged. Census 12-oct (omod_muladd.py): the 69
+    ''' ColorRemappingIndex properties of the 80 plugins are all SET.</summary>
     Private Sub ApplyColorRemapProp(prop As OMOD_Property,
-                                    shapes As IEnumerable(Of IRenderableShape),
-                                    sourceTag As String)
-        Dim funcType As ShapeMaterialOverrides.ColorRemapFunction
+                                    sourceTag As String,
+                                    remap As ShapeMaterialOverrides.ColorRemapInputs)
         Select Case prop.FunctionType
-            Case 0 : funcType = ShapeMaterialOverrides.ColorRemapFunction.SET
-            Case 1 : funcType = ShapeMaterialOverrides.ColorRemapFunction.MUL_ADD
-            Case 2 : funcType = ShapeMaterialOverrides.ColorRemapFunction.ADD
-            Case Else
-                Return
+            Case 0
+                remap.Instance = prop.Value1
+            Case 2
+                If remap.Instance.HasValue Then
+                    remap.Instance = remap.Instance.Value + prop.Value1
+                ElseIf Logger.Enabled Then
+                    Logger.LogLazy(Function() $"[CREMAP-ADD-NO-BASE] src={sourceTag} v1={prop.Value1:F4} - the instance index has no value yet; its initial value is not traced")
+                End If
+            Case 1
+                If Logger.Enabled Then
+                    Logger.LogLazy(Function() $"[CREMAP-MUL_ADD-STUB] src={sourceTag} v1={prop.Value1:F4} v2={prop.Value2:F4} - MUL_ADD not implemented (future)")
+                End If
         End Select
-        ShapeMaterialOverrides.ApplyColorRemap(prop.Value1, prop.Value2, funcType, shapes)
     End Sub
 
 End Module

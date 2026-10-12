@@ -3246,6 +3246,8 @@ Public Class PreviewModel
     ' SSE: opaque decal group, then blended decal group, then the alpha list (0x14151EF40, 0x14151FD60, 0x14151FF00).
     Private ReadOnly DecalBlendedMeshes As New List(Of RenderableMesh)
     Private ReadOnly BlendedMeshes As New List(Of RenderableMesh)
+    ' FO4: G-buffer list 0 (group 7, LOD_Landscape), drawn after the decal lists 2 / 3 (0x1421F3C21 -> 3C3B -> 3C4C; C8, ola 0c).
+    Private ReadOnly Fo4LodLandscapeMeshes As New List(Of RenderableMesh)
     ' SSE: the billboard effects (group 0x12 -> list 0xD, drawn by the opaque finish after the opaque lists and before the
     ' decals, 0x14151EF40) and the shapes with no colour pass (SseRenderPassLaw: refraction lighting, kTempRefraction +
     ' kDynamicDecal effects, Hair + DEPTH_WRITE_DECALS without its PS) - those still go through the z-prepass.
@@ -3333,31 +3335,14 @@ Public Class PreviewModel
     ''' oop_census.py dfs_order, which found it equal to block order in every SSE coplanar group): block index -&gt; position.</summary>
     Private Shared Function NifWalkOrder(nif As Nifcontent_Class_Manolo) As Dictionary(Of Integer, Integer)
         Dim order As New Dictionary(Of Integer, Integer)
-        Dim hasParent As New HashSet(Of Integer)
-        For Each b In nif.Blocks
-            Dim n = TryCast(b, NiflySharp.Blocks.NiNode)
-            If n?.Children Is Nothing Then Continue For
-            For Each k In n.Children.Indices
-                If k >= 0 Then hasParent.Add(k)
+        ' One walk per parentless node, in block order (NifSceneVisibility.ParentlessNodes / WalkDepthFirst: OnVisible's children 0..n-1);
+        ' a block already visited from an earlier root is not visited again (a child under two parents: its first visit; a cycle cannot
+        ' hang the render).
+        Dim visited As New HashSet(Of Integer)
+        For Each root In NifSceneVisibility.ParentlessNodes(nif)
+            For Each v In NifSceneVisibility.WalkDepthFirst(nif, root, visited)
+                order(v.Block) = order.Count
             Next
-        Next
-        ' Explicit stack (no recursion): children pushed in reverse so that child 0 is visited first. A block already visited is not
-        ' visited again (a child under two parents: its first visit; a malformed cycle cannot hang the render).
-        Dim stack As New Stack(Of Integer)
-        For root = 0 To nif.Blocks.Count - 1
-            If TypeOf nif.Blocks(root) IsNot NiflySharp.Blocks.NiNode OrElse hasParent.Contains(root) Then Continue For
-            stack.Push(root)
-            Do While stack.Count > 0
-                Dim k = stack.Pop()
-                If order.ContainsKey(k) Then Continue Do
-                order(k) = order.Count
-                Dim n = TryCast(nif.Blocks(k), NiflySharp.Blocks.NiNode)
-                If n?.Children Is Nothing Then Continue Do
-                Dim kids = n.Children.Indices.ToList()
-                For j = kids.Count - 1 To 0 Step -1
-                    If kids(j) >= 0 AndAlso kids(j) < nif.Blocks.Count Then stack.Push(kids(j))
-                Next
-            Loop
         Next
         Return order
     End Function
@@ -3383,7 +3368,7 @@ Public Class PreviewModel
         Dim rank As New Dictionary(Of UInteger, UInteger)
         Dim nextRank As UInteger = 0
         For Each m In list.OrderBy(Function(x) x.RegistrationKey)
-            Dim vis = NifSceneVisibility.Evaluate(m.MeshData.Shape)
+            Dim vis = m.SceneVisibility()
             If vis.HiddenByAncestor OrElse vis.BoundCullReason IsNot Nothing OrElse m.MeshData.Shape.IsHelperShape Then
                 m.OpaqueOrderKey = New OpaqueOrder With {.Pass = UInteger.MaxValue} : Continue For
             End If
@@ -3422,6 +3407,7 @@ Public Class PreviewModel
         Blended
         Billboard
         ForwardEffect
+        Fo4LodLandscape
         NoColourPass
     End Enum
 
@@ -3444,6 +3430,7 @@ Public Class PreviewModel
         End If
         Select Case material.Fo4Pass().List
             Case Fo4RenderPassLaw.Fo4List.GBufferOpaque : Return RenderBucket.Opaque   ' bucket 4: one list, technique order (O-OP D-L3)
+            Case Fo4RenderPassLaw.Fo4List.GBufferLodLandscape : Return RenderBucket.Fo4LodLandscape   ' list 0, after the decals (C8)
             Case Fo4RenderPassLaw.Fo4List.DecalOpaque : Return RenderBucket.Decal
             Case Fo4RenderPassLaw.Fo4List.DecalTranslucent : Return RenderBucket.DecalBlended
             Case Fo4RenderPassLaw.Fo4List.ForwardEffect : Return RenderBucket.ForwardEffect
@@ -3481,6 +3468,7 @@ Public Class PreviewModel
         BlendedMeshes.Clear()
         BillboardMeshes.Clear()
         ForwardEffectMeshes.Clear()
+        Fo4LodLandscapeMeshes.Clear()
         NoColourPassMeshes.Clear()
         BlendedDepthBuffer.Clear()
 
@@ -3496,6 +3484,7 @@ Public Class PreviewModel
                 Case RenderBucket.Blended : BlendedMeshes.Add(mesh)
                 Case RenderBucket.Billboard : BillboardMeshes.Add(mesh)
                 Case RenderBucket.ForwardEffect : ForwardEffectMeshes.Add(mesh)
+                Case RenderBucket.Fo4LodLandscape : Fo4LodLandscapeMeshes.Add(mesh)
                 Case Else : NoColourPassMeshes.Add(mesh)
             End Select
         Next
@@ -3515,6 +3504,7 @@ Public Class PreviewModel
         BlendedMeshes.Sort(AddressOf CompareRegistration)
         BillboardMeshes.Sort(AddressOf CompareRegistration)
         ForwardEffectMeshes.Sort(AddressOf CompareRegistration)
+        Fo4LodLandscapeMeshes.Sort(AddressOf CompareRegistration)
         NoColourPassMeshes.Sort(AddressOf CompareRegistration)
         RenderBucketsGame = FrameIsSse
 
@@ -3835,18 +3825,18 @@ Public Class PreviewModel
             ' el modelo de tres campos restauró, pero el render todavía consultaba el enum.
             ''' <summary>THE blend predicate: the engine-resolved blend bit OR the material alpha &lt; 1 (the engine routes
             ''' x = Alpha*fade &lt; 1 as blended too: Fallout4.exe 0x14217A485..A489, SkyrimSE 0x14151A47B..484). One formula, two
-            ''' readers: <paramref name="engine"/> = True reads the RAW alpha (the game's law, EngineHasAlphaBlend), False the alpha
-            ''' the preview draws (PreviewAlpha, HasAlphaBlend). The alpha is read after the guard: PreviewAlpha reads MaterialBase.</summary>
+            ''' readers: <paramref name="engine"/> = True reads the alpha at rest (RestAlpha, the game's law, EngineHasAlphaBlend), False
+            ''' the alpha the preview draws (PreviewAlpha, HasAlphaBlend). The alpha is read after the guard: both read MaterialBase.</summary>
             Private Function AlphaBlend(engine As Boolean) As Boolean
                 ' An overlay layer carries its own material in OverrideRelatedMaterial, so the
                 ' "no material on the shape" guard must consult the override too — otherwise an
                 ' overlay over a shape with no ShapeMaterial would wrongly report not-blended.
                 If OverrideRelatedMaterial Is Nothing AndAlso IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
-                Dim alpha = If(engine, MaterialBase.Alpha, PreviewAlpha())
+                Dim alpha = If(engine, RestAlpha(), PreviewAlpha())
                 Return MaterialBase.ResolveEngineAlpha().Blend OrElse alpha < 1.0F
             End Function
 
-            ''' <summary>The GAME's blend for this material (raw alpha). Read by what follows the engine and not the preview's
+            ''' <summary>The GAME's blend for this material (its alpha at rest, RestAlpha). Read by what follows the engine and not the preview's
             ''' drawing - Wardrobe Manager's occlusion tool (OcclusionRaytracer.ResolverMaterial, OcclusionMask_Form).</summary>
             Public ReadOnly Property EngineHasAlphaBlend As Boolean
                 Get
@@ -3855,8 +3845,8 @@ Public Class PreviewModel
             End Property
 
             ''' <summary>The PREVIEW's blend for this material (PreviewAlpha): equal to EngineHasAlphaBlend except for an alpha-0 base
-            ''' shape drawn with a forced alpha (C2 L5, both games: its controller's maximum in any view, 1 without a controller in a view
-            ''' that draws for editing). Read by the drawing (buckets, face mode, bHasAlphaBlend).</summary>
+            ''' shape drawn with a forced alpha (C2 L5, both games: 1 in a view that draws for editing; ola 0c pto 19). Read by the drawing
+            ''' (buckets, face mode, bHasAlphaBlend).</summary>
             Public ReadOnly Property HasAlphaBlend As Boolean
                 Get
                     Return AlphaBlend(engine:=False)
@@ -3872,7 +3862,7 @@ Public Class PreviewModel
             ''' SseRenderPassLaw.ShadowAlphaTest.</summary>
             Public ReadOnly Property AlphaTestThreshold As Single
                 Get
-                    Return MaterialBase.ResolveEngineAlpha().Threshold / 255.0F
+                    Return EngineAlphaAtRest().Threshold / 255.0F
                 End Get
             End Property
 
@@ -3896,7 +3886,7 @@ Public Class PreviewModel
                 Dim f1 As UInteger = If(sh Is Nothing, 0UI, CUInt(sh.ShaderFlags_SSPF1))
                 Dim f2 As UInteger = If(sh Is Nothing, 0UI, CUInt(sh.ShaderFlags_SSPF2))
                 Dim bit = Function(v As UInteger, b As Integer) ((v >> b) And 1UI) <> 0UI
-                Dim ea = mb.ResolveEngineAlpha()
+                Dim ea = EngineAlphaAtRest()
                 Dim geo = shp?.NifShape
                 Return New SseRenderPassLaw.SseShapeInputs With {
                     .IsEffect = mb.IsBGEM(),
@@ -3958,7 +3948,7 @@ Public Class PreviewModel
                 Dim f1 As UInteger = CUInt(ff And &HFFFFFFFFUL)
                 Dim f2 As UInteger = CUInt(ff >> 32)
                 Dim bit = Function(v As UInteger, b As Integer) ((v >> b) And 1UI) <> 0UI
-                Dim ea = mb.ResolveEngineAlpha()
+                Dim ea = EngineAlphaAtRest()
                 ' rev-45 / v4 B-rev-02: a lighting shape's group AND technique are GetRenderPasses' own (Fo4Technique); the pass law
                 ' reads the prepass mask, the depth mode and the vertex-alpha test from the technique bits, it re-derives none of them.
                 Dim lightingGroup As Integer? = Nothing
@@ -3997,45 +3987,31 @@ Public Class PreviewModel
 
             Private _ctlFrame As Integer = -1
             Private _ctlChain As List(Of NiflySharp.Blocks.NiTimeController)
-            Private _alphaCtlDone As Boolean
-            Private _alphaCtl As (Present As Boolean, Max As Single?)
+            Private _ctlAlphaChain As List(Of NiflySharp.Blocks.NiTimeController)
             Private _rest As MaterialRest
 
-            ''' <summary>C10 rev-07: THE one walk of the base shape's shader controller chain per frame (NifContent.CadenaDeShader, the owner of
-            ''' CadenasDeShape's DeShader - the shader chain alone, v2.2; PreviewModel.FrameSerial: edits are read on the next frame).
-            ''' AlphaController and Rest read it, each evaluated lazily and at
-            ''' most once per frame on it. Nothing for an overlay layer's material (no NIF property) or without a NIF shape.</summary>
+            ''' <summary>C10 rev-07: THE one walk of the base shape's controller chains per frame - the shader's (NifContent.CadenaDeShader,
+            ''' the owner of CadenasDeShape's DeShader) and its NiAlphaProperty's (NifContent.CadenaDeAlpha, ola 0c pto 13);
+            ''' PreviewModel.FrameSerial: edits are read on the next frame. Rest reads them, evaluated lazily and at most once per frame.
+            ''' Nothing for an overlay layer's material (no NIF property) or without a NIF shape.</summary>
             Private Function ShaderChain() As List(Of NiflySharp.Blocks.NiTimeController)
                 Dim shp = ParentMeshData.Shape
                 If OverrideRelatedMaterial IsNot Nothing OrElse shp?.NifContent Is Nothing OrElse shp.NifShape Is Nothing Then Return Nothing
                 Dim frame = If(ParentMeshData.ParentMesh?.ParentModel Is Nothing, -2, ParentMeshData.ParentMesh.ParentModel.FrameSerial)
                 If frame >= 0 AndAlso frame = _ctlFrame AndAlso _ctlChain IsNot Nothing Then Return _ctlChain
                 _ctlChain = shp.NifContent.CadenaDeShader(shp.NifShape)
-                _alphaCtlDone = False
+                _ctlAlphaChain = shp.NifContent.CadenaDeAlpha(shp.NifShape)
                 _rest = Nothing
                 _ctlFrame = frame
                 Return _ctlChain
             End Function
 
-            ''' <summary>The base shape's shader alpha controller (NifContent.LightingAlphaController on ShaderChain), once per frame. An
-            ''' overlay layer's material has no NIF property: none.</summary>
-            Friend Function AlphaController() As (Present As Boolean, Max As Single?)
-                Dim chain = ShaderChain()
-                If chain Is Nothing Then Return (False, Nothing)
-                If Not _alphaCtlDone Then
-                    Dim shp = ParentMeshData.Shape
-                    _alphaCtl = shp.NifContent.LightingAlphaController(shp.NifShape, chain)
-                    _alphaCtlDone = True
-                End If
-                Return _alphaCtl
-            End Function
-
-            ''' <summary>C10: the base shape's material at rest (NifContent.MaterialAtRest on ShaderChain), once per frame. An overlay
-            ''' layer's material: none.</summary>
+            ''' <summary>C10: the base shape's material at rest (NifContent.MaterialAtRest on ShaderChain and the NiAlphaProperty's chain),
+            ''' once per frame. An overlay layer's material: none.</summary>
             Friend Function Rest() As MaterialRest
                 Dim chain = ShaderChain()
                 If chain Is Nothing Then Return MaterialRest.None
-                If _rest Is Nothing Then _rest = ParentMeshData.Shape.NifContent.MaterialAtRest(chain, isFo4:=Not FrameSse())
+                If _rest Is Nothing Then _rest = ParentMeshData.Shape.NifContent.MaterialAtRest(chain, isFo4:=Not FrameSse(), alphaChain:=_ctlAlphaChain)
                 Return _rest
             End Function
 
@@ -4052,6 +4028,7 @@ Public Class PreviewModel
             ''' inside Fo4EngineState (RestWrites -&gt; Fo4EngineState would recurse).</summary>
             Friend Function RestWrites(v As RestVariable) As Boolean
                 If Not Rest().Has(v) Then Return False
+                If v = RestVariable.AlphaTestRef Then Return TestRefReachesDraw()
                 If v <> RestVariable.EnvMapScale OrElse FrameSse() Then Return True
                 Dim st = Fo4EngineState()
                 Return st.HasValue AndAlso st.Value.Material.Feature = 1
@@ -4070,6 +4047,32 @@ Public Class PreviewModel
             ''' the engine stores it) when one writes it (RestWrites), else Nothing (the caller keeps the material's, through its colour law).</summary>
             Friend Function RestColourAt(v As RestVariable) As OpenTK.Mathematics.Vector3?
                 Return If(RestWrites(v), Rest().Colour(v), CType(Nothing, OpenTK.Mathematics.Vector3?))
+            End Function
+
+            ''' <summary>Ola 0c pto 13: the NiAlphaProperty a BSNiAlphaPropertyTestRefController writes (the NIF's) is the one the geometry draws
+            ''' with: present in the engine's state (ResolveEngineAlpha: not detached, 0x142171908..1916; a material file rewrites the NIF's
+            ''' own property, taken when present, 0x142171954..19CC) and not replaced by the head writer's new property (0x1406EEC23..C7D,
+            ''' EngineFaceGenAlphaWriter).</summary>
+            Private Function TestRefReachesDraw() As Boolean
+                Dim mb = MaterialBase
+                If mb Is Nothing OrElse Not mb.NifAlphaPropertyPresent OrElse mb.FaceGenAlphaWriterApplies() Then Return False
+                Return mb.ResolveEngineAlpha().Present
+            End Function
+
+            ''' <summary>Ola 0c pto 19 (user decision 12-oct-2026): THE material alpha the GAME has at the preview's rest - the value its alpha
+            ''' controller writes at rest (lighting var 12 -&gt; +0x80, FO4 0x14224A9FD / SSE 0x14157AE1D; effect var 5, tables 0x14224BB90 /
+            ''' 0x14157C030; ControllerRestLaw, the rule of every material controller), else the material's.</summary>
+            Friend Function RestAlpha() As Single
+                Return RestValue(RestVariable.Alpha)
+            End Function
+
+            ''' <summary>Ola 0c pto 13: the engine's alpha state (ResolveEngineAlpha) with the threshold a BSNiAlphaPropertyTestRefController
+            ''' writes at rest (FO4 0x14224C5C0 -&gt; +0x2A, 0x14224C69F / 6B7; SSE 0x14157CA50 -&gt; +0x32, 0x14157CB2F / B47) when it reaches
+            ''' the drawn property (RestWrites). Every draw-side reader of the threshold reads it here.</summary>
+            Friend Function EngineAlphaAtRest() As FO4UnifiedMaterial_Class.EngineAlphaState
+                Dim ea = MaterialBase.ResolveEngineAlpha()
+                If RestWrites(RestVariable.AlphaTestRef) Then ea.Threshold = CByte(Rest().Value(RestVariable.AlphaTestRef, 0.0F))
+                Return ea
             End Function
 
             ''' <summary>The UV transform the draws use (RestValue of the four UV variables, C10).</summary>
@@ -4108,43 +4111,27 @@ Public Class PreviewModel
                 Return Fo4RenderPassLaw.LightingAlphaSkipsPasses(mb.IsBGEM(), alpha, EngineDecal(False))
             End Function
 
-            ''' <summary>F-A0 / S-ND: the GAME builds no pass for this material because of its RAW alpha (MaterialBase.Alpha, the engine's
-            ''' +0x80). Read by PreviewAlpha (whether to force) and RenderableMesh.AlphaZeroNotice (the notice). It reads neither
-            ''' PreviewAlpha nor the technique.</summary>
+            ''' <summary>F-A0 / S-ND: the GAME builds no pass for this material because of its alpha at rest (RestAlpha: the engine's +0x80
+            ''' after its controllers' update, ola 0c pto 19). Read by PreviewAlpha (whether to force) and RenderableMesh.AlphaZeroNotice
+            ''' (the notice). It reads neither PreviewAlpha nor the technique.</summary>
             Friend Function EngineAlphaSkipsPasses() As Boolean
-                Return MaterialBase IsNot Nothing AndAlso AlphaLawSkips(MaterialBase.Alpha)
+                Return MaterialBase IsNot Nothing AndAlso AlphaLawSkips(RestAlpha())
             End Function
 
-            ''' <summary>THE alpha the preview DRAWS this material with, and why (C2 v6 L5) - the one owner of that choice; PreviewAlpha is its
-            ''' value, read by every drawing consumer (SseInputs, Fo4Inputs, Fo4Technique, Fo4GBufferPass's engine material -
-            ''' AdditionalAlphaMaskRef, AlphaScale, SetupAlphaBlend -, the colour pass "alpha", the shadow pass "uMaterialAlpha",
-            ''' HasAlphaBlend); the game's law on the raw alpha and the notice read MaterialBase.Alpha (EngineAlphaSkipsPasses). The raw
-            ''' alpha, except for a base shape whose raw alpha the game builds no pass for: (1) an alpha controller whose highest value
-            ''' (AlphaController.Max) is above 0 - that maximum, in both views, Animated (the game shows it while it animates; rev-04,
-            ''' rev-26); (2) otherwise - no controller, no readable key, or a maximum of 0 or less - 1 in a view that draws for editing
-            ''' (RenderIntent.DrawEngineSkippedForEditing: what the user edits is seen; aud-B-06, provisional) and the raw alpha in a
-            ''' composite view (the game never draws it, L1c). A material outside any control (no ParentControl: a census, a tool) gets the
-            ''' composite rule - RenderIntent's default (C2 v7, D-G1: one answer for one shape). Overlay layers (rev-03): the raw alpha.
-            ''' PreviewModel.GateRawPreviewAlpha: the raw alpha.</summary>
-            Friend Function PreviewAlphaRule() As (Alpha As Single, Animated As Boolean)
-                Dim mb = MaterialBase
-                Dim pm = ParentMeshData.ParentMesh?.ParentModel
-                Dim pc = pm?.ParentControl
-                If OverrideRelatedMaterial IsNot Nothing OrElse
-                   PreviewModel.GateRawPreviewAlpha OrElse Not EngineAlphaSkipsPasses() Then Return (mb.Alpha, False)
-                Dim ctl = AlphaController()
-                ' Both views: the game shows it while its controller animates (rev-04) - the highest value it reaches, when above 0.
-                If ctl.Present AndAlso ctl.Max.HasValue AndAlso ctl.Max.Value > 0.0F Then Return (ctl.Max.Value, True)
-                ' Composite view - also a material outside any control (RenderIntent's default): nothing lifts it above 0, the game
-                ' never draws it (L1c).
-                If pc Is Nothing OrElse Not pc.Intent.DrawEngineSkippedForEditing Then Return (mb.Alpha, False)
-                ' Piece view: the shape the user edits is seen (aud-B-06, provisional).
-                Return (1.0F, False)
-            End Function
-
-            ''' <summary>The alpha the preview draws (PreviewAlphaRule().Alpha).</summary>
+            ''' <summary>THE alpha the preview DRAWS this material with (C2 v6 L5; ola 0c pto 19, user decision 12-oct-2026) - the one owner
+            ''' of that choice, read by every drawing consumer (SseInputs, Fo4Inputs, Fo4Technique, Fo4GBufferPass's engine material -
+            ''' AdditionalAlphaMaskRef, AlphaScale, SetupAlphaBlend -, the colour pass "alpha", the effect alpha, the shadow pass
+            ''' "uMaterialAlpha", HasAlphaBlend). The game's alpha at rest (RestAlpha), except for a base shape whose alpha at rest the game
+            ''' builds no pass for (EngineAlphaSkipsPasses): 1 in a view that draws for editing (RenderIntent.DrawEngineSkippedForEditing:
+            ''' what the user edits is seen, listed DrawnForEditing; aud-B-06) and the alpha at rest in a composite view (the game never
+            ''' draws it, L1c). A material outside any control (no ParentControl: a census, a tool) gets the composite rule - RenderIntent's
+            ''' default (C2 v7, D-G1). Overlay layers (rev-03) and PreviewModel.GateRawPreviewAlpha: the raw alpha.</summary>
             Friend Function PreviewAlpha() As Single
-                Return PreviewAlphaRule().Alpha
+                If OverrideRelatedMaterial IsNot Nothing OrElse PreviewModel.GateRawPreviewAlpha Then Return MaterialBase.Alpha
+                If Not EngineAlphaSkipsPasses() Then Return RestAlpha()
+                Dim pc = ParentMeshData.ParentMesh?.ParentModel?.ParentControl
+                If pc Is Nothing OrElse Not pc.Intent.DrawEngineSkippedForEditing Then Return RestAlpha()
+                Return 1.0F
             End Function
 
             ''' <summary>The pass law's own answer (C2 v6 L7, aud-B-02): the game's alpha branch cut this lighting material's passes on the
@@ -6320,19 +6307,25 @@ Public Class PreviewModel
             Return EffectSkipNotice(mb)
         End Function
 
-        Private _boundCentreFrame As Integer = -1
-        Private _boundCentre As Vector3
+        Private _boundSphereFrame As Integer = -1
+        Private _boundSphere As EngineWorldBound.Sphere?
 
-        ''' <summary>O-PT (chunk C8): the centre of this shape's world bound as its game computes it (EngineWorldBound.Centre), once per
-        ''' frame (PreviewModel.FrameSerial). A shape the game gives no sphere to (a skinned shape without bone spheres): the centre of
-        ''' its vertex box, as before (declared).</summary>
-        Friend Function WorldBoundCentre() As Vector3
+        ''' <summary>O-PT (chunk C8) and ola 0c pto 25: this shape's world bound sphere as its game computes it
+        ''' (EngineWorldBound.WorldSphere), once per frame (PreviewModel.FrameSerial); Nothing when the game gives it none the preview can
+        ''' place (WorldBoundCentre's declared gap).</summary>
+        Friend Function WorldBoundSphere() As EngineWorldBound.Sphere?
             Dim frame = If(ParentModel Is Nothing, -2, ParentModel.FrameSerial)
-            If frame >= 0 AndAlso frame = _boundCentreFrame Then Return _boundCentre
-            Dim c = EngineWorldBound.Centre(MeshData.Shape, MeshData.Meshgeometry)
-            _boundCentre = If(c.HasValue, c.Value, CType(MeshData.Meshgeometry.Boundingcenter, Vector3))
-            _boundCentreFrame = frame
-            Return _boundCentre
+            If frame >= 0 AndAlso frame = _boundSphereFrame Then Return _boundSphere
+            _boundSphere = EngineWorldBound.WorldSphere(MeshData.Shape, MeshData.Meshgeometry)
+            _boundSphereFrame = frame
+            Return _boundSphere
+        End Function
+
+        ''' <summary>O-PT (chunk C8): the centre of this shape's world bound (WorldBoundSphere, the one per-frame memo). A shape the game gives
+        ''' no sphere to (a skinned shape without bone spheres): the centre of its vertex box, as before (declared).</summary>
+        Friend Function WorldBoundCentre() As Vector3
+            Dim s = WorldBoundSphere()
+            Return If(s.HasValue, s.Value.Center, CType(MeshData.Meshgeometry.Boundingcenter, Vector3))
         End Function
 
         Private _sceneVisFrame As Integer = -1
@@ -6343,7 +6336,10 @@ Public Class PreviewModel
         Friend Function SceneVisibility() As NifSceneVisibility.LoadState
             Dim frame = If(ParentModel Is Nothing, -2, ParentModel.FrameSerial)
             If frame >= 0 AndAlso frame = _sceneVisFrame Then Return _sceneVis
-            _sceneVis = NifSceneVisibility.Evaluate(MeshData?.Shape)
+            ' Rev-13: the node bounds of one NIF are computed once per frame (PreviewModel.FrameSceneBounds), not once per shape.
+            Dim shp = MeshData?.Shape
+            _sceneVis = If(shp?.NifContent Is Nothing OrElse ParentModel Is Nothing OrElse frame < 0, NifSceneVisibility.Evaluate(shp),
+                           NifSceneVisibility.Evaluate(shp.NifContent, shp.NifShape, ParentModel.FrameSceneBounds.ForFrame(frame, shp.NifContent)))
             _sceneVisFrame = frame
             Return _sceneVis
         End Function
@@ -6421,14 +6417,13 @@ Public Class PreviewModel
         End Function
 
         ''' <summary>F-A0 / S-ND: the material alpha 0 (or NaN) for which the GAME builds no pass (MaterialData.EngineAlphaSkipsPasses,
-        ''' on the RAW alpha), as the notice says it: Drawn = the reason when the preview shows the shape, Undrawn = when it does not.
-        ''' "at rest" when the shape's shader carries an alpha controller (MaterialData.AlphaController); a base shape drawn for
+        ''' on the alpha at rest, RestAlpha), as the notice says it: Drawn = the reason when the preview shows the shape, Undrawn = when it
+        ''' does not. "at rest" when an alpha controller writes it (MaterialData.RestWrites(Alpha), ola 0c pto 19); a base shape drawn for
         ''' editing (L5) is drawn with MaterialData.PreviewAlpha, which the reason states. Nothing when the law does not cut.</summary>
         Friend Function AlphaZeroNotice(md As MaterialData, layer As OverlayMaterialLayer) As (Drawn As String, Undrawn As String)?
             If Not md.EngineAlphaSkipsPasses() Then Return Nothing
-            Dim mb = md.MaterialBase
             Dim game = If(Me.ParentModel.FrameIsSse, "Skyrim SE", "Fallout 4")
-            Dim what = $"Material alpha {If(Single.IsNaN(mb.Alpha), "NaN", "0")}{If(md.AlphaController().Present, " at rest (an alpha controller animates it)", "")}"
+            Dim what = $"Material alpha {If(Single.IsNaN(md.RestAlpha()), "NaN", "0")}{If(md.RestWrites(RestVariable.Alpha), " at rest (an alpha controller animates it)", "")}"
             Dim shownAs = If(layer Is Nothing,
                              $"; shown with alpha {md.PreviewAlpha().ToString("0.###", Globalization.CultureInfo.InvariantCulture)}", "")
             Return ($"{game}: {what}{shownAs}", $"{what}: {game} does not draw it")
@@ -6470,12 +6465,11 @@ Public Class PreviewModel
                 Dim alpha0 = AlphaZeroNotice(md, layer)
                 If alpha0.HasValue Then
                     ' Shown: the preview has vertices, no gap, a pass the game's law gives it, and the pass law did not cut it for the alpha it
-                    ' DRAWS (DrawnAlphaSkipsPasses: the law's own NoPass, one owner - C2 v6 L7). Its kind: shown at its animated maximum when
-                    ' PreviewAlphaRule took the controller's maximum, else drawn for editing (L5).
+                    ' DRAWS (DrawnAlphaSkipsPasses: the law's own NoPass, one owner - C2 v6 L7): drawn for editing (L5; ola 0c pto 19).
                     Dim shown = Not precombined AndAlso PreviewGap(md) Is Nothing AndAlso EngineUndrawnNotice(md) Is Nothing AndAlso
                                 Not md.DrawnAlphaSkipsPasses(pm.FrameIsSse)
                     If shown Then
-                        pm.ReportUndrawn(name, alpha0.Value.Drawn, If(md.PreviewAlphaRule().Animated, FrameNoticeKind.ShownAtAnimatedMaximum, FrameNoticeKind.DrawnForEditing))
+                        pm.ReportUndrawn(name, alpha0.Value.Drawn, FrameNoticeKind.DrawnForEditing)
                     Else
                         pm.ReportUndrawn(name, alpha0.Value.Undrawn, FrameNoticeKind.EngineUndrawn)
                     End If
@@ -6687,9 +6681,8 @@ Public Class PreviewModel
                 Dim b = material.Calculate_Blending()
                 Return (True, CType(b(0), BlendingFactor), CType(b(1), BlendingFactor))
             End If
-            Dim mb = material.MaterialBase
-            Dim ea = mb.ResolveEngineAlpha()
-            Dim f = Fo4EffectBlend(ea.Present, ea.Blend, ea.Src, ea.Dst, mb.Alpha)
+            Dim ea = material.MaterialBase.ResolveEngineAlpha()
+            Dim f = Fo4EffectBlend(ea.Present, ea.Blend, ea.Src, ea.Dst, material.PreviewAlpha())
             Return (f.Enabled, f.ColorSrc, f.ColorDst)
         End Function
 
@@ -6698,10 +6691,18 @@ Public Class PreviewModel
         ''' called when technique AND 0x1000020 = 0x1000000 (0x142207116..0x142207120: the list's state, no blend); property bit 49 =
         ''' mode 6 (0x14220784E..0x14220789C). 0 = no blend. One law for ApplyFo4GBufferDraw and the decals' base (DecalColourBlend).</summary>
         Friend Shared Function Fo4GBufferBlendMode(material As MaterialData, d As Fo4GBufferDraw) As Integer
+            Return Fo4GBufferBlendMode(material, d.Technique, d.Flags, d.Material.Alpha)
+        End Function
+
+        ''' <summary>The same law on a technique, the property's flags and a pass alpha: one owner for the G-buffer draw and the debug
+        ''' views' lighting draw (ola 0c point B). <paramref name="technique"/> Nothing: the debug view, an app view with no game
+        ''' counterpart, draws a shape GetRenderPasses gives no technique: design input of the editor's debug view, not an engine law -
+        ''' the 0x1000020 gate does not apply and SetupAlphaBlend decides.</summary>
+        Friend Shared Function Fo4GBufferBlendMode(material As MaterialData, technique As UInteger?, flags As ULong, passAlpha As Single) As Integer
             Dim ea = material.MaterialBase.ResolveEngineAlpha()
             Dim mode = 0
-            If (d.Technique And &H1000020UI) <> &H1000000UI Then mode = Fo4SetupAlphaBlendMode(ea.Present, ea.Blend, ea.Src, ea.Dst, d.Material.Alpha)
-            If ((d.Flags >> 49) And 1UL) <> 0UL Then mode = 6
+            If Not technique.HasValue OrElse (technique.Value And &H1000020UI) <> &H1000000UI Then mode = Fo4SetupAlphaBlendMode(ea.Present, ea.Blend, ea.Src, ea.Dst, passAlpha)
+            If ((flags >> 49) And 1UL) <> 0UL Then mode = 6
             Return mode
         End Function
 
@@ -7065,10 +7066,11 @@ Public Class PreviewModel
 
         ''' <summary>The refraction-normals draw of this shape (RefractionLaw / RefractionSource), into the target the control
         ''' bound: its game's VS (skinning and position as the colour pass), the normals PS, depth LESS_EQUAL against the
-        ''' frame (written only for FO4's Refraction_Writes_Depth), no blend. <paramref name="lodScale"/> = s of the LOD fade.
+        ''' frame (written only for FO4's Refraction_Writes_Depth), no blend. <paramref name="lodScale"/> = s of the LOD fade,
+        ''' <paramref name="fadeCentre"/> = the world-bound centre its distance is measured from (PreviewModel.DrawRefractionNormals).
         ''' Returns False when the shape is not drawn (no refraction, missing technique, or faded out).</summary>
         Friend Function RenderRefractionNormals(program As Shader_Base_Class, projection As Matrix4, camera As OrbitCamera,
-                                                isSse As Boolean, lodScale As Single) As Boolean
+                                                isSse As Boolean, lodScale As Single, fadeCentre As Vector3) As Boolean
             If Not IsDrawable() OrElse IsNothing(MeshData.Shape.NifShape) Then Return False
             If MeshData.Material?.MaterialBase Is Nothing Then Return False
             Dim r = MeshData.Material.Refraction(isSse)
@@ -7076,8 +7078,9 @@ Public Class PreviewModel
             Dim fade = 1.0F
             Dim view As Matrix4 = camera.GetViewMatrix()
             If r.UsesLodFade Then
-                ' x = |camera - world bound centre| * s / 7200 (0x1414E7120 / 0x14217EC00); the view-space length is that distance.
-                Dim c = Vector3.TransformPosition(Vector3.TransformPosition(WorldBoundCentre(), MeshData.Transform), view)
+                ' x = |camera - fade node's world-bound centre| * s / 7200 (0x1414E7120 / 0x14217EC00, the centre +0xB0..B8 at
+                ' 0x14217EC62..A7); the view-space length is that distance.
+                Dim c = Vector3.TransformPosition(Vector3.TransformPosition(fadeCentre, MeshData.Transform), view)
                 fade = RefractionLaw.LodFade(c.Length, lodScale)
                 If fade < 0.0F Then Return False
             End If
@@ -7181,7 +7184,7 @@ Public Class PreviewModel
             ' 0x142241F41..F64). SSE: SseRenderPassLaw.ShadowAlphaTest (chunk C11) - the NiAlphaProperty test (utility technique
             ' bit 7, 0x14151B641..65A) against the batch's cb11[0].x (SubgroupThreshold, the exe's float32 law).
             If Config_App.Current.Game = Config_App.Game_Enum.Fallout4 AndAlso materialBase IsNot Nothing Then
-                Dim atS = Fo4RenderPassLaw.ShadowPassAlphaTest(doAlphaTest, materialBase.ResolveEngineAlpha().Threshold)
+                Dim atS = Fo4RenderPassLaw.ShadowPassAlphaTest(doAlphaTest, MeshData.Material.EngineAlphaAtRest().Threshold)
                 doAlphaTest = atS.Test
                 umbralSombra = atS.Threshold
             ElseIf Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso materialBase IsNot Nothing Then
@@ -8218,7 +8221,7 @@ Public Class PreviewModel
             ' parser stores it at data+0x60 and ApplyMaterialData builds kBaseColor from it, 0x14216C065..C185,
             ' 0x1421717EF..1835); cb2[13].w = the property's fAlpha = 1.0 (ctor 0x1421688FB, never written by
             ' ApplyMaterialData). The app aliases BaseColor.A to the same file Alpha: it enters ONCE.
-            shader.SetFloat("effectBaseColorAlpha", materialBase.Alpha)
+            shader.SetFloat("effectBaseColorAlpha", material.PreviewAlpha())
             shader.SetFloat("effectBaseColorScale", material.RestValue(RestVariable.EffectEmissiveMultiple))
             ' The LIGHTING light: the weather's effect light kept in the game's proportion to the frame's key
             ' (PreviewImagingRow.EffectLightForKey; the key in the space the lit shaders get it, FrameLights).
@@ -8300,7 +8303,7 @@ Public Class PreviewModel
                 ' temporary blood effect runs (0x141558820); the threshold term is the NiAlphaProperty's (0x141557B94..BB7, 1/255 = token
                 ' [0x141B5BDC8] 0x3B808081).
                 shader.SetBool("bSseBlood", SseRenderPassLaw.EffectBloodTechnique(sseIn))
-                shader.SetVector3("uSseBloodParams", New Vector3(materialBase.ResolveEngineAlpha().Threshold * (1.0F / 255.0F), 0.0F, 0.0F))
+                shader.SetVector3("uSseBloodParams", New Vector3(material.EngineAlphaAtRest().Threshold * (1.0F / 255.0F), 0.0F, 0.0F))
                 ' The space the lighting PS works in (read by the anisotropic lobe's max(L.z, 0)): SseLitSpace, from the placement
                 ' SkinningHelper uploaded for this shape.
                 shader.SetMatrix3("uSseLitSpace", SseLitSpace(sseIn.LitSkinned, sseLitType, MeshData.Meshgeometry.GPUBoneMatrices, MeshData.Shape))
@@ -8312,13 +8315,13 @@ Public Class PreviewModel
                 shader.SetFloat("alphaThreshold", ssePass.MainAlphaThreshold)
                 testSubido = ssePass.MainAlphaTest
                 umbralSubido = ssePass.MainAlphaThreshold
-                shader.SetFloat("sseEffectPropAlpha", If(isBGEM, materialBase.Alpha, 1.0F))
+                shader.SetFloat("sseEffectPropAlpha", If(isBGEM, material.PreviewAlpha(), 1.0F))
                 shader.SetBool("bSseHairDepthWriteDecal", Not isBGEM AndAlso ssePass.HairDepthWriteDecal)
                 shader.SetBool("bSsePrepass", False)
             Else
                 ' FO4 colour pass: its alpha test and threshold (Fo4RenderPassLaw.ColourPassAlphaTest; an effect tests always,
                 ' 0 without a test). Overrides the generic upload. The shadow pass has its own writer (ShadowPassAlphaTest).
-                Dim atC = Fo4RenderPassLaw.ColourPassAlphaTest(isBGEM, CBool(hasAlphaTest), materialBase.ResolveEngineAlpha().Threshold)
+                Dim atC = Fo4RenderPassLaw.ColourPassAlphaTest(isBGEM, CBool(hasAlphaTest), material.EngineAlphaAtRest().Threshold)
                 shader.SetBool("bAlphaTest", atC.Test)
                 shader.SetFloat("alphaThreshold", atC.Threshold)
                 testSubido = atC.Test
@@ -8401,12 +8404,31 @@ Public Class PreviewModel
                 ' engine has no PS for it (Render).
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
                 Dim ea = materialBase.ResolveEngineAlpha()
-                Dim fb = Fo4EffectBlend(ea.Present, ea.Blend, ea.Src, ea.Dst, materialBase.Alpha)
+                Dim fb = Fo4EffectBlend(ea.Present, ea.Blend, ea.Src, ea.Dst, material.PreviewAlpha())
                 If fb.Enabled Then
                     GL.Enable(EnableCap.Blend)
                     GL.BlendFuncSeparate(CType(fb.ColorSrc, BlendingFactorSrc), CType(fb.ColorDst, BlendingFactorDest),
                                          CType(fb.AlphaSrc, BlendingFactorSrc), CType(fb.AlphaDst, BlendingFactorDest))
                     coverageMode = CoverageModeForSourceFactor(fb.ColorSrc)
+                Else
+                    GL.Disable(EnableCap.Blend)
+                End If
+            ElseIf hasAlphaBlend AndAlso Not isSSE AndAlso Not Me.ParentModel.FrameUsesFo4Deferred Then
+                ' FO4 lighting outside the G-buffer (a debug view; ola 0c point B): the G-buffer draw's own law (Fo4GBufferBlendMode:
+                ' SetupAlphaBlend 0x1422301E0 unless technique AND 0x1000020 = 0x1000000, property bit 49 = mode 6) with this draw's pass
+                ' alpha ([prop+0x28], 0x14217A47C..4AB = PreviewAlpha) and the D3D table 0x141855180 (Fo4BlendModeFactors); mode 6 = RT 0's
+                ' DEST_COLOR / ZERO, alpha ONE / ZERO (0x1418552AA), the factors of mode 3; mode 0 = not blended.
+                GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+                Dim ffL = material.Fo4Flags()
+                Dim groupL As Integer
+                Dim tL = material.Fo4Technique(ffL, groupL)
+                Dim modeL = Fo4GBufferBlendMode(material, tL, ffL, material.PreviewAlpha())
+                Dim fl = Fo4BlendModeFactors(If(modeL = 6, 3, modeL))
+                If fl.Enabled Then
+                    GL.Enable(EnableCap.Blend)
+                    GL.BlendFuncSeparate(CType(fl.ColorSrc, BlendingFactorSrc), CType(fl.ColorDst, BlendingFactorDest),
+                                         CType(fl.AlphaSrc, BlendingFactorSrc), CType(fl.AlphaDst, BlendingFactorDest))
+                    coverageMode = CoverageModeForSourceFactor(fl.ColorSrc)
                 Else
                     GL.Disable(EnableCap.Blend)
                 End If
@@ -8494,7 +8516,7 @@ Public Class PreviewModel
         ''' </list></summary>
         Private Sub ApplyFo4GBufferDraw(shader As Shader_Base_Class, material As MaterialData, d As Fo4GBufferDraw)
             Dim mb = material.MaterialBase
-            Dim ea = mb.ResolveEngineAlpha()
+            Dim ea = material.EngineAlphaAtRest()
             Dim t = d.Technique
             Dim bit = Function(v As ULong, n As Integer) ((v >> n) And 1UL) <> 0UL
             Dim rgbOnly = (t And (1UI << 15)) <> 0UI AndAlso Not (ea.Present AndAlso ea.Blend AndAlso (t And (1UI << 17)) <> 0UI)
@@ -10127,10 +10149,6 @@ Public Class PreviewModel
     ''' RenderableMesh.ReportUndrawn): reason -&gt; shapes, shown in the same notice.</summary>
     Friend ReadOnly FrameDrawnForEditing As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
-    ''' <summary>This frame's shapes whose material alpha at rest is 0 and whose alpha controller lifts it: the game draws them while it
-    ''' animates, the preview shows them at that maximum (C2 v6 L5, aud-B-05): reason -&gt; shapes, shown in the same notice.</summary>
-    Friend ReadOnly FrameShownAtAnimatedMaximum As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
-
     ''' <summary>C4: this frame's shapes the game draws and the preview draws differently (FrameNoticeKind.DrawnDifferently).</summary>
     Friend ReadOnly FrameDrawnDifferently As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
@@ -10155,7 +10173,7 @@ Public Class PreviewModel
     ''' view vector), which the preview draws its own way (FrameNoticeKind.UndefinedInGame).</summary>
     Friend ReadOnly FrameUndefinedInGame As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
-    ''' <summary>The ten kinds of the frame's notice, one map each (DrawnDifferently / UndefinedInGame / MissingTexture /
+    ''' <summary>The nine kinds of the frame's notice, one map each (DrawnDifferently / UndefinedInGame / MissingTexture /
     ''' EmptyTextureSlot: C4, the engine's default textures; DrivenByControllerAtRest: C10). Each kind has one severity
     ''' (SeverityOf).</summary>
     Friend Enum FrameNoticeKind
@@ -10165,9 +10183,6 @@ Public Class PreviewModel
         EngineUndrawn
         ''' <summary>The game does not draw it, the preview draws it so that it can be edited (FrameDrawnForEditing).</summary>
         DrawnForEditing
-        ''' <summary>Its alpha at rest is 0 and the game draws it while its alpha controller animates it: the preview shows it at the
-        ''' highest value the controller reaches (C2 v6 L5, aud-B-05; FrameShownAtAnimatedMaximum).</summary>
-        ShownAtAnimatedMaximum
         ''' <summary>C4 extension (rev-07 / rev-11): the game draws it, the preview draws it differently and cannot reproduce it
         ''' (FrameDrawnDifferently): a texture in the data the preview did not load, an SSE eye without eye data, snow sparkles.</summary>
         DrawnDifferently
@@ -10202,7 +10217,7 @@ Public Class PreviewModel
             Case FrameNoticeKind.PreviewGap, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.DrawnForEditing,
                  FrameNoticeKind.DrawnDifferently, FrameNoticeKind.MissingTexture
                 Return FrameNoticeSeverity.Error
-            Case FrameNoticeKind.ShownAtAnimatedMaximum, FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot,
+            Case FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot,
                  FrameNoticeKind.DrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
                 Return FrameNoticeSeverity.Warning
             Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
@@ -10212,6 +10227,9 @@ Public Class PreviewModel
     ''' <summary>The frame's serial (RenderAll): per-frame caches key on it (MaterialData.Fo4EngineState, MaterialData.PreviewAlpha).</summary>
     Friend Property FrameSerial As Integer
 
+    ''' <summary>Rev-13 (ola 0c pto 14): the node bounds of this frame, one map per NIF (NifSceneVisibility.SceneBoundMemo).</summary>
+    Friend ReadOnly FrameSceneBounds As New NifSceneVisibility.SceneBoundMemo()
+
     ''' <summary>The one sink of the frame's notice: <paramref name="kind"/> picks the map (FrameNoticeKind). A shape is listed once
     ''' under each reason.</summary>
     Friend Sub ReportUndrawn(shapeName As String, reason As String, kind As FrameNoticeKind)
@@ -10220,7 +10238,6 @@ Public Class PreviewModel
             Case FrameNoticeKind.PreviewGap : map = FramePreviewGaps
             Case FrameNoticeKind.EngineUndrawn : map = FrameEngineUndrawn
             Case FrameNoticeKind.DrawnForEditing : map = FrameDrawnForEditing
-            Case FrameNoticeKind.ShownAtAnimatedMaximum : map = FrameShownAtAnimatedMaximum
             Case FrameNoticeKind.DrawnDifferently : map = FrameDrawnDifferently
             Case FrameNoticeKind.UndefinedInGame : map = FrameUndefinedInGame
             Case FrameNoticeKind.MissingTexture : map = FrameMissingTextures
@@ -10253,7 +10270,6 @@ Public Class PreviewModel
             (FrameNoticeKind.PreviewGap, FramePreviewGaps, Function(r, n) $"Not drawn by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.EngineUndrawn, FrameEngineUndrawn, Function(r, n) $"{r} ({shapes(n)})"),
             (FrameNoticeKind.DrawnForEditing, FrameDrawnForEditing, Function(r, n) $"Drawn by the preview, not by the game ({shapes(n)}): {r}"),
-            (FrameNoticeKind.ShownAtAnimatedMaximum, FrameShownAtAnimatedMaximum, Function(r, n) $"Shown at its animated maximum ({shapes(n)}): {r}"),
             (FrameNoticeKind.DrawnDifferently, FrameDrawnDifferently, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.UndefinedInGame, FrameUndefinedInGame, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.MissingTexture, FrameMissingTextures, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
@@ -10278,7 +10294,6 @@ Public Class PreviewModel
         FramePreviewGaps.Clear()
         FrameEngineUndrawn.Clear()
         FrameDrawnForEditing.Clear()
-        FrameShownAtAnimatedMaximum.Clear()
         FrameDrawnDifferently.Clear()
         FrameUndefinedInGame.Clear()
         FrameMissingTextures.Clear()
@@ -10345,7 +10360,7 @@ Public Class PreviewModel
 
         If RenderBucketsDirty OrElse RenderBucketsGame <> FrameIsSse OrElse
            (OpaqueMeshes.Count + DecalMeshes.Count + DecalBlendedMeshes.Count + BlendedMeshes.Count +
-            BillboardMeshes.Count + ForwardEffectMeshes.Count + NoColourPassMeshes.Count) <> meshes.Count Then
+            BillboardMeshes.Count + ForwardEffectMeshes.Count + Fo4LodLandscapeMeshes.Count + NoColourPassMeshes.Count) <> meshes.Count Then
             RebuildRenderBuckets()
 
             ' SACADO: el re-orden de OPAQUE y CUTOUT (hoy un solo bucket OPAQUE, chunk C8) por `DiffuseTexture_ID` (era la optimizacion "O3.5",
@@ -10512,7 +10527,7 @@ Public Class PreviewModel
         ' target is cleared and bound only when at least one of them draws. ISRefraction then runs from RenderScene.
         FrameRefractionActive = False
         If Not GateDisableRefraction Then
-            Dim lodScale = RefractionLaw.LodScale(FrameIsSse)
+            Dim fadeNodes As Dictionary(Of RenderableMesh, (Centre As Vector3?, IsActor As Boolean, InList As Boolean)) = Nothing
             Dim abierto = False
             For Each mesh In NoColourPassMeshes
                 If mesh.MeshData?.Shape Is Nothing OrElse mesh.MeshData.Shape.Wireframe Then Continue For
@@ -10521,12 +10536,83 @@ Public Class PreviewModel
                 If r Is Nothing Then Continue For
                 Dim pass = mesh.MeshData.Material.Refraction(FrameIsSse)
                 If Not pass.Applies OrElse Not pass.Drawn Then Continue For
+                ' Pto 25: the fade node. Skyrim SE: the shape's own centre and the objects' entry (its fade node is not traced). Fallout 4:
+                ' the root BSFadeNode of the shape's 3D (Fo4FadeNodes) - its world bound's centre and its table entry; a fade node with no
+                ' geometry of radius > 0 (or without a placeable sphere this frame) keeps the shape's centre (WorldBoundCentre's gap).
+                Dim centre = mesh.WorldBoundCentre()
+                Dim lodScale = RefractionLaw.LodScale(FrameIsSse, isActor:=False)
+                If Not FrameIsSse Then
+                    If fadeNodes Is Nothing Then fadeNodes = Fo4FadeNodes()
+                    Dim f As (Centre As Vector3?, IsActor As Boolean, InList As Boolean)
+                    If fadeNodes.TryGetValue(mesh, f) Then
+                        If f.Centre.HasValue Then centre = f.Centre.Value
+                        lodScale = RefractionLaw.LodScale(False, f.IsActor)
+                        ' A shape outside its root's geometry list keeps the engine's default fade node [0x143E5DDF8] (ctor 0x142168909 ->
+                        ' 0x14217E637), whose +0x1B8 = +0x1BC = 0 (0x14217CF84): x = 0, fade 1.0 (0x142169A87..92).
+                        If Not f.InList Then lodScale = 0.0F
+                    End If
+                End If
                 If Not abierto Then ParentControl.BeginRefractionNormals(FrameIsSse) : abierto = True
-                If mesh.RenderRefractionNormals(ParentControl.RefractionNormalsProgram(FrameIsSse), projection, camera, FrameIsSse, lodScale) Then FrameRefractionActive = True
+                If mesh.RenderRefractionNormals(ParentControl.RefractionNormalsProgram(FrameIsSse), projection, camera, FrameIsSse, lodScale, centre) Then FrameRefractionActive = True
             Next
             If abierto Then ParentControl.EndRefractionNormals()
         End If
     End Sub
+
+    ''' <summary>Ola 0c pto 25 (Fallout 4): each mesh's fade node - the BSFadeNode the refraction pass measures its distance from
+    ''' ([prop+0x48] = the root of the 3D, written by the list visitor 0x14217F2C0 at 0x14217F34E..357; measured live, F4seRenderDiag pass
+    ''' 3: the skeleton.nif root for an actor) - as the preview's scene maps it (RefractionLaw.FadeGroupOf, user decision rev-04): a shape
+    ''' mounted on a character's skeleton (skinned, or a rigid piece anchored to a bone) is part of that actor (one group per SkeletonInstance
+    ''' of the scene's resolver), a loose model without a skeleton belongs to its NIF's root. Its centre:
+    ''' EngineWorldBound.FadeNodeBound (0x14217EE50) over the world spheres of the group's list - each NIF of the group in registration
+    ''' order, walked from its parentless nodes by NifSceneVisibility.FadeListGeometries (0x14217ED30: DFS pre-order, hidden geometry
+    ''' included, NiSwitchNode only its active child); Nothing when no geometry of the list has a world sphere of radius &gt; 0. The order
+    ''' between the NIFs of an actor is the preview's (registration): the engine's actor graph is not the preview's.</summary>
+    Private Function Fo4FadeNodes() As Dictionary(Of RenderableMesh, (Centre As Vector3?, IsActor As Boolean, InList As Boolean))
+        Dim resolver = ParentControl.Intent.SkeletonResolver
+        Dim groups As New Dictionary(Of Object, (Meshes As List(Of RenderableMesh), IsActor As Boolean))(ReferenceEqualityComparer.Instance)
+        For Each m In meshes.Where(Function(x) x?.MeshData?.Shape?.NifContent IsNot Nothing).OrderBy(Function(x) x.RegistrationKey)
+            Dim shp = m.MeshData.Shape
+            ' IRenderableShape.IsSkinned covers the synthetic anchor skin of a rigid piece mounted on a bone (IRuntimeSkinOverride).
+            Dim fg = RefractionLaw.FadeGroupOf(shp.IsSkinned, If(resolver Is Nothing, Nothing, CObj(resolver.ResolveFor(shp))), shp.NifContent)
+            Dim g As (Meshes As List(Of RenderableMesh), IsActor As Boolean) = Nothing
+            If Not groups.TryGetValue(fg.Key, g) Then
+                g = (New List(Of RenderableMesh), fg.IsActor)
+                groups(fg.Key) = g
+            End If
+            g.Meshes.Add(m)
+        Next
+        Dim out As New Dictionary(Of RenderableMesh, (Centre As Vector3?, IsActor As Boolean, InList As Boolean))
+        For Each kv In groups
+            Dim isActorGroup = kv.Value.IsActor
+            Dim listados As New HashSet(Of RenderableMesh)
+            Dim spheres As New List(Of EngineWorldBound.Sphere)
+            For Each porNif In kv.Value.Meshes.GroupBy(Function(x) x.MeshData.Shape.NifContent)
+                Dim nif = porNif.Key
+                Dim porBloque As New Dictionary(Of Integer, RenderableMesh)
+                For Each x In porNif
+                    Dim bi As Integer
+                    If x.MeshData.Shape.NifShape IsNot Nothing AndAlso nif.GetBlockIndex(x.MeshData.Shape.NifShape, bi) Then porBloque(bi) = x
+                Next
+                ' Every parentless node is the root BSFadeNode the loader makes of it (0x1417B39B0, load flag 0x10: 0x1417B3BB8..BD6).
+                For Each root In NifSceneVisibility.ParentlessNodes(nif)
+                    For Each geo In NifSceneVisibility.FadeListGeometries(nif, root).Items
+                        Dim x As RenderableMesh = Nothing
+                        If Not porBloque.TryGetValue(geo.Block, x) Then Continue For
+                        listados.Add(x)
+                        Dim sph = x.WorldBoundSphere()
+                        If sph.HasValue Then spheres.Add(sph.Value)
+                    Next
+                Next
+            Next
+            Dim b = EngineWorldBound.FadeNodeBound(spheres)
+            Dim c As Vector3? = If(b.HasValue, b.Value.Center, CType(Nothing, Vector3?))
+            For Each m In kv.Value.Meshes
+                out(m) = (c, isActorGroup, listados.Contains(m))
+            Next
+        Next
+        Return out
+    End Function
 
     ''' <summary>The engines' per-slot filter state in the frame (SamplerLaw: an inherited slot reads it): reset to FILT 3 every
     ''' frame (SSE 0x141007B70, FO4 0x141816080).</summary>
@@ -10697,6 +10783,9 @@ Public Class PreviewModel
             Array.Copy(filters, FrameSamplerFilter, filters.Length)
         End If
         If Not GateDecalColourSkip Then DrawBucket(DecalBlendedMeshes, _ovlDecalBlended, projection, camera)
+        ' C8 (ola 0c): Fallout 4's G-buffer list 0 - group 7, LOD_Landscape - after the decal lists 2 / 3 (0x1421F3C21 -> 0x1421F3C3B ->
+        ' 0x1421F3C4C) and before 0x1421D8450 / list 1 (0x1421F3CD0). Registration order inside it (its insertion is not traced).
+        If Not FrameIsSse Then DrawBucket(Fo4LodLandscapeMeshes, _ovlLodLandscape, projection, camera)
     End Sub
 
     ''' <summary>The step of the translucent decals' base pass a draw makes (RenderableMesh.Render / RenderOverlayLayer).</summary>
@@ -10791,11 +10880,12 @@ Public Class PreviewModel
     Private ReadOnly _ovlBlended As New List(Of OverlayItem)
     Private ReadOnly _ovlBillboard As New List(Of OverlayItem)
     Private ReadOnly _ovlForwardEffect As New List(Of OverlayItem)
+    Private ReadOnly _ovlLodLandscape As New List(Of OverlayItem)
     Private ReadOnly _ovlNoColourPass As New List(Of OverlayItem)
 
     ''' <summary>Every overlay layer of the frame (CollectOverlayItems' lists, in their draw order).</summary>
     Private Function AllOverlayItems() As IEnumerable(Of OverlayItem)
-        Return _ovlOpaque.Concat(_ovlDecal).Concat(_ovlDecalBlended).Concat(_ovlBlended).Concat(_ovlBillboard).Concat(_ovlForwardEffect).Concat(_ovlNoColourPass)
+        Return _ovlOpaque.Concat(_ovlDecal).Concat(_ovlDecalBlended).Concat(_ovlLodLandscape).Concat(_ovlBlended).Concat(_ovlBillboard).Concat(_ovlForwardEffect).Concat(_ovlNoColourPass)
     End Function
 
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-undrawn-notice mutant. True skips the frame's notice census.</summary>
@@ -10867,7 +10957,7 @@ Public Class PreviewModel
     ''' Manager, NPCs without overlays).</summary>
     Private Sub CollectOverlayItems()
         _ovlOpaque.Clear() : _ovlDecal.Clear() : _ovlDecalBlended.Clear() : _ovlBlended.Clear()
-        _ovlBillboard.Clear() : _ovlForwardEffect.Clear() : _ovlNoColourPass.Clear()
+        _ovlBillboard.Clear() : _ovlForwardEffect.Clear() : _ovlLodLandscape.Clear() : _ovlNoColourPass.Clear()
         For Each mesh In meshes
             If mesh Is Nothing OrElse mesh.MeshData Is Nothing Then Continue For
             Dim layers = mesh.MeshData.Shape?.OverlayLayers
@@ -10885,6 +10975,7 @@ Public Class PreviewModel
                     Case RenderBucket.Blended : _ovlBlended.Add(it)
                     Case RenderBucket.Billboard : _ovlBillboard.Add(it)
                     Case RenderBucket.ForwardEffect : _ovlForwardEffect.Add(it)
+                    Case RenderBucket.Fo4LodLandscape : _ovlLodLandscape.Add(it)
                     Case Else : _ovlNoColourPass.Add(it)
                 End Select
             Next

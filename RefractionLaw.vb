@@ -94,28 +94,51 @@ Friend Module RefractionLaw
     End Function
 
     ''' <summary>The refraction LOD fade (SSE 0x1414E8480, FO4 0x142169A30, the same law): x = distance * s / 7200;
-    ''' x &gt; fRefractionLODFadeEnd (0.03) -&gt; no pass at all (returns -1); x &lt;= fRefractionLODFadeStart (0.025) -&gt; 1;
-    ''' between, clamp((x - end) / (start - end), 0, 1).</summary>
+    ''' x &gt; fRefractionLODFadeEnd (0.03) -&gt; no pass at all (returns -1, 0x142169A33..4A); x &lt;= fRefractionLODFadeStart (0.025) or
+    ''' NaN -&gt; 1 (0x142169A87..92); between, clamp((x - end) / (start - end), 0, 1) (0x142169A4B..94). The previous frame's x only
+    ''' decides [prop+0x2C], the pass alpha's "changed" mark: it forces GetRenderPasses to rebuild the passes (0x14217A48D..4CA) and
+    ''' changes nothing visible in a still scene, so no state is kept; the override [0x143E5DD4C] stays -1.0 (init 0x14217E8A0, its
+    ''' setter 0x14217EAB0 has no callers): inactive (resultado5 item 7).</summary>
     Friend Function LodFade(distance As Single, s As Single) As Single
         Const FadeStart As Single = 0.025F, FadeEnd As Single = 0.03F
         ' 1 / 7200 as the exe stores it (0x3911A2B4: SSE 0x141B2F1C0, FO4 0x142903DE8).
         Dim x = distance * s * BitConverter.Int32BitsToSingle(&H3911A2B4)
         If x > FadeEnd Then Return -1.0F
-        If x <= FadeStart Then Return 1.0F
+        If Not (x > FadeStart) Then Return 1.0F
         Return Math.Min(1.0F, Math.Max(0.0F, (x - FadeEnd) / (FadeStart - FadeEnd)))
     End Function
 
-    ''' <summary>s of the refraction LOD fade for a NIF shown on its own (Tools/re-docs/RE_REFRACTION_BOTH_2026-10-03.md 7, 9):
-    ''' s = lodAdjust / fLODFadeOutMultObjects:LOD (the root BSFadeNode has fade type 0). The multiplier is the exe default
-    ''' (SSE 5, FO4 4.5; user decision 3-oct-2026: app values, not the installed INI files). lodAdjust = worldFOV /
-    ''' fDefaultFOV (80 in both exes), raw degree numbers (SSE 0x141516FD7, FO4 0x1421C8EAA), and the world camera is the
-    ''' PREVIEW's (user decision): the engine's FOV number is the horizontal FOV of a 16:9 frame - NiCamera::SetPerspective
-    ''' (SSE 0x140EF17A0, FO4 0x1421C8CC0) gives half-height tan(fov/2) * 0.5625 for the World scene graph - so the
-    ''' preview's vertical FOV v is the engine number 2 atan(tan(v/2) / 0.5625).</summary>
-    Friend Function LodScale(isSse As Boolean) As Single
+    ''' <summary>s of the refraction LOD fade (Tools/re-docs/RE_REFRACTION_BOTH_2026-10-03.md 7, 9; ola 0c pto 25): s = lodAdjust /
+    ''' LodFadeMultiplier. lodAdjust = worldFOV / fDefaultFOV (80 in both exes; FO4 [cam+0x194] 0x1421C8CDA -&gt; 0x1421C8EAA..EB2,
+    ''' fDefaultFOV [0x142F979C8]; SSE 0x141516FD7), raw degree numbers, and the world camera is the PREVIEW's (user decision): the
+    ''' engine's FOV number is the horizontal FOV of a 16:9 frame - NiCamera::SetPerspective (SSE 0x140EF17A0, FO4 0x1421C8CC0) gives
+    ''' half-height tan(fov/2) * 0.5625 for the World scene graph - so the preview's vertical FOV v is the engine number
+    ''' 2 atan(tan(v/2) / 0.5625).</summary>
+    Friend Function LodScale(isSse As Boolean, isActor As Boolean) As Single
         Dim mitadV = PreviewControl.PreviewFovYDegrees * Math.PI / 360.0
         Dim fovMotor = CSng(2.0 * Math.Atan(Math.Tan(mitadV) / 0.5625) * 180.0 / Math.PI)
-        Return (fovMotor / 80.0F) / If(isSse, 5.0F, 4.5F)
+        Return (fovMotor / 80.0F) / LodFadeMultiplier(isSse, isActor)
+    End Function
+
+    ''' <summary>The fade node's entry of the multipliers' table (FO4 0x142F97308, filled by 0x1402CC880 from the settings' .data
+    ''' defaults - user decision 3-oct-2026: the exe's defaults, never the installed INI): byte [node+0x11C] 0 or 1 (a NIF root, a
+    ''' reference's root; measured live) -&gt; fLODFadeOutMultObjects 4.5 (0x142EDB0C0); 3 (an actor's skeleton.nif root) -&gt;
+    ''' fLODFadeOutMultActors 6.0 (0x142EDB090; the player's factor [[0x1432DD370]+0xCC8]+0x78 is not applied: the preview has no
+    ''' player). Skyrim SE: fLODFadeOutMultObjects 5 (RE_REFRACTION_BOTH 7); its fade node and its actors' entry are not traced
+    ''' (PreviewModel.DrawRefractionNormals asks it for objects only).</summary>
+    Friend Function LodFadeMultiplier(isSse As Boolean, isActor As Boolean) As Single
+        If isSse Then Return 5.0F
+        Return If(isActor, 6.0F, 4.5F)
+    End Function
+
+    ''' <summary>Ola 0c pto 25, the preview's scene as the game's graph (user decision rev-04): a shape mounted on a character's skeleton
+    ''' (<paramref name="mountedOnSkeleton"/> = skinned, or a rigid piece anchored to a bone) hangs from that actor's skeleton root - its
+    ''' fade node, the Actors entry (byte [node+0x11C] = 3, measured live) - and the group is the <paramref name="skeleton"/> the scene's
+    ''' resolver gives it (one actor per SkeletonInstance); without a skeleton, or not mounted, the model is an object: the root of its
+    ''' <paramref name="nif"/> (converted by the loader, 0x1417B3BB8..BD6; idx 0, the Objects entry).</summary>
+    Friend Function FadeGroupOf(mountedOnSkeleton As Boolean, skeleton As Object, nif As Object) As (Key As Object, IsActor As Boolean)
+        If mountedOnSkeleton AndAlso skeleton IsNot Nothing Then Return (skeleton, True)
+        Return (nif, False)
     End Function
 
     ''' <summary>The image-space offset scale k of o = k * N.z * (N.xy - 0.5): SSE 0.1 (PS 15822: k = 0.05 N.z, o = 0.1 N.z (N.xy - 0.5)), FO4

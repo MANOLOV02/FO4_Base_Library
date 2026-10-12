@@ -46,8 +46,12 @@ Friend Module Fo4RenderPassLaw
 
     Friend Enum Fo4List
         None
-        ''' <summary>G-buffer bucket 4 (opaque lighting) and list 0 (LOD landscape).</summary>
+        ''' <summary>G-buffer bucket 4 (opaque lighting, group 0): the first draws of the G-buffer stage (0x1421F3C21 -&gt; 0x1421D6CD0,
+        ''' edx = 4).</summary>
         GBufferOpaque
+        ''' <summary>G-buffer list 0 (group 7, F4SF2 bit 1 LOD_Landscape): drawn after the decal lists 2 / 3 (0x1421F3C3B -&gt;
+        ''' 0x1421D5EA0) at 0x1421F3C4C, before 0x1421D8450 and list 1 (0x1421F3CD0). Its insertion order is not traced.</summary>
+        GBufferLodLandscape
         ''' <summary>G-buffer list 3 (group 2) - lighting and effect decals.</summary>
         DecalOpaque
         ''' <summary>G-buffer list 4 (group 3).</summary>
@@ -129,10 +133,14 @@ Friend Module Fo4RenderPassLaw
     ''' place of the bias - BSDFPrePassShader
     ''' SetupGeometry 0x142205540 (G-buffer cb2[1].w, EmissiveColor.w; 0x142207354..37D), BSEffectShader SetupGeometry 0x1422261B0
     ''' (cb2[14].x; 0x1422274C8..509) and its MEMBRANE setup 0x142227B60, BSLightingShader SetupGeometry 0x14223B240 (forward),
-    ''' BSDFCompositeShader SetupGeometry 0x1422174F0: MainPassAlphaThreshold. Bias for every ref - the z-prepass 0x1A
+    ''' BSDFCompositeShader SetupGeometry 0x1422174F0 without blend: MainPassAlphaThreshold; with a blending NiAlphaProperty the
+    ''' composite writes the immediate 0x3F7EFEFF (254/255) instead (0x142217823..830). Bias for every ref - the z-prepass 0x1A
     ''' 0x141828DE0 (0x141828F45..F65): PrepassAlphaThreshold. Bias plus 1/255 again for ref 4 - BSUtilityShader SetupGeometry
-    ''' 0x142241270, the shadow map (0x142241F41..F64): ShadowMapAlphaThreshold; also the per-instance builders 0x1421C9C00 and
-    ''' 0x1422421D0 (role not traced). Not traced: 0x14181FAA0, 0x1421DC470, 0x142207C80, 0x14223E850, 0x14223EC60. Bits, not
+    ''' 0x142241270, the shadow map (0x142241F41..F64): ShadowMapAlphaThreshold; also the per-instance builders 0x1421C9C00 (called
+    ''' from 0x1421C96A0) and 0x1422421D0 (role not traced), and 0x14223EC60 (the per-instance array [rbx+rsi*4+0x180..18C] of the
+    ''' instanced geometry, from the culling 0x1417E2830 -&gt; 0x1417E08C0; 0x14223F000..046); 0x1421DC470 builds the NVFlex debris
+    ''' (slot 48 of NVFlex::DebrisInstanceNode, vtable 0x1429147A0, through 0x1421DC070). The preview neither instances nor draws
+    ''' Flex debris. Not traced: 0x14181FAA0, 0x142207C80, 0x14223E850 (no static reference). Bits, not
     ''' decimal literals: 0.00392153F is 0x3B80802E. Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 9.1;
     ''' AUDIT_APP_VS_GAME_EFFECTS_SSE_2026-10-05.md D-B.</summary>
     Private ReadOnly AlphaRefBias4 As Single = BitConverter.Int32BitsToSingle(&H3C008056)
@@ -260,7 +268,7 @@ Friend Module Fo4RenderPassLaw
 
         Select Case r.Group
             Case 0 : r.List = If(s.IsEffect, Fo4List.ForwardEffect, Fo4List.GBufferOpaque)
-            Case 7 : r.List = Fo4List.GBufferOpaque
+            Case 7 : r.List = Fo4List.GBufferLodLandscape
             Case 1 : r.List = Fo4List.Translucent
             Case 2 : r.List = Fo4List.DecalOpaque
             Case 3 : r.List = Fo4List.DecalTranslucent

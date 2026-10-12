@@ -20,11 +20,15 @@ Friend Module EngineWorldBound
         End Sub
     End Structure
 
-    ''' <summary>[0x1420CF074] (.data, 1e-6 in the image) and [0x141B5BE14] = 0.5: SSE's union guard and half.</summary>
-    Private ReadOnly SseUnionGuard As Single = BitConverter.Int32BitsToSingle(&H358637BD)
+    ''' <summary>The merge's guard, 1e-6: SSE [0x1420CF074] (.data, 1e-6 in the image; [0x141B5BE14] = 0.5 the half), FO4
+    ''' [0x142F4C75C] (bytes BD 37 86 35 = 0x358637BD, verified 12-oct-2026).</summary>
+    Private ReadOnly MergeGuard As Single = BitConverter.Int32BitsToSingle(&H358637BD)
 
-    ''' <summary>SSE 0x140EFECA0: A grows to contain B (dump of 7-oct-2026).</summary>
-    Friend Function UnionSse(a As Sphere, b As Sphere) As Sphere
+    ''' <summary>NiBound::Merge, A grows to contain B - one law in both exes: SSE 0x140EFECA0 (dump of 7-oct-2026) and FO4 0x1416E8350 (ola
+    ''' 0c pto 25: D = A.c - B.c, dr = rB - rA; dr &gt;= 0 and dr^2 &gt;= |D|^2 -&gt; B, 0x1416E83D6..F2; dr &lt; 0 and dr^2 &gt;= |D|^2 -&gt; A,
+    ''' 0x1416E83F4..F7; else dist = sqrt, the centre B.c + t D with t = (dist - dr) (0.5 / dist) when dist &gt; 1e-6, 0x1416E8411..44F;
+    ''' r = (rB + dist + rA) 0.5, 0x1416E8459..465). FO4's NiNode::UpdateWorldBound and the BSFadeNode bound use it (ptos 14 / 25).</summary>
+    Friend Function MergeBound(a As Sphere, b As Sphere) As Sphere
         Dim d = a.Center - b.Center
         Dim d2 As Single = d.X * d.X + d.Y * d.Y + d.Z * d.Z
         Dim dr As Single = b.Radius - a.Radius
@@ -36,7 +40,7 @@ Friend Module EngineWorldBound
         End If
         Dim l As Single = MathF.Sqrt(d2)                                 ' sqrtss 0x140EFED54
         Dim c = a.Center
-        If l > SseUnionGuard Then                                        ' 0x140EFED58..D5F
+        If l > MergeGuard Then                                           ' 0x140EFED58..D5F / 0x1416E8411
             Dim k As Single = (l - dr) * (0.5F / l)                      ' 0x140EFED61..D6F
             c = New Vector3(k * d.X + b.Center.X, k * d.Y + b.Center.Y, k * d.Z + b.Center.Z)
         End If
@@ -53,6 +57,20 @@ Friend Module EngineWorldBound
         Return New Sphere(b.Center + t * diff, (l + b.Radius + a.Radius) * 0.5F)
     End Function
 
+    ''' <summary>Ola 0c ptos 25 / 14: the root BSFadeNode's world bound at the top-level update (BSFadeNode::UpdateDownwardPass, vt
+    ''' 0x142903BA8 slot 48 0x14217DFC0, [upd+0x18] = 1, replaces NiNode's with 0x14217EE50): radius 0 (0x14217EE60), then each geometry
+    ''' of its list whose world radius is &gt; 0 (comiss, 0x14217EECD..EF1: not 0, not negative, not NaN) - the first copied, the rest
+    ''' merged (MergeBound, 0x1416E8350). Nothing when none qualifies (the radius stays 0). The list (members and order) is the
+    ''' caller's: NifSceneVisibility.FadeListGeometries (0x14217ED30, resultado5 item 2).</summary>
+    Friend Function FadeNodeBound(spheres As IEnumerable(Of Sphere)) As Sphere?
+        Dim acc As Sphere? = Nothing
+        For Each s In spheres
+            If Not (s.Radius > 0.0F) Then Continue For
+            acc = If(acc.HasValue, MergeBound(acc.Value, s), s)
+        Next
+        Return acc
+    End Function
+
     ''' <summary>0x140EFCF20: c' = t + s R c, r' = s r - with the app's matrix (the placement it draws the vertices with) and the scalar
     ''' scale the engine's NiTransform has (Transform_Class.EscalaComoEscalar; a non-uniform scale exists only in the app's pose).</summary>
     Friend Function Place(t As Transform_Class, s As Sphere) As Sphere
@@ -62,11 +80,24 @@ Friend Module EngineWorldBound
         Return New Sphere(New Vector3(CSng(c.X), CSng(c.Y), CSng(c.Z)), s.Radius * t.EscalaComoEscalar(exacto))
     End Function
 
-    ''' <summary>The world-bound centre of <paramref name="shape"/> with the bone / root worlds <paramref name="geo"/> holds this frame
-    ''' (SkinnedGeometry.BoneWorldPose / SkinRootPose, written where the app skins). Unskinned or a synthetic anchor: the NIF sphere
-    ''' placed by palette 0 (rev-04). Nothing when the shape has no sphere the game would use or no geometry / palette yet, and when the
-    ''' bone-data list does not have the palette's bone count (declared gap, D-L4): the caller keeps the vertex box centre.</summary>
+    ''' <summary>The world-bound centre of <paramref name="shape"/> (WorldBound without the unskinned radius, rev-10). Nothing as
+    ''' WorldBound: the caller keeps the vertex box centre.</summary>
     Friend Function Centre(shape As IRenderableShape, geo As SkinnedGeometry) As Vector3?
+        Dim s = WorldBound(shape, geo, withRadius:=False)
+        Return If(s.HasValue, s.Value.Center, CType(Nothing, Vector3?))
+    End Function
+
+    ''' <summary>Ola 0c pto 25: the world bound sphere of <paramref name="shape"/> (WorldBound with its radius).</summary>
+    Friend Function WorldSphere(shape As IRenderableShape, geo As SkinnedGeometry) As Sphere?
+        Return WorldBound(shape, geo, withRadius:=True)
+    End Function
+
+    ''' <summary>The world bound of <paramref name="shape"/> with the bone / root worlds <paramref name="geo"/> holds this frame
+    ''' (SkinnedGeometry.BoneWorldPose / SkinRootPose, written where the app skins). Unskinned or a synthetic anchor: the NIF sphere
+    ''' placed by palette 0 (rev-04), its radius r' = s r (0x140EFCF20 / 0x1416D5EF0) only with <paramref name="withRadius"/>. Nothing
+    ''' when the shape has no sphere the game would use or no geometry / palette yet, and when the bone-data list does not have the
+    ''' palette's bone count (declared gap, D-L4).</summary>
+    Private Function WorldBound(shape As IRenderableShape, geo As SkinnedGeometry, withRadius As Boolean) As Sphere?
         Dim nif = shape?.NifContent
         Dim ns = shape?.NifShape
         If nif Is Nothing OrElse ns Is Nothing Then Return Nothing
@@ -76,7 +107,10 @@ Friend Module EngineWorldBound
             ' ShapeGlobalTransform for an unskinned shape, SkinningHelper.vb:2142; the anchor bone for a synthetic skin).
             If shape.Geometry Is Nothing OrElse geo.GPUBoneMatrices Is Nothing OrElse geo.GPUBoneMatrices.Length = 0 Then Return Nothing
             Dim b = shape.Geometry.Bounds
-            Return Vector3.TransformPosition(New Vector3(b.Center.X, b.Center.Y, b.Center.Z), geo.GPUBoneMatrices(0))
+            Dim c = Vector3.TransformPosition(New Vector3(b.Center.X, b.Center.Y, b.Center.Z), geo.GPUBoneMatrices(0))
+            ' The radius only when asked (rev-10): r' = s r of 0x140EFCF20 / 0x1416D5EF0 (Place, with the app's world of the shape).
+            If Not withRadius Then Return New Sphere(c, 0.0F)
+            Return New Sphere(c, Place(Transform_Class.GetGlobalTransform(ns, nif), New Sphere(Vector3.Zero, b.Radius)).Radius)
         End If
         If geo.BoneWorldPose Is Nothing OrElse geo.SkinRootPose Is Nothing Then Return Nothing
         Dim geomWorld = Transform_Class.GetGlobalTransform(ns, nif)
@@ -90,7 +124,7 @@ Friend Module EngineWorldBound
             For i = 0 To data.BoneList.Count - 1
                 Dim bs = data.BoneList(i).BoundingSphere
                 Dim p = Place(geo.BoneWorldPose(i), New Sphere(New Vector3(bs.Center.X, bs.Center.Y, bs.Center.Z), bs.Radius))
-                u = If(u.HasValue, UnionSse(u.Value, p), p)
+                u = If(u.HasValue, MergeBound(u.Value, p), p)
             Next
             Dim st = data.SkinTransform
             Dim overall As New Transform_Class With {.Rotation = st.Rotation, .Translation = st.Translation, .Scale = st.Scale}
@@ -107,7 +141,7 @@ Friend Module EngineWorldBound
             local = geo.SkinRootPose.Inverse()
         End If
         If Not u.HasValue Then Return Nothing
-        Return Place(geomWorld.ComposeTransforms(local), u.Value).Center
+        Return Place(geomWorld.ComposeTransforms(local), u.Value)
     End Function
 
 End Module

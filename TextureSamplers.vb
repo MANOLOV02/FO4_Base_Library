@@ -17,10 +17,13 @@ Friend NotInheritable Class TextureSamplers
         Dim s As Integer
         If _cache.TryGetValue(key, s) Then Return s
         GL.CreateSamplers(1, s)
-        ' ADDR: U = S wraps for 2 / 3, V = T wraps for 1 / 3; clamp = CLAMP_TO_EDGE (D3D11_TEXTURE_ADDRESS_CLAMP).
+        ' ADDR: U = S wraps for 2 / 3, V = T wraps for 1 / 3, W = R wraps only for 3; clamp = CLAMP_TO_EDGE (D3D11_TEXTURE_ADDRESS_CLAMP).
+        ' SSE 0x14102B910 (jump table 0x14102BB14: 1 = 0x14102B9A2 CLAMP / WRAP / CLAMP, 2 = 0x14102B9B9 WRAP / CLAMP / CLAMP,
+        ' 3 = 0x14102B9D0 WRAP / WRAP / WRAP); FO4 0x141856390 (0x141856420..0x14185646C): the same rows
+        ' (Tools/re-docs/RE_TEXTURE_ADDRESS_MODES_2026-10-03.md 1.1 / 1.4).
         GL.SamplerParameter(s, SamplerParameterName.TextureWrapS, CInt(If((addr And 2) <> 0, TextureWrapMode.Repeat, TextureWrapMode.ClampToEdge)))
         GL.SamplerParameter(s, SamplerParameterName.TextureWrapT, CInt(If((addr And 1) <> 0, TextureWrapMode.Repeat, TextureWrapMode.ClampToEdge)))
-        GL.SamplerParameter(s, SamplerParameterName.TextureWrapR, CInt(If((addr And 1) <> 0, TextureWrapMode.Repeat, TextureWrapMode.ClampToEdge)))
+        GL.SamplerParameter(s, SamplerParameterName.TextureWrapR, CInt(If((addr And 3) = 3, TextureWrapMode.Repeat, TextureWrapMode.ClampToEdge)))
         Dim minF As TextureMinFilter, magF As TextureMagFilter
         Select Case filt
             Case 0

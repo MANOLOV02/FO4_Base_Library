@@ -388,6 +388,16 @@ Public Class Nifcontent_Class_Manolo
         Return result
     End Function
 
+    ''' <summary>The material path the NIF declares for <paramref name="shap"/>: the Name of its BSShaderProperty, corrected
+    ''' (FO4UnifiedMaterial_Class.CorrectMaterialPath) and without <see cref="MaterialsPrefix"/>; "" without a shader. The one place that
+    ''' derives it: GetRelatedMaterial loads the shape's material from it, and ShapeMaterialOverrides.ApplyMaterialSwap looks every
+    ''' substitution up by it - the engine's [prop+0x10], which no pass renames outside a SCOL member clone (0x140256677, resultado5 R1).</summary>
+    Public Function NifMaterialPath(shap As INiShape) As String
+        Dim shad = TryCast(GetShader(shap), BSShaderProperty)
+        If shad Is Nothing Then Return ""
+        Return FO4UnifiedMaterial_Class.CorrectMaterialPath(shad.Name.String).StripPrefix(MaterialsPrefix)
+    End Function
+
     Public Function GetRelatedMaterial(shap As INiShape) As RelatedMaterial_Class
         Dim prefix = MaterialsPrefix
         Dim shad = GetShader(shap)
@@ -400,19 +410,16 @@ Public Class Nifcontent_Class_Manolo
         End If
 
         ' Extraer solo lo que difiere entre tipos de shader
-        Dim shadName As String
         Dim matType As Type
         Dim createFromShader As Action(Of FO4UnifiedMaterial_Class)
 
         Select Case shad.GetType
             Case GetType(BSLightingShaderProperty)
                 Dim typed = CType(shad, BSLightingShaderProperty)
-                shadName = typed.Name.String
                 matType = GetType(BGSM)
                 createFromShader = Sub(m) m.Create_From_Shader(Me, shap, typed)
             Case GetType(BSEffectShaderProperty)
                 Dim typed = CType(shad, BSEffectShaderProperty)
-                shadName = typed.Name.String
                 matType = GetType(BGEM)
                 createFromShader = Sub(m) m.Create_From_Shader(Me, shap, typed)
             Case Else
@@ -422,8 +429,7 @@ Public Class Nifcontent_Class_Manolo
                 Throw New Exception
         End Select
 
-        Dim fullpath = FO4UnifiedMaterial_Class.CorrectMaterialPath(shadName)
-        fullpath = fullpath.StripPrefix(prefix)
+        Dim fullpath = NifMaterialPath(shap)
 
 
         Dim material As New FO4UnifiedMaterial_Class

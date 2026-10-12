@@ -185,6 +185,69 @@ Friend Module ControllerRestLaw
     Friend Function FalloffCos(v As Single) As Single
         Return MathF.Cos(v * DegToRad)
     End Function
+
+    ''' <summary>Ola 0c pto 13: the threshold byte a BSNiAlphaPropertyTestRefController writes from its value (FO4 0x14224C5C0, SSE
+    ''' 0x14157CA50): clamped to [0, 255] (FO4 [0x1429295E8] = SSE [0x141B5BF6C] = 255.0) and truncated (cvttss2si) into the
+    ''' NiAlphaProperty's threshold (FO4 +0x2A, 0x14224C69F / 6B7; SSE +0x32, 0x14157CB2F / B47). A NaN value gives 0: `comiss v, 255;
+    ''' jbe` takes the unordered branch and `comiss v, 0; jae` does not, so v = 0 (FO4 0x14224C685..6B7, SSE 0x14157CB15..B47;
+    ''' resultado5 item 5).</summary>
+    Friend Function TestRefAtRest(v As Single) As Single
+        If Single.IsNaN(v) Then Return 0.0F
+        Return MathF.Truncate(Math.Min(Math.Max(v, 0.0F), 255.0F))
+    End Function
+
+    ''' <summary>Ola 0c pto 3a: a NiBoolInterpolator's output for the controller's first update (FO4 NiBoolInterpolator::Update
+    ''' 0x141752F60): without keys the pose [+0x18]; with keys the query 0x14176C870 (t before key 0 -&gt; key 0, t after the last -&gt; the
+    ''' last, else the search 0x14176C6C0: one key -&gt; key 0, else the segment [k_i, k_i+1] with ratio = (t - t_i) / (t_i+1 - t_i)) and
+    ''' the function of the key type from the table 0x14344A170 (measured live): type 5 = 0x14176F640, a step - ratio &lt; 1.0
+    ''' ([0x142929458]) -&gt; key i, else key i+1 (BoolAt); the keyed value normalized to 0 / 1 (setne 0x141752FD9). The pose: raw 2
+    ''' ([0x14268EAB8]) = invalid, nothing is written, else 0 / 1 (PoseAtRest); manager-controlled (bit 5) or t = -FLT_MAX: the pose;
+    ''' inactive (bit 3 clear): nothing -
+    ''' FloatAtRest's rule. Census (resultado5 item 6, boolkeys.py, every installed BA2): 6,117 NiBoolData, all key type 5; type 0
+    ''' (0x14176C930: the .bss byte [0x14344AF78] = 0, no writer) and the null entries are used by no FO4 NIF: Nothing (no write).
+    ''' Skyrim SE's NiBoolInterpolator: PENDIENTE DE CITA.</summary>
+    Friend Function BoolAtRest(c As NiSingleInterpController, interp As NiInterpolator, data As NiBoolData, isSse As Boolean) As Byte?
+        If isSse Then Return Nothing                                           ' PENDIENTE DE CITA: SSE NiBoolInterpolator::Update
+        Dim bi = TryCast(interp, NiBoolInterpolator)
+        If bi Is Nothing Then Return Nothing
+        Dim fl = CInt(c.Flags.Value)
+        Dim pose = CByte(bi.Value.RawValue And &HFFUI)
+        If (fl And &H20) <> 0 Then Return PoseAtRest(pose)
+        If (fl And 8) = 0 Then Return Nothing
+        Dim t = ScaledTimeAtRest(c)
+        If t = NegMax Then Return PoseAtRest(pose)                 ' t = [+0x10] (ctor 0x14174B455): cached pose, 0x141752F78..F92
+        If data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0 Then
+            Dim kv = BoolAt(data.Data, t)
+            Return If(kv.HasValue, CByte(If(kv.Value <> 0, 1, 0)), CType(Nothing, Byte?))   ' setne 0x141752FD9: never 2
+        End If
+        Return PoseAtRest(pose)
+    End Function
+
+    ''' <summary>The pose of a NiBoolInterpolator as Update returns it: 2 ([0x14268EAB8], 0x141752FE5) = invalid, nothing is written;
+    ''' any other byte normalized to 0 / 1.</summary>
+    Private Function PoseAtRest(pose As Byte) As Byte?
+        If pose = 2 Then Return Nothing                           ' [0x14268EAB8] = 2, 0x141752FE5
+        Return CByte(If(pose <> 0, 1, 0))
+    End Function
+
+    ''' <summary>The keyed value of BoolAtRest (FO4 Update 0x141752F60 -&gt; 0x14176C6C0 (0x141752FD2) -&gt; table 0x14344A170): one key -&gt; key 0; the
+    ''' segment search advances while t &gt; t(i+1); past the last key -&gt; the last; ratio = (t - t_i) / (t_i+1 - t_i), 1.0 for equal
+    ''' times; key type 5 (0x14176F640): ratio &gt;= 1.0 -&gt; key i+1, else key i. Any other key type: Nothing (no FO4 NIF uses one,
+    ''' resultado5 item 6).</summary>
+    Private Function BoolAt(kg As KeyGroup(Of Byte), t As Single) As Byte?
+        Dim k = kg.Keys
+        Dim n = k.Count
+        If n = 1 Then Return k(0).Value                            ' 0x14176C6CD -> 0x14176C84C
+        If CInt(kg.Interpolation) <> 5 Then Return Nothing
+        Dim i = 0
+        While i + 1 < n AndAlso t > k(i + 1).Time                  ' 0x14176C740..7D2
+            i += 1
+        End While
+        If i + 1 >= n Then Return k(n - 1).Value
+        Dim t0 = k(i).Time, t1 = k(i + 1).Time
+        Dim ratio As Single = If(t1 = t0, 1.0F, (t - t0) / (t1 - t0))   ' 0x14176C7D4..805
+        Return If(ratio >= 1.0F, k(i + 1).Value, k(i).Value)       ' 0x14176F640: comiss ratio, 1.0; jae
+    End Function
 End Module
 
 ''' <summary>The material variables a shader-property controller can move, as the preview names them (the app's material field
@@ -217,11 +280,17 @@ Friend Enum RestVariable
     Glossiness
     ''' <summary>Lighting var 10 (+0x8C) = SpecularMult.</summary>
     SpecularStrength
+    ''' <summary>Ola 0c pto 19: lighting var 12 (material +0x80, FO4 0x14224A9FD / SSE 0x14157AE1D) and effect var 5 (tables FO4
+    ''' 0x14224BB90 / SSE 0x14157C030) = the material Alpha.</summary>
+    Alpha
+    ''' <summary>Ola 0c pto 13: the NiAlphaProperty's threshold a BSNiAlphaPropertyTestRefController writes (FO4 +0x2A, SSE +0x32),
+    ''' held as the byte's value (ControllerRestLaw.TestRefAtRest).</summary>
+    AlphaTestRef
 End Enum
 
-''' <summary>A shape's material at rest: the variables its active shader controllers write at clock 0, nothing for the rest. The
-''' alpha (lighting var 12, effect var 5) is NOT here: its owner is C2's PreviewAlphaRule (user decision: an animated alpha shows its
-''' maximum).</summary>
+''' <summary>A shape's material at rest: the variables its active shader controllers and its NiAlphaProperty's controllers write at
+''' clock 0, nothing for the rest. The alpha (lighting var 12, effect var 5) is here (ola 0c pto 19, user decision 12-oct-2026: the
+''' same rest rule as every other controller), and the alpha-test threshold (ola 0c pto 13).</summary>
 Friend NotInheritable Class MaterialRest
     Public Shared ReadOnly None As New MaterialRest()
     Private ReadOnly _f As New Dictionary(Of RestVariable, Single)
@@ -276,6 +345,8 @@ Friend NotInheritable Class MaterialRest
             Case RestVariable.EnvMapScale : Return mb.EnvironmentMappingMaskScale
             Case RestVariable.Glossiness : Return If(isSse, mb.NifGlossiness, mb.Smoothness)
             Case RestVariable.SpecularStrength : Return mb.SpecularMult
+            Case RestVariable.Alpha : Return mb.Alpha
+            Case RestVariable.AlphaTestRef : Return CSng(mb.ResolveEngineAlpha().Threshold)
         End Select
         Throw New ArgumentOutOfRangeException(NameOf(v), v, "a colour variable has no Single field")
     End Function
@@ -300,6 +371,8 @@ Friend NotInheritable Class MaterialRest
             Case RestVariable.EnvMapScale : Return "environment map scale"
             Case RestVariable.Glossiness : Return If(isSse, "glossiness", "smoothness")
             Case RestVariable.SpecularStrength : Return "specular strength"
+            Case RestVariable.Alpha : Return "alpha"
+            Case RestVariable.AlphaTestRef : Return "alpha test threshold"
         End Select
         Throw New ArgumentOutOfRangeException(NameOf(v))
     End Function

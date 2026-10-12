@@ -129,8 +129,7 @@ Partial Public Class Nifcontent_Class_Manolo
     Public Function CadenasDeShape(shape As INiShape) As (DeShape As List(Of NiTimeController), DeShader As List(Of NiTimeController), DeAlpha As List(Of NiTimeController))
         Dim deShape = CadenaDeControllers(shape.Controller)
         Dim deShader = CadenaDeShader(shape)
-        Dim alp = GetBlock(Of NiAlphaProperty)(shape.AlphaPropertyRef)
-        Dim deAlpha = If(alp Is Nothing, New List(Of NiTimeController), CadenaDeControllers(alp.Controller))
+        Dim deAlpha = CadenaDeAlpha(shape)
         Return (deShape, deShader, deAlpha)
     End Function
 
@@ -141,57 +140,39 @@ Partial Public Class Nifcontent_Class_Manolo
         Return If(shad Is Nothing, New List(Of NiTimeController), CadenaDeControllers(shad.Controller))
     End Function
 
-    ''' <summary>F-A0 / S-ND: the shape's shader alpha controller. Present: a BSLightingShaderPropertyFloatController on variable 12
-    ''' (Alpha) in the shader's controller chain - its update writes material +0x80, the alpha GetRenderPasses reads (Fallout4.exe
-    ''' 0x14224A7C0, var 12 -> +0x80 at 0x14224A9FD; SkyrimSE.exe 0x14157AC20, 0x14157AE1D). Max: the highest value its
-    ''' interpolators can output (nif.xml): the controller's own Interpolator and the Interpolator of every NiSequence ControlledBlock
-    ''' bound to it by its Controller ref (BloquesQueAnimanA, the one law); of an NiFloatInterpolator, its pose Value (nif.xml default
-    ''' -3.402823466e+38 = no pose, skipped) and every key of its NiFloatData. Other interpolators (NiBlendFloatInterpolator only blends
-    ''' its sequences' outputs) give no value. Nothing when no value is readable. Key maximum, not curve maximum: quadratic tangents
-    ''' can overshoot (not evaluated). Blocks bound by name only (no Controller ref) are not read.</summary>
-    Public Function LightingAlphaController(shape As INiShape) As (Present As Boolean, Max As Single?)
-        Return LightingAlphaController(shape, CadenasDeShape(shape).DeShader)
+    ''' <summary>The NiAlphaProperty's controller chain of <paramref name="shape"/> - CadenasDeShape's DeAlpha, its one owner; empty without
+    ''' the property. Read alone by MaterialData.ShaderChain (ola 0c pto 13: the BSNiAlphaPropertyTestRefController at rest), once per
+    ''' frame and shape.</summary>
+    Public Function CadenaDeAlpha(shape As INiShape) As List(Of NiTimeController)
+        Dim alp = GetBlock(Of NiAlphaProperty)(shape.AlphaPropertyRef)
+        Return If(alp Is Nothing, New List(Of NiTimeController), CadenaDeControllers(alp.Controller))
     End Function
 
-    ''' <summary>LightingAlphaController on the shader chain the caller already walked (<paramref name="shaderChain"/> =
-    ''' CadenasDeShape(shape).DeShader; MaterialData.ShaderChain walks it once per frame for this and MaterialAtRest, C10 rev-07).</summary>
-    Public Function LightingAlphaController(shape As INiShape, shaderChain As List(Of NiTimeController)) As (Present As Boolean, Max As Single?)
-        Dim ctrls = shaderChain.Where(
-            Function(c) TypeOf c Is BSLightingShaderPropertyFloatController AndAlso
-                        DirectCast(c, BSLightingShaderPropertyFloatController).ControlledVariable = NiflySharp.Enums.LightingShaderControlledFloat.Alpha).ToList()
-        If ctrls.Count = 0 Then Return (False, Nothing)
-        Dim max As Single? = Nothing
-        Dim leer = Sub(interp As NiInterpolator)
-                       Dim fi = TryCast(interp, NiFloatInterpolator)
-                       If fi Is Nothing Then Return
-                       Dim vals As New List(Of Single)
-                       If fi.Value <> -Single.MaxValue Then vals.Add(fi.Value)
-                       Dim data = GetBlock(fi.Data)
-                       If data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing Then vals.AddRange(data.Data.Keys.Select(Function(k) k.Value))
-                       For Each v In vals
-                           If Not Single.IsNaN(v) AndAlso (Not max.HasValue OrElse v > max.Value) Then max = v
-                       Next
-                   End Sub
-        For Each c In ctrls
-            leer(GetBlock(DirectCast(c, NiSingleInterpController).Interpolator))
-        Next
-        For Each b In BloquesQueAnimanA(shape)
-            If b.Controller IsNot Nothing AndAlso ctrls.Contains(b.Controller) Then leer(GetBlock(b.Secuencia.ControlledBlocks(b.Indice).Interpolator))
-        Next
-        Return (True, max)
-    End Function
-
-    ''' <summary>C10: the shape's material at rest - what its active shader controllers write at the game clock's origin
-    ''' (ControllerRestLaw), from <paramref name="shaderChain"/> = CadenasDeShape(shape).DeShader (the engine's UpdateControllers of
-    ''' the property, 0x1416CF440; MaterialData.ShaderChain walks it once per frame, rev-07), in chain order (a later controller on the
-    ''' same variable wins, DEDUCED). Alpha (lighting 12, effect 5) is left to C2 (PreviewAlphaRule). Lighting vars 3..7 and 16..19 (FO4
-    ''' feature-gated; census: all manager-controlled, they write nothing) are not mapped. Friend: MaterialRest is the library's.</summary>
-    Friend Function MaterialAtRest(shaderChain As List(Of NiTimeController), isFo4 As Boolean) As MaterialRest
-        If shaderChain Is Nothing OrElse shaderChain.Count = 0 Then Return MaterialRest.None
+    ''' <summary>C10: the shape's material at rest - what its active controllers write at the game clock's origin (ControllerRestLaw),
+    ''' from <paramref name="shaderChain"/> = CadenasDeShape(shape).DeShader (the engine's UpdateControllers of the property,
+    ''' 0x1416CF440) and <paramref name="alphaChain"/> = CadenasDeShape(shape).DeAlpha (its NiAlphaProperty's; ola 0c pto 13) -
+    ''' MaterialData.ShaderChain walks them once per frame, rev-07 - in chain order (a later controller on the same variable wins,
+    ''' DEDUCED). Alpha (lighting 12, effect 5) enters as RestVariable.Alpha (ola 0c pto 19, user decision 12-oct-2026). Lighting vars
+    ''' 3..7 and 16..19 (FO4 feature-gated; census: all manager-controlled, they write nothing) are not mapped. Friend: MaterialRest is
+    ''' the library's.</summary>
+    Friend Function MaterialAtRest(shaderChain As List(Of NiTimeController), isFo4 As Boolean, alphaChain As List(Of NiTimeController)) As MaterialRest
+        Dim sinShader = shaderChain Is Nothing OrElse shaderChain.Count = 0
+        Dim sinAlpha = alphaChain Is Nothing OrElse alphaChain.Count = 0
+        If sinShader AndAlso sinAlpha Then Return MaterialRest.None
         Dim r As New MaterialRest()
         Dim fdata = Function(i As NiInterpolator) If(TypeOf i Is NiFloatInterpolator, GetBlock(DirectCast(i, NiFloatInterpolator).Data), Nothing)
         Dim pdata = Function(i As NiInterpolator) If(TypeOf i Is NiPoint3Interpolator, GetBlock(DirectCast(i, NiPoint3Interpolator).Data), Nothing)
-        For Each c In shaderChain
+        ' Ola 0c pto 13: BSNiAlphaPropertyTestRefController (FO4 0x14224C5C0, vt 0x142919CF8 slot 42; SSE 0x14157CA50, vt 0x141B4DB20
+        ' slot 39): its float interpolator's value (FO4 vt+0x160 / SSE vt+0x148) into the threshold byte (ControllerRestLaw.TestRefAtRest).
+        For Each c In If(alphaChain, New List(Of NiTimeController))
+            Dim tr = TryCast(c, BSNiAlphaPropertyTestRefController)
+            If tr Is Nothing Then Continue For
+            Dim trInterp = GetBlock(tr.Interpolator)
+            Dim tv = ControllerRestLaw.FloatAtRest(tr, trInterp, fdata(trInterp))
+            If Not tv.HasValue Then Continue For
+            r.SetValue(RestVariable.AlphaTestRef, ControllerRestLaw.TestRefAtRest(tv.Value))
+        Next
+        For Each c In If(shaderChain, New List(Of NiTimeController))
             Dim sc = TryCast(c, NiSingleInterpController)
             If sc Is Nothing Then Continue For
             Dim interp = GetBlock(sc.Interpolator)
@@ -206,6 +187,7 @@ Partial Public Class Nifcontent_Class_Manolo
                         Case 2 : r.SetValue(RestVariable.FalloffStopAngle, ControllerRestLaw.FalloffCos(x))
                         Case 3 : r.SetValue(RestVariable.FalloffStartOpacity, x)
                         Case 4 : r.SetValue(RestVariable.FalloffStopOpacity, x)
+                        Case 5 : r.SetValue(RestVariable.Alpha, x)
                         Case 6 : r.SetValue(RestVariable.UOffset, x)
                         Case 7 : r.SetValue(RestVariable.UScale, x)
                         Case 8 : r.SetValue(RestVariable.VOffset, x)
@@ -218,6 +200,7 @@ Partial Public Class Nifcontent_Class_Manolo
                         Case 9 : r.SetValue(RestVariable.Glossiness, x)
                         Case 10 : r.SetValue(RestVariable.SpecularStrength, x)
                         Case 11 : r.SetValue(RestVariable.LightingEmissiveMultiple, x)
+                        Case 12 : r.SetValue(RestVariable.Alpha, x)
                         Case 20 : r.SetValue(RestVariable.UOffset, x)
                         Case 21 : r.SetValue(RestVariable.UScale, x)
                         Case 22 : r.SetValue(RestVariable.VOffset, x)
