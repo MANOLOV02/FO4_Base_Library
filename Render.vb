@@ -2951,6 +2951,10 @@ Public Class PreviewControl
         ' SUMAMOS la media profundidad para asegurar que el punto más cercano también entra en FOV
         Dim baseDistance As Single = halfD + Math.Max(distH, distW)
         Dim idealDistance As Single = baseDistance * (1.0F + marginPct)
+        ' The auto framing never zooms in past the game's near plane (EngineCameraLaw.NearDistance): with the bounding sphere's
+        ' radius every point stays at least that far from the eye for any kept orbit angle, so a small object does not raise the
+        ' frame's closer-than-near notice by itself. Manual zoom is not limited.
+        idealDistance = Math.Max(idealDistance, size.Length * 0.5F + EngineCameraLaw.NearDistance)
         Dim oldMin = camera.MinDistance, oldMax = camera.MaxDistance
         camera.MaxDistance = idealDistance * 10
         camera.MinDistance = idealDistance / 10
