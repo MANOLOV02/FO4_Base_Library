@@ -460,8 +460,8 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' <summary>Opens the G-buffer stage: D3D row order (UPPER_LEFT; glFrontFace unchanged, propuesta A.2), every RT cleared (rev-29 b:
     ''' 0, the shadow RT 1), depth 1 / stencil 0 (0x1421F3151..0x1421F3164), sRGB writes on (rev-17).</summary>
     Public Sub BeginGBuffer()
-        GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.NegativeOneToOne)
-        If GateNoUpperLeft Then GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)
+        GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.ZeroToOne)
+        If GateNoUpperLeft Then GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboG)
         GL.Viewport(0, 0, _w, _h)
         GL.ColorMask(True, True, True, True)

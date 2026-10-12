@@ -682,7 +682,7 @@ Friend NotInheritable Class SseSaoTargets
         If w <= 0 OrElse h <= 0 Then Return
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.NegativeOneToOne)
+        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.ZeroToOne)
         Try
             ' 1. CameraZ (15997) -> pyramid level 0.
             Target(_pyramid, 0, w, h)
@@ -732,7 +732,7 @@ Friend NotInheritable Class SseSaoTargets
         Finally
             GL.BindSampler(0, 0)
             GL.BindSampler(1, 0)
-            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)
+            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
         End Try
     End Sub
 
@@ -759,12 +759,12 @@ Friend NotInheritable Class SseSaoTargets
     Friend Sub GateRunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.NegativeOneToOne)
+        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.ZeroToOne)
         Try
             RunBlurs(progs, aoTex, w, h, emptyVao)
         Finally
             GL.BindSampler(0, 0)
-            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)
+            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
         End Try
     End Sub
 

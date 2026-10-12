@@ -129,6 +129,7 @@ Partial Class LightRigForm
         grpFloor = New GroupBox()
         grpNotices = New GroupBox()
         chkShowErrors = New CheckBox()
+        chkShowWarnings = New CheckBox()
         chkFloorEnabled = New CheckBox()
         lblFloorSize = New Label()
         nudFloorSize = New NumericUpDownCultura()
@@ -1428,6 +1429,7 @@ Partial Class LightRigForm
         ' grpNotices
         ' 
         grpNotices.Controls.Add(chkShowErrors)
+        grpNotices.Controls.Add(chkShowWarnings)
         grpNotices.Location = New Point(12, 528)
         grpNotices.Name = "grpNotices"
         grpNotices.Size = New Size(418, 52)
@@ -1443,7 +1445,17 @@ Partial Class LightRigForm
         chkShowErrors.Size = New Size(87, 19)
         chkShowErrors.TabIndex = 0
         chkShowErrors.Text = "Show errors"
-        ToolTip1.SetToolTip(chkShowErrors, "Show the notice at the top-left of the preview: what the preview cannot draw, what the game does not draw, and what the game does not draw but the preview draws so it can be edited. Off hides the whole notice; nothing else changes.")
+        ToolTip1.SetToolTip(chkShowErrors, "Show the errors in the notice at the top-left of the preview: missing textures, textures the preview did not load, what the preview cannot draw, and what the game does not draw (hidden, or drawn here only so it can be edited). Off hides those lines; nothing else changes.")
+        ' 
+        ' chkShowWarnings
+        ' 
+        chkShowWarnings.AutoSize = True
+        chkShowWarnings.Location = New Point(150, 22)
+        chkShowWarnings.Name = "chkShowWarnings"
+        chkShowWarnings.Size = New Size(104, 19)
+        chkShowWarnings.TabIndex = 1
+        chkShowWarnings.Text = "Show warnings"
+        ToolTip1.SetToolTip(chkShowWarnings, "Show the warnings in the notice at the top-left of the preview: values driven by a controller at rest, empty texture slots the game fills with a default, shapes shown at their animated maximum, and values the game leaves undefined. Off hides those lines; nothing else changes.")
         ' 
         ' grpFloor
         ' 
@@ -1810,6 +1822,7 @@ Partial Class LightRigForm
     Friend WithEvents grpFloor As GroupBox
     Friend WithEvents grpNotices As GroupBox
     Friend WithEvents chkShowErrors As CheckBox
+    Friend WithEvents chkShowWarnings As CheckBox
     Friend WithEvents btnResetRender As Button
     Friend WithEvents chkFloorEnabled As CheckBox
     Friend WithEvents lblFloorSize As Label

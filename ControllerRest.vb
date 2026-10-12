@@ -3,7 +3,7 @@ Imports NiflySharp.Blocks
 Imports NiflySharp.Structs
 Imports NiflySharp.Enums
 
-''' <summary>THE VALUE A MATERIAL CONTROLLER GIVES AT THE GAME CLOCK'S ZERO, the preview's "at rest" (user decision 6-oct-2026: the
+''' <summary>THE VALUE A MATERIAL CONTROLLER GIVES AT THE PREVIEW'S REST (ScaledTimeAtRest: the clock's zero, CLAMP held at its end - user decisions 6-oct and 12-oct-2026; 6-oct: the
 ''' animated material still, with the game's value at t = 0). Transcribed from Fallout4.exe 1.11.240.0 / SkyrimSE.exe (identical
 ''' code; scripts and disassembly: scratchpad grupo-e\re_ctrl).
 ''' <para>The clock: every controller of the corpus that writes is APP_TIME (flags bit 0 clear), so its scaled time follows the
@@ -22,12 +22,15 @@ Friend Module ControllerRestLaw
     ''' <summary>pi / 180 as the exe writes it (0x14224BB57 / 0x14157BFF7: cos(v * 0.0174532924)).</summary>
     Private ReadOnly DegToRad As Single = BitConverter.Int32BitsToSingle(&H3C8EFA35)
 
-    ''' <summary>NiTimeController::ComputeScaledTime (FO4 0x1416CB210, SSE 0x140EF86D0) at its FIRST update with clock 0:
-    ''' st = (0 * freq + 0) + phase (APP_INIT: delta 0, the same), then the cycle when [lo, hi] is set (hi &lt;&gt; -FLT_MAX and
-    ''' lo &lt;&gt; +FLT_MAX): LOOP st = fmodf(st - lo, span) + lo, + span if below lo; REVERSE x = fmodf(st, 2 span), + 2 span if
-    ''' negative, lo + (2 span - x) past span else lo + x; CLAMP nothing; a zero span gives lo. Then r = st &gt; hi ? hi :
-    ''' max(lo, st), and backwards (bit 4) r = hi - (r - lo). fmodf of the CRT (0x1422C47BC).</summary>
-    Friend Function ScaledTimeAtClockZero(c As NiTimeController) As Single
+    ''' <summary>NiTimeController::ComputeScaledTime (FO4 0x1416CB210, SSE 0x140EF86D0) at the preview's rest. LOOP / REVERSE at the
+    ''' FIRST update with clock 0 (user decision 6-oct-2026): st = (0 * freq + 0) + phase (APP_INIT: delta 0, the same), then the
+    ''' cycle when [lo, hi] is set (hi &lt;&gt; -FLT_MAX and lo &lt;&gt; +FLT_MAX): LOOP st = fmodf(st - lo, span) + lo, + span if below lo;
+    ''' REVERSE x = fmodf(st, 2 span), + 2 span if negative, lo + (2 span - x) past span else lo + x; a zero span gives lo. CLAMP
+    ''' (cycle 2, and 3 on the same path) has no cycle, so the value the game holds once the clock T (0x1430E8940, + the frame
+    ''' delta at 0x1402D1B61) has taken st = T * freq + phase out of [lo, hi] (user decision 12-oct-2026): past hi for freq &gt; 0,
+    ''' below lo for freq &lt; 0, phase for freq = 0. Then r = st &gt; hi ? hi : max(lo, st), and backwards (bit 4)
+    ''' r = hi - (r - lo). fmodf of the CRT (0x1422C47BC).</summary>
+    Friend Function ScaledTimeAtRest(c As NiTimeController) As Single
         Dim fl = CInt(c.Flags.Value)
         Dim lo = c.StartTime, hi = c.StopTime
         Dim st = (0.0F * c.Frequency + 0.0F) + c.Phase
@@ -50,6 +53,12 @@ Friend Module ControllerRestLaw
                         Dim x = FModF(st, two)
                         If Not (x >= 0.0F) Then x += two
                         st = If(x > span, lo + (two - x), lo + x)
+                    End If
+                Case Else
+                    If c.Frequency > 0.0F Then
+                        st = PosMax
+                    ElseIf c.Frequency < 0.0F Then
+                        st = NegMax
                     End If
             End Select
         End If
@@ -151,7 +160,7 @@ Friend Module ControllerRestLaw
         If fi Is Nothing Then Return Nothing
         If (fl And &H20) <> 0 Then Return If(fi.Value = NegMax, CType(Nothing, Single?), fi.Value)
         If (fl And 8) = 0 Then Return Nothing
-        Dim t = ScaledTimeAtClockZero(c)
+        Dim t = ScaledTimeAtRest(c)
         If t = NegMax Then Return Nothing
         Dim v As Single? = If(data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0, FloatAt(data.Data, t), fi.Value)
         If v.HasValue AndAlso v.Value = NegMax Then Return Nothing
@@ -165,7 +174,7 @@ Friend Module ControllerRestLaw
         Dim invalid = Function(p As System.Numerics.Vector3) p.X = NegMax AndAlso p.Y = NegMax AndAlso p.Z = NegMax
         If (fl And &H20) <> 0 Then Return If(invalid(pi.Value), CType(Nothing, System.Numerics.Vector3?), pi.Value)
         If (fl And 8) = 0 Then Return Nothing
-        Dim t = ScaledTimeAtClockZero(c)
+        Dim t = ScaledTimeAtRest(c)
         If t = NegMax Then Return Nothing
         Dim v = If(data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0, Point3At(data.Data, t), pi.Value)
         If v.HasValue AndAlso invalid(v.Value) Then Return Nothing

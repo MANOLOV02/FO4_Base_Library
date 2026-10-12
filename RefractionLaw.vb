@@ -17,6 +17,8 @@ Friend Module RefractionLaw
         Public VertexColors As Boolean      ' SLSF2 / F4SF2 5 (bit 37)
         Public PipboyScreen As Boolean      ' F4SF2 28
         Public RefractionWritesDepth As Boolean ' F4SF2 31
+        ''' <summary>SLSF2 / F4SF2 3 (bit 35, kNoFade): the LOD fade is not computed (SSE 0x14151A41E..42B, FO4 0x14217A3EF..405).</summary>
+        Public NoFade As Boolean
         ''' <summary>Lighting: material refractionPower (SSE raw; FO4 .bgsm clamp(0, 1), NIF raw). Effect: fRefractionPower.</summary>
         Public Strength As Single
     End Structure
@@ -61,7 +63,9 @@ Friend Module RefractionLaw
                           If(s.RefractionFalloff, &H400, 0) Or &H200 Or If(s.ClampVariant, &H800, 0)
             ' Every {2,0x1A} x VC x skin x {none, 0x400, 0x800} VS ships; 0x400 with 0x800 does not (1.1).
             r.Drawn = Not (s.RefractionFalloff AndAlso s.ClampVariant)
-            r.UsesLodFade = True
+            ' kNoFade skips the fade and keeps the pass, with the property's stored fade: 1.0 from its constructor (SSE 0x141518E71,
+            ' FO4 0x1421791C8) when the bit comes from the file.
+            r.UsesLodFade = Not s.NoFade
             Return r
         End If
         If s.IsEffect Then
@@ -79,7 +83,9 @@ Friend Module RefractionLaw
             r.Falloff = s.RefractionFalloff : r.ClampVariant = s.ClampVariant
             r.Technique = If(s.ModelSpaceNormals, 2, &H1A) Or If(s.VertexColors, 1, 0) Or If(s.Skinned, 4, 0) Or
                           If(s.RefractionFalloff, &H400, 0) Or &H200 Or If(s.ClampVariant, &H800, 0)
-            r.UsesLodFade = True
+            ' kNoFade skips the fade and keeps the pass, with the property's stored fade: 1.0 from its constructor (SSE 0x141518E71,
+            ' FO4 0x1421791C8) when the bit comes from the file.
+            r.UsesLodFade = Not s.NoFade
         End If
         ' VS = T & 0xF7A5FFDF must ship (4.3).
         r.Drawn = Array.IndexOf(Fo4Vs, r.Technique And &HF7A5FFDF) >= 0
@@ -92,7 +98,8 @@ Friend Module RefractionLaw
     ''' between, clamp((x - end) / (start - end), 0, 1).</summary>
     Friend Function LodFade(distance As Single, s As Single) As Single
         Const FadeStart As Single = 0.025F, FadeEnd As Single = 0.03F
-        Dim x = distance * s * 0.000138889F
+        ' 1 / 7200 as the exe stores it (0x3911A2B4: SSE 0x141B2F1C0, FO4 0x142903DE8).
+        Dim x = distance * s * BitConverter.Int32BitsToSingle(&H3911A2B4)
         If x > FadeEnd Then Return -1.0F
         If x <= FadeStart Then Return 1.0F
         Return Math.Min(1.0F, Math.Max(0.0F, (x - FadeEnd) / (FadeStart - FadeEnd)))

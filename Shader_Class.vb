@@ -3328,7 +3328,7 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm, in int layer)
 	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
 	vec4 lc = matShadowViewProj[layer] * vec4(worldPos + worldNrm * uShadowNormalBias, 1.0);
 	vec3 p = lc.xyz / lc.w;
-	p = p * 0.5 + 0.5;   // NDC -> [0,1]
+	p.xy = p.xy * 0.5 + 0.5;   // NDC xy -> [0,1]; z is already the [0,1] depth (EngineCameraLaw.Orthographic, ZERO_TO_ONE)
 
 	// Past the far plane of the map there is nothing that could occlude. The XY case is NOT handled
 	// here on purpose: it is handled by the texture border (CLAMP_TO_BORDER with a white border), so a

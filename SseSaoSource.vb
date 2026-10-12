@@ -26,9 +26,9 @@ void main()
 "
 
     Friend Const Prelude As String = "// ---------------------------------------------------------------------------------------------------------------------
-// CONVENTION (SSE SAO transcription) -- all six passes run under glClipControl(GL_UPPER_LEFT, GL_NEGATIVE_ONE_TO_ONE)
-//  * The app sets glClipControl(GL_UPPER_LEFT, GL_NEGATIVE_ONE_TO_ONE) before CameraZ and restores
-//    (GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE) after BlurV. Per ARB_clip_control (core in GL 4.5) UPPER_LEFT only negates
+// CONVENTION (SSE SAO transcription) -- all six passes run under glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE)
+//  * The app sets glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE) before CameraZ and restores
+//    (GL_LOWER_LEFT, GL_ZERO_TO_ONE) after BlurV. Per ARB_clip_control (core in GL 4.5) UPPER_LEFT only negates
 //    the NDC y: y_d = f * y_c / w_c with f = -1; window coordinates keep their definition (glViewport/glReadPixels origin
 //    'independent of the clip control origin state'). So a vertex at clip y = +1 lands in window row 0 = memory row 0,
 //    exactly where D3D puts NDC y = +1 (render-target row 0). Consequences, for every SAO pass:

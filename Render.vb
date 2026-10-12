@@ -558,6 +558,13 @@ Public Class PreviewControl
         End Select
     End Function
 
+    ''' <summary>A uniform w×h texture of an engine built-in texture's bytes (EngineDefaultTextureLaw.Rgba: the one table).</summary>
+    Private Shared Function CreateColorTexture(w As Integer, h As Integer, t As EngineDefaultTextureLaw.EngineTexture,
+                                               Optional mipped As Boolean = False) As Integer
+        Dim c = EngineDefaultTextureLaw.Rgba(t)
+        Return CreateColorTexture(w, h, c(0), c(1), c(2), c(3), mipped)
+    End Function
+
     ''' <summary>Textura 2D uniforme de w×h con el color dado. <paramref name="mipped"/>=False (default):
     ''' Nearest + ClampToEdge, sin mips (comportamiento histórico de defaultWhiteTex/defaultNormalTex).
     ''' <paramref name="mipped"/>=True: mipmaps generados + LINEAR_MIPMAP_LINEAR + REPEAT — igual que una
@@ -629,7 +636,7 @@ Public Class PreviewControl
     ''' </summary>
     Public Sub GenerateDefaultTextures()
         ' 4×4 blanco puro
-        defaultWhiteTex = CreateColorTexture(4, 4, 255, 255, 255, 255)
+        defaultWhiteTex = CreateColorTexture(4, 4, EngineDefaultTextureLaw.EngineTexture.Fo4White)
 
         ' 4×4 normal map por defecto: el neutro de espacio tangente (0.5,0.5,1) → (128,128,255).
         ' El alpha va en 255 porque los DOS consumidores de normalMap.a caen a 1.0 cuando no hay normal
@@ -643,7 +650,7 @@ Public Class PreviewControl
         ' que contradecía a este mismo comentario; corregirlo dio 0 píxeles de diferencia en ShadowGate
         ' (10/10 frames byte-idénticos), como tenía que dar. Se corrige igual: el día que alguien saque un
         ' guard, el valor que hay acá es el que se lee, y un (128,128,128) decodifica a (0,0,-1).
-        defaultNormalTex = CreateColorTexture(4, 4, 128, 128, 255, 255)
+        defaultNormalTex = CreateColorTexture(4, 4, EngineDefaultTextureLaw.EngineTexture.Fo4NormalMap)
 
         ' default FaceGen detail = BSShader_DefFacegenDetail del motor (byte-exact, ver campo).
         ' Uniforme 64 = 0.251 (NO 0.5/identidad, NO la Bayer 0.1235 de BSShader_DitheringNoise).
@@ -660,10 +667,10 @@ Public Class PreviewControl
         defaultFacegenTintTex = CreateColorTexture(64, 64, 128, 128, 128, 255, mipped:=True)
 
         ' SSE: default del slot 7 en mallas MSN sin `_s` = NEGRO (specular 0), ver campo.
-        defaultSseMsnSpecTex = CreateColorTexture(64, 64, 0, 0, 0, 255, mipped:=True)
+        defaultSseMsnSpecTex = CreateColorTexture(64, 64, EngineDefaultTextureLaw.EngineTexture.SseDefHeightMap, mipped:=True)
 
         ' SSE: default GENERICO del slot 7 (rama backlight) = BSShader_DefNormalMap del motor, ver campo.
-        defaultSseEngineGenericTex = CreateColorTexture(64, 64, 128, 128, 255, 255, mipped:=True)
+        defaultSseEngineGenericTex = CreateColorTexture(64, 64, EngineDefaultTextureLaw.EngineTexture.SseDefNormalMap, mipped:=True)
 
         ' Diffuse de las HELPER SHAPES sin textura = NEGRO (ver el campo). Sin mips: son 4x4 planos.
         defaultHelperTex = CreateColorTexture(4, 4, 0, 0, 0, 255, mipped:=False)
@@ -1560,7 +1567,9 @@ Public Class PreviewControl
         GL.DebugMessageControl(DebugSourceControl.DontCare, DebugTypeControl.DontCare, DebugSeverityControl.DebugSeverityHigh, 0, Array.Empty(Of Integer)(), True)
 #End If
 
-        ' 3) Estado GL estándar
+        ' 3) Estado GL estándar. Profundidad [0, 1] de D3D en todo el contexto (EngineCameraLaw, ola 1); el origen GL, que la etapa FO4
+        ' cambia a UPPER_LEFT y EndFo4Stage repone.
+        GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
         GL.Enable(EnableCap.DepthTest)
         GL.DepthFunc(DepthFunction.Lequal)
 
@@ -1615,62 +1624,46 @@ Public Class PreviewControl
         End If
     End Sub
     ' === Frustum dinámico ===
-    Private lastNear As Single = 0.1F
-    Private lastFar As Single = 1000.0F
+    Private lastNear As Single = 0.0F
+    Private lastFar As Single = 0.0F
+    Private lastAspect As Single = 0.0F
 
-    ' Recalcula la proyección en función del tamaño de escena y la distancia actual de la cámara.
+    ''' <summary>THE FRAME'S PROJECTION (ola 1, 12-oct-2026): the engine's camera law (EngineCameraLaw) - far = the world camera's far
+    ''' without a world, near = SetViewFrustum's law with n = fNearDistance - and the engine's matrix, depth in [0, 1]
+    ''' (ClipDepthMode.ZeroToOne). EDITOR RULE (the app's; user decision 12-oct-2026): when a shape the frame draws inside the side
+    ''' planes of the frustum is closer to the eye than fNearDistance, n is its view depth, floored at the engine's minNear 1.0
+    ''' (FO4 0x1417EED11, SSE 0x140FF4939) - the editor's orbit camera reaches closer than the game's and a clipped piece cannot be
+    ''' edited. Those shapes (one owner: PreviewModel.NearShapes, kept in FrameCloserThanNear) are what the frame's notice lists
+    ''' (FrameNoticeKind.CloserThanGameNear). Called every frame (RenderScene), since the depths change with any camera move; the
+    ''' matrix is rebuilt only when near, far or the aspect changed.</summary>
     Public Sub UpdateProjection(Optional force As Boolean = False)
         If Me.Height <= 0 Then Return
-
-        ' Bounds de escena (si no hay meshes aún, usa un AABB mínimo)
-        Dim minB As Vector3
-        Dim maxB As Vector3
-        If Model IsNot Nothing AndAlso Model.meshes IsNot Nothing AndAlso Model.meshes.Count > 0 Then
-            GetSceneBounds(minB, maxB)
-        Else
-            minB = New Vector3(-1.0F)
-            maxB = New Vector3(1.0F)
-        End If
-
-        Dim size As Vector3 = maxB - minB
-        ' Ejes: X=ancho, Y=profundidad, Z=alto (tu código ya usa esta convención)
-        Dim halfW As Single = Math.Abs(size.X) * 0.5F
-        Dim halfD As Single = Math.Abs(size.Y) * 0.5F
-        Dim halfH As Single = Math.Abs(size.Z) * 0.5F
-
-        ' Radio: cuanto “crece” la escena alrededor del centro
-        Dim radius As Single = Math.Max(halfW, Math.Max(halfD, halfH))
-        If Double.IsInfinity(radius) Then radius = 1
-
-        ' Distancia actual cámara ? foco
-        Dim eyeToCenter As Single = Math.Max(1.0F, camera.distance)
-
-        ' Margen para asegurar que no clippea por el far plane
-        Dim margin As Single = 0.2F
-
-        ' Far plane sugerido: distancia + radio + margen
-        Dim farZ As Single = eyeToCenter + radius * (1.0F + margin) + 1.0F
-        ' Mínimo razonable para escenas pequeñas
-        farZ = Math.Max(1000.0F, farZ)
-
-        ' Near plane: suficientemente pequeño, pero no exagerado para no perder precisión de Z
-        Dim nearZ As Single = Math.Max(0.05F, farZ / 10000.0F)
-
-        ' Evitar recalcular si el cambio es mínimo
-        If Not force AndAlso Math.Abs(farZ - lastFar) < 1.0F AndAlso Math.Abs(nearZ - lastNear) < 0.01F Then
-            Return
-        End If
-
         Dim aspect As Single = Me.Width / CSng(Math.Max(1, Me.Height))
-        Dim fovY As Single = MathHelper.DegreesToRadians(PreviewFovYDegrees)
-
-        projection = Matrix4.CreatePerspectiveFieldOfView(fovY, aspect, nearZ, farZ)
+        Dim fovY = MathHelper.DegreesToRadians(PreviewFovYDegrees)
+        Dim farZ = EngineCameraLaw.FarWithoutWorld
+        Dim n = EngineCameraLaw.NearDistance
+        If Model IsNot Nothing AndAlso Model.meshes IsNot Nothing Then
+            ' The side planes (0..3) do not depend on near / far: EngineCameraLaw.Perspective's columns 1, 2 and 4 do not hold them.
+            Dim view = camera.GetViewMatrix()
+            PreviewModel.RenderableMesh.ExtractFrustumPlanes(view * EngineCameraLaw.Perspective(fovY, aspect, n, farZ), _nearProbePlanes)
+            Array.Copy(_nearProbePlanes, _nearSidePlanes, 4)
+            Dim cerca = Model.NearShapes(view, _nearSidePlanes)
+            If cerca.Depth < n Then n = cerca.Depth
+        End If
+        If n < EngineCameraLaw.MinNear Then n = EngineCameraLaw.MinNear
+        Dim nearZ = EngineCameraLaw.FrustumNear(n, farZ)
+        If Not force AndAlso nearZ = lastNear AndAlso farZ = lastFar AndAlso aspect = lastAspect Then Return
+        projection = EngineCameraLaw.Perspective(fovY, aspect, nearZ, farZ)
         lastNear = nearZ
         lastFar = farZ
+        lastAspect = aspect
         UpdateRequired = True
     End Sub
-    ''' <summary>The preview camera's VERTICAL field of view, degrees: the one constant of the projection (UpdateProjection
-    ''' and the framing). The refraction LOD fade takes the preview's FOV as the world camera's (RefractionLaw.LodScale).</summary>
+    ''' <summary>UpdateProjection's planes: the six of the probe matrix and the four side ones (reused: no allocation per frame).</summary>
+    Private ReadOnly _nearProbePlanes(5) As Vector4, _nearSidePlanes(3) As Vector4
+    ''' <summary>The preview camera's VERTICAL field of view, degrees - an EDITOR RULE (user decision 12-oct-2026), the same in both
+    ''' games: the engine's world camera takes fDefaultWorldFOV as a horizontal angle at 16:9 (FO4 70, SSE 80; tanV = 0.5625 tan(fov / 2),
+    ''' FO4 0x1421C8DE4, SSE 0x140EF1869; ola1.md 1). The refraction LOD fade converts it to the engine's number (RefractionLaw.LodScale).</summary>
     Friend Const PreviewFovYDegrees As Single = 45.0F
 
     ''' <summary>El fade radial del fondo, normalizado a -1..+1. Lo consumen el quad de fondo y el piso:
@@ -2014,25 +2007,32 @@ Public Class PreviewControl
     ''' <summary>The end of Fallout 4's D3D-order stage (G-buffer, lights, composites and the forward stage), however it ended: when
     ''' the frame reached composite 2 (FinishFo4Deferred), the frame's targets turned to GL rows - the scene target's radiance and
     ''' coverage, the background-shadow target (post on) or the display target (post off), and the depth/stencil
-    ''' (Fo4DeferredTargets.MirrorRows) - so everything after the stage (refraction normals, the post, the display overlays, the
-    ''' capture) finds them as before the zfight-overlay fix; the SOFT depth copy taken in the stage holds D3D rows, so the next SOFT
+    ''' (Fo4DeferredTargets.MirrorRows), and the refraction normals drawn in the stage (rev-01: against the unmirrored depth) - so
+    ''' everything after the stage (ISRefraction, the post, the display overlays, the capture) finds them in GL rows; the SOFT depth
+    ''' copy taken in the stage holds D3D rows, so the next SOFT
     ''' reader copies again (FrameDepthDirty). Then GL row order and linear writes back, so nothing after it inherits the D3D-order
     ''' state (propuesta A.2).</summary>
     Friend Sub EndFo4Stage()
         If GateFo4SkipEndStage Then Return
         If _fo4RowsD3D Then
             _fo4RowsD3D = False
-            _fo4.MirrorRows(_targets.SceneTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
-            _fo4.MirrorRows(_targets.CoverageTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
-            If _frameFbo = _targets.HdrFramebuffer Then
-                _fo4.MirrorRows(_targets.BgShadowTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
-            Else
-                _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
+            If Not GateFo4NoStageMirror Then
+                _fo4.MirrorRows(_targets.SceneTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
+                _fo4.MirrorRows(_targets.CoverageTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
+                If _frameFbo = _targets.HdrFramebuffer Then
+                    _fo4.MirrorRows(_targets.BgShadowTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
+                Else
+                    _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
+                End If
+                _fo4.MirrorRows(_targets.DepthRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Depth24Stencil8)
+                ' rev-01: the refraction normals drawn in the stage (FO4's target is R11G11B10F, RefractionTargets.BeginNormals).
+                If _Model IsNot Nothing AndAlso _Model.FrameRefractionActive AndAlso Not GateFo4NoNormalsMirror Then
+                    _fo4.MirrorRows(_refraction.NormalsTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
+                End If
             End If
-            _fo4.MirrorRows(_targets.DepthRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Depth24Stencil8)
             If _Model IsNot Nothing Then _Model.FrameDepthDirty = True
         End If
-        GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.NegativeOneToOne)
+        GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
         GL.Disable(EnableCap.FramebufferSrgb)
     End Sub
 
@@ -2042,6 +2042,14 @@ Public Class PreviewControl
 
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True makes EndFo4Stage do nothing.</summary>
     Friend Shared GateFo4SkipEndStage As Boolean = False
+
+    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant (rev-03). True skips only the output mirror of EndFo4Stage
+    ''' (the clip state and sRGB writes are still restored): the frame after the stage stays in D3D rows.</summary>
+    Friend Shared GateFo4NoStageMirror As Boolean = False
+
+    ''' <summary>GATE ONLY (no UI): ShadowGate --refraction-scene mutant (revisor-13). True leaves the refraction normals target in
+    ''' D3D rows at EndFo4Stage (every other target is still mirrored).</summary>
+    Friend Shared GateFo4NoNormalsMirror As Boolean = False
 
     ''' <summary>GATE ONLY (ShadowGate --sse-sao-scene): the HDR radiance right before and right after the composite of the frame.</summary>
     Friend Shared GateCompositeSnapshot As Boolean
@@ -2064,13 +2072,26 @@ Public Class PreviewControl
     ''' <summary>Copies the depth of the framebuffer being drawn for the effects' SOFT fade (see SceneDepthCopy).</summary>
     Friend Sub CopySceneDepth()
         ' Fallout 4's G-buffer stage draws into the deferred targets (D3D rows, as gl_FragCoord under UPPER_LEFT): their depth.
+        If _Model IsNot Nothing AndAlso _Model.FrameGBufferStage Then GateSoftCopiesInGBufferStage += 1
         _sceneDepth.CopyFrom(If(_Model IsNot Nothing AndAlso _Model.FrameGBufferStage, _fo4.GBufferFramebuffer, _frameFbo), Me.Width, Me.Height)
     End Sub
+
+    ''' <summary>GATE ONLY (ShadowGate --soft-scene, rev-04 / revisor-14): SOFT depth copies taken inside Fallout 4's G-buffer stage since
+    ''' the gate reset it - the only copies the deleted re-copy after the blit could have replaced.</summary>
+    Friend Shared GateSoftCopiesInGBufferStage As Integer
 
     ''' <summary>The copied scene depth (0 before the first copy).</summary>
     Friend ReadOnly Property SceneDepthTexture As Integer
         Get
             Return _sceneDepth.Texture
+        End Get
+    End Property
+
+    ''' <summary>The projection this frame draws with (UpdateProjection). ShadowGate --refraction-scene projects the refracting shapes'
+    ''' AABBs with it on the CPU (revisor-13).</summary>
+    Friend ReadOnly Property FrameProjection As Matrix4
+        Get
+            Return projection
         End Get
     End Property
 
@@ -2168,6 +2189,7 @@ Public Class PreviewControl
         Model.FrameIsHdr = hdr
         Try
             If Model.Can_Render Then
+                UpdateProjection(False)
                 Model.RenderAll(projection, camera)
             End If
             Dim isSse = CurrentShader Is SharedSSEShader
@@ -2208,12 +2230,14 @@ Public Class PreviewControl
     ''' game, but never silent) and the ones the game does not draw while the preview does (FrameDrawnForEditing, 6-oct-2026) -
     ''' top-left on the WINDOW after the frame is presented (rev-59): CaptureBitmap reads the scene target, so captures (NPC
     ''' portraits, gate PNGs) never carry it - except when the offscreen targets could not be allocated and the capture reads the
-    ''' front buffer. The text wraps at the window's width less the margin on each side. "Show errors" off
-    ''' (Config_App.Setting_ShowErrors) draws none of it; the census is not touched.</summary>
+    ''' front buffer. The text wraps at the window's width less the margin on each side. "Show errors" / "Show warnings" off
+    ''' (Config_App.Setting_ShowErrors / Setting_ShowWarnings) leave that class of lines out (PreviewModel.SeverityOf); the census
+    ''' is not touched.</summary>
     Private Sub DrawPreviewGapNotice()
         If overlay Is Nothing OrElse _Model Is Nothing Then Exit Sub
-        If Config_App.Current IsNot Nothing AndAlso Not Config_App.Current.Setting_ShowErrors Then Exit Sub
-        Dim lines = _Model.FrameNoticeLines()
+        Dim cfg = Config_App.Current
+        Dim lines = _Model.FrameNoticeLines(errors:=cfg Is Nothing OrElse cfg.Setting_ShowErrors,
+                                            warnings:=cfg Is Nothing OrElse cfg.Setting_ShowWarnings)
         If lines.Count = 0 Then Exit Sub
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
         GL.Viewport(0, 0, Me.Width, Me.Height)
@@ -2881,11 +2905,9 @@ Public Class PreviewControl
             ' HelperShapeGate cubre RenderHide + las helper shapes. Encuadrar sobre una helper deforma la
             ' camara: el VirtualGround de KS Hairdos SMP es un quad de radio 113 centrado en el origen,
             ' o sea que la escena entera se aleja por una malla que ni siquiera se dibuja.
-            If mesh Is Nothing OrElse Not mesh.IsDrawable() Then Continue For
             ' A Fallout 4 shape the preview cannot draw yet (preview Gap) leaves every pass (rev-55 a): it is not drawn, so it is
-            ' not framed either.
-            If Not Model.FrameIsSse AndAlso mesh.MeshData.Material IsNot Nothing AndAlso
-               mesh.MeshData.Material.Fo4PreviewGap(SharedFo4Deferred) Then Continue For
+            ' not framed either (PreviewModel.DrawsShape, also the editor's near).
+            If Not Model.DrawsShape(mesh) Then Continue For
             min = Vector3.ComponentMin(min, mesh.MeshData.Meshgeometry.Minv)
             max = Vector3.ComponentMax(max, mesh.MeshData.Meshgeometry.Maxv)
             anyVisible = True
@@ -4358,7 +4380,7 @@ Public Class PreviewModel
                     .Refraction = mb.Refraction, .TempRefraction = bit(f1, 2),
                     .RefractionFalloff = mb.RefractionFalloff OrElse bit(f1, 16),
                     .ClampVariant = bit(f1, 13), .ModelSpaceNormals = mb.ModelSpaceNormals, .Skinned = bit(f1, 1),
-                    .VertexColors = bit(f2, 5), .PipboyScreen = bit(f2, 28), .RefractionWritesDepth = bit(f2, 31),
+                    .VertexColors = bit(f2, 5), .PipboyScreen = bit(f2, 28), .RefractionWritesDepth = bit(f2, 31), .NoFade = bit(f2, 3),
                     .Strength = fuerza})
                 ' C2 v6 L1c (aud-B-01): the game's alpha branch clears the WHOLE list, the refraction utility pass included - FO4 0x14217A147
                 ' before 0x14217A566, SSE 0x14151A554 before 0x14151A6BB: a lighting shape the pass law cut for its drawn alpha has no
@@ -4547,6 +4569,7 @@ Public Class PreviewModel
                     .EnvmapClass = st = NiflySharp.Enums.BSLightingShaderType.EnvironmentMap OrElse st = NiflySharp.Enums.BSLightingShaderType.EyeEnvmap,
                     .ParallaxClass = st = NiflySharp.Enums.BSLightingShaderType.Parallax,
                     .MultiLayerParallaxClass = st = NiflySharp.Enums.BSLightingShaderType.MultiLayerParallax,
+                    .EyeClass = st = NiflySharp.Enums.BSLightingShaderType.EyeEnvmap,
                     .RimOrSoft = mb.RimLighting OrElse mb.SubsurfaceLighting,
                     .BackLighting = mb.BackLighting,
                     .SpecularMsn = mb.SpecularEnabled AndAlso mb.ModelSpaceNormals})
@@ -4568,7 +4591,7 @@ Public Class PreviewModel
                 Return If(id <> 0, CUInt(id), ownId)
             End Function
 
-            ''' <summary>The recolor-without-base line (rev-07 / rev-11): C4's class "drawn differently by the preview" (the game draws
+            ''' <summary>The recolor-without-base line (rev-07 / rev-11): a warning, FrameNoticeKind.UndefinedInGame (the game draws
             ''' it, reading the previous draw's t0; the preview draws white).</summary>
             Friend Const RecolorWithoutBase As String = "Recolor without a base texture: drawn white; the game reads the previous draw's texture"
 
@@ -4579,7 +4602,7 @@ Public Class PreviewModel
             ''' does not reproduce it: "Texture not loaded by the preview: path");</item>
             ''' <item>every EMPTY slot the game samples with a default that is not neutral (EngineDefaultTextureLaw.IsNeutral) -&gt;
             ''' EmptyTextureSlot (the slot's name);</item>
-            ''' <item>an effect base that is empty under a recolor -&gt; DrawnDifferently (RecolorWithoutBase).</item>
+            ''' <item>an effect base that is empty under a recolor -&gt; UndefinedInGame (RecolorWithoutBase).</item>
             ''' </list>
             ''' A slot the SSE fold stands in for (DiffuseTexture_ID / NormalTexture_ID through a per-NPC key) counts as loaded.</summary>
             Friend Function TextureNotices() As List(Of (Kind As PreviewModel.FrameNoticeKind, Reason As String))
@@ -4601,7 +4624,7 @@ Public Class PreviewModel
                     Select Case d
                         Case EngineDefaultTextureLaw.EngineTexture.Own, EngineDefaultTextureLaw.EngineTexture.NoTexture, EngineDefaultTextureLaw.EngineTexture.NotTraced
                         Case EngineDefaultTextureLaw.EngineTexture.PreviousDraw
-                            out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, RecolorWithoutBase))
+                            out.Add((PreviewModel.FrameNoticeKind.UndefinedInGame, RecolorWithoutBase))
                         Case Else
                             If Not EngineDefaultTextureLaw.IsNeutral(slot, d) Then out.Add((PreviewModel.FrameNoticeKind.EmptyTextureSlot, SlotNoticeName(slot)))
                     End Select
@@ -5713,11 +5736,26 @@ Public Class PreviewModel
             planes(2) = New Vector4(vp.M14 + vp.M12, vp.M24 + vp.M22, vp.M34 + vp.M32, vp.M44 + vp.M42)
             ' Top
             planes(3) = New Vector4(vp.M14 - vp.M12, vp.M24 - vp.M22, vp.M34 - vp.M32, vp.M44 - vp.M42)
-            ' Near
-            planes(4) = New Vector4(vp.M14 + vp.M13, vp.M24 + vp.M23, vp.M34 + vp.M33, vp.M44 + vp.M43)
+            ' Near: z_clip >= 0 (depth [0, 1], ClipDepthMode.ZeroToOne; EngineCameraLaw)
+            planes(4) = New Vector4(vp.M13, vp.M23, vp.M33, vp.M43)
             ' Far
             planes(5) = New Vector4(vp.M14 - vp.M13, vp.M24 - vp.M23, vp.M34 - vp.M33, vp.M44 - vp.M43)
         End Sub
+
+        ''' <summary>The smallest view depth (-z of the GL view) of a world AABB: the minimum over its 8 corners (a linear function's
+        ''' minimum over a box), 0 when the box crosses the eye's plane, +infinity when the whole box is behind the eye. The editor's
+        ''' near and its notice (PreviewControl.UpdateProjection, PreviewModel.ReportUndrawnShapes).</summary>
+        Friend Shared Function NearestViewDepth(bmin As Vector3, bmax As Vector3, view As Matrix4) As Single
+            Dim dmin = Single.PositiveInfinity, dmax = Single.NegativeInfinity
+            For i = 0 To 7
+                Dim c As New Vector3(If((i And 1) = 0, bmin.X, bmax.X), If((i And 2) = 0, bmin.Y, bmax.Y), If((i And 4) = 0, bmin.Z, bmax.Z))
+                Dim z = -Vector3.TransformPosition(c, view).Z
+                If z < dmin Then dmin = z
+                If z > dmax Then dmax = z
+            Next
+            If dmax <= 0.0F Then Return Single.PositiveInfinity
+            Return If(dmin < 0.0F, 0.0F, dmin)
+        End Function
 
         ''' <summary>NO USAR EN EL CAMINO DE DIBUJO: aloca los 6 planos en cada llamada. Queda como
         ''' conveniencia para un call site suelto; los bucles de RenderAll y el pase de sombra usan la
@@ -6053,7 +6091,7 @@ Public Class PreviewModel
             End If
             ' S-P (user decision 6-oct-2026): a Parallax technique whose view vector the game leaves unwritten (ParallaxViewNotice).
             Dim parallaxV = ParallaxViewNotice(md)
-            If parallaxV IsNot Nothing Then pm.ReportUndrawn(name, parallaxV, FrameNoticeKind.DrawnDifferently)
+            If parallaxV IsNot Nothing Then pm.ReportUndrawn(name, parallaxV, FrameNoticeKind.UndefinedInGame)
             ' S-N: the composite's snow sparkles are not drawn (their colour, iSnowSparklesColor 2, comes from the scene: not traced).
             If pm.FrameIsSse AndAlso Not md.MaterialBase.IsBGEM() AndAlso
                SseRenderPassLaw.SnowTechnique(md.SseInputs(), SseRenderPassLaw.ImprovedSnowExeDefault) Then
@@ -9610,11 +9648,20 @@ Public Class PreviewModel
     ''' (FrameNoticeKind.DrivenByControllerAtRest): the variables' names -&gt; shapes.</summary>
     Friend ReadOnly FrameDrivenAtRest As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
+    ''' <summary>Ola 1 (editor rule): this frame's shapes closer to the eye than the game's near plane (EngineCameraLaw.NearDistance),
+    ''' drawn with the lowered near (FrameNoticeKind.CloserThanGameNear): the reason -&gt; shapes.</summary>
+    Friend ReadOnly FrameCloserThanGameNear As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
+
     ''' <summary>GATE ONLY (no UI): ShadowGate --default-textures mutant. True skips the frame's texture census.</summary>
     Friend Shared GateNoTextureNoticeCensus As Boolean = False
 
-    ''' <summary>The eight kinds of the frame's notice, one map each (DrawnDifferently / MissingTexture / EmptyTextureSlot: C4, the
-    ''' engine's default textures; DrivenByControllerAtRest: C10).</summary>
+    ''' <summary>C4 extension: this frame's shapes the game draws in a way it leaves undefined (the previous draw's texture, an unset
+    ''' view vector), which the preview draws its own way (FrameNoticeKind.UndefinedInGame).</summary>
+    Friend ReadOnly FrameUndefinedInGame As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
+
+    ''' <summary>The ten kinds of the frame's notice, one map each (DrawnDifferently / UndefinedInGame / MissingTexture /
+    ''' EmptyTextureSlot: C4, the engine's default textures; DrivenByControllerAtRest: C10). Each kind has one severity
+    ''' (SeverityOf).</summary>
     Friend Enum FrameNoticeKind
         ''' <summary>The game draws it, the preview cannot (FramePreviewGaps).</summary>
         PreviewGap
@@ -9626,8 +9673,11 @@ Public Class PreviewModel
         ''' highest value the controller reaches (C2 v6 L5, aud-B-05; FrameShownAtAnimatedMaximum).</summary>
         ShownAtAnimatedMaximum
         ''' <summary>C4 extension (rev-07 / rev-11): the game draws it, the preview draws it differently and cannot reproduce it
-        ''' (FrameDrawnDifferently): a recolor without a base texture, a texture in the data the preview did not load.</summary>
+        ''' (FrameDrawnDifferently): a texture in the data the preview did not load, an SSE eye without eye data, snow sparkles.</summary>
         DrawnDifferently
+        ''' <summary>The game draws it with a value it leaves undefined, the preview draws it its own way (FrameUndefinedInGame): a
+        ''' recolor without a base texture (the previous draw's t0), a Parallax technique without its view vector.</summary>
+        UndefinedInGame
         ''' <summary>C4: a texture path absent from the game's data (FrameMissingTextures).</summary>
         MissingTexture
         ''' <summary>C4: an empty texture slot the game samples with a default that is not neutral (FrameEmptyTextureSlots).</summary>
@@ -9635,7 +9685,33 @@ Public Class PreviewModel
         ''' <summary>C10 rev-04 (user decision 7-oct-2026): the game draws it with a value its shader controller writes at the clock's
         ''' origin, and so does the preview (MaterialData.RestValue); what the editors show and save is the block's (FrameDrivenAtRest).</summary>
         DrivenByControllerAtRest
+        ''' <summary>Ola 1 (editor rule, 12-oct-2026): the shape is closer to the eye than the game's near plane; the preview lowers its
+        ''' near to draw it (PreviewControl.UpdateProjection), so the depth precision differs from the game's (FrameCloserThanGameNear).</summary>
+        CloserThanGameNear
     End Enum
+
+    ''' <summary>The two classes of the frame's notice (user decision 12-oct-2026), each with its checkbox: "Show errors"
+    ''' (Config_App.Setting_ShowErrors) and "Show warnings" (Config_App.Setting_ShowWarnings).</summary>
+    Friend Enum FrameNoticeSeverity
+        ''' <summary>The shape is not seen as in the game: data missing, a gap of the preview, or a shape the game does not draw.</summary>
+        [Error]
+        ''' <summary>The shape is drawn as the game draws it, with a remark: a default, a controller at rest, an undefined value.</summary>
+        Warning
+    End Enum
+
+    ''' <summary>The severity of <paramref name="kind"/> (user decision 12-oct-2026: what the game does not draw is an error, in the
+    ''' composite and in the piece view alike).</summary>
+    Friend Shared Function SeverityOf(kind As FrameNoticeKind) As FrameNoticeSeverity
+        Select Case kind
+            Case FrameNoticeKind.PreviewGap, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.DrawnForEditing,
+                 FrameNoticeKind.DrawnDifferently, FrameNoticeKind.MissingTexture
+                Return FrameNoticeSeverity.Error
+            Case FrameNoticeKind.ShownAtAnimatedMaximum, FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot,
+                 FrameNoticeKind.DrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
+                Return FrameNoticeSeverity.Warning
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
+        End Select
+    End Function
 
     ''' <summary>The frame's serial (RenderAll): per-frame caches key on it (MaterialData.Fo4EngineState, MaterialData.PreviewAlpha).</summary>
     Friend Property FrameSerial As Integer
@@ -9650,9 +9726,11 @@ Public Class PreviewModel
             Case FrameNoticeKind.DrawnForEditing : map = FrameDrawnForEditing
             Case FrameNoticeKind.ShownAtAnimatedMaximum : map = FrameShownAtAnimatedMaximum
             Case FrameNoticeKind.DrawnDifferently : map = FrameDrawnDifferently
+            Case FrameNoticeKind.UndefinedInGame : map = FrameUndefinedInGame
             Case FrameNoticeKind.MissingTexture : map = FrameMissingTextures
             Case FrameNoticeKind.EmptyTextureSlot : map = FrameEmptyTextureSlots
             Case FrameNoticeKind.DrivenByControllerAtRest : map = FrameDrivenAtRest
+            Case FrameNoticeKind.CloserThanGameNear : map = FrameCloserThanGameNear
             Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
         End Select
         Dim shapes As SortedSet(Of String) = Nothing
@@ -9668,36 +9746,33 @@ Public Class PreviewModel
     ''' (n shapes)": each such reason already says that the game does not draw it), then what the game does not draw and the preview
     ''' does ("Drawn by the preview, not by the game (n shapes): reason"), what it shows at its animated maximum, then C4's texture
     ''' lines ("Drawn differently by the preview", "Missing texture", "Empty texture slot"), then C10's ("Value driven by a controller
-    ''' at rest", rev-04). Empty when the frame draws every shape as
-    ''' the game does.</summary>
-    Friend Function FrameNoticeLines() As List(Of String)
+    ''' at rest", rev-04). The errors come first, then the warnings (SeverityOf); <paramref name="errors"/> /
+    ''' <paramref name="warnings"/> False leave that class out (the window's notice: "Show errors" / "Show warnings"). Empty when
+    ''' the frame draws every shape as the game does.</summary>
+    Friend Function FrameNoticeLines(Optional errors As Boolean = True, Optional warnings As Boolean = True) As List(Of String)
         Dim shapes = Function(n As Integer) $"{n} shape{If(n = 1, "", "s")}"
-        Dim lines As New List(Of String)
-        For Each kv In FramePreviewGaps
-            lines.Add($"Not drawn by the preview ({shapes(kv.Value.Count)}): {kv.Key}")
-        Next
-        For Each kv In FrameEngineUndrawn
-            lines.Add($"{kv.Key} ({shapes(kv.Value.Count)})")
-        Next
-        For Each kv In FrameDrawnForEditing
-            lines.Add($"Drawn by the preview, not by the game ({shapes(kv.Value.Count)}): {kv.Key}")
-        Next
-        For Each kv In FrameShownAtAnimatedMaximum
-            lines.Add($"Shown at its animated maximum ({shapes(kv.Value.Count)}): {kv.Key}")
-        Next
-        For Each kv In FrameDrawnDifferently
-            lines.Add($"Drawn differently by the preview ({shapes(kv.Value.Count)}): {kv.Key}")
-        Next
         ' Fallout 4: what the game samples for an absent file is not traced (C4 L7) - the preview keeps its own fallback and says so.
         Dim missingLabel = If(FrameIsSse, "Missing texture", "Missing texture, the game's fallback not traced")
-        For Each kv In FrameMissingTextures
-            lines.Add($"{missingLabel} ({shapes(kv.Value.Count)}): {kv.Key}")
-        Next
-        For Each kv In FrameEmptyTextureSlots
-            lines.Add($"Empty texture slot ({shapes(kv.Value.Count)}): {kv.Key}")
-        Next
-        For Each kv In FrameDrivenAtRest
-            lines.Add($"Value driven by a controller at rest ({shapes(kv.Value.Count)}): {kv.Key}")
+        Dim sections As (Kind As FrameNoticeKind, Map As SortedDictionary(Of String, SortedSet(Of String)), Line As Func(Of String, Integer, String))() = {
+            (FrameNoticeKind.PreviewGap, FramePreviewGaps, Function(r, n) $"Not drawn by the preview ({shapes(n)}): {r}"),
+            (FrameNoticeKind.EngineUndrawn, FrameEngineUndrawn, Function(r, n) $"{r} ({shapes(n)})"),
+            (FrameNoticeKind.DrawnForEditing, FrameDrawnForEditing, Function(r, n) $"Drawn by the preview, not by the game ({shapes(n)}): {r}"),
+            (FrameNoticeKind.ShownAtAnimatedMaximum, FrameShownAtAnimatedMaximum, Function(r, n) $"Shown at its animated maximum ({shapes(n)}): {r}"),
+            (FrameNoticeKind.DrawnDifferently, FrameDrawnDifferently, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
+            (FrameNoticeKind.UndefinedInGame, FrameUndefinedInGame, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
+            (FrameNoticeKind.MissingTexture, FrameMissingTextures, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
+            (FrameNoticeKind.EmptyTextureSlot, FrameEmptyTextureSlots, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
+            (FrameNoticeKind.DrivenByControllerAtRest, FrameDrivenAtRest, Function(r, n) $"Value driven by a controller at rest ({shapes(n)}): {r}"),
+            (FrameNoticeKind.CloserThanGameNear, FrameCloserThanGameNear, Function(r, n) $"{r} ({shapes(n)})")}
+        Dim lines As New List(Of String)
+        For Each severity In {FrameNoticeSeverity.Error, FrameNoticeSeverity.Warning}
+            If Not If(severity = FrameNoticeSeverity.Error, errors, warnings) Then Continue For
+            For Each s In sections
+                If SeverityOf(s.Kind) <> severity Then Continue For
+                For Each kv In s.Map
+                    lines.Add(s.Line(kv.Key, kv.Value.Count))
+                Next
+            Next
         Next
         Return lines
     End Function
@@ -9709,14 +9784,18 @@ Public Class PreviewModel
         FrameDrawnForEditing.Clear()
         FrameShownAtAnimatedMaximum.Clear()
         FrameDrawnDifferently.Clear()
+        FrameUndefinedInGame.Clear()
         FrameMissingTextures.Clear()
         FrameEmptyTextureSlots.Clear()
         FrameDrivenAtRest.Clear()
+        FrameCloserThanGameNear.Clear()
         FrameSerial = If(FrameSerial = Integer.MaxValue, 0, FrameSerial + 1)
         For i = 0 To FrameSamplerFilter.Length - 1 : FrameSamplerFilter(i) = 3 : Next
         ' SOFT's scene depth: nothing copied yet this frame, and the depth buffer is "written" (cleared).
         FrameSceneDepthValid = False
         FrameDepthDirty = True
+        ' The refraction normals are drawn inside Fallout 4's stage (rev-01): a stage that aborts before them leaves no stale flag.
+        FrameRefractionActive = False
         ' A FO4 effect draw masks the alpha of draw buffer 0 (ApplyMaterial): every frame starts with all channels.
         GL.ColorMask(True, True, True, True)
         ' O4.1: Process pending background texture uploads (Phase 2) each frame
@@ -9841,13 +9920,15 @@ Public Class PreviewModel
                 DrawOpaqueStage(projection, camera)
                 FrameGBufferStage = False
                 ParentControl.FinishFo4Deferred(BuildFo4DeferredFrame(projection, viewMatrix))
-                ' The blit wrote the scene depth: the forward effects' SOFT copies it again (FO4 reads the live depth). Since the blit
-                ' is straight (zfight-overlay fix) a copy taken inside the G-buffer stage holds the same values wherever no later write
-                ' dirtied it, so this copies from the buffer the forward stage reads rather than changing what a copy holds.
-                FrameDepthDirty = True
+                ' No new SOFT copy for the blit (rev-04): FO4's SOFT reads the live depth (0x14183C863); a copy taken in the G-buffer
+                ' stage comes from the G-buffer depth (CopySceneDepth), the blit is straight D24S8 -&gt; D24S8 NEAREST, and the lights and
+                ' composites do not write depth, so a clean copy already equals the live depth; any later write marks FrameDepthDirty.
                 ' The forward stage in the D3D row order the G-buffer depth was written in (one orientation, as the game: an overlay
                 ' on its body's geometry gets the body's depth bit for bit); EndFo4Stage turns the targets to GL rows after it.
                 DrawForwardStage(projection, camera, viewMatrix, vp)
+                ' rev-01: the refraction normals in the stage's D3D rows, against the depth the stage drew (FO4 0x1421D6540, after the
+                ' forward stage); EndFo4Stage turns their target to GL rows with the others.
+                DrawRefractionNormals(projection, camera)
             Finally
                 FrameGBufferStage = False
                 ParentControl.EndFo4Stage()
@@ -9857,9 +9938,8 @@ Public Class PreviewModel
             ' SSE: the SAO composite over the opaque scene, between the opaque finish and the alpha finish (0x14153A1CA).
             If FrameIsSse AndAlso FrameIsHdr AndAlso Not GateDisableSseComposite Then ParentControl.ApplySseOpaqueComposite()
             DrawForwardStage(projection, camera, viewMatrix, vp)
+            DrawRefractionNormals(projection, camera)
         End If
-
-        DrawRefractionNormals(projection, camera)
     End Sub
 
     ''' <summary>The frame after the opaque finish (and SSE's composite): the floor, Fallout 4's forward stage (bucket 0, list 0xE),
@@ -9985,18 +10065,19 @@ Public Class PreviewModel
 
     ''' <summary>What the FO4 light and composite passes receive this frame (propuesta D; Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md
     ''' and opaque-fo4/transcripcion/notas.md 4.2, D9). Engine view = GL view with z negated. cb12[20..23] = inverse(A * P_e),
-    ''' cb12[24..27] = inverse(B * P_e) (D9: A maps z to 1.01 z - 0.01 w, B to 100 z; P_e = the GL projection's rows 0, 1,
-    ''' (2 + 3) / 2, 3 times diag(1, 1, -1, 1)); cb12[12..14] = the rows of the engine view -&gt; world rotation. The sun = the rig's
+    ''' cb12[24..27] = inverse(B * P_e) (D9: A maps z to 1.01 z - 0.01 w, B to 100 z; P_e = the frame projection's rows (already the
+    ''' engine's [0, 1] matrix, EngineCameraLaw.Perspective) times diag(1, 1, -1, 1)); cb12[12..14] = the rows of the engine view -&gt;
+    ''' world rotation. The sun = the rig's
     ''' key (no IMGS Sunlight Scale, user decision rev-23 b); the fills = the other three rig lights (rev-21 b: shadow channel k + 1 of
     ''' the G-buffer's shadow RT); the ambient from the RAW rig colours: sky -&gt; world Z+ facing, ground -&gt; Z-, the sides their
     ''' mean (rev-22), the 3107 PS applies pow 2.2 after the dot.</summary>
     Private Function BuildFo4DeferredFrame(projection As Matrix4, view As Matrix4) As Fo4DeferredFrame
         Dim nf = ParentControl.FrameNearFar
-        ' Column-vector rows of the GL projection = the columns of OpenTK's row-vector matrix.
+        ' Column-vector rows of the frame projection = the columns of OpenTK's row-vector matrix; diag(1, 1, -1) = engine view.
         Dim flipZ = Function(r As Vector4d) New Vector4d(r.X, r.Y, -r.Z, r.W)
         Dim p0 = flipZ(CType(projection.Column0, Vector4d)), p1 = flipZ(CType(projection.Column1, Vector4d))
         Dim p3 = flipZ(CType(projection.Column3, Vector4d))
-        Dim p2 = flipZ((CType(projection.Column2, Vector4d) + CType(projection.Column3, Vector4d)) * 0.5)
+        Dim p2 = flipZ(CType(projection.Column2, Vector4d))
         Dim rowsOf = Function(zRow As Vector4d) As Vector4()
                          Dim m As New Matrix4d(p0, p1, zRow, p3)
                          m.Invert()
@@ -10243,7 +10324,45 @@ Public Class PreviewModel
         For Each it In AllOverlayItems()
             it.Mesh.ReportUndrawn(it.Layer)
         Next
+        ' Ola 1, editor rule: exactly the shapes that lowered this frame's near (NearShapes, one owner).
+        For Each mesh In FrameCloserThanNear
+            ReportUndrawn(mesh.NoticeName(Nothing), CloserThanGameNearReason, FrameNoticeKind.CloserThanGameNear)
+        Next
     End Sub
+
+    ''' <summary>The reason line of FrameNoticeKind.CloserThanGameNear (the user's wording, 12-oct-2026).</summary>
+    Friend Shared ReadOnly CloserThanGameNearReason As String =
+        $"Closer than the game's near plane ({EngineCameraLaw.NearDistance.ToString(Globalization.CultureInfo.InvariantCulture)}): depth precision differs from the game"
+
+    ''' <summary>The frame draws this shape (the camera's framing and the editor's near): drawable, and not a Fallout 4 preview Gap
+    ''' (rev-55 a). FrameIsSse is computed from the control's current shader (it is not set by RenderAll), so it holds before
+    ''' RenderAll too.</summary>
+    Friend Function DrawsShape(mesh As RenderableMesh) As Boolean
+        If mesh Is Nothing OrElse Not mesh.IsDrawable() Then Return False
+        If Not FrameIsSse AndAlso mesh.MeshData.Material IsNot Nothing AndAlso
+           mesh.MeshData.Material.Fo4PreviewGap(ParentControl.SharedFo4Deferred) Then Return False
+        Return True
+    End Function
+
+    ''' <summary>ONE OWNER of the editor's near (ola 1, revisor-10): the shapes the frame draws (DrawsShape) inside the four side
+    ''' planes of the frustum whose nearest view depth (RenderableMesh.NearestViewDepth) is below fNearDistance, kept in
+    ''' FrameCloserThanNear for the frame's notice, and the smallest of those depths (+infinity when none). PreviewControl.UpdateProjection.</summary>
+    Friend Function NearShapes(view As Matrix4, sidePlanes As Vector4()) As (Depth As Single, Shapes As List(Of RenderableMesh))
+        FrameCloserThanNear.Clear()
+        Dim d = Single.PositiveInfinity
+        For Each mesh In meshes
+            If Not DrawsShape(mesh) Then Continue For
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, sidePlanes) Then Continue For
+            Dim m = RenderableMesh.NearestViewDepth(mesh.BoundsMin, mesh.BoundsMax, view)
+            If m >= EngineCameraLaw.NearDistance Then Continue For
+            FrameCloserThanNear.Add(mesh)
+            If m < d Then d = m
+        Next
+        Return (d, FrameCloserThanNear)
+    End Function
+
+    ''' <summary>The shapes that lowered this frame's near (NearShapes): the frame's notice lists exactly them.</summary>
+    Friend ReadOnly FrameCloserThanNear As New List(Of RenderableMesh)
 
     ''' <summary>Routes every overlay layer of the visible shapes to its group with the SAME rule as
     ''' RebuildRenderBuckets (decal before blend before test), from the layer's own material. List order is kept

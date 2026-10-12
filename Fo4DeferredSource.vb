@@ -18,7 +18,7 @@ Friend Module Fo4DeferredSource
 
     Friend Const Prelude As String = "// ---------------------------------------------------------------------------------------------------------------------
 // CONVENTION (FO4 deferred transcription)
-//  * Every pass runs under glClipControl(GL_UPPER_LEFT, GL_NEGATIVE_ONE_TO_ONE) (ARB_clip_control, core in GL 4.5).
+//  * Every pass runs under glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE) (ARB_clip_control, core in GL 4.5).
 //    UPPER_LEFT only negates NDC y; window coordinates keep their definition. So clip y = +1 lands in window row 0 =
 //    memory row 0, where D3D puts NDC y = +1 (render-target row 0): gl_FragCoord.xy == SV_Position.xy, the window y
 //    grows down the image like D3D's screen y (dFdyCoarse == deriv_rty_coarse, no sign change; 2x2 quads pair the
@@ -34,8 +34,8 @@ Friend Module Fo4DeferredSource
 //    normals and light vectors. The G-buffer normal is the engine encode of n_engine with n.z <= 0 (DF 6):
 //        t1.xy = n_e.xy / sqrt(8 - 8 n_e.z) + 0.5      (R16G16_UNORM)
 //    so the decode below (asm 3321:65..70) is transcribed as is.
-//  * Depth: D3D window depth d in [0,1]. GL with glDepthRange(0,1) and NDC z in [-1,1] stores the same d for the same
-//    D3D clip position if the VS emits z_gl = 2 z_d3d - w (VS_DFLIGHT / VS_DFCOMPOSITE do exactly that).
+//  * Depth: D3D window depth d in [0,1]. GL under ZERO_TO_ONE with glDepthRange(0,1) stores d = z/w for the D3D clip
+//    position as is (VS_DFLIGHT / VS_DFCOMPOSITE emit o0 unchanged).
 //  * Literals: the exact 32-bit token of the SHEX chunk (lits.py / litmap.py, per line: litmap_<rec>.txt). Every
 //    non-dyadic literal is a macro NAME uintBitsToFloat(0x........u), printed decimal in the comment. A macro and not
 //    a const: glslang rejects uintBitsToFloat in a global const initializer.
@@ -107,8 +107,8 @@ void main()
     o0.x = dot(WorldViewProj[0], r0);           // 32  dp4 o0.x, cb2[0].xyzw, r0.xyzw
     o0.y = dot(WorldViewProj[1], r0);           // 33  dp4 o0.y, cb2[1].xyzw, r0.xyzw
     // 34  mov o1.xyzw, l(1,1,1,1): POSITION14, declared by the light PS but never read by them -> not emitted.
-    // D3D clip z in [0, w] -> GL NEGATIVE_ONE_TO_ONE: same window depth d = z/w under glDepthRange(0,1).
-    gl_Position = vec4(o0.x, o0.y, 2.0 * o0.z - o0.w, o0.w);
+    // D3D clip z in [0, w] = GL ZERO_TO_ONE: window depth d = z/w under glDepthRange(0,1), as emitted.
+    gl_Position = o0;
 }
 "
 
@@ -120,7 +120,7 @@ void main()
     vec4 o0;
     o0.xyz = v0.xyz;                            // 22  mov o0.xyz, v0.xyzx
     o0.w = 1.0;                                 // 23  mov o0.w, l(1.000000)
-    gl_Position = vec4(o0.x, o0.y, 2.0 * o0.z - o0.w, o0.w);   // D3D z = 1 -> GL z_ndc = 1 -> window 1.0
+    gl_Position = o0;   // D3D z = 1 -> window 1.0 (ZERO_TO_ONE)
 }
 "
 

@@ -78,6 +78,7 @@ Friend Module EngineDefaultTextureLaw
         Friend SpecularMsn As Boolean   ' SPECULAR and MODELSPACENORMALS
         Friend ParallaxClass As Boolean ' shader type 3 (vt 0x141B3FFC8)
         Friend MultiLayerParallaxClass As Boolean ' shader type 11 (vt 0x141B40388)
+        Friend EyeClass As Boolean      ' shader type 16 (vt 0x141B3FED8)
     End Structure
 
     ''' <summary>GATE ONLY (ParityGate engine-default-textures): a directed mutant of the law. Never set by the app.</summary>
@@ -171,8 +172,9 @@ Friend Module EngineDefaultTextureLaw
             Case MaterialSlot.Lightmask : Return EngineTexture.SseDefNormalMap                       ' +0x60 0x141523F36..F72
             Case MaterialSlot.Cube : Return EngineTexture.SseDefCubeMap                              ' Envmap vf10
             Case MaterialSlot.EnvMask
-                ' MultiLayerParallax vf10 0x1415287EC..806: +0xB0 -> DefNormalMap, so cb1[2].y = 1 and t5 is sampled (0x141548F6D..F7F).
-                If c.MultiLayerParallaxClass Then Return EngineTexture.SseDefNormalMap
+                ' MultiLayerParallax vf10 0x1415287EC..806 and Eye vf10 0x141525640 (0x14152569B..6B5): +0xA8 / +0xB0 -> DefNormalMap,
+                ' so cb1[2].y = 1 and t5 is sampled (0x1415489BB, 0x141548F6D..F7F).
+                If c.MultiLayerParallaxClass OrElse c.EyeClass Then Return EngineTexture.SseDefNormalMap
                 Return EngineTexture.NoTexture                                                       ' +0xA8 NULL: cb1[2].y = 0 (0x1415489BB)
             Case MaterialSlot.Height : Return EngineTexture.SseDefHeightMap                          ' Parallax vf10 0x1415260BA..D4: [0x143336428] = state+0x88 (0x14101DAF8)
             Case MaterialSlot.InnerLayer : Return EngineTexture.SseDefNormalMap                      ' MultiLayerParallax vf10 0x1415287AA..C4
@@ -245,13 +247,13 @@ Friend Module EngineDefaultTextureLaw
     ''' the reflection (0x141548F6D..F7F) - not neutral by C4 L8. 593 MLP shapes leave the slot empty (579 vanilla; grupo-c
     ''' parallax-mlp misc_out.txt, re2 mlp_compare_out.txt) and the app draws that same default (MaterialData.EngineSlotTextureId), so
     ''' a notice would fill the panel in every ice cave with no difference to report. EnvMask with SseDefNormalMap for an EMPTY slot
-    ''' comes only from the MultiLayerParallax class (SseLighting: the Envmap class gives NoTexture).</summary>
+    ''' comes from the MultiLayerParallax class and from the Eye class, which fills the same slot the same way (vf10 0x141525640; user decision 12-oct-2026: no notice either); the Envmap class gives NoTexture.</summary>
     Friend Const SseMlpEnvMaskPolicy As Boolean = True
 
     ''' <summary>C4 L8: is <paramref name="t"/> the identity of <paramref name="slot"/>'s role? Multiplicative slots (diffuse, glow,
     ''' masks) -> white; normal -> flat (128, 128, 255, 255); cube -> zeros (no reflection); the palette has no identity; the FACE t8 role
     ''' is not traced (never neutral). Derived from Rgba, except EyeCubeMap (<see cref="Fo4EyeCubeMapPolicy"/>) and an empty
-    ''' MultiLayerParallax mask (<see cref="SseMlpEnvMaskPolicy"/>).</summary>
+    ''' MultiLayerParallax or Eye mask (<see cref="SseMlpEnvMaskPolicy"/>; the name stays, it covers both classes since 12-oct-2026).</summary>
     Friend Function IsNeutral(slot As MaterialSlot, t As EngineTexture) As Boolean
         If slot = MaterialSlot.EnvMask AndAlso t = EngineTexture.SseDefNormalMap Then Return SseMlpEnvMaskPolicy AndAlso GateMutant <> DefaultTextureMutant.MlpEnvMaskNotNeutral
         If t = EngineTexture.Fo4EyeCubeMap Then Return Fo4EyeCubeMapPolicy AndAlso GateMutant <> DefaultTextureMutant.EyeCubeNotNeutral

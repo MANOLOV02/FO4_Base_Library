@@ -525,49 +525,14 @@ Partial Public Class Nifcontent_Class_Manolo
         Throw New NotSupportedException("Unsupported shader vocabulary.")
     End Function
 
-    ''' <summary>Bits 10-15 de NiAlphaProperty.Flags (TestFunc 10-12 y los tres altos: los que el escritor de la
-    ''' app NO escribe) para un bloque PRE-CREADO: 0x04 &lt;&lt; 10 = TestFunc GREATER, bits 13-15 en cero.
-    ''' Medido sobre la poblacion donde el bloque inline es ley (FO4 sin archivo resoluble; MaterialResolver real,
-    ''' Tools\ShaderFamilyVertexCensus pasada 4) y SOLO en las celdas donde esos bits son invariantes al 100 %:
-    ''' FO4 Effect b0t1 (N=152) y b1t1 (451), FO4 Lighting b1t0 (5.667). En las demas celdas varian: no hay base que
-    ''' escribir, asi que el alpha se DESCARTA (ver <see cref="MaterialConvertidoPara"/>).
-    ''' <para>Solo FO4: la pre-creacion exige un archivo de material FO4 aplicado (<see cref="FO4UnifiedMaterial_Class.ArchivoFo4Aplicado"/>).
-    ''' En SSE el alpha resuelto ES el estado del NIF, asi que una shape sin bloque no pide alpha y nunca se
-    ''' pre-crea (las celdas SSE medidas no tienen consumidor).</para></summary>
-    Private Const BitsAltosAlphaPreCreado As UShort = &H1000US
-
-    Private Shared Function CeldaAlphaInvariante(efecto As Boolean, blend As Boolean, test As Boolean) As Boolean
-        If efecto Then Return test
-        Return blend AndAlso Not test
-    End Function
-
     ''' <summary>⛔ SEDE UNICA del material convertido para una shape: <see cref="FO4UnifiedMaterial_Class.ConvertidoA"/>
-    ''' hacia la otra familia (vocabulario del bloque) y la regla del alpha que no se puede crear.
-    ''' <para>ALPHA DESCARTADO (decision del usuario, 3-oct-2026: "que deje pero avise que se perdera alpha"): si el
-    ''' material convertido pide alpha, la shape no tiene NiAlphaProperty (el plan lo PRE-CREARIA) y la celda no tiene
-    ''' una base medida (<see cref="CeldaAlphaInvariante"/>), no hay valor del motor para los bits 10-15 del bloque
-    ''' nuevo. En vez de negar la conversion o inventar esos bits, el material convertido queda SIN alpha (tupla
-    ''' None: blend apagado ONE/ZERO, test apagado) y la shape se dibuja opaca. El llamador avisa
-    ''' (<see cref="AvisoAlphaQueSePierde"/>) y la perdida sale medida en <see cref="PerdidasAlConvertirShader"/>.</para>
+    ''' hacia la otra familia (vocabulario del bloque). El alpha se conserva siempre: un bloque que haga falta crear nace como el
+    ''' constructor del motor (<see cref="FO4UnifiedMaterial_Class.NewFo4AlphaProperty"/>) y el escritor le pone el estado del
+    ''' material (decision del usuario 12-oct-2026; antes, 3-oct, se descartaba en las celdas sin base medida).
     ''' <para>Precondicion: el material es de la familia del shader (lo garantiza el predicado antes de llamar).</para></summary>
-    Public Function MaterialConvertidoPara(shape As INiShape, mat As FO4UnifiedMaterial_Class) As (Conv As FO4UnifiedMaterial_Class, AlphaDescartado As Boolean)
+    Public Function MaterialConvertidoPara(shape As INiShape, mat As FO4UnifiedMaterial_Class) As FO4UnifiedMaterial_Class
         Dim efectoDestino = TypeOf GetShader(shape) Is BSLightingShaderProperty
-        Dim conv = mat.ConvertidoA(If(efectoDestino, GetType(BGEM), GetType(BGSM)), Vocabulario() = VocabularioDeShader.Skyrim)
-        If Not PlanDeAlpha(shape, mat, conv).SePreCrea OrElse CeldaAlphaInvariante(efectoDestino, conv.AlphaBlendEnabled, conv.AlphaTest) Then
-            Return (conv, False)
-        End If
-        conv.RestoreAlphaState(New FO4UnifiedMaterial_Class.AlphaStateSnapshot With {
-            .Mode = MaterialLib.BaseMaterialFile.AlphaBlendModeType.None, .Enabled = False,
-            .Src = NiflySharp.Enums.AlphaFunction.ONE, .Dst = NiflySharp.Enums.AlphaFunction.ZERO,
-            .Test = False, .TestRef = conv.CaptureAlphaState().TestRef})
-        Return (conv, True)
-    End Function
-
-    ''' <summary>El aviso de <see cref="MaterialConvertidoPara"/> cuando descarta el alpha, o Nothing. Sale de la MISMA
-    ''' decision que la conversion, asi el dialogo no puede prometer otra cosa.</summary>
-    Public Function AvisoAlphaQueSePierde(shape As INiShape, mat As FO4UnifiedMaterial_Class) As String
-        If Not MaterialConvertidoPara(shape, mat).AlphaDescartado Then Return Nothing
-        Return "The material asks for transparency, but the shape has no alpha property and the game has no single base value to create one for this case: the converted shape will be drawn OPAQUE (its transparency will be lost)."
+        Return mat.ConvertidoA(If(efectoDestino, GetType(BGEM), GetType(BGSM)), Vocabulario() = VocabularioDeShader.Skyrim)
     End Function
 
     ''' <summary>Que canales le faltan a la geometria para un shader Lighting (consulta PURA, para avisar ANTES de
@@ -640,7 +605,7 @@ Partial Public Class Nifcontent_Class_Manolo
         If (TypeOf mat.Underlying_Material Is BGSM) <> (TypeOf shad Is BSLightingShaderProperty) Then
             Return "The loaded material does not belong to the shape's shader family."
         End If
-        Dim conv = MaterialConvertidoPara(shape, mat).Conv
+        Dim conv = MaterialConvertidoPara(shape, mat)
         Dim plan = PlanDeAlpha(shape, mat, conv)
         For Each b In BloquesQueAnimanA(shape)
             If b.Cadena = CadenaAnimada.DeShader Then
@@ -673,7 +638,7 @@ Partial Public Class Nifcontent_Class_Manolo
         Dim sk = vocab = VocabularioDeShader.Skyrim
         Dim viejo = DirectCast(GetShader(shape), BSShaderProperty)
         Dim efectoDestino = TypeOf viejo Is BSLightingShaderProperty
-        Dim conv = MaterialConvertidoPara(shape, mat).Conv
+        Dim conv = MaterialConvertidoPara(shape, mat)
 
         ' --- capturas del bloque viejo, antes de borrarlo ---
         FO4UnifiedMaterial_Class.EnsureShaderGameType(viejo, Me)
@@ -691,8 +656,7 @@ Partial Public Class Nifcontent_Class_Manolo
 
         ' --- alpha (orden acordado): si ya no hace falta, se borra con su clausura (candidato: si otra shape lo
         ' comparte, queda para ella) y el escritor ve "sin bloque y no hace falta"; si hace falta y esta compartido, se
-        ' des-comparte; si hace falta y no hay, se pre-crea (el escritor lo completa por la rama no-createdNew). La
-        ' pre-creacion solo llega en celdas medidas: en las demas MaterialConvertidoPara ya descarto el alpha. ---
+        ' des-comparte; si hace falta y no hay, se pre-crea como el constructor del motor (el escritor lo completa). ---
         Dim alp = GetBlock(Of NiAlphaProperty)(shape.AlphaPropertyRef)
         Dim plan = PlanDeAlpha(shape, mat, conv)
         If plan.SeQuita Then
@@ -706,8 +670,7 @@ Partial Public Class Nifcontent_Class_Manolo
             ReapuntarPunterosDeClausura(copia, idxViejo, idxCopia)
             shape.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = idxCopia}
         ElseIf plan.SePreCrea Then
-            Dim nuevoAlp As New NiAlphaProperty()
-            nuevoAlp.Flags.Value = BitsAltosAlphaPreCreado
+            Dim nuevoAlp = FO4UnifiedMaterial_Class.NewFo4AlphaProperty()
             shape.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = AddBlock(nuevoAlp)}
         End If
 
@@ -865,7 +828,7 @@ Partial Public Class Nifcontent_Class_Manolo
         Dim inicio As New List(Of NiObject)
         Dim shad = TryCast(GetShader(shape), NiObject)
         If shad IsNot Nothing Then inicio.Add(shad)
-        Dim conv = MaterialConvertidoPara(shape, mat).Conv
+        Dim conv = MaterialConvertidoPara(shape, mat)
         If PlanDeAlpha(shape, mat, conv).SeQuita Then
             Dim alp = GetBlock(Of NiAlphaProperty)(shape.AlphaPropertyRef)
             If alp IsNot Nothing Then inicio.Add(alp)

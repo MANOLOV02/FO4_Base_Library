@@ -296,9 +296,7 @@ Friend Module ShadowMapMath
         Dim zNear As Single = distToCenter - r.Radius - pad
         Dim zFar As Single = distToCenter + r.Radius + pad
         r.DepthRange = zFar - zNear
-        r.Proj = Matrix4.CreateOrthographicOffCenter(sx - r.Radius, sx + r.Radius,
-                                                     sy - r.Radius, sy + r.Radius,
-                                                     zNear, zFar)
+        r.Proj = EngineCameraLaw.Orthographic(sx - r.Radius, sx + r.Radius, sy - r.Radius, sy + r.Radius, zNear, zFar)
         r.ViewProj = r.View * r.Proj
         r.Valid = True
         Return r

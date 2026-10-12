@@ -3872,6 +3872,17 @@ Public Class FO4UnifiedMaterial_Class
         Underlying_Material.AlphaBlendMode = ClassifyTuple(_alphaBlendEnabled, _blendFunctionSource, _blendFunctionDest)
     End Sub
 
+    ''' <summary>⛔ SEDE UNICA: a NEW Fallout 4 NiAlphaProperty as the engine's constructor leaves it (0x142176880: flags 0x00EC at
+    ''' +0x28 - blend off, SRC_ALPHA / INV_SRC_ALPHA, test off, TestFunc ALWAYS, bits 13-15 clear - and threshold 0 at +0x2A). The
+    ''' engine creates every block it attaches this way (ApplyMaterialData 0x142171954; the head writer 0x1406EEC23 inline), and the
+    ''' app's two creators (a save of a shape without a block, the shader-family conversion) start from it too.</summary>
+    Friend Shared Function NewFo4AlphaProperty() As NiAlphaProperty
+        Dim alp As New NiAlphaProperty()
+        alp.Flags.Value = &HECUS
+        alp.Threshold = 0
+        Return alp
+    End Function
+
     Private Sub WriteBlendFlagsToAlphaProperty(alp As NiAlphaProperty)
         alp.Flags.AlphaBlend = _alphaBlendEnabled
         alp.Flags.SourceBlendMode = _blendFunctionSource
@@ -3921,31 +3932,20 @@ Public Class FO4UnifiedMaterial_Class
         End If
         Dim needAlphaProperty = NecesitaBloqueAlpha()
         If needAlphaProperty Then
-            Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
                 ' (El viejo veto de DiMA ya no existe: su causa era el alfa del MNAM del TXST adoptado por la cara, que el
                 ' motor nunca aplica. Una transcripcion FO4 con archivo o con el escritor de la cabeza no llega aca.)
-                shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
-                createdNew = True
+                ' A new block: Fallout 4 as the engine's constructor (NewFo4AlphaProperty); Skyrim SE's constructor is not traced
+                ' (NiflySharp's default). The material's state is then written over it, as over a block the shape already had.
+                ' (The old "CK rule" - 0x00EC + test, threshold 0 on every FO4 save - was the head writer 0x1406EEA90 / CK
+                ' 0x140ED9C3A, modelled in ResolveEngineAlpha, not a save rule.)
+                Dim nuevo = If(Nif.Header.Version.IsFO4, NewFo4AlphaProperty(), New NiAlphaProperty)
+                shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(nuevo)}
             End If
             Dim alp = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
-            ' REGLA (FO4, bake CK): cuando el shape FUENTE no traia NiAlphaProperty, el CK NO deriva el bloque
-            ' del material: CONSTRUYE uno con SU default y le espeja UNICAMENTE el booleano AlphaTest del
-            ' material. Su base es 0x00EC (AlphaBlend=0, src=SRC_ALPHA, dst=INV_SRC_ALPHA, TestFunc=ALWAYS) mas
-            ' 0x200 si AlphaTest, o sea 0x02EC con threshold=0, ignorando alphaBlend y alphaTestRef del BGSM.
-            ' Medido con Valentine (shape SynthGen2Head1): CK flags=0x02EC threshold=0, nosotros dabamos
-            ' flags=0x12ED threshold=128 (default de NiflySharp + bit del BGSM + AlphaTestRef del BGSM).
-            ' El camino de round-trip (el shape ya tenia NiAlphaProperty) queda intacto: ahi el bloque clonado se
-            ' reescribe desde el material, que salio de ese mismo bloque. Solo FO4; Skyrim no se toca.
-            If createdNew AndAlso Nif.Header.Version.IsFO4 Then
-                alp.Flags.Value = &HECUS
-                alp.Flags.AlphaTest = Underlying_Material.AlphaTest
-                alp.Threshold = 0
-            Else
-                alp.Flags.AlphaTest = Underlying_Material.AlphaTest
-                alp.Threshold = Underlying_Material.AlphaTestRef
-                WriteBlendFlagsToAlphaProperty(alp)
-            End If
+            alp.Flags.AlphaTest = Underlying_Material.AlphaTest
+            alp.Threshold = Underlying_Material.AlphaTestRef
+            WriteBlendFlagsToAlphaProperty(alp)
         Else
             If shap.AlphaPropertyRef IsNot Nothing AndAlso shap.AlphaPropertyRef.Index <> -1 Then
                 Nif.RemoveBlock(shap.AlphaPropertyRef.Index)
