@@ -110,10 +110,12 @@ Friend Module EngineWorldBound
             Dim c = Vector3.TransformPosition(New Vector3(b.Center.X, b.Center.Y, b.Center.Z), geo.GPUBoneMatrices(0))
             ' The radius only when asked (rev-10): r' = s r of 0x140EFCF20 / 0x1416D5EF0 (Place, with the app's world of the shape).
             If Not withRadius Then Return New Sphere(c, 0.0F)
-            Return New Sphere(c, Place(Transform_Class.GetGlobalTransform(ns, nif), New Sphere(Vector3.Zero, b.Radius)).Radius)
+            ' Ola 0c parte 2: the world the shape is drawn with (NodeRestLayer), as palette 0.
+            Return New Sphere(c, Place(NodeRestLayer.DrawnGlobal(TryCast(ns, NiAVObject), nif), New Sphere(Vector3.Zero, b.Radius)).Radius)
         End If
         If geo.BoneWorldPose Is Nothing OrElse geo.SkinRootPose Is Nothing Then Return Nothing
-        Dim geomWorld = Transform_Class.GetGlobalTransform(ns, nif)
+        ' Ola 0c parte 2: drawn (NodeRestLayer) when the shape's own NIF chain is (SkinnedGeometry.NifOwnDrawn), else the file's.
+        Dim geomWorld = If(geo.NifOwnDrawn, NodeRestLayer.DrawnGlobal(TryCast(ns, NiAVObject), nif), Transform_Class.GetGlobalTransform(ns, nif))
         Dim skin = nif.GetBlock(skinRef)
         Dim u As Sphere? = Nothing
         Dim local As Transform_Class

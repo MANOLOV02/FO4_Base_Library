@@ -6501,6 +6501,18 @@ Public Class PreviewModel
             If layer Is Nothing AndAlso Not shp.IsHelperShape Then
                 Dim driven = md.RestDrivenNotice()
                 If driven IsNot Nothing Then pm.ReportUndrawn(name, driven, FrameNoticeKind.DrivenByControllerAtRest)
+                ' Ola 0c parte 2 (user decision 12-oct-2026, option 1): the blocks whose transform this shape is drawn with comes from a
+                ' NiTransformController at rest (NodeRestLayer, SkinnedGeometry.RestLayer); the ones it draws as the file (a skinned
+                ' shape mounted on the skeleton) and the controllers not determinable, as drawn differently.
+                Dim rl = MeshData.Meshgeometry.RestLayer
+                If rl IsNot Nothing Then
+                    If rl.Driven IsNot Nothing Then pm.ReportUndrawn(name, rl.Driven, FrameNoticeKind.TransformDrivenByControllerAtRest)
+                    If rl.Excluded IsNot Nothing Then
+                        pm.ReportUndrawn(name, $"transform driven by a controller at rest, not applied - skinned shape mounted on the skeleton (drawn as the file or by the skeleton; the game NOT TRACED): {rl.Excluded}",
+                                         FrameNoticeKind.DrawnDifferently)
+                    End If
+                    If rl.Hole IsNot Nothing Then pm.ReportUndrawn(name, $"transform at rest not determinable: {rl.Hole}", FrameNoticeKind.DrawnDifferently)
+                End If
             End If
             ' C4: missing textures, empty slots sampled with a non-neutral default, what the preview draws differently
             ' (MaterialData.TextureNotices) - only for a shape the frame draws as the game does (the earlier exits: alpha 0,
@@ -10166,6 +10178,10 @@ Public Class PreviewModel
     ''' (FrameNoticeKind.DrivenByControllerAtRest): the variables' names -&gt; shapes.</summary>
     Friend ReadOnly FrameDrivenAtRest As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
+    ''' <summary>Ola 0c parte 2: this frame's shapes drawn with a transform a NiTransformController writes at rest
+    ''' (FrameNoticeKind.TransformDrivenByControllerAtRest): the driven blocks' names -&gt; shapes.</summary>
+    Friend ReadOnly FrameTransformDrivenAtRest As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
+
     ''' <summary>Ola 1 (editor rule): this frame's shapes closer to the eye than the game's near plane (EngineCameraLaw.NearDistance),
     ''' drawn with the lowered near (FrameNoticeKind.CloserThanGameNear): the reason -&gt; shapes.</summary>
     Friend ReadOnly FrameCloserThanGameNear As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
@@ -10200,6 +10216,10 @@ Public Class PreviewModel
         ''' <summary>C10 rev-04 (user decision 7-oct-2026): the game draws it with a value its shader controller writes at the clock's
         ''' origin, and so does the preview (MaterialData.RestValue); what the editors show and save is the block's (FrameDrivenAtRest).</summary>
         DrivenByControllerAtRest
+        ''' <summary>Ola 0c parte 2 (user decision 12-oct-2026, option 1): the game draws it with the transform its NiTransformControllers
+        ''' write at the clock's origin, and so does the preview (NodeRestLayer, a drawing layer); what the editors show and save is the
+        ''' block's (FrameTransformDrivenAtRest).</summary>
+        TransformDrivenByControllerAtRest
         ''' <summary>Ola 1 (editor rule, 12-oct-2026): the shape is closer to the eye than the game's near plane; the preview lowers its
         ''' near to draw it (PreviewControl.UpdateProjection), so the depth precision differs from the game's (FrameCloserThanGameNear).</summary>
         CloserThanGameNear
@@ -10222,7 +10242,7 @@ Public Class PreviewModel
                  FrameNoticeKind.DrawnDifferently, FrameNoticeKind.MissingTexture
                 Return FrameNoticeSeverity.Error
             Case FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot,
-                 FrameNoticeKind.DrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
+                 FrameNoticeKind.DrivenByControllerAtRest, FrameNoticeKind.TransformDrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
                 Return FrameNoticeSeverity.Warning
             Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
         End Select
@@ -10247,6 +10267,7 @@ Public Class PreviewModel
             Case FrameNoticeKind.MissingTexture : map = FrameMissingTextures
             Case FrameNoticeKind.EmptyTextureSlot : map = FrameEmptyTextureSlots
             Case FrameNoticeKind.DrivenByControllerAtRest : map = FrameDrivenAtRest
+            Case FrameNoticeKind.TransformDrivenByControllerAtRest : map = FrameTransformDrivenAtRest
             Case FrameNoticeKind.CloserThanGameNear : map = FrameCloserThanGameNear
             Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
         End Select
@@ -10263,7 +10284,8 @@ Public Class PreviewModel
     ''' (n shapes)": each such reason already says that the game does not draw it), then what the game does not draw and the preview
     ''' does ("Drawn by the preview, not by the game (n shapes): reason"), what it shows at its animated maximum, then C4's texture
     ''' lines ("Drawn differently by the preview", "Missing texture", "Empty texture slot"), then C10's ("Value driven by a controller
-    ''' at rest", rev-04). The errors come first, then the warnings (SeverityOf); <paramref name="errors"/> /
+    ''' at rest", rev-04) and ola 0c parte 2's ("Transform driven by a controller at rest"). The errors come first, then the warnings
+    ''' (SeverityOf); <paramref name="errors"/> /
     ''' <paramref name="warnings"/> False leave that class out (the window's notice: "Show errors" / "Show warnings"). Empty when
     ''' the frame draws every shape as the game does.</summary>
     Friend Function FrameNoticeLines(Optional errors As Boolean = True, Optional warnings As Boolean = True) As List(Of String)
@@ -10279,6 +10301,7 @@ Public Class PreviewModel
             (FrameNoticeKind.MissingTexture, FrameMissingTextures, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
             (FrameNoticeKind.EmptyTextureSlot, FrameEmptyTextureSlots, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
             (FrameNoticeKind.DrivenByControllerAtRest, FrameDrivenAtRest, Function(r, n) $"Value driven by a controller at rest ({shapes(n)}): {r}"),
+            (FrameNoticeKind.TransformDrivenByControllerAtRest, FrameTransformDrivenAtRest, Function(r, n) $"Transform driven by a controller at rest ({shapes(n)}): {r}"),
             (FrameNoticeKind.CloserThanGameNear, FrameCloserThanGameNear, Function(r, n) $"{r} ({shapes(n)})")}
         Dim lines As New List(Of String)
         For Each severity In {FrameNoticeSeverity.Error, FrameNoticeSeverity.Warning}
@@ -10303,6 +10326,7 @@ Public Class PreviewModel
         FrameMissingTextures.Clear()
         FrameEmptyTextureSlots.Clear()
         FrameDrivenAtRest.Clear()
+        FrameTransformDrivenAtRest.Clear()
         FrameCloserThanGameNear.Clear()
         FrameSerial = If(FrameSerial = Integer.MaxValue, 0, FrameSerial + 1)
         For i = 0 To FrameSamplerFilter.Length - 1 : FrameSamplerFilter(i) = 3 : Next

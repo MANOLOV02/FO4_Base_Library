@@ -85,6 +85,17 @@ Public Structure SkinnedGeometry
     Public ParentGlobalTransform As Matrix4d
     Public BoneMatsBind() As Matrix4d   ' bind-pose matrices
     Public BoneMatsPose() As Matrix4d  ' pose matrices
+    ''' <summary>Ola 0c parte 2 (the connection): the pose matrices the shape is DRAWN with - BoneMatsPose with each NIF-own bone (not in
+    ''' the skeleton) placed by NodeRestLayer when NifOwnDrawn. Nothing = BoneMatsPose (no bone differs). The palette of the view
+    ''' (BuildPosePalette: GPUBoneMatrices, PerVertexSkinMatrix, the world cache) reads it; the bakes read BoneMatsBind / BoneMatsPose,
+    ''' which stay the file's.</summary>
+    Public BoneMatsDrawn() As Matrix4d
+    ''' <summary>Ola 0c parte 2: the shape's own NIF chain (its geometry's world, its NIF-own bones, its skin root) is drawn with
+    ''' NodeRestLayer - an unskinned shape, or a skinned one none of whose bones the skeleton resolves (SkinningHelper.NifOwnDrawn). A
+    ''' skinned shape mounted on the skeleton keeps the file's (user decision 12-oct-2026: the *_faceBones shapes; hole notice).</summary>
+    Public NifOwnDrawn As Boolean
+    ''' <summary>Ola 0c parte 2: what the layer did to this shape, for the frame's notice (RenderableMesh.ReportUndrawn); Nothing = nothing.</summary>
+    Friend RestLayer As NodeRestLayer.ShapeLayer
     ''' <summary>O-PT (chunk C8): each palette bone's posed global (without skin-to-bone) and the skin root's - what
     ''' EngineWorldBound.Centre places the bone spheres with. Written where BoneMatsPose is.</summary>
     Public BoneWorldPose() As Transform_Class
@@ -649,6 +660,10 @@ Public Class SkinningHelper
         Dim matsBind(bones.Count - 1) As Matrix4d
         Dim matsPose(bones.Count - 1) As Matrix4d
         Dim boneWorld(bones.Count - 1) As Transform_Class
+        ' Ola 0c parte 2: the drawn pose (NodeRestLayer) of the NIF-own bones; matsDrawn stays Nothing while no bone differs.
+        Dim ownDrawn = NifOwnDrawn(shape, bones, effectiveSkel)
+        Dim layerRep As New NodeRestLayer.ChainReport()
+        Dim matsDrawn() As Matrix4d = Nothing
         For k = 0 To bones.Count - 1
             Dim localT = boneTrans(k)
             Dim boneName = bones(k).Name.String
@@ -671,6 +686,19 @@ Public Class SkinningHelper
                 poseT = bindT
                 matsPose(k) = matsBind(k)
             End If
+            ' Single-bone draws bone 0 only: only its chain goes to the notice (RecomputeGPUBoneMatrices' single-bone branch, the same).
+            Dim boneRep = If(singleboneskinning AndAlso k > 0, Nothing, layerRep)
+            If IsNothing(SkeletonBone) Then
+                Dim drawnT = NifOwnDrawnWorld(bones(k), shape.NifContent, ownDrawn, boneRep)
+                If drawnT IsNot Nothing Then
+                    If matsDrawn Is Nothing Then matsDrawn = CType(matsPose.Clone(), Matrix4d())
+                    poseT = drawnT
+                End If
+            Else
+                ' A bone the skeleton draws: what the layer would move on its NIF chain is reported as excluded.
+                NodeRestLayer.NoteExcluded(bones(k), shape.NifContent, boneRep)
+            End If
+            If matsDrawn IsNot Nothing Then matsDrawn(k) = poseT.ComposeTransforms(localT).ToMatrix4d()
             boneWorld(k) = poseT
 
             ' [SKIN-MAT] DIAG A/B: skin-matrix REAL de render por shape/hueso (poseT ∘ localT = world de un
@@ -731,7 +759,7 @@ Public Class SkinningHelper
         Select Case True
             Case shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Count > 0
                 ' La fórmula vive en BuildPosePalette y en ningún otro lado. Ver su docstring.
-                Dim precomputedBoneMatrices = BuildPosePalette(matsPose, GlobalTransform)
+                Dim precomputedBoneMatrices = BuildPosePalette(If(matsDrawn, matsPose), GlobalTransform)
                 ' Paleta plana para el blend vectorial. Se arma UNA vez por shape (20-60 matrices),
                 ' no por vertice: la copia no esta en el camino caliente. Ver FastGeom.
                 Dim flatPalette = FastGeom.BuildFlatPaletteS(precomputedBoneMatrices)
@@ -837,7 +865,7 @@ Public Class SkinningHelper
 
             Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Count > 0
                 ' Single-bone: pre-compute once — GPU path: do NOT transform rawVerts/N/T/B
-                Dim Mtot = GlobalTransform * matsPose(0)
+                Dim Mtot = GlobalTransform * If(matsDrawn, matsPose)(0)
                 perVertexMtot.Llenar(AMatrix4(Mtot))
 
                 ' GPU Skinning: single bone matrix for SSBO
@@ -871,8 +899,8 @@ Public Class SkinningHelper
                     ' (B) Degenerado: identity, igual que OS.
                     Mtot = Matrix4d.Identity
                 Else
-                    ' (A) Unskinned puro: shape.T/R/S × parent chain.
-                    Mtot = ShapeGlobalTransform(shape)
+                    ' (A) Unskinned puro: shape.T/R/S × parent chain (drawn: NodeRestLayer).
+                    Mtot = ShapeGlobalTransform(shape, layerRep)
                 End If
 
                 perVertexMtot.Llenar(AMatrix4(Mtot))
@@ -956,8 +984,11 @@ Public Class SkinningHelper
             .ParentGlobalTransform = GlobalTransform,
             .BoneMatsBind = matsBind,
             .BoneMatsPose = matsPose,
+            .BoneMatsDrawn = matsDrawn,
+            .NifOwnDrawn = ownDrawn,
             .BoneWorldPose = If(shape.IsSkinned AndAlso bones.Count > 0, boneWorld, Nothing),
-            .SkinRootPose = SkinRootWorld(shape, effectiveSkel, Nothing, singleboneskinning),
+            .SkinRootPose = SkinRootWorld(shape, effectiveSkel, Nothing, singleboneskinning, ownDrawn, layerRep),
+            .RestLayer = NodeRestLayer.Summary(layerRep),
             .DrawTriangleOrder = shapeGeom.GetEngineDrawTriangleOrder(),
             .DrawTriangleOrderFor = flatIndices,
             .Indices = flatIndices,
@@ -1076,9 +1107,10 @@ Public Class SkinningHelper
     End Sub
 
     ''' <summary>O-PT: the posed global of the shape's skin root (NiSkinInstance / BSSkin_Instance SkeletonRoot) by the bones' own rule:
-    ''' the skeleton bone of that name (posed; bind in single-bone mode), else the NIF node. Nothing without a skin root.</summary>
+    ''' the skeleton bone of that name (posed; bind in single-bone mode), else the NIF node (NifOwnWorld: drawn when
+    ''' <paramref name="ownDrawn"/>). Nothing without a skin root.</summary>
     Friend Shared Function SkinRootWorld(shape As IRenderableShape, skel As SkeletonInstance, cache As SkeletonGlobalTransformCache,
-                                         singleBone As Boolean) As Transform_Class
+                                         singleBone As Boolean, ownDrawn As Boolean, report As NodeRestLayer.ChainReport) As Transform_Class
         Dim nif = shape?.NifContent
         Dim ns = shape?.NifShape
         If nif Is Nothing OrElse ns?.SkinInstanceRef Is Nothing OrElse ns.SkinInstanceRef.IsEmpty() Then Return Nothing
@@ -1095,17 +1127,45 @@ Public Class SkinningHelper
         If es IsNot Nothing AndAlso es.SkeletonDictionary.TryGetValue(rootNode.Name.String, bone) Then
             Return If(singleBone, CachedBindMount(bone, cache), CachedDisplay(bone, cache))
         End If
-        Return Transform_Class.GetGlobalTransform(rootNode, nif)
+        Return NifOwnWorld(rootNode, nif, ownDrawn, report)
     End Function
 
-    ''' <summary>THE world transform of a shape's own NIF block: shape T/R/S x the parent chain (Outfit Studio Anim.cpp:692-704
-    ''' GetTransformShapeToGlobal). The one place the RENDER composes it: ExtractSkinnedGeometry and RecomputeGPUBoneMatrices
-    ''' place an unskinned shape with it (uploaded as its single bone); Render.vb SseLitSpace takes the SSE lighting PS's model
-    ''' space from it when the shape has no single placement. EspacioDeShape, SkinBakeMath, FaceGenBuildPipeline,
-    ''' NifContent_Class and FO4_FaceTint_CLI (SkinnedPositions) compose the same transform on their own (a separate
-    ''' unification, not this one).</summary>
-    Friend Shared Function ShapeGlobalTransform(shape As IRenderableShape) As Matrix4d
-        Return Transform_Class.GetGlobalTransform(shape?.Geometry?.BackingShape, shape?.NifContent).ToMatrix4d()
+    ''' <summary>THE world transform of a shape's own NIF block AS DRAWN: shape T/R/S x the parent chain (Outfit Studio Anim.cpp:692-704
+    ''' GetTransformShapeToGlobal), each local with what its NiTransformControllers write at rest (NodeRestLayer.DrawnGlobal, ola 0c
+    ''' parte 2; the file's bits when no controller writes). The one place the RENDER composes it: ExtractSkinnedGeometry and
+    ''' RecomputeGPUBoneMatrices place an unskinned shape with it (uploaded as its single bone); Render.vb SseLitSpace takes the SSE
+    ''' lighting PS's model space from it when the shape has no single placement. EspacioDeShape (the gizmos), SkinBakeMath,
+    ''' FaceGenBuildPipeline, NifContent_Class and FO4_FaceTint_CLI (SkinnedPositions) compose the FILE's transform on their own
+    ''' (Transform_Class.GetGlobalTransform): editing, bakes and builds read the file. <paramref name="report"/> (optional) collects
+    ''' what the layer did.</summary>
+    Friend Shared Function ShapeGlobalTransform(shape As IRenderableShape, Optional report As NodeRestLayer.ChainReport = Nothing) As Matrix4d
+        Return NodeRestLayer.DrawnGlobal(TryCast(shape?.Geometry?.BackingShape, NiAVObject), shape?.NifContent, report).ToMatrix4d()
+    End Function
+
+    ''' <summary>Ola 0c parte 2: is the shape's own NIF chain drawn with NodeRestLayer? An unskinned shape: yes. A skinned one: only when
+    ''' the skeleton resolves none of its bones (by name, SkeletonDictionary - the same lookup that picks the skeleton bone over the NIF's);
+    ''' a shape mounted on the skeleton (the *_faceBones shapes, user decision 12-oct-2026) keeps the file's NIF-own bones.</summary>
+    Friend Shared Function NifOwnDrawn(shape As IRenderableShape, bones As IList(Of NiNode), skel As SkeletonInstance) As Boolean
+        If Not shape.IsSkinned Then Return True
+        If skel Is Nothing Then Return True
+        For Each b In bones
+            If b IsNot Nothing AndAlso skel.SkeletonDictionary.ContainsKey(b.Name.String) Then Return False
+        Next
+        Return True
+    End Function
+
+    ''' <summary>Ola 0c parte 2: the world of a NIF-own node (a bone the skeleton does not resolve, a skin root) as the shape draws it,
+    ''' or Nothing when that is the file's: NodeRestLayer.DrawnGlobalOrNothing when <paramref name="ownDrawn"/>; else Nothing, and the
+    ''' blocks the layer would move are reported as excluded (ChainReport.Excluded).</summary>
+    Friend Shared Function NifOwnDrawnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport) As Transform_Class
+        If ownDrawn Then Return NodeRestLayer.DrawnGlobalOrNothing(node, nif, report)
+        NodeRestLayer.NoteExcluded(node, nif, report)
+        Return Nothing
+    End Function
+
+    ''' <summary>NifOwnDrawnWorld, or the file's world (Transform_Class.GetGlobalTransform) when it gives Nothing.</summary>
+    Friend Shared Function NifOwnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport) As Transform_Class
+        Return If(NifOwnDrawnWorld(node, nif, ownDrawn, report), Transform_Class.GetGlobalTransform(node, nif))
     End Function
 
     ''' <summary>Matrix4d -> Matrix4. Se usa al GUARDAR en <c>PerVertexSkinMatrix</c>: el blend sigue
@@ -1794,7 +1854,7 @@ Public Class SkinningHelper
         If geo.PerVertexMatrixValid Then Return
         Dim mats = geo.PerVertexSkinMatrix
         If mats Is Nothing Then Return
-        Dim poseMats = geo.BoneMatsPose
+        Dim poseMats = If(geo.BoneMatsDrawn, geo.BoneMatsPose)
         If poseMats Is Nothing Then Return
         ' MISMA paleta y MISMO cuerpo de relleno que el eager: BuildPosePalette +
         ' FillPerVertexSkinMatrix.
@@ -2154,6 +2214,10 @@ Public Class SkinningHelper
             If geo.BoneMatsPose Is Nothing OrElse geo.BoneMatsPose.Length <> bones.Count Then
                 ReDim geo.BoneMatsPose(bones.Count - 1)
             End If
+            ' Ola 0c parte 2: the drawn pose of the NIF-own bones (NodeRestLayer), as ExtractSkinnedGeometry.
+            Dim ownDrawn = NifOwnDrawn(shape, bones, effectiveSkel)
+            Dim layerRep As New NodeRestLayer.ChainReport()
+            Dim matsDrawn() As Matrix4d = Nothing
             ' Threading contract (lock-free read): SkeletonDictionary y globalCache se leen aquí SIN
             ' lock. Es seguro por la invariante documentada en
             ' SkeletonInstance.BuildGlobalTransformCacheForRenderPass: toda mutación del esqueleto y
@@ -2183,15 +2247,29 @@ Public Class SkinningHelper
                 Dim matPose = poseT.ComposeTransforms(localT).ToMatrix4d()
                 geo.BoneMatsBind(k) = matBind
                 geo.BoneMatsPose(k) = matPose
+                If IsNothing(SkeletonBone) Then
+                    Dim drawnT = NifOwnDrawnWorld(bones(k), shape.NifContent, ownDrawn, layerRep)
+                    If drawnT IsNot Nothing Then
+                        If matsDrawn Is Nothing Then matsDrawn = CType(geo.BoneMatsPose.Clone(), Matrix4d())
+                        poseT = drawnT
+                    End If
+                Else
+                    NodeRestLayer.NoteExcluded(bones(k), shape.NifContent, layerRep)
+                End If
+                If matsDrawn IsNot Nothing Then matsDrawn(k) = poseT.ComposeTransforms(localT).ToMatrix4d()
                 If geo.BoneWorldPose Is Nothing OrElse geo.BoneWorldPose.Length <> bones.Count Then ReDim geo.BoneWorldPose(bones.Count - 1)
                 geo.BoneWorldPose(k) = poseT
             Next
+            ' A bone before the first drawn one was copied from BoneMatsPose by the Clone: the same value.
+            geo.BoneMatsDrawn = matsDrawn
+            geo.NifOwnDrawn = ownDrawn
 
             ' La paleta se arma DESPUES del loop y con BuildPosePalette, no inline: es la misma
             ' fórmula que usan Extract y la recomposición perezosa, y tiene que salir del mismo sitio.
             ' Cuesta una segunda pasada sobre ≤60 huesos.
-            geo.SkinRootPose = SkinRootWorld(shape, effectiveSkel, globalCache, singleboneskinning)
-            precomputedBoneMatrices = BuildPosePalette(geo.BoneMatsPose, GlobalTransform)
+            geo.SkinRootPose = SkinRootWorld(shape, effectiveSkel, globalCache, singleboneskinning, ownDrawn, layerRep)
+            geo.RestLayer = NodeRestLayer.Summary(layerRep)
+            precomputedBoneMatrices = BuildPosePalette(If(geo.BoneMatsDrawn, geo.BoneMatsPose), GlobalTransform)
             For k = 0 To bones.Count - 1
                 Dim m = precomputedBoneMatrices(k)
                 geo.GPUBoneMatrices(k) = New Matrix4(
@@ -2229,19 +2307,23 @@ Public Class SkinningHelper
             ' AndAlso bones=0), (3) unskinned puro. La rama (2) matchea OS Anim.cpp:711 →
             ' identity. La rama (3) matchea OS Anim.cpp:692-704 → shape.T/R/S × parent_chain.
             Dim Mtot As Matrix4d
+            Dim ownDrawn = NifOwnDrawn(shape, bones, effectiveSkel)
+            Dim layerRep As New NodeRestLayer.ChainReport()
             If shape.IsSkinned AndAlso bones.Count > 0 Then
                 ' (1) Skinned single-bone: ignora pose animada por diseño (single-bone es modo
                 ' preview rigido), pero debe respetar bindT(0) * localT(0) del hueso 0. Si no
                 ' lo hiciera, el shape salta cada vez que cambia la pose porque se pierde el
-                ' transform del hueso. Coincide con ExtractSkinnedGeometry caso single-bone.
+                ' transform del hueso. Coincide con ExtractSkinnedGeometry caso single-bone
+                ' (un hueso propio del NIF: el dibujado, NifOwnWorld; ola 0c parte 2).
                 Dim localT = boneTrans(0)
                 Dim boneName = bones(0).Name.String
                 Dim SkeletonBone As HierarchiBone_class = Nothing
                 Dim bindT As Transform_Class
                 If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
                     bindT = CachedBindMount(SkeletonBone, globalCache)
+                    NodeRestLayer.NoteExcluded(bones(0), shape.NifContent, layerRep)
                 Else
-                    bindT = Transform_Class.GetGlobalTransform(bones(0), shape.NifContent)
+                    bindT = NifOwnWorld(bones(0), shape.NifContent, ownDrawn, layerRep)
                 End If
                 Mtot = GlobalTransform * bindT.ComposeTransforms(localT).ToMatrix4d()
             ElseIf shape.IsSkinned Then
@@ -2249,9 +2331,11 @@ Public Class SkinningHelper
                 ' Identity, igual que OS Anim.cpp:711 (shapeSkinning lookup miss → MatTransform()).
                 Mtot = Matrix4d.Identity
             Else
-                ' (3) Unskinned puro: shape.T/R/S + parent chain.
-                Mtot = ShapeGlobalTransform(shape)
+                ' (3) Unskinned puro: shape.T/R/S + parent chain (dibujado: NodeRestLayer).
+                Mtot = ShapeGlobalTransform(shape, layerRep)
             End If
+            geo.NifOwnDrawn = ownDrawn
+            geo.RestLayer = NodeRestLayer.Summary(layerRep)
 
             geo.GPUBoneMatrices(0) = New Matrix4(
                 CSng(Mtot.M11), CSng(Mtot.M12), CSng(Mtot.M13), CSng(Mtot.M14),

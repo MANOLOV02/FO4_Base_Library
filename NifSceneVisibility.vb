@@ -229,12 +229,26 @@ Public Module NifSceneVisibility
     ''' <summary>The world scale of an object: its parents' scales from the root down, times its own, in Single (padre x local: SSE
     ''' 0x140F0303C..0x140F03049, FO4 0x1416C8CAD -&gt; 0x140344966). <paramref name="chain"/> = ParentChain; <paramref name="rootAbs"/> =
     ''' the root is a converted Fallout 4 root, whose scale enters as |s| (andps 0x14217CDC0..DCD, rev-16).</summary>
-    Friend Function WorldScale(chain As List(Of NiNode), ownScale As Single, rootAbs As Boolean) As Single
+    Friend Function WorldScale(nif As NifFile, chain As List(Of NiNode), ownScale As Single, rootAbs As Boolean) As Single
         Dim ws As Single = 1.0F
         For i = chain.Count - 1 To 0 Step -1
-            ws = ws * If(rootAbs AndAlso i = chain.Count - 1, Math.Abs(chain(i).Scale), chain(i).Scale)
+            Dim s = DrawnScaleOf(nif, chain(i))
+            ws = ws * If(rootAbs AndAlso i = chain.Count - 1, Math.Abs(s), s)
         Next
         Return ws * ownScale
+    End Function
+
+    ''' <summary>Ola 0c parte 2 (the connection): the scale <paramref name="o"/> is drawn with - what its NiTransformControllers write at
+    ''' rest (NodeRestLayer.DrawnScale) - so the world scales and bounds of this module follow the drawn nodes. A NifFile that is not
+    ''' the app's NIF content (no controller chain reader): the block's own.</summary>
+    Private Function DrawnScaleOf(nif As NifFile, o As NiAVObject) As Single
+        Dim m = TryCast(nif, Nifcontent_Class_Manolo)
+        Return If(m Is Nothing, o.Scale, NodeRestLayer.DrawnScale(o, m))
+    End Function
+
+    ''' <summary>Ola 0c parte 2: the world <paramref name="o"/> is drawn with (NodeRestLayer.DrawnGlobal).</summary>
+    Private Function DrawnWorldOf(nif As Nifcontent_Class_Manolo, o As NiAVObject) As Transform_Class
+        Return NodeRestLayer.DrawnGlobal(o, nif)
     End Function
 
     ''' <summary>The depth-first walk of OnVisible from block <paramref name="root"/> (children 0..n-1: SSE 0x140EE2D10..D33, FO4
@@ -302,7 +316,8 @@ Public Module NifSceneVisibility
                 Continue Do
             End If
             If n.Children Is Nothing Then Continue Do
-            Dim ws As Single = e.WsParent * If(converted AndAlso e.Block = root, Math.Abs(n.Scale), n.Scale)
+            Dim ns = DrawnScaleOf(nif, n)
+            Dim ws As Single = e.WsParent * If(converted AndAlso e.Block = root, Math.Abs(ns), ns)
             Dim kids = n.Children.Indices.ToList()
             Dim sw = TryCast(n, NiSwitchNode)
             If sw IsNot Nothing AndAlso Not (converted AndAlso e.Block = root) Then
@@ -337,7 +352,7 @@ Public Module NifSceneVisibility
         ' Con skin el bound de mundo sale de los huesos, no de la esfera del modelo (SSE 0x140EFC870, FO4 0x1416D5502).
         If shape.SkinInstanceRef IsNot Nothing AndAlso Not shape.SkinInstanceRef.IsEmpty() Then Return (Nothing, Nothing)
         If (tri.Flags_ui And &H800UI) <> 0UI Then Return (Nothing, Nothing)           ' SSE 0x140FEDA9A, FO4 0x1417E1C82
-        Dim g = GeometryWorldRadius(tri, WorldScale(chain, 1.0F, IsConvertedRoot(chain, isSse)), isSse)
+        Dim g = GeometryWorldRadius(nif, tri, WorldScale(nif, chain, 1.0F, IsConvertedRoot(chain, isSse)), isSse)
         If BitConverter.SingleToInt32Bits(g.Radius) <> 0 Then Return (Nothing, Nothing)   ' cmp dword ..., 0
         If g.NaNSphere Then Return NoticeNaN()
         If BitConverter.SingleToInt32Bits(tri.Bounds.Radius) = 0 Then Return NoticeRadius0(isSse)
@@ -348,12 +363,12 @@ Public Module NifSceneVisibility
     ''' world scale (SSE 0x140EFCFDF, FO4 0x1416D5FD0), the world scale its parent's (<paramref name="wsParent"/>) x its own; a Skyrim SE
     ''' sphere with NaN in any of its four floats is loaded as centre 0 radius 0 (_fdtest = 2, 0x140EFC191..0x140EFC21A; FO4
     ''' 0x1416D4EA0 keeps it).</summary>
-    Private Function GeometryWorldRadius(tri As BSTriShape, wsParent As Single, isSse As Boolean) As (Radius As Single, NaNSphere As Boolean)
+    Private Function GeometryWorldRadius(nif As NifFile, tri As BSTriShape, wsParent As Single, isSse As Boolean) As (Radius As Single, NaNSphere As Boolean)
         Dim b = tri.Bounds
         Dim nanSphere = isSse AndAlso (Single.IsNaN(b.Center.X) OrElse Single.IsNaN(b.Center.Y) OrElse
                                        Single.IsNaN(b.Center.Z) OrElse Single.IsNaN(b.Radius))
         Dim r = If(nanSphere, 0.0F, b.Radius)
-        Return (r * (wsParent * tri.Scale), nanSphere)
+        Return (r * (wsParent * DrawnScaleOf(nif, tri)), nanSphere)
     End Function
 
     ' ================================================================= pto 14: the world bound of a node, by its class
@@ -415,7 +430,8 @@ Public Module NifSceneVisibility
                     Return (nr.Drawn, nr.Undrawn, b.Cause)
                 End If
             End If
-            wsParent = wsParent * If(esRaizConvertida, Math.Abs(n.Scale), n.Scale)
+            Dim ns = DrawnScaleOf(nif, n)
+            wsParent = wsParent * If(esRaizConvertida, Math.Abs(ns), ns)
         Next
         Return (Nothing, Nothing, NodeCullCause.None)
     End Function
@@ -433,13 +449,14 @@ Public Module NifSceneVisibility
         Dim r As NodeBound
         Dim tri = TryCast(obj, BSTriShape)
         Dim node = TryCast(obj, NiNode)
+        Dim nodeScale = If(node Is Nothing, 1.0F, DrawnScaleOf(nif, node))
         If tri IsNot Nothing Then
             r = GeometryBound(nif, tri, wsParent, isSse)
         ElseIf node Is Nothing Then
             ' Another NiAVObject class (lights, particles, legacy NiGeometry): its bound is not classified (bound16_out.txt).
             r = UnknownBound()
         ElseIf isSse Then
-            r = If(node.GetType() Is GetType(NiNode), NiNodeBound(nif, node, wsParent * node.Scale, root, isSse, memo), UnknownBound())
+            r = If(node.GetType() Is GetType(NiNode), NiNodeBound(nif, node, wsParent * nodeScale, root, isSse, memo), UnknownBound())
         ElseIf node Is root Then
             ' The model loader 0x1417B39B0 with load flag 0x10 turns a root that is not a BSFadeNode into a BSFadeNode built from it
             ' (0x1417B3BB8..BD6, 0x14217C970, measured live); 0x14217DFC0 replaces its bound with its geometry list at the top-level
@@ -450,16 +467,16 @@ Public Module NifSceneVisibility
             ' A geometry-list node that is not the root: what 0x14217DFC0 does outside the top-level update is NOT TRACED.
             r = UnknownBound()
         ElseIf node.GetType() Is GetType(NiSwitchNode) Then
-            r = SwitchBound(nif, DirectCast(node, NiSwitchNode), wsParent * node.Scale, root, memo)
+            r = SwitchBound(nif, DirectCast(node, NiSwitchNode), wsParent * nodeScale, root, memo)
         ElseIf node.GetType() Is GetType(BSMultiBoundNode) Then
             ' 0x1417E9A70: with a multibound ([+0x140]+0x18) the bound is its shape's vfunc +0x170 (NOT TRACED); without one, NiNode's.
             Dim mbo = nif.GetBlock(DirectCast(node, BSMultiBoundNode).MultiBound)
             r = If(mbo IsNot Nothing AndAlso mbo.Data IsNot Nothing AndAlso Not mbo.Data.IsEmpty(), UnknownBound(),
-                   NiNodeBound(nif, node, wsParent * node.Scale, root, isSse, memo))
+                   NiNodeBound(nif, node, wsParent * nodeScale, root, isSse, memo))
         ElseIf node.GetType() Is GetType(BSOrderedNode) Then
-            r = OrderedBound(nif, DirectCast(node, BSOrderedNode), wsParent * node.Scale, root, memo)
+            r = OrderedBound(nif, DirectCast(node, BSOrderedNode), wsParent * nodeScale, root, memo)
         ElseIf IsNiNodeLawClass(node) Then
-            r = NiNodeBound(nif, node, wsParent * node.Scale, root, isSse, memo)
+            r = NiNodeBound(nif, node, wsParent * nodeScale, root, isSse, memo)
         Else
             r = UnknownBound()
         End If
@@ -540,7 +557,7 @@ Public Module NifSceneVisibility
         Dim sb = o.AlphaSortBound
         Dim wr As Single = sb.W * wsNode
         If wr > 0.0F Then Return PositiveBound()
-        Dim placed = EngineWorldBound.Place(Transform_Class.GetGlobalTransform(o, nif), New EngineWorldBound.Sphere(New Vector3(sb.X, sb.Y, sb.Z), sb.W))
+        Dim placed = EngineWorldBound.Place(DrawnWorldOf(nif, o), New EngineWorldBound.Sphere(New Vector3(sb.X, sb.Y, sb.Z), sb.W))
         Return New NodeBound(BoundKind.Exact, New EngineWorldBound.Sphere(placed.Center, wr), NodeCullCause.StaticBound)
     End Function
 
@@ -565,11 +582,11 @@ Public Module NifSceneVisibility
     ''' Positive, any other the exact sphere placed by its world (SSE 0x140EFC810 -&gt; 0x140EFCF20, FO4 0x1416D54A0 -&gt; 0x1416D5EF0).</summary>
     Private Function GeometryBound(nif As Nifcontent_Class_Manolo, tri As BSTriShape, wsParent As Single, isSse As Boolean) As NodeBound
         If tri.SkinInstanceRef IsNot Nothing AndAlso Not tri.SkinInstanceRef.IsEmpty() Then Return PositiveBound()
-        Dim g = GeometryWorldRadius(tri, wsParent, isSse)
+        Dim g = GeometryWorldRadius(nif, tri, wsParent, isSse)
         If g.Radius > 0.0F Then Return PositiveBound()
         Dim b = tri.Bounds
         Dim c = If(g.NaNSphere, Vector3.Zero, New Vector3(b.Center.X, b.Center.Y, b.Center.Z))
-        Dim placed = EngineWorldBound.Place(Transform_Class.GetGlobalTransform(tri, nif), New EngineWorldBound.Sphere(c, 0.0F))
+        Dim placed = EngineWorldBound.Place(DrawnWorldOf(nif, tri), New EngineWorldBound.Sphere(c, 0.0F))
         Return New NodeBound(BoundKind.Exact, New EngineWorldBound.Sphere(placed.Center, g.Radius))
     End Function
 

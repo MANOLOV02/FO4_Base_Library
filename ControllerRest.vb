@@ -13,8 +13,10 @@ Imports NiflySharp.Enums
 ''' <para>Holes, declared: StartAnimations (0x1416CB020) activates inactive controllers; which loads call it is NOT TRACED - an
 ''' inactive controller writes nothing here (its Update returns at bit 3). Whether the engine starts a NiControllerSequence by
 ''' itself is NOT TRACED: a manager-controlled controller whose interpolator is a NiBlend* with no sequence (count 0,
-''' 0x1417442D7) writes nothing. TBC keys between two keys: derived tangents NOT TRACED (no value). Several controllers on one
-''' variable: the chain order of UpdateControllers (0x1416CF440), last one wins - DEDUCED from the call order.</para></summary>
+''' 0x1417442D7) writes nothing. TBC keys: the tangents the load fills (FloatTbcTangents, Point3Coefficients; ola 0c parte 2,
+''' resultado5 R2). Several controllers on one variable: the chain order of UpdateControllers (0x1416CF440), last one wins -
+''' DEDUCED from the call order. The controller's time: ControllerTimeAtRest, the one preamble of every Update; the derived key
+''' data: KeyFillLaw; the NiTransformController's transform at rest: TransformRestLaw.</para></summary>
 Friend Module ControllerRestLaw
 
     Private ReadOnly NegMax As Single = BitConverter.Int32BitsToSingle(&HFF7FFFFF)
@@ -67,22 +69,46 @@ Friend Module ControllerRestLaw
         Return r
     End Function
 
+    ''' <summary>THE time a controller's Update runs its interpolator at, on the controller's first update - the one preamble every
+    ''' Update the rest laws read shares, compared instruction by instruction (D:\WinTmp\rc\ola0c\re7\preamble.py: identical): FO4
+    ''' 0x14224A7C0 lighting float, 0x14224B420 lighting colour, 0x14224BA30 effect float, 0x14224C080 effect colour, 0x14224C5C0
+    ''' NiAlphaProperty TestRef, 0x141744FD0 NiVisController, 0x141745490 NiTransformController; SSE 0x14157AC20, 0x14157B890,
+    ''' 0x14157BED0, 0x14157C540, 0x14157CA50, 0x140F8A340, 0x140F69760 (FO4 0x1417454A3..53A). Bit 5 (manager-controlled): -FLT_MAX
+    ''' ([0x14268C5A4]). Bit 3 clear (inactive): the interpolator's vt+0x1C8 / vt+0x1B8 refuses (FO4 0x14174B430 / SSE 0x140F6CD60,
+    ''' `xor al, al`, the entry of every float / Point3 / bool / transform / blend / path interpolator), Nothing = no write. Active, the
+    ''' update time differs from [+0x28] (-FLT_MAX from the ctor FO4 0x1416CADB7 / SSE 0x140EF8277 at the first update); with bit 6
+    ''' (ComputeScaledTime) the scaled time (vt+0x170 / vt+0x158 = ScaledTimeAtRest), which, equal to the stored [+0x30] (-FLT_MAX from
+    ''' the ctor, 0x1416CADBE / 0x140EF827E) or unordered without bit 7 (ForceUpdate), refuses as above; without bit 6 the stored
+    ''' [+0x30], -FLT_MAX.</summary>
+    Friend Function ControllerTimeAtRest(c As NiTimeController) As Single?
+        Dim fl = CInt(c.Flags.Value)
+        If (fl And &H20) <> 0 Then Return NegMax
+        If (fl And 8) = 0 Then Return Nothing
+        If (fl And &H40) = 0 Then Return NegMax
+        Dim st = ScaledTimeAtRest(c)
+        If SameOrUnordered(st, NegMax) AndAlso (fl And &H80) = 0 Then Return Nothing
+        Return st
+    End Function
+
     ''' <summary>The CRT fmodf the exe imports (IAT 0x142441108): C fmod semantics (sign of the dividend), which .NET's % on Single
     ''' implements (ECMA-335 rem = C fmod).</summary>
     Private Function FModF(a As Single, b As Single) As Single
         Return a Mod b
     End Function
 
-    ''' <summary>GenInterp of a float key group (FO4 0x14174C400 = SSE 0x140F6ECB0) from lastIdx 0: one key or t = -FLT_MAX =&gt; key 0;
-    ''' i advances while t &gt; key(i+1).time; past the last key =&gt; its value; u = (t - t_i) / (t_i+1 - t_i). LINEAR (1 - u) v0 + u v1
-    ''' (0x141775810); CONST/step u &gt;= 1 ? v1 : v0 (0x141770230); QUADRATIC Hermite with D0 = the SECOND file tangent of key i
-    ''' (Backward) and D1 = the FIRST of key i+1 (Forward) (load 0x14176A687..6C0; 0x141775840); TBC only at u = 0 (NOT TRACED
-    ''' otherwise); NOINTERP writes nothing. Nothing = no write.</summary>
+    ''' <summary>GenInterp of a float key group (FO4 0x14174C400 = SSE 0x140F6ECB0) from lastIdx 0: one key or t = -FLT_MAX (or
+    ''' unordered: `ucomiss; je`) =&gt; key 0; i advances while t &gt; key(i+1).time; past the last key =&gt; its value; u = (t - t_i) /
+    ''' (t_i+1 - t_i). The key function of the type (table FO4 0x14344A080 / SSE 0x14331E040): LINEAR (1 - u) v0 + u v1 (0x141775810 /
+    ''' 0x140F98A10); CONST/step u &gt;= 1 ? v1 : v0 (0x141770230 / 0x140F92DC0); QUADRATIC Hermite with D0 = the SECOND file tangent of
+    ''' key i (Backward) and D1 = the FIRST of key i+1 (Forward) (load 0x14176A770 / 0x140F8DD00; 0x141775840 / 0x140F98A40); TBC the
+    ''' same Hermite (0x1417758B0 / 0x140F98AB0) with D0 = DD of key i and D1 = DS of key i+1 (0x141771760 / 0x140F94550), the tangents
+    ''' the load fills (KeyFillLaw.FloatTangents); type 0 (0x14174C3A0 / 0x140F6EC50: ret, the caller's stack) and any other: Nothing = no
+    ''' write.</summary>
     Friend Function FloatAt(kg As KeyGroup(Of Single), t As Single) As Single?
         Dim k = kg.Keys
         If k Is Nothing OrElse k.Count = 0 Then Return Nothing
         Dim n = k.Count
-        If n = 1 OrElse t = NegMax Then Return k(0).Value
+        If n = 1 OrElse SameOrUnordered(t, NegMax) Then Return k(0).Value
         Dim i = 0
         While i + 1 <= n - 1 AndAlso t > k(i + 1).Time
             i += 1
@@ -94,39 +120,52 @@ Friend Module ControllerRestLaw
             Case KeyType.LINEAR_KEY : Return (1.0F - u) * v0 + u * v1
             Case KeyType.CONST_KEY : Return If(u >= 1.0F, v1, v0)
             Case KeyType.QUADRATIC_KEY : Return Hermite(v0, v1, k(i).Backward, k(i + 1).Forward, u)
-            Case KeyType.TBC_KEY : Return If(u = 0.0F, v0, CType(Nothing, Single?))
+            Case KeyType.TBC_KEY
+                Dim tg = KeyFillLaw.FloatTangents(k)
+                Return Hermite(v0, v1, tg(i).DD, tg(i + 1).DS, u)
         End Select
         Return Nothing
     End Function
 
-    ''' <summary>Point3 GenInterp (FO4 0x14174D500): as FloatAt, but equal times give u = 1 and past the last key the last key is
-    ''' interpolated with itself (j = min(i + 1, n - 1)); per component the float key functions (0x14176E930 / 0x141770850 /
-    ''' 0x14176B8B0).</summary>
+    ''' <summary>Point3 GenInterp (FO4 0x14174D500 = SSE 0x140F6FDB0): one key or t = -FLT_MAX (or unordered) =&gt; key 0; from lastIdx 0
+    ''' i advances while t &gt; key(i+1).time, j = min(i + 1, n - 1), u = 1 when t_j = t_i or unordered (`ucomiss; je`), else
+    ''' (t - t_i) / (t_j - t_i). The key function of the type (table FO4 0x14344A0B0 / SSE 0x14331E070): LINEAR u P_j + (1 - u) P_i
+    ''' per component (0x14176E930 / 0x140F912D0); CONST u &gt;= 1 ? P_j : P_i (0x141770850 / 0x140F934A0); QUADRATIC and TBC the
+    ''' polynomial ((C u + B) u + D) u + P_i on the coefficients the load fills for key i (0x14176B8B0 / 0x140F8EF40, 0x141772450 /
+    ''' 0x140F953C0; KeyFillLaw.Point3Coefficients) - past the last key (i = n - 1) its B / C were never written (the fill stops at n - 2; the key
+    ''' array is the allocator's, 0x141771FA0 / 0x140F94EA0): Nothing; type 0 the zero vector (0x14174DB90 / 0x140F70470).</summary>
     Friend Function Point3At(kg As KeyGroup(Of System.Numerics.Vector3), t As Single) As System.Numerics.Vector3?
         Dim k = kg.Keys
         If k Is Nothing OrElse k.Count = 0 Then Return Nothing
         Dim n = k.Count
-        If n = 1 OrElse t = NegMax Then Return k(0).Value
+        If n = 1 OrElse SameOrUnordered(t, NegMax) Then Return k(0).Value
         Dim i = 0
         While i + 1 <= n - 1 AndAlso t > k(i + 1).Time
             i += 1
         End While
         Dim j = Math.Min(i + 1, n - 1)
-        Dim u = If(k(j).Time = k(i).Time, 1.0F, (t - k(i).Time) / (k(j).Time - k(i).Time))
+        Dim u = If(SameOrUnordered(k(j).Time, k(i).Time), 1.0F, (t - k(i).Time) / (k(j).Time - k(i).Time))
         Dim a = k(i), b = k(j)
         Select Case kg.Interpolation
             Case KeyType.LINEAR_KEY
-                Return New System.Numerics.Vector3((1.0F - u) * a.Value.X + u * b.Value.X, (1.0F - u) * a.Value.Y + u * b.Value.Y, (1.0F - u) * a.Value.Z + u * b.Value.Z)
+                Return New System.Numerics.Vector3(u * b.Value.X + (1.0F - u) * a.Value.X, u * b.Value.Y + (1.0F - u) * a.Value.Y, u * b.Value.Z + (1.0F - u) * a.Value.Z)
             Case KeyType.CONST_KEY
                 Return If(u >= 1.0F, b.Value, a.Value)
-            Case KeyType.QUADRATIC_KEY
-                Return New System.Numerics.Vector3(Hermite(a.Value.X, b.Value.X, a.Backward.X, b.Forward.X, u),
-                                                   Hermite(a.Value.Y, b.Value.Y, a.Backward.Y, b.Forward.Y, u),
-                                                   Hermite(a.Value.Z, b.Value.Z, a.Backward.Z, b.Forward.Z, u))
-            Case KeyType.TBC_KEY
-                Return If(u = 0.0F, a.Value, CType(Nothing, System.Numerics.Vector3?))
+            Case KeyType.QUADRATIC_KEY, KeyType.TBC_KEY
+                If i = n - 1 Then Return Nothing
+                Dim c = KeyFillLaw.Point3Coefficients(k, kg.Interpolation)(i)
+                Return New System.Numerics.Vector3(((c.C.X * u + c.B.X) * u + c.D.X) * u + a.Value.X,
+                                                   ((c.C.Y * u + c.B.Y) * u + c.D.Y) * u + a.Value.Y,
+                                                   ((c.C.Z * u + c.B.Z) * u + c.D.Z) * u + a.Value.Z)
+            Case CType(0UI, KeyType)
+                Return System.Numerics.Vector3.Zero
         End Select
         Return Nothing
+    End Function
+
+    ''' <summary>`ucomiss a, b` with `je`: equal or unordered (the exe's test against -FLT_MAX and between key times).</summary>
+    Friend Function SameOrUnordered(a As Single, b As Single) As Boolean
+        Return Not (a < b OrElse a > b)
     End Function
 
     ''' <summary>The exe's Hermite (0x141775840): a = D0 + D1; b = (D0 + D0) + D1; d = P1 - P0; c3 = d * 3 - b; c2 = a - (d + d);
@@ -155,28 +194,24 @@ Friend Module ControllerRestLaw
     ''' +0x18..0x20 and +0x28; their base LoadBinary (FO4 0x14174BC00 -&gt; 0x14174B230 -&gt; 0x1416BAC60, SSE 0x140F6E5B0 -&gt; 0x140F6CBB0
     ''' -&gt; 0x140EDC790) is a bare ret, and LinkObject (FO4 0x14174BC10 -&gt; 0x1416BAC70) as well.</para></summary>
     Friend Function FloatAtRest(c As NiSingleInterpController, interp As NiInterpolator, data As NiFloatData) As Single?
-        Dim fl = CInt(c.Flags.Value)
         Dim fi = TryCast(interp, NiFloatInterpolator)
         If fi Is Nothing Then Return Nothing
-        If (fl And &H20) <> 0 Then Return If(fi.Value = NegMax, CType(Nothing, Single?), fi.Value)
-        If (fl And 8) = 0 Then Return Nothing
-        Dim t = ScaledTimeAtRest(c)
-        If t = NegMax Then Return Nothing
-        Dim v As Single? = If(data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0, FloatAt(data.Data, t), fi.Value)
+        Dim t = ControllerTimeAtRest(c)
+        If Not t.HasValue Then Return Nothing
+        If SameOrUnordered(t.Value, NegMax) Then Return If(fi.Value = NegMax, CType(Nothing, Single?), fi.Value)
+        Dim v As Single? = If(data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0, FloatAt(data.Data, t.Value), fi.Value)
         If v.HasValue AndAlso v.Value = NegMax Then Return Nothing
         Return v
     End Function
 
     Friend Function Point3AtRest(c As NiSingleInterpController, interp As NiInterpolator, data As NiPosData) As System.Numerics.Vector3?
-        Dim fl = CInt(c.Flags.Value)
         Dim pi = TryCast(interp, NiPoint3Interpolator)
         If pi Is Nothing Then Return Nothing
         Dim invalid = Function(p As System.Numerics.Vector3) p.X = NegMax AndAlso p.Y = NegMax AndAlso p.Z = NegMax
-        If (fl And &H20) <> 0 Then Return If(invalid(pi.Value), CType(Nothing, System.Numerics.Vector3?), pi.Value)
-        If (fl And 8) = 0 Then Return Nothing
-        Dim t = ScaledTimeAtRest(c)
-        If t = NegMax Then Return Nothing
-        Dim v = If(data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0, Point3At(data.Data, t), pi.Value)
+        Dim t = ControllerTimeAtRest(c)
+        If Not t.HasValue Then Return Nothing
+        If SameOrUnordered(t.Value, NegMax) Then Return If(invalid(pi.Value), CType(Nothing, System.Numerics.Vector3?), pi.Value)
+        Dim v = If(data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0, Point3At(data.Data, t.Value), pi.Value)
         If v.HasValue AndAlso invalid(v.Value) Then Return Nothing
         Return v
     End Function
@@ -210,14 +245,12 @@ Friend Module ControllerRestLaw
         If isSse Then Return Nothing                                           ' PENDIENTE DE CITA: SSE NiBoolInterpolator::Update
         Dim bi = TryCast(interp, NiBoolInterpolator)
         If bi Is Nothing Then Return Nothing
-        Dim fl = CInt(c.Flags.Value)
         Dim pose = CByte(bi.Value.RawValue And &HFFUI)
-        If (fl And &H20) <> 0 Then Return PoseAtRest(pose)
-        If (fl And 8) = 0 Then Return Nothing
-        Dim t = ScaledTimeAtRest(c)
-        If t = NegMax Then Return PoseAtRest(pose)                 ' t = [+0x10] (ctor 0x14174B455): cached pose, 0x141752F78..F92
+        Dim t = ControllerTimeAtRest(c)
+        If Not t.HasValue Then Return Nothing
+        If SameOrUnordered(t.Value, NegMax) Then Return PoseAtRest(pose)   ' t = [+0x10] (ctor 0x14174B455): cached pose, 0x141752F78..F92
         If data IsNot Nothing AndAlso data.Data.Keys IsNot Nothing AndAlso data.Data.Keys.Count > 0 Then
-            Dim kv = BoolAt(data.Data, t)
+            Dim kv = BoolAt(data.Data, t.Value)
             Return If(kv.HasValue, CByte(If(kv.Value <> 0, 1, 0)), CType(Nothing, Byte?))   ' setne 0x141752FD9: never 2
         End If
         Return PoseAtRest(pose)
