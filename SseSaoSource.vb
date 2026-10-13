@@ -1,4 +1,4 @@
-﻿' GENERATED from the SAO transcription (scratchpad sao-sse/transcripcion, propuesta-FINAL.md): do not edit the GLSL by hand.
+﻿' GLSL constants GENERATED from Tools\ShaderTranscription\sse-sao\SseSaoSource.glsl.txt by Tools\ShaderTranscription\common\gen_transcription_vb.py (--check): do not edit the GLSL by hand.
 ''' <summary>THE SKYRIM SE SAO (non-temporal RawAO, PS 16012) AS THE PREVIEW RUNS IT: the six passes transcribed from the
 ''' bytecode line by line (CameraZ 15997, Minify 16006, MinifyContrast 16008, RawAO 16012, BlurH 15991, BlurV 15993), exact
 ''' literal tokens, D3D11 semantics helpers. Tools/re-docs/RE_SAO_BOTH_2026-10-03.md. The only edit to the transcribed text is
@@ -6,7 +6,7 @@
 Friend Module SseSaoSource
     ''' <summary>Full-screen triangle of the six passes (VS_SAO_FULLSCREEN).</summary>
     Friend Const Vs_Fullscreen As String = "#version 430
-// Full-screen triangle for the six SAO passes (draw 3 vertices, no vertex buffer). Emits the D3D TEXCOORD0:
+" & Gl43.ClipGlsl & "// Full-screen triangle for the six SAO passes (draw 3 vertices, no vertex buffer). Emits the D3D TEXCOORD0:
 // under UPPER_LEFT, clip y = +1 lands on render-target row 0, where the D3D uv has v = 0.
 // The engine's image-space VS is NOT TRACED; this VS only has to deliver uv_d3d = pixel centre / (W, H).
 layout(location = 0) out vec2 v1;
@@ -14,21 +14,17 @@ void main()
 {
     vec2 p = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0);
     v1 = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
-    gl_Position = vec4(p, 0.0, 1.0);
+    gl_Position = gl43ClipToGl(vec4(p, 0.0, 1.0));
 }
 "
 
     Friend Const Header430 As String = "#version 430
 "
 
-    Friend Const Header430Deriv As String = "#version 430
-#extension GL_ARB_derivative_control : require
-"
-
     Friend Const Prelude As String = "// ---------------------------------------------------------------------------------------------------------------------
-// CONVENTION (SSE SAO transcription) -- all six passes run under glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE)
-//  * The app sets glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE) before CameraZ and restores
-//    (GL_LOWER_LEFT, GL_ZERO_TO_ONE) after BlurV. Per ARB_clip_control (core in GL 4.5) UPPER_LEFT only negates
+// CONVENTION (SSE SAO transcription) -- all six passes run under UPPER_LEFT (Gl43.ClipControl, OpenGL 4.3)
+//  * The app sets Gl43.ClipControl(UPPER_LEFT) before CameraZ and restores LOWER_LEFT after BlurV. The VS writes
+//    gl43ClipToGl (Gl43.ClipGlsl), which negates, as ARB_clip_control's UPPER_LEFT does, only
 //    the NDC y: y_d = f * y_c / w_c with f = -1; window coordinates keep their definition (glViewport/glReadPixels origin
 //    'independent of the clip control origin state'). So a vertex at clip y = +1 lands in window row 0 = memory row 0,
 //    exactly where D3D puts NDC y = +1 (render-target row 0). Consequences, for every SAO pass:
@@ -55,8 +51,8 @@ void main()
 //    (cb12[43].xy < 1) moves the reads off texel centres.
 //  * Consumer of kSAO: the composite runs under LOWER_LEFT and must read kSAO with (u, 1 - v) (it is stored in D3D row
 //    order); RE SAO 1.7: point sampling at texel centres, so that flip is exact too. Not part of these six shaders.
-//  * Screen-space derivatives: deriv_rtx_coarse -> dFdxCoarse, deriv_rty_coarse -> dFdyCoarse with NO sign change.
-//    GLSL 4.60 8.14.1: dFdyCoarse 'Returns the partial derivative of p with respect to the window y coordinate'; under
+//  * Screen-space derivatives: deriv_rtx_coarse -> dFdx, deriv_rty_coarse -> dFdy (GLSL 4.30 has no coarse form: fine or
+//    coarse is the driver's, 8.13.1) with NO sign change: dFdy is the derivative along the window y coordinate; under
 //    UPPER_LEFT the window y grows downwards over the image like D3D's screen y (see above).
 //  * View space: the engine view space is x right, y up, +z forward (RE SAO 7.1). The app's GL view space is x right,
 //    y up, -z forward. Mapping (positions and normals): v_engine = (v_gl.x, v_gl.y, -v_gl.z). Inside RawAO the
@@ -440,17 +436,17 @@ void main()
     r0y = r0y * pHi;                                                        // asm 123 mul r0.y, r0.y, r1.x
     r0y = d3d_exp2(r0y);                                                    // asm 124 exp r0.y
     r0y = lo ? pLo : r0y;                                                   // asm 125 movc r0.y, r1.y, r1.w, r0.y
-    float dzx = dFdxCoarse(r1z);                                            // asm 126 deriv_rtx_coarse r1.x, r1.z
+    float dzx = dFdx(r1z);                                                  // asm 126 deriv_rtx_coarse r1.x, r1.z
     bool gx = abs(dzx) < SSE_AO_DERIV_GATE;                                 // asm 127 lt r1.x, |r1.x|, l(0.02)
-    float dax = dFdxCoarse(r0y);                                            // asm 128 deriv_rtx_coarse r1.y, r0.y
+    float dax = dFdx(r0y);                                                  // asm 128 deriv_rtx_coarse r1.y, r0.y
     ivec2 par = r0zw & ivec2(1);                                            // asm 129 and r0.zw, r0.zzzw, l(0,0,1,1)
     vec2 pf = vec2(par);                                                    // asm 130 itof
     pf = pf + (-0.5);                                                       // asm 131 add l(-0.5)
     float sx = -dax * pf.x + r0y;                                           // asm 132 mad r0.z, -r1.y, r0.z, r0.y
     r0y = gx ? sx : r0y;                                                    // asm 133 movc r0.y, r1.x, r0.z, r0.y
-    float dzy = dFdyCoarse(r1z);                                            // asm 134 deriv_rty_coarse r0.z, r1.z  (UPPER_LEFT: no sign change)
+    float dzy = dFdy(r1z);                                                  // asm 134 deriv_rty_coarse r0.z, r1.z  (UPPER_LEFT: no sign change)
     bool gy = abs(dzy) < SSE_AO_DERIV_GATE;                                 // asm 135 lt r0.z, |r0.z|, l(0.02)
-    float day = dFdyCoarse(r0y);                                            // asm 136 deriv_rty_coarse r1.x, r0.y  (on the x-smoothed value)
+    float day = dFdy(r0y);                                                  // asm 136 deriv_rty_coarse r1.x, r0.y  (on the x-smoothed value)
     float sy = -day * pf.y + r0y;                                           // asm 137 mad r0.w, -r1.x, r0.w, r0.y
     r0y = gy ? sy : r0y;                                                    // asm 138 movc r0.y, r0.z, r0.w, r0.y
     bool k1 = r0x == 1.0;                                                   // asm 139 eq r0.x, r0.x, l(1)
@@ -491,7 +487,7 @@ void main()
     Friend Const Fragment_CameraZ As String = Header430 & Prelude & D3d11SemanticsSource.Glsl & Body_CameraZ
     Friend Const Fragment_Minify As String = Header430 & Prelude & D3d11SemanticsSource.Glsl & MinifyCommon & Body_Minify
     Friend Const Fragment_MinifyContrast As String = Header430 & Prelude & D3d11SemanticsSource.Glsl & MinifyCommon & Body_MinifyContrast
-    Friend Const Fragment_RawAO As String = Header430Deriv & Prelude & D3d11SemanticsSource.Glsl & Body_RawAO
+    Friend Const Fragment_RawAO As String = Header430 & Prelude & D3d11SemanticsSource.Glsl & Body_RawAO
     Friend Const Fragment_BlurH As String = Header430 & Prelude & D3d11SemanticsSource.Glsl & BlurCommon & Body_BlurH
     Friend Const Fragment_BlurV As String = Header430 & Prelude & D3d11SemanticsSource.Glsl & BlurCommon & Body_BlurV
 End Module

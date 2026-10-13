@@ -25,10 +25,10 @@ void main() {}
 
     ''' <summary>The full-screen triangle of the app passes (attribute-less; same convention as the SAO's).</summary>
     Friend Const Vertex_Fullscreen As String = "#version 430
-void main()
+" & Gl43.ClipGlsl & "void main()
 {
     vec2 p = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0);
-    gl_Position = vec4(p, 1.0, 1.0);
+    gl_Position = gl43ClipToGl(vec4(p, 1.0, 1.0));
 }
 "
 
@@ -304,7 +304,7 @@ Friend NotInheritable Class Fo4DeferredPrograms
         Dim p As Fo4_Deferred_Shader_Class = Nothing
         If route.Position.TryGetValue(vs, p) Then Return p
         Try
-            p = New Fo4_Deferred_Shader_Class(Fo4GBufferSource.StageOf(vs, 0UI, 0UI, route Is _cpuRoute).Vertex,
+            p = New Fo4_Deferred_Shader_Class(Fo4GBufferSource.StageOf(vs, 0UI, 0UI, route Is _cpuRoute, positionCapture:=True).Vertex,
                                               Fo4DeferredAppSource.Fragment_PositionCapture, Nothing, Nothing, {"gl_Position"})
             _built.Add(p)
         Catch ex As Exception
@@ -500,8 +500,8 @@ Friend NotInheritable Class Fo4DeferredTargets
 
     Private Shared Function Tex(fmt As SizedInternalFormat, w As Integer, h As Integer) As Integer
         Dim t As Integer
-        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
-        GL.TextureStorage2D(t, 1, fmt, w, h)
+        t = Gl43.CreateTexture(TextureTarget.Texture2D)
+        Gl43.TexStorage2D(t, TextureTarget2d.Texture2D, 1, fmt, w, h)
         Return t
     End Function
 
@@ -518,37 +518,37 @@ Friend NotInheritable Class Fo4DeferredTargets
         _shadow = Tex(SizedInternalFormat.Rgba8, w, h)              ' app (propuesta B)
         _depth = Tex(SizedInternalFormat.Depth24Stencil8, w, h)     ' DS 1 D24_UNORM_S8_UINT
         _depthCopy = Tex(SizedInternalFormat.Depth24Stencil8, w, h)
-        GL.TextureParameter(_depthCopy, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
+        Gl43.TexParameter(_depthCopy, TextureTarget.Texture2D, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
         _lightD = Tex(SizedInternalFormat.R11fG11fB10f, w, h)       ' RT 0x21
         _lightS = Tex(SizedInternalFormat.R11fG11fB10f, w, h)       ' RT 0x22 (RGBSPEC = 1, rev-24)
         _rt2 = Tex(SizedInternalFormat.R11fG11fB10f, w, h)          ' RT 2
         _linZ = Tex(SizedInternalFormat.R32f, w, h)                 ' RT 0x28 mip 0
         Dim ok = True
-        GL.CreateFramebuffers(1, _fboG)
+        _fboG = Gl43.CreateFramebuffer()
         For i = 0 To 5
-            GL.NamedFramebufferTexture(_fboG, CType(FramebufferAttachment.ColorAttachment0 + i, FramebufferAttachment),
+            Gl43.FramebufferTexture(_fboG, CType(FramebufferAttachment.ColorAttachment0 + i, FramebufferAttachment),
                                        {_albedo, _normal, _env, _gloss, _emit, _shadow}(i), 0)
         Next
-        GL.NamedFramebufferTexture(_fboG, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
-        ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboG, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
-        GL.CreateFramebuffers(1, _fboL)
-        GL.NamedFramebufferTexture(_fboL, FramebufferAttachment.ColorAttachment0, _lightD, 0)
-        GL.NamedFramebufferTexture(_fboL, FramebufferAttachment.ColorAttachment1, _lightS, 0)
-        GL.NamedFramebufferTexture(_fboL, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
-        ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboL, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
-        GL.CreateFramebuffers(1, _fboC1)
-        GL.NamedFramebufferTexture(_fboC1, FramebufferAttachment.ColorAttachment0, _rt2, 0)
-        GL.NamedFramebufferTexture(_fboC1, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
-        ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboC1, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
-        GL.CreateFramebuffers(1, _fboZ)
-        GL.NamedFramebufferTexture(_fboZ, FramebufferAttachment.ColorAttachment0, _linZ, 0)
-        ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboZ, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        Gl43.FramebufferTexture(_fboG, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
+        ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboG, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        _fboL = Gl43.CreateFramebuffer()
+        Gl43.FramebufferTexture(_fboL, FramebufferAttachment.ColorAttachment0, _lightD, 0)
+        Gl43.FramebufferTexture(_fboL, FramebufferAttachment.ColorAttachment1, _lightS, 0)
+        Gl43.FramebufferTexture(_fboL, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
+        ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboL, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        _fboC1 = Gl43.CreateFramebuffer()
+        Gl43.FramebufferTexture(_fboC1, FramebufferAttachment.ColorAttachment0, _rt2, 0)
+        Gl43.FramebufferTexture(_fboC1, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
+        ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboC1, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        _fboZ = Gl43.CreateFramebuffer()
+        Gl43.FramebufferTexture(_fboZ, FramebufferAttachment.ColorAttachment0, _linZ, 0)
+        ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboZ, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
         ok = ok AndAlso _base.Ensure(w, h)
         _mirR11 = Tex(SizedInternalFormat.R11fG11fB10f, w, h)
         _mirRgba8 = Tex(SizedInternalFormat.Rgba8, w, h)
         _mirDs = Tex(SizedInternalFormat.Depth24Stencil8, w, h)
-        GL.CreateFramebuffers(1, _fboMirSrc)
-        GL.CreateFramebuffers(1, _fboMirDst)
+        _fboMirSrc = Gl43.CreateFramebuffer()
+        _fboMirDst = Gl43.CreateFramebuffer()
         ' The light quad (-1,1,0) (-1,-1,0) (1,-1,0) (1,1,0) (0x142246595..0x142246669) and the composite triangle (-1,1,1) (-1,-3,1)
         ' (3,1,1) (DF 4.4, 0x142216600).
         _quadVao = GL.GenVertexArray() : _quadVbo = GL.GenBuffer()
@@ -579,7 +579,7 @@ Friend NotInheritable Class Fo4DeferredTargets
         Next
         GL.SamplerParameter(_cubeSampler, SamplerParameterName.TextureMinFilter, CInt(TextureMinFilter.LinearMipmapLinear))
         GL.SamplerParameter(_cubeSampler, SamplerParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-        GL.SamplerParameter(_cubeSampler, CType(&H84FE, SamplerParameterName), 16.0F)   ' GL_TEXTURE_MAX_ANISOTROPY
+        Gl43.SamplerAnisotropy(_cubeSampler, 16.0F)
         If Not ok Then Free() : Return False
         _w = w : _h = h
         Return True
@@ -588,18 +588,18 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' <summary>Opens the G-buffer stage: D3D row order (UPPER_LEFT; glFrontFace unchanged, propuesta A.2), every RT cleared (rev-29 b:
     ''' 0, the shadow RT 1), depth 1 / stencil 0 (0x1421F3151..0x1421F3164), sRGB writes on (rev-17).</summary>
     Public Sub BeginGBuffer()
-        GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.ZeroToOne)
-        If GateNoUpperLeft Then GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
+        Gl43.ClipControl(ClipOrigin.UpperLeft)
+        If GateNoUpperLeft Then Gl43.ClipControl(ClipOrigin.LowerLeft)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboG)
         GL.Viewport(0, 0, _w, _h)
         GL.ColorMask(True, True, True, True)
         GL.DepthMask(True)
-        GL.NamedFramebufferDrawBuffers(_fboG, 6, GBufferBuffers)
+        Gl43.DrawBuffers(_fboG, 6, GBufferBuffers)
         For i = 0 To 4
-            GL.ClearNamedFramebuffer(_fboG, ClearBuffer.Color, i, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
+            Gl43.ClearFramebuffer(_fboG, ClearBuffer.Color, i, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
         Next
-        GL.ClearNamedFramebuffer(_fboG, ClearBuffer.Color, 5, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
-        GL.ClearNamedFramebuffer(_fboG, ClearBufferCombined.DepthStencil, 0, 1.0F, 0)
+        Gl43.ClearFramebuffer(_fboG, ClearBuffer.Color, 5, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
+        Gl43.ClearFramebuffer(_fboG, ClearBufferCombined.DepthStencil, 0, 1.0F, 0)
         _baseDrawn = False
         GL.Enable(EnableCap.FramebufferSrgb)
         If GateNoGBufferSrgb Then GL.Disable(EnableCap.FramebufferSrgb)
@@ -614,7 +614,7 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.Viewport(0, 0, _w, _h)
         progs.LinearZ.Use()
         progs.LinearZ.SetVector2("uNearFar", New Vector2(near, far))
-        GL.BindTextureUnit(7, _depthCopy) : GL.BindSampler(7, _point)
+        Gl43.BindTextureUnit(7, TextureTarget.Texture2D, _depthCopy) : GL.BindSampler(7, _point)
         FullscreenPass.Draw(progs.LinearZ, _emptyVao, 8)
         GL.BindSampler(7, 0)
     End Sub
@@ -655,8 +655,8 @@ Friend NotInheritable Class Fo4DeferredTargets
 
     Private Sub BindGBufferInputs()
         ' Lights: t0 = RT 0x1A, t1 = RT 0x1B, t2 = RT 0x1E, t3 = depth copy (0x142248EAE..F02).
-        GL.BindTextureUnit(0, _albedo) : GL.BindTextureUnit(1, _normal) : GL.BindTextureUnit(2, _gloss) : GL.BindTextureUnit(3, _depthCopy)
-        GL.BindTextureUnit(5, _shadow)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _albedo) : Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _normal) : Gl43.BindTextureUnit(2, TextureTarget.Texture2D, _gloss) : Gl43.BindTextureUnit(3, TextureTarget.Texture2D, _depthCopy)
+        Gl43.BindTextureUnit(5, TextureTarget.Texture2D, _shadow)
         For u = 0 To 5 : GL.BindSampler(u, _point) : Next
     End Sub
 
@@ -702,10 +702,10 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' <summary>The light stage (DF 3, 15.5): RT 0x21/0x22 cleared to 0, then sun, ambient and the three rig fills, additive.</summary>
     Public Sub RunLights(progs As Fo4DeferredPrograms, f As Fo4DeferredFrame)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboL)
-        GL.NamedFramebufferDrawBuffers(_fboL, 2, LightBuffers)
+        Gl43.DrawBuffers(_fboL, 2, LightBuffers)
         GL.ColorMask(True, True, True, True)
-        GL.ClearNamedFramebuffer(_fboL, ClearBuffer.Color, 0, New Single() {0, 0, 0, 0})
-        GL.ClearNamedFramebuffer(_fboL, ClearBuffer.Color, 1, New Single() {0, 0, 0, 0})
+        Gl43.ClearFramebuffer(_fboL, ClearBuffer.Color, 0, New Single() {0, 0, 0, 0})
+        Gl43.ClearFramebuffer(_fboL, ClearBuffer.Color, 1, New Single() {0, 0, 0, 0})
         LightState()
         BindGBufferInputs()
         Dim sun As Shader_Base_Class = If(f.SunCastsShadow, CType(progs.SunShadow, Shader_Base_Class), progs.Sun)
@@ -728,25 +728,25 @@ Friend NotInheritable Class Fo4DeferredTargets
             progs.Fill.SetInt("uFillShadowChannel", If(f.FillShadowChannel(k) >= 0, f.FillShadowChannel(k), 0))
             DrawQuad(progs.Fill, f)
         Next
-        For u = 0 To 5 : GL.BindTextureUnit(u, 0) : GL.BindSampler(u, 0) : Next
+        For u = 0 To 5 : Gl43.UnbindTextureUnit(u) : GL.BindSampler(u, 0) : Next
         GL.UseProgram(0)
     End Sub
 
     ''' <summary>Composite pass 1 (3432) -&gt; RT 2: triangle at z = 1, GREATER (DF 4.4).</summary>
     Public Sub RunComposite1(progs As Fo4DeferredPrograms, f As Fo4DeferredFrame)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboC1)
-        GL.NamedFramebufferDrawBuffer(_fboC1, DrawBufferMode.ColorAttachment0)
+        Gl43.DrawBuffer(_fboC1, DrawBufferMode.ColorAttachment0)
         GL.Disable(EnableCap.Blend)
         GL.Enable(EnableCap.DepthTest) : GL.DepthFunc(DepthFunction.Greater) : GL.DepthMask(False)
         GL.ColorMask(True, True, True, False)
         GL.Disable(EnableCap.CullFace)
         progs.Composite1.Use()
         progs.Composite1.SetVector4("VPOSOffset", New Vector4(1.0F / f.W, 1.0F / f.H, 1.0F, 1.0F))   ' 0x142217560..0x1422175D0
-        GL.BindTextureUnit(0, _albedo) : GL.BindTextureUnit(3, _gloss) : GL.BindTextureUnit(4, _emit)
-        GL.BindTextureUnit(5, _lightD) : GL.BindTextureUnit(6, _lightS)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _albedo) : Gl43.BindTextureUnit(3, TextureTarget.Texture2D, _gloss) : Gl43.BindTextureUnit(4, TextureTarget.Texture2D, _emit)
+        Gl43.BindTextureUnit(5, TextureTarget.Texture2D, _lightD) : Gl43.BindTextureUnit(6, TextureTarget.Texture2D, _lightS)
         For Each u In {0, 3, 4, 5, 6} : GL.BindSampler(u, _point) : Next
         GL.BindVertexArray(_triVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
-        For Each u In {0, 3, 4, 5, 6} : GL.BindTextureUnit(u, 0) : GL.BindSampler(u, 0) : Next
+        For Each u In {0, 3, 4, 5, 6} : Gl43.UnbindTextureUnit(u) : GL.BindSampler(u, 0) : Next
         GL.UseProgram(0)
     End Sub
 
@@ -755,8 +755,8 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' in the orientation this depth was written in, so an overlay on its body's geometry gets the body's depth bit for bit).
     ''' GateBlitMirror: the old mirrored blit.</summary>
     Public Sub BlitDepthTo(targetFbo As Integer)
-        If GateBlitMirror Then GL.BlitNamedFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, _h, _w, 0, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, BlitFramebufferFilter.Nearest) : Return
-        GL.BlitNamedFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, 0, _w, _h,
+        If GateBlitMirror Then Gl43.BlitFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, _h, _w, 0, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, BlitFramebufferFilter.Nearest) : Return
+        Gl43.BlitFramebuffer(_fboG, targetFbo, 0, 0, _w, _h, 0, 0, _w, _h,
                                 ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, BlitFramebufferFilter.Nearest)
     End Sub
 
@@ -777,27 +777,27 @@ Friend NotInheritable Class Fo4DeferredTargets
         Dim att = If(isDs, FramebufferAttachment.DepthStencilAttachment, FramebufferAttachment.ColorAttachment0)
         Dim attach = Sub(fbo As Integer, img As Integer, tgt As ImageTarget)
                          If tgt = ImageTarget.Renderbuffer Then
-                             GL.NamedFramebufferRenderbuffer(fbo, att, RenderbufferTarget.Renderbuffer, img)
+                             Gl43.FramebufferRenderbuffer(fbo, att, RenderbufferTarget.Renderbuffer, img)
                          Else
-                             GL.NamedFramebufferTexture(fbo, att, img, 0)
+                             Gl43.FramebufferTexture(fbo, att, img, 0)
                          End If
                      End Sub
         attach(_fboMirSrc, image, target)
         attach(_fboMirDst, scratch, ImageTarget.Texture2D)
-        GL.NamedFramebufferReadBuffer(_fboMirSrc, If(isDs, ReadBufferMode.None, ReadBufferMode.ColorAttachment0))
-        GL.NamedFramebufferDrawBuffer(_fboMirDst, If(isDs, DrawBufferMode.None, DrawBufferMode.ColorAttachment0))
+        Gl43.ReadBuffer(_fboMirSrc, If(isDs, ReadBufferMode.None, ReadBufferMode.ColorAttachment0))
+        Gl43.DrawBuffer(_fboMirDst, If(isDs, DrawBufferMode.None, DrawBufferMode.ColorAttachment0))
         Try
             ' Never copy back from a blit that did not happen: an incomplete pair would leave the scratch's old rows, and
             ' CopyImageSubData would write them over the frame silently. The blit honours the scissor (GL 4.6 18.3.1) and this
             ' runs from a Finally after whatever state an aborted stage left: off.
-            Dim src = GL.CheckNamedFramebufferStatus(_fboMirSrc, FramebufferTarget.ReadFramebuffer)
-            Dim dst = GL.CheckNamedFramebufferStatus(_fboMirDst, FramebufferTarget.DrawFramebuffer)
+            Dim src = Gl43.CheckFramebufferStatus(_fboMirSrc, FramebufferTarget.ReadFramebuffer)
+            Dim dst = Gl43.CheckFramebufferStatus(_fboMirDst, FramebufferTarget.DrawFramebuffer)
             If src <> FramebufferStatus.FramebufferComplete OrElse dst <> FramebufferStatus.FramebufferComplete Then
                 Throw New InvalidOperationException($"MirrorRows: incomplete framebuffer (source {src}, scratch {dst}) for {format}")
             End If
             GL.Disable(EnableCap.ScissorTest)
             Dim mask = If(isDs, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, ClearBufferMask.ColorBufferBit)
-            GL.BlitNamedFramebuffer(_fboMirSrc, _fboMirDst, 0, 0, _w, _h, 0, _h, _w, 0, mask, BlitFramebufferFilter.Nearest)
+            Gl43.BlitFramebuffer(_fboMirSrc, _fboMirDst, 0, 0, _w, _h, 0, _h, _w, 0, mask, BlitFramebufferFilter.Nearest)
             GL.CopyImageSubData(scratch, ImageTarget.Texture2D, 0, 0, 0, 0, image, target, 0, 0, 0, 0, _w, _h, 1)
         Finally
             attach(_fboMirSrc, 0, target)
@@ -809,7 +809,7 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' blitted straight; draw buffers {A0, A1} = radiance and coverage, rev-19).</summary>
     Public Sub RunComposite2(progs As Fo4DeferredPrograms, f As Fo4DeferredFrame, sceneFbo As Integer, envArray As Integer)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, sceneFbo)
-        GL.NamedFramebufferDrawBuffers(sceneFbo, 2, LightBuffers)
+        Gl43.DrawBuffers(sceneFbo, 2, LightBuffers)
         GL.Viewport(0, 0, _w, _h)
         GL.Disable(EnableCap.Blend)
         GL.Enable(EnableCap.DepthTest) : GL.DepthFunc(DepthFunction.Greater) : GL.DepthMask(False)
@@ -825,14 +825,14 @@ Friend NotInheritable Class Fo4DeferredTargets
         p.SetVector4("SSLRParams0", New Vector4(1.0F, 0, 0, 0))
         p.SetVector4("SSLRParams1", New Vector4(0, 0, 1.0F, 0))
         SetCb12(p, f)
-        GL.BindTextureUnit(1, _normal) : GL.BindTextureUnit(2, _env) : GL.BindTextureUnit(3, _gloss) : GL.BindTextureUnit(4, _emit)
-        GL.BindTextureUnit(5, _lightD) : GL.BindTextureUnit(6, _lightS) : GL.BindTextureUnit(7, _depthCopy)
-        GL.BindTextureUnit(8, envArray) : GL.BindTextureUnit(10, _rt2) : GL.BindTextureUnit(15, _linZ)
-        GL.BindTextureUnit(11, _base.CoverageTexture)
+        Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _normal) : Gl43.BindTextureUnit(2, TextureTarget.Texture2D, _env) : Gl43.BindTextureUnit(3, TextureTarget.Texture2D, _gloss) : Gl43.BindTextureUnit(4, TextureTarget.Texture2D, _emit)
+        Gl43.BindTextureUnit(5, TextureTarget.Texture2D, _lightD) : Gl43.BindTextureUnit(6, TextureTarget.Texture2D, _lightS) : Gl43.BindTextureUnit(7, TextureTarget.Texture2D, _depthCopy)
+        Gl43.BindTextureUnit(8, TextureTarget.TextureCubeMapArray, envArray) : Gl43.BindTextureUnit(10, TextureTarget.Texture2D, _rt2) : Gl43.BindTextureUnit(15, TextureTarget.Texture2D, _linZ)
+        Gl43.BindTextureUnit(11, TextureTarget.Texture2D, _base.CoverageTexture)
         For Each u In {1, 2, 3, 4, 5, 6, 7, 10, 11, 15} : GL.BindSampler(u, _point) : Next
         GL.BindSampler(8, _cubeSampler)
         GL.BindVertexArray(_triVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
-        For Each u In {1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 15} : GL.BindTextureUnit(u, 0) : GL.BindSampler(u, 0) : Next
+        For Each u In {1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 15} : Gl43.UnbindTextureUnit(u) : GL.BindSampler(u, 0) : Next
         GL.UseProgram(0)
         GL.DepthMask(True) : GL.DepthFunc(DepthFunction.Lequal) : GL.Enable(EnableCap.CullFace)
     End Sub
@@ -851,9 +851,9 @@ Friend NotInheritable Class Fo4DeferredTargets
         progs.DirectResolve.Use()
         progs.DirectResolve.SetFloat("uSceneToLinear", sceneToLinear)
         progs.DirectResolve.SetBool("uCoverageBlend", _baseDrawn AndAlso Not GateDirectResolveNoCoverage)
-        GL.BindTextureUnit(0, sceneTex) : GL.BindTextureUnit(1, coverageTex)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, sceneTex) : Gl43.BindTextureUnit(1, TextureTarget.Texture2D, coverageTex)
         GL.BindVertexArray(_emptyVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
-        GL.BindTextureUnit(0, 0) : GL.BindTextureUnit(1, 0) : GL.UseProgram(0)
+        Gl43.UnbindTextureUnit(0) : Gl43.UnbindTextureUnit(1) : GL.UseProgram(0)
         GL.Disable(EnableCap.Blend)
         GL.DepthMask(True) : GL.DepthFunc(DepthFunction.Lequal) : GL.Enable(EnableCap.CullFace)
     End Sub

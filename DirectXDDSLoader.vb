@@ -126,10 +126,9 @@ Public Module DirectXDDSLoader
             ' Sin la extensión de anisotropía este GetFloat deja `maxAniso` en 0 y encola un
             ' GL_INVALID_ENUM. El gate `>= 1` hace que no se aplique nada, y el drenaje evita que ese error
             ' quede en la cola y lo cobre un chequeo posterior ajeno.
-            Dim maxAniso As Single = 0
-            GL.GetFloat(CType(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GetPName), maxAniso)
+            Dim maxAniso As Single = Gl43.MaxAnisotropy()
             If maxAniso >= 1.0F Then
-                GL.TexParameter(target, CType(GL_TEXTURE_MAX_ANISOTROPY_EXT, TextureParameterName), maxAniso)
+                Gl43.TexAnisotropy(target, maxAniso)
             Else
                 DrainGlErrors()
             End If
@@ -158,10 +157,10 @@ Public Module DirectXDDSLoader
     Friend Function CreateColorSpaceView(texId As Integer, cubemap As Boolean, wantSrgb As Boolean, dxgiOriginal As Integer) As Integer
         If texId = 0 Then Return 0
         Dim immutable As Integer = 0, levels As Integer = 0, fmt As Integer = 0
-        GL.GetTextureParameter(texId, GetTextureParameter.TextureImmutableFormat, immutable)
+        Gl43.GetTexParameter(texId, If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), GetTextureParameter.TextureImmutableFormat, immutable)
         If immutable = 0 Then DrainGlErrors() : Return 0
-        GL.GetTextureParameter(texId, GetTextureParameter.TextureImmutableLevels, levels)
-        GL.GetTextureLevelParameter(texId, 0, GetTextureParameter.TextureInternalFormat, fmt)
+        Gl43.GetTexParameter(texId, If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), GetTextureParameter.TextureImmutableLevels, levels)
+        Gl43.GetTexLevelParameter(texId, If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), 0, GetTextureParameter.TextureInternalFormat, fmt)
         If GL.GetError() <> ErrorCode.NoError OrElse levels <= 0 Then DrainGlErrors() : Return 0
         Dim storageSrgb As Boolean, twin As Integer
         If Not TwinColorSpaceFormat(fmt, storageSrgb, twin) Then Return 0
@@ -183,7 +182,7 @@ Public Module DirectXDDSLoader
         ApplySamplingState(target, levels, False, cubemap)
         For Each sw In {GL_TEXTURE_SWIZZLE_R, GL_TEXTURE_SWIZZLE_G, GL_TEXTURE_SWIZZLE_B, GL_TEXTURE_SWIZZLE_A}
             Dim v As Integer = 0
-            GL.GetTextureParameter(texId, CType(sw, GetTextureParameter), v)
+            Gl43.GetTexParameter(texId, target, CType(sw, GetTextureParameter), v)
             GL.TexParameter(target, CType(sw, TextureParameterName), v)
         Next
         GL.BindTexture(target, prevBinding)
@@ -244,8 +243,6 @@ Public Module DirectXDDSLoader
     End Function
 
     Const GL_UNPACK_ALIGNMENT As Integer = &HCF5
-    Const GL_TEXTURE_MAX_ANISOTROPY_EXT As Integer = &H84FE
-    Const GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT As Integer = &H84FF
 
     Const GL_TEXTURE_SWIZZLE_R As Integer = &H8E42
     Const GL_TEXTURE_SWIZZLE_G As Integer = &H8E43

@@ -504,7 +504,8 @@ Public Module FaceTintCompositor
             ("SSE-SAO-RAWAO", SseSaoSource.Fragment_RawAO),
             ("SSE-SAO-BLURH", SseSaoSource.Fragment_BlurH),
             ("SSE-SAO-BLURV", SseSaoSource.Fragment_BlurV),
-            ("SSE-SAO-HEADER430DERIV", SseSaoSource.Header430Deriv),
+            ("GL43-CLIP", Gl43.ClipGlsl),
+            ("GL43-CLIP-CAPTURE", Gl43.ClipGlslCapture),
             ("SSE-SAO-PRELUDE", SseSaoSource.Prelude),
             ("SSE-SAO-MINIFYCOMMON", SseSaoSource.MinifyCommon),
             ("SSE-SAO-BLURCOMMON", SseSaoSource.BlurCommon),
@@ -540,11 +541,11 @@ Public Module FaceTintCompositor
     End Function
 
     Private Const VertexShaderSource As String = "#version 430
-layout(location = 0) in vec2 aPos;
+" & Gl43.ClipGlsl & "layout(location = 0) in vec2 aPos;
 out vec2 vUV;
 void main() {
     vUV = vec2((aPos.x + 1.0) * 0.5, (aPos.y + 1.0) * 0.5);
-    gl_Position = vec4(aPos, 0.0, 1.0);
+    gl_Position = gl43ClipToGl(vec4(aPos, 0.0, 1.0));
 }"
 
     ' Photoshop / W3C SVG compositing formulas. dst = current accumulated face diffuse,
@@ -1333,7 +1334,7 @@ void main() {
             Dim occlusionActive As Boolean = False
             Dim baseTexForCompose As Integer = originalTexId
 
-            GL.UseProgram(state._program)
+            Gl43.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
             ' fetchAt necesita el tamaño del DESTINO para decidir indice directo vs resample, y no hay forma
             ' de consultarlo desde el fragment shader. Va pegado al UseProgram de cada pase, con los MISMOS
@@ -1826,7 +1827,7 @@ void main() {
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
 
-            GL.UseProgram(state._program)
+            Gl43.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
             GL.Uniform2(state._uTargetSizeLoc, width, height)
             GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))   ' MISMO valor que la ley del CPU
@@ -2052,7 +2053,7 @@ void main() {
     ''' enable-caps. MUST run on the GL thread.</summary>
     Private Sub RestoreGlState(s As GlStateSnapshot)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, s.Fbo)
-        GL.UseProgram(s.Prog)
+        Gl43.UseProgram(s.Prog)
         GL.BindVertexArray(s.Vao)
         GL.ActiveTexture(TextureUnit.Texture0)
         GL.BindTexture(TextureTarget.Texture2D, s.Tex0)
@@ -2192,7 +2193,7 @@ void main() {
         If state._program <> 0 AndAlso state._quadVao <> 0 Then Return
 
         Dim vs = GL.CreateShader(ShaderType.VertexShader)
-        GL.ShaderSource(vs, VertexShaderSource)
+        Gl43.ShaderSource(vs, VertexShaderSource)
         GL.CompileShader(vs)
         Dim vsOk As Integer
         GL.GetShader(vs, ShaderParameter.CompileStatus, vsOk)
@@ -2204,7 +2205,7 @@ void main() {
         End If
 
         Dim fs = GL.CreateShader(ShaderType.FragmentShader)
-        GL.ShaderSource(fs, FragmentShaderSource)
+        Gl43.ShaderSource(fs, FragmentShaderSource)
         GL.CompileShader(fs)
         Dim fsOk As Integer
         GL.GetShader(fs, ShaderParameter.CompileStatus, fsOk)
@@ -2354,7 +2355,7 @@ void main() {
             GL.Disable(EnableCap.DepthTest)
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
-            GL.UseProgram(state._program)
+            Gl43.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
             ' ACA es donde el pase RESAMPLEA: uMode=2 convierte espacio Y cambia de tamaño (es el seed del
             ' acumulador y el resize por canal). fetchAt compara el tamaño de la fuente contra este target y
@@ -2426,7 +2427,7 @@ void main() {
             GL.Disable(EnableCap.DepthTest)
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
-            GL.UseProgram(state._program)
+            Gl43.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
             GL.Uniform2(state._uTargetSizeLoc, width, height)
             GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))
@@ -2562,7 +2563,7 @@ void main() {
                 GL.Disable(EnableCap.DepthTest)
                 GL.Disable(EnableCap.ScissorTest)
                 GL.Disable(EnableCap.Blend)
-                GL.UseProgram(state._program)
+                Gl43.UseProgram(state._program)
                 programBound = True
                 GL.BindVertexArray(state._quadVao)
                 GL.Uniform2(state._uTargetSizeLoc, width, height)
@@ -2607,7 +2608,7 @@ void main() {
             ' este pase bindeó el programa: con otro programa activo, Uniform1 escribiría en ESE.
             If programBound Then
                 Try
-                    GL.UseProgram(state._program)
+                    Gl43.UseProgram(state._program)
                     GL.Uniform1(state._uSkinTintDecalLoc, 0)
                 Catch
                 End Try

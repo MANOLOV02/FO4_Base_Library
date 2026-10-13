@@ -2,7 +2,8 @@ Imports OpenTK.Mathematics
 
 ''' <summary>THE WORLD CAMERA'S DEPTH LAW OF BOTH ENGINES (ola 1, 12-oct-2026; RE in D:\WinTmp\rc\conv\conv.md and ola1.md): its near
 ''' and far without a world, SetViewFrustum's near, and the projection matrices the renderer builds, in the [0, 1] depth of D3D the
-''' whole frame is drawn with (GL.ClipControl(..., ClipDepthMode.ZeroToOne)). Read by PreviewControl.UpdateProjection, ShadowMap.Fit
+''' whole frame is drawn with (OpenGL 4.3: every vertex stage writes gl43ClipToGl, z = 2 z - w, Gl43.ClipGlsl; the window depth is
+''' z / w of these matrices). Read by PreviewControl.UpdateProjection, ShadowMap.Fit
 ''' and the frame's notice (PreviewModel.ReportUndrawnShapes). Gate: ParityGate `camera-law`.</summary>
 Friend Module EngineCameraLaw
 

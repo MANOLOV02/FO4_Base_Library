@@ -50,14 +50,14 @@ Friend NotInheritable Class Fo4EnvMapArray
         _period = frameIndex
     End Sub
 
-    Private Shared Function Describe(tex As Integer, ByRef w As Integer, ByRef h As Integer, ByRef levels As Integer, ByRef fmt As Integer) As Boolean
+    Private Shared Function Describe(tex As Integer, target As TextureTarget, ByRef w As Integer, ByRef h As Integer, ByRef levels As Integer, ByRef fmt As Integer) As Boolean
         If tex = 0 Then Return False
         Dim immutable As Integer
-        GL.GetTextureParameter(tex, GetTextureParameter.TextureImmutableFormat, immutable)
-        GL.GetTextureParameter(tex, GetTextureParameter.TextureImmutableLevels, levels)
-        GL.GetTextureLevelParameter(tex, 0, GetTextureParameter.TextureWidth, w)
-        GL.GetTextureLevelParameter(tex, 0, GetTextureParameter.TextureHeight, h)
-        GL.GetTextureLevelParameter(tex, 0, GetTextureParameter.TextureInternalFormat, fmt)
+        Gl43.GetTexParameter(tex, target, GetTextureParameter.TextureImmutableFormat, immutable)
+        Gl43.GetTexParameter(tex, target, GetTextureParameter.TextureImmutableLevels, levels)
+        Gl43.GetTexLevelParameter(tex, target, 0, GetTextureParameter.TextureWidth, w)
+        Gl43.GetTexLevelParameter(tex, target, 0, GetTextureParameter.TextureHeight, h)
+        Gl43.GetTexLevelParameter(tex, target, 0, GetTextureParameter.TextureInternalFormat, fmt)
         Return immutable <> 0 AndAlso levels > 0
     End Function
 
@@ -69,7 +69,7 @@ Friend NotInheritable Class Fo4EnvMapArray
         If tex Is Nothing OrElse tex.Texture_ID = 0 Then Return -1                       ' 0x14223993C
         Dim cube = tex.Texture_ID
         Dim w, h, lv, fmt As Integer
-        If Not Describe(cube, w, h, lv, fmt) Then Return -1
+        If Not Describe(cube, If(tex.Cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), w, h, lv, fmt) Then Return -1
         Dim promoted = DirectXDDSLoader.MakeSrgbDxgi(tex.DGXFormat_Original)
         If _array <> 0 Then
             ' 0x142239942..0x142239980: same height, width, format and cube flag, mips >= the array's.
@@ -78,7 +78,7 @@ Friend NotInheritable Class Fo4EnvMapArray
             ' 0x1422399AA..0x1422399EE: the same comparison against the first queued cube (0x142239CC0).
             Dim first = _entries(_queue(0))
             Dim w0, h0, lv0, f0 As Integer
-            Describe(first.Texture, w0, h0, lv0, f0)
+            Describe(first.Texture, TextureTarget.TextureCubeMap, w0, h0, lv0, f0)
             If h <> h0 OrElse w <> w0 OrElse promoted <> first.Dxgi OrElse Not tex.Cubemap OrElse lv < lv0 Then Return -1
         ElseIf w <> 128 Then
             Return -1                                                                     ' word[tex+0x2A] == 0x80 (7.2)
@@ -121,15 +121,15 @@ Friend NotInheritable Class Fo4EnvMapArray
     Public Sub CopyQueued()
         If _array = 0 AndAlso _queue.Count > 0 Then
             Dim w, h, lv, fmt As Integer
-            If Describe(_entries(_queue(0)).Texture, w, h, lv, fmt) Then
+            If Describe(_entries(_queue(0)).Texture, TextureTarget.TextureCubeMap, w, h, lv, fmt) Then
                 _arrayW = w : _arrayH = h : _arrayLevels = lv : _arrayDxgi = _entries(_queue(0)).Dxgi
                 _arrayFormat = DirectXDDSLoader.SrgbTwinOf(fmt)                ' the SRV is promoted to sRGB (13.3, 16.2)
-                GL.CreateTextures(TextureTarget.TextureCubeMapArray, 1, _array)
-                GL.TextureStorage3D(_array, lv, CType(_arrayFormat, SizedInternalFormat), w, h, SliceCount * 6)
-                GL.TextureParameter(_array, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                GL.TextureParameter(_array, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                GL.TextureParameter(_array, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.LinearMipmapLinear))
-                GL.TextureParameter(_array, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+                _array = Gl43.CreateTexture(TextureTarget.TextureCubeMapArray)
+                Gl43.TexStorage3D(_array, TextureTarget3d.TextureCubeMapArray, lv, CType(_arrayFormat, SizedInternalFormat), w, h, SliceCount * 6)
+                Gl43.TexParameter(_array, TextureTarget.TextureCubeMapArray, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+                Gl43.TexParameter(_array, TextureTarget.TextureCubeMapArray, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+                Gl43.TexParameter(_array, TextureTarget.TextureCubeMapArray, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.LinearMipmapLinear))
+                Gl43.TexParameter(_array, TextureTarget.TextureCubeMapArray, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
             End If
         End If
         If _array <> 0 Then

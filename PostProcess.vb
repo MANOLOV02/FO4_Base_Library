@@ -468,7 +468,7 @@ Friend NotInheritable Class FullscreenPass
         GL.BindVertexArray(emptyVao)
         GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
         GL.BindVertexArray(0)
-        For u = 0 To unitsUsed - 1 : GL.BindTextureUnit(u, 0) : Next
+        For u = 0 To unitsUsed - 1 : Gl43.UnbindTextureUnit(u) : Next
         GL.UseProgram(0)
         GL.Enable(EnableCap.CullFace)
     End Sub
@@ -484,25 +484,25 @@ Friend NotInheritable Class SceneColorPass
                      emptyVao As Integer, bindInputs As Action(Of Shader_Base_Class))
         If _copy = 0 OrElse w <> _w OrElse h <> _h OrElse fmt <> _fmt Then
             If _copy <> 0 Then GL.DeleteTexture(_copy)
-            GL.CreateTextures(TextureTarget.Texture2D, 1, _copy)
-            GL.TextureStorage2D(_copy, 1, fmt, w, h)
+            _copy = Gl43.CreateTexture(TextureTarget.Texture2D)
+            Gl43.TexStorage2D(_copy, TextureTarget2d.Texture2D, 1, fmt, w, h)
             For Each prm In {TextureParameterName.TextureMinFilter, TextureParameterName.TextureMagFilter}
-                GL.TextureParameter(_copy, prm, CInt(TextureMinFilter.Linear))
+                Gl43.TexParameter(_copy, TextureTarget.Texture2D, prm, CInt(TextureMinFilter.Linear))
             Next
             For Each prm In {TextureParameterName.TextureWrapS, TextureParameterName.TextureWrapT}
-                GL.TextureParameter(_copy, prm, CInt(TextureWrapMode.ClampToEdge))
+                Gl43.TexParameter(_copy, TextureTarget.Texture2D, prm, CInt(TextureWrapMode.ClampToEdge))
             Next
             _fmt = fmt : _w = w : _h = h
         End If
         GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo)
         GL.ReadBuffer(If(targetFbo = 0, ReadBufferMode.Back, ReadBufferMode.ColorAttachment0))
-        GL.CopyTextureSubImage2D(_copy, 0, 0, 0, 0, 0, w, h)
+        Gl43.CopyTexSubImage2D(_copy, TextureTarget.Texture2D, 0, 0, 0, 0, 0, w, h)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo)
         If targetFbo <> 0 Then GL.DrawBuffer(DrawBufferMode.ColorAttachment0) Else GL.DrawBuffer(DrawBufferMode.Back)
         GL.Viewport(0, 0, w, h)
         GL.ColorMask(True, True, True, True)
         program.Use()
-        GL.BindTextureUnit(0, _copy)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _copy)
         program.SetInt("texScene", 0)
         bindInputs?.Invoke(program)
         FullscreenPass.Draw(program, emptyVao, 4)
@@ -636,8 +636,8 @@ Friend NotInheritable Class SseSaoTargets
 
     Private Shared Function NewTex(fmt As SizedInternalFormat, levels As Integer, w As Integer, h As Integer) As Integer
         Dim t As Integer
-        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
-        GL.TextureStorage2D(t, levels, fmt, w, h)
+        t = Gl43.CreateTexture(TextureTarget.Texture2D)
+        Gl43.TexStorage2D(t, TextureTarget2d.Texture2D, levels, fmt, w, h)
         Return t
     End Function
 
@@ -682,14 +682,14 @@ Friend NotInheritable Class SseSaoTargets
         If w <= 0 OrElse h <= 0 Then Return
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.ZeroToOne)
+        If Not GateNoClipControl Then Gl43.ClipControl(ClipOrigin.UpperLeft)
         Try
             ' 1. CameraZ (15997) -> pyramid level 0.
             Target(_pyramid, 0, w, h)
             progs.CameraZ.Use()
             progs.CameraZ.SetVector4("g_ClipInfos", SseSaoConstants.CameraZClipInfos(near, far, SseSaoConstants.DofMaxDepthParticipation))
             Cb12(progs.CameraZ, False, True)
-            GL.BindTextureUnit(0, depthTex)
+            Gl43.BindTextureUnit(0, TextureTarget.Texture2D, depthTex)
             GL.BindSampler(0, _sFilt0)
             FullscreenPass.Draw(progs.CameraZ, emptyVao, 1)
 
@@ -707,7 +707,7 @@ Friend NotInheritable Class SseSaoTargets
                 p.SetVector4("g_UseDynamicSampling", New Vector4(BitConverter.UInt32BitsToSingle(dynBits), 0.0F, 0.0F, 0.0F))
                 If contrast Then p.SetVector4("g_ContrastParams", New Vector4(SseSaoConstants.ContrastScale(SseSaoConstants.DofCenterWeight), 0.0F, 0.0F, 0.0F))
                 Cb12(p, True, False)
-                GL.BindTextureUnit(0, _views(i - 1))
+                Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _views(i - 1))
                 GL.BindSampler(0, If(i <= 4, _sFilt0, _sFilt1))
                 FullscreenPass.Draw(p, emptyVao, 1)
             Next
@@ -721,9 +721,9 @@ Friend NotInheritable Class SseSaoTargets
             progs.RawAO.SetVector4("g_ScreenInfos", k.ScreenInfos)
             progs.RawAO.SetVector4("g_SSAOInfos2", k.SsaoInfos2)
             Cb12(progs.RawAO, False, True)
-            GL.BindTextureUnit(0, _pyramid)
+            Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _pyramid)
             GL.BindSampler(0, _sFilt2)
-            GL.BindTextureUnit(1, normalsTex)
+            Gl43.BindTextureUnit(1, TextureTarget.Texture2D, normalsTex)
             GL.BindSampler(1, _sFilt1)
             FullscreenPass.Draw(progs.RawAO, emptyVao, 2)
 
@@ -732,7 +732,7 @@ Friend NotInheritable Class SseSaoTargets
         Finally
             GL.BindSampler(0, 0)
             GL.BindSampler(1, 0)
-            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
+            Gl43.ClipControl(ClipOrigin.LowerLeft)
         End Try
     End Sub
 
@@ -744,14 +744,14 @@ Friend NotInheritable Class SseSaoTargets
         progs.BlurH.Use()
         progs.BlurH.SetVector4("g_BlurScreenInfos", blur)
         Cb12(progs.BlurH, False, True)
-        GL.BindTextureUnit(0, aoTex)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, aoTex)
         FullscreenPass.Draw(progs.BlurH, emptyVao, 1)
 
         Target(_kSao, 0, w, h)
         progs.BlurV.Use()
         progs.BlurV.SetVector4("g_BlurScreenInfos", blur)
         Cb12(progs.BlurV, False, True)
-        GL.BindTextureUnit(0, _blurH)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _blurH)
         FullscreenPass.Draw(progs.BlurV, emptyVao, 1)
     End Sub
 
@@ -759,12 +759,12 @@ Friend NotInheritable Class SseSaoTargets
     Friend Sub GateRunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        If Not GateNoClipControl Then GL.ClipControl(ClipOrigin.UpperLeft, ClipDepthMode.ZeroToOne)
+        If Not GateNoClipControl Then Gl43.ClipControl(ClipOrigin.UpperLeft)
         Try
             RunBlurs(progs, aoTex, w, h, emptyVao)
         Finally
             GL.BindSampler(0, 0)
-            GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
+            Gl43.ClipControl(ClipOrigin.LowerLeft)
         End Try
     End Sub
 
@@ -811,13 +811,13 @@ Friend NotInheritable Class RefractionTargets
         Dim fmt = If(isSse, SizedInternalFormat.Rgba8, SizedInternalFormat.R11fG11fB10f)
         If _normalsTex = 0 OrElse w <> _w OrElse h <> _h OrElse fmt <> _normalsFmt Then
             FreeNormals()
-            GL.CreateTextures(TextureTarget.Texture2D, 1, _normalsTex)
-            GL.TextureStorage2D(_normalsTex, 1, fmt, w, h)
+            _normalsTex = Gl43.CreateTexture(TextureTarget.Texture2D)
+            Gl43.TexStorage2D(_normalsTex, TextureTarget2d.Texture2D, 1, fmt, w, h)
             For Each prm In {TextureParameterName.TextureMinFilter, TextureParameterName.TextureMagFilter}
-                GL.TextureParameter(_normalsTex, prm, CInt(TextureMinFilter.Nearest))
+                Gl43.TexParameter(_normalsTex, TextureTarget.Texture2D, prm, CInt(TextureMinFilter.Nearest))
             Next
             For Each prm In {TextureParameterName.TextureWrapS, TextureParameterName.TextureWrapT}
-                GL.TextureParameter(_normalsTex, prm, CInt(TextureWrapMode.ClampToEdge))
+                Gl43.TexParameter(_normalsTex, TextureTarget.Texture2D, prm, CInt(TextureWrapMode.ClampToEdge))
             Next
             _fbo = GL.GenFramebuffer()
             _normalsFmt = fmt : _w = w : _h = h
@@ -844,7 +844,7 @@ Friend NotInheritable Class RefractionTargets
         Dim k = RefractionLaw.ImageSpaceConstants(isSse)
         _pass.Apply(program, targetFbo, sceneFmt, w, h, emptyVao,
                     Sub(prog)
-                        GL.BindTextureUnit(1, _normalsTex)
+                        Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _normalsTex)
                         prog.SetInt("texRefractNormals", 1)
                         prog.SetFloat("refractOffsetScale", k.OffsetScale)
                         prog.SetBool("bRefractSceneAlpha", k.SceneAlpha)
@@ -910,19 +910,19 @@ Friend NotInheritable Class SceneDepthCopy
         If w <= 0 OrElse h <= 0 Then Return
         If _tex = 0 OrElse w <> _w OrElse h <> _h Then
             Free()
-            GL.CreateTextures(TextureTarget.Texture2D, 1, _tex)
+            _tex = Gl43.CreateTexture(TextureTarget.Texture2D)
             ' Same format as the frame's depth (Depth24Stencil8, SceneTargets and the window): a depth copy needs it.
-            GL.TextureStorage2D(_tex, 1, SizedInternalFormat.Depth24Stencil8, w, h)
-            GL.TextureParameter(_tex, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
-            GL.TextureParameter(_tex, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
-            GL.TextureParameter(_tex, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-            GL.TextureParameter(_tex, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-            GL.TextureParameter(_tex, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
+            Gl43.TexStorage2D(_tex, TextureTarget2d.Texture2D, 1, SizedInternalFormat.Depth24Stencil8, w, h)
+            Gl43.TexParameter(_tex, TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
+            Gl43.TexParameter(_tex, TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
+            Gl43.TexParameter(_tex, TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+            Gl43.TexParameter(_tex, TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+            Gl43.TexParameter(_tex, TextureTarget.Texture2D, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
             _w = w : _h = h
         End If
         ' The read framebuffer is the one being drawn (RenderScene binds both): the copy reads its depth buffer.
         GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fbo)
-        GL.CopyTextureSubImage2D(_tex, 0, 0, 0, 0, 0, w, h)
+        Gl43.CopyTexSubImage2D(_tex, TextureTarget.Texture2D, 0, 0, 0, 0, 0, w, h)
     End Sub
 
     Public Sub Free()
@@ -1081,12 +1081,12 @@ Friend NotInheritable Class SceneTargets
 
     Private Shared Function NewTarget(fmt As SizedInternalFormat, w As Integer, h As Integer) As Integer
         Dim t As Integer
-        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
-        GL.TextureStorage2D(t, 1, fmt, w, h)
-        GL.TextureParameter(t, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
-        GL.TextureParameter(t, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
-        GL.TextureParameter(t, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-        GL.TextureParameter(t, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        t = Gl43.CreateTexture(TextureTarget.Texture2D)
+        Gl43.TexStorage2D(t, TextureTarget2d.Texture2D, 1, fmt, w, h)
+        Gl43.TexParameter(t, TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
+        Gl43.TexParameter(t, TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
+        Gl43.TexParameter(t, TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+        Gl43.TexParameter(t, TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
         Return t
     End Function
 
@@ -1122,8 +1122,8 @@ Friend NotInheritable Class SceneTargets
     ''' <summary>Mean luminance of the HDR target into the result buffer (GPU only, no readback).</summary>
     Public Sub ReduceLuminance(partials As Shader_Base_Class, resolve As Shader_Base_Class)
         partials.Use()
-        GL.BindTextureUnit(0, _sceneTex)
-        GL.BindTextureUnit(1, _coverageTex)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _sceneTex)
+        Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _coverageTex)
         partials.SetInt("texScene", 0)
         partials.SetInt("texCoverage", 1)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 7, _lumPartials)
@@ -1137,8 +1137,8 @@ Friend NotInheritable Class SceneTargets
         GL.MemoryBarrier(MemoryBarrierFlags.ShaderStorageBarrierBit)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 7, 0)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, 0)
-        GL.BindTextureUnit(0, 0)
-        GL.BindTextureUnit(1, 0)
+        Gl43.UnbindTextureUnit(0)
+        Gl43.UnbindTextureUnit(1)
         GL.UseProgram(0)
     End Sub
 
@@ -1153,10 +1153,10 @@ Friend NotInheritable Class SceneTargets
         post.Use()
 
         Dim lut = If(String.IsNullOrEmpty(lutPath), 0, EnsureLut(lutPath))
-        GL.BindTextureUnit(0, _sceneTex)
-        GL.BindTextureUnit(1, _coverageTex)
-        GL.BindTextureUnit(2, _bgShadowTex)
-        GL.BindTextureUnit(3, lut)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _sceneTex)
+        Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _coverageTex)
+        Gl43.BindTextureUnit(2, TextureTarget.Texture2D, _bgShadowTex)
+        Gl43.BindTextureUnit(3, TextureTarget.Texture3D, lut)
         post.SetInt("texScene", 0)
         post.SetInt("texCoverage", 1)
         post.SetInt("texBgShadow", 2)
@@ -1192,18 +1192,18 @@ Friend NotInheritable Class SceneTargets
         Dim vol = LutVolume(path)
         If vol Is Nothing Then Return 0
         Dim t As Integer
-        GL.CreateTextures(TextureTarget.Texture3D, 1, t)
-        GL.TextureStorage3D(t, 1, SizedInternalFormat.Rgb8, 16, 16, 16)
+        t = Gl43.CreateTexture(TextureTarget.Texture3D)
+        Gl43.TexStorage3D(t, TextureTarget3d.Texture3D, 1, SizedInternalFormat.Rgb8, 16, 16, 16)
         Dim prevUnpack As Integer
         GL.GetInteger(GetPName.UnpackAlignment, prevUnpack)
         GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
-        GL.TextureSubImage3D(t, 0, 0, 0, 0, 16, 16, 16, PixelFormat.Rgb, PixelType.UnsignedByte, vol)
+        Gl43.TexSubImage3D(t, TextureTarget.Texture3D, 0, 0, 0, 0, 16, 16, 16, PixelFormat.Rgb, PixelType.UnsignedByte, vol)
         GL.PixelStore(PixelStoreParameter.UnpackAlignment, prevUnpack)
-        GL.TextureParameter(t, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-        GL.TextureParameter(t, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-        GL.TextureParameter(t, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-        GL.TextureParameter(t, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-        GL.TextureParameter(t, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
+        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
+        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
         _lutTex = t
         _lutPath = path
         Return t

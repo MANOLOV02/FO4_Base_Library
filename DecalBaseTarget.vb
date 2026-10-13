@@ -87,27 +87,27 @@ Friend NotInheritable Class DecalBaseTarget
 
     Private Shared Function DepthTexture(w As Integer, h As Integer) As Integer
         Dim t As Integer
-        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
-        GL.TextureStorage2D(t, 1, SizedInternalFormat.Depth24Stencil8, w, h)
-        GL.TextureParameter(t, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
+        t = Gl43.CreateTexture(TextureTarget.Texture2D)
+        Gl43.TexStorage2D(t, TextureTarget2d.Texture2D, 1, SizedInternalFormat.Depth24Stencil8, w, h)
+        Gl43.TexParameter(t, TextureTarget.Texture2D, TextureParameterName.DepthStencilTextureMode, CInt(All.DepthComponent))
         Return t
     End Function
 
     Private Shared Function ColourTexture(fmt As SizedInternalFormat, w As Integer, h As Integer) As Integer
         Dim t As Integer
-        GL.CreateTextures(TextureTarget.Texture2D, 1, t)
-        GL.TextureStorage2D(t, 1, fmt, w, h)
+        t = Gl43.CreateTexture(TextureTarget.Texture2D)
+        Gl43.TexStorage2D(t, TextureTarget2d.Texture2D, 1, fmt, w, h)
         Return t
     End Function
 
     ''' <summary>A framebuffer on the auxiliary depth/stencil with one colour texture at attachment 0 (draw buffer 0).</summary>
     Private Function AuxFramebuffer(colour As Integer) As Integer
         Dim f As Integer
-        GL.CreateFramebuffers(1, f)
-        GL.NamedFramebufferTexture(f, FramebufferAttachment.DepthStencilAttachment, _aux, 0)
-        GL.NamedFramebufferTexture(f, FramebufferAttachment.ColorAttachment0, colour, 0)
-        GL.NamedFramebufferDrawBuffer(f, DrawBufferMode.ColorAttachment0)
-        GL.NamedFramebufferReadBuffer(f, ReadBufferMode.None)
+        f = Gl43.CreateFramebuffer()
+        Gl43.FramebufferTexture(f, FramebufferAttachment.DepthStencilAttachment, _aux, 0)
+        Gl43.FramebufferTexture(f, FramebufferAttachment.ColorAttachment0, colour, 0)
+        Gl43.DrawBuffer(f, DrawBufferMode.ColorAttachment0)
+        Gl43.ReadBuffer(f, ReadBufferMode.None)
         Return f
     End Function
 
@@ -127,18 +127,18 @@ Friend NotInheritable Class DecalBaseTarget
         Free()
         If Not _deferred Then _copy = DepthTexture(w, h)
         _aux = DepthTexture(w, h)
-        GL.CreateFramebuffers(1, _fbo)
-        GL.NamedFramebufferTexture(_fbo, FramebufferAttachment.DepthStencilAttachment, _aux, 0)
-        GL.NamedFramebufferDrawBuffer(_fbo, DrawBufferMode.None)
-        GL.NamedFramebufferReadBuffer(_fbo, ReadBufferMode.None)
-        Dim ok = GL.CheckNamedFramebufferStatus(_fbo, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        _fbo = Gl43.CreateFramebuffer()
+        Gl43.FramebufferTexture(_fbo, FramebufferAttachment.DepthStencilAttachment, _aux, 0)
+        Gl43.DrawBuffer(_fbo, DrawBufferMode.None)
+        Gl43.ReadBuffer(_fbo, ReadBufferMode.None)
+        Dim ok = Gl43.CheckFramebufferStatus(_fbo, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
         If _deferred Then
             _alpha = ColourTexture(If(GateAlphaFloat, SizedInternalFormat.Rgba32f, SizedInternalFormat.Rgba16), w, h)
             _coverage = ColourTexture(SizedInternalFormat.Rgba8, w, h)
             _fboDepth = AuxFramebuffer(_alpha)
             _fboCoverage = AuxFramebuffer(_coverage)
-            ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboDepth, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
-            ok = ok AndAlso GL.CheckNamedFramebufferStatus(_fboCoverage, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+            ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboDepth, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+            ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboCoverage, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
         End If
         _emptyVao = GL.GenVertexArray()
         _point = GL.GenSampler()
@@ -168,27 +168,27 @@ Friend NotInheritable Class DecalBaseTarget
         For i = 0 To colours.Length - 1
             Dim att = CType(FramebufferAttachment.ColorAttachment0 + i, FramebufferAttachment)
             If colours(i).IsRenderbuffer Then
-                GL.NamedFramebufferRenderbuffer(_fbo, att, RenderbufferTarget.Renderbuffer, colours(i).Name)
+                Gl43.FramebufferRenderbuffer(_fbo, att, RenderbufferTarget.Renderbuffer, colours(i).Name)
             Else
-                GL.NamedFramebufferTexture(_fbo, att, colours(i).Name, 0)
+                Gl43.FramebufferTexture(_fbo, att, colours(i).Name, 0)
             End If
         Next
         ' Fallout 4: the coverage target after the caller's colours (Fragment_DecalBaseSurface oCoverage, location 6).
         Dim count = colours.Length
         If _deferred Then
-            GL.NamedFramebufferTexture(_fbo, CType(FramebufferAttachment.ColorAttachment0 + count, FramebufferAttachment), _coverage, 0)
+            Gl43.FramebufferTexture(_fbo, CType(FramebufferAttachment.ColorAttachment0 + count, FramebufferAttachment), _coverage, 0)
             count += 1
         End If
         For i = count To _colourCount - 1
-            GL.NamedFramebufferTexture(_fbo, CType(FramebufferAttachment.ColorAttachment0 + i, FramebufferAttachment), 0, 0)
+            Gl43.FramebufferTexture(_fbo, CType(FramebufferAttachment.ColorAttachment0 + i, FramebufferAttachment), 0, 0)
         Next
         _colourCount = count
-        GL.NamedFramebufferDrawBuffers(_fbo, count,
+        Gl43.DrawBuffers(_fbo, count,
                                        Enumerable.Range(0, count).Select(Function(i) CType(DrawBuffersEnum.ColorAttachment0 + i, DrawBuffersEnum)).ToArray())
-        If GL.CheckNamedFramebufferStatus(_fbo, FramebufferTarget.Framebuffer) <> FramebufferStatus.FramebufferComplete Then Return False
+        If Gl43.CheckFramebufferStatus(_fbo, FramebufferTarget.Framebuffer) <> FramebufferStatus.FramebufferComplete Then Return False
         GL.DepthMask(True)
         GL.StencilMask(&HFF)
-        GL.ClearNamedFramebuffer(_fbo, ClearBuffer.Stencil, 0, New Integer() {0})
+        Gl43.ClearFramebuffer(_fbo, ClearBuffer.Stencil, 0, New Integer() {0})
         GL.Viewport(0, 0, _w, _h)
         GL.Disable(EnableCap.Blend)
         GL.ColorMask(False, False, False, False)
@@ -196,7 +196,7 @@ Friend NotInheritable Class DecalBaseTarget
             ' The coverage target: 1 everywhere (the pixels the pass does not mark keep coverage 1 in composite 2), then the mark
             ' writes its colour output 0 (Fragment_DecalBase oCoverage) on the marked pixels, where the coverage draws accumulate.
             GL.ColorMask(0, True, True, True, True)
-            GL.ClearNamedFramebuffer(_fboCoverage, ClearBuffer.Color, 0, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
+            Gl43.ClearFramebuffer(_fboCoverage, ClearBuffer.Color, 0, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboCoverage)
         Else
             ' The mark writes no colour into the frame's targets (masked).
@@ -208,7 +208,7 @@ Friend NotInheritable Class DecalBaseTarget
         mark.Use()
         mark.SetBool("uOnlyEmpty", True)
         mark.SetFloat("uDepth", If(nearestMutant, 1.0F, 0.0F))
-        GL.BindTextureUnit(0, copy) : GL.BindSampler(0, _point)
+        Gl43.BindTextureUnit(0, TextureTarget.Texture2D, copy) : GL.BindSampler(0, _point)
         FullscreenPass.Draw(mark, _emptyVao, 1, writesDepth:=True)
         GL.BindSampler(0, 0)
         GL.ColorMask(False, False, False, False)
@@ -309,7 +309,7 @@ Friend NotInheritable Class DecalBaseTarget
     ''' <summary>Fallout 4 (step 4): the auxiliary depth blitted into <paramref name="dstFbo"/>, DEPTH only, NEAREST, same rectangle and
     ''' format (GL 4.6 18.3.1; "Color, depth, and stencil masks ... are ignored"); the destination stencil is not in the mask.</summary>
     Public Sub BlitDepthTo(dstFbo As Integer)
-        GL.BlitNamedFramebuffer(_fbo, dstFbo, 0, 0, _w, _h, 0, 0, _w, _h, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest)
+        Gl43.BlitFramebuffer(_fbo, dstFbo, 0, 0, _w, _h, 0, 0, _w, _h, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest)
     End Sub
 
     Public Sub Free()

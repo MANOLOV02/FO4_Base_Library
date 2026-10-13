@@ -1561,32 +1561,36 @@ void main() {}
     ''' tessellates (topology 0x23, 0x14181D60E). Throws when a stage is not transcribed (its reason) or the HS is not in the cache
     ''' (A1, StaleHullTechniques). Provides = the varyings the last stage writes (for the decal base surface).
     ''' <paramref name="cpuRoute"/> = True: the skinned VS's CPU-route variant (the vertex stream carries the CPU's skinning,
-    ''' Fo4EngineVertexPacker.PackCpuRoute); a rigid VS has one route and ignores it.</summary>
-    Friend Function StageOf(vs As UInteger, hs As UInteger, ds As UInteger, Optional cpuRoute As Boolean = False) As (Vertex As String, Control As String, Evaluation As String)
+    ''' Fo4EngineVertexPacker.PackCpuRoute); a rigid VS has one route and ignores it. The VS and the DS carry Gl43.ClipGlsl (their
+    ''' gl_Position = gl43ClipToGl(o0)); <paramref name="positionCapture"/> = True: the VS with Gl43.ClipGlslCapture instead, for the
+    ''' transform-feedback capture of the D3D clip position (Fo4DeferredPrograms.EnginePositionProgram).</summary>
+    Friend Function StageOf(vs As UInteger, hs As UInteger, ds As UInteger, Optional cpuRoute As Boolean = False,
+                            Optional positionCapture As Boolean = False) As (Vertex As String, Control As String, Evaluation As String)
         Dim v As (Record As Integer, Fn As String, Resources As String, SkinLaw As Boolean, NotTranscribed As String, CpuFn As String, CpuResources As String, CpuSkinLaw As Boolean, CpuLayout As Fo4CpuRouteLayout) = Nothing
         If Not VertexStages.TryGetValue(vs, v) Then Throw New InvalidOperationException($"VS 0x{vs:X8} is not in the b09 shader cache")
         If v.NotTranscribed <> "" Then Throw New InvalidOperationException($"VS 0x{vs:X8} (rec{v.Record}) not transcribed: {v.NotTranscribed}")
+        Dim clip = If(positionCapture, Gl43.ClipGlslCapture, Gl43.ClipGlsl)
         Dim vertex = If(EffectiveCpuLayout(vs, cpuRoute) <> Fo4CpuRouteLayout.None,
-                        Header430 & D3d11SemanticsSource.Glsl & StageLiterals & If(v.CpuSkinLaw, AppSkinLaw.Glsl, "") & v.CpuResources & v.CpuFn & AppVertexFoot,
-                        Header430 & D3d11SemanticsSource.Glsl & StageLiterals & If(v.SkinLaw, AppSkinLaw.Glsl, "") & v.Resources & v.Fn & AppVertexFoot)
+                        Header430 & clip & D3d11SemanticsSource.Glsl & StageLiterals & If(v.CpuSkinLaw, AppSkinLaw.Glsl, "") & v.CpuResources & v.CpuFn & AppVertexFoot,
+                        Header430 & clip & D3d11SemanticsSource.Glsl & StageLiterals & If(v.SkinLaw, AppSkinLaw.Glsl, "") & v.Resources & v.Fn & AppVertexFoot)
         If hs = 0UI Then Return (vertex, Nothing, Nothing)
         Dim h As (Record As Integer, Fn As String, NotTranscribed As String) = Nothing
         If Not HullStages.TryGetValue(hs, h) Then Throw New InvalidOperationException($"HS 0x{hs:X8} is not in the cache: the engine keeps the HS / DS a previous draw left bound (A1, 0x142231CAB / CC4)")
         Dim d = DomainStages(ds)
         If h.NotTranscribed <> "" OrElse d.NotTranscribed <> "" Then Throw New InvalidOperationException($"HS / DS 0x{hs:X8} not transcribed: {h.NotTranscribed}{d.NotTranscribed}")
         Return (vertex, Header430 & D3d11SemanticsSource.Glsl & StageLiterals & h.Fn & AppTessControlFoot,
-                Header430 & D3d11SemanticsSource.Glsl & StageLiterals & d.Resources & d.Fn & AppTessEvalFoot)
+                Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & d.Resources & d.Fn & AppTessEvalFoot)
     End Function
 
     ''' <summary>A z-prepass VS of the fxp tail (0x14181F290): 3928 rigid, 3929 alpha test (3931 / 3932 / 3934 / 3935 transcribed too).</summary>
     Friend Function PrepassVertex(rec As Integer) As String
         Select Case rec
-            Case 3928 : Return Header430 & D3d11SemanticsSource.Glsl & StageLiterals & ProgramText("Fo4GPre_rec3928")
-            Case 3929 : Return Header430 & D3d11SemanticsSource.Glsl & StageLiterals & ProgramText("Fo4GPre_rec3929")
-            Case 3931 : Return Header430 & D3d11SemanticsSource.Glsl & StageLiterals & VsCb13 & ProgramText("Fo4GPre_rec3931")
-            Case 3932 : Return Header430 & D3d11SemanticsSource.Glsl & StageLiterals & VsCb13 & ProgramText("Fo4GPre_rec3932")
-            Case 3934 : Return Header430 & D3d11SemanticsSource.Glsl & StageLiterals & VsRawT4 & VsRawT5 & VsRawT6 & VsStructT7 & ProgramText("Fo4GPre_rec3934")
-            Case 3935 : Return Header430 & D3d11SemanticsSource.Glsl & StageLiterals & VsRawT4 & VsRawT5 & VsRawT6 & VsStructT7 & ProgramText("Fo4GPre_rec3935")
+            Case 3928 : Return Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & ProgramText("Fo4GPre_rec3928")
+            Case 3929 : Return Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & ProgramText("Fo4GPre_rec3929")
+            Case 3931 : Return Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & VsCb13 & ProgramText("Fo4GPre_rec3931")
+            Case 3932 : Return Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & VsCb13 & ProgramText("Fo4GPre_rec3932")
+            Case 3934 : Return Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & VsRawT4 & VsRawT5 & VsRawT6 & VsStructT7 & ProgramText("Fo4GPre_rec3934")
+            Case 3935 : Return Header430 & Gl43.ClipGlsl & D3d11SemanticsSource.Glsl & StageLiterals & VsRawT4 & VsRawT5 & VsRawT6 & VsStructT7 & ProgramText("Fo4GPre_rec3935")
         End Select
         Throw New ArgumentOutOfRangeException(NameOf(rec))
     End Function

@@ -87,11 +87,11 @@ vec3 backgroundAt(in vec2 fragXYIn)
     ''' hace falta ni VBO ni geometria. Un triangulo, no dos: evita la costura por la diagonal.</summary>
     Friend Const Vertex_Background As String =
 "#version 430
-
+" & Gl43.ClipGlsl & "
 void main()
 {
     vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+    gl_Position = gl43ClipToGl(vec4(p * 2.0 - 1.0, 0.0, 1.0));
 }"
 
     Friend Const Fragment_Background As String =
@@ -127,7 +127,7 @@ Public Class Floor_Shader_Class
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_Floor As String =
 "#version 430
-layout(location = 0) in vec3 vertexPosition;
+" & Gl43.ClipGlsl & "layout(location = 0) in vec3 vertexPosition;
 
 uniform mat4 matProjection;
 uniform mat4 matView;
@@ -139,7 +139,7 @@ void main()
 {
     vec4 wp = matModel * vec4(vertexPosition, 1.0);
     worldPos = wp.xyz;
-    gl_Position = matProjection * matView * wp;
+    gl_Position = gl43ClipToGl(matProjection * matView * wp);
 }"
 
     Friend Const Fragment_Floor As String =
@@ -264,7 +264,7 @@ Public Class Shader_Class_Fo4
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_FO4 As String = "
 #version 430
-// invariant: the FO4 z-prepass and the G-buffer colour pass are draws of this same VS (their DXBC position code is
+" & Gl43.ClipGlsl & "// invariant: the FO4 z-prepass and the G-buffer colour pass are draws of this same VS (their DXBC position code is
 // identical, Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 10.3).
 // The depth one draw writes is tested by another program's draw (FO4 z-prepass -> G-buffer; translucent-decal base pass ->
 // its colour pass): gl_Position must come out identical across programs, which GLSL guarantees only for an invariant output
@@ -475,7 +475,7 @@ void main(void)
 
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
-	gl_Position = bEnginePosition ? enginePosition[gl_VertexID] : matProjection * vec4(vPos, 1.0);
+	gl_Position = gl43ClipToGl(bEnginePosition ? enginePosition[gl_VertexID] : matProjection * vec4(vPos, 1.0));
 	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
@@ -1282,7 +1282,7 @@ Public Class Shader_Class_SSE
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_SSE As String = "
 #version 430
-// SSE vertex shader with model-space normal (MSN) support
+" & Gl43.ClipGlsl & "// SSE vertex shader with model-space normal (MSN) support
 // invariant: the z-prepass and the colour pass are draws of this same VS and the colour pass of an opaque shape tests
 // EQUAL against the prepass depth (SseRenderPassLaw): the position must come out bit-identical in both, as the engine's
 // utility depth VS and main VS do (Tools/re-docs/RE_SSE_PASS_GROUPS_DEPTH_2026-10-03.md 5).
@@ -1496,7 +1496,7 @@ void main(void)
 
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
-	gl_Position = matProjection * vec4(vPos, 1.0);
+	gl_Position = gl43ClipToGl(matProjection * vec4(vPos, 1.0));
 	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
@@ -2945,12 +2945,12 @@ void main(void)
 
     ''' <summary>The fullscreen VS of the image-space pass (the engine's passes are a quad with uv; here a triangle).</summary>
     Friend Const ImageSpace_Vertex As String = "#version 430
-out vec2 vUv;
+" & Gl43.ClipGlsl & "out vec2 vUv;
 void main(void)
 {
 	vec2 p = vec2((gl_VertexID & 1) * 4 - 1, (gl_VertexID >> 1) * 4 - 1);
 	vUv = p * 0.5 + 0.5;
-	gl_Position = vec4(p, 0.0, 1.0);
+	gl_Position = gl43ClipToGl(vec4(p, 0.0, 1.0));
 }
 "
 
@@ -3414,7 +3414,7 @@ Friend Module GroundShadowShaderSource
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_Ground As String = "
 #version 430
-layout(location = 0) in vec2 aCorner;   // unit quad, [-1..1] on both axes
+" & Gl43.ClipGlsl & "layout(location = 0) in vec2 aCorner;   // unit quad, [-1..1] on both axes
 
 uniform mat4 matViewProj;      // camera view * projection (same convention as the rest of the render)
 uniform vec3 uGroundCenter;    // world-space centre of the catcher
@@ -3427,7 +3427,7 @@ void main(void)
 {
 	gLocal = aCorner;
 	gWorldPos = uGroundCenter + vec3(aCorner * uGroundHalf, 0.0);
-	gl_Position = matViewProj * vec4(gWorldPos, 1.0);
+	gl_Position = gl43ClipToGl(matViewProj * vec4(gWorldPos, 1.0));
 }
 "
 
@@ -3668,7 +3668,7 @@ Public MustInherit Class Shader_Base_Class
 
     Private Shared Function CompileShader(type As ShaderType, source As String) As Integer
         Dim shader = GL.CreateShader(type)
-        GL.ShaderSource(shader, source)
+        Gl43.ShaderSource(shader, source)
         GL.CompileShader(shader)
 
         Dim compileStatus As Integer
@@ -3682,7 +3682,7 @@ Public MustInherit Class Shader_Base_Class
     End Function
 
     Public Sub Use()
-        GL.UseProgram(program)
+        Gl43.UseProgram(program)
     End Sub
     Private Function GetUniformLocationCached(name As String) As Integer
         Dim loc As Integer

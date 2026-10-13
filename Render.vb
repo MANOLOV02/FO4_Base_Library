@@ -91,7 +91,7 @@ Public Class TextOverlayRenderer
         GL.Enable(EnableCap.Blend)
         GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
 
-        GL.UseProgram(shaderProgram)
+        Gl43.UseProgram(shaderProgram)
 
         Dim locSize = GL.GetUniformLocation(shaderProgram, "uSize")
         Dim locPos = GL.GetUniformLocation(shaderProgram, "uPosition")
@@ -151,8 +151,8 @@ Public Class TextOverlayRenderer
     ''' constantes"; esto es eso. Al ser <c>Const</c>, la reflexion las descubre sola y el gate exige
     ''' ademas que esten registradas.</para></summary>
     Friend Const VertexOverlaySrc As String =
-"#version 330 core
-layout(location = 0) in vec2 aPos;
+"#version 430 core
+" & Gl43.ClipGlsl & "layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aTexCoord;
 
 out vec2 TexCoord;
@@ -166,7 +166,7 @@ void main()
     vec2 pixelPos = aPos * uSize + uPosition;
     vec2 ndc = (pixelPos / uScreenSize) * 2.0 - 1.0;
     ndc.y = -ndc.y;
-    gl_Position = vec4(ndc, 0.0, 1.0);
+    gl_Position = gl43ClipToGl(vec4(ndc, 0.0, 1.0));
     TexCoord = aTexCoord;
 }"
 
@@ -189,8 +189,8 @@ void main()
         Dim vertexShader = GL.CreateShader(ShaderType.VertexShader)
         Dim fragmentShader = GL.CreateShader(ShaderType.FragmentShader)
 
-        GL.ShaderSource(vertexShader, vertexShaderSrc)
-        GL.ShaderSource(fragmentShader, fragmentShaderSrc)
+        Gl43.ShaderSource(vertexShader, vertexShaderSrc)
+        Gl43.ShaderSource(fragmentShader, fragmentShaderSrc)
 
         GL.CompileShader(vertexShader)
         Dim vLog = GL.GetShaderInfoLog(vertexShader)
@@ -1501,9 +1501,16 @@ Public Class PreviewControl
         Next
     End Sub
 
+    ''' <summary>This control's GL context as Gl43 keeps its clip state (InitContext in OnLoad, ReleaseContext in Clean).</summary>
+    Private _gl43Context As IntPtr
+
     Protected Overrides Sub OnLoad(e As EventArgs)
         MyBase.OnLoad(e)
         If Me.IsInDesignMode Then Return
+        ' OpenGL 4.3 (ola GL43): the context's clip state FIRST, before any GL call - every vertex stage reads its uniform buffer
+        ' (Gl43.ClipGlsl) and Gl43.UseProgram refuses a program without it.
+        Me.EnsureContextCurrent()
+        _gl43Context = Gl43.InitContext()
         ApplyResize(True)
         GenerateDefaultTextures()
         SharedActiveShader = New Shader_Class_Fo4
@@ -1567,15 +1574,15 @@ Public Class PreviewControl
         GL.DebugMessageControl(DebugSourceControl.DontCare, DebugTypeControl.DontCare, DebugSeverityControl.DebugSeverityHigh, 0, Array.Empty(Of Integer)(), True)
 #End If
 
-        ' 3) Estado GL estándar. Profundidad [0, 1] de D3D en todo el contexto (EngineCameraLaw, ola 1); el origen GL, que la etapa FO4
-        ' cambia a UPPER_LEFT y EndFo4Stage repone.
-        GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
+        ' 3) Estado GL estándar. Profundidad [0, 1] de D3D en todo el contexto (EngineCameraLaw, ola 1) con OpenGL 4.3 (ola GL43: cada
+        ' etapa de vértices escribe gl43ClipToGl, Gl43.ClipGlsl); el origen GL, que la etapa FO4 cambia a UPPER_LEFT y EndFo4Stage
+        ' repone, vive en el estado de clip del contexto (Gl43.InitContext al principio de OnLoad: LOWER_LEFT, frente CCW).
         GL.Enable(EnableCap.DepthTest)
         GL.DepthFunc(DepthFunction.Lequal)
 
         GL.Enable(EnableCap.CullFace)
         GL.CullFace(TriangleFace.Back)
-        GL.FrontFace(FrontFaceDirection.Ccw)
+        Gl43.FrontFace(FrontFaceDirection.Ccw)
 
         overlay = New TextOverlayRenderer()
 
@@ -1630,7 +1637,7 @@ Public Class PreviewControl
 
     ''' <summary>THE FRAME'S PROJECTION (ola 1, 12-oct-2026): the engine's camera law (EngineCameraLaw) - far = the world camera's far
     ''' without a world, near = SetViewFrustum's law with n = fNearDistance - and the engine's matrix, depth in [0, 1]
-    ''' (ClipDepthMode.ZeroToOne). EDITOR RULE (the app's; user decision 12-oct-2026): when a shape the frame draws inside the side
+    ''' (D3D z / w; OpenGL 4.3 receives it through Gl43.ClipGlsl). EDITOR RULE (the app's; user decision 12-oct-2026): when a shape the frame draws inside the side
     ''' planes of the frustum is closer to the eye than fNearDistance, n is its view depth, floored at the engine's minNear 1.0
     ''' (FO4 0x1417EED11, SSE 0x140FF4939) - the editor's orbit camera reaches closer than the game's and a clipped piece cannot be
     ''' edited. Those shapes (one owner: PreviewModel.NearShapes, kept in FrameCloserThanNear) are what the frame's notice lists
@@ -1833,9 +1840,9 @@ Public Class PreviewControl
     Private _gateWhite As Integer
     Private Function GateWhiteTexture() As Integer
         If _gateWhite = 0 Then
-            GL.CreateTextures(TextureTarget.Texture2D, 1, _gateWhite)
-            GL.TextureStorage2D(_gateWhite, 1, SizedInternalFormat.Rgba8, 1, 1)
-            GL.TextureSubImage2D(_gateWhite, 0, 0, 0, 1, 1, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.UnsignedByte, New Byte() {255, 255, 255, 255})
+            _gateWhite = Gl43.CreateTexture(TextureTarget.Texture2D)
+            Gl43.TexStorage2D(_gateWhite, TextureTarget2d.Texture2D, 1, SizedInternalFormat.Rgba8, 1, 1)
+            Gl43.TexSubImage2D(_gateWhite, TextureTarget.Texture2D, 0, 0, 0, 1, 1, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.UnsignedByte, New Byte() {255, 255, 255, 255})
         End If
         Return _gateWhite
     End Function
@@ -1891,19 +1898,19 @@ Public Class PreviewControl
         _opaqueComposite.Apply(SharedSseOpaqueComposite, _frameFbo, SizedInternalFormat.R11fG11fB10f, Me.Width, Me.Height, _bgVao,
                                Sub(prog)
                                    prog.SetFloat("sseInvFramebufferRange", PreviewModel.RenderableMesh.SseInvFrameBufferRangeWorld)
-                                   GL.BindTextureUnit(1, _targets.CoverageTexture)
+                                   Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _targets.CoverageTexture)
                                    prog.SetInt("texCoverage", 1)
-                                   GL.BindTextureUnit(2, If(GateSseSaoOff, GateWhiteTexture(), _sao.KSaoTexture))
+                                   Gl43.BindTextureUnit(2, TextureTarget.Texture2D, If(GateSseSaoOff, GateWhiteTexture(), _sao.KSaoTexture))
                                    GL.BindSampler(2, _saoPointSampler)
                                    prog.SetInt("texSao", 2)
                                    ' S-N: kSNOW_SPECALPHA at unit 3 (SceneColorPass.Apply binds only unit 0, texScene).
-                                   GL.BindTextureUnit(3, _targets.SnowSpecAlphaTexture)
+                                   Gl43.BindTextureUnit(3, TextureTarget.Texture2D, _targets.SnowSpecAlphaTexture)
                                    prog.SetInt("texSnowSpecAlpha", 3)
                                    prog.SetFloat("sseImprovedSnow", If(SseRenderPassLaw.ImprovedSnowExeDefault, 1.0F, 0.0F))
                                    prog.SetFloat("sseDeactivateAoOnSnow", SseRenderPassLaw.DeactivateAoOnSnowExeDefault)
                                End Sub)
         GL.BindSampler(2, 0)
-        GL.BindTextureUnit(3, 0)   ' RT 0x70 is attachment 4 of the target the next draws write: not left bound to a sampler unit
+        Gl43.UnbindTextureUnit(3)   ' RT 0x70 is attachment 4 of the target the next draws write: not left bound to a sampler unit
         If GateCompositeSnapshot Then GatePostComposite = GateReadScene()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _frameFbo)
         _targets.SetGroundCatcherOutputs(False)
@@ -2030,7 +2037,7 @@ Public Class PreviewControl
             End If
             If _Model IsNot Nothing Then _Model.FrameDepthDirty = True
         End If
-        GL.ClipControl(ClipOrigin.LowerLeft, ClipDepthMode.ZeroToOne)
+        Gl43.ClipControl(ClipOrigin.LowerLeft)
         GL.Disable(EnableCap.FramebufferSrgb)
     End Sub
 
@@ -2054,7 +2061,7 @@ Public Class PreviewControl
     Friend GatePreComposite As Single(), GatePostComposite As Single()
     Private Function GateReadScene() As Single()
         Dim px(Me.Width * Me.Height * 4 - 1) As Single
-        GL.GetTextureImage(_targets.SceneTexture, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.Float, px.Length * 4, px)
+        Gl43.GetTexImage(_targets.SceneTexture, TextureTarget.Texture2D, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.Float, px.Length * 4, px)
         Return px
     End Function
 
@@ -2434,7 +2441,7 @@ Public Class PreviewControl
         Dim px(Me.Width * Me.Height * 3 - 1) As Single
         Try
             GL.PixelStore(PixelStoreParameter.PackAlignment, 4)
-            GL.GetTextureImage(_targets.SceneTexture, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.Float, px.Length * 4, px)
+            Gl43.GetTexImage(_targets.SceneTexture, TextureTarget.Texture2D, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.Float, px.Length * 4, px)
         Finally
             GL.PixelStore(PixelStoreParameter.PackAlignment, prevPackAlignment)
         End Try
@@ -3191,6 +3198,7 @@ Public Class PreviewControl
         If defaultDissolvePatternTex <> 0 Then GL.DeleteTexture(defaultDissolvePatternTex) : defaultDissolvePatternTex = 0
         If defaultFo4DiffuseMapTex <> 0 Then GL.DeleteTexture(defaultFo4DiffuseMapTex) : defaultFo4DiffuseMapTex = 0
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap) : defaultCubeMap = 0
+        If _gl43Context <> IntPtr.Zero Then Gl43.ReleaseContext(_gl43Context) : _gl43Context = IntPtr.Zero
 #If DEBUG Then
         GL.DebugMessageCallback(Nothing, IntPtr.Zero)
 #End If
@@ -6158,7 +6166,7 @@ Public Class PreviewModel
             planes(2) = New Vector4(vp.M14 + vp.M12, vp.M24 + vp.M22, vp.M34 + vp.M32, vp.M44 + vp.M42)
             ' Top
             planes(3) = New Vector4(vp.M14 - vp.M12, vp.M24 - vp.M22, vp.M34 - vp.M32, vp.M44 - vp.M42)
-            ' Near: z_clip >= 0 (depth [0, 1], ClipDepthMode.ZeroToOne; EngineCameraLaw)
+            ' Near: z_clip >= 0 (the D3D depth [0, 1] of EngineCameraLaw)
             planes(4) = New Vector4(vp.M13, vp.M23, vp.M33, vp.M43)
             ' Far
             planes(5) = New Vector4(vp.M14 - vp.M13, vp.M24 - vp.M23, vp.M34 - vp.M33, vp.M44 - vp.M43)
@@ -6587,7 +6595,7 @@ Public Class PreviewModel
                 GL.ActiveTexture(TextureUnit.Texture0 + unidad)
                 Dim tex As Integer
                 GL.GetInteger(If(sl.Unit = SamplerLaw.AppUnit.Cube, GetPName.TextureBindingCubeMap, GetPName.TextureBinding2D), tex)
-                GL.BindSampler(unidad, cache.Get_(sl.Addr, filt, sl.Lod, TextureSamplers.HasMips(tex)))
+                GL.BindSampler(unidad, cache.Get_(sl.Addr, filt, sl.Lod, TextureSamplers.HasMips(tex, If(sl.Unit = SamplerLaw.AppUnit.Cube, TextureTarget.TextureCubeMap, TextureTarget.Texture2D))))
                 _samplerUnitsBound = _samplerUnitsBound Or (1 << unidad)
             Next
         End Sub
@@ -7656,7 +7664,7 @@ Public Class PreviewModel
             If texId <= 0 Then Return -1
             Try
                 Dim v As Integer = -1
-                GL.GetTextureParameter(texId, pname, v)
+                Gl43.GetTexParameter(texId, TextureTarget.Texture2D, pname, v)
                 If GL.GetError() <> ErrorCode.NoError Then Return -1
                 Return v
             Catch
@@ -9090,7 +9098,7 @@ Public Class PreviewModel
                                 Dim sz = result.Size, srgb = result.IsSRGB
                                 Dim mx As Integer = -1
                                 Try
-                                    GL.GetTextureParameter(CInt(nid), GetTextureParameter.TextureMaxLevel, mx)
+                                    Gl43.GetTexParameter(CInt(nid), If(result.Cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), GetTextureParameter.TextureMaxLevel, mx)
                                     If GL.GetError() <> ErrorCode.NoError Then mx = -1
                                 Catch
                                     mx = -1
