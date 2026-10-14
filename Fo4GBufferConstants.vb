@@ -97,15 +97,49 @@ Friend Module Fo4GBufferConstants
         Return {model.Column0, model.Column1, model.Column2, New Vector4(0.0F, 0.0F, 0.0F, 1.0F)}
     End Function
 
-    ''' <summary>cb12 rows 0..2, 8..11 and 35 of the frame (writer 0x14181E1C0), revisor-26. R = the GL view's rotation (LookAt without
-    ''' translation), P = EngineCameraLaw.Perspective (built FOR the GL view: M34 = -1, z in [0, 1]). The engine VS takes
-    ''' o0.i = dp4(cb12[8+i], p - eye) (rec2273 L54-57) = column i of R * P; its view rows (rec2273 L69-79) are the engine view
-    ''' = GL view with z negated (BuildFo4DeferredFrame flipZ, Render.vb:10077): columns 0..2 of R * diag(1, 1, -1).</summary>
-    Friend Function EngineFrameRows(viewGl As Matrix4, projection As Matrix4, eye As Vector3) As (View As Vector4(), ViewProj As Vector4(), Eye As Vector4)
+    ''' <summary>cb12 rows 0..2, 8..11, 12..15, 20..23, 35 and 41..46 of the frame (writer 0x14181E1C0), revisor-26 / ola 3. R = the GL
+    ''' view's rotation (LookAt without translation), P = EngineCameraLaw.Perspective (built FOR the GL view: M34 = -1, z in [0, 1]).
+    ''' <list type="bullet">
+    ''' <item>View (0..2): the engine VS takes o0.i = dp4(cb12[8+i], p - eye) (rec2273 L54-57) = column i of R * P (ViewProj, 8..11); its
+    ''' view rows (rec2273 L69-79) are the engine view = GL view with z negated: columns 0..2 of R * diag(1, 1, -1).</item>
+    ''' <item>InvView (12..15, the inverse of the view by 0x140336140, written 0x14181E442..44D): the rows of the engine view -&gt; world
+    ''' rotation, row 3 = (0, 0, 0, 1) (the view is camera-relative); InvProj (20..23, the inverse of the projection +0x760,
+    ''' 0x14181E532..53D) = inverse(A * P_e), A mapping z to 1.01 z - 0.01 w (the lights' notas 4.2 / D9; P_e = the projection's rows
+    ''' times diag(1, 1, -1, 1)). One owner: the deferred lights read these rows too (PreviewModel.BuildFo4DeferredFrame).</item>
+    ''' <item>Fog (41..46): Fo4EffectConstants.FogRows of the engine's fog-off state (user decision 13-oct-2026, Fo4EffectConstants.FogOff).</item>
+    ''' </list></summary>
+    Friend Function EngineFrameRows(viewGl As Matrix4, projection As Matrix4, eye As Vector3) As Fo4FrameRows
         Dim r = viewGl.ClearTranslation()
         Dim vp = r * projection
         Dim rs = r * Matrix4.CreateScale(1.0F, 1.0F, -1.0F)
-        Return ({rs.Column0, rs.Column1, rs.Column2}, {vp.Column0, vp.Column1, vp.Column2, vp.Column3}, New Vector4(eye, 0.0F))
+        Dim w = ViewToWorldRows(viewGl)
+        Dim rRow = Function(i As Integer) New Vector4(CType(w(i), Vector3), 0.0F)
+        Return New Fo4FrameRows With {.View = {rs.Column0, rs.Column1, rs.Column2}, .ViewProj = {vp.Column0, vp.Column1, vp.Column2, vp.Column3},
+                                      .InvView = {rRow(0), rRow(1), rRow(2), New Vector4(0.0F, 0.0F, 0.0F, 1.0F)},
+                                      .InvProj = InverseProjectionRows(projection, 1.01, -0.01),
+                                      .Eye = New Vector4(eye, 0.0F), .Fog = Fo4EffectConstants.FogRows(Fo4EffectConstants.FogOff()),
+                                      .AppInvViewProj = vp.Inverted()}
+    End Function
+
+    ''' <summary>The engine view -&gt; world rotation's rows, in double (one owner: cb12 12..14 and the deferred ambient,
+    ''' PreviewModel.BuildFo4DeferredFrame): R = inverse(GL view rotation) * diag(1, 1, -1) in the column-vector convention - OpenTK
+    ''' stores the row-vector matrix, so the column-vector rotation is its transpose, inverted in general, then the columns' z negated.</summary>
+    Friend Function ViewToWorldRows(viewGl As Matrix4) As Vector3d()
+        Dim v3 As New Matrix3d(viewGl.M11, viewGl.M12, viewGl.M13, viewGl.M21, viewGl.M22, viewGl.M23, viewGl.M31, viewGl.M32, viewGl.M33)
+        Dim rcv = Matrix3d.Transpose(v3)
+        rcv.Invert()
+        Dim rRow = Function(i As Integer) New Vector3d(rcv(i, 0), rcv(i, 1), -rcv(i, 2))
+        Return {rRow(0), rRow(1), rRow(2)}
+    End Function
+
+    ''' <summary>The rows of inverse(P_e with its z row replaced by zScale * z + wScale * w), P_e = the GL projection's column-vector rows
+    ''' times diag(1, 1, -1, 1): cb12 20..23 (1.01, -0.01) and the lights' first-person 24..27 (100, 0) (notas 4.2 / D9).</summary>
+    Friend Function InverseProjectionRows(projection As Matrix4, zScale As Double, wScale As Double) As Vector4()
+        Dim flipZ = Function(c As Vector4) New Vector4d(c.X, c.Y, -c.Z, c.W)
+        Dim p0 = flipZ(projection.Column0), p1 = flipZ(projection.Column1), p2 = flipZ(projection.Column2), p3 = flipZ(projection.Column3)
+        Dim m As New Matrix4d(p0, p1, If(wScale = 0.0, zScale * p2, zScale * p2 + wScale * p3), p3)
+        m.Invert()
+        Return {CType(m.Row0, Vector4), CType(m.Row1, Vector4), CType(m.Row2, Vector4), CType(m.Row3, Vector4)}
     End Function
 
     ''' <summary>cb1 TexcoordOffset (SetupMaterial 0x14220421F..296 / 0x142204325..39B): (offset.u, offset.v, scale.u, scale.v).</summary>
@@ -114,16 +148,32 @@ Friend Module Fo4GBufferConstants
     End Function
 
 #If DEBUG Then
-    ''' <summary>DEBUG ONLY (ola 2b rev-B12): THE one switch of ShadowGate --fo4-vertex-constants' mutants - of the laws here
-    ''' ("worldview-eye", "scalemask-bit", "actorcollision-w", "bted-bit") and of their writers' conditions in
-    ''' RenderableMesh.BindEngineVertexStage / EngineVao ("worldview-cond", "scalemask-cond", "bted-cond", "swap-blend-loc").
-    ''' Nothing = the laws. Read only under #If DEBUG: a Release build has no mutant branch.</summary>
+    ''' <summary>DEBUG ONLY (ola 2b rev-B12): THE one switch of the deferred frame's constant mutants. ShadowGate
+    ''' --fo4-vertex-constants: the laws here ("worldview-eye", also the effects' WorldViewProj, one composition; "scalemask-bit",
+    ''' "actorcollision-w", "bted-bit") and their writers' conditions in RenderableMesh.BindEngineVertexStage / EngineVao
+    ''' ("worldview-cond", "scalemask-cond", "bted-cond", "swap-blend-loc"). Ola 3, ShadowGate --fo4-effect-technique-law: the flags
+    ''' and the technique (Fo4EffectTechnique: "efx-mat-N" one applicator bit inverted, "efx-decal-arg3", "efx-skin", "efx-slot42-vc",
+    ''' "efx-slot42-li", "efx-tech-addblend", "efx-tech-palette", "efx-tech-normals"; Fo4EffectSource.VertexShaderId "efx-vsid-mask");
+    ''' --fo4-effect-constants: Fo4EffectConstants ("efx-world-eye", "efx-eyepos-skinned", "efx-falloff-order", "efx-softvs",
+    ''' "efx-propcolor-w", "efx-alphatest-y", "efx-pspot", "efx-cameradata", "efx-li-soft", "efx-envscale", "efx-fog-on") and
+    ''' BindEffectVertexStage ("efx-world-cond", "efx-world-node", "efx-texoff"). Nothing = the laws. Read only under #If DEBUG: a
+    ''' Release build has no mutant branch.</summary>
     Friend GateVertexConstantsMutant As String = Nothing
 
     ''' <summary>DEBUG ONLY (rev-B12): the mutant <paramref name="name"/> is on.</summary>
     Friend Function GateMutantOn(name As String) As Boolean
         Return String.Equals(GateVertexConstantsMutant, name, StringComparison.Ordinal)
     End Function
+
+    ''' <summary>DEBUG ONLY (ShadowGate --effect-scenes, ola 3 rev-C5): the scene bounds PreviewControl.GetSceneBounds returns (the
+    ''' camera's framing and the shadow map's, Render.vb), so a frame with some shapes hidden keeps the framing of the frame it is
+    ''' compared with. Nothing = the visible shapes' own bounds.</summary>
+    Friend GateSceneBounds As (Min As Vector3, Max As Vector3)? = Nothing
+
+    ''' <summary>DEBUG ONLY (ShadowGate --effect-exposure, ola 3 rev-C1): the mean luminance the post reads (SceneTargets.Composite
+    ''' writes it over the frame's own reduction, the rest of the post unchanged), so a frame can be shown with another frame's
+    ''' exposure and contrast pivot. Nothing = the frame's own mean.</summary>
+    Friend GateAvgLumOverride As Single? = Nothing
 #End If
 
     ''' <summary>WorldView (VS constant 3, cb2, 4 rows; D:\WinTmp\rc\ola2b\re.md 2.3), SetupGeometry 0x142206BC9..C86 (the pre-built
@@ -138,10 +188,19 @@ Friend Module Fo4GBufferConstants
     ''' camera's V is built by 0x14182D750 with row 3 = (0, 0, 0, 1) (0x14182D88F / 0x14182D893 zero, 0x14182D89A [+0x8C] = 1.0) and
     ''' copied to [state + 0x1B70 + 0x720..0x750] (0x14182BD34..0x14182BD62).</summary>
     Friend Function EngineWorldViewRows(model As Matrix4, view As Vector4(), eye As Vector4) As Vector4()
-        Dim v As New Matrix4(view(0).X, view(1).X, view(2).X, 0.0F,
-                             view(0).Y, view(1).Y, view(2).Y, 0.0F,
-                             view(0).Z, view(1).Z, view(2).Z, 0.0F,
-                             view(0).W, view(1).W, view(2).W, 1.0F)
+        Return EngineWorldTimesRows(model, {view(0), view(1), view(2), New Vector4(0.0F, 0.0F, 0.0F, 1.0F)}, eye)
+    End Function
+
+    ''' <summary>THE composition 0x1422094B0 / SG 0x142226394..411 -&gt; 0x1406B9610 of a geometry's VS constant with a frame matrix (one owner
+    ''' for WorldView of the G-buffer and WorldViewProj of the effects, ola 3): W_rel = the world NiTransform with translation - eye and
+    ''' row 3 w = 1, times the frame matrix whose columns are <paramref name="frameRows"/> (cb12 rows), the result transposed into the
+    ''' rows (= the columns of W_rel * F).</summary>
+    Friend Function EngineWorldTimesRows(model As Matrix4, frameRows As Vector4(), eye As Vector4) As Vector4()
+        Dim f = frameRows
+        Dim v As New Matrix4(f(0).X, f(1).X, f(2).X, f(3).X,
+                             f(0).Y, f(1).Y, f(2).Y, f(3).Y,
+                             f(0).Z, f(1).Z, f(2).Z, f(3).Z,
+                             f(0).W, f(1).W, f(2).W, f(3).W)
         Dim wRel = model * Matrix4.CreateTranslation(-eye.Xyz)
 #If DEBUG Then
         If GateMutantOn("worldview-eye") Then wRel = model
@@ -203,3 +262,17 @@ Friend Module Fo4GBufferConstants
         Return r
     End Function
 End Module
+
+''' <summary>The cb12 rows of a frame (writer 0x14181E1C0) the transcribed programs read (Fo4GBufferConstants.EngineFrameRows): View 0..2,
+''' ViewProj 8..11, InvView 12..15, InvProj 20..23, Eye 35, Fog 41..46.</summary>
+Friend Structure Fo4FrameRows
+    Public View As Vector4()
+    Public ViewProj As Vector4()
+    Public InvView As Vector4()
+    Public InvProj As Vector4()
+    Public Eye As Vector4
+    Public Fog As Vector4()
+    ''' <summary>APP (not a cb12 row): the inverse of the view-projection whose columns are ViewProj (OpenTK row-vector convention): the
+    ''' D3D clip position -&gt; camera-relative world of the effect decals' base surface foot (Fo4EffectSource.AppSurfaceVertexFoot).</summary>
+    Public AppInvViewProj As Matrix4
+End Structure

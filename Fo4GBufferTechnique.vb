@@ -21,11 +21,13 @@ Friend Module Fo4GBufferTechnique
     Friend Const TechGradientRemap As UInteger = 1UI << 26   ' t5 (0x14220462A..706)
     Friend Const TechFace As UInteger = 1UI << 31            ' t8 (0x142204EB0..FCC)
 
-    Private Function Bit(v As ULong, n As Integer) As Boolean
+    ''' <summary>Bit <paramref name="n"/> of a property's 64-bit flags (shared with Fo4EffectTechnique, ola 3).</summary>
+    Friend Function Bit(v As ULong, n As Integer) As Boolean
         Return ((v >> n) And 1UL) <> 0UL
     End Function
 
-    Private Function SetBit(v As ULong, n As Integer, value As Boolean) As ULong
+    ''' <summary>The flags with bit <paramref name="n"/> set to <paramref name="value"/> (0x142169460's effect; shared with Fo4EffectTechnique).</summary>
+    Friend Function SetBit(v As ULong, n As Integer, value As Boolean) As ULong
         Return If(value, v Or (1UL << n), v And Not (1UL << n))
     End Function
 

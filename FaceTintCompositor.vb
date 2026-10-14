@@ -538,7 +538,7 @@ Public Module FaceTintCompositor
             ("FO4-DEFERRED-APP-POSITIONCAPTURE", Fo4DeferredAppSource.Fragment_PositionCapture),
             ("APP-SKIN-LAW", AppSkinLaw.Glsl),
             ("APP-EDIT-VIEWS-COLORRAMP", AppEditViewsSource.ColorRamp)}).
-            Concat(Fo4DeferredSource.AllSources()).Concat(Fo4GBufferSource.AllSources()).ToArray()
+            Concat(Fo4DeferredSource.AllSources()).Concat(Fo4GBufferSource.AllSources()).Concat(Fo4EffectSource.AllSources()).ToArray()
     End Function
 
     Private Const VertexShaderSource As String = "#version 430

@@ -1149,6 +1149,14 @@ Friend NotInheritable Class SceneTargets
     ''' display target keeps the previous frame).</summary>
     Public Sub Composite(post As Shader_Base_Class, uploadImageSpace As Action(Of Shader_Base_Class), lutPath As String,
                          setBackground As Action(Of Shader_Base_Class), emptyVao As Integer)
+#If DEBUG Then
+        ' ShadowGate --effect-exposure: another frame's mean luminance in place of this one's (Fo4GBufferConstants.GateAvgLumOverride)
+        If Fo4GBufferConstants.GateAvgLumOverride.HasValue Then
+            GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _lumResult)
+            GL.BufferSubData(BufferTarget.ShaderStorageBuffer, IntPtr.Zero, 4, {Fo4GBufferConstants.GateAvgLumOverride.Value})
+            GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
+        End If
+#End If
         BindDisplay()
         post.Use()
 

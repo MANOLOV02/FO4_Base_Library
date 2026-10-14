@@ -429,8 +429,8 @@ vec4 gl43ClipToGl(vec4 p) { return vec4(p.x, p.y * gl43ClipOrigin.x, 2.0 * p.z -
 "
 
     ''' <summary>The same function for the transform-feedback capture of an engine VS (Fo4DeferredPrograms.EnginePositionProgram,
-    ''' rasterizer discard): the captured gl_Position is the D3D clip position the VS writes; the draw that reads it (Vertex_FO4)
-    ''' converts it with ClipGlsl, as the host's own draw does.</summary>
+    ''' rasterizer discard): the captured gl_Position is the D3D clip position the VS writes; the draw that reads it (an FO4 overlay's
+    ''' effect VS, Fo4EffectSource.AppVertexFoot) converts it with ClipGlsl, as the host's own draw does.</summary>
     Friend Const ClipGlslCapture As String = "// GL43 CLIP CONTROL, TRANSFORM-FEEDBACK CAPTURE (rasterizer discard): gl_Position keeps the D3D clip position.
 vec4 gl43ClipToGl(vec4 p) { return p; }
 "

@@ -266,22 +266,11 @@ Public Class Shader_Class_Fo4
 #version 430
 " & Gl43.ClipGlsl & "// invariant: the FO4 z-prepass and the G-buffer colour pass are draws of this same VS (their DXBC position code is
 // identical, Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 10.3).
-// The depth one draw writes is tested by another program's draw (FO4 z-prepass -> G-buffer; translucent-decal base pass ->
-// its colour pass): gl_Position must come out identical across programs, which GLSL guarantees only for an invariant output
-// (GLSL 4.60 4.8.1). Every FO4 program is built on this one VS: Shader_Class_Fo4 (colour, prepass, effects), the G-buffer
-// records and their decal-base variants, the refraction normals, the shadow depth.
+// The depth one draw writes is tested by another program's draw: gl_Position must come out identical across programs, which GLSL
+// guarantees only for an invariant output (GLSL 4.60 4.8.1). In Fallout 4's deferred frame the G-buffer records (ola 2) and the
+// effects (ola 3, Fo4EffectSource) draw with the engine's own VS; this one draws the FO4 debug views, the wireframes, the
+// refraction normals and the shadow depth.
 invariant gl_Position;
-// FO4 OVERLAY POSITION (user decision 12-oct-2026): an overlay that is a clone of its host shape sharing the skin (LooksMenu /
-// F4EE COPY_EXACT) is drawn in the game by an effect VS whose position chain is the host's G-buffer VS's instruction for
-// instruction (b05 rec0042 against b09 rec2304: weights add / add_sat / 1 - x, ftoi(x * 765.01), (row - eye) mul / mad x 3 in
-// the order w1, w0, w2, w3, dp4 with (p, 1), dp4 with cb12[8..11]). The clip position is therefore the host's engine vertex
-// stage's own output, captured per vertex (RenderableMesh.EnginePositions) and read here by gl_VertexID. The rest of the
-// effect VS (colour, uv, falloff, ...) is not transcribed (ola 3): it stays this VS's (declared gap, Render.vb
-// RenderOverlayLayer).
-uniform bool bEnginePosition;
-layout(std430, binding = 14) readonly buffer EnginePositions {
-    vec4 enginePosition[];
-};
 uniform mat4 matProjection;
 uniform mat4 matView;
 uniform mat4 matModel;
@@ -370,13 +359,6 @@ out vec4 vGbufVcol;
 // -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
 // introduced, which is the same thing hemiAmbient() does with the normal.
 out vec3 vWorldPos;
-
-// FO4 EFFECT FALLOFF, PER VERTEX (BSEffect VS rec0440: o1.z, read by the PS as v1.z). Off when the geometry has
-// no vertex normals (model-space-normal geometry): the engine permutation for that case is not traced, and the
-// PS keeps its per-pixel evaluation there.
-uniform bool bVertexFalloff;
-uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
-out float vEffectFalloff;
 
 " & AppEditViewsSource.ColorRamp & "
 
@@ -475,7 +457,7 @@ void main(void)
 
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
-	gl_Position = gl43ClipToGl(bEnginePosition ? enginePosition[gl_VertexID] : matProjection * vec4(vPos, 1.0));
+	gl_Position = gl43ClipToGl(matProjection * vec4(vPos, 1.0));
 	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
@@ -490,15 +472,6 @@ void main(void)
 	viewDirRaw = normalize(-vPos);
 	refractVertex(skinnedNormal, vPos);
 
-	// rec0440: v = normalize(-pos) and n = normalize(3x3 * normal) in the same (camera-relative) frame;
-	// t = sat((|n.v| - start) / (stop - start)); o1.z = t*t*(3 - 2t) * (stopOpacity - startOpacity) + startOpacity.
-	vEffectFalloff = 1.0;
-	if (bVertexFalloff)
-	{
-		float nv = abs(dot(normalize(mv_normalMatrix * skinnedNormal), viewDirRaw));
-		float t = clamp((nv - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
-		vEffectFalloff = (t * t * (-2.0 * t + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
-	}
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
@@ -607,34 +580,10 @@ uniform bool bIsEffectShader;
 // the caller blends attachment 1 with ONE / ONE_MINUS_SRC_ALPHA), 2 = blended with a destination-only factor
 // (multiplicative modes: adds no light of its own, writes 0 and leaves the coverage as it was).
 uniform int uCoverageMode;
-uniform bool bEffectFalloff;
-uniform bool bEffectFalloffColor;
-uniform bool bEffectGreyscaleAlpha;
-uniform float effectLightingInfluence;
-uniform vec4 effectFalloffParams;   // x=startAngle, y=stopAngle, z=startOpacity, w=stopOpacity
-uniform bool bVertexFalloff;        // the falloff arrives from the VS (vEffectFalloff), see Vertex_FO4
-in float vEffectFalloff;
-// cb1[0] of the BSEffect PS (SetupMaterial 0x142225A18..B11): rgb = powf(BaseColor.rgb * BaseColorScale, 2.2), or
-// powf(BaseColor.rgb, 2.2) with greyscale-to-palette colour (then BaseColorScale goes to cb1[1].x =
-// effectBaseColorScale and scales the palette colour); a = BaseColor.a = the file Alpha, raw.
-uniform vec3 effectBaseColor;
-uniform float effectBaseColorAlpha;
-uniform float effectBaseColorScale;
-// LIGHTING technique bit: EffectLighting on AND byte(LightingInfluence) > 0 (0x1421775CD..609, 0x142171806).
-uniform bool bEffectLighting;
-// The LIGHTING technique's light L (i1385): the sum of up to 4 point lights + DLightColor, no N.L, no shadow, no
-// ambient. The preview has no point lights; L = DLightColor of the chosen weather and moment kept in the game's
-// proportion to the preview key (PreviewImagingRow.EffectLightForKey), linear. Flat: one value per draw.
-uniform vec3 effectDLightColor;
-// MULTBLEND technique of the effect (see the effect block).
-uniform bool bEffectMultBlend;
 // Post off (Apply post-process unchecked) and not a debug view: this shader applies the 2.3.8 display law
 // itself (see the tail of the lit block). uSceneToLinear = Shader_Base_Class.SceneToLinearExponent.
 uniform bool bLegacyDisplay;
 uniform float uSceneToLinear;
-// Mip the effect samples its cube at: max(uiMinLOD, EnvmapMinLOD) (0x142225C6E..C75), sampler MIN_MAG_LINEAR_MIP_POINT
-// with MinLOD = MaxLOD (0x141856390). uiMinLOD = 0 for a resident texture.
-uniform float effectEnvMinLod;
 
 uniform mat4 matModel;
 uniform mat4 matModelViewInverse;
@@ -733,7 +682,7 @@ vec4 normalMap = vec4(0.0);
 
 
 
-" & LegacyDisplaySource.Tonemap_Glsl & SoftEffectSource.Soft_Glsl & "
+" & LegacyDisplaySource.Tonemap_Glsl & "
 
 vec4 colorLookup(in float x, in float y)
 {
@@ -895,134 +844,9 @@ void main(void)
 			normal = -normal;
 		}
 
-		// The lighting of the lighting shapes is the FO4 deferred frame's (Fo4DeferredTargets: G-buffer, lights,
-		// composite; propuesta v3 E4). This fragment draws only effects, wireframes, debug views and the prepass.
-
-		// Effect Shader (BGEM = BSEffectShader, block b05), reconstructed EXACT from the GAME:
-		// base rec1026, VC rec1083, recolor-color rec1103, recolor-alpha rec0905, envmap rec0761.
-		// Engine pixel order (all LINEAR; NO PS tonemap/encode). The blend STATE comes from the alpha property's src/dst
-		// (Render: Fo4EffectBlend); MULTBLEND also changes the PS (below); PREMULTIPLY is never set in world rendering
-		// (global byte 0x143E5E345, written only by Interface3D); ADDBLEND's PS term is the fog (none here):
-		//   base.rgb = diffuse.rgb*BaseColor ; base.a = diffuse.a*BaseColor.a
-		//   [RGB_FALLOFF] base.rgb *= falloff, BEFORE the envmap add: the reflection is not attenuated (rec0828)
-		//   [ENVMAP]  base.rgb += cube(reflect(V,N)) * EnvmapScale * normal.a * envMask.r   (rec0761 L62-66)
-		//   [VERTEX COLOR, only when mesh has them = rec1083 VC]: base.rgba *= pow(vColor.rgba,2.2)  (COLOR0 = mesh vColor, MULTIPLY)
-			//   [RECOLOR-COLOR] base.rgb = palette(U=pow(diffuse.g,1/2.2), V=RAW BaseColor.r*falloff) * BaseColorScale  (rec1103 ignores COLOR0)
-		//   eff = lerp(base, PropertyColor*base, LightingInfluence)
-		//   alpha = base.a*PropertyColor.w ; [RECOLOR-ALPHA] alpha = palette(U=diffuse.a, V=pow(BaseColor.a,1/2.2)*falloff).a
-		//   o0.rgb = lerp(eff, COLOR1.rgb, COLOR1.w)  <-- COLOR1 (v3) = the FOG, built by the VS from cb12[41..46] (Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md), NOT the mesh vertex color. The preview has no fog -> NOT replicated.
-		// PropertyColor (cb2[13], runtime light tint) -> the effect's DLightColor (effectDLightColor, ApplyMaterial); PropertyColor.w ~ 1.
-		// BaseColorScale (cb1[1]) is the PALETTE scale ONLY -- it is NOT a base multiplier (rec0512 has none).
-		// Vertex color (COLOR0) is applied below ONLY as a MULTIPLY on base rgb+alpha (rec1083). There is
-		// NO final lerp toward the mesh vColor -- the engine's final lerp targets COLOR1 (the fog), not COLOR0.
-		if (bIsEffectShader)
-		{
-			// base = diffuse * BaseColor, with VC (vertex color) modulation when the mesh has vertex
-			// colors (rec1083 VC bit): base.rgb *= pow(vColor.rgb,2.2) and the output alpha *=
-			// pow(vColor.a,2.2) (COLOR0 gamma-decoded -- rec1083 L32-37). For EyeAO (black BaseColor) the AO
-			// gradient is carried entirely by the vertex ALPHA (-> effAlpha, the OUTPUT alpha), NOT by any rgb
-			// blend. bShowVertexColor = (toggle, default on) AND the mesh has vertex colors = the VC permutation.
-			vec3 vcMod = bShowVertexColor ? pow(max(vColor.rgb, 0.0), vec3(2.2)) : vec3(1.0);
-			float vcAlpha = bShowVertexColor ? pow(max(vColor.a, 0.0), 2.2) : 1.0;
-			vec3 effRgb = baseMap.rgb * vcMod * effectBaseColor;
-			float effAlpha = baseMap.a * vcAlpha * effectBaseColorAlpha;   // diffuse.a * pow(vColor.a,2.2) * BaseColor.a
-			
-			// Falloff factor = v1.z of the VS (rec0440), interpolated. 1.0 when no falloff. Geometry without vertex
-			// normals (MSN) keeps the per-pixel evaluation (see Vertex_FO4).
-			float effFalloff = 1.0;
-			if (bVertexFalloff)
-				effFalloff = vEffectFalloff;
-			else if (bEffectFalloff || bEffectFalloffColor)
-			{
-				float NdotV_falloff = abs(dot(normal, viewDir));   // viewDir ya es unitario (main lo normaliza)
-				float ft = clamp((NdotV_falloff - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
-				ft = ft * ft * (3.0 - 2.0 * ft);
-				effFalloff = mix(effectFalloffParams.z, effectFalloffParams.w, ft);
-			}
-			
-			// SOFT (technique bit 12, softFo4 in SoftEffectSource): it scales the base alpha (before PropertyColor.w and the
-			// alpha test) and the palette V of both recolors; with palette ALPHA the output alpha is palette.a (not scaled
-			// again). Hole, declared: PARTICLE_DISTORTION (soft on palette.a instead of V) is not rendered by the preview.
-			float effSoft = bSoftEffect ? softFo4() : 1.0;
-			effAlpha *= effSoft;
-
-			// Grayscale->palette recolor. COLOR(0x2000) replaces rgb; ALPHA(0x4000) replaces alpha; both=0x6000.
-			// U = pow(base.channel,1/2.2) for COLOR (rec1103 L38-40: the base slot is sRGB, so the sample is
-			//   linear and the pow re-encodes it), raw base.alpha for ALPHA (rec0905 L32).
-			// V (color) = pow(cb1[0].x,1/2.2) * falloff (rec1103 L34-36). effectBaseColor IS cb1[0] (powf'd on
-			//   the CPU, see the uniform), so the pow undoes it and V is the authored BaseColor.r.
-			//   (Alpha: BaseColor.a is NOT powf'd in setup, and its V still takes pow(.,1/2.2) -- rec0905 L34-37.)
-			// When the mesh has vertex colors, the engine MULTIPLIES the palette V by the vertex color
-			// channel, RAW (rec1002 `mul r0.yz, r0.yyzy, v2.xxwx`): V_color *= vColor.r, V_alpha *= vColor.a.
-			// White verts (=1) -> no change (rec1103/rec0905, no-vColor perm). NOTE BGSM does this ADDITIVE
-			// + gamma-encoded; BGEM does it MULTIPLICATIVE + raw (different families, verified per-asm).
-			float vcRecolorR = bShowVertexColor ? max(vColor.r, 0.0) : 1.0;
-			float vcRecolorA = bShowVertexColor ? max(vColor.a, 0.0) : 1.0;
-			if (bGreyscaleColor)
-			{
-				float palU = pow(max(baseMap.g, 0.0), 1.0/2.2);
-				float palV = pow(max(effectBaseColor.r, 0.0), 1.0/2.2) * vcRecolorR * effFalloff * effSoft;
-				effRgb = colorLookup(palU, palV).rgb * effectBaseColorScale;   // * BaseColorScale (PaletteColorScale)
-			}
-
-			// RGB_FALLOFF (0x200000) multiplies the BASE rgb only, before the envmap is added: rec0828 multiplies the diffuse
-			// by v1.z (`mul r0.xyz, r0.xyzx, v1.zzzz`) and then adds env * mask on top (`mad r0.xyz, r0.xyzx, r2.xxxx, r1.xyzx`),
-			// so the reflection is not attenuated (AUDIT D-A). The recolor already folds the falloff into palette V (rec0550)
-			// -> no falloff^2.
-			if (bEffectFalloffColor && !bGreyscaleColor) effRgb *= effFalloff;
-			
-			// ENVMAP reflection (0x80000): cube(reflect(V,N)) * EnvmapScale * normal.a * envMask.r,
-			// ADDED to base BEFORE the lighting-influence lerp (rec0761 L62-66), on top of recolor.
-			if (bCubemap && bEnvMap && bShowTexture)
-			{
-				vec3 reflected = reflect(viewDir, normal);
-				vec3 reflectedWS = vec3(matModel * (matModelViewInverse * vec4(reflected, 0.0)));
-				vec3 cube = textureLod(texCubemap, reflectedWS, effectEnvMinLod).rgb;
-				float emask = bEnvMask ? texture(texEnvMask, uv).r : 1.0;
-				float nrmA = bNormalMap ? normalMap.a : 1.0;
-				effRgb += cube * envReflection * nrmA * emask;
-			}
-			if (bEffectGreyscaleAlpha)
-			{
-				float palUa = baseMap.a;                                        // alpha index = diffuse.alpha (rec0905)
-				float palVa = pow(max(effectBaseColorAlpha, 0.0), 1.0/2.2) * vcRecolorA * effFalloff * effSoft;
-				effAlpha = colorLookup(palUa, palVa).a;
-			}
-			
-			// FALLOFF (0x10) multiplies alpha (RGB_FALLOFF is applied to the base above, before the envmap).
-			// With palette ALPHA the output alpha IS palette.a, whose V already carries the falloff (rec0905, rec0927): no
-			// second multiply.
-			if (bEffectFalloff && !bEffectGreyscaleAlpha) effAlpha *= effFalloff;
-			
-			// LIGHTING technique (i1385): c = lerp(b, L * b, LI), L = point lights + DLightColor, no N.L.
-			// Without it the PS lerps toward PropertyColor.rgb * b with PropertyColor = 1 (an effect property's
-			// external emittance is null, 0x1421774F4 / 0x142226F0D..F9F): c = b.
-			if (bEffectLighting)
-				effRgb = mix(effRgb, effRgb * effectDLightColor, effectLightingInfluence);
-
-			// MULTBLEND (technique bit 6: src DEST_COLOR or dst SRC_COLOR, not the decal pair 4/7; 0x142178150): the PS
-			// writes 1 + a*(c - 1) = lerp(1, c, a) with the FINAL alpha (rec1099 L33-37, rec1035), so where the effect is
-			// transparent it multiplies the destination by 1 (neutral) instead of by its colour. The fog term of that
-			// permutation (lerp(c, 1, saturate(1.5 * fog.a))) is a no-op without fog.
-			if (bEffectMultBlend)
-				effRgb = vec3(1.0) + effAlpha * (effRgb - vec3(1.0));
-			
-			// NO emissive add: the engine b05 BGEM family has NO emissive term (verified -- none of the b05
-			// PS sample a glow or add an emissive). A glow on an effect material is its base color + the
-			// additive/glow BLEND MODE, not a separate emissive. Adding emissiveColor*mult here washed glowing
-			// BGEM effects toward white (the green->white on a BGEM-with-glowmap). effRgb stays the effect.
-			
-			color.rgb = effRgb;
-			color.a = effAlpha;
-
-			// NO final vertex-color lerp here. The engine's BGEM PS ends with lerp(eff, COLOR1.rgb, COLOR1.w)
-			// where COLOR1 (v3) is the VS-synthesized soft-particle DISTANCE falloff (rec0039 VS L72-78 /
-			// rec1083 PS L41-42) -- NOT the mesh vertex color. The mesh vertex color is COLOR0 and is already
-			// applied above as a MULTIPLY on base rgb+alpha (vcMod/vcAlpha). The distance falloff has no preview
-			// analog (its alpha ~0 on solid geometry, a no-op); lerping toward the mesh vColor instead washed
-			// the effect to white on white-a=1 verts (BloodBug) and inverted EyeAO. Angular material falloff is
-			// already handled by effFalloff above.
-		}
+		// The lighting of the lighting shapes is the FO4 deferred frame's (Fo4DeferredTargets: G-buffer, lights, composite;
+		// propuesta v3 E4), its effects the transcribed b05 programs' (ola 3, Fo4EffectSource). This fragment draws only the
+		// wireframes, the debug views (an effect too: the debug block writes the colour) and the prepass.
 
 		if (bShowMask)
 		{
@@ -1038,16 +862,10 @@ void main(void)
 		// colas escriben lineal a o0 (`mad o0.xyz, ...` sin curva, sin pow, sin _sat); los PS de b05 (BGEM)
 		// tampoco. El tonemap, el encode y la LUT son POST-PROCESO sobre el buffer compuesto (ImageSpace HDR
 		// i3700 + GammaCorrectLUT i3648): los hace la pasada de PostProcess.vb, no este shader.
-		// POST OFF (bLegacyDisplay): THE 2.3.8 DISPLAY TAIL, NOT THE ENGINE, applied to the value in the space
-		// 2.3.8 gave it. Lit: linear then and now -> Hable / Hable(1), then 1/2.2. Effect (BGEM): 2.3.8 composed
-		// it in display space with no curve and no encode; it is linear now -> only 1/2.2.
+		// POST OFF (bLegacyDisplay): THE 2.3.8 DISPLAY TAIL, NOT THE ENGINE, applied to the value in the space 2.3.8 gave it:
+		// linear then and now -> Hable / Hable(1), then 1/2.2. (An effect's display law, pow 1/2.2, is Fo4EffectSource.AppMain's.)
 		if (bLegacyDisplay)
-		{
-			if (bIsEffectShader)
-				color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(1.0 / 2.2));
-			else
-				color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
-		}
+			color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
 	}
 	else
 	{
@@ -3129,18 +2947,7 @@ float softSse()
 	return softBase(wOverS);
 }
 
-// FO4: the base factor times the near term (rec1027 L35-49, all 311 SOFT PS), constants literal from the bytecode:
-// nearS = K / (n(f - n) + n), t = saturate((saturate(w/S - nearS) - 0.075) * 2.352941), soft = a * t*t*(3 - 2t).
-float softFo4()
-{
-	float wOverS;
-	float a = softBase(wOverS);
-	float n = uNearFar.x;
-	float K = uNearFar.y * n / softDepth;
-	float nearS = K / (n * (uNearFar.y - n) + n);
-	float t = clamp((clamp(wOverS - nearS, 0.0, 1.0) - 0.075) * 2.352941, 0.0, 1.0);
-	return a * t * t * (3.0 - 2.0 * t);
-}
+// Fallout 4's SOFT is its transcribed b05 PS's (ola 3, Fo4EffectSource: rec1027 L35-49 in all 311 SOFT PS).
 "
 End Module
 

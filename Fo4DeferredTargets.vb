@@ -136,7 +136,7 @@ void main()
     ''' <summary>THE LAW OF THE BASE SURFACE, one text for its two inputs (D16, 12-oct-2026): the declarations, the outputs and
     ''' decalBaseSurfaceOut(gn, worldPos), which writes o0..o4, oShadow and oCoverage from the geometric normal (GL view) and the
     ''' world position (see Fragment_DecalBaseSurface). Fragment_DecalBaseSurface feeds it from the record's engine VS, and
-    ''' Fragment_DecalBaseSurfaceEffect from Vertex_FO4.</summary>
+    ''' Fragment_DecalBaseSurfaceEffect from the effect's own engine VS (ola 3).</summary>
     Friend Const DecalBaseSurfaceLaw As String = "
 uniform bool bDoubleSided;
 uniform int uBaseOpacity;            // RenderableMesh.DecalBaseOpacity: 0 (unblended) -> 1, 1 (blended) -> the decal's alpha
@@ -168,25 +168,28 @@ void decalBaseSurfaceOut(vec3 gn, vec3 worldPos)
 }
 "
 
-    ''' <summary>THE BASE SURFACE OF AN EFFECT DECAL (a translucent decal drawn without a G-buffer draw), as before ola 2, until ola 3
-    ''' transcribes the effects (user decision 12-oct-2026, D16: no regression of "a decal alone is seen as laid on something"): the
-    ''' one law DecalBaseSurfaceLaw fed by Vertex_FO4's inputs (mv_tbn, v_msnMatrix, vUV, vWorldPos), with the geometric normal of
-    ''' then - the program Fo4DeferredPrograms.DecalBaseSurfaceEffect, drawn by RenderableMesh.DrawDecalBaseSurface.</summary>
+    ''' <summary>THE BASE SURFACE OF AN EFFECT DECAL (user decision 12-oct-2026, D16: no regression of "a decal alone is seen as laid on
+    ''' something"; ola 3, Q2): the one law DecalBaseSurfaceLaw fed by the decal's own engine effect VS - the same text as its colour and
+    ''' depth draws, so the same gl_Position (invariant) - with the surface foot Fo4EffectSource.AppSurfaceVertexFoot, which hands the
+    ''' camera-relative world position appRel. The b05 VS carries no geometric normal for every technique: the surface's is the
+    ''' triangle's, from the derivatives of appRel (GL 4.3 8.13.1 dFdx / dFdy, the driver's: GL43 decision 13-oct-2026), in the engine
+    ''' view of cb12 rows 0..2, turned to the side the camera sees. An effect has no model-space normals: bModelSpace (declared by the
+    ''' law's shadow factors) is never set. The program Fo4DeferredPrograms.EffectSurfaceProgram, drawn by
+    ''' RenderableMesh.DrawDecalBaseSurface.</summary>
     Friend Const Fragment_DecalBaseSurfaceEffect As String = "#version 430
 " & BackgroundFadeSource.Fade_Helper & "
-in mat3 mv_tbn;
-in mat3 v_msnMatrix;
-in vec2 vUV;
-in vec3 vWorldPos;
-uniform vec2 uvScale;
-uniform vec2 uvOffset;
+in vec3 appRel;
+uniform vec4 cb12_view[3];
+uniform vec4 cb12_35;
 " & DecalBaseSurfaceLaw & "
 void main()
 {
-    vec3 gn = bModelSpace ? normalize(v_msnMatrix * (texture(t1, vUV * uvScale + uvOffset).rbg * 2.0 - 1.0))
-                          : normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
-    if (bDoubleSided && !gl_FrontFacing) gn = -gn;
-    decalBaseSurfaceOut(gn, vWorldPos);
+    vec3 nw = cross(dFdx(appRel), dFdy(appRel));
+    vec3 ne = vec3(dot(cb12_view[0].xyz, nw), dot(cb12_view[1].xyz, nw), dot(cb12_view[2].xyz, nw));
+    vec3 pe = vec3(dot(cb12_view[0].xyz, appRel), dot(cb12_view[1].xyz, appRel), dot(cb12_view[2].xyz, appRel));
+    vec3 gn = normalize(vec3(ne.x, ne.y, -ne.z));                                              // GL view, as the records' surface
+    if (dot(gn, vec3(pe.x, pe.y, -pe.z)) > 0.0) gn = -gn;                                      // the side the camera sees
+    decalBaseSurfaceOut(gn, appRel + cb12_35.xyz);
 }
 "
 End Module
@@ -207,8 +210,6 @@ End Class
 ''' built (rev-50: the control then runs without the FO4 deferred frame and says why).</summary>
 Friend NotInheritable Class Fo4DeferredPrograms
     Friend ReadOnly Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase As Fo4_Deferred_Shader_Class
-    ''' <summary>The base surface of an effect decal (Vertex_FO4 + Fragment_DecalBaseSurfaceEffect), until ola 3 (D16).</summary>
-    Friend ReadOnly DecalBaseSurfaceEffect As Fo4_Deferred_Shader_Class
     Friend ReadOnly PrepassRigid, PrepassAlpha As Fo4_Deferred_Shader_Class
     ''' <summary>The programs of one vertex route (ola 2 v5: the GPU route - the engine VS blends cb10 - and the CPU route of a skinned
     ''' VS - Fo4GBufferSource.StageOf cpuRoute -, user decision 12-oct-2026): tuple -&gt; the record programs built so far, the tuples
@@ -247,7 +248,6 @@ Friend NotInheritable Class Fo4DeferredPrograms
             LinearZ = Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_LinearZ)
             DirectResolve = Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DirectResolve)
             DecalBase = Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DecalBase)
-            DecalBaseSurfaceEffect = Build(Shader_Class_Fo4.Vertex_FO4, Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect)
             PrepassRigid = Build(Fo4GBufferSource.PrepassVertex(3928), Fo4GBufferSource.PrepassFragmentNone)         ' 0x14181FBCF..C19
             PrepassAlpha = Build(Fo4GBufferSource.PrepassVertex(3929), Fo4GBufferSource.PrepassFragment(3930))      ' 0x14181FC99..D01
 #If DEBUG Then
@@ -259,6 +259,15 @@ Friend NotInheritable Class Fo4DeferredPrograms
                 Dim errorText As String = Nothing
                 If GBufferProgram(New Fo4Technique(tv), errorText) Is Nothing Then Throw New Exception($"G-buffer technique 0x{tv:X8} (PS {Fo4GBufferTechnique.PixelShaderId(tv):X8}): {errorText}")
                 If GBufferProgram(New Fo4Technique(tv), errorText, cpuRoute:=True) Is Nothing Then Throw New Exception($"G-buffer technique 0x{tv:X8} CPU route (PS {Fo4GBufferTechnique.PixelShaderId(tv):X8}): {errorText}")
+            Next
+            ' Ola 3 (user decision 13-oct-2026: built on demand, every one in Debug): every effect technique of the law on both vertex
+            ' routes, with its decals' base surface program; the first failure throws.
+            For Each tv In Fo4EffectSource.LawTechniques
+                Dim errorText As String = Nothing
+                For Each cpu In {False, True}
+                    If EffectProgram(New Fo4EffectTech(tv), errorText, cpu) Is Nothing Then Throw New Exception($"effect technique 0x{tv:X8}{If(cpu, " CPU route", "")}: {errorText}")
+                    If EffectSurfaceProgram(New Fo4EffectTech(tv), cpu) Is Nothing Then Throw New Exception($"effect technique 0x{tv:X8}{If(cpu, " CPU route", "")}: base surface not built")
+                Next
             Next
 #End If
         Catch
@@ -297,7 +306,7 @@ Friend NotInheritable Class Fo4DeferredPrograms
     ''' <summary>The engine VS <paramref name="vs"/> on a vertex route, alone, its clip position (gl_Position, invariant in the app
     ''' foot) captured by transform feedback: what an overlay that shares its host's geometry draws its position with
     ''' (RenderableMesh.EnginePositions, user decision 12-oct-2026). Built on first use, one per VS and route; Nothing when the
-    ''' stage does not build (the overlay then keeps Vertex_FO4's position, as its host is not drawn by an engine stage).</summary>
+    ''' stage does not build (the overlay then keeps its effect VS's own position, as its host is not drawn by an engine stage).</summary>
     Friend Function EnginePositionProgram(vs As UInteger, cpuRoute As Boolean) As Fo4_Deferred_Shader_Class
         If _gbufferSource IsNot Nothing Then Return _gbufferSource.EnginePositionProgram(vs, cpuRoute)
         Dim route = RouteOf(vs, cpuRoute)
@@ -320,6 +329,90 @@ Friend NotInheritable Class Fo4DeferredPrograms
         _built.Add(p)
         Return p
     End Function
+
+    ''' <summary>Ola 3: the effect programs of one vertex route (the CPU route only for a skinned VS, Fo4EffectSource.EffectiveCpuLayout):
+    ''' technique key (VS, PS) -&gt; the program, its build error; VS -&gt; the decals' base surface program (the same VS with the
+    ''' surface foot, Fragment_DecalBaseSurfaceEffect).</summary>
+    Private NotInheritable Class EffectRoute
+        Friend ReadOnly Programs As New Dictionary(Of (Vs As UInteger, Ps As UInteger), Fo4_Deferred_Shader_Class)
+        Friend ReadOnly Errors As New Dictionary(Of (Vs As UInteger, Ps As UInteger), String)
+        Friend ReadOnly Surface As New Dictionary(Of UInteger, Fo4_Deferred_Shader_Class)
+    End Class
+    Private ReadOnly _effectGpu As New EffectRoute, _effectCpu As New EffectRoute
+    Private Function EffectRouteOf(vs As UInteger, cpuRoute As Boolean) As EffectRoute
+        Return If(Fo4EffectSource.EffectiveCpuLayout(vs, cpuRoute) <> Fo4CpuRouteLayout.None, _effectCpu, _effectGpu)
+    End Function
+
+    ''' <summary>The program of the effect technique <paramref name="t"/> on the draw's vertex route (RenderableMesh.EngineCpuRoute):
+    ''' Fo4EffectSource.VertexOf + FragmentOf, built on its first use (user decision 13-oct-2026); Nothing when its build failed,
+    ''' with the error in <paramref name="errorText"/> (remembered: not rebuilt).</summary>
+    Friend Function EffectProgram(t As Fo4EffectTech, ByRef errorText As String, Optional cpuRoute As Boolean = False) As Fo4_Deferred_Shader_Class
+        errorText = Nothing
+        Dim key = t.Key()
+        Dim route = EffectRouteOf(key.Vs, cpuRoute)
+        Dim p As Fo4_Deferred_Shader_Class = Nothing
+        If route.Programs.TryGetValue(key, p) Then Return p
+        If _gbufferSource IsNot Nothing AndAlso _gateEffectVertex Is Nothing Then Return _gbufferSource.EffectProgram(t, errorText, cpuRoute)
+        If route.Errors.TryGetValue(key, errorText) Then Return Nothing
+        Try
+            Dim vertex = Fo4EffectSource.VertexOf(key.Vs, route Is _effectCpu)
+            If _gateEffectVertex IsNot Nothing Then vertex = _gateEffectVertex(vertex)
+            p = Build(vertex, Fo4EffectSource.FragmentOf(key.Ps))
+        Catch ex As Exception
+            errorText = ex.Message
+            route.Errors(key) = errorText
+            Return Nothing
+        End Try
+        route.Programs(key) = p
+        Return p
+    End Function
+
+    ''' <summary>The translucent decals' base surface program of an effect technique (D16; ola 3, Q2): its engine VS with the surface
+    ''' foot + Fragment_DecalBaseSurfaceEffect, one per VS and route, built on first use; Nothing when it does not build. A copy made
+    ''' by GateWithEffectSurfaceFragment builds its own with the gate's fragment.</summary>
+    Friend Function EffectSurfaceProgram(t As Fo4EffectTech, Optional cpuRoute As Boolean = False) As Fo4_Deferred_Shader_Class
+        Dim vs = t.Key().Vs
+        Dim route = EffectRouteOf(vs, cpuRoute)
+        Dim p As Fo4_Deferred_Shader_Class = Nothing
+        If route.Surface.TryGetValue(vs, p) Then Return p
+        If _gbufferSource IsNot Nothing AndAlso _gateEffectSurfaceFragment Is Nothing Then Return _gbufferSource.EffectSurfaceProgram(t, cpuRoute)
+        Try
+            p = Build(Fo4EffectSource.VertexOf(vs, route Is _effectCpu, surface:=True), If(_gateEffectSurfaceFragment, Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect))
+        Catch ex As Exception
+            p = Nothing
+        End Try
+        route.Surface(vs) = p
+        Return p
+    End Function
+
+    ''' <summary>The effect programs built so far on a vertex route (ShadowGate's program census).</summary>
+    Friend Function BuiltEffectPrograms(Optional cpuRoute As Boolean = False) As IReadOnlyDictionary(Of (Vs As UInteger, Ps As UInteger), Fo4_Deferred_Shader_Class)
+        Return If(cpuRoute, _effectCpu, _effectGpu).Programs
+    End Function
+
+    ''' <summary>The effect decals' base surface programs built so far on a vertex route, by VS (ShadowGate's program census).</summary>
+    Friend Function BuiltEffectSurfacePrograms(Optional cpuRoute As Boolean = False) As IReadOnlyDictionary(Of UInteger, Fo4_Deferred_Shader_Class)
+        Return If(cpuRoute, _effectCpu, _effectGpu).Surface
+    End Function
+
+    ''' <summary>GATE ONLY: a copy of these programs (GateWith) whose effect decals' base surface is drawn with <paramref name="fragment"/>,
+    ''' built per VS on first use by the copy, which owns those (its Dispose releases them and nothing else).</summary>
+    Friend Function GateWithEffectSurfaceFragment(fragment As String) As Fo4DeferredPrograms
+        Dim c = New Fo4DeferredPrograms(Me, "DecalBase", DecalBase)
+        c._gateEffectSurfaceFragment = fragment
+        Return c
+    End Function
+    Private _gateEffectSurfaceFragment As String
+
+    ''' <summary>GATE ONLY: a copy of these programs (GateWith) whose effect programs are built with their vertex text passed through
+    ''' <paramref name="vertex"/> (the gate declares the text it makes, Gl43.GateHarnessText), per technique on first use by the copy,
+    ''' which owns those (its Dispose releases them and nothing else).</summary>
+    Friend Function GateWithEffectVertex(vertex As Func(Of String, String)) As Fo4DeferredPrograms
+        Dim c = New Fo4DeferredPrograms(Me, "DecalBase", DecalBase)
+        c._gateEffectVertex = vertex
+        Return c
+    End Function
+    Private _gateEffectVertex As Func(Of String, String)
 
     ''' <summary>The decals' base surface program of technique <paramref name="t"/> on the draw's vertex route (built with its record by
     ''' GBufferProgram).</summary>
@@ -390,17 +483,20 @@ Friend NotInheritable Class Fo4DeferredPrograms
     Private _gateSurface As Fo4_Deferred_Shader_Class
 
     ''' <summary>GATE ONLY (ShadowGate --fo4-deferred-law mutants): a copy of these programs with the one of role
-    ''' <paramref name="role"/> (Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase,
-    ''' DecalBaseSurface) replaced.
+    ''' <paramref name="role"/> (Sun, SunShadow, Fill, Ambient, Composite1, Composite2, LinearZ, DirectResolve, DecalBase) replaced
+    ''' (the effect decals' base surface: GateWithEffectSurfaceFragment). The closed list of roles is checked in Debug only (rev-C4:
+    ''' a gate's own data, not a Release runtime check).
     ''' The copy owns nothing: its Dispose releases no program.</summary>
     Friend Function GateWith(role As String, program As Fo4_Deferred_Shader_Class) As Fo4DeferredPrograms
         Return New Fo4DeferredPrograms(Me, role, program)
     End Function
 
     Private Sub New(src As Fo4DeferredPrograms, role As String, program As Fo4_Deferred_Shader_Class)
-        If Not {"Sun", "SunShadow", "Fill", "Ambient", "Composite1", "Composite2", "LinearZ", "DirectResolve", "DecalBase", "DecalBaseSurfaceEffect"}.Contains(role) Then
+#If DEBUG Then
+        If Not {"Sun", "SunShadow", "Fill", "Ambient", "Composite1", "Composite2", "LinearZ", "DirectResolve", "DecalBase"}.Contains(role) Then
             Throw New ArgumentException("no deferred program role " & role)
         End If
+#End If
         Sun = If(role = "Sun", program, src.Sun)
         SunShadow = If(role = "SunShadow", program, src.SunShadow)
         Fill = If(role = "Fill", program, src.Fill)
@@ -410,7 +506,6 @@ Friend NotInheritable Class Fo4DeferredPrograms
         LinearZ = If(role = "LinearZ", program, src.LinearZ)
         DirectResolve = If(role = "DirectResolve", program, src.DirectResolve)
         DecalBase = If(role = "DecalBase", program, src.DecalBase)
-        DecalBaseSurfaceEffect = If(role = "DecalBaseSurfaceEffect", program, src.DecalBaseSurfaceEffect)
         PrepassRigid = If(role = "PrepassRigid", program, src.PrepassRigid)
         PrepassAlpha = If(role = "PrepassAlpha", program, src.PrepassAlpha)
         _gbufferSource = src

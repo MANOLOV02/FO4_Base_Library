@@ -212,6 +212,7 @@
        Fo4GBufferSource.vb): too large for the assembly's user-string heap as constants (BC37255); read by Fo4GBufferSource.ProgramText. -->
   <ItemGroup>
     <EmbeddedResource Include="Fo4GBufferBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4GBufferBlocks.glsl.txt" />
+    <EmbeddedResource Include="Fo4EffectBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4EffectBlocks.glsl.txt" />
   </ItemGroup>
 
   <ItemGroup>

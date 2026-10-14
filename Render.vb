@@ -2899,6 +2899,13 @@ Public Class PreviewControl
     End Sub
 
     Public Sub GetSceneBounds(ByRef min As Vector3, ByRef max As Vector3)
+#If DEBUG Then
+        ' ShadowGate --effect-scenes (rev-C5): the bounds of the frame a '.noeff' copy is compared with (Fo4GBufferConstants.GateSceneBounds)
+        If Fo4GBufferConstants.GateSceneBounds.HasValue Then
+            min = Fo4GBufferConstants.GateSceneBounds.Value.Min : max = Fo4GBufferConstants.GateSceneBounds.Value.Max
+            Return
+        End If
+#End If
         min = New Vector3(Single.MaxValue)
         max = New Vector3(Single.MinValue)
         Dim anyVisible As Boolean = False
@@ -3452,7 +3459,7 @@ Public Class PreviewModel
         End Select
     End Function
 
-    Friend FrameEngineRows As (View As Vector4(), ViewProj As Vector4(), Eye As Vector4)
+    Friend FrameEngineRows As Fo4FrameRows
 
     ''' <summary>The frame is drawn with the Skyrim SE shader (and so with its pass law).</summary>
     Friend ReadOnly Property FrameIsSse As Boolean
@@ -3976,9 +3983,9 @@ Public Class PreviewModel
                     .IsEffect = mb.IsBGEM(), .Alpha = PreviewAlpha(), .Blend = ea.Blend,
                     .ZTest = mb.ZBufferTest, .ZWrite = mb.ZBufferWrite,
                     .Decal = EngineDecal(False), .Refraction = mb.Refraction, .TempRefraction = bit(f1, 2),
-                    .Falloff = mb.IsBGEM() AndAlso (mb.FalloffEnabled OrElse mb.FalloffColorEnabled),
+                    .Falloff = mb.IsBGEM() AndAlso (bit(f1, 6) OrElse bit(f1, 8)),
                     .Billboard = bit(f2, 13), .PipboyScreen = bit(f2, 28),
-                    .Soft = mb.IsBGEM() AndAlso mb.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft,
+                    .Soft = mb.IsBGEM() AndAlso bit(f1, 30) AndAlso Not PreviewModel.GateDisableSoft,
                     .AlphaTest = ea.Test, .TestRef = ea.Threshold,
                     .HasColorStream = geo IsNot Nothing AndAlso geo.HasVertexColors,
                     .PrepassGeometry = geo IsNot Nothing AndAlso Fo4PrepassGeometryClass(geo) AndAlso indicesPresentes}
@@ -3987,12 +3994,16 @@ Public Class PreviewModel
             ''' <summary>F4SF1 | F4SF2 &lt;&lt; 32 as Fallout 4's GetRenderPasses reads them (rev-40: the one owner; Fo4Inputs and the
             ''' G-buffer technique read these): a lighting shape's go through Fo4GBufferTechnique.EffectiveFlags (the BGSM applicator
             ''' 0x14216AF90 when a material file was applied, else the flags of the block the save writes; then the slot-42 fixer
-            ''' 0x1421793F0); an effect's are the NIF's.</summary>
+            ''' 0x1421793F0); an effect's through Fo4EffectFlags (ola 3: the applicator for a .bgem, the effect's slot 42 0x142177570).</summary>
             Friend Function Fo4Flags() As ULong
                 Dim sh = ParentMeshData.Shape?.NifShader
                 Dim raw As ULong = If(sh Is Nothing, 0UL, CULng(CUInt(sh.ShaderFlags_F4SPF1)) Or (CULng(CUInt(sh.ShaderFlags_F4SPF2)) << 32))
                 If GateFo4RawFlags Then Return raw
-                If MaterialBase Is Nothing OrElse MaterialBase.IsBGEM() Then Return raw
+                If MaterialBase Is Nothing Then Return raw
+                If MaterialBase.IsBGEM() Then
+                    Dim e = Fo4EffectFlags()
+                    Return If(e.HasValue, e.Value, raw)
+                End If
                 Dim st = Fo4EngineState()
                 Return If(st.HasValue, st.Value.Flags, raw)
             End Function
@@ -4263,13 +4274,14 @@ Public Class PreviewModel
                 Return ParentMeshData?.ParentMesh IsNot Nothing AndAlso ParentMeshData.ParentMesh.EngineCpuRoute()
             End Function
 
-            ''' <summary>Is this a decal for the engine? A Fallout 4 lighting shape: bit 26 or 27 of its effective flags (Fo4Flags: the
-            ''' applicator writes them from the Decal byte only when its 3rd argument is 0, a material swap / overlay keeps the NIF's;
-            ''' GetRenderPasses tests flags AND 0xC000000, 0x14217A9F6). Otherwise (Skyrim SE, effects) the material's (RendersAsDecal).</summary>
+            ''' <summary>Is this a decal for the engine? A Fallout 4 shape: bit 26 or 27 of its effective flags (Fo4Flags: the applicator
+            ''' writes them from the Decal byte only when its 3rd argument is 0, a material swap / overlay keeps the NIF's / the new
+            ''' property's; GetRenderPasses tests flags AND 0xC000000, lighting 0x14217A9F6, effect 0x142177A57..A69 - ola 3). Skyrim SE: the
+            ''' material's (RendersAsDecal).</summary>
             Friend Function EngineDecal(isSse As Boolean) As Boolean
                 Dim mb = MaterialBase
                 If mb Is Nothing Then Return False
-                If Not isSse AndAlso Not mb.IsBGEM() Then Return (Fo4Flags() And &HC000000UL) <> 0UL
+                If Not isSse Then Return (Fo4Flags() And &HC000000UL) <> 0UL
                 Return mb.RendersAsDecal()
             End Function
 
@@ -4346,6 +4358,94 @@ Public Class PreviewModel
                     Dim errorText As String = Nothing
                     d.Program = programs.GBufferProgram(New Fo4Technique(t.Value), errorText, EngineCpuRouteOf())
                     If d.Program Is Nothing Then d.Gap = "program build failed: " & errorText Else If EngineLayoutUnsupportedOf() Then d.Gap = "vertex desc with UV2 / LAND data: NiflySharp does not read them (BSVertexData.Sync), the preview has no source"
+                End If
+                Return d
+            End Function
+
+            Private _fo4EffFrame As Integer = -1
+            Private _fo4Eff As ULong?
+
+            ''' <summary>Ola 3: a Fallout 4 effect shape's 64-bit flags as GetRenderPasses 0x1421777A0 reads them (Fo4EffectTechnique.EngineFlags):
+            ''' the NIF's BSEffectShaderProperty as loaded or, for a LooksMenu overlay layer (OverrideRelatedMaterial), the new property F4EE
+            ''' creates; the material in memory; the geometry's skin and vertex desc. Once per frame (PreviewModel.FrameSerial). Nothing for a
+            ''' lighting material, or for a base shape without an effect block.</summary>
+            Friend Function Fo4EffectFlags() As ULong?
+                Dim mb = MaterialBase
+                If mb Is Nothing OrElse Not mb.IsBGEM() Then Return Nothing
+                Dim overlay = OverrideRelatedMaterial IsNot Nothing
+                Dim sh = ParentMeshData.Shape?.NifShader
+                If Not overlay AndAlso Not TypeOf sh Is NiflySharp.Blocks.BSEffectShaderProperty Then Return Nothing
+                Dim frame = If(ParentMeshData.ParentMesh?.ParentModel Is Nothing, -2, ParentMeshData.ParentMesh.ParentModel.FrameSerial)
+                If frame >= 0 AndAlso frame = _fo4EffFrame Then Return _fo4Eff
+                Dim geo = ParentMeshData.Shape?.NifShape
+                Dim raw As ULong = If(overlay OrElse sh Is Nothing, 0UL, CULng(CUInt(sh.ShaderFlags_F4SPF1)) Or (CULng(CUInt(sh.ShaderFlags_F4SPF2)) << 32))
+                Dim skinned = geo IsNot Nothing AndAlso geo.SkinInstanceRef IsNot Nothing AndAlso Not geo.SkinInstanceRef.IsEmpty()
+                Dim liByte = FO4UnifiedMaterial_Class.EngineEffectConstants(OpenTK.Mathematics.Vector3.Zero, 1.0F, False, mb.LightingInfluence, False).InfluenceByte
+                _fo4Eff = Fo4EffectTechnique.EngineFlags(raw, mb, skinned, VertexDescValue(geo), overlay, liByte)
+                _fo4EffFrame = frame
+                Return _fo4Eff
+            End Function
+
+            ''' <summary>Ola 3: GetRenderPasses' technique of this effect (Fo4EffectTechnique.Technique on Fo4EffectFlags, the base and palette
+            ''' paths +0x88 / +0x90 the material names, the engine's NiAlphaProperty at rest); the preview draws no particle system. Nothing
+            ''' for a lighting material. Gate only: PreviewModel.GateDisableSoft takes SOFT (bit 12) off, the --soft-scene comparison.</summary>
+            Friend Function Fo4EffectTechniqueValue() As UInteger?
+                Dim f = Fo4EffectFlags()
+                If Not f.HasValue Then Return Nothing
+                Dim mb = MaterialBase
+                Dim ea = EngineAlphaAtRest()
+                Dim t = Fo4EffectTechnique.Technique(New Fo4EffectTechnique.EffectInputs With {
+                    .Flags = f.Value, .BasePath = Not String.IsNullOrEmpty(mb.Diffuse_or_Base_Texture), .PalettePath = Not String.IsNullOrEmpty(mb.GreyscaleTexture),
+                    .AlphaFlags = If(ea.Present, ea.NiFlags(), CType(Nothing, Integer?))})
+                If PreviewModel.GateDisableSoft Then t = t And Not Fo4EffectTechnique.TechSoft
+                Return t
+            End Function
+
+            ''' <summary>Ola 3: why the GAME draws no colour pass of this effect although its pass exists: no PS / VS for its technique in the
+            ''' shader cache (Fo4EffectSource.MissingEnginePrograms: BeginTechnique 0x142231AE0 fails, the pass is skipped 0x14222513F..145),
+            ''' or UI mask rects without rects (Fo4EffectTechnique.UiMaskVetoed, 0x1422250F9..11E); Nothing when it draws, for a lighting
+            ''' material, or without a technique.</summary>
+            Friend Function Fo4EffectEngineUndrawn() As String
+                Dim t = Fo4EffectTechniqueValue()
+                If Not t.HasValue Then Return Nothing
+                Dim missing = Fo4EffectSource.MissingEnginePrograms(t.Value)
+                If missing IsNot Nothing Then Return $"No {missing} in Fallout 4 for effect technique 0x{t.Value:X8}: Fallout 4 does not draw it"
+                If Fo4EffectTechnique.UiMaskVetoed(t.Value) Then Return "Effect with UI mask rects, which only an interface draw has: Fallout 4 does not draw it"
+                Return Nothing
+            End Function
+
+            ''' <summary>Ola 3: Fallout 4's effect pass of this material - technique, flags and its transcribed program (Fo4DeferredPrograms.
+            ''' EffectProgram on the draw's vertex route); Nothing for a lighting material. A technique the game does not draw comes back with
+            ''' Undrawn (Fo4EffectEngineUndrawn) and no program; one whose stages read a runtime resource (Fo4EffectSource.GapOf), or
+            ''' whose program failed to build, with its Gap. Once per frame and programs object, as Fo4GBufferPass.</summary>
+            Friend Function Fo4EffectPass(programs As Fo4DeferredPrograms) As Fo4EffectDraw?
+                Dim frame = If(ParentMeshData.ParentMesh?.ParentModel Is Nothing, -2, ParentMeshData.ParentMesh.ParentModel.FrameSerial)
+                If frame >= 0 AndAlso frame = _fo4EffPassFrame AndAlso programs Is _fo4EffPassPrograms Then Return _fo4EffPass
+                _fo4EffPass = BuildFo4EffectPass(programs)
+                _fo4EffPassFrame = frame : _fo4EffPassPrograms = programs
+                Return _fo4EffPass
+            End Function
+
+            Private _fo4EffPassFrame As Integer = -1
+            Private _fo4EffPassPrograms As Fo4DeferredPrograms
+            Private _fo4EffPass As Fo4EffectDraw?
+
+            Private Function BuildFo4EffectPass(programs As Fo4DeferredPrograms) As Fo4EffectDraw?
+                If programs Is Nothing Then Return Nothing
+                Dim t = Fo4EffectTechniqueValue()
+                If Not t.HasValue Then Return Nothing
+                Dim d As New Fo4EffectDraw With {.Technique = t.Value, .Flags = Fo4EffectFlags().Value, .Gap = "", .Undrawn = Fo4EffectEngineUndrawn()}
+                If d.Undrawn IsNot Nothing Then Return d
+                d.Gap = Fo4EffectSource.GapOf(t.Value)
+                If d.Gap = "" Then
+                    Dim errorText As String = Nothing
+                    d.Program = programs.EffectProgram(New Fo4EffectTech(t.Value), errorText, EngineCpuRouteOf())
+                    If d.Program Is Nothing Then
+                        d.Gap = "program build failed: " & errorText
+                    ElseIf EngineLayoutUnsupportedOf() Then
+                        d.Gap = "vertex desc with UV2 / LAND data: NiflySharp does not read them (BSVertexData.Sync), the preview has no source"
+                        d.Program = Nothing
+                    End If
                 End If
                 Return d
             End Function
@@ -5266,8 +5366,8 @@ Public Class PreviewModel
             Return If(g IsNot Nothing AndAlso g.Length > 0, g(0), Matrix4.Identity) * MeshData.Transform
         End Function
 
-        ''' <summary>GATE ONLY (no UI): ShadowGate --overlay-z-probe mutant. True draws an FO4 overlay with Vertex_FO4's own position
-        ''' (the law before 12-oct-2026) instead of its host's engine vertex stage (EnginePositions).</summary>
+        ''' <summary>GATE ONLY (no UI): ShadowGate --overlay-z-probe. True draws an FO4 overlay with its effect VS's own position (ola 3:
+        ''' the transcribed b05 VS) instead of its host's engine vertex stage (EnginePositions).</summary>
         Friend Shared GateOverlayOwnPosition As Boolean = False
 
         Private _enginePosBuffer As Integer, _enginePosCap As Integer, _enginePosFrame As Integer = -1
@@ -5279,12 +5379,13 @@ Public Class PreviewModel
 
         ''' <summary>THE POSITION OF AN FO4 OVERLAY (user decision 12-oct-2026): an overlay layer of this shape is, in the game, a clone
         ''' that shares its skin (F4EE COPY_EXACT, ApplyMaterialData 0x1421715E0), drawn in the forward alpha list (0x1421D7120) by an
-        ''' effect VS whose position chain is this shape's G-buffer VS's instruction for instruction (b05 rec0042 against b09 rec2304,
-        ''' see Vertex_FO4's header), LESS_EQUAL with write and no bias: its depth is the body's. So the clip position of each vertex
+        ''' effect VS whose position chain is this shape's G-buffer VS's instruction for instruction (b05 rec0042 against b09 rec2304:
+        ''' weights add / add_sat / 1 - x, ftoi(x * 765.01), (row - eye) mul / mad x 3, dp4 with cb12[8..11]), LESS_EQUAL with write and no bias: its depth is the body's. So the clip position of each vertex
         ''' is this shape's own engine vertex stage's output - the same VS (Fo4DeferredPrograms.EnginePositionProgram), route, VAO,
         ''' constants and palette as its G-buffer draw (BindEngineVertexStage) - captured by transform feedback once per frame and
-        ''' bound as SSBO 14 for Vertex_FO4 (bEnginePosition). False (Vertex_FO4's own position) outside Fallout 4's deferred frame, or
-        ''' when this shape has no engine G-buffer draw (a gap, a BGEM host): then its own draw is not an engine stage's either.</summary>
+        ''' bound as SSBO 14 for the overlay's transcribed effect VS (Fo4EffectSource APP_VertexFoot, bEnginePosition). False (the effect
+        ''' VS's own position) outside Fallout 4's deferred frame, or when this shape has no engine G-buffer draw (a gap, a BGEM host):
+        ''' then its own draw is not an engine stage's either.</summary>
         Friend Function EnginePositions() As Boolean
             Dim pm = Me.ParentModel
             If GateOverlayOwnPosition OrElse pm Is Nothing OrElse Not pm.FrameUsesFo4Deferred OrElse engineVbo = 0 Then Return False
@@ -6317,29 +6418,30 @@ Public Class PreviewModel
         End Function
 
 
-        ''' <summary>An effect whose technique has no shader in the game's cache is not drawn. FO4: MULTBLEND_DECAL and
-        ''' ADD+MULT, the lookup returns 0 and the draw is skipped (0x142231AE0, 0x14221FB9F; Fo4EffectBlend). SSE: SOFT +
-        ''' MULTBLEND_DECAL (src DEST_COLOR + dst INV_SRC_ALPHA; bits 18 and 22 set independently, 0x14152A5B8 / 0x14152A57C):
-        ''' 0x440042 exists as neither VS nor PS, BeginTechnique 0x141579120 fails and the pass renderer 0x141560340 skips it
-        ''' (Tools/re-docs/RE_SSE_ZPREPASS_BGSM_JSON_2026-10-03.md, C).</summary>
+        ''' <summary>An effect whose technique has no shader in the game's cache is not drawn. FO4 (ola 3): its technique's PS or VS is
+        ''' not in the cache, or it has UI mask rects without rects (MaterialData.Fo4EffectEngineUndrawn; BeginTechnique 0x142231AE0
+        ''' fails and the pass is skipped, 0x14222513F..145). SSE: SOFT + MULTBLEND_DECAL (src DEST_COLOR + dst INV_SRC_ALPHA; bits 18
+        ''' and 22 set independently, 0x14152A5B8 / 0x14152A57C): 0x440042 exists as neither VS nor PS, BeginTechnique 0x141579120 fails
+        ''' and the pass renderer 0x141560340 skips it (Tools/re-docs/RE_SSE_ZPREPASS_BGSM_JSON_2026-10-03.md, C).</summary>
         Private Function EngineSkipsEffectDraw(md As MaterialData) As Boolean
             Dim mb = md?.MaterialBase
             If mb Is Nothing Then Return False
             ' SSE: a shape with no colour pass (SseRenderPassLaw: refraction lighting, kTempRefraction + kDynamicDecal
             ' effects, Hair + DEPTH_WRITE_DECALS without its PS).
             If Me.ParentModel.FrameIsSse AndAlso Not md.SsePass().Drawn Then Return True
-            Return EffectSkipNotice(mb) IsNot Nothing
+            Return EffectSkipNotice(md) IsNot Nothing
         End Function
 
-        ''' <summary>The notice of an effect whose blend has no shader in the game's cache (EffectDrawSkipped: the engine skips the
-        ''' draw), naming the blend pair; Nothing when the effect is drawn, or for a lighting material.</summary>
-        Private Function EffectSkipNotice(mb As FO4UnifiedMaterial_Class) As String
+        ''' <summary>The notice of an effect whose technique has no shader in the game's cache (the engine skips the draw): Fallout 4
+        ''' MaterialData.Fo4EffectEngineUndrawn (ola 3), Skyrim SE SseEffectDrawSkipped naming the blend pair; Nothing when the effect is
+        ''' drawn, or for a lighting material.</summary>
+        Private Function EffectSkipNotice(md As MaterialData) As String
+            Dim mb = md.MaterialBase
             If Not mb.IsBGEM() Then Return Nothing
+            If Not Me.ParentModel.FrameIsSse Then Return md.Fo4EffectEngineUndrawn()
             Dim ea = mb.ResolveEngineAlpha()
-            Dim isSse = Me.ParentModel.FrameIsSse
-            If Not EffectDrawSkipped(isSse, mb.SoftEnabled, ea.Blend, ea.Src, ea.Dst) Then Return Nothing
-            If isSse Then Return $"Soft effect with blend {ea.Src} / {ea.Dst}, which has no Skyrim SE shader: Skyrim SE does not draw it"
-            Return $"Effect with blend {ea.Src} / {ea.Dst}, which has no Fallout 4 shader: Fallout 4 does not draw it"
+            If Not SseEffectDrawSkipped(mb.SoftEnabled, ea.Src, ea.Dst) Then Return Nothing
+            Return $"Soft effect with blend {ea.Src} / {ea.Dst}, which has no Skyrim SE shader: Skyrim SE does not draw it"
         End Function
 
         ''' <summary>Why the GAME draws no colour pass of <paramref name="md"/> on this shape, as the frame's notice says it (user decision
@@ -6379,7 +6481,7 @@ Public Class PreviewModel
             End If
             ' A shape without a colour pass whose reason is not above is a refraction shape: its refraction pass draws it.
             If Not drawn Then Return Nothing
-            Return EffectSkipNotice(mb)
+            Return EffectSkipNotice(md)
         End Function
 
         Private _boundSphereFrame As Integer = -1
@@ -6486,7 +6588,12 @@ Public Class PreviewModel
         ''' it has none. One place: ReportUndrawn reads it for the gap notice and to know whether the preview draws the shape.</summary>
         Private Function PreviewGap(md As MaterialData) As String
             Dim pm = Me.ParentModel
-            If Not pm.FrameUsesFo4Deferred OrElse md.MaterialBase.IsBGEM() Then Return Nothing
+            If Not pm.FrameUsesFo4Deferred Then Return Nothing
+            ' Ola 3: an effect's gap (a runtime resource of its stages, its program's build) is its pass's, as a lighting shape's.
+            If md.MaterialBase.IsBGEM() Then
+                Dim e = md.Fo4EffectPass(pm.ParentControl.SharedFo4Deferred)
+                Return If(e.HasValue AndAlso e.Value.Undrawn Is Nothing AndAlso e.Value.Gap <> "", e.Value.Gap, Nothing)
+            End If
             Dim d = md.Fo4GBufferPass(pm.ParentControl.SharedFo4Deferred)
             Return If(d.HasValue AndAlso d.Value.Gap <> "", d.Value.Gap, Nothing)
         End Function
@@ -6848,11 +6955,11 @@ Public Class PreviewModel
         ''' bias as its depth draw, under DecalBaseTarget.SurfaceDrawStencil (depth EQUAL: only the farthest painting decal's fragments;
         ''' one per pixel). Its opacity is DecalBaseOpacity (the base follows the decal's alpha):
         ''' <list type="bullet">
-        ''' <item>Fallout 4: Fo4DeferredPrograms.DecalBaseSurface writes the six G-buffer RTs of a plain surface, its albedo
-        ''' premultiplied by the opacity (uBaseOpacity; the decal's alpha from DecalBaseTarget.AlphaTexture at unit 2), and adds that
-        ''' opacity to the coverage target (its buffer 6, blended ONE / ONE_MINUS_SRC_ALPHA: the base is a layer); its VS is
-        ''' Vertex_FO4 with the uniforms that decide the position set as for the depth draw (invariant gl_Position, GLSL 4.60
-        ''' 4.8.1). Then the coverage draw of the decal's own colour draw (DecalCoverageMode): its own program into DecalBaseTarget's
+        ''' <item>Fallout 4: the decal's base surface program (a G-buffer record's DecalBaseSurfaceProgram, an effect's
+        ''' EffectSurfaceProgram, ola 3) writes the six G-buffer RTs of a plain surface, its albedo premultiplied by the opacity
+        ''' (uBaseOpacity; the decal's alpha from DecalBaseTarget.AlphaTexture at unit 2), and adds that opacity to the coverage target
+        ''' (its buffer 6, blended ONE / ONE_MINUS_SRC_ALPHA: the base is a layer); its VS is the decal's own engine VS with the
+        ''' constants of its depth draw (invariant gl_Position, GLSL 4.60 4.8.1). Then the coverage draw of the decal's own colour draw (DecalCoverageMode): its own program into DecalBaseTarget's
         ''' coverage target (CoverageDrawStencil), alpha blended ONE / ONE_MINUS_SRC_ALPHA (mode 1: its alpha, the over-accumulation the
         ''' HDR coverage takes from the forward draws, ApplyMaterial) or 1 (mode 0, unblended: logic op SET); none for mode 2 (a colour
         ''' source factor adds no coverage). Composite 2 hands that coverage to the post.</item>
@@ -6863,9 +6970,7 @@ Public Class PreviewModel
         ''' </list>
         ''' Gate mutants: PreviewModel.GateDecalBaseNoSurface (the surface not drawn; Fallout 4's coverage draws still are), GateDecalBaseOpaque (opacity 1), GateDecalBaseNoCoverage
         ''' (Fallout 4: no coverage draws).</summary>
-        Private Sub DrawDecalBaseSurface(shader As Shader_Base_Class, material As MaterialData, gbuf As Fo4GBufferDraw?, projection As Matrix4,
-                                         view As Matrix4, model As Matrix4, modelView As Matrix4, modelViewInverse As Matrix4,
-                                         normalMatrix As Matrix3, boneCount As Integer)
+        Private Sub DrawDecalBaseSurface(shader As Shader_Base_Class, material As MaterialData, gbuf As Fo4GBufferDraw?, fx As Fo4EffectDraw?)
             Dim pm = Me.ParentModel
             Dim target = pm.ParentControl.FrameDecalBase
             Dim opacity = DecalBaseOpacity(material, gbuf, pm.FrameIsSse)
@@ -6891,37 +6996,30 @@ Public Class PreviewModel
                 shader.SetBool("uSseDecalBaseSurface", False)
                 GL.Disable(EnableCap.Blend)
             Else
-                ' A translucent decal drawn WITHOUT a G-buffer draw (an effect decal: no engine vertex stage until ola 3 transcribes the
-                ' effects) keeps the surface it had before ola 2 (user decision 12-oct-2026, D16: no regression of "a decal alone is seen
-                ' as laid on something"): Vertex_FO4 + Fragment_DecalBaseSurfaceEffect, the fixed program DecalBaseSurfaceEffect, with
-                ' the same constants as then (the background's were BeginFo4DecalBase's).
-                If Not gbuf.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
+                ' A translucent EFFECT decal (ola 3, D16 / Q2): its surface on its own engine VS (the same gl_Position as its depth and colour
+                ' draws) with the surface foot and Fragment_DecalBaseSurfaceEffect (Fo4DeferredPrograms.EffectSurfaceProgram).
+                If fx.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
                     target.SurfaceDrawStencil()
                     GL.Disable(EnableCap.Blend)
                     GL.Enable(IndexedEnableCap.Blend, 6)
                     GL.BlendFunc(6, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
                     GL.ColorMask(6, False, False, False, True)
-                    Dim p = pm.ParentControl.SharedFo4Deferred.DecalBaseSurfaceEffect
-                    Dim mb = material.MaterialBase
+                    Dim tq = fx.Value.Technique
+                    Dim p = pm.ParentControl.SharedFo4Deferred.EffectSurfaceProgram(New Fo4EffectTech(tq), EngineCpuRoute())
+                    If p Is Nothing Then Exit Sub
+                    Dim fr = pm.FrameEngineRows
                     p.Use()
                     pm.ParentControl.SubirUniformsDeFondo(p)
-                    p.SetMatrix4("matProjection", projection)
-                    p.SetMatrix4("matView", view)
-                    p.SetMatrix4("matModel", model)
-                    p.SetMatrix4("matModelView", modelView)
-                    p.SetMatrix4("matModelViewInverse", modelViewInverse)
-                    p.SetMatrix3("mv_normalMatrix", normalMatrix)
-                    p.SetBool("bModelSpace", mb.ModelSpaceNormals)
-                    Dim uv = material.RestUv()
-                    p.SetVector2("uvOffset", uv.Offset)
-                    p.SetVector2("uvScale", uv.Scale)
-                    p.SetBool("bDoubleSided", mb.TwoSided)
-                    p.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
-                    p.SetInt("uBoneCount", boneCount)
+                    BindEffectVertexStage(p, material, EngineCpuRoute(), tq)
+                    p.SetMatrix4("appInvViewProj", fr.AppInvViewProj)
+                    p.SetVector4Array("cb12_view", fr.View)
                     p.SetInt("uBaseOpacity", opacity)
                     pm.EnsureFrameShadowUniforms(p)
                     p.Use()
-                    target.WithAlphaBound(2, Sub() GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0))
+                    target.WithAlphaBound(2, Sub()
+                                                 GL.BindVertexArray(EffectVaoFor(EngineCpuRoute(), tq))
+                                                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+                                             End Sub)
                     GL.Disable(EnableCap.Blend)
                 End If
                 If gbuf.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
@@ -6981,12 +7079,22 @@ Public Class PreviewModel
             Return d.Program
         End Function
 
-        ''' <summary>The law of <see cref="EngineSkipsEffectDraw"/>, pure (gate `effect-draw-skip`).</summary>
-        Friend Shared Function EffectDrawSkipped(isSse As Boolean, soft As Boolean, blendBit As Boolean,
-                                                 src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As Boolean
-            If isSse Then Return soft AndAlso src = NiflySharp.Enums.AlphaFunction.DEST_COLOR AndAlso dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
-            Return Fo4EffectTechnique(src, dst).Skip
+        ''' <summary>Skyrim SE's law of <see cref="EngineSkipsEffectDraw"/>, pure (gate `effect-draw-skip`). Fallout 4's is its technique's
+        ''' programs (ola 3, MaterialData.Fo4EffectEngineUndrawn; gate --fo4-effect-technique-law).</summary>
+        Friend Shared Function SseEffectDrawSkipped(soft As Boolean, src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As Boolean
+            Return soft AndAlso src = NiflySharp.Enums.AlphaFunction.DEST_COLOR AndAlso dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
         End Function
+
+        ''' <summary>Ola 3: Fallout 4's effect draw of a material (MaterialData.Fo4EffectPass): its transcribed program, technique and flags.
+        ''' Undrawn (not Nothing): the engine itself does not draw it (no programs, UI rects). Gap (not empty): the engine draws it, the
+        ''' preview cannot. Program is Nothing in both, and the frame's notice lists the shape.</summary>
+        Friend Structure Fo4EffectDraw
+            Public Program As Shader_Base_Class
+            Public Gap As String
+            Public Undrawn As String
+            Public Technique As UInteger
+            Public Flags As ULong
+        End Structure
 
         ''' <param name="ssePrepass">Skyrim SE's z-prepass draw of this shape (RenderAll): depth only, its own alpha test;
         ''' the shape's colour-pass existence does not matter there (slot 0x2B is a separate pass).</param>
@@ -7006,15 +7114,26 @@ Public Class PreviewModel
             Public Group As Integer
         End Structure
 
-        ''' <summary>The program a draw of <paramref name="md"/> uses: the frame's game shader, or in Fallout 4's G-buffer stage a
-        ''' lighting shape's record program (<paramref name="gbuf"/> set). Nothing = nothing is drawn: a lighting shape without a
-        ''' G-buffer pass, a technique the engine has no programs for (MissingPrograms), or a preview gap (Gap) - the frame's notice
-        ''' lists the last two (PreviewModel.ReportUndrawnShapes, before the frame draws). The prepass keeps the game shader (its
-        ''' depth-only branch).</summary>
-        Private Function ColourDrawProgram(md As MaterialData, prepass As Boolean, ByRef gbuf As Fo4GBufferDraw?) As Shader_Base_Class
-            gbuf = Nothing
+        ''' <summary>The program a draw of <paramref name="md"/> uses: the frame's game shader, in Fallout 4's G-buffer stage a lighting
+        ''' shape's record program (<paramref name="gbuf"/> set), or in Fallout 4's deferred frame an effect's transcribed program
+        ''' (<paramref name="fx"/> set, ola 3; a wireframe keeps the game shader's edit view). Nothing = nothing is drawn: a lighting shape
+        ''' without a G-buffer pass, a technique the engine has no programs for (MissingPrograms / Undrawn), or a preview gap (Gap) - the
+        ''' frame's notice lists the last two (PreviewModel.ReportUndrawnShapes, before the frame draws). The prepass keeps the game shader
+        ''' (its depth-only branch).</summary>
+        Private Function ColourDrawProgram(md As MaterialData, prepass As Boolean, ByRef gbuf As Fo4GBufferDraw?, ByRef fx As Fo4EffectDraw?) As Shader_Base_Class
+            gbuf = Nothing : fx = Nothing
             Dim pm = Me.ParentModel
-            If prepass OrElse Not pm.FrameGBufferStage OrElse md?.MaterialBase Is Nothing OrElse md.MaterialBase.IsBGEM() Then Return pm.ParentControl.CurrentShader
+            If prepass OrElse md?.MaterialBase Is Nothing Then Return pm.ParentControl.CurrentShader
+            If md.MaterialBase.IsBGEM() Then
+                If Not pm.FrameUsesFo4Deferred OrElse MeshData.Shape.Wireframe Then Return pm.ParentControl.CurrentShader
+                fx = md.Fo4EffectPass(pm.ParentControl.SharedFo4Deferred)
+                If Not fx.HasValue OrElse fx.Value.Program Is Nothing Then
+                    fx = Nothing
+                    Return Nothing
+                End If
+                Return fx.Value.Program
+            End If
+            If Not pm.FrameGBufferStage Then Return pm.ParentControl.CurrentShader
             gbuf = md.Fo4GBufferPass(pm.ParentControl.SharedFo4Deferred)
             If Not gbuf.HasValue Then Return Nothing
             If gbuf.Value.Gap <> "" OrElse gbuf.Value.MissingPrograms IsNot Nothing Then
@@ -7046,7 +7165,8 @@ Public Class PreviewModel
 
             '=============================== SHADER ===============================
             Dim gbuf As Fo4GBufferDraw? = Nothing
-            Dim shader = ColourDrawProgram(MeshData.Material, ssePrepass, gbuf)
+            Dim fx As Fo4EffectDraw? = Nothing
+            Dim shader = ColourDrawProgram(MeshData.Material, ssePrepass, gbuf, fx)
             If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
             If shader Is Nothing Then Exit Sub
             shader.Use()
@@ -7059,7 +7179,7 @@ Public Class PreviewModel
             ' bModelSpace needed in vertex shader for MSN CPU skinning path
             Dim materialBase = MeshData.Material.MaterialBase
             shader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
-            ApplyMaterial(MeshData.Material, gbuf)
+            ApplyMaterial(MeshData.Material, gbuf, fx)
 
             ' GPU Skinning: bind SSBO and set uniforms
             shader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
@@ -7070,7 +7190,8 @@ Public Class PreviewModel
             End If
 
             '=============================== DRAW ===============================
-            GL.BindVertexArray(If(gbuf.HasValue, EngineVaoFor(EngineCpuRoute(), gbuf.Value.Technique), vao))
+            GL.BindVertexArray(If(gbuf.HasValue, EngineVaoFor(EngineCpuRoute(), gbuf.Value.Technique),
+                                  If(fx.HasValue, EffectVaoFor(EngineCpuRoute(), fx.Value.Technique), vao)))
             ' Clean CPU-side zap: filter the element buffer to drop zapped triangles before drawing,
             ' so indexCount is correct for the DrawElements calls below. Cheap (re-uploads only when
             ' the zapped vertex set changes); no-op when ApplyZaps is off or nothing is zapped.
@@ -7111,7 +7232,7 @@ Public Class PreviewModel
                 EndDecalBaseDraw(shader, gbuf)
             ElseIf decalBase = DecalBaseStep.Surface Then
                 ApplyFaceMode(faceMode)
-                DrawDecalBaseSurface(shader, MeshData.Material, gbuf, projection, view, model, modelView, modelViewInverse, normalMatrix, boneCount)
+                DrawDecalBaseSurface(shader, MeshData.Material, gbuf, fx)
                 EndDecalBaseDraw(shader, gbuf)
             ElseIf isTwoPassBlended Then
                 GL.Enable(EnableCap.CullFace)
@@ -7438,10 +7559,11 @@ Public Class PreviewModel
             ' Bind the LAYER's material (transient MaterialData with OverrideRelatedMaterial).
             Dim overlayMat = GetOverlayMaterialData(layer)
             Dim gbuf As Fo4GBufferDraw? = Nothing
+            Dim fx As Fo4EffectDraw? = Nothing
             ' The position of the overlay = this shape's engine vertex stage's (EnginePositions), captured before the overlay's
-            ' program is in use. DECLARED GAP until ola 3: the rest of the game's effect VS (colour, uv, falloff) is Vertex_FO4's.
+            ' program is in use; the rest of the game's effect VS (uv, colour, falloff, TBN) is its technique's transcribed b05 VS (ola 3).
             Dim enginePos = Not ssePrepass AndAlso EnginePositions()
-            Dim shader = ColourDrawProgram(overlayMat, ssePrepass, gbuf)
+            Dim shader = ColourDrawProgram(overlayMat, ssePrepass, gbuf, fx)
             If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
             If shader Is Nothing Then Exit Sub
             shader.Use()
@@ -7455,7 +7577,7 @@ Public Class PreviewModel
 
             Dim materialBase = overlayMat.MaterialBase
             shader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
-            ApplyMaterial(overlayMat, gbuf)
+            ApplyMaterial(overlayMat, gbuf, fx)
 
             ' GPU Skinning: bind the SAME SSBO / bone uniforms as the base draw (geometry is shared).
             shader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
@@ -7466,7 +7588,8 @@ Public Class PreviewModel
             End If
 
             '=============================== DRAW ===============================
-            GL.BindVertexArray(vao)
+            ' The host's engine buffer for an effect layer (its b05 VS reads the engine layout, ola 3); the app's VAO otherwise.
+            GL.BindVertexArray(If(fx.HasValue, EffectVaoFor(EngineCpuRoute(), fx.Value.Technique), vao))
             EnsureZapIndexBuffer()
             Dim faceMode = ResolveDrawFaceMode(overlayMat)
 
@@ -7477,7 +7600,7 @@ Public Class PreviewModel
             If decalBase = DecalBaseStep.Depth Then ApplyDecalBaseState(shader, overlayMat, gbuf)
             ApplyFaceMode(faceMode)
             If decalBase = DecalBaseStep.Surface Then
-                DrawDecalBaseSurface(shader, overlayMat, gbuf, projection, view, model, modelView, modelViewInverse, normalMatrix, boneCount)
+                DrawDecalBaseSurface(shader, overlayMat, gbuf, fx)
             Else
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
             End If
@@ -7492,7 +7615,7 @@ Public Class PreviewModel
             If ssbo_BoneMatrices > 0 Then
                 GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
             End If
-            ' The program is shared with every other Vertex_FO4 draw: the overlay's position source is reset with its SSBO.
+            ' The program is shared with every other draw of the technique: the overlay's position source is reset with its SSBO.
             If enginePos Then
                 shader.Use()
                 shader.SetBool("bEnginePosition", False)
@@ -7592,23 +7715,12 @@ Public Class PreviewModel
         Friend Const SsePrepassDepthFunc As DepthFunction = DepthFunction.Lequal
 
 
-        ''' <summary>The effect technique law (0x142178150): MULTBLEND_DECAL = (4,7), MULTBLEND = dst 2 or src 4 otherwise, ADDBLEND =
-        ''' dst 0; no PS exists for MULTBLEND_DECAL nor for ADD+MULT, so the draw is skipped (0x142231AE0, 0x14221FB9F).</summary>
-        Friend Shared Function Fo4EffectTechnique(src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As (Skip As Boolean, MultBlend As Boolean)
-            Dim s = CInt(src), d = CInt(dst)
-            Dim multDecal = s = 4 AndAlso d = 7
-            Dim mult = Not multDecal AndAlso (d = 2 OrElse s = 4)
-            Dim add = d = 0
-            Return (multDecal OrElse (mult AndAlso add), mult)
-        End Function
-
-        ''' <summary>An effect's pass: its technique (Fo4EffectTechnique) and its blend (SetupAlphaBlend with the property's real alpha,
-        ''' Fo4SetupAlphaBlendMode / Fo4BlendModeFactors - the table the G-buffer shares).</summary>
+        ''' <summary>An effect's blend (SetupAlphaBlend with the property's real alpha, Fo4SetupAlphaBlendMode / Fo4BlendModeFactors - the
+        ''' table the G-buffer shares). Its technique (MULTBLEND, the skip) is Fo4EffectTechnique's (ola 3).</summary>
         Friend Shared Function Fo4EffectBlend(present As Boolean, blendBit As Boolean, src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction,
-                                              passAlpha As Single) As (Skip As Boolean, MultBlend As Boolean, Enabled As Boolean, ColorSrc As BlendingFactor, ColorDst As BlendingFactor, AlphaSrc As BlendingFactor, AlphaDst As BlendingFactor)
-            Dim tq = Fo4EffectTechnique(src, dst)
+                                              passAlpha As Single) As (Enabled As Boolean, ColorSrc As BlendingFactor, ColorDst As BlendingFactor, AlphaSrc As BlendingFactor, AlphaDst As BlendingFactor)
             Dim m = Fo4BlendModeFactors(Fo4SetupAlphaBlendMode(present, blendBit, src, dst, passAlpha))
-            Return (tq.Skip, tq.MultBlend, m.Enabled, m.ColorSrc, m.ColorDst, m.AlphaSrc, m.AlphaDst)
+            Return (m.Enabled, m.ColorSrc, m.ColorDst, m.AlphaSrc, m.AlphaDst)
         End Function
 
         Private Shared Function CoverageModeForSourceFactor(src As BlendingFactor) As Integer
@@ -7751,9 +7863,9 @@ Public Class PreviewModel
             Return If(material.RestColourAt(RestVariable.EffectEmissiveColor), New OpenTK.Mathematics.Vector3(c.R / 255.0F, c.G / 255.0F, c.B / 255.0F))
         End Function
 
-        Friend Sub ApplyMaterial(material As PreviewModel.RenderableMesh.MaterialData, Optional gbuf As Fo4GBufferDraw? = Nothing)
+        Friend Sub ApplyMaterial(material As PreviewModel.RenderableMesh.MaterialData, Optional gbuf As Fo4GBufferDraw? = Nothing, Optional fx As Fo4EffectDraw? = Nothing)
 
-            Dim shader = If(gbuf.HasValue, gbuf.Value.Program, Me.ParentModel.ParentControl.CurrentShader)
+            Dim shader = If(gbuf.HasValue, gbuf.Value.Program, If(fx.HasValue, fx.Value.Program, Me.ParentModel.ParentControl.CurrentShader))
             Dim materialBase = material.MaterialBase
 
             Dim diffuseTextureId = material.DiffuseTexture_ID
@@ -8293,28 +8405,22 @@ Public Class PreviewModel
             ' T2: 'shaderType' (NifShaderType enum) was dead code in the GLSL. Send the effective type
             ' (factory priority) instead, consumed by the engine-faithful per-type branch (linear path).
             shader.SetInt("uEffectiveType", CInt(materialBase.ResolveEffectiveType()))
-            shader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
-            shader.SetBool("bEffectFalloffColor", materialBase.FalloffColorEnabled)
-            ' Palette alpha = MaterialData.EngineRecolors (technique bit 14 / 20: the flag AND a palette path).
-            shader.SetBool("bEffectGreyscaleAlpha", material.EngineRecolors().Alpha)
-            shader.SetVector4("effectFalloffParams", New OpenTK.Mathematics.Vector4(material.RestValue(RestVariable.FalloffStartAngle), material.RestValue(RestVariable.FalloffStopAngle),
-                                                                                   material.RestValue(RestVariable.FalloffStartOpacity), material.RestValue(RestVariable.FalloffStopOpacity)))
-            ' FO4 effect falloff per vertex (Vertex_FO4) when the DRAWN geometry has vertex normals: the geometry is
-            ' this mesh's (MeshData), whose own material says whether it is model-space-normal (no vertex normals),
-            ' also when the material bound here is an overlay layer's.
-            Dim geometryHasNormals = Not (MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals)
-            shader.SetBool("bVertexFalloff", isBGEM AndAlso (materialBase.FalloffEnabled OrElse materialBase.FalloffColorEnabled) AndAlso geometryHasNormals)
-            ' Output alpha = diffuse.a * cb1[0].w * cb2[13].w (i1385). cb1[0].w = kBaseColor.a = the FILE Alpha (the
-            ' parser stores it at data+0x60 and ApplyMaterialData builds kBaseColor from it, 0x14216C065..C185,
-            ' 0x1421717EF..1835); cb2[13].w = the property's fAlpha = 1.0 (ctor 0x1421688FB, never written by
-            ' ApplyMaterialData). The app aliases BaseColor.A to the same file Alpha: it enters ONCE.
-            shader.SetFloat("effectBaseColorAlpha", material.PreviewAlpha())
-            shader.SetFloat("effectBaseColorScale", material.RestValue(RestVariable.EffectEmissiveMultiple))
-            ' The LIGHTING light: the weather's effect light kept in the game's proportion to the frame's key
-            ' (PreviewImagingRow.EffectLightForKey; the key in the space the lit shaders get it, FrameLights).
-            Dim effectL = Me.ParentModel.FrameImaging.Row.EffectLightForKey(Me.ParentModel.FrameLights.KeyDiffuse,
-                                                                            Me.ParentModel.FrameImaging.Settings.EffectLightVsKey)
             If isSSE Then
+                ' Fragment_SSE's effect inputs (Fallout 4's are its transcribed programs' constants, ola 3: ApplyFo4EffectDraw).
+                shader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
+                shader.SetBool("bEffectFalloffColor", materialBase.FalloffColorEnabled)
+                ' Palette alpha = MaterialData.EngineRecolors (technique bit 14 / 20: the flag AND a palette path).
+                shader.SetBool("bEffectGreyscaleAlpha", material.EngineRecolors().Alpha)
+                shader.SetVector4("effectFalloffParams", New OpenTK.Mathematics.Vector4(material.RestValue(RestVariable.FalloffStartAngle), material.RestValue(RestVariable.FalloffStopAngle),
+                                                                                       material.RestValue(RestVariable.FalloffStartOpacity), material.RestValue(RestVariable.FalloffStopOpacity)))
+                ' The effect falloff per vertex (Vertex_SSE) when the DRAWN geometry has vertex normals: the geometry is this mesh's
+                ' (MeshData), whose own material says whether it is model-space-normal (no vertex normals), also when the material
+                ' bound here is an overlay layer's.
+                Dim geometryHasNormals = Not (MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals)
+                shader.SetBool("bVertexFalloff", isBGEM AndAlso (materialBase.FalloffEnabled OrElse materialBase.FalloffColorEnabled) AndAlso geometryHasNormals)
+                ' The effect's base alpha (Fragment_SSE: aBase and the prepass keep) = the file Alpha, and the palette scale.
+                shader.SetFloat("effectBaseColorAlpha", material.PreviewAlpha())
+                shader.SetFloat("effectBaseColorScale", material.RestValue(RestVariable.EffectEmissiveMultiple))
                 ' SSE SetupMaterial of the effect property (FO4UnifiedMaterial_Class.EngineSseEffectConstants), raw.
                 ' The palette branch is the shader's bGreyscaleColor: same predicate (bit 19 = flag + greyscale tex).
                 Dim ssePalette = materialBase.GrayscaleToPaletteColor AndAlso greyscaleTextureId <> 0
@@ -8323,23 +8429,18 @@ Public Class PreviewModel
                 shader.SetVector3("effectBaseColor", ks.BaseColor)
                 shader.SetFloat("effectLightingInfluence", ks.Influence)
                 shader.SetBool("bEffectLighting", ks.LightingTechnique)
-                shader.SetVector3("effectLight", effectL)
-            Else
-                ' FO4 SetupMaterial of the effect material (FO4UnifiedMaterial_Class.EngineEffectConstants). The
-                ' palette branch is the shader's bGreyscaleColor: same predicate.
-                Dim palette = materialBase.GrayscaleToPaletteColor AndAlso greyscaleTextureId <> 0
-                Dim k = FO4UnifiedMaterial_Class.EngineEffectConstants(RestBase(material), material.RestValue(RestVariable.EffectEmissiveMultiple), palette,
-                                                                       materialBase.LightingInfluence, materialBase.EffectLightingEnabled)
-                shader.SetVector3("effectBaseColor", k.BaseColorLinear)
-                shader.SetFloat("effectLightingInfluence", k.InfluenceByte / 255.0F)
-                shader.SetBool("bEffectLighting", k.LightingTechnique)
-                shader.SetVector3("effectDLightColor", effectL)
-                shader.SetFloat("effectEnvMinLod", materialBase.EnvmapMinLOD)
+                ' The LIGHTING light: the weather's effect light kept in the game's proportion to the frame's key
+                ' (PreviewImagingRow.EffectLightForKey; the key in the space the lit shaders get it, FrameLights).
+                shader.SetVector3("effectLight", Me.ParentModel.FrameImaging.Row.EffectLightForKey(Me.ParentModel.FrameLights.KeyDiffuse,
+                                                                                                   Me.ParentModel.FrameImaging.Settings.EffectLightVsKey))
             End If
+            ' Fallout 4's effect constants are its transcribed programs' (ola 3: ApplyFo4EffectDraw, Fo4EffectConstants).
             ' SOFT (FO4 technique bit 12 / SSE bit 18 = SLSF1 bit 30, the BGEM's SoftEnabled; no setting can turn it
             ' off, and the preview is not first person): the fade reads the scene depth copied this frame. Before the
             ' copy (the opaque groups) there is none: no fade (hole, see RenderAll).
-            Dim softOn = isBGEM AndAlso materialBase.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft
+            ' Fallout 4 (ola 3): its effect's technique says SOFT (bit 12, MaterialData.Fo4EffectTechniqueValue: flag 30).
+            Dim softOn = If(fx.HasValue, (fx.Value.Technique And Fo4EffectTechnique.TechSoft) <> 0UI,
+                            isBGEM AndAlso materialBase.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft)
             If softOn AndAlso Not isSSE Then
                 ' FO4 reads the LIVE depth (logical depth 1, bound read-only while it is an SRV, 0x14183C863): all that was
                 ' drawn before this effect. Copy it when something wrote depth since the last copy.
@@ -8353,11 +8454,6 @@ Public Class PreviewModel
             ' waits on the z-prepass question (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md).
             softOn = softOn AndAlso Me.ParentModel.FrameSceneDepthValid
             shader.SetBool("bSoftEffect", softOn)
-            ' FO4 MULTBLEND (technique bit 6) changes the PS (Fo4EffectBlend).
-            If Not isSSE Then
-                Dim eaM = materialBase.ResolveEngineAlpha()
-                shader.SetBool("bEffectMultBlend", isBGEM AndAlso Fo4EffectTechnique(eaM.Src, eaM.Dst).MultBlend)
-            End If
             ' What this draw uploads as its alpha test, for the [DRAW-STATE] log: the generic upload above, overwritten by each
             ' game's branch below (SSE: SseRenderPassLaw; FO4: Fo4RenderPassLaw.ColourPassAlphaTest).
             Dim testSubido As Boolean = CBool(hasAlphaTest)
@@ -8557,6 +8653,7 @@ Public Class PreviewModel
                 For rt = 1 To 5 : GL.ColorMask(rt, False, False, False, False) : Next
                 If GateFo4EffectDecalMaskOpen Then GL.ColorMask(1, True, True, True, True) : GL.ColorMask(2, True, True, True, True) : GL.ColorMask(3, True, True, True, True) : GL.ColorMask(4, True, True, True, True) : GL.ColorMask(5, True, True, True, True)
             End If
+            If fx.HasValue Then ApplyFo4EffectDraw(shader, material, fx.Value)
 
             Dim polygonOffset = ResolvePolygonOffset(material)
             If polygonOffset.Enabled Then
@@ -8657,6 +8754,115 @@ Public Class PreviewModel
             Me.ParentModel.EnsureFrameShadowUniforms(shader)
             shader.Use()
         End Sub
+
+        ''' <summary>Ola 3: an effect's draw with its transcribed program (D:\WinTmp\rc\ola3\re.md 3), after the shared material state
+        ''' (ApplyMaterial: the textures at the units Fo4EffectSource binds the slots to, the samplers of SamplerLaw, the blend
+        ''' Fo4EffectBlend, the write mask RGB, the coverage, the post-off display law): the constants by name (Fo4EffectConstants) - the
+        ''' VS's (BindEffectVertexStage) and the PS's: PropertyColor, AlphaTestRef, BaseColor (+ BaseColorScale with GRAYSCALE_TO_COLOR),
+        ''' LightingInfluence, CameraData, EnvmapScale, DLightColor and the point lights (none) of LIGHTING - and the scene depth of SOFT
+        ''' at t3's unit (9).</summary>
+        Private Sub ApplyFo4EffectDraw(shader As Shader_Base_Class, material As MaterialData, d As Fo4EffectDraw)
+            Dim mb = material.MaterialBase
+            Dim pm = Me.ParentModel
+            Dim t = d.Technique
+            Dim ea = material.EngineAlphaAtRest()
+            Dim alpha = material.PreviewAlpha()
+            BindEffectVertexStage(shader, material, EngineCpuRoute(), t)
+            shader.SetVector4("PropertyColor", Fo4EffectConstants.PropertyColor(alpha))
+            shader.SetVector4("AlphaTestRef", Fo4EffectConstants.AlphaTestRef(ea.Present AndAlso ea.Test, ea.Threshold))
+            Dim palette = (t And Fo4EffectTechnique.TechGrayscaleToColor) <> 0UI
+            Dim scale = material.RestValue(RestVariable.EffectEmissiveMultiple)
+            Dim k = FO4UnifiedMaterial_Class.EngineEffectConstants(RestBase(material), scale, palette, mb.LightingInfluence, mb.EffectLightingEnabled)
+            shader.SetVector4("BaseColor", Fo4EffectConstants.BaseColor(k.BaseColorLinear, alpha))
+            If palette Then shader.SetVector4("BaseColorScale", Fo4EffectConstants.BaseColorScale(scale))
+            Dim soft = (t And Fo4EffectTechnique.TechSoft) <> 0UI
+            Dim nf = pm.ParentControl.FrameNearFar
+            shader.SetVector4("LightingInfluence", Fo4EffectConstants.LightingInfluence(k.InfluenceByte, soft, nf.X, nf.Y, mb.SoftDepth))
+            If soft Then
+                shader.SetVector4("CameraData", Fo4EffectConstants.CameraData(nf.X, nf.Y))
+                GL.ActiveTexture(TextureUnit.Texture9)
+                GL.BindTexture(TextureTarget.Texture2D, pm.ParentControl.SceneDepthTexture)
+            End If
+            If (t And Fo4EffectTechnique.TechEnvmap) <> 0UI Then shader.SetVector4("EnvmapScale", Fo4EffectConstants.EnvmapScale(material.RestValue(RestVariable.EnvMapScale)))
+            If (t And Fo4EffectTechnique.TechLighting) <> 0UI Then
+                ' DLightColor: the weather's effect light kept in the game's proportion to the frame's key (PreviewImagingRow.EffectLightForKey,
+                ' the app's rule; user decision 13-oct-2026: the rig's directional light lights the effects), .w unwritten (asm2glsl.EPNOWRITE).
+                Dim effectL = pm.FrameImaging.Row.EffectLightForKey(pm.FrameLights.KeyDiffuse, pm.FrameImaging.Settings.EffectLightVsKey)
+                shader.SetVector4("DLightColor", New Vector4(effectL, 0.0F))
+                ' The point lights (none, Fo4EffectConstants.PointLightNone / PSpotPowerNone), each name a literal (build_source_v6 rev-B10).
+                shader.SetVector4("PLightPositionX", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PLightPositionY", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PLightPositionZ", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PSpotDirX", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PSpotDirY", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PSpotDirZ", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PSpotPower", Fo4EffectConstants.PSpotPowerNone())
+                shader.SetVector4("PSpotAngle", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PLightingRadiusInverseSquared", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PLightColorR", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PLightColorG", Fo4EffectConstants.PointLightNone)
+                shader.SetVector4("PLightColorB", Fo4EffectConstants.PointLightNone)
+            End If
+            shader.Use()
+        End Sub
+
+        ''' <summary>Ola 3: the constants of an effect's engine VS (Fo4EffectConstants, each under its writer's condition; a program without
+        ''' the name ignores it): WorldViewProj without SKINNED; World with FALLOFF / RGB_FALLOFF without SKINNED or with ENVMAP (SKINNED:
+        ''' the node's own world); EyePosition with ENVMAP; FalloffData with FALLOFF / RGB_FALLOFF; SoftMaterialVSParams with SOFT;
+        ''' TexcoordOffset with TEXTURE; the frame's cb12 rows (FrameEngineRows) and the palette (BindEnginePalette).</summary>
+        Friend Sub BindEffectVertexStage(p As Shader_Base_Class, material As MaterialData, cpuRoute As Boolean, technique As UInteger)
+            Dim fr = Me.ParentModel.FrameEngineRows
+            Dim mb = material.MaterialBase
+            Dim skinned = (technique And Fo4EffectTechnique.TechSkinned) <> 0UI
+            Dim falloff = (technique And (Fo4EffectTechnique.TechFalloff Or Fo4EffectTechnique.TechRgbFalloff)) <> 0UI
+            Dim env = (technique And Fo4EffectTechnique.TechEnvmap) <> 0UI
+            Dim worldCond = (falloff AndAlso Not skinned) OrElse env, nodeWorld = skinned
+#If DEBUG Then
+            ' ShadowGate --fo4-effect-constants' mutants of the writers' conditions (Fo4GBufferConstants.GateMutantOn, the one switch)
+            If Fo4GBufferConstants.GateMutantOn("efx-world-cond") Then worldCond = Not worldCond
+            If Fo4GBufferConstants.GateMutantOn("efx-world-node") Then nodeWorld = Not nodeWorld
+#End If
+            If Not skinned Then p.SetVector4Array("WorldViewProj", Fo4EffectConstants.WorldViewProj(EngineGeometryModel(), fr))
+            If worldCond Then p.SetVector4Array("World", Fo4EffectConstants.World(If(nodeWorld, EngineNodeModel(), EngineGeometryModel()), fr.Eye))
+            If env Then p.SetVector4("EyePosition", Fo4EffectConstants.EyePosition(EngineGeometryModel(), fr.Eye, skinned))
+            If falloff Then
+                p.SetVector4("FalloffData", Fo4EffectConstants.FalloffData(material.RestValue(RestVariable.FalloffStartAngle), material.RestValue(RestVariable.FalloffStopAngle),
+                                                                          material.RestValue(RestVariable.FalloffStartOpacity), material.RestValue(RestVariable.FalloffStopOpacity)))
+            End If
+            If (technique And Fo4EffectTechnique.TechSoft) <> 0UI Then p.SetVector4("SoftMaterialVSParams", Fo4EffectConstants.SoftMaterialVSParams(mb.SoftDepth))
+            If (technique And Fo4EffectTechnique.TechTexture) <> 0UI Then
+                Dim uv = material.RestUv()
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("efx-texoff") Then uv = (uv.Scale, uv.Offset)
+#End If
+                p.SetVector4("TexcoordOffset", Fo4GBufferConstants.TexcoordOffset(uv.Offset, uv.Scale))
+            End If
+            p.SetVector4Array("cb12_viewproj", fr.ViewProj)
+            p.SetVector4Array("cb12_invview", fr.InvView)
+            p.SetVector4Array("cb12_invproj", fr.InvProj)
+            p.SetVector4("cb12_35", fr.Eye)
+            p.SetVector4Array("cb12_fog", fr.Fog)
+            BindEnginePalette(cpuRoute)
+        End Sub
+
+        ''' <summary>Ola 3: the world NiTransform of a skinned geometry's node ([geom + 0x70], the World of an ENVMAP + SKINNED effect,
+        ''' SG 0x142226DA3..E2F): the shape's global transform in its NIF (SkinningHelper.ShapeGlobalTransform) times MeshData.Transform;
+        ''' a rigid shape's is EngineGeometryModel.</summary>
+        Friend Function EngineNodeModel() As Matrix4
+            Dim shp = MeshData.Shape
+            If shp?.Geometry?.BackingShape Is Nothing OrElse shp.NifContent Is Nothing Then Return EngineGeometryModel()
+            Return SkinningHelper.AMatrix4(SkinningHelper.ShapeGlobalTransform(shp)) * MeshData.Transform
+        End Function
+
+        ''' <summary>Ola 3: the VAO of an effect draw of technique <paramref name="technique"/> - the GPU route's engine VAO, or on the CPU
+        ''' route the one of its VS's CPU layout (Fo4EffectSource.EffectiveCpuLayout; a rigid VS has one route).</summary>
+        Friend Function EffectVaoFor(cpuRoute As Boolean, technique As UInteger) As Integer
+            Select Case Fo4EffectSource.EffectiveCpuLayout(New Fo4EffectTech(technique).Key().Vs, cpuRoute)
+                Case Fo4CpuRouteLayout.Tbn : Return engineVaoCpuTbn
+                Case Fo4CpuRouteLayout.Rows : Return engineVaoCpuRows
+                Case Else : Return engineVaoGbuf
+            End Select
+        End Function
 
         ''' <summary>SetupAlphaBlend 0x1422301E0 (Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md 3.2): without a blending
         ''' NiAlphaProperty, mode 1 when the pass alpha is below 1, else 0; with one, only seven (src, dst) pairs blend - (6,7) 1;
@@ -10755,24 +10961,10 @@ Public Class PreviewModel
     ''' mean (rev-22), the 3107 PS applies pow 2.2 after the dot.</summary>
     Private Function BuildFo4DeferredFrame(projection As Matrix4, view As Matrix4) As Fo4DeferredFrame
         Dim nf = ParentControl.FrameNearFar
-        ' Column-vector rows of the frame projection = the columns of OpenTK's row-vector matrix; diag(1, 1, -1) = engine view.
-        Dim flipZ = Function(r As Vector4d) New Vector4d(r.X, r.Y, -r.Z, r.W)
-        Dim p0 = flipZ(CType(projection.Column0, Vector4d)), p1 = flipZ(CType(projection.Column1, Vector4d))
-        Dim p3 = flipZ(CType(projection.Column3, Vector4d))
-        Dim p2 = flipZ(CType(projection.Column2, Vector4d))
-        Dim rowsOf = Function(zRow As Vector4d) As Vector4()
-                         Dim m As New Matrix4d(p0, p1, zRow, p3)
-                         m.Invert()
-                         Return {CType(m.Row0, Vector4), CType(m.Row1, Vector4), CType(m.Row2, Vector4), CType(m.Row3, Vector4)}
-                     End Function
-        ' Engine view -> world: R = inverse(GL view rotation) * diag(1, 1, -1); its rows (column-vector convention).
-        Dim v3 As New Matrix3d(view.M11, view.M12, view.M13, view.M21, view.M22, view.M23, view.M31, view.M32, view.M33)
-        ' OpenTK stores the row-vector matrix: the column-vector view rotation is its transpose, whose inverse is v3 itself
-        ' when orthonormal; inverted in general, then the columns' z negated (diag(1, 1, -1) on the right).
-        Dim rcv = Matrix3d.Transpose(v3)
-        rcv.Invert()
-        Dim rRow = Function(i As Integer) New Vector3d(rcv(i, 0), rcv(i, 1), -rcv(i, 2))
-        Dim r0 = rRow(0), r1 = rRow(1), r2 = rRow(2)
+        ' cb12 20..23 and the engine view -> world rows 12..14: the frame's (Fo4GBufferConstants.EngineFrameRows, one owner with the
+        ' effects' VS, ola 3); 24..27 the first-person projection's (InverseProjectionRows, 100 z).
+        Dim fr = FrameEngineRows
+        Dim r2 = Fo4GBufferConstants.ViewToWorldRows(view)(2)
         Dim toEngineView = Function(worldDir As Vector3) As Vector3
                                Dim g = (New Vector4(worldDir, 0.0F) * view).Xyz
                                Return New Vector3(g.X, g.Y, -g.Z)
@@ -10787,9 +10979,9 @@ Public Class PreviewModel
         Next
         Return New Fo4DeferredFrame With {
             .W = ParentControl.Width, .H = ParentControl.Height, .Near = nf.X, .Far = nf.Y,
-            .InvProj = rowsOf(New Vector4d(1.01 * p2 - 0.01 * p3)),
-            .InvProj1P = rowsOf(100.0 * p2),
-            .ViewToWorld = {New Vector4(CType(r0, Vector3), 0.0F), New Vector4(CType(r1, Vector3), 0.0F), New Vector4(CType(r2, Vector3), 0.0F)},
+            .InvProj = fr.InvProj,
+            .InvProj1P = Fo4GBufferConstants.InverseProjectionRows(projection, 100.0, 0.0),
+            .ViewToWorld = {fr.InvView(0), fr.InvView(1), fr.InvView(2)},
             .SunDir = toEngineView(_frameLights.KeyDir), .SunColor = _frameLights.KeyDiffuse,
             .SunCastsShadow = _shadowActive AndAlso _shadowSlots(0) >= 0,
             .FillDir = {toEngineView(_frameLights.Fill0Dir), toEngineView(_frameLights.Fill1Dir), toEngineView(_frameLights.BackDir)},
