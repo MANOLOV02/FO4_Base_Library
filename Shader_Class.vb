@@ -3807,6 +3807,17 @@ Public MustInherit Class Shader_Base_Class
         GL.Uniform4(loc, values.Length, f)
     End Sub
 
+    ''' <summary>A uvec4 array uniform (glUniform4uiv): <paramref name="words"/> = 4 words per element, kept bit for bit (ola 2b:
+    ''' BoneTintIndices, the engine's integer rows; decision of 13-oct-2026: a vec4 upload does not keep every bit pattern).</summary>
+    Public Sub SetUVector4Array(name As String, words As UInteger())
+#If DEBUG Then
+        ' rev-B12: the caller's words are the closed rows of Fo4GBufferConstants (16 words): checked in Debug only
+        If words Is Nothing OrElse words.Length = 0 OrElse words.Length Mod 4 <> 0 Then Throw New ArgumentException("4 words per uvec4", NameOf(words))
+#End If
+        Dim loc As Integer = GetUniformLocationCached(name)
+        If loc <> -1 Then GL.Uniform4(loc, words.Length \ 4, words)
+    End Sub
+
     Public Sub SetVector4(name As String, value As Vector4)
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then

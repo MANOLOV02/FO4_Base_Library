@@ -65,6 +65,12 @@ Imports OpenTK.Graphics.OpenGL4
 ''' over every app program (the four transcriptions and every GLSL text of FO4_Base_Library): these three and no other
 ''' constant output with a non-integer stored value; the gate's dynamic census (Val.Literal over the 433 records) lists the
 ''' same two of them it reaches.</para>
+''' <para>THE ORDER OF THE OPERATIONS IS NOT PINNED, declared (ola 2b rev-B7, decided by the reviewer 13-oct-2026): no GLSL text of
+''' the app uses the precise qualifier, and without it GLSL 4.30 4.9 does not guarantee that an expression is evaluated in the
+''' order and form it is written (one fma for a * b + c or two roundings, reassociation). The bounds the gates' oracle propagates
+''' (Tools\ShadowGate\Fo4GBufferBytecode.vb OpErr) suppose the written order, so a red of a gate from that cause is a gap of this
+''' law, not a defect of the transcription. Measured once: an exact float32 result claimed for a mad of the oracle put 20 PS of
+''' --fo4-gbuffer-law outside the bound (rec2805 asm 69 / 75); that the compiler evaluated another order is the inference.</para>
 ''' ASCII only (GLSL).</summary>
 Friend NotInheritable Class Gl43
     Private Sub New()
@@ -662,10 +668,46 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         Return v
     End Function
 
-    ''' <summary>glShaderSource with the GL 4.3 check: a source with GlslViolations is not compiled (InvalidOperationException).</summary>
+    ''' <summary>glShaderSource with the GL 4.3 check in Debug: a source with GlslViolations is not compiled (InvalidOperationException).
+    ''' <para>DEBUG ONLY (user decision 13-oct-2026, ola 2b): in Release the shader texts are closed - the library's own constants and
+    ''' the generated FO4 G-buffer stages, nothing the user writes - and the ParityGate gate gl43-glsl runs GlslViolations over every
+    ''' one of them before a delivery (Tools\ParityGate\Gl43GlslTexts.vb), so checking them again at every start adds nothing.
+    ''' GlslViolations stays for the gates. In Debug every text is also recorded (GateCompiledTexts, rev-B11 / B13): ShadowGate checks
+    ''' at the end of each run that every text it compiled and no harness declared (GateHarnessText) is one the gate evaluates. The
+    ''' clip-state check of UseProgram (law gl43-unbound-clip) stays in every build: it guards runtime state, not a text (measured in
+    ''' Release: 1.7 us per bind over 24863 binds of --fo4-deferred-scene, 58.7 us over the 2028 of --fo4-gbuffer-scenes, where the
+    ''' binding query waits on the GPU).</para></summary>
     Friend Shared Sub ShaderSource(shader As Integer, source As String)
+#If DEBUG Then
         Dim v = GlslViolations(source)
         If v.Count > 0 Then Throw New InvalidOperationException("GLSL above 4.30 or off the GL43 clip contract: " & String.Join("; ", v))
+        GateCompiledTexts.TryAdd(GateSha256(source), source.Length)
+#End If
         GL.ShaderSource(shader, source)
     End Sub
+
+    ''' <summary>GATE (ola 2b rev-B13): a harness declares, where it produces it, that <paramref name="text"/> is its own (a mutant, an
+    ''' oracle, a probe), under the name <paramref name="site"/>; returns the text unchanged. Every compiled text not declared here is
+    ''' the app's (ShadowGate's gl43-glsl coverage check: it must be one the gate gl43-glsl evaluates). In Release nothing is
+    ''' recorded.</summary>
+    Friend Shared Function GateHarnessText(site As String, text As String) As String
+#If DEBUG Then
+        GateHarnessTexts(GateSha256(text)) = site
+#End If
+        Return text
+    End Function
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (rev-B11 / B13): the SHA-256 (UTF-8, uppercase hex) of every text glShaderSource received in this process,
+    ''' with its length.</summary>
+    Friend Shared ReadOnly GateCompiledTexts As New ConcurrentDictionary(Of String, Integer)(StringComparer.Ordinal)
+
+    ''' <summary>DEBUG ONLY (rev-B13): the SHA-256 of every text a harness declared (GateHarnessText), with its site.</summary>
+    Friend Shared ReadOnly GateHarnessTexts As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+
+    ''' <summary>DEBUG ONLY: the key of a text in GateCompiledTexts / GateHarnessTexts.</summary>
+    Friend Shared Function GateSha256(s As String) As String
+        Return Convert.ToHexString(Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(s)))
+    End Function
+#End If
 End Class

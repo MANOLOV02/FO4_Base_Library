@@ -4205,17 +4205,31 @@ Public Class PreviewModel
                 Return (Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(mb.SkinTintColor, mb.TintColorScale)), mb.SkinTintAlpha, True)
             End Function
 
-            ''' <summary>The geometry carries an extra data named "BTED" (0x142507510, read by GetRenderPasses 0x14217A802).</summary>
-            Private Function HasBtedExtraData() As Boolean
+            ''' <summary>The geometry's extra data named "BTED" (0x142507510), Nothing without one.</summary>
+            Private Function BtedExtraData() As NiflySharp.Blocks.NiExtraData
                 Dim obj = TryCast(ParentMeshData.Shape?.NifShape, NiflySharp.Blocks.NiObjectNET)
                 Dim nif = ParentMeshData.Shape?.NifContent
-                If obj Is Nothing OrElse nif Is Nothing OrElse obj.ExtraDataList Is Nothing Then Return False
+                If obj Is Nothing OrElse nif Is Nothing OrElse obj.ExtraDataList Is Nothing Then Return Nothing
                 For Each r In obj.ExtraDataList.References
                     If r Is Nothing OrElse r.Index < 0 OrElse r.Index >= nif.Blocks.Count Then Continue For
                     Dim ed = TryCast(nif.Blocks(r.Index), NiflySharp.Blocks.NiExtraData)
-                    If ed IsNot Nothing AndAlso String.Equals(ed.Name?.String, "BTED", StringComparison.Ordinal) Then Return True
+                    If ed IsNot Nothing AndAlso String.Equals(ed.Name?.String, "BTED", StringComparison.Ordinal) Then Return ed
                 Next
-                Return False
+                Return Nothing
+            End Function
+
+            ''' <summary>The geometry carries an extra data named "BTED" (0x142507510, read by GetRenderPasses 0x14217A802).</summary>
+            Private Function HasBtedExtraData() As Boolean
+                Return BtedExtraData() IsNot Nothing
+            End Function
+
+            ''' <summary>Ola 2b: the integers of the "BTED" extra data SetupGeometry reads as a NiIntegersExtraData (count [ed + 0x18], array
+            ''' [ed + 0x20], 0x142205D24..D28) for BoneTintIndices (Fo4GBufferConstants.BoneTintIndices); Nothing without one. HUECO,
+            ''' declared: a "BTED" of another class (0 in the corpus, re.md 3) - the engine would read those offsets of that class, not
+            ''' traced; Nothing here.</summary>
+            Friend Function BtedBoneIndices() As UInteger()
+                Dim ed = TryCast(BtedExtraData(), NiflySharp.Blocks.NiIntegersExtraData)
+                Return If(ed Is Nothing OrElse ed.Data Is Nothing, Nothing, ed.Data.ToArray())
             End Function
 
             ''' <summary>GetRenderPasses' deferred technique and group of this lighting material (Fo4GBufferTechnique.Technique on
@@ -4990,15 +5004,29 @@ Public Class PreviewModel
 
         ''' <summary>A VAO over the engine buffer by Fo4EngineVertexLayout.Elements. <paramref name="cpuLayout"/> (a skinned VS's CPU route,
         ''' Fo4GBufferSource.EffectiveCpuLayout): the CPU stream (Fo4EngineVertexPacker.PackCpuRoute / PackCpuRouteBlended) at locations 6 / 7 / 12 / 13
-        ''' (asm2glsl.CPU_LOC) in place of BLENDWEIGHT / BLENDINDICES, which a CPU-route VS never reads; the other engine attributes
-        ''' as the GPU route.</summary>
+        ''' (asm2glsl.CPU_LOC) in place of BLENDWEIGHT / BLENDINDICES, which go to Fo4GBufferSource.CpuRouteBlendLocations (ola 2b: the
+        ''' bone tint of the BTED VS still reads them; TEXCOORD1 / 3, read by no skinned VS, left out); the other engine attributes as the
+        ''' GPU route.</summary>
         Private Function EngineVao(desc As ULong, cpuLayout As Fo4CpuRouteLayout) As Integer
             Dim v = GL.GenVertexArray()
             GL.BindVertexArray(v)
             Dim stride = Fo4EngineVertexLayout.Stride(_engineDesc)
             For Each e In Fo4EngineVertexLayout.Elements(desc)
                 Dim loc = CInt(e.Semantic)
-                If cpuLayout <> Fo4CpuRouteLayout.None AndAlso (e.Semantic = Fo4EngineVertexLayout.Sem.BlendWeight0 OrElse e.Semantic = Fo4EngineVertexLayout.Sem.BlendIndices0) Then Continue For
+                If cpuLayout <> Fo4CpuRouteLayout.None Then
+                    If Fo4GBufferSource.CpuRouteBlendLocations.ContainsValue(loc) Then Continue For
+                    Dim bl As Integer
+                    If Fo4GBufferSource.CpuRouteBlendLocations.TryGetValue(e.Semantic, bl) Then
+                        loc = bl
+#If DEBUG Then
+                        ' rev-B12: the gate's mutant of the blend locations (Fo4GBufferConstants.GateVertexConstantsMutant)
+                        If Fo4GBufferConstants.GateMutantOn("swap-blend-loc") Then
+                            loc = Fo4GBufferSource.CpuRouteBlendLocations(If(e.Semantic = Fo4EngineVertexLayout.Sem.BlendWeight0,
+                                                                              Fo4EngineVertexLayout.Sem.BlendIndices0, Fo4EngineVertexLayout.Sem.BlendWeight0))
+                        End If
+#End If
+                    End If
+                End If
                 GL.BindBuffer(BufferTarget.ArrayBuffer, engineVbo)
                 GL.EnableVertexAttribArray(loc)
                 GL.VertexAttribPointer(loc, e.Components, e.GlType, e.Normalized, stride, e.Offset)
@@ -5148,6 +5176,11 @@ Public Class PreviewModel
             Return _engineCpuInputs
         End Function
 
+        ''' <summary>GATE ONLY (ola 2b, --fo4-vertex-constants' oracle): the vertex desc of the engine stage (Fo4EngineVertexLayout).</summary>
+        Friend Function EngineDescValue() As ULong
+            Return _engineDesc
+        End Function
+
         ''' <summary>GATE ONLY (N1): DrawPosition(i, Nothing) as a System.Numerics.Vector3.</summary>
         Friend Function EngineDrawPositionF(i As Integer) As System.Numerics.Vector3
             Dim v = DrawPosition(i, Nothing)
@@ -5222,9 +5255,15 @@ Public Class PreviewModel
         ''' world of a rigid shape = its palette's one matrix (SkinningHelper.RecomputeGPUBoneMatrices: ShapeGlobalTransform, what
         ''' Vertex_FO4 draws it with) x MeshData.Transform.</summary>
         Friend Function EngineGeometryWorld() As Vector4()
-            If GateWorldIdentity Then Return Fo4GBufferConstants.EngineWorldRows(Matrix4.Identity)
+            Return Fo4GBufferConstants.EngineWorldRows(EngineGeometryModel())
+        End Function
+
+        ''' <summary>The geometry's world NiTransform as the app's row-vector model: the matrix of EngineGeometryWorld and of WorldView's
+        ''' W (ola 2b: 0x1422094B0 reads the same geom + 0x70 as SetupGeometry's World, 0x1422059AE).</summary>
+        Friend Function EngineGeometryModel() As Matrix4
+            If GateWorldIdentity Then Return Matrix4.Identity
             Dim g = MeshData.Meshgeometry.GPUBoneMatrices
-            Return Fo4GBufferConstants.EngineWorldRows(If(g IsNot Nothing AndAlso g.Length > 0, g(0), Matrix4.Identity) * MeshData.Transform)
+            Return If(g IsNot Nothing AndAlso g.Length > 0, g(0), Matrix4.Identity) * MeshData.Transform
         End Function
 
         ''' <summary>GATE ONLY (no UI): ShadowGate --overlay-z-probe mutant. True draws an FO4 overlay with Vertex_FO4's own position
@@ -5308,6 +5347,30 @@ Public Class PreviewModel
             p.SetVector4Array("cb12_view", fr.View)
             p.SetVector4Array("cb12_viewproj", fr.ViewProj)
             p.SetVector4("cb12_35", fr.Eye)
+            ' Ola 2b (D:\WinTmp\rc\ola2b\re.md 2, 5): each written under its writer's condition; a program without the name ignores it.
+            Dim worldView = (technique And &H800400UI) = &H800000UI     ' 0x142206BB6..BC3
+            Dim scaleMask = (technique And &H80UI) <> 0UI                ' 0x142206F59
+            Dim btedBit = &H40000000UI                                   ' 0x142205CCA..CDB
+#If DEBUG Then
+            ' rev-B12: the gate's mutants of these conditions (Fo4GBufferConstants.GateVertexConstantsMutant, the one switch)
+            If Fo4GBufferConstants.GateMutantOn("worldview-cond") Then worldView = Not worldView
+            If Fo4GBufferConstants.GateMutantOn("scalemask-cond") Then scaleMask = Not scaleMask
+            If Fo4GBufferConstants.GateMutantOn("bted-cond") Then btedBit = &H20000000UI
+#End If
+            ' WorldView: technique AND 0x800400 = 0x800000 (0x142206BB6..BC3), the editor camera's view and this geometry's World.
+            If worldView Then
+                p.SetVector4Array("WorldView", Fo4GBufferConstants.EngineWorldViewRows(EngineGeometryModel(), fr.View, fr.Eye))
+            End If
+            ' ScaleMask: technique bit 7 (0x142206F59). ActorCollision: whenever the VS has the slot (0x1422059C2, no technique test).
+            If scaleMask Then p.SetVector4("ScaleMask", Fo4GBufferConstants.ScaleMask(material.Fo4Flags()))
+            p.SetVector4Array("ActorCollision", Fo4GBufferConstants.ActorCollisionNoActors(fr.Eye))
+            ' BoneTintIndices: technique bit 30 (0x142205CCA..CDB), the NIF's BTED or 0.
+            If (technique And btedBit) <> 0UI Then
+                p.SetUVector4Array("BoneTintIndices", Fo4GBufferConstants.BoneTintIndices(material.BtedBoneIndices()))
+            End If
+            ' ClipVolume (cb0, SetupTechnique 0x142203878..952: centre - eye, extents; 2 rows xyz): only with technique bit 29, which
+            ' GetRenderPasses sets only with a clip volume ([0x143E5E118] <> 0, 0x14217A7D8); the preview has none, so no writer here.
+            ' PARA ANALIZAR EN EL FUTURO (re.md 7, H3): the system that sets the clip volume (0x1407D84A0).
             BindEnginePalette(cpuRoute)
         End Sub
         ''' <summary>S-W: scratch of the CPU-skinning upload's displaced local positions (sized up, never down: the policy of _upPos,

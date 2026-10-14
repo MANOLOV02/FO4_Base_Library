@@ -164,9 +164,22 @@ Friend Module Fo4EngineVertexPacker
     ''' default (0, 0, 0, 1) (OpenGL 4.6 10.2).</summary>
     Private Function ReadElement(stage As Byte(), inp As CpuRouteInputs, i As Integer, k As Integer) As Vector4
         If Not inp.Present(k) Then Return New Vector4(0.0F, 0.0F, 0.0F, 1.0F)
-        Dim e = inp.Elements(k)
-        Dim o = i * inp.Stride + e.Offset
+        Return ElementAt(stage, inp.Elements(k), i * inp.Stride + inp.Elements(k).Offset)
+    End Function
+
+    ''' <summary>The element at byte <paramref name="o"/> as the input assembler hands it (Component, four components).</summary>
+    Private Function ElementAt(stage As Byte(), e As Fo4EngineVertexLayout.Element, o As Integer) As Vector4
         Return New Vector4(Component(stage, e, o, 0), Component(stage, e, o, 1), Component(stage, e, o, 2), Component(stage, e, o, 3))
+    End Function
+
+    ''' <summary>GATE ONLY (ola 2b, --fo4-vertex-constants' oracle): attribute <paramref name="sem"/> of vertex <paramref name="i"/> of an
+    ''' engine stage of layout <paramref name="desc"/>, as the input assembler hands it (ElementAt); Nothing when the layout has no such
+    ''' element (the VS then reads the GL current attribute value, OpenGL 4.6 10.2).</summary>
+    Friend Function ElementValue(engineStage As Byte(), desc As ULong, i As Integer, sem As Fo4EngineVertexLayout.Sem) As Vector4?
+        For Each e In Fo4EngineVertexLayout.Elements(desc)
+            If e.Semantic = sem Then Return ElementAt(engineStage, e, i * Fo4EngineVertexLayout.Stride(desc) + e.Offset)
+        Next
+        Return Nothing
     End Function
 
     ''' <summary>The five attributes of vertex <paramref name="i"/> the CPU route reads, as the VS receives them (ReadElement): the one

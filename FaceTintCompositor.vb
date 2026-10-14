@@ -506,6 +506,7 @@ Public Module FaceTintCompositor
             ("SSE-SAO-BLURV", SseSaoSource.Fragment_BlurV),
             ("GL43-CLIP", Gl43.ClipGlsl),
             ("GL43-CLIP-CAPTURE", Gl43.ClipGlslCapture),
+            ("SSE-SAO-HEADER430", SseSaoSource.Header430),
             ("SSE-SAO-PRELUDE", SseSaoSource.Prelude),
             ("SSE-SAO-MINIFYCOMMON", SseSaoSource.MinifyCommon),
             ("SSE-SAO-BLURCOMMON", SseSaoSource.BlurCommon),

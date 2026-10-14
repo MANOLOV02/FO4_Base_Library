@@ -112,4 +112,94 @@ Friend Module Fo4GBufferConstants
     Friend Function TexcoordOffset(offset As Vector2, scale As Vector2) As Vector4
         Return New Vector4(offset.X, offset.Y, scale.X, scale.Y)
     End Function
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ola 2b rev-B12): THE one switch of ShadowGate --fo4-vertex-constants' mutants - of the laws here
+    ''' ("worldview-eye", "scalemask-bit", "actorcollision-w", "bted-bit") and of their writers' conditions in
+    ''' RenderableMesh.BindEngineVertexStage / EngineVao ("worldview-cond", "scalemask-cond", "bted-cond", "swap-blend-loc").
+    ''' Nothing = the laws. Read only under #If DEBUG: a Release build has no mutant branch.</summary>
+    Friend GateVertexConstantsMutant As String = Nothing
+
+    ''' <summary>DEBUG ONLY (rev-B12): the mutant <paramref name="name"/> is on.</summary>
+    Friend Function GateMutantOn(name As String) As Boolean
+        Return String.Equals(GateVertexConstantsMutant, name, StringComparison.Ordinal)
+    End Function
+#End If
+
+    ''' <summary>WorldView (VS constant 3, cb2, 4 rows; D:\WinTmp\rc\ola2b\re.md 2.3), SetupGeometry 0x142206BC9..C86 (the pre-built
+    ''' constants 0x142208330..3D8 the same) when technique AND 0x800400 = 0x800000 (0x142206BB6..BC3; bit 23 = flags bit 60
+    ''' Pipboy_Screen, GetRenderPasses 0x14217A897..8B0): 0x1422094B0 builds W_rel from the geometry's world NiTransform (geom + 0x70):
+    ''' rows 0..2 the rotation rows x scale, row 3 = (t - eye, 1), eye = [state + 0x1B70 + 0x6B0] (0x1422094FD..51B); 0x1406B9610
+    ''' returns (W_rel * V) transposed with V = [state + 0x1B70 + 0x720..0x750], the view whose columns are cb12[0..3]
+    ''' (0x14181E280..2F3); the rows written = columns 0..3 of W_rel * V (0x142206C71..C86). The app: W = <paramref name="model"/>
+    ''' (EngineGeometryModel, the NiTransform World is built from), eye = <paramref name="eye"/>, V = the editor camera's engine view:
+    ''' columns 0..2 = <paramref name="view"/> (EngineFrameRows' cb12 rows 0..2, no translation), column 3 = (0, 0, 0, 1). Row 3 of the
+    ''' result is written by the engine and read by no VS (rec2267 / 2268 / 2432 / 2433 read cb2[8..10]). V's column 3 = (0, 0, 0, 1): the
+    ''' camera's V is built by 0x14182D750 with row 3 = (0, 0, 0, 1) (0x14182D88F / 0x14182D893 zero, 0x14182D89A [+0x8C] = 1.0) and
+    ''' copied to [state + 0x1B70 + 0x720..0x750] (0x14182BD34..0x14182BD62).</summary>
+    Friend Function EngineWorldViewRows(model As Matrix4, view As Vector4(), eye As Vector4) As Vector4()
+        Dim v As New Matrix4(view(0).X, view(1).X, view(2).X, 0.0F,
+                             view(0).Y, view(1).Y, view(2).Y, 0.0F,
+                             view(0).Z, view(1).Z, view(2).Z, 0.0F,
+                             view(0).W, view(1).W, view(2).W, 1.0F)
+        Dim wRel = model * Matrix4.CreateTranslation(-eye.Xyz)
+#If DEBUG Then
+        If GateMutantOn("worldview-eye") Then wRel = model
+#End If
+        Dim m = wRel * v
+        Return {m.Column0, m.Column1, m.Column2, m.Column3}
+    End Function
+
+    ''' <summary>ScaleMask (VS constant 15, cb2, 1 row; re.md 2.1), SetupGeometry 0x142207079..0C9 (pre-built 0x142208855..8B5), only with
+    ''' technique bit 7 (0x142206F59; GetRenderPasses gives bit 7 only to a BSGrassShaderProperty, RTTI 0x143E5F270 named at
+    ''' 0x1401DB200): .zw = 1 (0x1422070A7 / 0x1422070AE); .xy = 1 when [prop + 0x30] AND 0x80000000000 (bit 43 = SF2.11
+    ''' Grass_Uniform_Scale, the NIF's raw flags, BSShaderProperty LoadBinary 0x142168761..771), else 0 (0x1422070C9).
+    ''' PARA ANALIZAR EN EL FUTURO (re.md 7, H1, ola 6): who sets bit 43 on the game's grass property (no immediate writer of
+    ''' prop + 0x30 bit 43 in the exe).</summary>
+    Friend Function ScaleMask(flags As ULong) As Vector4
+        Dim bit = 43
+#If DEBUG Then
+        If GateMutantOn("scalemask-bit") Then bit = 42
+#End If
+        Dim xy = If((flags And (1UL << bit)) <> 0UL, 1.0F, 0.0F)
+        Return New Vector4(xy, xy, 1.0F, 1.0F)
+    End Function
+
+    ''' <summary>ActorCollision (VS constant 24, cb2, 4 rows; re.md 2.2), SetupGeometry 0x1422059B6..B34 whenever the VS has the slot (no
+    ''' technique test): row i = (G_i.x - eye.x, G_i.y - eye.y, G_i.z, G_i.w) of the globals 0x143E5DF00..3C (0x142205A02..B34; eye x
+    ''' [state + 0x2220] = 0x1B70 + 0x6B0, y + 0x6B4). Their one writer 0x140C356D0: a row without an actor is z = 1, w = -1
+    ''' (0x140C359FC..A02; all four 0x140C35B40..B86) and x / y are never written then (the .bss 0). The preview has no actors: rows
+    ''' (-eye.x, -eye.y, 1, -1); the grass VS's push max(w - d, 0) is 0 (rec2183 L160..178). <paramref name="eye"/> = cb12 row 35.
+    ''' PARA ANALIZAR EN EL FUTURO (re.md 7, ola 6): the rows of real actors.</summary>
+    Friend Function ActorCollisionNoActors(eye As Vector4) As Vector4()
+        Dim w = -1.0F
+#If DEBUG Then
+        If GateMutantOn("actorcollision-w") Then w = 1.0F
+#End If
+        Dim r = New Vector4(-eye.X, -eye.Y, 1.0F, w)
+        Return {r, r, r, r}
+    End Function
+
+    ''' <summary>BoneTintIndices (VS constant 21, cb2, 4 rows of 32-bit words, GLSL uvec4; re.md 2.5), SetupGeometry with technique bit 30
+    ''' (0x142205CCA..CDB): with the geometry's "BTED" extra data (name 0x142507510; 0x142207C48, lookup 0x142205D16) every integer b
+    ''' sets bit (b AND 31) of word ((b &gt;&gt; 5) AND 3) (0x142205D71..D8B) and row i = (word i) x 4 (0x142205DA6..DE1); without it the
+    ''' 4 rows are 0 (0x142205F95..FD2). <paramref name="bones"/> = the NIF's BTED integers (MaterialData.BtedBoneIndices), Nothing
+    ''' without one. PARA ANALIZAR EN EL FUTURO (re.md 7, H2): the engine creates / removes BTED at runtime (0x1406F3300, the LooksMenu's
+    ''' face region 0x140A80F4F); the preview has the NIF's only.</summary>
+    Friend Function BoneTintIndices(bones As UInteger()) As UInteger()
+        Dim w(3) As UInteger
+        If bones IsNot Nothing Then
+            Dim lowBits = 31UI
+#If DEBUG Then
+            If GateMutantOn("bted-bit") Then lowBits = 15UI
+#End If
+            For Each b In bones
+                Dim i = CInt((b >> 5) And 3UI)
+                w(i) = w(i) Or (1UI << CInt(b And lowBits))
+            Next
+        End If
+        Dim r(15) As UInteger
+        For k = 0 To 15 : r(k) = w(k \ 4) : Next
+        Return r
+    End Function
 End Module
