@@ -318,7 +318,7 @@ Friend Module PreviewImagingTable
                     Dim lutPath = If(String.IsNullOrEmpty(imgs.Lut), "", FO4UnifiedMaterial_Class.CorrectTexturePath(imgs.Lut))
                     row = New PreviewImagingRow(key, False, w.EditorID, w.SourcePluginName, imgsOrigin, imgsRec.Header.FormID And &HFFFFFFUI,
                                                 imgsRec.EditorID, imgsRec.SourcePluginName,
-                                                New Fo4ImageSpace(v(0), v(1), v(2), v(3), v(4), v(5), v(6), v(7), tint, v(8), lutPath),
+                                                New Fo4ImageSpace(v(0), v(1), v(2), v(3), v(4), v(5), v(6), v(7), tint, v(8), lutPath, v(12), v(13)),
                                                 New Fo4PreviewWeather(elV, sunV), Nothing, Nothing)
                 End If
                 out.Add(row)
@@ -365,10 +365,11 @@ Friend Module PreviewImagingTable
             f = If(isSse,
                 {"HNAM\HDR\Receive Bloom Threshold", "HNAM\HDR\White", Nothing, Nothing, "HNAM\HDR\Sunlight Scale",
                  "CNAM\Cinematic\Saturation", "CNAM\Cinematic\Brightness", "CNAM\Cinematic\Contrast",
-                 "TNAM\Tint\Amount", "TNAM\Tint\Color\Red", "TNAM\Tint\Color\Green", "TNAM\Tint\Color\Blue"},
+                 "TNAM\Tint\Amount", "TNAM\Tint\Color\Red", "TNAM\Tint\Color\Green", "TNAM\Tint\Color\Blue", Nothing, Nothing},
                 {"HNAM\HDR\Tonemap E", "HNAM\HDR\Auto Exposure Max", "HNAM\HDR\Auto Exposure Min", "HNAM\HDR\Middle Gray",
                  "HNAM\HDR\Sunlight Scale", "CNAM\Cinematic\Saturation", "CNAM\Cinematic\Brightness", "CNAM\Cinematic\Contrast",
-                 "TNAM\Tint\Amount", "TNAM\Tint\Color\Red", "TNAM\Tint\Color\Green", "TNAM\Tint\Color\Blue"})
+                 "TNAM\Tint\Amount", "TNAM\Tint\Color\Red", "TNAM\Tint\Color\Green", "TNAM\Tint\Color\Blue",
+                 "HNAM\HDR\Bloom Threshold", "HNAM\HDR\Bloom Scale"})
         ElseIf hasE AndAlso Not (hasH OrElse hasC OrElse hasT) Then
             ' ENAM[4] = the xEdit member "Receive Bloom Threshold" (TES5) / "Auto Exposure Min/Max" (FO4), written to
             ' +0x30 and +0x34. FO4 Middle Gray (+0x40) is not in ENAM: Nothing = the constructor's 3.0 (0x1404af4c8).
@@ -376,20 +377,23 @@ Friend Module PreviewImagingTable
                 {"ENAM\Data\HDR\Receive Bloom Threshold", "ENAM\Data\HDR\Receive Bloom Threshold", Nothing, Nothing,
                  "ENAM\Data\HDR\Sunlight Scale", "ENAM\Data\Cinematic\Saturation", "ENAM\Data\Cinematic\Brightness",
                  "ENAM\Data\Cinematic\Contrast", "ENAM\Data\Tint\Amount", "ENAM\Data\Tint\Color\Red",
-                 "ENAM\Data\Tint\Color\Green", "ENAM\Data\Tint\Color\Blue"},
+                 "ENAM\Data\Tint\Color\Green", "ENAM\Data\Tint\Color\Blue", Nothing, Nothing},
                 {"ENAM\Image Space Data\HDR\Tonemap E", "ENAM\Image Space Data\HDR\Auto Exposure Min/Max",
                  "ENAM\Image Space Data\HDR\Auto Exposure Min/Max", Nothing, "ENAM\Image Space Data\HDR\Sunlight Scale",
                  "ENAM\Image Space Data\Cinematic\Saturation", "ENAM\Image Space Data\Cinematic\Brightness",
                  "ENAM\Image Space Data\Cinematic\Contrast", "ENAM\Image Space Data\Tint\Amount",
                  "ENAM\Image Space Data\Tint\Color\Red", "ENAM\Image Space Data\Tint\Color\Green",
-                 "ENAM\Image Space Data\Tint\Color\Blue"})
+                 "ENAM\Image Space Data\Tint\Color\Blue",
+                 "ENAM\Image Space Data\HDR\Bloom Threshold", "ENAM\Image Space Data\HDR\Bloom Scale"})
         Else
             Return (Nothing, Nothing, $"subrecords [{String.Join(",", sigs.Where(Function(s) s = "ENAM" OrElse s = "HNAM" OrElse s = "CNAM" OrElse s = "TNAM"))}] (mix not traced)")
         End If
         ' The constructor's value where the record writes nothing (FO4 Middle Gray +0x40 = 3.0, 0x1404af4c8).
         Dim ctorMiddleGray = 3.0F
-        Dim v(11) As Single
-        For i = 0 To 11
+        ' FO4 12 / 13: Bloom Threshold / Bloom Scale (HNAM +0x08 / +0x0C to +0x28 / +0x2C, 0x1404AF805; ENAM[2] / [3] to the same,
+        ' 0x1404AF863: ISM+0x88 / +0x8C). SSE: no field (its bloom is not read).
+        Dim v(13) As Single
+        For i = 0 To 13
             If f(i) Is Nothing Then
                 v(i) = If(Not isSse AndAlso i = 3, ctorMiddleGray, 0.0F)
                 Continue For

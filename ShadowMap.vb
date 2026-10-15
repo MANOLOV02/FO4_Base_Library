@@ -224,6 +224,17 @@ Friend Module ShadowMapMath
         ''' <summary>Rango de profundidad del ortho (far - near). Convierte el bias de texeles a
         ''' unidades de profundidad normalizada.</summary>
         Public DepthRange As Single
+        ''' <summary>near / far del ortho (las distancias sobre -Z de la vista de la luz que recibe
+        ''' EngineCameraLaw.Orthographic): el (near, far) del frustum de la cascada que el receptor del
+        ''' juego lee en ShadowWorldScale.zw (Fo4DeferredLightLaw.ShadowWorldScale).</summary>
+        Public ZNear As Single
+        Public ZFar As Single
+        ''' <summary>The orthographic frustum (l, r, b, t) Proj is built from (EngineCameraLaw.Orthographic): the camera's +0x160 /
+        ''' +0x164 / +0x16C / +0x168 the receiver's ShadowWorldScale.xy subtracts (Fo4DeferredLightLaw.ShadowWorldScale).</summary>
+        Public FrustumLeft As Single
+        Public FrustumRight As Single
+        Public FrustumBottom As Single
+        Public FrustumTop As Single
         Public Valid As Boolean
     End Structure
 
@@ -296,7 +307,10 @@ Friend Module ShadowMapMath
         Dim zNear As Single = distToCenter - r.Radius - pad
         Dim zFar As Single = distToCenter + r.Radius + pad
         r.DepthRange = zFar - zNear
-        r.Proj = EngineCameraLaw.Orthographic(sx - r.Radius, sx + r.Radius, sy - r.Radius, sy + r.Radius, zNear, zFar)
+        r.ZNear = zNear : r.ZFar = zFar
+        r.FrustumLeft = sx - r.Radius : r.FrustumRight = sx + r.Radius
+        r.FrustumBottom = sy - r.Radius : r.FrustumTop = sy + r.Radius
+        r.Proj = EngineCameraLaw.Orthographic(r.FrustumLeft, r.FrustumRight, r.FrustumBottom, r.FrustumTop, zNear, zFar)
         r.ViewProj = r.View * r.Proj
         r.Valid = True
         Return r
@@ -469,6 +483,13 @@ Friend Class ShadowMapTarget
     Private _tex As Integer
     Private _size As Integer
     Private _layers As Integer
+    ''' <summary>16 bits de profundidad (el <c>media</c> de <see cref="Ensure"/>): parte de la clave del cache, como el lado y las
+    ''' capas. Sin esto, un pedido con otra precision devolvia la textura vieja.</summary>
+    Private _media As Boolean
+    ''' <summary>Una vista por capa (glTextureView, GL 4.3 8.18): un TEXTURE_2D_ARRAY de UNA capa sobre la capa i, creada con la
+    ''' textura. Es lo que el receptor de Fallout 4 liga como su t5 (el Texture2DArray del DS de la cascada, re.md 2.3): el
+    ''' programa del juego indexa la cascada como coordenada de capa, y la capa de cada luz del rig es la cascada 0 de su vista.</summary>
+    Private _views As Integer() = Array.Empty(Of Integer)()
     ''' <summary>Que capa esta attacheada al FBO ahora mismo. -1 = ninguna (recien creado o liberado).
     ''' Tiene que resetearse en <see cref="Release"/> Y quedar en 0 despues del attach de
     ''' <see cref="Ensure"/>: si mintiera, <see cref="BindForWrite"/> saltearia el attach y el pase
@@ -478,6 +499,7 @@ Friend Class ShadowMapTarget
     ''' reintentarla en cada frame. -1/-1 = no hay ninguna. Ver el comentario de Ensure.</summary>
     Private _falloSize As Integer = -1
     Private _falloLayers As Integer = -1
+    Private _falloMedia As Boolean
 
     Friend ReadOnly Property Texture As Integer
         Get
@@ -496,6 +518,11 @@ Friend Class ShadowMapTarget
             Return _layers
         End Get
     End Property
+
+    ''' <summary>La vista de UNA capa de <paramref name="layer"/> (ver <c>_views</c>); 0 fuera de rango.</summary>
+    Friend Function LayerView(layer As Integer) As Integer
+        Return If(layer >= 0 AndAlso layer < _views.Length, _views(layer), 0)
+    End Function
 
     ''' <summary>Cuantas veces se creo la textura desde que arranco el proceso. **ES UN INSTRUMENTO**, no
     ''' un estado del render: nadie lo lee para decidir nada.
@@ -542,7 +569,7 @@ Friend Class ShadowMapTarget
     ''' se tocan es justo la banda de PCF.</para></param>
     Friend Function Ensure(size As Integer, layers As Integer, Optional media As Boolean = False) As Boolean
         If size <= 0 OrElse layers <= 0 Then Return False
-        If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers Then Return True
+        If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers AndAlso _media = media Then Return True
         ' NO SE REINTENTA UNA COMBINACION QUE YA FALLO. Sin esto, una reserva que no entra en la placa
         ' se reintenta ENTERA EN CADA FRAME: GenTexture + TexImage3D + GenFramebuffer +
         ' CheckFramebufferStatus + DeleteTexture + una linea de log, decenas de veces por segundo mientras
@@ -560,17 +587,18 @@ Friend Class ShadowMapTarget
         ' SoltarMapasDeSombra() -> Release() en cada frame, y con eso vuelve exactamente la tormenta de
         ' reintentos que este centinela existe para cortar. La salida es cambiar la calidad o una casilla de
         ' luz, que es justo lo que dice el log.
-        If size = _falloSize AndAlso layers = _falloLayers Then Return False
+        If size = _falloSize AndAlso layers = _falloLayers AndAlso media = _falloMedia Then Return False
         Release()
 
         ' Instrumento del arnes, no logica: ver VecesRecreada. Se incrementa donde REALMENTE se paga el
         ' costo (crear la textura + el FBO), no en la entrada del metodo, que sale antes por el fast-path.
         VecesRecreada += 1
-        _tex = GL.GenTexture()
+        ' ALMACENAMIENTO INMUTABLE (TexStorage3D, core 4.2): glTextureView exige una textura inmutable (GL 4.3 8.18:
+        ' INVALID_OPERATION si TEXTURE_IMMUTABLE_FORMAT es FALSE). Un solo nivel, como el TexImage3D de antes.
+        Dim fmt = If(media, SizedInternalFormat.DepthComponent16, SizedInternalFormat.DepthComponent24)
+        _tex = Gl43.CreateTexture(TextureTarget.Texture2DArray)
+        Gl43.TexStorage3D(_tex, TextureTarget3d.Texture2DArray, 1, fmt, size, size, layers)
         GL.BindTexture(TextureTarget.Texture2DArray, _tex)
-        GL.TexImage3D(TextureTarget.Texture2DArray, 0,
-                      If(media, PixelInternalFormat.DepthComponent16, PixelInternalFormat.DepthComponent24),
-                      size, size, layers, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero)
         GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
         GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
         ' CLAMP_TO_BORDER + borde 1.0 => todo lo que cae FUERA del mapa lee "sin ocluir". Con CLAMP_TO_EDGE
@@ -583,6 +611,13 @@ Friend Class ShadowMapTarget
         GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureCompareMode, CInt(TextureCompareMode.CompareRefToTexture))
         GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureCompareFunc, CInt(All.Lequal))
         GL.BindTexture(TextureTarget.Texture2DArray, 0)
+        ' Las vistas por capa (nombres nuevos sin ligar: glTextureView los exige asi, GL 4.3 8.18). Su muestreo lo pone el sampler
+        ' que liga el lector (Fo4DeferredTargets: el s5 del juego), no estos parametros.
+        ReDim _views(layers - 1)
+        For i = 0 To layers - 1
+            _views(i) = GL.GenTexture()
+            GL.TextureView(_views(i), TextureTarget.Texture2DArray, _tex, CType(fmt, PixelInternalFormat), 0, 1, i, 1)
+        Next
 
         Dim prevFbo As Integer = GL.GetInteger(GetPName.FramebufferBinding)
         _fbo = GL.GenFramebuffer()
@@ -603,11 +638,13 @@ Friend Class ShadowMapTarget
             Release()
             _falloSize = size
             _falloLayers = layers
+            _falloMedia = media
             Return False
         End If
 
         _size = size
         _layers = layers
+        _media = media
         _falloSize = -1
         _falloLayers = -1
         Return True
@@ -646,12 +683,19 @@ Friend Class ShadowMapTarget
             Try : GL.DeleteFramebuffer(_fbo) : Catch : End Try
             _fbo = 0
         End If
+        For Each v In _views
+            If v > 0 Then
+                Try : GL.DeleteTexture(v) : Catch : End Try
+            End If
+        Next
+        _views = Array.Empty(Of Integer)()
         If _tex > 0 Then
             Try : GL.DeleteTexture(_tex) : Catch : End Try
             _tex = 0
         End If
         _size = 0
         _layers = 0
+        _media = False
         _capaAttachada = -1
     End Sub
 

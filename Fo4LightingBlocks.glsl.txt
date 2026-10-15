@@ -1,0 +1,870 @@
+//#### BEGIN Fo4LitVs_rec1480 ####
+// class of identical transcribed code: rec1480 t00000000, rec1496 t00000200, rec1482 t00000400, rec1484 t00000500, rec1486 t00000600
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 WorldViewProj[4];               // name 0, cb2, writer SG 0x14223B679..684
+// b06_BSLighting_VS_rec1480_t00000000  technique 0x00000000 = 
+// constants by name (fxp offset table of rec1480, loader 0x14181E030, obj+0x68; names 0x142243A40): WorldViewProj = cb2[0].x
+void Fo4LitVs_rec1480(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r1;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.xyz = vs_POSITION0.xyz;                                                            // 45  mov r0.xyz, v0.xyzx
+    r0.w = 1.0;                                                                           // 46  mov r0.w, l(1.000000)
+    r1.x = dot(WorldViewProj[2].xyzw, r0.xyzw);                                           // 47  dp4 r1.x, cb2[2].xyzw, r0.xyzw
+    o0.z = r1.x;                                                                          // 48  mov o0.z, r1.x
+                                                                                          // 49  mov o2.w, r1.x   [no consumer: omitted]
+    o0.x = dot(WorldViewProj[0].xyzw, r0.xyzw);                                           // 50  dp4 o0.x, cb2[0].xyzw, r0.xyzw
+    o0.y = dot(WorldViewProj[1].xyzw, r0.xyzw);                                           // 51  dp4 o0.y, cb2[1].xyzw, r0.xyzw
+    o0.w = dot(WorldViewProj[3].xyzw, r0.xyzw);                                           // 52  dp4 o0.w, cb2[3].xyzw, r0.xyzw
+                                                                                          // 53  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 54  mov o2.xyz, v0.xyzx   [no consumer: omitted]
+                                                                                          // 55  mov o3.x, v0.w   [no consumer: omitted]
+                                                                                          // 56  mad o3.y, v3.x, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 57  mad o3.z, v2.x, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 58  mad o4.xz, v2.wwyw, l(2.000000, 0.000000, 2.000000, 0.000000), l(-1.000000, 0.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 59  mad o4.y, v3.y, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 60  mad o5.xy, v3.wzww, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 61  mad o5.z, v2.z, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 62  add o6.xyz, -v0.xyzx, cb2[7].xyzx   [no consumer: omitted]
+                                                                                          // 63  mov o7.xyzw, l(1.000000,1.000000,1.000000,1.000000)   [no consumer: omitted]
+    return;                                                                               // 64  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1480(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1480 ####
+//#### BEGIN Fo4LitVs_rec1481 ####
+// class of identical transcribed code: rec1481 t00000001, rec1497 t00000201, rec1483 t00000401, rec1485 t00000501, rec1487 t00000601
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+layout(location = 5) in vec4 vs_COLOR0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 WorldViewProj[4];               // name 0, cb2, writer SG 0x14223B679..684
+// b06_BSLighting_VS_rec1481_t00000001  technique 0x00000001 = VC
+// constants by name (fxp offset table of rec1481, loader 0x14181E030, obj+0x68; names 0x142243A40): WorldViewProj = cb2[0].x
+void Fo4LitVs_rec1481(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r1;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.xyz = vs_POSITION0.xyz;                                                            // 47  mov r0.xyz, v0.xyzx
+    r0.w = 1.0;                                                                           // 48  mov r0.w, l(1.000000)
+    r1.x = dot(WorldViewProj[2].xyzw, r0.xyzw);                                           // 49  dp4 r1.x, cb2[2].xyzw, r0.xyzw
+    o0.z = r1.x;                                                                          // 50  mov o0.z, r1.x
+                                                                                          // 51  mov o2.w, r1.x   [no consumer: omitted]
+    o0.x = dot(WorldViewProj[0].xyzw, r0.xyzw);                                           // 52  dp4 o0.x, cb2[0].xyzw, r0.xyzw
+    o0.y = dot(WorldViewProj[1].xyzw, r0.xyzw);                                           // 53  dp4 o0.y, cb2[1].xyzw, r0.xyzw
+    o0.w = dot(WorldViewProj[3].xyzw, r0.xyzw);                                           // 54  dp4 o0.w, cb2[3].xyzw, r0.xyzw
+                                                                                          // 55  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 56  mov o2.xyz, v0.xyzx   [no consumer: omitted]
+                                                                                          // 57  mov o3.x, v0.w   [no consumer: omitted]
+                                                                                          // 58  mad o3.y, v3.x, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 59  mad o3.z, v2.x, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 60  mad o4.xz, v2.wwyw, l(2.000000, 0.000000, 2.000000, 0.000000), l(-1.000000, 0.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 61  mad o4.y, v3.y, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 62  mad o5.xy, v3.wzww, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 63  mad o5.z, v2.z, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 64  add o6.xyz, -v0.xyzx, cb2[7].xyzx   [no consumer: omitted]
+                                                                                          // 65  log r0.xyz, v4.xyzx   [no consumer: omitted]
+                                                                                          // 66  mul r0.xyz, r0.xyzx, l(2.200000, 2.200000, 2.200000, 0.000000)   [no consumer: omitted]
+                                                                                          // 67  exp o7.xyz, r0.xyzx   [no consumer: omitted]
+                                                                                          // 68  mov o7.w, v4.w   [no consumer: omitted]
+    return;                                                                               // 69  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1481(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1481 ####
+//#### BEGIN Fo4LitVs_rec1488 ####
+// class of identical transcribed code: rec1488 t00000002, rec1491 t00000102
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+layout(location = 6) in vec4 vs_BLENDWEIGHT0;
+layout(location = 7) in vec4 vs_BLENDINDICES0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 cb12_viewproj[4];      // cb12 rows 8..11: view-projection rows (0x14181E368..3D5)
+uniform vec4 cb12_35;               // cb12 row 35: eye (0x14181E70B..729)
+// b06_BSLighting_VS_rec1488_t00000002  technique 0x00000002 = SKINNED
+// constants by name (fxp offset table of rec1488, loader 0x14181E030, obj+0x68; names 0x142243A40): 
+void Fo4LitVs_rec1488(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r1, r2, r3, r4, r5, r6, r7, r8, r9;
+    ivec4 i2, i3, i5;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.x = vs_BLENDWEIGHT0.y + vs_BLENDWEIGHT0.x;                                         // 51  add r0.x, v4.y, v4.x
+    r0.x = d3d_sat(r0.x + vs_BLENDWEIGHT0.z);                                             // 52  add_sat r0.x, r0.x, v4.z
+    r0.x = -r0.x + 1.0;                                                                   // 53  add r0.x, -r0.x, l(1.000000)
+    r1.xyz = vec3(-0.0, -0.0, -0.0);                                                      // 54  mov r1.xyz, l(-0.000000,-0.000000,-0.000000,0)
+    r1.w = -cb12_35.z;                                                                    // 55  mov r1.w, -cb12[35].z
+    r2.xyzw = vs_BLENDINDICES0.xyzw * vec4(FO4_L_765_01001);                              // 56  mul r2.xyzw, v5.xyzw, l(765.010010, 765.010010, 765.010010, 765.010010)
+    i2.xyzw = ivec4(d3d_ftoi(r2.x), d3d_ftoi(r2.y), d3d_ftoi(r2.z), d3d_ftoi(r2.w));      // 57  ftoi r2.xyzw, r2.xyzw
+    i3.xyzw = ivec4((i2.x + 1), (i2.x + 2), (i2.y + 1), (i2.y + 2));                      // 58  iadd r3.xyzw, r2.xxyy, l(1, 2, 1, 2)
+    r4.xyzw = r1.zzzw + d3d_cb10(i3.w + 0).xyzw;                                          // 59  add r4.xyzw, r1.zzzw, cb10[r3.w + 0].xyzw
+    r4.xyzw = r4.xyzw * vs_BLENDWEIGHT0.yyyy;                                             // 60  mul r4.xyzw, r4.xyzw, v4.yyyy
+    r5.xyzw = r1.zzzw + d3d_cb10(i3.y + 0).xyzw;                                          // 61  add r5.xyzw, r1.zzzw, cb10[r3.y + 0].xyzw
+    r4.xyzw = vs_BLENDWEIGHT0.xxxx * r5.xyzw + r4.xyzw;                                   // 62  mad r4.xyzw, v4.xxxx, r5.xyzw, r4.xyzw
+    i5.xyzw = ivec4((i2.z + 1), (i2.z + 2), (i2.w + 1), (i2.w + 2));                      // 63  iadd r5.xyzw, r2.zzww, l(1, 2, 1, 2)
+    r6.xyzw = r1.zzzw + d3d_cb10(i5.y + 0).xyzw;                                          // 64  add r6.xyzw, r1.zzzw, cb10[r5.y + 0].xyzw
+    r1.xyzw = r1.xyzw + d3d_cb10(i5.w + 0).xyzw;                                          // 65  add r1.xyzw, r1.xyzw, cb10[r5.w + 0].xyzw
+    r4.xyzw = vs_BLENDWEIGHT0.zzzz * r6.xyzw + r4.xyzw;                                   // 66  mad r4.xyzw, v4.zzzz, r6.xyzw, r4.xyzw
+    r1.xyzw = r0.xxxx * r1.xyzw + r4.xyzw;                                                // 67  mad r1.xyzw, r0.xxxx, r1.xyzw, r4.xyzw
+    r4.xyz = vs_POSITION0.xyz;                                                            // 68  mov r4.xyz, v0.xyzx
+    r4.w = 1.0;                                                                           // 69  mov r4.w, l(1.000000)
+    r6.z = dot(r4.xyzw, r1.xyzw);                                                         // 70  dp4 r6.z, r4.xyzw, r1.xyzw
+    r7.xz = vec2(-0.0, -0.0);                                                             // 71  mov r7.xz, l(-0.000000,0,-0.000000,0)
+    r7.yw = -cb12_35.xy;                                                                  // 72  mov r7.yw, -cb12[35].xxxy
+    r8.xyzw = r7.xxxy + d3d_cb10(i2.y + 0).xyzw;                                          // 73  add r8.xyzw, r7.xxxy, cb10[r2.y + 0].xyzw
+    r8.xyzw = r8.xyzw * vs_BLENDWEIGHT0.yyyy;                                             // 74  mul r8.xyzw, r8.xyzw, v4.yyyy
+    r9.xyzw = r7.xxxy + d3d_cb10(i2.x + 0).xyzw;                                          // 75  add r9.xyzw, r7.xxxy, cb10[r2.x + 0].xyzw
+    r8.xyzw = vs_BLENDWEIGHT0.xxxx * r9.xyzw + r8.xyzw;                                   // 76  mad r8.xyzw, v4.xxxx, r9.xyzw, r8.xyzw
+    r9.xyzw = r7.xxxy + d3d_cb10(i2.z + 0).xyzw;                                          // 77  add r9.xyzw, r7.xxxy, cb10[r2.z + 0].xyzw
+    r2.xyzw = r7.xxxy + d3d_cb10(i2.w + 0).xyzw;                                          // 78  add r2.xyzw, r7.xxxy, cb10[r2.w + 0].xyzw
+    r8.xyzw = vs_BLENDWEIGHT0.zzzz * r9.xyzw + r8.xyzw;                                   // 79  mad r8.xyzw, v4.zzzz, r9.xyzw, r8.xyzw
+    r2.xyzw = r0.xxxx * r2.xyzw + r8.xyzw;                                                // 80  mad r2.xyzw, r0.xxxx, r2.xyzw, r8.xyzw
+    r6.x = dot(r4.xyzw, r2.xyzw);                                                         // 81  dp4 r6.x, r4.xyzw, r2.xyzw
+    r8.xyzw = r7.zzzw + d3d_cb10(i3.z + 0).xyzw;                                          // 82  add r8.xyzw, r7.zzzw, cb10[r3.z + 0].xyzw
+    r3.xyzw = r7.zzzw + d3d_cb10(i3.x + 0).xyzw;                                          // 83  add r3.xyzw, r7.zzzw, cb10[r3.x + 0].xyzw
+    r8.xyzw = r8.xyzw * vs_BLENDWEIGHT0.yyyy;                                             // 84  mul r8.xyzw, r8.xyzw, v4.yyyy
+    r3.xyzw = vs_BLENDWEIGHT0.xxxx * r3.xyzw + r8.xyzw;                                   // 85  mad r3.xyzw, v4.xxxx, r3.xyzw, r8.xyzw
+    r8.xyzw = r7.zzzw + d3d_cb10(i5.x + 0).xyzw;                                          // 86  add r8.xyzw, r7.zzzw, cb10[r5.x + 0].xyzw
+    r5.xyzw = r7.zzzw + d3d_cb10(i5.z + 0).xyzw;                                          // 87  add r5.xyzw, r7.zzzw, cb10[r5.z + 0].xyzw
+    r3.xyzw = vs_BLENDWEIGHT0.zzzz * r8.xyzw + r3.xyzw;                                   // 88  mad r3.xyzw, v4.zzzz, r8.xyzw, r3.xyzw
+    r0.xyzw = r0.xxxx * r5.xyzw + r3.xyzw;                                                // 89  mad r0.xyzw, r0.xxxx, r5.xyzw, r3.xyzw
+    r6.y = dot(r4.xyzw, r0.xyzw);                                                         // 90  dp4 r6.y, r4.xyzw, r0.xyzw
+    r6.w = 1.0;                                                                           // 91  mov r6.w, l(1.000000)
+    o0.x = dot(cb12_viewproj[0].xyzw, r6.xyzw);                                           // 92  dp4 o0.x, cb12[8].xyzw, r6.xyzw
+    o0.y = dot(cb12_viewproj[1].xyzw, r6.xyzw);                                           // 93  dp4 o0.y, cb12[9].xyzw, r6.xyzw
+    o0.w = dot(cb12_viewproj[3].xyzw, r6.xyzw);                                           // 94  dp4 o0.w, cb12[11].xyzw, r6.xyzw
+    r0.w = dot(cb12_viewproj[2].xyzw, r6.xyzw);                                           // 95  dp4 r0.w, cb12[10].xyzw, r6.xyzw
+    o0.z = r0.w;                                                                          // 96  mov o0.z, r0.w
+                                                                                          // 97  mov o2.w, r0.w   [no consumer: omitted]
+                                                                                          // 98  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 99  mov o2.xyz, r6.xyzx   [no consumer: omitted]
+                                                                                          // 100  add o6.xyz, -r6.xyzx, cb2[3].xyzx   [no consumer: omitted]
+                                                                                          // 101  mov r3.x, v0.w   [no consumer: omitted]
+                                                                                          // 102  mad r3.y, v2.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 103  mad r3.z, v3.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 104  dp3 r4.y, r3.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 105  dp3 r4.z, r3.xyzx, r1.xyzx   [no consumer: omitted]
+                                                                                          // 106  dp3 r4.x, r3.xyzx, r2.xyzx   [no consumer: omitted]
+                                                                                          // 107  dp3 r0.w, r4.xyzx, r4.xyzx   [no consumer: omitted]
+                                                                                          // 108  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 109  mul r3.xyz, r0.wwww, r4.xyzx   [no consumer: omitted]
+                                                                                          // 110  mov o3.x, r3.x   [no consumer: omitted]
+                                                                                          // 111  mad r4.xyz, v3.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 112  dp3 r5.y, r4.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 113  dp3 r5.z, r4.xyzx, r1.xyzx   [no consumer: omitted]
+                                                                                          // 114  dp3 r5.x, r4.xyzx, r2.xyzx   [no consumer: omitted]
+                                                                                          // 115  dp3 r0.w, r5.xyzx, r5.xyzx   [no consumer: omitted]
+                                                                                          // 116  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 117  mul r4.xyz, r0.wwww, r5.xyzx   [no consumer: omitted]
+                                                                                          // 118  mov o3.y, r4.x   [no consumer: omitted]
+                                                                                          // 119  mad r5.xyz, v2.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 120  dp3 r0.y, r5.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 121  dp3 r0.z, r5.xyzx, r1.xyzx   [no consumer: omitted]
+                                                                                          // 122  dp3 r0.x, r5.xyzx, r2.xyzx   [no consumer: omitted]
+                                                                                          // 123  dp3 r0.w, r0.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 124  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 125  mul r0.xyz, r0.wwww, r0.xyzx   [no consumer: omitted]
+                                                                                          // 126  mov o3.z, r0.x   [no consumer: omitted]
+                                                                                          // 127  mov o4.x, r3.y   [no consumer: omitted]
+                                                                                          // 128  mov o5.x, r3.z   [no consumer: omitted]
+                                                                                          // 129  mov o4.y, r4.y   [no consumer: omitted]
+                                                                                          // 130  mov o5.y, r4.z   [no consumer: omitted]
+                                                                                          // 131  mov o4.z, r0.y   [no consumer: omitted]
+                                                                                          // 132  mov o5.z, r0.z   [no consumer: omitted]
+                                                                                          // 133  mov o7.xyzw, l(1.000000,1.000000,1.000000,1.000000)   [no consumer: omitted]
+    return;                                                                               // 134  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1488(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1488 ####
+//#### BEGIN Fo4LitVs_rec1489 ####
+// class of identical transcribed code: rec1489 t00000100
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 WorldViewProj[4];               // name 0, cb2, writer SG 0x14223B679..684
+// b06_BSLighting_VS_rec1489_t00000100  technique 0x00000100 = ENVMAP
+// constants by name (fxp offset table of rec1489, loader 0x14181E030, obj+0x68; names 0x142243A40): WorldViewProj = cb2[0].x
+void Fo4LitVs_rec1489(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r1;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.xyz = vs_POSITION0.xyz;                                                            // 45  mov r0.xyz, v0.xyzx
+    r0.w = 1.0;                                                                           // 46  mov r0.w, l(1.000000)
+    r1.x = dot(WorldViewProj[2].xyzw, r0.xyzw);                                           // 47  dp4 r1.x, cb2[2].xyzw, r0.xyzw
+    o0.z = r1.x;                                                                          // 48  mov o0.z, r1.x
+                                                                                          // 49  mov o2.w, r1.x   [no consumer: omitted]
+    o0.x = dot(WorldViewProj[0].xyzw, r0.xyzw);                                           // 50  dp4 o0.x, cb2[0].xyzw, r0.xyzw
+    o0.y = dot(WorldViewProj[1].xyzw, r0.xyzw);                                           // 51  dp4 o0.y, cb2[1].xyzw, r0.xyzw
+    o0.w = dot(WorldViewProj[3].xyzw, r0.xyzw);                                           // 52  dp4 o0.w, cb2[3].xyzw, r0.xyzw
+                                                                                          // 53  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 54  dp4 r1.x, cb2[4].xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 55  dp4 r1.y, cb2[5].xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 56  dp4 r1.z, cb2[6].xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 57  mov o2.xyz, r1.xyzx   [no consumer: omitted]
+                                                                                          // 58  add o6.xyz, -r1.xyzx, cb2[7].xyzx   [no consumer: omitted]
+                                                                                          // 59  mad r0.xyz, v3.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 60  dp3 o3.y, r0.xyzx, cb2[4].xyzx   [no consumer: omitted]
+                                                                                          // 61  mad r1.xyz, v2.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 62  dp3 o3.z, r1.xyzx, cb2[4].xyzx   [no consumer: omitted]
+                                                                                          // 63  mov r2.x, v0.w   [no consumer: omitted]
+                                                                                          // 64  mad r2.y, v2.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 65  mad r2.z, v3.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 66  dp3 o3.x, r2.xyzx, cb2[4].xyzx   [no consumer: omitted]
+                                                                                          // 67  dp3 o4.x, r2.xyzx, cb2[5].xyzx   [no consumer: omitted]
+                                                                                          // 68  dp3 o5.x, r2.xyzx, cb2[6].xyzx   [no consumer: omitted]
+                                                                                          // 69  dp3 o4.y, r0.xyzx, cb2[5].xyzx   [no consumer: omitted]
+                                                                                          // 70  dp3 o5.y, r0.xyzx, cb2[6].xyzx   [no consumer: omitted]
+                                                                                          // 71  dp3 o4.z, r1.xyzx, cb2[5].xyzx   [no consumer: omitted]
+                                                                                          // 72  dp3 o5.z, r1.xyzx, cb2[6].xyzx   [no consumer: omitted]
+                                                                                          // 73  mov o7.xyzw, l(1.000000,1.000000,1.000000,1.000000)   [no consumer: omitted]
+    return;                                                                               // 74  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1489(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1489 ####
+//#### BEGIN Fo4LitVs_rec1490 ####
+// class of identical transcribed code: rec1490 t00000101
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+layout(location = 5) in vec4 vs_COLOR0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 WorldViewProj[4];               // name 0, cb2, writer SG 0x14223B679..684
+// b06_BSLighting_VS_rec1490_t00000101  technique 0x00000101 = VC|ENVMAP
+// constants by name (fxp offset table of rec1490, loader 0x14181E030, obj+0x68; names 0x142243A40): WorldViewProj = cb2[0].x
+void Fo4LitVs_rec1490(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r1;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.xyz = vs_POSITION0.xyz;                                                            // 47  mov r0.xyz, v0.xyzx
+    r0.w = 1.0;                                                                           // 48  mov r0.w, l(1.000000)
+    r1.x = dot(WorldViewProj[2].xyzw, r0.xyzw);                                           // 49  dp4 r1.x, cb2[2].xyzw, r0.xyzw
+    o0.z = r1.x;                                                                          // 50  mov o0.z, r1.x
+                                                                                          // 51  mov o2.w, r1.x   [no consumer: omitted]
+    o0.x = dot(WorldViewProj[0].xyzw, r0.xyzw);                                           // 52  dp4 o0.x, cb2[0].xyzw, r0.xyzw
+    o0.y = dot(WorldViewProj[1].xyzw, r0.xyzw);                                           // 53  dp4 o0.y, cb2[1].xyzw, r0.xyzw
+    o0.w = dot(WorldViewProj[3].xyzw, r0.xyzw);                                           // 54  dp4 o0.w, cb2[3].xyzw, r0.xyzw
+                                                                                          // 55  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 56  dp4 r1.x, cb2[4].xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 57  dp4 r1.y, cb2[5].xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 58  dp4 r1.z, cb2[6].xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 59  mov o2.xyz, r1.xyzx   [no consumer: omitted]
+                                                                                          // 60  add o6.xyz, -r1.xyzx, cb2[7].xyzx   [no consumer: omitted]
+                                                                                          // 61  mad r0.xyz, v3.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 62  dp3 o3.y, r0.xyzx, cb2[4].xyzx   [no consumer: omitted]
+                                                                                          // 63  mad r1.xyz, v2.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 64  dp3 o3.z, r1.xyzx, cb2[4].xyzx   [no consumer: omitted]
+                                                                                          // 65  mov r2.x, v0.w   [no consumer: omitted]
+                                                                                          // 66  mad r2.y, v2.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 67  mad r2.z, v3.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 68  dp3 o3.x, r2.xyzx, cb2[4].xyzx   [no consumer: omitted]
+                                                                                          // 69  dp3 o4.x, r2.xyzx, cb2[5].xyzx   [no consumer: omitted]
+                                                                                          // 70  dp3 o5.x, r2.xyzx, cb2[6].xyzx   [no consumer: omitted]
+                                                                                          // 71  dp3 o4.y, r0.xyzx, cb2[5].xyzx   [no consumer: omitted]
+                                                                                          // 72  dp3 o5.y, r0.xyzx, cb2[6].xyzx   [no consumer: omitted]
+                                                                                          // 73  dp3 o4.z, r1.xyzx, cb2[5].xyzx   [no consumer: omitted]
+                                                                                          // 74  dp3 o5.z, r1.xyzx, cb2[6].xyzx   [no consumer: omitted]
+                                                                                          // 75  log r0.xyz, v4.xyzx   [no consumer: omitted]
+                                                                                          // 76  mul r0.xyz, r0.xyzx, l(2.200000, 2.200000, 2.200000, 0.000000)   [no consumer: omitted]
+                                                                                          // 77  exp o7.xyz, r0.xyzx   [no consumer: omitted]
+                                                                                          // 78  mov o7.w, v4.w   [no consumer: omitted]
+    return;                                                                               // 79  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1490(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1490 ####
+//#### BEGIN Fo4LitVs_rec1493 ####
+// class of identical transcribed code: rec1493 t00000003, rec1492 t00000103
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+layout(location = 5) in vec4 vs_COLOR0;
+layout(location = 6) in vec4 vs_BLENDWEIGHT0;
+layout(location = 7) in vec4 vs_BLENDINDICES0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 cb12_viewproj[4];      // cb12 rows 8..11: view-projection rows (0x14181E368..3D5)
+uniform vec4 cb12_35;               // cb12 row 35: eye (0x14181E70B..729)
+// b06_BSLighting_VS_rec1493_t00000003  technique 0x00000003 = VC|SKINNED
+// constants by name (fxp offset table of rec1493, loader 0x14181E030, obj+0x68; names 0x142243A40): 
+void Fo4LitVs_rec1493(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r1, r2, r3, r4, r5, r6, r7, r8, r9;
+    ivec4 i2, i3, i5;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.x = vs_BLENDWEIGHT0.y + vs_BLENDWEIGHT0.x;                                         // 53  add r0.x, v5.y, v5.x
+    r0.x = d3d_sat(r0.x + vs_BLENDWEIGHT0.z);                                             // 54  add_sat r0.x, r0.x, v5.z
+    r0.x = -r0.x + 1.0;                                                                   // 55  add r0.x, -r0.x, l(1.000000)
+    r1.xyz = vec3(-0.0, -0.0, -0.0);                                                      // 56  mov r1.xyz, l(-0.000000,-0.000000,-0.000000,0)
+    r1.w = -cb12_35.z;                                                                    // 57  mov r1.w, -cb12[35].z
+    r2.xyzw = vs_BLENDINDICES0.xyzw * vec4(FO4_L_765_01001);                              // 58  mul r2.xyzw, v6.xyzw, l(765.010010, 765.010010, 765.010010, 765.010010)
+    i2.xyzw = ivec4(d3d_ftoi(r2.x), d3d_ftoi(r2.y), d3d_ftoi(r2.z), d3d_ftoi(r2.w));      // 59  ftoi r2.xyzw, r2.xyzw
+    i3.xyzw = ivec4((i2.x + 1), (i2.x + 2), (i2.y + 1), (i2.y + 2));                      // 60  iadd r3.xyzw, r2.xxyy, l(1, 2, 1, 2)
+    r4.xyzw = r1.zzzw + d3d_cb10(i3.w + 0).xyzw;                                          // 61  add r4.xyzw, r1.zzzw, cb10[r3.w + 0].xyzw
+    r4.xyzw = r4.xyzw * vs_BLENDWEIGHT0.yyyy;                                             // 62  mul r4.xyzw, r4.xyzw, v5.yyyy
+    r5.xyzw = r1.zzzw + d3d_cb10(i3.y + 0).xyzw;                                          // 63  add r5.xyzw, r1.zzzw, cb10[r3.y + 0].xyzw
+    r4.xyzw = vs_BLENDWEIGHT0.xxxx * r5.xyzw + r4.xyzw;                                   // 64  mad r4.xyzw, v5.xxxx, r5.xyzw, r4.xyzw
+    i5.xyzw = ivec4((i2.z + 1), (i2.z + 2), (i2.w + 1), (i2.w + 2));                      // 65  iadd r5.xyzw, r2.zzww, l(1, 2, 1, 2)
+    r6.xyzw = r1.zzzw + d3d_cb10(i5.y + 0).xyzw;                                          // 66  add r6.xyzw, r1.zzzw, cb10[r5.y + 0].xyzw
+    r1.xyzw = r1.xyzw + d3d_cb10(i5.w + 0).xyzw;                                          // 67  add r1.xyzw, r1.xyzw, cb10[r5.w + 0].xyzw
+    r4.xyzw = vs_BLENDWEIGHT0.zzzz * r6.xyzw + r4.xyzw;                                   // 68  mad r4.xyzw, v5.zzzz, r6.xyzw, r4.xyzw
+    r1.xyzw = r0.xxxx * r1.xyzw + r4.xyzw;                                                // 69  mad r1.xyzw, r0.xxxx, r1.xyzw, r4.xyzw
+    r4.xyz = vs_POSITION0.xyz;                                                            // 70  mov r4.xyz, v0.xyzx
+    r4.w = 1.0;                                                                           // 71  mov r4.w, l(1.000000)
+    r6.z = dot(r4.xyzw, r1.xyzw);                                                         // 72  dp4 r6.z, r4.xyzw, r1.xyzw
+    r7.xz = vec2(-0.0, -0.0);                                                             // 73  mov r7.xz, l(-0.000000,0,-0.000000,0)
+    r7.yw = -cb12_35.xy;                                                                  // 74  mov r7.yw, -cb12[35].xxxy
+    r8.xyzw = r7.xxxy + d3d_cb10(i2.y + 0).xyzw;                                          // 75  add r8.xyzw, r7.xxxy, cb10[r2.y + 0].xyzw
+    r8.xyzw = r8.xyzw * vs_BLENDWEIGHT0.yyyy;                                             // 76  mul r8.xyzw, r8.xyzw, v5.yyyy
+    r9.xyzw = r7.xxxy + d3d_cb10(i2.x + 0).xyzw;                                          // 77  add r9.xyzw, r7.xxxy, cb10[r2.x + 0].xyzw
+    r8.xyzw = vs_BLENDWEIGHT0.xxxx * r9.xyzw + r8.xyzw;                                   // 78  mad r8.xyzw, v5.xxxx, r9.xyzw, r8.xyzw
+    r9.xyzw = r7.xxxy + d3d_cb10(i2.z + 0).xyzw;                                          // 79  add r9.xyzw, r7.xxxy, cb10[r2.z + 0].xyzw
+    r2.xyzw = r7.xxxy + d3d_cb10(i2.w + 0).xyzw;                                          // 80  add r2.xyzw, r7.xxxy, cb10[r2.w + 0].xyzw
+    r8.xyzw = vs_BLENDWEIGHT0.zzzz * r9.xyzw + r8.xyzw;                                   // 81  mad r8.xyzw, v5.zzzz, r9.xyzw, r8.xyzw
+    r2.xyzw = r0.xxxx * r2.xyzw + r8.xyzw;                                                // 82  mad r2.xyzw, r0.xxxx, r2.xyzw, r8.xyzw
+    r6.x = dot(r4.xyzw, r2.xyzw);                                                         // 83  dp4 r6.x, r4.xyzw, r2.xyzw
+    r8.xyzw = r7.zzzw + d3d_cb10(i3.z + 0).xyzw;                                          // 84  add r8.xyzw, r7.zzzw, cb10[r3.z + 0].xyzw
+    r3.xyzw = r7.zzzw + d3d_cb10(i3.x + 0).xyzw;                                          // 85  add r3.xyzw, r7.zzzw, cb10[r3.x + 0].xyzw
+    r8.xyzw = r8.xyzw * vs_BLENDWEIGHT0.yyyy;                                             // 86  mul r8.xyzw, r8.xyzw, v5.yyyy
+    r3.xyzw = vs_BLENDWEIGHT0.xxxx * r3.xyzw + r8.xyzw;                                   // 87  mad r3.xyzw, v5.xxxx, r3.xyzw, r8.xyzw
+    r8.xyzw = r7.zzzw + d3d_cb10(i5.x + 0).xyzw;                                          // 88  add r8.xyzw, r7.zzzw, cb10[r5.x + 0].xyzw
+    r5.xyzw = r7.zzzw + d3d_cb10(i5.z + 0).xyzw;                                          // 89  add r5.xyzw, r7.zzzw, cb10[r5.z + 0].xyzw
+    r3.xyzw = vs_BLENDWEIGHT0.zzzz * r8.xyzw + r3.xyzw;                                   // 90  mad r3.xyzw, v5.zzzz, r8.xyzw, r3.xyzw
+    r0.xyzw = r0.xxxx * r5.xyzw + r3.xyzw;                                                // 91  mad r0.xyzw, r0.xxxx, r5.xyzw, r3.xyzw
+    r6.y = dot(r4.xyzw, r0.xyzw);                                                         // 92  dp4 r6.y, r4.xyzw, r0.xyzw
+    r6.w = 1.0;                                                                           // 93  mov r6.w, l(1.000000)
+    o0.x = dot(cb12_viewproj[0].xyzw, r6.xyzw);                                           // 94  dp4 o0.x, cb12[8].xyzw, r6.xyzw
+    o0.y = dot(cb12_viewproj[1].xyzw, r6.xyzw);                                           // 95  dp4 o0.y, cb12[9].xyzw, r6.xyzw
+    o0.w = dot(cb12_viewproj[3].xyzw, r6.xyzw);                                           // 96  dp4 o0.w, cb12[11].xyzw, r6.xyzw
+    r0.w = dot(cb12_viewproj[2].xyzw, r6.xyzw);                                           // 97  dp4 r0.w, cb12[10].xyzw, r6.xyzw
+    o0.z = r0.w;                                                                          // 98  mov o0.z, r0.w
+                                                                                          // 99  mov o2.w, r0.w   [no consumer: omitted]
+                                                                                          // 100  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 101  mov o2.xyz, r6.xyzx   [no consumer: omitted]
+                                                                                          // 102  add o6.xyz, -r6.xyzx, cb2[3].xyzx   [no consumer: omitted]
+                                                                                          // 103  mov r3.x, v0.w   [no consumer: omitted]
+                                                                                          // 104  mad r3.y, v2.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 105  mad r3.z, v3.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 106  dp3 r4.y, r3.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 107  dp3 r4.z, r3.xyzx, r1.xyzx   [no consumer: omitted]
+                                                                                          // 108  dp3 r4.x, r3.xyzx, r2.xyzx   [no consumer: omitted]
+                                                                                          // 109  dp3 r0.w, r4.xyzx, r4.xyzx   [no consumer: omitted]
+                                                                                          // 110  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 111  mul r3.xyz, r0.wwww, r4.xyzx   [no consumer: omitted]
+                                                                                          // 112  mov o3.x, r3.x   [no consumer: omitted]
+                                                                                          // 113  mad r4.xyz, v3.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 114  dp3 r5.y, r4.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 115  dp3 r5.z, r4.xyzx, r1.xyzx   [no consumer: omitted]
+                                                                                          // 116  dp3 r5.x, r4.xyzx, r2.xyzx   [no consumer: omitted]
+                                                                                          // 117  dp3 r0.w, r5.xyzx, r5.xyzx   [no consumer: omitted]
+                                                                                          // 118  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 119  mul r4.xyz, r0.wwww, r5.xyzx   [no consumer: omitted]
+                                                                                          // 120  mov o3.y, r4.x   [no consumer: omitted]
+                                                                                          // 121  mad r5.xyz, v2.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 122  dp3 r0.y, r5.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 123  dp3 r0.z, r5.xyzx, r1.xyzx   [no consumer: omitted]
+                                                                                          // 124  dp3 r0.x, r5.xyzx, r2.xyzx   [no consumer: omitted]
+                                                                                          // 125  dp3 r0.w, r0.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 126  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 127  mul r0.xyz, r0.wwww, r0.xyzx   [no consumer: omitted]
+                                                                                          // 128  mov o3.z, r0.x   [no consumer: omitted]
+                                                                                          // 129  mov o4.x, r3.y   [no consumer: omitted]
+                                                                                          // 130  mov o5.x, r3.z   [no consumer: omitted]
+                                                                                          // 131  mov o4.y, r4.y   [no consumer: omitted]
+                                                                                          // 132  mov o5.y, r4.z   [no consumer: omitted]
+                                                                                          // 133  mov o4.z, r0.y   [no consumer: omitted]
+                                                                                          // 134  mov o5.z, r0.z   [no consumer: omitted]
+                                                                                          // 135  log r0.xyz, v4.xyzx   [no consumer: omitted]
+                                                                                          // 136  mul r0.xyz, r0.xyzx, l(2.200000, 2.200000, 2.200000, 0.000000)   [no consumer: omitted]
+                                                                                          // 137  exp o7.xyz, r0.xyzx   [no consumer: omitted]
+                                                                                          // 138  mov o7.w, v4.w   [no consumer: omitted]
+    return;                                                                               // 139  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1493(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1493 ####
+//#### BEGIN Fo4LitVs_rec1494 ####
+// class of identical transcribed code: rec1494 t00000C01
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+layout(location = 3) in vec4 vs_NORMAL0;
+layout(location = 4) in vec4 vs_BINORMAL0;
+layout(location = 5) in vec4 vs_COLOR0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 TreeParams;                  // name 6, cb2, writer SG 0x14223B4A8..583
+uniform vec4 WorldViewProj[4];               // name 0, cb2, writer SG 0x14223B679..684
+// b06_BSLighting_VS_rec1494_t00000C01  technique 0x00000C01 = VC|TREE_ANIM
+// constants by name (fxp offset table of rec1494, loader 0x14181E030, obj+0x68; names 0x142243A40): WorldViewProj = cb2[0].x, TreeParams = cb2[12].x
+void Fo4LitVs_rec1494(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+    r0.x = TreeParams.y * TreeParams.w;                                                   // 47  mul r0.x, cb2[12].y, cb2[12].w
+    r0.x = r0.x * TreeParams.x;                                                           // 48  mul r0.x, r0.x, cb2[12].x
+    r0.y = dot(vs_POSITION0.xyz, vec3(1.0, 1.0, 1.0));                                    // 49  dp3 r0.y, v0.xyzx, l(1.000000, 1.000000, 1.000000, 0.000000)
+    r0.xy = r0.xx * vec2(FO4_L_0_1, 0.25) + r0.yy;                                        // 50  mad r0.xy, r0.xxxx, l(0.100000, 0.250000, 0.000000, 0.000000), r0.yyyy
+    r0.xy = r0.xy + vec2(0.5, 0.5);                                                       // 51  add r0.xy, r0.xyxx, l(0.500000, 0.500000, 0.000000, 0.000000)
+    r0.xy = vec2((r0.x - floor(r0.x)), (r0.y - floor(r0.y)));                             // 52  frc r0.xy, r0.xyxx
+    r0.xy = r0.xy * vec2(2.0, 2.0) + vec2(-1.0, -1.0);                                    // 53  mad r0.xy, r0.xyxx, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)
+    r0.zw = abs(r0.xy) * abs(r0.xy);                                                      // 54  mul r0.zw, |r0.xxxy|, |r0.xxxy|
+    r0.xy = -abs(r0.xy) * vec2(2.0, 2.0) + vec2(3.0, 3.0);                                // 55  mad r0.xy, -|r0.xyxx|, l(2.000000, 2.000000, 0.000000, 0.000000), l(3.000000, 3.000000, 0.000000, 0.000000)
+    r0.xy = r0.xy * r0.zw;                                                                // 56  mul r0.xy, r0.xyxx, r0.zwzz
+    r0.x = r0.y * FO4_L_0_1 + r0.x;                                                       // 57  mad r0.x, r0.y, l(0.100000), r0.x
+    r0.y = vs_COLOR0.w * TreeParams.z;                                                    // 58  mul r0.y, v4.w, cb2[12].z
+    r0.x = r0.y * r0.x;                                                                   // 59  mul r0.x, r0.y, r0.x
+    r0.yzw = vs_NORMAL0.xyz * vec3(2.0, 2.0, 2.0) + vec3(-1.0, -1.0, -1.0);               // 60  mad r0.yzw, v2.xxyz, l(0.000000, 2.000000, 2.000000, 2.000000), l(0.000000, -1.000000, -1.000000, -1.000000)
+    r0.xyz = r0.yzw * r0.xxx + vs_POSITION0.xyz;                                          // 61  mad r0.xyz, r0.yzwy, r0.xxxx, v0.xyzx
+    r0.w = 1.0;                                                                           // 62  mov r0.w, l(1.000000)
+    o0.x = dot(WorldViewProj[0].xyzw, r0.xyzw);                                           // 63  dp4 o0.x, cb2[0].xyzw, r0.xyzw
+    o0.y = dot(WorldViewProj[1].xyzw, r0.xyzw);                                           // 64  dp4 o0.y, cb2[1].xyzw, r0.xyzw
+    o0.w = dot(WorldViewProj[3].xyzw, r0.xyzw);                                           // 65  dp4 o0.w, cb2[3].xyzw, r0.xyzw
+    r0.w = dot(WorldViewProj[2].xyzw, r0.xyzw);                                           // 66  dp4 r0.w, cb2[2].xyzw, r0.xyzw
+    o0.z = r0.w;                                                                          // 67  mov o0.z, r0.w
+                                                                                          // 68  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 69  mov o2.xyzw, r0.xyzw   [no consumer: omitted]
+                                                                                          // 70  add o6.xyz, -r0.xyzx, cb2[7].xyzx   [no consumer: omitted]
+                                                                                          // 71  mov o3.x, v0.w   [no consumer: omitted]
+                                                                                          // 72  mad o3.y, v3.x, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 73  mad o3.z, v2.x, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 74  mad o4.xz, v2.wwyw, l(2.000000, 0.000000, 2.000000, 0.000000), l(-1.000000, 0.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 75  mad o4.y, v3.y, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 76  mad o5.xy, v3.wzww, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 77  mad o5.z, v2.z, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 78  log r0.xyz, v4.xyzx   [no consumer: omitted]
+                                                                                          // 79  mul r0.xyz, r0.xyzx, l(2.200000, 2.200000, 2.200000, 0.000000)   [no consumer: omitted]
+                                                                                          // 80  exp o7.xyz, r0.xyzx   [no consumer: omitted]
+                                                                                          // 81  mov o7.w, v4.w   [no consumer: omitted]
+    return;                                                                               // 82  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVs_rec1494(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVs_rec1494 ####
+//#### BEGIN Fo4LitVs_rec1495 ####
+// class of identical transcribed code: rec1495 t00000004
+// VS inputs: vertex attributes at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 0) in vec4 vs_POSITION0;
+layout(location = 1) in vec4 vs_TEXCOORD0;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 WorldViewProj[4];               // name 0, cb2, writer SG 0x14223B679..684
+// b06_BSLighting_VS_rec1495_t00000004  technique 0x00000004 = MODELSPACENORMALS
+// constants by name (fxp offset table of rec1495, loader 0x14181E030, obj+0x68; names 0x142243A40): WorldViewProj = cb2[0].x
+void Fo4LitVs_rec1495(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4)
+{
+    vec4 r0, r1;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0);   // unwritten components (notas D9)
+    r0.xyz = vs_POSITION0.xyz;                                                            // 35  mov r0.xyz, v0.xyzx
+    r0.w = 1.0;                                                                           // 36  mov r0.w, l(1.000000)
+    r1.x = dot(WorldViewProj[2].xyzw, r0.xyzw);                                           // 37  dp4 r1.x, cb2[2].xyzw, r0.xyzw
+    o0.z = r1.x;                                                                          // 38  mov o0.z, r1.x
+                                                                                          // 39  mov o2.w, r1.x   [no consumer: omitted]
+    o0.x = dot(WorldViewProj[0].xyzw, r0.xyzw);                                           // 40  dp4 o0.x, cb2[0].xyzw, r0.xyzw
+    o0.y = dot(WorldViewProj[1].xyzw, r0.xyzw);                                           // 41  dp4 o0.y, cb2[1].xyzw, r0.xyzw
+    o0.w = dot(WorldViewProj[3].xyzw, r0.xyzw);                                           // 42  dp4 o0.w, cb2[3].xyzw, r0.xyzw
+                                                                                          // 43  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 44  mov o2.xyz, v0.xyzx   [no consumer: omitted]
+                                                                                          // 45  add o3.xyz, -v0.xyzx, cb2[7].xyzx   [no consumer: omitted]
+                                                                                          // 46  mov o4.xyzw, l(1.000000,1.000000,1.000000,1.000000)   [no consumer: omitted]
+    return;                                                                               // 47  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4;
+    Fo4LitVs_rec1495(o0, o1, o2, o3, o4);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD5.xyz = o3.xyz;
+    lit_COLOR0.xyzw = o4.xyzw;
+}
+//#### END Fo4LitVs_rec1495 ####
+//#### BEGIN Fo4LitVsCpu_rec1488 ####
+// class of identical transcribed code: rec1488 t00000002, rec1491 t00000102
+// CPU-route VS (layout tbn): the CPU stream at the locations of asm2glsl.CPU_LOC; the engine attributes it still reads
+// at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 6) in vec4 cpu_ps;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 cb12_viewproj[4];      // cb12 rows 8..11: view-projection rows (0x14181E368..3D5)
+uniform vec4 cb12_35;               // cb12 row 35: eye (0x14181E70B..729)
+// b06_BSLighting_VS_rec1488_t00000002  technique 0x00000002 = SKINNED
+// constants by name (fxp offset table of rec1488, loader 0x14181E030, obj+0x68; names 0x142243A40): 
+void Fo4LitVsCpu_rec1488(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r6;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+                                                                                          // 51  add r0.x, v4.y, v4.x   [no consumer: omitted]
+                                                                                          // 52  add_sat r0.x, r0.x, v4.z   [no consumer: omitted]
+                                                                                          // 53  add r0.x, -r0.x, l(1.000000)   [no consumer: omitted]
+                                                                                          // 54  mov r1.xyz, l(-0.000000,-0.000000,-0.000000,0)   [no consumer: omitted]
+                                                                                          // 55  mov r1.w, -cb12[35].z   [no consumer: omitted]
+                                                                                          // 56  mul r2.xyzw, v5.xyzw, l(765.010010, 765.010010, 765.010010, 765.010010)   [no consumer: omitted]
+                                                                                          // 57  ftoi r2.xyzw, r2.xyzw   [no consumer: omitted]
+                                                                                          // 58  iadd r3.xyzw, r2.xxyy, l(1, 2, 1, 2)   [no consumer: omitted]
+                                                                                          // 59  add r4.xyzw, r1.zzzw, cb10[r3.w + 0].xyzw   [no consumer: omitted]
+                                                                                          // 60  mul r4.xyzw, r4.xyzw, v4.yyyy   [no consumer: omitted]
+                                                                                          // 61  add r5.xyzw, r1.zzzw, cb10[r3.y + 0].xyzw   [no consumer: omitted]
+                                                                                          // 62  mad r4.xyzw, v4.xxxx, r5.xyzw, r4.xyzw   [no consumer: omitted]
+                                                                                          // 63  iadd r5.xyzw, r2.zzww, l(1, 2, 1, 2)   [no consumer: omitted]
+                                                                                          // 64  add r6.xyzw, r1.zzzw, cb10[r5.y + 0].xyzw   [no consumer: omitted]
+                                                                                          // 65  add r1.xyzw, r1.xyzw, cb10[r5.w + 0].xyzw   [no consumer: omitted]
+                                                                                          // 66  mad r4.xyzw, v4.zzzz, r6.xyzw, r4.xyzw   [no consumer: omitted]
+                                                                                          // 67  mad r1.xyzw, r0.xxxx, r1.xyzw, r4.xyzw   [no consumer: omitted]
+                                                                                          // 68  mov r4.xyz, v0.xyzx   [no consumer: omitted]
+                                                                                          // 69  mov r4.w, l(1.000000)   [no consumer: omitted]
+    r6.z = (cpu_ps.z - cpu_ps.w * cb12_35.z);                                             // 70  dp4 r6.z, r4.xyzw, r1.xyzw   [CPU route: mov r6.z, vcpup.z]
+                                                                                          // 71  mov r7.xz, l(-0.000000,0,-0.000000,0)   [no consumer: omitted]
+                                                                                          // 72  mov r7.yw, -cb12[35].xxxy   [no consumer: omitted]
+                                                                                          // 73  add r8.xyzw, r7.xxxy, cb10[r2.y + 0].xyzw   [no consumer: omitted]
+                                                                                          // 74  mul r8.xyzw, r8.xyzw, v4.yyyy   [no consumer: omitted]
+                                                                                          // 75  add r9.xyzw, r7.xxxy, cb10[r2.x + 0].xyzw   [no consumer: omitted]
+                                                                                          // 76  mad r8.xyzw, v4.xxxx, r9.xyzw, r8.xyzw   [no consumer: omitted]
+                                                                                          // 77  add r9.xyzw, r7.xxxy, cb10[r2.z + 0].xyzw   [no consumer: omitted]
+                                                                                          // 78  add r2.xyzw, r7.xxxy, cb10[r2.w + 0].xyzw   [no consumer: omitted]
+                                                                                          // 79  mad r8.xyzw, v4.zzzz, r9.xyzw, r8.xyzw   [no consumer: omitted]
+                                                                                          // 80  mad r2.xyzw, r0.xxxx, r2.xyzw, r8.xyzw   [no consumer: omitted]
+    r6.x = (cpu_ps.x - cpu_ps.w * cb12_35.x);                                             // 81  dp4 r6.x, r4.xyzw, r2.xyzw   [CPU route: mov r6.x, vcpup.x]
+                                                                                          // 82  add r8.xyzw, r7.zzzw, cb10[r3.z + 0].xyzw   [no consumer: omitted]
+                                                                                          // 83  add r3.xyzw, r7.zzzw, cb10[r3.x + 0].xyzw   [no consumer: omitted]
+                                                                                          // 84  mul r8.xyzw, r8.xyzw, v4.yyyy   [no consumer: omitted]
+                                                                                          // 85  mad r3.xyzw, v4.xxxx, r3.xyzw, r8.xyzw   [no consumer: omitted]
+                                                                                          // 86  add r8.xyzw, r7.zzzw, cb10[r5.x + 0].xyzw   [no consumer: omitted]
+                                                                                          // 87  add r5.xyzw, r7.zzzw, cb10[r5.z + 0].xyzw   [no consumer: omitted]
+                                                                                          // 88  mad r3.xyzw, v4.zzzz, r8.xyzw, r3.xyzw   [no consumer: omitted]
+                                                                                          // 89  mad r0.xyzw, r0.xxxx, r5.xyzw, r3.xyzw   [no consumer: omitted]
+    r6.y = (cpu_ps.y - cpu_ps.w * cb12_35.y);                                             // 90  dp4 r6.y, r4.xyzw, r0.xyzw   [CPU route: mov r6.y, vcpup.y]
+    r6.w = 1.0;                                                                           // 91  mov r6.w, l(1.000000)
+    o0.x = dot(cb12_viewproj[0].xyzw, r6.xyzw);                                           // 92  dp4 o0.x, cb12[8].xyzw, r6.xyzw
+    o0.y = dot(cb12_viewproj[1].xyzw, r6.xyzw);                                           // 93  dp4 o0.y, cb12[9].xyzw, r6.xyzw
+    o0.w = dot(cb12_viewproj[3].xyzw, r6.xyzw);                                           // 94  dp4 o0.w, cb12[11].xyzw, r6.xyzw
+    r0.w = dot(cb12_viewproj[2].xyzw, r6.xyzw);                                           // 95  dp4 r0.w, cb12[10].xyzw, r6.xyzw
+    o0.z = r0.w;                                                                          // 96  mov o0.z, r0.w
+                                                                                          // 97  mov o2.w, r0.w   [no consumer: omitted]
+                                                                                          // 98  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 99  mov o2.xyz, r6.xyzx   [no consumer: omitted]
+                                                                                          // 100  add o6.xyz, -r6.xyzx, cb2[3].xyzx   [no consumer: omitted]
+                                                                                          // 101  mov r3.x, v0.w   [no consumer: omitted]
+                                                                                          // 102  mad r3.y, v2.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 103  mad r3.z, v3.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 104  dp3 r4.y, r3.xyzx, r0.xyzx   [CPU route: mov r4.y, vcpux.y]   [no consumer: omitted]
+                                                                                          // 105  dp3 r4.z, r3.xyzx, r1.xyzx   [CPU route: mov r4.z, vcpux.z]   [no consumer: omitted]
+                                                                                          // 106  dp3 r4.x, r3.xyzx, r2.xyzx   [CPU route: mov r4.x, vcpux.x]   [no consumer: omitted]
+                                                                                          // 107  dp3 r0.w, r4.xyzx, r4.xyzx   [no consumer: omitted]
+                                                                                          // 108  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 109  mul r3.xyz, r0.wwww, r4.xyzx   [no consumer: omitted]
+                                                                                          // 110  mov o3.x, r3.x   [no consumer: omitted]
+                                                                                          // 111  mad r4.xyz, v3.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 112  dp3 r5.y, r4.xyzx, r0.xyzx   [CPU route: mov r5.y, vcpub.y]   [no consumer: omitted]
+                                                                                          // 113  dp3 r5.z, r4.xyzx, r1.xyzx   [CPU route: mov r5.z, vcpub.z]   [no consumer: omitted]
+                                                                                          // 114  dp3 r5.x, r4.xyzx, r2.xyzx   [CPU route: mov r5.x, vcpub.x]   [no consumer: omitted]
+                                                                                          // 115  dp3 r0.w, r5.xyzx, r5.xyzx   [no consumer: omitted]
+                                                                                          // 116  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 117  mul r4.xyz, r0.wwww, r5.xyzx   [no consumer: omitted]
+                                                                                          // 118  mov o3.y, r4.x   [no consumer: omitted]
+                                                                                          // 119  mad r5.xyz, v2.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 120  dp3 r0.y, r5.xyzx, r0.xyzx   [CPU route: mov r0.y, vcpun.y]   [no consumer: omitted]
+                                                                                          // 121  dp3 r0.z, r5.xyzx, r1.xyzx   [CPU route: mov r0.z, vcpun.z]   [no consumer: omitted]
+                                                                                          // 122  dp3 r0.x, r5.xyzx, r2.xyzx   [CPU route: mov r0.x, vcpun.x]   [no consumer: omitted]
+                                                                                          // 123  dp3 r0.w, r0.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 124  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 125  mul r0.xyz, r0.wwww, r0.xyzx   [no consumer: omitted]
+                                                                                          // 126  mov o3.z, r0.x   [no consumer: omitted]
+                                                                                          // 127  mov o4.x, r3.y   [no consumer: omitted]
+                                                                                          // 128  mov o5.x, r3.z   [no consumer: omitted]
+                                                                                          // 129  mov o4.y, r4.y   [no consumer: omitted]
+                                                                                          // 130  mov o5.y, r4.z   [no consumer: omitted]
+                                                                                          // 131  mov o4.z, r0.y   [no consumer: omitted]
+                                                                                          // 132  mov o5.z, r0.z   [no consumer: omitted]
+                                                                                          // 133  mov o7.xyzw, l(1.000000,1.000000,1.000000,1.000000)   [no consumer: omitted]
+    return;                                                                               // 134  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVsCpu_rec1488(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVsCpu_rec1488 ####
+//#### BEGIN Fo4LitVsCpu_rec1493 ####
+// class of identical transcribed code: rec1493 t00000003, rec1492 t00000103
+// CPU-route VS (layout tbn): the CPU stream at the locations of asm2glsl.CPU_LOC; the engine attributes it still reads
+// at the locations of Fo4EngineVertexLayout.Sem (layout 0x141823210)
+layout(location = 6) in vec4 cpu_ps;
+invariant gl_Position;   // the prepass and the G-buffer draw must give the same depth (GLSL 4.60 4.8.1)
+out vec4 lit_TEXCOORD0;
+out vec4 lit_TEXCOORD4;
+out vec4 lit_TEXCOORD1;
+out vec4 lit_TEXCOORD2;
+out vec4 lit_TEXCOORD3;
+out vec4 lit_TEXCOORD5;
+out vec4 lit_COLOR0;
+uniform vec4 cb12_viewproj[4];      // cb12 rows 8..11: view-projection rows (0x14181E368..3D5)
+uniform vec4 cb12_35;               // cb12 row 35: eye (0x14181E70B..729)
+// b06_BSLighting_VS_rec1493_t00000003  technique 0x00000003 = VC|SKINNED
+// constants by name (fxp offset table of rec1493, loader 0x14181E030, obj+0x68; names 0x142243A40): 
+void Fo4LitVsCpu_rec1493(out vec4 o0, out vec4 o1, out vec4 o2, out vec4 o3, out vec4 o4, out vec4 o5, out vec4 o6, out vec4 o7)
+{
+    vec4 r0, r6;
+    o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); o3 = vec4(0.0); o4 = vec4(0.0); o5 = vec4(0.0); o6 = vec4(0.0); o7 = vec4(0.0);   // unwritten components (notas D9)
+                                                                                          // 53  add r0.x, v5.y, v5.x   [no consumer: omitted]
+                                                                                          // 54  add_sat r0.x, r0.x, v5.z   [no consumer: omitted]
+                                                                                          // 55  add r0.x, -r0.x, l(1.000000)   [no consumer: omitted]
+                                                                                          // 56  mov r1.xyz, l(-0.000000,-0.000000,-0.000000,0)   [no consumer: omitted]
+                                                                                          // 57  mov r1.w, -cb12[35].z   [no consumer: omitted]
+                                                                                          // 58  mul r2.xyzw, v6.xyzw, l(765.010010, 765.010010, 765.010010, 765.010010)   [no consumer: omitted]
+                                                                                          // 59  ftoi r2.xyzw, r2.xyzw   [no consumer: omitted]
+                                                                                          // 60  iadd r3.xyzw, r2.xxyy, l(1, 2, 1, 2)   [no consumer: omitted]
+                                                                                          // 61  add r4.xyzw, r1.zzzw, cb10[r3.w + 0].xyzw   [no consumer: omitted]
+                                                                                          // 62  mul r4.xyzw, r4.xyzw, v5.yyyy   [no consumer: omitted]
+                                                                                          // 63  add r5.xyzw, r1.zzzw, cb10[r3.y + 0].xyzw   [no consumer: omitted]
+                                                                                          // 64  mad r4.xyzw, v5.xxxx, r5.xyzw, r4.xyzw   [no consumer: omitted]
+                                                                                          // 65  iadd r5.xyzw, r2.zzww, l(1, 2, 1, 2)   [no consumer: omitted]
+                                                                                          // 66  add r6.xyzw, r1.zzzw, cb10[r5.y + 0].xyzw   [no consumer: omitted]
+                                                                                          // 67  add r1.xyzw, r1.xyzw, cb10[r5.w + 0].xyzw   [no consumer: omitted]
+                                                                                          // 68  mad r4.xyzw, v5.zzzz, r6.xyzw, r4.xyzw   [no consumer: omitted]
+                                                                                          // 69  mad r1.xyzw, r0.xxxx, r1.xyzw, r4.xyzw   [no consumer: omitted]
+                                                                                          // 70  mov r4.xyz, v0.xyzx   [no consumer: omitted]
+                                                                                          // 71  mov r4.w, l(1.000000)   [no consumer: omitted]
+    r6.z = (cpu_ps.z - cpu_ps.w * cb12_35.z);                                             // 72  dp4 r6.z, r4.xyzw, r1.xyzw   [CPU route: mov r6.z, vcpup.z]
+                                                                                          // 73  mov r7.xz, l(-0.000000,0,-0.000000,0)   [no consumer: omitted]
+                                                                                          // 74  mov r7.yw, -cb12[35].xxxy   [no consumer: omitted]
+                                                                                          // 75  add r8.xyzw, r7.xxxy, cb10[r2.y + 0].xyzw   [no consumer: omitted]
+                                                                                          // 76  mul r8.xyzw, r8.xyzw, v5.yyyy   [no consumer: omitted]
+                                                                                          // 77  add r9.xyzw, r7.xxxy, cb10[r2.x + 0].xyzw   [no consumer: omitted]
+                                                                                          // 78  mad r8.xyzw, v5.xxxx, r9.xyzw, r8.xyzw   [no consumer: omitted]
+                                                                                          // 79  add r9.xyzw, r7.xxxy, cb10[r2.z + 0].xyzw   [no consumer: omitted]
+                                                                                          // 80  add r2.xyzw, r7.xxxy, cb10[r2.w + 0].xyzw   [no consumer: omitted]
+                                                                                          // 81  mad r8.xyzw, v5.zzzz, r9.xyzw, r8.xyzw   [no consumer: omitted]
+                                                                                          // 82  mad r2.xyzw, r0.xxxx, r2.xyzw, r8.xyzw   [no consumer: omitted]
+    r6.x = (cpu_ps.x - cpu_ps.w * cb12_35.x);                                             // 83  dp4 r6.x, r4.xyzw, r2.xyzw   [CPU route: mov r6.x, vcpup.x]
+                                                                                          // 84  add r8.xyzw, r7.zzzw, cb10[r3.z + 0].xyzw   [no consumer: omitted]
+                                                                                          // 85  add r3.xyzw, r7.zzzw, cb10[r3.x + 0].xyzw   [no consumer: omitted]
+                                                                                          // 86  mul r8.xyzw, r8.xyzw, v5.yyyy   [no consumer: omitted]
+                                                                                          // 87  mad r3.xyzw, v5.xxxx, r3.xyzw, r8.xyzw   [no consumer: omitted]
+                                                                                          // 88  add r8.xyzw, r7.zzzw, cb10[r5.x + 0].xyzw   [no consumer: omitted]
+                                                                                          // 89  add r5.xyzw, r7.zzzw, cb10[r5.z + 0].xyzw   [no consumer: omitted]
+                                                                                          // 90  mad r3.xyzw, v5.zzzz, r8.xyzw, r3.xyzw   [no consumer: omitted]
+                                                                                          // 91  mad r0.xyzw, r0.xxxx, r5.xyzw, r3.xyzw   [no consumer: omitted]
+    r6.y = (cpu_ps.y - cpu_ps.w * cb12_35.y);                                             // 92  dp4 r6.y, r4.xyzw, r0.xyzw   [CPU route: mov r6.y, vcpup.y]
+    r6.w = 1.0;                                                                           // 93  mov r6.w, l(1.000000)
+    o0.x = dot(cb12_viewproj[0].xyzw, r6.xyzw);                                           // 94  dp4 o0.x, cb12[8].xyzw, r6.xyzw
+    o0.y = dot(cb12_viewproj[1].xyzw, r6.xyzw);                                           // 95  dp4 o0.y, cb12[9].xyzw, r6.xyzw
+    o0.w = dot(cb12_viewproj[3].xyzw, r6.xyzw);                                           // 96  dp4 o0.w, cb12[11].xyzw, r6.xyzw
+    r0.w = dot(cb12_viewproj[2].xyzw, r6.xyzw);                                           // 97  dp4 r0.w, cb12[10].xyzw, r6.xyzw
+    o0.z = r0.w;                                                                          // 98  mov o0.z, r0.w
+                                                                                          // 99  mov o2.w, r0.w   [no consumer: omitted]
+                                                                                          // 100  mad o1.xy, v1.xyxx, cb1[2].zwzz, cb1[2].xyxx   [no consumer: omitted]
+                                                                                          // 101  mov o2.xyz, r6.xyzx   [no consumer: omitted]
+                                                                                          // 102  add o6.xyz, -r6.xyzx, cb2[3].xyzx   [no consumer: omitted]
+                                                                                          // 103  mov r3.x, v0.w   [no consumer: omitted]
+                                                                                          // 104  mad r3.y, v2.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 105  mad r3.z, v3.w, l(2.000000), l(-1.000000)   [no consumer: omitted]
+                                                                                          // 106  dp3 r4.y, r3.xyzx, r0.xyzx   [CPU route: mov r4.y, vcpux.y]   [no consumer: omitted]
+                                                                                          // 107  dp3 r4.z, r3.xyzx, r1.xyzx   [CPU route: mov r4.z, vcpux.z]   [no consumer: omitted]
+                                                                                          // 108  dp3 r4.x, r3.xyzx, r2.xyzx   [CPU route: mov r4.x, vcpux.x]   [no consumer: omitted]
+                                                                                          // 109  dp3 r0.w, r4.xyzx, r4.xyzx   [no consumer: omitted]
+                                                                                          // 110  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 111  mul r3.xyz, r0.wwww, r4.xyzx   [no consumer: omitted]
+                                                                                          // 112  mov o3.x, r3.x   [no consumer: omitted]
+                                                                                          // 113  mad r4.xyz, v3.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 114  dp3 r5.y, r4.xyzx, r0.xyzx   [CPU route: mov r5.y, vcpub.y]   [no consumer: omitted]
+                                                                                          // 115  dp3 r5.z, r4.xyzx, r1.xyzx   [CPU route: mov r5.z, vcpub.z]   [no consumer: omitted]
+                                                                                          // 116  dp3 r5.x, r4.xyzx, r2.xyzx   [CPU route: mov r5.x, vcpub.x]   [no consumer: omitted]
+                                                                                          // 117  dp3 r0.w, r5.xyzx, r5.xyzx   [no consumer: omitted]
+                                                                                          // 118  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 119  mul r4.xyz, r0.wwww, r5.xyzx   [no consumer: omitted]
+                                                                                          // 120  mov o3.y, r4.x   [no consumer: omitted]
+                                                                                          // 121  mad r5.xyz, v2.xyzx, l(2.000000, 2.000000, 2.000000, 0.000000), l(-1.000000, -1.000000, -1.000000, 0.000000)   [no consumer: omitted]
+                                                                                          // 122  dp3 r0.y, r5.xyzx, r0.xyzx   [CPU route: mov r0.y, vcpun.y]   [no consumer: omitted]
+                                                                                          // 123  dp3 r0.z, r5.xyzx, r1.xyzx   [CPU route: mov r0.z, vcpun.z]   [no consumer: omitted]
+                                                                                          // 124  dp3 r0.x, r5.xyzx, r2.xyzx   [CPU route: mov r0.x, vcpun.x]   [no consumer: omitted]
+                                                                                          // 125  dp3 r0.w, r0.xyzx, r0.xyzx   [no consumer: omitted]
+                                                                                          // 126  rsq r0.w, r0.w   [no consumer: omitted]
+                                                                                          // 127  mul r0.xyz, r0.wwww, r0.xyzx   [no consumer: omitted]
+                                                                                          // 128  mov o3.z, r0.x   [no consumer: omitted]
+                                                                                          // 129  mov o4.x, r3.y   [no consumer: omitted]
+                                                                                          // 130  mov o5.x, r3.z   [no consumer: omitted]
+                                                                                          // 131  mov o4.y, r4.y   [no consumer: omitted]
+                                                                                          // 132  mov o5.y, r4.z   [no consumer: omitted]
+                                                                                          // 133  mov o4.z, r0.y   [no consumer: omitted]
+                                                                                          // 134  mov o5.z, r0.z   [no consumer: omitted]
+                                                                                          // 135  log r0.xyz, v4.xyzx   [no consumer: omitted]
+                                                                                          // 136  mul r0.xyz, r0.xyzx, l(2.200000, 2.200000, 2.200000, 0.000000)   [no consumer: omitted]
+                                                                                          // 137  exp o7.xyz, r0.xyzx   [no consumer: omitted]
+                                                                                          // 138  mov o7.w, v4.w   [no consumer: omitted]
+    return;                                                                               // 139  ret
+}
+void engine_main()
+{
+    vec4 o0, o1, o2, o3, o4, o5, o6, o7;
+    Fo4LitVsCpu_rec1493(o0, o1, o2, o3, o4, o5, o6, o7);
+    gl_Position = gl43ClipToGl(o0);
+    lit_TEXCOORD0.xy = o1.xy;
+    lit_TEXCOORD4.xyzw = o2.xyzw;
+    lit_TEXCOORD1.xyz = o3.xyz;
+    lit_TEXCOORD2.xyz = o4.xyz;
+    lit_TEXCOORD3.xyz = o5.xyz;
+    lit_TEXCOORD5.xyz = o6.xyz;
+    lit_COLOR0.xyzw = o7.xyzw;
+}
+//#### END Fo4LitVsCpu_rec1493 ####

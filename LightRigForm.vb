@@ -225,7 +225,10 @@ Partial Public Class LightRigForm
         ' de presets como "Custom", que es exactamente lo que no significa.
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         chkShadows.Checked = sh.Enabled
-        chkDepth16.Checked = sh.Depth16
+        ' Fallout 4 draws its shadow maps in 16-bit depth always, the game's D16_UNORM (user decision 14-oct-2026, rev-E08;
+        ' PreviewModel.MapaEn16Bits): the box shows it and cannot change it; the stored Fallout 4 setting is left as it is.
+        chkDepth16.Checked = sh.Depth16 OrElse Not EsSkyrim()
+        PonerAyudasDeSombraPorJuego()
         ' ESTOS TRES SALEN DEL RIG, no de ActiveShadows(): blandura, oscuridad y receptor de suelo son
         ' parte del LOOK del set de luces y viajan con el preset. Ver el bloque de PreviewLightRig.
         chkGroundShadow.Checked = rig.ShadowOnGround
@@ -861,6 +864,29 @@ Partial Public Class LightRigForm
         cmbShadowQuality.SelectedIndex = idx
     End Sub
 
+    ''' <summary>The dialog is for the active game (its title says which).</summary>
+    Private Shared Function EsSkyrim() As Boolean
+        Return Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+    End Function
+
+    ''' <summary>The tooltips of the shadow controls whose meaning depends on the game (rev-E08, user decision 14-oct-2026): on
+    ''' Fallout 4, Softness and Darkness are the rig's entries over the game's own receiver (Fo4DeferredLightLaw.RigShadowRadiusScale,
+    ''' RigShadowLift; the default rig is the game) and the 16-bit box is fixed; on Skyrim SE they drive the preview's PCF receiver.
+    ''' The ground catcher takes them as texels and darkness on both games.</summary>
+    Private Sub PonerAyudasDeSombraPorJuego()
+        If EsSkyrim() Then
+            ToolTip1.SetToolTip(tShadowSoft, "Shadow softness: the radius of the shadow filter, in shadow-map texels (also on the ground catcher).")
+            ToolTip1.SetToolTip(tShadowStrength, "Shadow darkness: 1.0 is a full shadow; lower values let light through (shadow factor = 1 - Darkness x (1 - lit)).")
+        Else
+            ToolTip1.SetToolTip(tShadowSoft, "Shadow softness: scales the radius of Fallout 4's own shadow filter (16 Poisson samples within 3 texels). " &
+                                "2.0, every preset's value, is the game's filter; 4.0 doubles its radius, 0 samples one point. " &
+                                "On the ground catcher it is the filter radius in texels.")
+            ToolTip1.SetToolTip(tShadowStrength, "Shadow darkness: 1.0 is the game's shadow; lower values let light through " &
+                                "(shadow = mix(1, game shadow, Darkness)). Also used by the ground catcher.")
+            ToolTip1.SetToolTip(chkDepth16, "Fallout 4 always draws its shadow maps in 16-bit depth (D16_UNORM), like the game: fixed.")
+        End If
+    End Sub
+
     ''' <summary>Con las sombras apagadas, sus perillas no hacen nada: deshabilitarlas evita que alguien
     ''' mueva Softness diez minutos preguntandose por que no pasa nada.</summary>
     Private Sub ActualizarHabilitadoSombras()
@@ -872,7 +898,7 @@ Partial Public Class LightRigForm
         ActualizarCartelDeVram()
         lblShadowQuality.Enabled = on_
         cmbShadowQuality.Enabled = on_
-        chkDepth16.Enabled = on_
+        chkDepth16.Enabled = on_ AndAlso EsSkyrim()            ' fixed in Fallout 4 (rev-E08)
         lblShadowSoft.Enabled = on_
         tShadowSoft.Enabled = on_
         lblShadowStrength.Enabled = on_
@@ -937,7 +963,7 @@ Partial Public Class LightRigForm
         If _preventchanges Then Return
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         sh.Enabled = chkShadows.Checked
-        sh.Depth16 = chkDepth16.Checked
+        If EsSkyrim() Then sh.Depth16 = chkDepth16.Checked     ' Fallout 4's box is fixed (rev-E08): its stored value is not touched
         If _mapSizeFueraDeLista > 0 Then
             ' El usuario tiene un tamano propio y todavia no eligio uno de la lista: se conserva.
             sh.MapSize = _mapSizeFueraDeLista

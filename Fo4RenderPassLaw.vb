@@ -109,18 +109,19 @@ Friend Module Fo4RenderPassLaw
         Public GBufferTestVertexAlpha As Boolean
     End Structure
 
-    ''' <summary>DepthBias / SlopeScaledDepthBias of a rasterizer bias index (table 0x141856170, switch 0x141856364;
-    ''' DepthBiasClamp -100 everywhere). The main depth buffer is D24_UNORM_S8_UINT, standard Z (clear 1.0, 0x141823EC4;
-    ''' LESS_EQUAL): GL's polygon offset (factor = slope, units = DepthBias) is the same bias.</summary>
-    Friend Function BiasOf(index As Integer) As (DepthBias As Single, Slope As Single)
+    ''' <summary>DepthBias / SlopeScaledDepthBias / DepthBiasClamp of a rasterizer bias index (table 0x141856170, switch 0x141856364;
+    ''' DepthBiasClamp -100 in every state, 0x1424875E0). A D3D11.3 15.10 bias: the draw applies it through Gl43.DepthBias (GL's
+    ''' polygon offset unit is the implementation's, measured per context; ola 4 v3).</summary>
+    Friend Function BiasOf(index As Integer) As (DepthBias As Single, Slope As Single, Clamp As Single)
+        Const clamp As Single = -100.0F
         Select Case index
-            Case 1, 5 : Return (-3.0F, -0.4F)
-            Case 2 : Return (-6.0F, -0.8F)
-            Case 3, 4 : Return (-9.0F, -1.2F)
-            Case 6 : Return (3.0F, 0.4F)
-            Case 7 : Return (6.0F, 0.8F)
-            Case 8 : Return (12.0F, 6.0F)
-            Case Else : Return (0.0F, 0.0F)
+            Case 1, 5 : Return (-3.0F, -0.4F, clamp)
+            Case 2 : Return (-6.0F, -0.8F, clamp)
+            Case 3, 4 : Return (-9.0F, -1.2F, clamp)
+            Case 6 : Return (3.0F, 0.4F, clamp)
+            Case 7 : Return (6.0F, 0.8F, clamp)
+            Case 8 : Return (12.0F, 6.0F, clamp)
+            Case Else : Return (0.0F, 0.0F, clamp)
         End Select
     End Function
 

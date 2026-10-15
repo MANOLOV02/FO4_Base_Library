@@ -91,5 +91,45 @@ uint d3d_ftou(float x) { if (!(x > 0.0)) return 0u; if (x >= 4294967296.0) retur
 // D3D11.3 22.11.20 ubfe: width/offset & 31; width 0 -> 0; width+offset >= 32 -> value >> offset.
 int d3d_ubfe(int w, int o, int v) { uint wi = uint(w) & 31u, oi = uint(o) & 31u; if (wi == 0u) return 0;
     if (wi + oi < 32u) return int((uint(v) << (32u - wi - oi)) >> (32u - wi)); return int(uint(v) >> oi); }
+// Ola 4 (the resource ops of b06 / b07 / b10 / b11 / image space, asm2glsl.tex_op; d3d_layer moved here from GBUF_ARRAYS: one copy).
+// Texture2DArray sample: the array coordinate is rounded to nearest even, then clamped to the view's slices (D3D11.3
+// 22.4.15 'Array Resources', 5.3.6.1). GLSL rounds the layer with floor(z + 0.5): d3d_layer gives the integral index first.
+float d3d_layer(float z, int slices) { return clamp(roundEven(z), 0.0, float(slices - 1)); }
+// D3D11 ld of a uint texture: out of range = 0 (the rule of d3d_ld2d).
+uvec4 d3d_ld2du(usampler2D t, ivec2 p, int lod)
+{
+    if (lod < 0 || lod >= textureQueryLevels(t)) return uvec4(0u);
+    ivec2 s = textureSize(t, lod);
+    if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, s))) return uvec4(0u);
+    return texelFetch(t, p, lod);
+}
+// D3D11 resinfo: (width, height, array size or 0, mip count) of the mip; a mip outside the resource gives 0 for the sizes and still
+// the mip count (D3D11.3 functional specification, the resinfo instruction).
+vec4 d3d_resinfo2d(sampler2D t, int mip)
+{
+    int n = textureQueryLevels(t);
+    if (mip < 0 || mip >= n) return vec4(0.0, 0.0, 0.0, float(n));
+    ivec2 s = textureSize(t, mip);
+    return vec4(float(s.x), float(s.y), 0.0, float(n));
+}
+vec4 d3d_resinfo2du(usampler2D t, int mip)
+{
+    int n = textureQueryLevels(t);
+    if (mip < 0 || mip >= n) return vec4(0.0, 0.0, 0.0, float(n));
+    ivec2 s = textureSize(t, mip);
+    return vec4(float(s.x), float(s.y), 0.0, float(n));
+}
+vec4 d3d_resinfo2darray(sampler2DArray t, int mip)
+{
+    int n = textureQueryLevels(t);
+    if (mip < 0 || mip >= n) return vec4(0.0, 0.0, 0.0, float(n));
+    ivec3 s = textureSize(t, mip);
+    return vec4(float(s.x), float(s.y), float(s.z), float(n));
+}
+// D3D11 rcp: 1 / x under the IEEE rules of div (d3d_div).
+float d3d_rcp(float x) { return d3d_div(1.0, x); }
+// D3D11.3 22.11.4 bfi: width / offset & 31; mask = ((1 << width) - 1) << offset; (src2 << offset) & mask | src3 & ~mask.
+int d3d_bfi(int w, int o, int a, int b) { uint wi = uint(w) & 31u, oi = uint(o) & 31u; uint m = ((1u << wi) - 1u) << oi;
+    return int(((uint(a) << oi) & m) | (uint(b) & ~m)); }
 "
 End Module

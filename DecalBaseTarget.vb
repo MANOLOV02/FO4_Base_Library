@@ -23,7 +23,8 @@ Imports OpenTK.Graphics.OpenGL4
 ''' under SurfaceDrawStencil: depth EQUAL against the final base depth (only the farthest decal's fragments pass), stencil
 ''' CoveredBit set and SurfacedBit clear, SurfacedBit set on pass (GL 4.6 17.3.3, INVERT under write mask SurfacedBit): one surface
 ''' fragment per pixel. After all the depth draws because a blended surface cannot be overwritten by a farther one. The surface
-''' adds its opacity to the coverage (Skyrim SE: the HDR coverage, uCoverageMode 1; Fallout 4: the coverage target, attachment 6).
+''' adds its opacity to the coverage (Skyrim SE: the HDR coverage, uCoverageMode 1; Fallout 4: the coverage target, the attachment
+''' after the G-buffer RTs, Fo4DeferredTargets.SurfaceCoverageBuffer).
 ''' Fallout 4, then the coverage draw of the same decal (CoverageDrawStencil: depth LEQUAL against the base depth, the fragments its
 ''' colour draw will blend there; marked and covered pixels) into the coverage target, blended ONE / ONE_MINUS_SRC_ALPHA on alpha
 ''' (RenderableMesh.DrawDecalBaseSurface).</item>
@@ -173,7 +174,8 @@ Friend NotInheritable Class DecalBaseTarget
                 Gl43.FramebufferTexture(_fbo, att, colours(i).Name, 0)
             End If
         Next
-        ' Fallout 4: the coverage target after the caller's colours (Fragment_DecalBaseSurface oCoverage, location 6).
+        ' Fallout 4: the coverage target after the caller's colours (Fragment_DecalBaseSurface oCoverage,
+        ' Fo4DeferredTargets.SurfaceCoverageBuffer).
         Dim count = colours.Length
         If _deferred Then
             Gl43.FramebufferTexture(_fbo, CType(FramebufferAttachment.ColorAttachment0 + count, FramebufferAttachment), _coverage, 0)

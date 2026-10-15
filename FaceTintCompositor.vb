@@ -506,6 +506,8 @@ Public Module FaceTintCompositor
             ("SSE-SAO-BLURV", SseSaoSource.Fragment_BlurV),
             ("GL43-CLIP", Gl43.ClipGlsl),
             ("GL43-CLIP-CAPTURE", Gl43.ClipGlslCapture),
+            ("GL43-OFFSET-PROBE-VERTEX", Gl43.OffsetProbeVertex),
+            ("GL43-OFFSET-PROBE-FRAGMENT", Gl43.OffsetProbeFragment),
             ("SSE-SAO-HEADER430", SseSaoSource.Header430),
             ("SSE-SAO-PRELUDE", SseSaoSource.Prelude),
             ("SSE-SAO-MINIFYCOMMON", SseSaoSource.MinifyCommon),
@@ -528,7 +530,6 @@ Public Module FaceTintCompositor
             ("LUMINANCE-RESOLVE-COMPUTE", PostProcessShaderSource.Compute_LumResolve),
             ("D3D11-SEMANTICS", D3d11SemanticsSource.Glsl),
             ("SHADOW-WORLDDIR", ShadowDepthShaderSource.WorldDirGlsl),
-            ("FO4-DEFERRED-APP-LINEARZ", Fo4DeferredAppSource.Fragment_LinearZ),
             ("FO4-DEFERRED-APP-FULLSCREEN", Fo4DeferredAppSource.Vertex_Fullscreen),
             ("FO4-DEFERRED-APP-RESOLVE", Fo4DeferredAppSource.Fragment_DirectResolve),
             ("FO4-DEFERRED-APP-DECALBASE", Fo4DeferredAppSource.Fragment_DecalBase),
@@ -536,9 +537,14 @@ Public Module FaceTintCompositor
             ("FO4-DEFERRED-APP-DECALBASESURFACE-EFFECT", Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect),
             ("FO4-DEFERRED-APP-DECALBASESURFACE-LAW", Fo4DeferredAppSource.DecalBaseSurfaceLaw),
             ("FO4-DEFERRED-APP-POSITIONCAPTURE", Fo4DeferredAppSource.Fragment_PositionCapture),
+            ("FO4-POST-APP-UNPREMULTIPLY", Fo4ImageSpaceAppSource.Fragment_Unpremultiply),
+            ("FO4-POST-APP-ACTORMEAN", Fo4ImageSpaceAppSource.Fragment_ActorMean),
+            ("FO4-POST-APP-PRESENT", Fo4ImageSpaceAppSource.Fragment_Present),
             ("APP-SKIN-LAW", AppSkinLaw.Glsl),
             ("APP-EDIT-VIEWS-COLORRAMP", AppEditViewsSource.ColorRamp)}).
-            Concat(Fo4DeferredSource.AllSources()).Concat(Fo4GBufferSource.AllSources()).Concat(Fo4EffectSource.AllSources()).ToArray()
+            Concat(Fo4GBufferSource.AllSources()).Concat(Fo4EffectSource.AllSources()).Concat(Fo4LightingSource.AllSources()).
+            Concat(Fo4UtilitySource.AllSources()).Concat(Fo4DFLightSource.AllSources()).Concat(Fo4DFCompositeSource.AllSources()).
+            Concat(Fo4ImageSpaceSource.AllSources()).ToArray()
     End Function
 
     Private Const VertexShaderSource As String = "#version 430

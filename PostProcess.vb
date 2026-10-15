@@ -9,13 +9,15 @@ Imports OpenTK.Mathematics
 ''' definition, mapped to the ImageSpaceManager offsets the engine reads, 0x14220A730):</para>
 ''' <list type="bullet">
 ''' <item>HNAM = (EyeAdaptSpeed 3.0, TonemapE 0.02, BloomThreshold 0.5, BloomScale 0.2, AutoExposureMax 3.25,
-''' AutoExposureMin 1.6, SunlightScale 4.5, SkyScale 2.4, MiddleGray 0.18) - ISM+0x80..0xA0.</item>
+''' AutoExposureMin 1.6, SunlightScale 4.5, SkyScale 2.4, MiddleGray 0.18) - ISM+0x80..0xA0 (the eye-adaptation speed and the sky
+''' scale are read by no pass the preview runs: the steady state, no sky).</item>
 ''' <item>CNAM = (Saturation 1, Brightness 1, Contrast 1) - ISM+0xA4/0xA8/0xAC; TNAM tint amount 0 - ISM+0xB0.</item>
 ''' <item>TX00 = <c>Textures\Effects\LUTs\LUT_CW_ClearDAY.DDS</c> (Fallout4 - Misc.ba2; 115 of the 293 vanilla
 ''' IMGS use it).</item>
 ''' </list>
-''' <para>Holes, declared and not filled: bloom (the preview has no bloom pass: 0), the weights of the four LUT
-''' slots (one LUT, weight 1), and the eye-adaptation history (steady state: adapted = current mean).</para></summary>
+''' <para>Ola 4: the post runs on the transcribed programs (Fo4ImageSpaceChain): the bloom with BloomThreshold / BloomScale, one LUT
+''' with weight 1 (the law for one image space, D:\WinTmp\rc\ola4\post\post.md 2.5), the eye adaptation in its steady state (decision
+''' of the PLAN: adapted = the current mean).</para></summary>
 Friend NotInheritable Class Fo4ImageSpace
     Public ReadOnly TonemapE As Single
     Public ReadOnly AutoExposureMax As Single
@@ -29,14 +31,20 @@ Friend NotInheritable Class Fo4ImageSpace
     Public ReadOnly TintColor As Vector3
     Public ReadOnly TintAmount As Single
     Public ReadOnly LutPath As String
+    ''' <summary>HNAM Bloom Threshold / Bloom Scale (ISM+0x88 / +0x8C; ENAM[2] / [3] -&gt; +0x28 / +0x2C, 0x1404AF863): copied to
+    ''' [0x142F98CE8] / [0x142F98CEC] by the HDR's render (0x14220A38F..3B1), the bloom's BlurBrightPass (0x1422357C6,
+    ''' Fo4ImageSpaceChain).</summary>
+    Public ReadOnly BloomThreshold As Single
+    Public ReadOnly BloomScale As Single
 
     Friend Sub New(tonemapE As Single, aeMax As Single, aeMin As Single, middleGray As Single, sunlightScale As Single,
                     saturation As Single, brightness As Single, contrast As Single,
-                    tintColor As Vector3, tintAmount As Single, lutPath As String)
+                    tintColor As Vector3, tintAmount As Single, lutPath As String, bloomThreshold As Single, bloomScale As Single)
         Me.TonemapE = tonemapE : AutoExposureMax = aeMax : AutoExposureMin = aeMin : Me.MiddleGray = middleGray
         Me.SunlightScale = sunlightScale
         Me.Saturation = saturation : Me.Brightness = brightness : Me.Contrast = contrast
         Me.TintColor = tintColor : Me.TintAmount = tintAmount : Me.LutPath = lutPath
+        Me.BloomThreshold = bloomThreshold : Me.BloomScale = bloomScale
     End Sub
 
     ''' <summary>IMGS CW_ClearDAY_MAY19 (Fallout4.esm 0x00216A9C). See the class summary.</summary>
@@ -44,16 +52,15 @@ Friend NotInheritable Class Fo4ImageSpace
         tonemapE:=0.02F, aeMax:=3.25F, aeMin:=1.6F, middleGray:=0.18F, sunlightScale:=4.5F,
         saturation:=1.0F, brightness:=1.0F, contrast:=1.0F,
         tintColor:=Vector3.Zero, tintAmount:=0.0F,
-        lutPath:="Textures\Effects\LUTs\LUT_CW_ClearDAY.DDS")
+        lutPath:="Textures\Effects\LUTs\LUT_CW_ClearDAY.DDS", bloomThreshold:=0.5F, bloomScale:=0.2F)
 
-    ''' <summary>The constants of PS i3700 (cb2[1..3]) for this image space.</summary>
-    Public Sub Upload(post As Shader_Base_Class)
-        post.SetVector4("hdrExposure", New Vector4(AutoExposureMax, AutoExposureMin, MiddleGray, EffectiveTonemapE))
-        post.SetVector3("hdrCinematic", New Vector3(Saturation, Brightness, Contrast))
-        ' cb2[3] of i3700 = (TintColor * TintAmount, TintAmount): the engine premultiplies when it copies the image
-        ' space into the ISM (0x1421efcd0, rcx = ISM+0x80 from 0x142186312) and uploads +0xB4..+0xBC, +0xB0
-        ' (SetVector(2) at 0x14220a8f2). Fallout4.exe 1.11.240.0.
-        post.SetVector4("hdrTint", New Vector4(TintColor * TintAmount, TintAmount))
+    ''' <summary>The constants of the tonemap HDRTonemapBlendCinematic (i3700; ImageSpaceEffectHDR slot 9 0x14220A730, ctor names
+    ''' 0x14219B4C0): Param = (AEMax, AEMin, MiddleGray, E) (0x14220A8AD), Cinematic = (Saturation, 0, Contrast, Brightness)
+    ''' (0x14220A8CF), Tint = (TintColor x TintAmount, TintAmount) (premultiplied on the copy into the ISM 0x1421EFCD0, 0x14220A8F2).</summary>
+    Public Sub UploadTonemap(p As Shader_Base_Class)
+        p.SetVector4("Param", New Vector4(AutoExposureMax, AutoExposureMin, MiddleGray, EffectiveTonemapE))
+        p.SetVector4("Cinematic", New Vector4(Saturation, 0.0F, Contrast, Brightness))
+        p.SetVector4("Tint", New Vector4(TintColor * TintAmount, TintAmount))
     End Sub
 
     ''' <summary>The E the tonemap receives: the record's TonemapE when it is &lt;= 1, else 0.02
@@ -424,13 +431,6 @@ Public Class Refraction_Normals_Sse_Shader_Class
     Inherits Shader_Base_Class
     Sub New()
         MyBase.New(Shader_Class_SSE.Vertex_SSE, RefractionSource.Normals_Fragment)
-    End Sub
-End Class
-
-Public Class Refraction_Normals_Fo4_Shader_Class
-    Inherits Shader_Base_Class
-    Sub New()
-        MyBase.New(Shader_Class_Fo4.Vertex_FO4, RefractionSource.Normals_Fragment)
     End Sub
 End Class
 
@@ -852,6 +852,30 @@ Friend NotInheritable Class RefractionTargets
                     End Sub)
     End Sub
 
+    ''' <summary>Fallout 4's ISRefraction over attachment 0 of <paramref name="targetFbo"/> in a direct frame (ola 4; effect 5, i3658 on
+    ''' the ImageSpaceManager's triangle <paramref name="triangleVao"/>, under UPPER_LEFT - Fo4ImageSpaceChain's convention): the scene is
+    ''' copied first (t0; FILT 1 <paramref name="linearSampler"/>: ImageSpaceEffectRefraction::Render 0x142255B70 passes the scene with
+    ''' +0x1C = 1, RE_REFRACTION_BOTH 4.6), t1 = the normals (+0x1C = 0: POINT <paramref name="pointSampler"/>), Tint =
+    ''' RefractionLaw.ImageSpaceConstants. The caller's clip origin is restored. A frame with the post runs it inside Fo4ImageSpaceChain.</summary>
+    Public Sub ApplyImageSpaceFo4(program As Shader_Base_Class, targetFbo As Integer, sceneFmt As SizedInternalFormat, w As Integer, h As Integer,
+                                  triangleVao As Integer, linearSampler As Integer, pointSampler As Integer)
+        Dim k = RefractionLaw.ImageSpaceConstants(False)
+        Dim origen = Gl43.Origin
+        Gl43.ClipControl(ClipOrigin.UpperLeft)
+        Try
+            _pass.Apply(program, targetFbo, sceneFmt, w, h, triangleVao,
+                        Sub(prog)
+                            GL.BindSampler(0, linearSampler)
+                            Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _normalsTex)
+                            GL.BindSampler(1, pointSampler)
+                            prog.SetVector4("Tint", k.Tint)
+                        End Sub)
+        Finally
+            Gl43.ClipControl(origen)
+            GL.BindSampler(0, 0) : GL.BindSampler(1, 0)
+        End Try
+    End Sub
+
     Private Sub FreeNormals()
         If _fbo <> 0 Then GL.DeleteFramebuffer(_fbo) : _fbo = 0
         If _normalsTex <> 0 Then GL.DeleteTexture(_normalsTex) : _normalsTex = 0
@@ -862,14 +886,6 @@ Friend NotInheritable Class RefractionTargets
         FreeNormals()
         _depthCopy.Free()
         _pass.Free()
-    End Sub
-End Class
-
-''' <summary>Program of the FO4 post pass: fullscreen triangle of the background + <see cref="PostProcessShaderSource.Fragment_PostFo4"/>.</summary>
-Public Class PostProcess_Fo4_Shader_Class
-    Inherits Shader_Base_Class
-    Sub New()
-        MyBase.New(BackgroundFadeSource.Vertex_Background, PostProcessShaderSource.Fragment_PostFo4)
     End Sub
 End Class
 
@@ -952,8 +968,6 @@ Friend NotInheritable Class SceneTargets
     Private _snowSpecAlphaTex As Integer
     Private _displayRb As Integer, _depthRb As Integer
     Private _lumPartials As Integer, _lumResult As Integer, _partialCount As Integer
-    Private _lutTex As Integer
-    Private _lutPath As String
 
     Public ReadOnly Property HdrFramebuffer As Integer
         Get
@@ -1147,7 +1161,7 @@ Friend NotInheritable Class SceneTargets
     ''' ones the background quad receives). <paramref name="emptyVao"/> is the attribute-less VAO of the
     ''' fullscreen triangle: the core profile rejects a draw with no VAO bound (GL_INVALID_OPERATION, and the
     ''' display target keeps the previous frame).</summary>
-    Public Sub Composite(post As Shader_Base_Class, uploadImageSpace As Action(Of Shader_Base_Class), lutPath As String,
+    Public Sub Composite(post As Shader_Base_Class, uploadImageSpace As Action(Of Shader_Base_Class),
                          setBackground As Action(Of Shader_Base_Class), emptyVao As Integer)
 #If DEBUG Then
         ' ShadowGate --effect-exposure: another frame's mean luminance in place of this one's (Fo4GBufferConstants.GateAvgLumOverride)
@@ -1160,22 +1174,18 @@ Friend NotInheritable Class SceneTargets
         BindDisplay()
         post.Use()
 
-        Dim lut = If(String.IsNullOrEmpty(lutPath), 0, EnsureLut(lutPath))
         Gl43.BindTextureUnit(0, TextureTarget.Texture2D, _sceneTex)
         Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _coverageTex)
         Gl43.BindTextureUnit(2, TextureTarget.Texture2D, _bgShadowTex)
-        Gl43.BindTextureUnit(3, TextureTarget.Texture3D, lut)
         post.SetInt("texScene", 0)
         post.SetInt("texCoverage", 1)
         post.SetInt("texBgShadow", 2)
-        post.SetInt("texLut", 3)
-        post.SetFloat("lutWeight", If(lut <> 0, 1.0F, 0.0F))
         uploadImageSpace(post)
         setBackground(post)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, _lumResult)
 
-        ' The targets are attachments again next frame: FullscreenPass unbinds the four units.
-        FullscreenPass.Draw(post, emptyVao, 4)
+        ' The targets are attachments again next frame: FullscreenPass unbinds the three units.
+        FullscreenPass.Draw(post, emptyVao, 3)
         GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 8, 0)
         GL.DepthMask(True)
         GL.Enable(EnableCap.DepthTest)
@@ -1189,37 +1199,10 @@ Friend NotInheritable Class SceneTargets
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
     End Sub
 
-    ''' <summary>The image space's LUT as the engine samples it: a 16^3 volume, UNORM (raw, no sRGB), linear
-    ''' filter, clamped. The legacy 256x16 RGB24 file is unfolded with the layout of the game's identity LUT
-    ''' (Textures\Effects\ColorLUT.dds measured: r = x mod 16, g = y, b = x div 16). Retried every frame while
-    ''' the data dictionary cannot give the file (returns 0 = no LUT).</summary>
-    Private Function EnsureLut(path As String) As Integer
-        If _lutTex <> 0 AndAlso String.Equals(_lutPath, path, StringComparison.OrdinalIgnoreCase) Then Return _lutTex
-        If _lutTex <> 0 Then GL.DeleteTexture(_lutTex) : _lutTex = 0
-        _lutPath = Nothing
-        Dim vol = LutVolume(path)
-        If vol Is Nothing Then Return 0
-        Dim t As Integer
-        t = Gl43.CreateTexture(TextureTarget.Texture3D)
-        Gl43.TexStorage3D(t, TextureTarget3d.Texture3D, 1, SizedInternalFormat.Rgb8, 16, 16, 16)
-        Dim prevUnpack As Integer
-        GL.GetInteger(GetPName.UnpackAlignment, prevUnpack)
-        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
-        Gl43.TexSubImage3D(t, TextureTarget.Texture3D, 0, 0, 0, 0, 16, 16, 16, PixelFormat.Rgb, PixelType.UnsignedByte, vol)
-        GL.PixelStore(PixelStoreParameter.UnpackAlignment, prevUnpack)
-        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-        Gl43.TexParameter(t, TextureTarget.Texture3D, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
-        _lutTex = t
-        _lutPath = path
-        Return t
-    End Function
-
-    ''' <summary>The 16^3 RGB volume of a legacy 256x16 LUT (layout of the game's identity LUT, see EnsureLut), or Nothing
-    ''' when the data dictionary cannot give the file, it does not decode or it is not 256x16: THE one answer to "does the
-    ''' post use this LUT", shared by EnsureLut and the Rendering tab.</summary>
+    ''' <summary>The 16^3 RGB volume of a legacy 256x16 LUT (UNORM, raw: the layout of the game's identity LUT,
+    ''' Textures\Effects\ColorLUT.dds measured: r = x mod 16, g = y, b = x div 16), or Nothing when the data dictionary cannot give
+    ''' the file, it does not decode or it is not 256x16: THE one answer to "does the post use this LUT", shared by
+    ''' Fo4ImageSpaceChain (its LUT texture) and the Rendering tab.</summary>
     Friend Shared Function LutVolume(path As String) As Byte()
         If String.IsNullOrEmpty(path) Then Return Nothing
         Dim bytes As Byte() = Nothing
@@ -1259,7 +1242,5 @@ Friend NotInheritable Class SceneTargets
     ''' <summary>Frees every GL object (the context must be current).</summary>
     Public Sub Free()
         FreeFrame()
-        If _lutTex <> 0 Then GL.DeleteTexture(_lutTex) : _lutTex = 0
-        _lutPath = Nothing
     End Sub
 End Class

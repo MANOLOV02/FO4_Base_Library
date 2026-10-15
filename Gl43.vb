@@ -70,7 +70,13 @@ Imports OpenTK.Graphics.OpenGL4
 ''' order and form it is written (one fma for a * b + c or two roundings, reassociation). The bounds the gates' oracle propagates
 ''' (Tools\ShadowGate\Fo4GBufferBytecode.vb OpErr) suppose the written order, so a red of a gate from that cause is a gap of this
 ''' law, not a defect of the transcription. Measured once: an exact float32 result claimed for a mad of the oracle put 20 PS of
-''' --fo4-gbuffer-law outside the bound (rec2805 asm 69 / 75); that the compiler evaluated another order is the inference.</para>
+''' --fo4-gbuffer-law outside the bound (rec2805 asm 69 / 75); that the compiler evaluated another order is the inference.
+''' gates-v6 (rev-E18, decided 15-oct-2026 on a measured red: the b09 wind VS rec2328 / 2329 / 2342 / 2343, asm 256..257
+''' r1.x * (u8 * 0.003922), the GPU 1 ULP away where the written-order bound gave 0.82 ULP): on an ASSOCIATIVE CHAIN - products or
+''' sums of the same op, no other op between - the oracle's bound is that of ANY order of evaluation (Fo4GBufferBytecode.SetOpErr,
+''' the one seat every gate's oracle uses): a product of n factors within (1 + u)^(n - 1) - 1 of the exact product, relative (Higham,
+''' Accuracy and Stability of Numerical Algorithms, 2nd ed., Lemma 3.1), while no partial product leaves the normal range; a sum of
+''' n terms within ((1 + u)^(n - 1) - 1) sum |x_i| (Higham 4.2), u = 2^-24. Out of those chains the written-order bound stands.</para>
 ''' ASCII only (GLSL).</summary>
 Friend NotInheritable Class Gl43
     Private Sub New()
@@ -439,6 +445,22 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         Public Ubo As Integer
         Public Origin As ClipOrigin
         Public RequestedFront As FrontFaceDirection
+        ''' <summary>The context's polygon offset per depth format (DepthFormat.Key): D16 / D24S8 / the default framebuffer measured at
+        ''' InitContext, any other format on its first bias (DepthBias).</summary>
+        Public ReadOnly OffsetUnits As New Dictionary(Of String, PolygonOffsetUnit)
+        ''' <summary>The depth formats whose measurement failed, with the reason (the start and the frames go on; a bias drawn on such a
+        ''' format is drawn without it and its reason returned by DepthBias).</summary>
+        Public ReadOnly OffsetErrors As New Dictionary(Of String, String)
+        ''' <summary>The wall time of those measurements in InitContext, ms (with the GL finish of the last read).</summary>
+        Public OffsetMeasureMs As Double
+        ''' <summary>The probe of the measurements (rev-E11: one per context, built on the first measurement; the context's
+        ''' destruction frees it).</summary>
+        Public OffsetProbe As Fo4_Deferred_Shader_Class
+        Public OffsetProbeVao As Integer
+        ''' <summary>The default framebuffer's measurement attempts so far, and whether they are closed (rev-E11: attempts only up to
+        ''' the context's first presented frame - DefaultFramebufferAttemptsClose -; after that a failure stays cached).</summary>
+        Public DefaultAttempts As Integer
+        Public DefaultAttemptsClosed As Boolean
     End Class
 
     Private Shared ReadOnly _clip As New ConcurrentDictionary(Of IntPtr, ClipState)()
@@ -474,6 +496,19 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         GL.BindBuffer(BufferTarget.UniformBuffer, prev)
         _clip(ctx) = st
         GL.FrontFace(FrontFaceDirection.Ccw)
+        ' The context's polygon offset (DepthBias's law), measured at the start on the frame's two depth formats and the default
+        ' framebuffer; any other format on its first bias. A measurement that fails does not stop anything (rev-E05, v5): it is kept with
+        ' its reason; the default framebuffer, often not drawable yet at OnLoad, is measured again by RenderScene.
+        Dim sw = Diagnostics.Stopwatch.StartNew()
+        For Each f In OffsetFormats
+            Try
+                st.OffsetUnits(f.Key) = MeasurePolygonOffset(f)
+            Catch ex As Exception
+                st.OffsetErrors(f.Key) = ex.Message
+            End Try
+        Next
+        MeasureDefaultFramebufferIfNeeded()
+        st.OffsetMeasureMs = sw.Elapsed.TotalMilliseconds
         Return ctx
     End Function
 
@@ -545,6 +580,451 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         If st.Origin = ClipOrigin.UpperLeft Then d = If(d = FrontFaceDirection.Ccw, FrontFaceDirection.Cw, FrontFaceDirection.Ccw)
         GL.FrontFace(d)
     End Sub
+
+    ' =================================================================================================================================
+    ' D3D11 DEPTH BIAS (ola 4 v3)
+    ' =================================================================================================================================
+
+    ''' <summary>THE DEPTH BIAS OF A D3D RASTERIZER STATE IN GL 4.3 (D3D11.3 15.10): on a UNORM depth buffer Bias = DepthBias x r +
+    ''' SlopeScaledDepthBias x MaxDepthSlope, r = 1 / (2^n - 1) (the format's least positive value: ONE code), MaxDepthSlope =
+    ''' max(|dz/dx|, |dz/dy|), then DepthBiasClamp, then the biased z clamped to the viewport's depth range. GL 4.3 14.6.5 adds
+    ''' o = m x factor + r_GL x units with r_GL left to the implementation; after the offset a fixed-point depth is clamped to [0, 1].
+    ''' Measured on NVIDIA RTX 2080 Ti, driver 610.88 (ShadowGate --gl-depth-bias, 14-oct-2026): one GL unit = 2 codes on 16- and on
+    ''' 24-bit UNORM - the D3D units cannot be passed through (the v2 law drew the shadow map's DepthBias 12 as 24 codes; gate G-4a).
+    ''' The law of the constant term: units = DepthBias / (codes one GL unit adds, MEASURED per format on this context:
+    ''' PolygonOffsetUnitOf).
+    ''' <para>THE SLOPE TERM (USER DECISION 14-oct-2026): factor = SlopeScaledDepthBias as it is, and the GPU computes m - GL 4.3 eq.
+    ''' 14.10 sqrt(zx^2 + zy^2) or eq. 14.11 max(|zx|, |zy|), D3D's, as the implementation chooses. No detection, no notice.</para>
+    ''' <para>DepthBiasClamp is not applied (GL 4.3 has no offset clamp): every rasterizer state of the two games has -100 (FO4
+    ''' 0x1424875E0, SSE 0x14102B6DF; ParityGate's bias table checks FO4's), and on a UNORM target z + bias leaves [0, 1] before
+    ''' |bias| reaches 1, where D3D and GL both clamp the biased z: a clamp of magnitude 1 or more never changes a stored code.</para>
+    ''' <para>DECISION (ola 4 v3, with numbers): the bias goes through glPolygonOffset with the measured unit, not written by the fragment
+    ''' stage (gl_FragDepth = z + DepthBias r + Slope max(|dFdx z|, |dFdy z|)). (1) Law: 128 of the 470 b09 PS declare
+    ''' forceEarlyDepthStencil (rec2762, 2115 corpus shapes, among them) and GLSL's early_fragment_tests ignores gl_FragDepth (GLSL 4.30
+    ''' 4.4.1.3): D3D tests those fragments with the biased depth before the PS, so a decal of such a record would lose its bias.
+    ''' (2) Cost (ShadowGate --gl-depth-bias, 4096 x 4096 D16, 8 full layers): 0.078 / 0.240 ms front-to-back / back-to-front with the
+    ''' offset, 1.93 / 1.93 ms writing gl_FragDepth, 0.289 / 1.93 ms with layout(depth_greater).</para>
+    ''' <para>The unit is the one of the depth FORMAT the current draw framebuffer has (DrawDepthFormat: the default framebuffer, or
+    ''' an attachment's format), so every draw takes the unit of the buffer it writes. A format not measured yet is measured ON DEMAND
+    ''' the first time a bias is drawn on it - in this context, every state it touches put back - and cached (v5, decided by the
+    ''' coordinator 15-oct-2026: a new depth format must not break the app; the v4 aborted every later frame). A float depth has the
+    ''' same law in both APIs (D3D11.3 15.10 and GL 4.3 14.6.5: r = 2^(e - 23), e the exponent of the primitive's largest z) and is
+    ''' measured the same way, in units of 2^-25 at the probe's z 0.25. Only a measurement that FAILS leaves this draw without its
+    ''' bias: the offset off and the reason returned (the caller lists the shape in the frame's notice); the frame and the process go
+    ''' on, and the failure is cached (no new attempt per draw). The default framebuffer holds the frame and is not measured here:
+    ''' InitContext and PreviewControl.RenderScene (before it clears the window) measure it. Returns Nothing when the bias is applied
+    ''' or there is nothing to bias (no depth buffer, or both terms 0).</para></summary>
+    Friend Shared Function DepthBias(constantBias As Single, slopeScaledDepthBias As Single, depthBiasClamp As Single) As String
+        If constantBias = 0.0F AndAlso slopeScaledDepthBias = 0.0F Then
+            GL.Disable(EnableCap.PolygonOffsetFill)
+            Return Nothing
+        End If
+        Dim st = Current()
+        Dim fmt = DrawDepthFormat()
+        If Not fmt.HasValue Then
+            GL.Disable(EnableCap.PolygonOffsetFill)                  ' no depth buffer: nothing to bias
+            Return Nothing
+        End If
+        Dim key = fmt.Value.Key
+        Dim u As PolygonOffsetUnit
+        If Not st.OffsetUnits.TryGetValue(key, u) AndAlso Not st.OffsetErrors.ContainsKey(key) AndAlso Not fmt.Value.IsDefault Then
+            Try
+                u = MeasurePolygonOffset(fmt.Value)
+                st.OffsetUnits(key) = u
+            Catch ex As Exception
+                st.OffsetErrors(key) = ex.Message
+            End Try
+        End If
+        If Not st.OffsetUnits.TryGetValue(key, u) Then
+            GL.Disable(EnableCap.PolygonOffsetFill)
+            Dim e As String = Nothing
+            Return $"drawn without its depth bias: the polygon offset unit of the {key} depth " &
+                   If(st.OffsetErrors.TryGetValue(key, e), $"could not be measured ({e})", "is not measured yet")
+        End If
+        GL.Enable(EnableCap.PolygonOffsetFill)
+        GL.PolygonOffset(slopeScaledDepthBias, CSng(constantBias / u.CodesPerUnit))
+        Return Nothing
+    End Function
+
+    ''' <summary>The default framebuffer's unit, measured where the window is drawn when InitContext could not: the probe at OnLoad finds
+    ''' a window not yet drawable (GL 4.3 14.9.1, pixel ownership; measured 14 / 15-oct-2026: 0 codes for 4096 units). PreviewControl.
+    ''' RenderScene calls it on its direct frame right before clearing the window, so the probe's depth is cleared by the frame itself;
+    ''' a gate calls it once the window is drawable. Nothing after a success; until then each call measures again (a failure is kept
+    ''' as the buffer's reason). Returns the unit, or Nothing (no depth buffer, or the measurement failed).</summary>
+    Friend Shared Function MeasureDefaultFramebufferIfNeeded() As PolygonOffsetUnit?
+        Dim st = Current()
+        Dim u As PolygonOffsetUnit
+        If st.OffsetUnits.TryGetValue(DepthKeyDefault, u) Then Return u
+        If st.DefaultAttemptsClosed Then Return Nothing                ' rev-E11: the failure stays cached after the first presented frame
+        st.DefaultAttempts += 1
+        Try
+            Dim m = MeasureDefaultFramebufferOffset()
+            If m.HasValue Then st.OffsetUnits(DepthKeyDefault) = m.Value : st.OffsetErrors.Remove(DepthKeyDefault)
+            Return m
+        Catch ex As Exception
+            st.OffsetErrors(DepthKeyDefault) = ex.Message
+            Return Nothing
+        End Try
+    End Function
+
+    ''' <summary>rev-E11: the context presented its first frame (PreviewControl.RenderScene, after the frame): no more attempts at the
+    ''' default framebuffer's unit - the start and the frames up to this one had them, and the window was drawable for this one -; a
+    ''' failure stays cached and a bias on the default framebuffer returns its reason.</summary>
+    Friend Shared Sub DefaultFramebufferAttemptsClose()
+        Current().DefaultAttemptsClosed = True
+    End Sub
+
+    ''' <summary>GATE: how many times this context measured the default framebuffer (rev-E11, the bound of the retries).</summary>
+    Friend Shared ReadOnly Property DefaultFramebufferAttempts As Integer
+        Get
+            Return Current().DefaultAttempts
+        End Get
+    End Property
+
+    ''' <summary>The keys of the depth formats (DepthFormat.Key): the two the start measures - DepthComponent16 and Depth24Stencil8, the
+    ''' textures and renderbuffers of the frame - and the window's default framebuffer. Any other format is measured on its first bias.
+    ''' </summary>
+    Friend Const DepthKeyD16 As String = "D16"
+    Friend Const DepthKeyD24S8 As String = "D24S8"
+    Friend Const DepthKeyDefault As String = "default framebuffer"
+
+    ''' <summary>A depth format as a draw framebuffer's attachment reports it (GL 4.3 9.2.3, table 9.2: FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE,
+    ''' _STENCIL_SIZE - the sizes of the attached image's format - and _COMPONENT_TYPE), or the default framebuffer.</summary>
+    Friend Structure DepthFormat
+        Public Bits As Integer, StencilBits As Integer, IsFloat As Boolean, IsDefault As Boolean
+        ''' <summary>"D16", "D24", "D24S8", "D32", "D32F", "D32FS8", ... or DepthKeyDefault.</summary>
+        Public ReadOnly Property Key As String
+            Get
+                If IsDefault Then Return DepthKeyDefault
+                Return $"D{Bits}{If(IsFloat, "F", "")}{If(StencilBits > 0, $"S{StencilBits}", "")}"
+            End Get
+        End Property
+        ''' <summary>The sized format of a texture of this format (the on-demand probe target); Nothing when GL 4.3 has none.</summary>
+        Friend Function Sized() As SizedInternalFormat?
+            Select Case Key
+                Case "D16" : Return SizedInternalFormat.DepthComponent16
+                Case "D24" : Return SizedInternalFormat.DepthComponent24
+                Case "D24S8" : Return SizedInternalFormat.Depth24Stencil8
+                Case "D32" : Return SizedInternalFormat.DepthComponent32
+                Case "D32F" : Return SizedInternalFormat.DepthComponent32f
+                Case "D32FS8" : Return SizedInternalFormat.Depth32fStencil8
+                Case Else : Return Nothing
+            End Select
+        End Function
+    End Structure
+
+    ''' <summary>What one unit of glPolygonOffset adds on a depth format of the current context (MeasureOffsetOn).</summary>
+    Friend Structure PolygonOffsetUnit
+        ''' <summary>Codes of the format one GL unit adds on a plane of slope 0 (a float depth: units of 2^-25 at z 0.25, D3D's r there).
+        ''' </summary>
+        Public CodesPerUnit As Double
+        ''' <summary>The measurement, for the gate: the units drawn and the codes they added (all pixels; Min = Max on a flat plane).</summary>
+        Public UnitCodesMin, UnitCodesMax, UnitsDrawn As Integer
+    End Structure
+
+    ''' <summary>The wall time (ms) InitContext took to measure the current context's polygon offset units (MeasurePolygonOffset on
+    ''' every format; each ends reading the target back, so the GPU work is inside).</summary>
+    Friend Shared ReadOnly Property PolygonOffsetMeasureMs As Double
+        Get
+            Return Current().OffsetMeasureMs
+        End Get
+    End Property
+
+    ''' <summary>The measured unit of depth format <paramref name="key"/> (DepthFormat.Key) on the current context, Nothing when it has
+    ''' none (not measured yet, the measurement failed - PolygonOffsetErrorOf -, or the default framebuffer has no depth).</summary>
+    Friend Shared Function PolygonOffsetUnitOf(key As String) As PolygonOffsetUnit?
+        Dim u As PolygonOffsetUnit
+        If Current().OffsetUnits.TryGetValue(key, u) Then Return u
+        Return Nothing
+    End Function
+
+    ''' <summary>Why the measurement of depth format <paramref name="key"/> failed, Nothing when it did not.</summary>
+    Friend Shared Function PolygonOffsetErrorOf(key As String) As String
+        Dim e As String = Nothing
+        Return If(Current().OffsetErrors.TryGetValue(key, e), e, Nothing)
+    End Function
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate --gl-depth-bias): the on-demand measurement of the next NEW format fails (a measurement that
+    ''' cannot be made), so the gate sees that draw without its bias and the frames after it drawn.</summary>
+    Friend Shared GateFailNextMeasurement As Boolean = False
+
+    ''' <summary>DEBUG ONLY (ShadowGate --gl-depth-bias): forgets depth format <paramref name="key"/>'s cached unit or failure, so the
+    ''' next bias on it measures it again (the gate's mutants need a measurement on a format the run already measured).</summary>
+    Friend Shared Sub GateForgetUnit(key As String)
+        Dim st = Current()
+        st.OffsetUnits.Remove(key) : st.OffsetErrors.Remove(key)
+    End Sub
+#End If
+
+    ''' <summary>The depth format of the current draw framebuffer: the default framebuffer, or its DEPTH_ATTACHMENT's; Nothing when
+    ''' there is no depth buffer.</summary>
+    Private Shared Function DrawDepthFormat() As DepthFormat?
+        Dim isDefault = GL.GetInteger(GetPName.DrawFramebufferBinding) = 0
+        Dim att = If(isDefault, FramebufferAttachment.Depth, FramebufferAttachment.DepthAttachment)
+        Dim objType, bits, stencil, kind As Integer
+        GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, att, FramebufferParameterName.FramebufferAttachmentObjectType, objType)
+        If objType = CInt(All.None) Then Return Nothing
+        GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, att, FramebufferParameterName.FramebufferAttachmentDepthSize, bits)
+        If bits = 0 Then Return Nothing
+        If isDefault Then Return New DepthFormat With {.Bits = bits, .IsDefault = True}
+        GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, att, FramebufferParameterName.FramebufferAttachmentStencilSize, stencil)
+        GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, att, FramebufferParameterName.FramebufferAttachmentComponentType, kind)
+        Return New DepthFormat With {.Bits = bits, .StencilBits = stencil, .IsFloat = kind = CInt(All.Float)}
+    End Function
+
+    ''' <summary>The formats InitContext measures.</summary>
+    Private Shared ReadOnly OffsetFormats As DepthFormat() = {New DepthFormat With {.Bits = 16}, New DepthFormat With {.Bits = 24, .StencilBits = 8}}
+
+    ''' <summary>The probe's vertex stage: the full-viewport triangle (gl_VertexID 0..2: (-1, -1), (3, -1), (-1, 3)) on the plane of
+    ''' window depth uPlane.x + uPlane.y x_ndc + uPlane.z y_ndc (a D3D clip position with w = 1, through ClipGlsl).</summary>
+    Friend Const OffsetProbeVertex As String = "#version 430
+" & ClipGlsl & "uniform vec4 uPlane;
+void main()
+{
+    vec2 p = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0);
+    gl_Position = gl43ClipToGl(vec4(p, uPlane.x + uPlane.y * p.x + uPlane.z * p.y, 1.0));
+}
+"
+
+    ''' <summary>The probe's fragment stage: none of its own (the depth is the rasterizer's).</summary>
+    Friend Const OffsetProbeFragment As String = "#version 430
+void main()
+{
+}
+"
+
+    ''' <summary>The codes of a depth read back exactly: UNORM 16 UNSIGNED_SHORT; UNORM 24 + 8 UNSIGNED_INT_24_8 (the depth in the
+    ''' high 24 bits); other UNORM UNSIGNED_INT, c = round(v (2^n - 1) / (2^32 - 1)) (GL 4.3 8.4.4.2 / 18.2.6: the depth goes through
+    ''' [0, 1]; at the probe's z near 0.25 the round trip is exact for n &lt;= 24 and n = 32); float FLOAT, c = z x 2^25 (z in [0.25, 0.5)
+    ''' is a multiple of 2^-25; the cleared 1.0 is 2^25). <paramref name="read"/> reads (format, type, buffer) into the buffer.</summary>
+    Private Shared Sub ReadCodes(fmt As DepthFormat, n As Integer, codes As Long(), read As Action(Of PixelFormat, PixelType, Object))
+        If fmt.IsFloat Then
+            Dim f(n - 1) As Single
+            read(PixelFormat.DepthComponent, PixelType.Float, f)
+            For i = 0 To n - 1 : codes(i) = CLng(Math.Round(CDbl(f(i)) * 33554432.0)) : Next
+        ElseIf fmt.Bits = 16 Then
+            Dim d(n - 1) As UShort
+            read(PixelFormat.DepthComponent, PixelType.UnsignedShort, d)
+            For i = 0 To n - 1 : codes(i) = d(i) : Next
+        ElseIf fmt.Bits = 24 AndAlso fmt.StencilBits = 8 Then
+            Dim d(n - 1) As UInteger
+            read(PixelFormat.DepthStencil, PixelType.UnsignedInt248, d)
+            For i = 0 To n - 1 : codes(i) = d(i) >> 8 : Next
+        Else
+            Dim d(n - 1) As UInteger
+            read(PixelFormat.DepthComponent, PixelType.UnsignedInt, d)
+            Dim m = Math.Pow(2.0, fmt.Bits) - 1.0
+            For i = 0 To n - 1 : codes(i) = CLng(Math.Round(d(i) * m / 4294967295.0)) : Next
+        End If
+    End Sub
+
+    ''' <summary>The code a cleared depth (1.0) reads as: 2^n - 1, or 2^25 for a float depth (ReadCodes).</summary>
+    Private Shared Function ClearedCode(fmt As DepthFormat) As Long
+        Return If(fmt.IsFloat, 33554432L, (1L << fmt.Bits) - 1L)
+    End Function
+
+    ''' <summary>Measures glPolygonOffset on depth format <paramref name="fmt"/> (InitContext for D16 / D24S8; DepthBias on demand for
+    ''' any other): a 64 x 64 texture of the format, depth test ALWAYS with writes, the probe's plane drawn without and with an offset,
+    ''' the codes read back exactly (ReadCodes). The unit: a flat plane at z 0.25 with 4096 units (CodesPerUnit = the codes added /
+    ''' 4096: one code of error is 1 / 4096 of a unit). The texture and framebuffer are its own, deleted after; the bindings and state
+    ''' it touches are put back (it can run inside a frame).</summary>
+    Private Shared Function MeasurePolygonOffset(fmt As DepthFormat) As PolygonOffsetUnit
+        Const N As Integer = 64
+#If DEBUG Then
+        If GateFailNextMeasurement Then GateFailNextMeasurement = False : Throw New InvalidOperationException($"{fmt.Key}: gate mutant, the measurement fails")
+#End If
+        Dim sized = fmt.Sized()
+        If Not sized.HasValue Then Throw New NotSupportedException($"{fmt.Key}: no sized depth format to measure it on")
+        Dim tex = CreateTexture(TextureTarget.Texture2D)
+        Dim fbo = 0
+        Dim pack = GL.GetInteger(GetPName.PackAlignment)
+        Try
+            TexStorage2D(tex, TextureTarget2d.Texture2D, 1, sized.Value, N, N)
+            fbo = CreateFramebuffer()
+            FramebufferTexture(fbo, If(fmt.StencilBits > 0, FramebufferAttachment.DepthStencilAttachment, FramebufferAttachment.DepthAttachment), tex, 0)
+            DrawBuffer(fbo, DrawBufferMode.None)
+            If CheckFramebufferStatus(fbo, FramebufferTarget.Framebuffer) <> FramebufferStatus.FramebufferComplete Then
+                Throw New InvalidOperationException($"a {fmt.Key} target is incomplete")
+            End If
+            Return MeasureOffsetOn(fbo, N, N, fmt,
+                                   Sub()
+                                       If fmt.StencilBits = 0 Then
+                                           ClearFramebuffer(fbo, ClearBuffer.Depth, 0, New Single() {1.0F})
+                                       Else
+                                           ClearFramebuffer(fbo, ClearBufferCombined.DepthStencil, 0, 1.0F, 0)
+                                       End If
+                                   End Sub,
+                                   Function(codes As Long())
+                                       GL.PixelStore(PixelStoreParameter.PackAlignment, 4)
+                                       ReadCodes(fmt, N * N, codes,
+                                                 Sub(pf As PixelFormat, pt As PixelType, buf As Object)
+                                                     Dim bytes = If(TypeOf buf Is UShort(), 2, 4) * N * N
+                                                     Select Case True
+                                                         Case TypeOf buf Is UShort() : GetTexImage(tex, TextureTarget.Texture2D, 0, pf, pt, bytes, DirectCast(buf, UShort()))
+                                                         Case TypeOf buf Is UInteger() : GetTexImage(tex, TextureTarget.Texture2D, 0, pf, pt, bytes, DirectCast(buf, UInteger()))
+                                                         Case Else : GetTexImage(tex, TextureTarget.Texture2D, 0, pf, pt, bytes, DirectCast(buf, Single()))
+                                                     End Select
+                                                 End Sub)
+                                       Return True
+                                   End Function)
+        Finally
+            GL.PixelStore(PixelStoreParameter.PackAlignment, pack)
+            If fbo <> 0 Then GL.DeleteFramebuffer(fbo)
+            GL.DeleteTexture(tex)
+        End Try
+    End Function
+
+    ''' <summary>Measures glPolygonOffset on the window's default framebuffer (InitContext; rev-E05: its depth is the window's pixel
+    ''' format, not one of the measured textures, so it is measured itself): the probe drawn into the lower-left min(64, width) x
+    ''' min(64, height) pixels of the BACK buffer with colour writes off, the depth read back exactly (glReadPixels: D16
+    ''' UNSIGNED_SHORT, D24S8 UNSIGNED_INT_24_8), the depth cleared after (every frame clears it before drawing). Nothing when the
+    ''' default framebuffer has no depth buffer; throws (kept as the buffer's error) for any other depth format or an empty window.
+    ''' </summary>
+    Private Shared Function MeasureDefaultFramebufferOffset() As PolygonOffsetUnit?
+        Dim prevDraw = GL.GetInteger(GetPName.DrawFramebufferBinding), prevRead = GL.GetInteger(GetPName.ReadFramebufferBinding)
+        Try
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+            Dim objType, bits, stencil, kind As Integer
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, FramebufferAttachment.Depth, FramebufferParameterName.FramebufferAttachmentObjectType, objType)
+            If objType = CInt(All.None) Then Return Nothing
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, FramebufferAttachment.Depth, FramebufferParameterName.FramebufferAttachmentDepthSize, bits)
+            If bits = 0 Then Return Nothing
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, FramebufferAttachment.Stencil, FramebufferParameterName.FramebufferAttachmentStencilSize, stencil)
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer, FramebufferAttachment.Depth, FramebufferParameterName.FramebufferAttachmentComponentType, kind)
+            Dim fmt As New DepthFormat With {.Bits = bits, .StencilBits = stencil, .IsFloat = kind = CInt(All.Float)}
+            Dim vp(3) As Integer : GL.GetInteger(GetPName.Viewport, vp)
+            Dim w = Math.Min(64, vp(2)), h = Math.Min(64, vp(3))
+            If w <= 0 OrElse h <= 0 Then Throw New InvalidOperationException("the window has no pixels at the start")
+            Dim clearDepth = Sub()
+                                 If stencil = 0 Then
+                                     ClearFramebuffer(0, ClearBuffer.Depth, 0, New Single() {1.0F})
+                                 Else
+                                     ClearFramebuffer(0, ClearBufferCombined.DepthStencil, 0, 1.0F, 0)
+                                 End If
+                             End Sub
+            Dim cm(3) As Boolean : GL.GetBoolean(GetPName.ColorWritemask, cm)
+            GL.ColorMask(False, False, False, False)
+            Try
+                Dim pack = GL.GetInteger(GetPName.PackAlignment)
+                Try
+                    Return MeasureOffsetOn(0, w, h, fmt, clearDepth,
+                                           Function(codes As Long())
+                                               GL.PixelStore(PixelStoreParameter.PackAlignment, 4)
+                                               ReadCodes(fmt, w * h, codes,
+                                                         Sub(pf As PixelFormat, pt As PixelType, buf As Object)
+                                                             Select Case True
+                                                                 Case TypeOf buf Is UShort() : GL.ReadPixels(0, 0, w, h, pf, pt, DirectCast(buf, UShort()))
+                                                                 Case TypeOf buf Is UInteger() : GL.ReadPixels(0, 0, w, h, pf, pt, DirectCast(buf, UInteger()))
+                                                                 Case Else : GL.ReadPixels(0, 0, w, h, pf, pt, DirectCast(buf, Single()))
+                                                             End Select
+                                                         End Sub)
+                                               Return True
+                                           End Function)
+                Finally
+                    GL.PixelStore(PixelStoreParameter.PackAlignment, pack)
+                End Try
+            Finally
+                GL.ColorMask(cm(0), cm(1), cm(2), cm(3))
+                clearDepth()
+            End Try
+        Finally
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, prevDraw)
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, prevRead)
+        End Try
+    End Function
+
+    ''' <summary>The measurement itself, on framebuffer <paramref name="fbo"/> (0 = the default) over its lower-left w x h pixels:
+    ''' depth test ALWAYS with writes, the probe's flat plane at z 0.25 drawn without and with 4096 units, every pixel's codes read
+    ''' by <paramref name="read"/>. On a flat plane GL 4.3 14.6.5 adds the same o = r x units to every fragment of the same depth, so
+    ''' every pixel must gain the same codes: a pixel that does not (a pixel the window does not own, 14.9.1, or a driver fault) is
+    ''' not a measurement and throws. CodesPerUnit = codes added / 4096 (one code of error is 1 / 4096 of a unit).</summary>
+    Private Shared Function MeasureOffsetOn(fbo As Integer, w As Integer, h As Integer, fmt As DepthFormat, clearDepth As Action,
+                                            read As Func(Of Long(), Boolean)) As PolygonOffsetUnit
+        Dim bits = fmt.Key
+        Dim st = Current()
+        Dim prevFbo = GL.GetInteger(GetPName.DrawFramebufferBinding), prevRead = GL.GetInteger(GetPName.ReadFramebufferBinding)
+        Dim vp(3) As Integer : GL.GetInteger(GetPName.Viewport, vp)
+        ' the state it changes, put back as it was (it runs inside a frame: DepthBias on demand, MeasureDefaultFramebufferIfNeeded)
+        Dim depthTest = GL.IsEnabled(EnableCap.DepthTest), cull = GL.IsEnabled(EnableCap.CullFace), stencil = GL.IsEnabled(EnableCap.StencilTest)
+        Dim scissor = GL.IsEnabled(EnableCap.ScissorTest), discardRaster = GL.IsEnabled(EnableCap.RasterizerDiscard)
+        Dim offsetFill = GL.IsEnabled(EnableCap.PolygonOffsetFill)
+        Dim depthFunc = GL.GetInteger(GetPName.DepthFunc), depthMask = GL.GetBoolean(GetPName.DepthWritemask)
+        Dim prevProg = GL.GetInteger(GetPName.CurrentProgram), prevVao = GL.GetInteger(GetPName.VertexArrayBinding)
+        Dim prevFactor = GL.GetFloat(GetPName.PolygonOffsetFactor), prevUnits = GL.GetFloat(GetPName.PolygonOffsetUnits)
+        ' rev-E11: the polygon mode (core: one mode for both faces, GL 4.3 14.6.4) and the user clip planes in use
+        Dim polyMode(1) As Integer : GL.GetInteger(GetPName.PolygonMode, polyMode)
+        Dim clipOn(GL.GetInteger(GetPName.MaxClipDistances) - 1) As Boolean
+        For i = 0 To clipOn.Length - 1 : clipOn(i) = GL.IsEnabled(CType(CInt(EnableCap.ClipDistance0) + i, EnableCap)) : Next
+        Try
+            If st.OffsetProbe Is Nothing Then
+                st.OffsetProbe = New Fo4_Deferred_Shader_Class(OffsetProbeVertex, OffsetProbeFragment)
+                st.OffsetProbeVao = GL.GenVertexArray()
+            End If
+            Dim prog = st.OffsetProbe
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fbo)
+            GL.Viewport(0, 0, w, h)
+            GL.Enable(EnableCap.DepthTest) : GL.DepthFunc(DepthFunction.Always) : GL.DepthMask(True)
+            GL.Disable(EnableCap.CullFace) : GL.Disable(EnableCap.StencilTest)
+            GL.Disable(EnableCap.ScissorTest) : GL.Disable(EnableCap.RasterizerDiscard)
+            GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+            For i = 0 To clipOn.Length - 1 : GL.Disable(CType(CInt(EnableCap.ClipDistance0) + i, EnableCap)) : Next
+            prog.Use()
+            GL.BindVertexArray(st.OffsetProbeVao)
+            Dim draw = Function(units As Single) As Long()
+                           clearDepth()
+                           prog.SetVector4("uPlane", New OpenTK.Mathematics.Vector4(0.25F, 0.0F, 0.0F, 0.0F))
+                           If units = 0.0F Then
+                               GL.Disable(EnableCap.PolygonOffsetFill)
+                           Else
+                               GL.Enable(EnableCap.PolygonOffsetFill) : GL.PolygonOffset(0.0F, units)
+                           End If
+                           GL.DrawArrays(PrimitiveType.Triangles, 0, 3)
+                           GL.Disable(EnableCap.PolygonOffsetFill)
+                           Dim codes(w * h - 1) As Long
+                           read(codes)
+                           Return codes
+                       End Function
+            Const U As Integer = 4096
+            Dim a0 = draw(0.0F), a1 = draw(U)
+            Dim cleared = ClearedCode(fmt)
+            If a0.Any(Function(c) c = cleared) Then Throw New InvalidOperationException($"{bits}: the probe's plane was not written ({a0.Count(Function(c) c = cleared)} of {w}x{h} pixels keep the cleared depth)")
+            Dim dMin = Long.MaxValue, dMax = Long.MinValue
+            For i = 0 To a0.Length - 1
+                Dim dd = a1(i) - a0(i)
+                dMin = Math.Min(dMin, dd) : dMax = Math.Max(dMax, dd)
+            Next
+            If dMin <> dMax Then Throw New InvalidOperationException($"{bits}: a flat plane gained {dMin}..{dMax} codes over {w}x{h} pixels (one value expected)")
+            If dMin <= 0 Then Throw New InvalidOperationException($"{bits}: {U} units added {dMin} codes (GL 4.3 14.6.5: a positive offset expected)")
+            Dim r As PolygonOffsetUnit
+            r.UnitsDrawn = U : r.UnitCodesMin = CInt(dMin) : r.UnitCodesMax = CInt(dMax)
+            r.CodesPerUnit = CDbl(dMin) / U
+            Return r
+        Finally
+            GL.BindVertexArray(prevVao)
+#If DEBUG Then
+            ' ShadowGate --gl-depth-bias's mutant (rev-E12): the program is not put back
+            If Not Fo4GBufferConstants.GateMutantOn("bias-probe-no-program-restore") Then GL.UseProgram(prevProg)
+#Else
+            GL.UseProgram(prevProg)
+#End If
+            GL.PolygonMode(TriangleFace.FrontAndBack, CType(polyMode(0), PolygonMode))
+            For i = 0 To clipOn.Length - 1
+                If clipOn(i) Then GL.Enable(CType(CInt(EnableCap.ClipDistance0) + i, EnableCap)) Else GL.Disable(CType(CInt(EnableCap.ClipDistance0) + i, EnableCap))
+            Next
+            GL.DepthFunc(CType(depthFunc, DepthFunction)) : GL.DepthMask(depthMask)
+            If depthTest Then GL.Enable(EnableCap.DepthTest) Else GL.Disable(EnableCap.DepthTest)
+            If cull Then GL.Enable(EnableCap.CullFace) Else GL.Disable(EnableCap.CullFace)
+            If stencil Then GL.Enable(EnableCap.StencilTest) Else GL.Disable(EnableCap.StencilTest)
+            If scissor Then GL.Enable(EnableCap.ScissorTest) Else GL.Disable(EnableCap.ScissorTest)
+            If discardRaster Then GL.Enable(EnableCap.RasterizerDiscard) Else GL.Disable(EnableCap.RasterizerDiscard)
+            If offsetFill Then GL.Enable(EnableCap.PolygonOffsetFill) Else GL.Disable(EnableCap.PolygonOffsetFill)
+            GL.PolygonOffset(prevFactor, prevUnits)
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, prevFbo)
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, prevRead)
+            GL.Viewport(vp(0), vp(1), vp(2), vp(3))
+        End Try
+    End Function
 
     ' =================================================================================================================================
     ' GLSL (closed list of what GLSL 4.40 / 4.50 / 4.60 add to 4.30)
@@ -711,3 +1191,4 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
     End Function
 #End If
 End Class
+

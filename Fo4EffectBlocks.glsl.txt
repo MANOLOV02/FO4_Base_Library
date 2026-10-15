@@ -2742,7 +2742,7 @@ void Fo4EPs_rec0563(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 53  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 54  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 55  discard_nz r0.x
-    }                                                                                     // 56  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 56  endif
     o0.w = r0.y;                                                                          // 57  mov o0.w, r0.y
     return;                                                                               // 58  ret
 }
@@ -2951,7 +2951,7 @@ void Fo4EPs_rec0566(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 74  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 75  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 76  discard_nz r0.x
-    }                                                                                     // 77  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 77  endif
     o0.w = r0.y;                                                                          // 78  mov o0.w, r0.y
     return;                                                                               // 79  ret
 }
@@ -3237,7 +3237,7 @@ void Fo4EPs_rec0570(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 115  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 116  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 117  discard_nz r0.x
-    }                                                                                     // 118  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 118  endif
     o0.w = r0.y;                                                                          // 119  mov o0.w, r0.y
     return;                                                                               // 120  ret
 }
@@ -4714,7 +4714,7 @@ void Fo4EPs_rec0609(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 83  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 84  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 85  discard_nz r0.w
-    }                                                                                     // 86  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 86  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 87  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 88  mov o0.w, r1.x
     return;                                                                               // 89  ret
@@ -4911,7 +4911,7 @@ void Fo4EPs_rec0611(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 83  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 84  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 85  discard_nz r0.w
-    }                                                                                     // 86  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 86  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 87  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 88  mov o0.w, r1.x
     return;                                                                               // 89  ret
@@ -6200,7 +6200,7 @@ void Fo4EPs_rec0631(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 53  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 54  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 55  discard_nz r0.y
-    }                                                                                     // 56  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 56  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 57  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 58  mov o0.w, r0.x
     return;                                                                               // 59  ret
@@ -6487,7 +6487,7 @@ void Fo4EPs_rec0637(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 94  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 95  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 96  discard_nz r0.y
-    }                                                                                     // 97  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 97  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 98  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 99  mov o0.w, r0.x
     return;                                                                               // 100  ret
@@ -6707,7 +6707,7 @@ void Fo4EPs_rec0639(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 94  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 95  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 96  discard_nz r0.y
-    }                                                                                     // 97  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 97  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 98  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 99  mov o0.w, r0.x
     return;                                                                               // 100  ret
@@ -7204,7 +7204,7 @@ void Fo4EPs_rec0644(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 76  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 77  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 78  discard_nz r0.y
-    }                                                                                     // 79  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 79  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 80  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 81  mov o0.w, r0.x
     return;                                                                               // 82  ret
@@ -7604,7 +7604,7 @@ void Fo4EPs_rec0653(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 52  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 53  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 54  discard_nz r0.x
-    }                                                                                     // 55  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 55  endif
     o0.xyz = r0.yyy * r1.xyz;                                                             // 56  mul o0.xyz, r0.yyyy, r1.xyzx
     o0.w = r0.y;                                                                          // 57  mov o0.w, r0.y
     return;                                                                               // 58  ret
@@ -7662,7 +7662,7 @@ void Fo4EPs_rec0654(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 59  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 60  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 61  discard_nz r1.x
-    }                                                                                     // 62  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 62  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 63  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 64  mov o0.w, r0.w
     return;                                                                               // 65  ret
@@ -7720,7 +7720,7 @@ void Fo4EPs_rec0655(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 59  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 60  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 61  discard_nz r1.x
-    }                                                                                     // 62  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 62  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 63  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 64  mov o0.w, r0.w
     return;                                                                               // 65  ret
@@ -7778,7 +7778,7 @@ void Fo4EPs_rec0656(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 60  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 61  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 62  discard_nz r1.x
-    }                                                                                     // 63  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 63  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 64  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 65  mov o0.w, r0.w
     return;                                                                               // 66  ret
@@ -7889,7 +7889,7 @@ void Fo4EPs_rec0657(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 100  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 101  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 102  discard_nz r1.x
-    }                                                                                     // 103  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 103  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 104  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 105  mov o0.w, r0.w
     return;                                                                               // 106  ret
@@ -8000,7 +8000,7 @@ void Fo4EPs_rec0658(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 101  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 102  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 103  discard_nz r1.x
-    }                                                                                     // 104  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 104  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 105  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 106  mov o0.w, r0.w
     return;                                                                               // 107  ret
@@ -8111,7 +8111,7 @@ void Fo4EPs_rec0659(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 101  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 102  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 103  discard_nz r1.x
-    }                                                                                     // 104  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 104  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 105  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 106  mov o0.w, r0.w
     return;                                                                               // 107  ret
@@ -8183,7 +8183,7 @@ void Fo4EPs_rec0660(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 73  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 74  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 75  discard_nz r0.x
-    }                                                                                     // 76  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 76  endif
     o0.xyz = r0.yyy * r1.xyz;                                                             // 77  mul o0.xyz, r0.yyyy, r1.xyzx
     o0.w = r0.y;                                                                          // 78  mov o0.w, r0.y
     return;                                                                               // 79  ret
@@ -8255,7 +8255,7 @@ void Fo4EPs_rec0661(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 73  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 74  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 75  discard_nz r0.x
-    }                                                                                     // 76  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 76  endif
     o0.xyz = r0.yyy * r1.xyz;                                                             // 77  mul o0.xyz, r0.yyyy, r1.xyzx
     o0.w = r0.y;                                                                          // 78  mov o0.w, r0.y
     return;                                                                               // 79  ret
@@ -8334,7 +8334,7 @@ void Fo4EPs_rec0662(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 81  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 82  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 83  discard_nz r1.x
-    }                                                                                     // 84  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 84  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 85  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 86  mov o0.w, r0.w
     return;                                                                               // 87  ret
@@ -8413,7 +8413,7 @@ void Fo4EPs_rec0663(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 81  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 82  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 83  discard_nz r1.x
-    }                                                                                     // 84  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 84  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 85  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 86  mov o0.w, r0.w
     return;                                                                               // 87  ret
@@ -8538,7 +8538,7 @@ void Fo4EPs_rec0665(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 114  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 115  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 116  discard_nz r0.x
-    }                                                                                     // 117  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 117  endif
     o0.xyz = r0.yyy * r1.xyz;                                                             // 118  mul o0.xyz, r0.yyyy, r1.xyzx
     o0.w = r0.y;                                                                          // 119  mov o0.w, r0.y
     return;                                                                               // 120  ret
@@ -8669,7 +8669,7 @@ void Fo4EPs_rec0666(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 121  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 122  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 123  discard_nz r1.x
-    }                                                                                     // 124  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 124  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 125  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 126  mov o0.w, r0.w
     return;                                                                               // 127  ret
@@ -8800,7 +8800,7 @@ void Fo4EPs_rec0667(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 121  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 122  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 123  discard_nz r1.x
-    }                                                                                     // 124  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 124  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 125  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 126  mov o0.w, r0.w
     return;                                                                               // 127  ret
@@ -8857,7 +8857,7 @@ void Fo4EPs_rec0670(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 56  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 57  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 58  discard_nz r1.x
-    }                                                                                     // 59  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 59  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 60  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 61  mov o0.w, r0.z
     return;                                                                               // 62  ret
@@ -8919,7 +8919,7 @@ void Fo4EPs_rec0671(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 62  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 63  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 64  discard_nz r1.x
-    }                                                                                     // 65  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 65  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 66  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 67  mov o0.w, r0.z
     return;                                                                               // 68  ret
@@ -8984,7 +8984,7 @@ void Fo4EPs_rec0672(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 65  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 66  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 67  discard_nz r1.x
-    }                                                                                     // 68  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 68  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 69  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 70  mov o0.w, r0.z
     return;                                                                               // 71  ret
@@ -9046,7 +9046,7 @@ void Fo4EPs_rec0673(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 63  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 64  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 65  discard_nz r1.x
-    }                                                                                     // 66  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 66  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 67  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 68  mov o0.w, r0.z
     return;                                                                               // 69  ret
@@ -9108,7 +9108,7 @@ void Fo4EPs_rec0674(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 63  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 64  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 65  discard_nz r1.x
-    }                                                                                     // 66  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 66  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 67  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 68  mov o0.w, r0.z
     return;                                                                               // 69  ret
@@ -9218,7 +9218,7 @@ void Fo4EPs_rec0675(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 97  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 98  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 99  discard_nz r1.x
-    }                                                                                     // 100  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 100  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 101  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 102  mov o0.w, r0.z
     return;                                                                               // 103  ret
@@ -9333,7 +9333,7 @@ void Fo4EPs_rec0676(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 103  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 104  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 105  discard_nz r1.x
-    }                                                                                     // 106  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 106  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 107  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 108  mov o0.w, r0.z
     return;                                                                               // 109  ret
@@ -9448,7 +9448,7 @@ void Fo4EPs_rec0677(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 104  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 105  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 106  discard_nz r1.x
-    }                                                                                     // 107  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 107  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 108  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 109  mov o0.w, r0.z
     return;                                                                               // 110  ret
@@ -9563,7 +9563,7 @@ void Fo4EPs_rec0678(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 104  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 105  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 106  discard_nz r1.x
-    }                                                                                     // 107  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 107  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 108  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 109  mov o0.w, r0.z
     return;                                                                               // 110  ret
@@ -12976,7 +12976,7 @@ void Fo4EPs_rec0718(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 85  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 86  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 87  discard_nz r0.w
-    }                                                                                     // 88  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 88  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 89  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 90  mov o0.w, r1.x
     return;                                                                               // 91  ret
@@ -13274,7 +13274,7 @@ void Fo4EPs_rec0721(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 85  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 86  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 87  discard_nz r0.w
-    }                                                                                     // 88  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 88  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 89  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 90  mov o0.w, r1.x
     return;                                                                               // 91  ret
@@ -14261,7 +14261,7 @@ void Fo4EPs_rec0733(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 54  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 55  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 56  discard_nz r0.y
-    }                                                                                     // 57  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 57  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 58  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 59  mov o0.w, r0.x
     return;                                                                               // 60  ret
@@ -14710,7 +14710,7 @@ void Fo4EPs_rec0738(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 77  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 78  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 79  discard_nz r0.y
-    }                                                                                     // 80  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 80  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 81  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 82  mov o0.w, r0.x
     return;                                                                               // 83  ret
@@ -14923,7 +14923,7 @@ void Fo4EPs_rec0740(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 118  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 119  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 120  discard_nz r0.y
-    }                                                                                     // 121  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 121  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 122  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 123  mov o0.w, r0.x
     return;                                                                               // 124  ret
@@ -15302,7 +15302,7 @@ void Fo4EPs_rec0746(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 100  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 101  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 102  discard_nz r1.x
-    }                                                                                     // 103  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 103  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 104  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 105  mov o0.w, r0.w
     return;                                                                               // 106  ret
@@ -15364,7 +15364,7 @@ void Fo4EPs_rec0750(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 62  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 63  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 64  discard_nz r1.x
-    }                                                                                     // 65  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 65  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 66  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 67  mov o0.w, r0.z
     return;                                                                               // 68  ret
@@ -15479,7 +15479,7 @@ void Fo4EPs_rec0753(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 103  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 104  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 105  discard_nz r1.x
-    }                                                                                     // 106  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 106  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 107  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 108  mov o0.w, r0.z
     return;                                                                               // 109  ret
@@ -15776,7 +15776,7 @@ void Fo4EPs_rec0761(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 77  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 78  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 79  discard_nz r0.w
-    }                                                                                     // 80  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 80  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 81  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 82  mov o0.w, r1.x
     return;                                                                               // 83  ret
@@ -15927,7 +15927,7 @@ void Fo4EPs_rec0763(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 79  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 80  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 81  discard_nz r0.w
-    }                                                                                     // 82  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 82  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 83  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 84  mov o0.w, r1.x
     return;                                                                               // 85  ret
@@ -16225,7 +16225,7 @@ void Fo4EPs_rec0767(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 77  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 78  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 79  discard_nz r0.w
-    }                                                                                     // 80  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 80  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 81  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 82  mov o0.w, r1.x
     return;                                                                               // 83  ret
@@ -16450,7 +16450,7 @@ void Fo4EPs_rec0770(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 79  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 80  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 81  discard_nz r0.w
-    }                                                                                     // 82  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 82  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 83  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 84  mov o0.w, r1.x
     return;                                                                               // 85  ret
@@ -16858,7 +16858,7 @@ void Fo4EPs_rec0774(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 118  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 119  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 120  discard_nz r0.w
-    }                                                                                     // 121  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 121  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 122  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 123  mov o0.w, r1.x
     return;                                                                               // 124  ret
@@ -17115,7 +17115,7 @@ void Fo4EPs_rec0776(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 120  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 121  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 122  discard_nz r0.w
-    }                                                                                     // 123  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 123  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 124  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 125  mov o0.w, r1.x
     return;                                                                               // 126  ret
@@ -17496,7 +17496,7 @@ void Fo4EPs_rec0779(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 118  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 119  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 120  discard_nz r0.w
-    }                                                                                     // 121  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 121  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 122  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 123  mov o0.w, r1.x
     return;                                                                               // 124  ret
@@ -17879,7 +17879,7 @@ void Fo4EPs_rec0782(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 120  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 121  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 122  discard_nz r0.w
-    }                                                                                     // 123  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 123  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 124  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 125  mov o0.w, r1.x
     return;                                                                               // 126  ret
@@ -18573,7 +18573,7 @@ void Fo4EPs_rec0788(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 129  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 130  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 131  discard_nz r0.y
-    }                                                                                     // 132  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 132  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 133  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 134  mov o0.w, r0.x
     return;                                                                               // 135  ret
@@ -19314,7 +19314,7 @@ void Fo4EPs_rec0795(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 97  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 98  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 99  discard_nz r1.x
-    }                                                                                     // 100  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 100  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 101  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 102  mov o0.w, r0.z
     return;                                                                               // 103  ret
@@ -19405,7 +19405,7 @@ void Fo4EPs_rec0796(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 97  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 98  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 99  discard_nz r1.x
-    }                                                                                     // 100  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 100  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 101  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 102  mov o0.w, r0.z
     return;                                                                               // 103  ret
@@ -19544,7 +19544,7 @@ void Fo4EPs_rec0797(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 132  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 133  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 134  discard_nz r1.x
-    }                                                                                     // 135  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 135  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 136  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 137  mov o0.w, r0.z
     return;                                                                               // 138  ret
@@ -19688,7 +19688,7 @@ void Fo4EPs_rec0798(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 138  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 139  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 140  discard_nz r1.x
-    }                                                                                     // 141  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 141  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 142  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 143  mov o0.w, r0.z
     return;                                                                               // 144  ret
@@ -19827,7 +19827,7 @@ void Fo4EPs_rec0800(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 132  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 133  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 134  discard_nz r1.x
-    }                                                                                     // 135  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 135  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 136  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 137  mov o0.w, r0.z
     return;                                                                               // 138  ret
@@ -19971,7 +19971,7 @@ void Fo4EPs_rec0801(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 138  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 139  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 140  discard_nz r1.x
-    }                                                                                     // 141  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 141  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 142  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 143  mov o0.w, r0.z
     return;                                                                               // 144  ret
@@ -20090,7 +20090,7 @@ void Fo4EPs_rec0803(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 54  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 55  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 56  discard_nz r0.y
-    }                                                                                     // 57  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 57  endif
     o0.xyz = r0.xxx * r1.xyz;                                                             // 58  mul o0.xyz, r0.xxxx, r1.xyzx
     o0.w = r0.x;                                                                          // 59  mov o0.w, r0.x
     return;                                                                               // 60  ret
@@ -20149,7 +20149,7 @@ void Fo4EPs_rec0804(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 60  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 61  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 62  discard_nz r1.x
-    }                                                                                     // 63  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 63  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 64  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 65  mov o0.w, r0.w
     return;                                                                               // 66  ret
@@ -20222,7 +20222,7 @@ void Fo4EPs_rec0805(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 74  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 75  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 76  discard_nz r0.x
-    }                                                                                     // 77  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 77  endif
     o0.xyz = r0.yyy * r1.xyz;                                                             // 78  mul o0.xyz, r0.yyyy, r1.xyzx
     o0.w = r0.y;                                                                          // 79  mov o0.w, r0.y
     return;                                                                               // 80  ret
@@ -20302,7 +20302,7 @@ void Fo4EPs_rec0806(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 82  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 83  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 84  discard_nz r1.x
-    }                                                                                     // 85  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 85  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 86  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 87  mov o0.w, r0.w
     return;                                                                               // 88  ret
@@ -20382,7 +20382,7 @@ void Fo4EPs_rec0807(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 82  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 83  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 84  discard_nz r1.x
-    }                                                                                     // 85  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 85  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 86  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 87  mov o0.w, r0.w
     return;                                                                               // 88  ret
@@ -20514,7 +20514,7 @@ void Fo4EPs_rec0808(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 122  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 123  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 124  discard_nz r1.x
-    }                                                                                     // 125  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 125  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 126  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 127  mov o0.w, r0.w
     return;                                                                               // 128  ret
@@ -20624,7 +20624,7 @@ void Fo4EPs_rec0810(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 97  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 98  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 99  discard_nz r1.x
-    }                                                                                     // 100  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 100  endif
     o0.xyz = r0.zzz * r0.xyw;                                                             // 101  mul o0.xyz, r0.zzzz, r0.xywx
     o0.w = r0.z;                                                                          // 102  mov o0.w, r0.z
     return;                                                                               // 103  ret
@@ -21464,7 +21464,7 @@ void Fo4EPs_rec0818(out vec4 o0, out bool kill)
         r0.w = -r0.w + AlphaTestRef.y;                                                    // 95  add r0.w, -r0.w, cb2[14].y
         b0.w = (r0.w < 0.0);                                                              // 96  lt r0.w, r0.w, l(0.000000)
         kill = kill || b0.w;                                                              // 97  discard_nz r0.w
-    }                                                                                     // 98  endif
+    r0.w = intBitsToFloat(b0.w ? -1 : 0); }                                               // 98  endif
     o0.xyz = r1.xxx * r0.xyz;                                                             // 99  mul o0.xyz, r1.xxxx, r0.xyzx
     o0.w = r1.x;                                                                          // 100  mov o0.w, r1.x
     return;                                                                               // 101  ret
@@ -24786,7 +24786,7 @@ void Fo4EPs_rec0864(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 38  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 39  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 40  discard_nz r0.x
-    }                                                                                     // 41  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 41  endif
     i0.x = d3d_ftoi(UIMaskRectParams.x);                                                  // 42  ftoi r0.x, cb0[2].x
     r0.y = r0.z;                                                                          // 43  mov r0.y, r0.z
     i0.w = 0;                                                                             // 44  mov r0.w, l(0)
@@ -24813,7 +24813,7 @@ void Fo4EPs_rec0864(out vec4 o0, out bool kill)
             r1.z = -(UIMaskRects[i0.w + 0].y) + UIMaskRects[i0.w + 0].w;                  // 65  add r1.z, -cb0[r0.w + 3].y, cb0[r0.w + 3].w
             r1.y = d3d_div(r1.y, r1.z);                                                   // 66  div r1.y, r1.y, r1.z
             r0.y = r0.y * r1.y;                                                           // 67  mul r0.y, r0.y, r1.y
-        }                                                                                 // 68  endif
+        } else { r1.y = intBitsToFloat(b1.y ? -1 : 0); r1.z = intBitsToFloat(b1.z ? -1 : 0); }// 68  endif
         i0.w = (i0.w + 1);                                                                // 69  iadd r0.w, r0.w, l(1)
     }                                                                                     // 70  endloop
     r1.x = d3d_sat(r1.x);                                                                 // 71  mov_sat r1.x, r1.x
@@ -25002,7 +25002,7 @@ void Fo4EPs_rec0866(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 76  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 77  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 78  discard_nz r0.y
-    }                                                                                     // 79  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 79  endif
     o0.w = r0.x;                                                                          // 80  mov o0.w, r0.x
     return;                                                                               // 81  ret
 }
@@ -25158,7 +25158,7 @@ void Fo4EPs_rec0868(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 76  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 77  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 78  discard_nz r0.y
-    }                                                                                     // 79  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 79  endif
     o0.w = r0.x;                                                                          // 80  mov o0.w, r0.x
     return;                                                                               // 81  ret
 }
@@ -25570,7 +25570,7 @@ void Fo4EPs_rec0877(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 117  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 118  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 119  discard_nz r0.y
-    }                                                                                     // 120  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 120  endif
     o0.w = r0.x;                                                                          // 121  mov o0.w, r0.x
     return;                                                                               // 122  ret
 }
@@ -25830,7 +25830,7 @@ void Fo4EPs_rec0879(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 117  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 118  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 119  discard_nz r0.y
-    }                                                                                     // 120  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 120  endif
     o0.w = r0.x;                                                                          // 121  mov o0.w, r0.x
     return;                                                                               // 122  ret
 }
@@ -26002,7 +26002,7 @@ void Fo4EPs_rec0886(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 38  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 39  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 40  discard_nz r0.x
-    }                                                                                     // 41  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 41  endif
     i0.x = d3d_ftoi(UIMaskRectParams.x);                                                  // 42  ftoi r0.x, cb0[2].x
     r0.y = r0.z;                                                                          // 43  mov r0.y, r0.z
     i0.w = 0;                                                                             // 44  mov r0.w, l(0)
@@ -26029,7 +26029,7 @@ void Fo4EPs_rec0886(out vec4 o0, out bool kill)
             r1.z = -(UIMaskRects[i0.w + 0].y) + UIMaskRects[i0.w + 0].w;                  // 65  add r1.z, -cb0[r0.w + 3].y, cb0[r0.w + 3].w
             r1.y = d3d_div(r1.y, r1.z);                                                   // 66  div r1.y, r1.y, r1.z
             r0.y = r0.y * r1.y;                                                           // 67  mul r0.y, r0.y, r1.y
-        }                                                                                 // 68  endif
+        } else { r1.y = intBitsToFloat(b1.y ? -1 : 0); r1.z = intBitsToFloat(b1.z ? -1 : 0); }// 68  endif
         i0.w = (i0.w + 1);                                                                // 69  iadd r0.w, r0.w, l(1)
     }                                                                                     // 70  endloop
     r1.x = d3d_sat(r1.x);                                                                 // 71  mov_sat r1.x, r1.x
@@ -26144,7 +26144,7 @@ void Fo4EPs_rec0895(out vec4 o0, out bool kill)
         r1.x = -r1.x + AlphaTestRef.y;                                                    // 62  add r1.x, -r1.x, cb2[14].y
         b1.x = (r1.x < 0.0);                                                              // 63  lt r1.x, r1.x, l(0.000000)
         kill = kill || b1.x;                                                              // 64  discard_nz r1.x
-    }                                                                                     // 65  endif
+    r1.x = intBitsToFloat(b1.x ? -1 : 0); }                                               // 65  endif
     o0.xyz = r0.www * r0.xyz;                                                             // 66  mul o0.xyz, r0.wwww, r0.xyzx
     o0.w = r0.w;                                                                          // 67  mov o0.w, r0.w
     return;                                                                               // 68  ret
@@ -26307,7 +26307,7 @@ void Fo4EPs_rec0905(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 52  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 53  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 54  discard_nz r0.x
-    }                                                                                     // 55  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 55  endif
     o0.w = r0.y;                                                                          // 56  mov o0.w, r0.y
     return;                                                                               // 57  ret
 }
@@ -26415,7 +26415,7 @@ void Fo4EPs_rec0907(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 52  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 53  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 54  discard_nz r0.x
-    }                                                                                     // 55  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 55  endif
     o0.w = r0.y;                                                                          // 56  mov o0.w, r0.y
     return;                                                                               // 57  ret
 }
@@ -26526,7 +26526,7 @@ void Fo4EPs_rec0909(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 55  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 56  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 57  discard_nz r0.x
-    }                                                                                     // 58  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 58  endif
     o0.w = r0.y;                                                                          // 59  mov o0.w, r0.y
     return;                                                                               // 60  ret
 }
@@ -27442,7 +27442,7 @@ void Fo4EPs_rec0922(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 93  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 94  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 95  discard_nz r0.x
-    }                                                                                     // 96  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 96  endif
     o0.w = r0.y;                                                                          // 97  mov o0.w, r0.y
     return;                                                                               // 98  ret
 }
@@ -27953,7 +27953,7 @@ void Fo4EPs_rec0927(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 73  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 74  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 75  discard_nz r0.x
-    }                                                                                     // 76  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 76  endif
     o0.w = r0.y;                                                                          // 77  mov o0.w, r0.y
     return;                                                                               // 78  ret
 }
@@ -28229,7 +28229,7 @@ void Fo4EPs_rec0931(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 73  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 74  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 75  discard_nz r0.x
-    }                                                                                     // 76  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 76  endif
     o0.w = r0.y;                                                                          // 77  mov o0.w, r0.y
     return;                                                                               // 78  ret
 }
@@ -28431,7 +28431,7 @@ void Fo4EPs_rec0936(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 114  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 115  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 116  discard_nz r0.x
-    }                                                                                     // 117  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 117  endif
     o0.w = r0.y;                                                                          // 118  mov o0.w, r0.y
     return;                                                                               // 119  ret
 }
@@ -37038,7 +37038,7 @@ void Fo4EPs_rec1103(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 53  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 54  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 55  discard_nz r0.y
-    }                                                                                     // 56  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 56  endif
     o0.w = r0.x;                                                                          // 57  mov o0.w, r0.x
     return;                                                                               // 58  ret
 }
@@ -37150,7 +37150,7 @@ void Fo4EPs_rec1105(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 53  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 54  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 55  discard_nz r0.y
-    }                                                                                     // 56  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 56  endif
     o0.w = r0.x;                                                                          // 57  mov o0.w, r0.x
     return;                                                                               // 58  ret
 }
@@ -37265,7 +37265,7 @@ void Fo4EPs_rec1107(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 56  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 57  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 58  discard_nz r0.y
-    }                                                                                     // 59  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 59  endif
     o0.w = r0.x;                                                                          // 60  mov o0.w, r0.x
     return;                                                                               // 61  ret
 }
@@ -40483,7 +40483,7 @@ void Fo4EPs_rec1167(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 54  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 55  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 56  discard_nz r0.y
-    }                                                                                     // 57  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 57  endif
     o0.w = r0.x;                                                                          // 58  mov o0.w, r0.x
     return;                                                                               // 59  ret
 }
@@ -40656,7 +40656,7 @@ void Fo4EPs_rec1170(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 54  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 55  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 56  discard_nz r0.y
-    }                                                                                     // 57  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 57  endif
     o0.w = r0.x;                                                                          // 58  mov o0.w, r0.x
     return;                                                                               // 59  ret
 }
@@ -41474,7 +41474,7 @@ void Fo4EPs_rec1193(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 77  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 78  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 79  discard_nz r0.y
-    }                                                                                     // 80  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 80  endif
     o0.w = r0.x;                                                                          // 81  mov o0.w, r0.x
     return;                                                                               // 82  ret
 }
@@ -41632,7 +41632,7 @@ void Fo4EPs_rec1195(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 77  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 78  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 79  discard_nz r0.y
-    }                                                                                     // 80  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 80  endif
     o0.w = r0.x;                                                                          // 81  mov o0.w, r0.x
     return;                                                                               // 82  ret
 }
@@ -41843,7 +41843,7 @@ void Fo4EPs_rec1197(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 118  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 119  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 120  discard_nz r0.y
-    }                                                                                     // 121  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 121  endif
     o0.w = r0.x;                                                                          // 122  mov o0.w, r0.x
     return;                                                                               // 123  ret
 }
@@ -42105,7 +42105,7 @@ void Fo4EPs_rec1199(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 118  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 119  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 120  discard_nz r0.y
-    }                                                                                     // 121  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 121  endif
     o0.w = r0.x;                                                                          // 122  mov o0.w, r0.x
     return;                                                                               // 123  ret
 }
@@ -42562,7 +42562,7 @@ void Fo4EPs_rec1212(out vec4 o0, out bool kill)
         r0.x = -r0.x + AlphaTestRef.y;                                                    // 93  add r0.x, -r0.x, cb2[14].y
         b0.x = (r0.x < 0.0);                                                              // 94  lt r0.x, r0.x, l(0.000000)
         kill = kill || b0.x;                                                              // 95  discard_nz r0.x
-    }                                                                                     // 96  endif
+    r0.x = intBitsToFloat(b0.x ? -1 : 0); }                                               // 96  endif
     o0.w = r0.y;                                                                          // 97  mov o0.w, r0.y
     return;                                                                               // 98  ret
 }
@@ -51172,7 +51172,7 @@ void Fo4EPs_rec1414(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 88  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 89  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 90  discard_nz r0.y
-    }                                                                                     // 91  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 91  endif
     o0.w = r0.x;                                                                          // 92  mov o0.w, r0.x
     return;                                                                               // 93  ret
 }
@@ -51343,7 +51343,7 @@ void Fo4EPs_rec1416(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 89  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 90  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 91  discard_nz r0.y
-    }                                                                                     // 92  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 92  endif
     o0.w = r0.x;                                                                          // 93  mov o0.w, r0.x
     return;                                                                               // 94  ret
 }
@@ -51514,7 +51514,7 @@ void Fo4EPs_rec1418(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 88  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 89  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 90  discard_nz r0.y
-    }                                                                                     // 91  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 91  endif
     o0.w = r0.x;                                                                          // 92  mov o0.w, r0.x
     return;                                                                               // 93  ret
 }
@@ -51767,7 +51767,7 @@ void Fo4EPs_rec1421(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 89  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 90  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 91  discard_nz r0.y
-    }                                                                                     // 92  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 92  endif
     o0.w = r0.x;                                                                          // 93  mov o0.w, r0.x
     return;                                                                               // 94  ret
 }
@@ -52082,7 +52082,7 @@ void Fo4EPs_rec1424(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 129  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 130  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 131  discard_nz r0.y
-    }                                                                                     // 132  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 132  endif
     o0.w = r0.x;                                                                          // 133  mov o0.w, r0.x
     return;                                                                               // 134  ret
 }
@@ -52359,7 +52359,7 @@ void Fo4EPs_rec1426(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 130  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 131  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 132  discard_nz r0.y
-    }                                                                                     // 133  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 133  endif
     o0.w = r0.x;                                                                          // 134  mov o0.w, r0.x
     return;                                                                               // 135  ret
 }
@@ -52636,7 +52636,7 @@ void Fo4EPs_rec1428(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 129  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 130  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 131  discard_nz r0.y
-    }                                                                                     // 132  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 132  endif
     o0.w = r0.x;                                                                          // 133  mov o0.w, r0.x
     return;                                                                               // 134  ret
 }
@@ -53192,7 +53192,7 @@ void Fo4EPs_rec1432(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 132  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 133  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 134  discard_nz r0.y
-    }                                                                                     // 135  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 135  endif
     o0.w = r0.x;                                                                          // 136  mov o0.w, r0.x
     return;                                                                               // 137  ret
 }
@@ -53569,7 +53569,7 @@ void Fo4EPs_rec1435(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 152  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 153  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 154  discard_nz r0.y
-    }                                                                                     // 155  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 155  endif
     o0.w = r0.x;                                                                          // 156  mov o0.w, r0.x
     return;                                                                               // 157  ret
 }
@@ -54051,7 +54051,7 @@ void Fo4EPs_rec1438(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 153  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 154  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 155  discard_nz r0.y
-    }                                                                                     // 156  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 156  endif
     o0.w = r0.x;                                                                          // 157  mov o0.w, r0.x
     return;                                                                               // 158  ret
 }
@@ -57109,7 +57109,7 @@ void Fo4EPs_rec1472(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 94  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 95  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 96  discard_nz r0.y
-    }                                                                                     // 97  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 97  endif
     o0.w = r0.x;                                                                          // 98  mov o0.w, r0.x
     return;                                                                               // 99  ret
 }
@@ -57431,7 +57431,7 @@ void Fo4EPs_rec1475(out vec4 o0, out bool kill)
         r0.y = -r0.y + AlphaTestRef.y;                                                    // 94  add r0.y, -r0.y, cb2[14].y
         b0.y = (r0.y < 0.0);                                                              // 95  lt r0.y, r0.y, l(0.000000)
         kill = kill || b0.y;                                                              // 96  discard_nz r0.y
-    }                                                                                     // 97  endif
+    r0.y = intBitsToFloat(b0.y ? -1 : 0); }                                               // 97  endif
     o0.w = r0.x;                                                                          // 98  mov o0.w, r0.x
     return;                                                                               // 99  ret
 }

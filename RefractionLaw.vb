@@ -41,9 +41,6 @@ Friend Module RefractionLaw
         Public Strength As Single
     End Structure
 
-    ''' <summary>FO4 refraction VS shipped in the shader pack (recs 1519..1695): any other technique is not drawn (4.3).</summary>
-    Private ReadOnly Fo4Vs As Integer() = {&H202, &H21A, &H21B, &H21E, &H21F, &H61A, &H61B, &HA06, &HA1A, &HA1B, &HA1E, &HA1F}
-
     ''' <summary>A FO4 BSEffect builds no pass at all with Temp_Refraction (flag 2) and without flag 60 Pipboy_Screen
     ''' (BSEffectShaderProperty::GetRenderPasses 0x1421777A0, row 2: 0x142177919..0x14217792E), before the Refraction test (row 4).
     ''' One owner: Fo4RenderPassLaw and this law read it.</summary>
@@ -87,8 +84,9 @@ Friend Module RefractionLaw
             ' FO4 0x1421791C8) when the bit comes from the file.
             r.UsesLodFade = Not s.NoFade
         End If
-        ' VS = T & 0xF7A5FFDF must ship (4.3).
-        r.Drawn = Array.IndexOf(Fo4Vs, r.Technique And &HF7A5FFDF) >= 0
+        ' The technique's VS and PS must be in the cache (BeginTechnique 0x142231AE0; 4.3): the source's closed list of b07 (ola 4: the
+        ' VS T AND 0xF7A5FFDF and the PS of every refraction technique, Fo4UtilitySource.MissingEnginePrograms).
+        r.Drawn = Fo4UtilitySource.MissingEnginePrograms(CUInt(r.Technique)) Is Nothing
         r.DepthWrite = s.RefractionWritesDepth
         Return r
     End Function

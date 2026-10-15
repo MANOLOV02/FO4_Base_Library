@@ -305,14 +305,13 @@ Public Class PreviewControl
     Public SharedFloorShader As Floor_Shader_Class
     ''' <summary>Programa del quad de fondo (fade radial). Ver <see cref="PaintBackground"/>.</summary>
     Public SharedBackgroundShader As Background_Shader_Class
-    ''' <summary>FO4 post pass (ImageSpace HDR i3700 + GammaCorrectLUT i3648) and the two compute passes of
-    ''' the mean luminance. See PostProcess.vb.</summary>
-    Friend SharedPostFo4Shader As PostProcess_Fo4_Shader_Class
+    ''' <summary>Skyrim SE's post pass (ImageSpace HDR 12545) and the two compute passes of the mean luminance (PostProcess.vb);
+    ''' Fallout 4's post is its image-space chain (Fo4ImageSpaceChain, ola 4) with the app passes of SharedFo4PostApp.</summary>
     Friend SharedPostSseShader As PostProcess_Sse_Shader_Class
+    Friend SharedFo4PostApp As Fo4ImageSpaceAppPrograms
     Friend SharedLumPartialsShader As Luminance_Partials_Shader_Class
     Friend SharedLumResolveShader As Luminance_Resolve_Shader_Class
     Friend SharedRefractionNormalsSse As Refraction_Normals_Sse_Shader_Class
-    Friend SharedRefractionNormalsFo4 As Refraction_Normals_Fo4_Shader_Class
     Friend SharedRefractionImageSpace As Refraction_ImageSpace_Shader_Class
     Friend SharedSseOpaqueComposite As Sse_Opaque_Composite_Shader_Class
     ''' <summary>The six programs of the Skyrim SE SAO (SseSaoSource).</summary>
@@ -1504,23 +1503,46 @@ Public Class PreviewControl
     ''' <summary>This control's GL context as Gl43 keeps its clip state (InitContext in OnLoad, ReleaseContext in Clean).</summary>
     Private _gl43Context As IntPtr
 
+    ''' <summary>DEBUG TRACE OF THE START (rev-E03: the start was measured hanging between "PreviewControl created" and "added to the
+    ''' panel", inside OnLoad): where the lines go - ShadowGate sets GateForm.RawTrace, a file appended and closed per line, so it
+    ''' survives a hang -; Nothing traces nothing. TraceBoot calls exist only in Debug builds (Conditional).</summary>
+    Friend Shared BootTrace As Action(Of String)
+
+    ''' <summary>One line of the start trace with the milliseconds since <paramref name="sw"/> started (Debug builds only).</summary>
+    <Diagnostics.Conditional("DEBUG")>
+    Friend Shared Sub TraceBoot(what As String, sw As Diagnostics.Stopwatch)
+        BootTrace?.Invoke($"{what}: {sw.Elapsed.TotalMilliseconds:F0} ms")
+        sw.Restart()
+    End Sub
+
     Protected Overrides Sub OnLoad(e As EventArgs)
         MyBase.OnLoad(e)
         If Me.IsInDesignMode Then Return
+        Dim sw = Diagnostics.Stopwatch.StartNew()
+        TraceBoot("OnLoad: entered (base OnLoad done)", sw)
         ' OpenGL 4.3 (ola GL43): the context's clip state FIRST, before any GL call - every vertex stage reads its uniform buffer
         ' (Gl43.ClipGlsl) and Gl43.UseProgram refuses a program without it.
         Me.EnsureContextCurrent()
+        TraceBoot("OnLoad: EnsureContextCurrent", sw)
         _gl43Context = Gl43.InitContext()
+        TraceBoot($"OnLoad: Gl43.InitContext ({GL.GetString(StringName.Renderer)} / {GL.GetString(StringName.Version)}; polygon offset units: " &
+                  String.Join(", ", {Gl43.DepthKeyD16, Gl43.DepthKeyD24S8, Gl43.DepthKeyDefault}.Select(
+                      Function(k)
+                          Dim u = Gl43.PolygonOffsetUnitOf(k)
+                          Return If(u.HasValue, $"{k} {u.Value.CodesPerUnit:R} codes", $"{k} none ({If(Gl43.PolygonOffsetErrorOf(k), "no depth buffer")})")
+                      End Function)) & $"; measured in {Gl43.PolygonOffsetMeasureMs:F1} ms)", sw)
         ApplyResize(True)
+        TraceBoot("OnLoad: ApplyResize", sw)
         GenerateDefaultTextures()
+        TraceBoot("OnLoad: GenerateDefaultTextures", sw)
         SharedActiveShader = New Shader_Class_Fo4
         SharedSSEShader = New Shader_Class_SSE
         SharedFloorShader = New Floor_Shader_Class
         SharedBackgroundShader = New Background_Shader_Class
-        SharedPostFo4Shader = New PostProcess_Fo4_Shader_Class
         SharedPostSseShader = New PostProcess_Sse_Shader_Class
         SharedLumPartialsShader = New Luminance_Partials_Shader_Class
         SharedLumResolveShader = New Luminance_Resolve_Shader_Class
+        TraceBoot("OnLoad: forward / floor / background / SSE post programs", sw)
         ' rev-50 / v4 B-rev-05: a program set that does not compile or link leaves ITS game without a frame (the status card names
         ' the error, FrameUnavailable), never the control - and the other game - dead. The refraction image-space pass runs in both.
         Try
@@ -1541,14 +1563,16 @@ Public Class PreviewControl
             SharedSseDecalBaseMark?.Dispose() : SharedSseDecalBaseMark = Nothing
             SseProgramError = If(SseProgramError, ex.Message)
         End Try
+        TraceBoot("OnLoad: refraction and Skyrim SE programs", sw)
         Try
-            SharedRefractionNormalsFo4 = New Refraction_Normals_Fo4_Shader_Class
             SharedFo4Deferred = New Fo4DeferredPrograms()
+            SharedFo4PostApp = New Fo4ImageSpaceAppPrograms()
         Catch ex As Exception
-            SharedRefractionNormalsFo4?.Dispose() : SharedRefractionNormalsFo4 = Nothing
-            SharedFo4Deferred = Nothing
+            SharedFo4Deferred?.Dispose() : SharedFo4Deferred = Nothing
+            SharedFo4PostApp = Nothing
             Fo4ProgramError = If(Fo4ProgramError, ex.Message)
         End Try
+        TraceBoot($"OnLoad: Fallout 4 programs (Fo4DeferredPrograms; error: {If(Fo4ProgramError, "none")})", sw)
         _bgVao = GL.GenVertexArray()
         ' Los dos programas de profundidad se compilan SIEMPRE, aunque las sombras esten apagadas: el
         ' costo es un link por juego al abrir el control, y tenerlos condicionados al setting significaria
@@ -1556,6 +1580,7 @@ Public Class PreviewControl
         SharedShadowFO4Shader = New Shadow_Depth_Shader_Fo4
         SharedShadowSSEShader = New Shadow_Depth_Shader_SSE
         SharedGroundShadowShader = New Ground_Shadow_Shader_Class
+        TraceBoot("OnLoad: shadow depth programs", sw)
         ' Cube filtering ACROSS faces, like every D3D10+ cube sample of both engines (GL defaults to per-face).
         GL.Enable(EnableCap.TextureCubeMapSeamless)
 
@@ -1585,7 +1610,7 @@ Public Class PreviewControl
         Gl43.FrontFace(FrontFaceDirection.Ccw)
 
         overlay = New TextOverlayRenderer()
-
+        TraceBoot("OnLoad: done (debug output, GL state, text overlay)", sw)
     End Sub
 
     Protected Overrides Sub OnLocationChanged(e As EventArgs)
@@ -1798,9 +1823,10 @@ Public Class PreviewControl
         End Get
     End Property
 
-    ''' <summary>The refraction-normals program of the game drawing the frame.</summary>
+    ''' <summary>The refraction-normals program of the game drawing the frame: Skyrim SE's (RefractionSource); Fallout 4's draws are its
+    ''' b07 techniques (RenderableMesh.RenderRefractionNormalsFo4): Nothing.</summary>
     Friend Function RefractionNormalsProgram(isSse As Boolean) As Shader_Base_Class
-        Return If(isSse, CType(SharedRefractionNormalsSse, Shader_Base_Class), SharedRefractionNormalsFo4)
+        Return If(isSse, SharedRefractionNormalsSse, Nothing)
     End Function
 
     ''' <summary>Binds and clears the refraction-normals target; it tests against the frame's own depth (the offscreen
@@ -1827,6 +1853,8 @@ Public Class PreviewControl
     Private ReadOnly _saoDepth As New SceneDepthCopy()
     Private ReadOnly _sao As New SseSaoTargets()
     Private ReadOnly _fo4 As New Fo4DeferredTargets()
+    ''' <summary>Fallout 4's post (ola 4): the image-space chain of the world (Fo4ImageSpaceChain).</summary>
+    Private ReadOnly _fo4Post As New Fo4ImageSpaceChain()
     ''' <summary>Skyrim SE's translucent decals' base (BeginSseDecalBase / EndSseDecalBase).</summary>
     Private ReadOnly _sseDecalBase As New DecalBaseTarget(deferred:=False)
     ''' <summary>Fallout 4's world envmap array of this GL context (Fo4EnvMapArray).</summary>
@@ -1997,6 +2025,8 @@ Public Class PreviewControl
     Friend Sub FinishFo4Deferred(frame As Fo4DeferredFrame)
         _fo4.EndGBuffer(SharedFo4Deferred, lastNear, lastFar)
         _fo4.RunLights(SharedFo4Deferred, frame)
+        ' gates-v6 (rev-E16): a light technique without a program is not drawn, and the frame's notice says so
+        Fo4DeferredTargets.ReportSkippedLights(_Model, _fo4.SkippedLightTechniques)
         Fo4EnvMap.CopyQueued()
         _fo4.RunComposite1(SharedFo4Deferred, frame)
         _fo4.BlitDepthTo(_targets.HdrFramebuffer)
@@ -2065,10 +2095,16 @@ Public Class PreviewControl
         Return px
     End Function
 
-    ''' <summary>ISRefraction over the frame's colour (attachment 0 of <paramref name="fbo"/>).</summary>
+    ''' <summary>ISRefraction over the frame's colour (attachment 0 of <paramref name="fbo"/>): Skyrim SE's program (RefractionSource), Fallout
+    ''' 4's i3658 on the ImageSpaceManager's triangle (RefractionTargets.ApplyImageSpaceFo4). A frame with the post runs Fallout 4's inside
+    ''' its chain (Fo4ImageSpaceChain); this is the direct frame's.</summary>
     Private Sub ApplyRefraction(isSse As Boolean, fbo As Integer, fmt As SizedInternalFormat)
         If Not _Model.FrameRefractionActive Then Return
-        _refraction.ApplyImageSpace(SharedRefractionImageSpace, isSse, fbo, fmt, Me.Width, Me.Height, _bgVao)
+        If isSse Then
+            _refraction.ApplyImageSpace(SharedRefractionImageSpace, True, fbo, fmt, Me.Width, Me.Height, _bgVao)
+        Else
+            _refraction.ApplyImageSpaceFo4(SharedFo4Deferred.ImageSpaceProgram(3658UI), fbo, fmt, Me.Width, Me.Height, _fo4Post.TriangleVao, _fo4Post.LinearSampler, _fo4Post.PointSampler)
+        End If
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, fbo)
         If fbo = _targets.HdrFramebuffer AndAlso fbo <> 0 Then _targets.SetGroundCatcherOutputs(False)
     End Sub
@@ -2121,16 +2157,15 @@ Public Class PreviewControl
         _targets.SetGroundCatcherOutputs(enabled)
     End Sub
 
-    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: i3700 + i3648; SSE: 12545) unless the user turned the post off (Rendering tab) or a shader debug
-    ''' view is on (a debug view shows raw values: it is drawn straight to the display target, 8-bit exact).
-    ''' Returns the post program of the game drawing the frame, or Nothing for a direct frame.</summary>
-    Private Function FramePostProgram() As Shader_Base_Class
-        If _bgVao = 0 OrElse CurrentShader Is Nothing OrElse SharedLumPartialsShader Is Nothing OrElse
-           SharedLumResolveShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None OrElse
-           Not _Model.FrameImaging.Settings.ApplyPostProcess Then Return Nothing
-        If CurrentShader Is SharedActiveShader Then Return SharedPostFo4Shader
-        If CurrentShader Is SharedSSEShader Then Return SharedPostSseShader
-        Return Nothing
+    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: its image-space chain, Fo4ImageSpaceChain; SSE: 12545) unless the user
+    ''' turned the post off (Rendering tab) or a shader debug view is on (a debug view shows raw values: it is drawn straight to the
+    ''' display target, 8-bit exact). True when the frame of the game drawing it has the post.</summary>
+    Private Function FramePostOn() As Boolean
+        If _bgVao = 0 OrElse CurrentShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None OrElse
+           Not _Model.FrameImaging.Settings.ApplyPostProcess Then Return False
+        If CurrentShader Is SharedActiveShader Then Return SharedFo4Deferred IsNot Nothing AndAlso SharedFo4PostApp IsNot Nothing
+        If CurrentShader Is SharedSSEShader Then Return SharedPostSseShader IsNot Nothing AndAlso SharedLumPartialsShader IsNot Nothing AndAlso SharedLumResolveShader IsNot Nothing
+        Return False
     End Function
 
     ''' <summary>Binds the framebuffer reads come from (the scene target, or the window's default one when the
@@ -2167,11 +2202,14 @@ Public Class PreviewControl
         If SharedActiveShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
         ApplyResize(False)
         Me.EnsureContextCurrent()
+        ' rev-E05 / E11: the window's depth unit when the start could not measure it (the window was not drawable yet at OnLoad), at
+        ' the start of a frame - before anything of it is drawn: the probe's depth is the window's, which a direct frame clears and an
+        ' offscreen frame never reads -, only up to the first presented frame (DefaultFramebufferAttemptsClose below).
+        Gl43.MeasureDefaultFramebufferIfNeeded()
         Dim offscreen = _targets.Ensure(Me.Width, Me.Height)
         ' The weather/moment and the two options of THIS frame, for the game of the shader that draws it.
         _Model.ResolveFrameImaging(CurrentShader Is SharedSSEShader)
-        Dim postProgram = If(offscreen, FramePostProgram(), Nothing)
-        Dim hdr = postProgram IsNot Nothing
+        Dim hdr = offscreen AndAlso FramePostOn()
         _statusDrawnInFrame = False
         _lastFrameHdrScene = False
         If hdr Then
@@ -2208,16 +2246,20 @@ Public Class PreviewControl
             End If
             ' A status card drawn during the frame (textures still loading) is already in the display target.
             If hdr AndAlso Not _statusDrawnInFrame Then
-                _targets.ReduceLuminance(SharedLumPartialsShader, SharedLumResolveShader)
                 Dim row = _Model.FrameImaging.Row
-                If postProgram Is SharedPostSseShader Then
-                    _targets.Composite(postProgram, AddressOf row.SseImageSpace.Upload, Nothing, AddressOf SubirUniformsDeFondo, _bgVao)
+                If isSse Then
+                    _targets.ReduceLuminance(SharedLumPartialsShader, SharedLumResolveShader)
+                    _targets.Composite(SharedPostSseShader, AddressOf row.SseImageSpace.Upload, AddressOf SubirUniformsDeFondo, _bgVao)
                 Else
-                    _targets.Composite(postProgram, AddressOf row.Fo4ImageSpace.Upload, row.Fo4ImageSpace.LutPath, AddressOf SubirUniformsDeFondo, _bgVao)
+                    ' Fallout 4 (ola 4): the ImageSpaceManager's chain, ISRefraction inside it (effect 5, between the HDR and the LUT).
+                    _fo4Post.Ensure(Me.Width, Me.Height)
+                    _fo4Post.Run(SharedFo4Deferred, SharedFo4PostApp.Unpremultiply, SharedFo4PostApp.ActorMean, SharedFo4PostApp.Present,
+                                 row.Fo4ImageSpace, _targets.SceneTexture, _targets.CoverageTexture, _targets.BgShadowTexture,
+                                 If(_Model.FrameRefractionActive, _refraction.NormalsTexture, 0), RefractionLaw.ImageSpaceConstants(False).Tint,
+                                 _targets.DisplayFramebuffer, AddressOf SubirUniformsDeFondo, _bgVao)
                 End If
                 _frameFbo = _targets.DisplayFramebuffer
                 _lastFrameHdrScene = True
-                If Not isSse Then ApplyRefraction(False, _targets.DisplayFramebuffer, SizedInternalFormat.Rgba8)
                 ' What is drawn in display values (wireframes) goes on top of the post, depth-tested
                 ' against the scene's depth (shared by both targets).
                 Model.RenderDisplayOverlays(projection, camera)
@@ -2228,6 +2270,7 @@ Public Class PreviewControl
         If offscreen Then _targets.Present()
         If Not _statusDrawnInFrame Then DrawPreviewGapNotice()
         _frameFbo = 0
+        Gl43.DefaultFramebufferAttemptsClose()                        ' rev-E11: the first presented frame closes the retries
     End Sub
 
     ''' <summary>The frame's notice (PreviewModel.ReportUndrawn): one line per reason with its shape count - the preview's gaps
@@ -3108,11 +3151,6 @@ Public Class PreviewControl
             SharedBackgroundShader = Nothing
         End If
 
-        If SharedPostFo4Shader IsNot Nothing Then
-            SharedPostFo4Shader.Dispose()
-            SharedPostFo4Shader = Nothing
-        End If
-
         If SharedPostSseShader IsNot Nothing Then
             SharedPostSseShader.Dispose()
             SharedPostSseShader = Nothing
@@ -3122,15 +3160,18 @@ Public Class PreviewControl
             SharedLumPartialsShader.Dispose()
             SharedLumPartialsShader = Nothing
         End If
-        For Each sh As Shader_Base_Class In {SharedRefractionNormalsSse, SharedRefractionNormalsFo4, SharedRefractionImageSpace, SharedSseOpaqueComposite, SharedSseDecalBaseMark}
+        For Each sh As Shader_Base_Class In {SharedRefractionNormalsSse, SharedRefractionImageSpace, SharedSseOpaqueComposite, SharedSseDecalBaseMark}
             sh?.Dispose()
         Next
-        SharedRefractionNormalsSse = Nothing : SharedRefractionNormalsFo4 = Nothing : SharedRefractionImageSpace = Nothing
+        SharedRefractionNormalsSse = Nothing : SharedRefractionImageSpace = Nothing
         SharedSseOpaqueComposite = Nothing : SharedSseDecalBaseMark = Nothing
         SharedSseSao?.Dispose()
         SharedSseSao = Nothing
         SharedFo4Deferred?.Dispose()
         SharedFo4Deferred = Nothing
+        SharedFo4PostApp?.Dispose()
+        SharedFo4PostApp = Nothing
+        _fo4Post.FreeAll()
 
         If SharedLumResolveShader IsNot Nothing Then
             SharedLumResolveShader.Dispose()
@@ -3646,13 +3687,9 @@ Public Class PreviewModel
         ''' the GPU-skinning uploads skip them while this holds.</summary>
         Private _eyeCentersAreBind As Boolean
 
-        ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True leaves RT1..5 writable for an effect decal drawn
+        ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True leaves RT1..4 writable for an effect decal drawn
         ''' in the FO4 G-buffer stage.</summary>
         Friend Shared GateFo4EffectDecalMaskOpen As Boolean = False
-
-        ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True enables blending on the app's shadow RT
-        ''' (attachment 5) in a blended G-buffer draw.</summary>
-        Friend Shared GateFo4BlendRt5 As Boolean = False
 
         ''' <summary>GATE ONLY: the location-11 buffer.</summary>
         Friend ReadOnly Property GatePreSkinNormalVbo As Integer
@@ -5342,11 +5379,137 @@ Public Class PreviewModel
         ''' <summary>The VAO of a G-buffer draw of technique <paramref name="technique"/>: the GPU route's, or on the CPU route the one of
         ''' its VS's CPU layout (a rigid VS has one route: the GPU route's VAO).</summary>
         Friend Function EngineVaoFor(cpuRoute As Boolean, technique As UInteger) As Integer
-            Select Case Fo4GBufferSource.EffectiveCpuLayout(New Fo4Technique(technique).Key().Vs, cpuRoute)
+            Return VaoOfLayout(Fo4GBufferSource.EffectiveCpuLayout(New Fo4Technique(technique).Key().Vs, cpuRoute))
+        End Function
+
+        ''' <summary>The VAO of a draw on the route of a vertex stage whose CPU-route layout is <paramref name="layout"/> (the stage's own
+        ''' EffectiveCpuLayout): the GPU route's, or the CPU stream of that layout. The one choice of EngineVaoFor, EffectVaoFor and
+        ''' UtilityVaoFor.</summary>
+        Private Function VaoOfLayout(layout As Fo4CpuRouteLayout) As Integer
+            Select Case layout
                 Case Fo4CpuRouteLayout.Tbn : Return engineVaoCpuTbn
                 Case Fo4CpuRouteLayout.Rows : Return engineVaoCpuRows
                 Case Else : Return engineVaoGbuf
             End Select
+        End Function
+
+        ''' <summary>The VAO of a utility draw (b07) of technique <paramref name="technique"/> (Fo4UtilitySource.EffectiveCpuLayout of its VS).</summary>
+        Friend Function UtilityVaoFor(cpuRoute As Boolean, technique As UInteger) As Integer
+            Return VaoOfLayout(Fo4UtilitySource.EffectiveCpuLayout(Fo4UtilitySource.VertexShaderId(technique), cpuRoute))
+        End Function
+
+        ''' <summary>The engine VS constants of a utility draw (b07, BSUtilityShader; D:\WinTmp\rc\ola4\re.md 2.2 table 5, 6): World = this
+        ''' geometry's world rows whenever the VS has the slot (SetupGeometry 0x1422414D3..56C, no technique test: EngineGeometryWorld,
+        ''' the G-buffer's composition); TexcoordOffset (Fo4UtilityTechnique.TexcoordOffset); the frame rows 0..2, 8..11 and 35 of the
+        ''' camera the pass draws with (<paramref name="rows"/>: the light's for the shadow map, 0x14182BC80 from 0x14224F59B..5B2; the
+        ''' frame's for the refraction normals); the palette (BindEnginePalette); the edit view's zap (Fo4UtilitySource.AppVertexFoot).</summary>
+        Private Sub BindUtilityVertexStage(p As Shader_Base_Class, material As MaterialData, cpuRoute As Boolean, technique As UInteger, rows As Fo4FrameRows)
+            p.SetVector4Array("World", EngineGeometryWorld())
+            Dim uv = material.RestUv()
+            p.SetVector4("TexcoordOffset", Fo4UtilityTechnique.TexcoordOffset(technique, uv.Offset, uv.Scale))
+            p.SetVector4Array("cb12_view", rows.View)
+            p.SetVector4Array("cb12_viewproj", rows.ViewProj)
+            p.SetVector4("cb12_35", rows.Eye)
+            p.SetBool("bApplyZap", MeshData.Shape.ApplyZaps)
+            BindEnginePalette(cpuRoute)
+        End Sub
+
+        ''' <summary>THIS SHAPE INTO THE DIRECTIONAL SHADOW MAP WITH FALLOUT 4'S EMITTER (ola 4; D:\WinTmp\rc\ola4\re.md 2.2): the utility
+        ''' technique of a lighting shape in mode 0x10 (Fo4UtilityTechnique.ShadowMapTechnique: its NiAlphaProperty test, the shadow
+        ''' writer's test of Fo4RenderPassLaw.ShadowPassAlphaTest), its b07 program on this draw's vertex route
+        ''' (Fo4DeferredPrograms.UtilityProgram; a technique the engine has no program for is not drawn - SetupTechnique aborts - and a
+        ''' declared gap is not drawn by the preview: both said in the frame's notice), the VS constants of BindUtilityVertexStage with
+        ''' the light's <paramref name="rows"/>, AlphaTestRef.x = the threshold (SetupGeometry 0x142241EBB..F68) with t0 = the
+        ''' material's base texture (SetupMaterial 0x142241025..09A: [mat + 0x48] + 0x38, ADDR mat + 0x70, FILT 3 =
+        ''' SamplerLaw.UtilityDiffuse), and the cull of a utility draw (Fo4UtilityTechnique.CullsBack). The pass's state - target,
+        ''' depth, bias, clip origin - is the caller's (PreviewModel.RenderDepthInto).</summary>
+        Friend Sub RenderShadowMapFo4(rows As Fo4FrameRows)
+            If Not IsDrawable() OrElse IsNothing(MeshData.Shape.NifShape) OrElse engineVbo = 0 Then Exit Sub
+            Dim md = MeshData.Material
+            Dim pm = Me.ParentModel
+            Dim at = Fo4RenderPassLaw.ShadowPassAlphaTest(md.HasAlphaTest, md.EngineAlphaAtRest().Threshold)
+            Dim flags = md.Fo4Flags()
+            Dim t = Fo4UtilityTechnique.ShadowMapTechnique(flags, at.Test)
+            Dim cpu = EngineCpuRoute()
+            Dim errorText As String = Nothing
+            Dim p = pm.ParentControl.SharedFo4Deferred.UtilityProgram(t, errorText, cpu)
+            If p Is Nothing Then
+                Dim missing = Fo4UtilitySource.MissingEnginePrograms(t) IsNot Nothing
+                pm.ReportUndrawn(NoticeName(Nothing), $"Shadow map technique 0x{t:X8}: {errorText}",
+                                 If(missing, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.PreviewGap))
+                Exit Sub
+            End If
+            p.Use()
+            BindUtilityVertexStage(p, md, cpu, t, rows)
+            If (t And Fo4UtilityTechnique.TechAlphaTest) <> 0UI Then
+                p.SetVector4("AlphaTestRef", New Vector4(at.Threshold, 0.0F, 0.0F, 0.0F))
+                Gl43.BindTextureUnit(0, TextureTarget.Texture2D, CInt(md.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, md.DiffuseTexture_ID)))
+                BindMaterialSamplers(md, New List(Of SamplerLaw.SlotSampler) From {SamplerLaw.UtilityDiffuse(md.SamplerInputs(False))})
+            End If
+            If Fo4UtilityTechnique.CullsBack(flags) Then
+                GL.Enable(EnableCap.CullFace) : GL.CullFace(TriangleFace.Back)
+            Else
+                GL.Disable(EnableCap.CullFace)
+            End If
+            GL.BindVertexArray(UtilityVaoFor(cpu, t))
+            GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+            GL.BindVertexArray(0)
+            UnbindMaterialSamplers()
+        End Sub
+
+        ''' <summary>FALLOUT 4'S REFRACTION NORMALS OF THIS SHAPE (ola 4: b07, D:\WinTmp\rc\ola4\re.md 1.1, 6): the technique of
+        ''' RefractionLaw <paramref name="r"/> on its b07 program (Fo4DeferredPrograms.UtilityProgram), the VS constants of
+        ''' BindUtilityVertexStage with the frame's rows, EyePos (SetupGeometry 0x142241902..9C8, with RENDER_NORMAL): .xyz with
+        ''' bit 10 (falloff) = the camera's eye taken into the geometry's model space by the inverse of its world transform
+        ''' (0x1417A2580 over the eye, 0x14224192C..9A1), .w = the lighting property's refraction LOD fade ([prop + 0xD4], property type 8,
+        ''' 0x1422419A1..9C8; RefractionLaw.UsesLodFade) or 1.0 (0x14224157F); RefractionPower.x = the material's power (SetupMaterial
+        ''' 0x1422410AA..163, RefractionLaw r.Strength) with t1 = the base texture (lighting [mat + 0x48] + 0x38, effect [mat + 0x58] +
+        ''' 0x38; FILT 3: SamplerLaw.UtilityDiffuse); the cull of a utility draw (Fo4UtilityTechnique.CullsBack); depth LESS_EQUAL,
+        ''' written only with Refraction_Writes_Depth (RefractionLaw r.DepthWrite). Returns False when it is not drawn.</summary>
+        Private Function RenderRefractionNormalsFo4(r As RefractionLaw.RefractionPass, fade As Single) As Boolean
+            Dim md = MeshData.Material
+            Dim pm = Me.ParentModel
+            Dim t = CUInt(r.Technique)
+            Dim cpu = EngineCpuRoute()
+            Dim errorText As String = Nothing
+            Dim p = pm.ParentControl.SharedFo4Deferred.UtilityProgram(t, errorText, cpu)
+            If p Is Nothing Then
+                Dim missing = Fo4UtilitySource.MissingEnginePrograms(t) IsNot Nothing
+                pm.ReportUndrawn(NoticeName(Nothing), $"Refraction normals technique 0x{t:X8}: {errorText}",
+                                 If(missing, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.PreviewGap))
+                Return False
+            End If
+            Dim fr = pm.FrameEngineRows
+            p.Use()
+            BindUtilityVertexStage(p, md, cpu, t, fr)
+            Dim eyeModel = If(r.Falloff, Vector3.TransformPosition(fr.Eye.Xyz, Matrix4.Invert(EngineGeometryModel())), Vector3.Zero)
+            p.SetVector4("EyePos", New Vector4(eyeModel, If(r.UsesLodFade, fade, 1.0F)))
+            p.SetVector4("RefractionPower", New Vector4(r.Strength, 0.0F, 0.0F, 0.0F))
+#If DEBUG Then
+            ' ShadowGate --fo4-refraction-normals's mutants (Fo4GBufferConstants.GateMutantOn, the one switch): RefractionPower.x 0, and
+            ' EyePos.xyz in world space (without the inverse of the geometry's world, 0x14224192C..9A1)
+            If Fo4GBufferConstants.GateMutantOn("utl-refr-power0") Then p.SetVector4("RefractionPower", New Vector4(0.0F, 0.0F, 0.0F, 0.0F))
+            If Fo4GBufferConstants.GateMutantOn("utl-eyepos-world") Then p.SetVector4("EyePos", New Vector4(If(r.Falloff, fr.Eye.Xyz, Vector3.Zero), If(r.UsesLodFade, fade, 1.0F)))
+#End If
+            Gl43.BindTextureUnit(0, TextureTarget.Texture2D, CInt(md.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, md.DiffuseTexture_ID)))
+            BindMaterialSamplers(md, New List(Of SamplerLaw.SlotSampler) From {SamplerLaw.UtilityDiffuse(md.SamplerInputs(False))})
+            GL.Disable(EnableCap.Blend)
+            GL.Enable(EnableCap.DepthTest)
+            GL.DepthFunc(DepthFunction.Lequal)
+            GL.DepthMask(r.DepthWrite)
+            GL.Disable(EnableCap.PolygonOffsetFill)
+            If Fo4UtilityTechnique.CullsBack(md.Fo4Flags()) Then
+                GL.Enable(EnableCap.CullFace) : GL.CullFace(TriangleFace.Back)
+            Else
+                GL.Disable(EnableCap.CullFace)
+            End If
+            GL.BindVertexArray(UtilityVaoFor(cpu, t))
+            GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+            GL.BindVertexArray(0)
+            UnbindMaterialSamplers()
+            GL.DepthMask(True)
+            GL.Enable(EnableCap.CullFace) : GL.CullFace(TriangleFace.Back)
+            Return True
         End Function
 
         ''' <summary>cb2 World of this geometry, the ONE writer of the G-buffer and the prepass: SetupGeometry 0x142205B77..0x142205BF0
@@ -6377,44 +6540,45 @@ Public Class PreviewModel
             Return True
         End Function
 
-        Private Structure PolygonOffsetState
-            Public ReadOnly Enabled As Boolean
-            Public ReadOnly Factor As Single
-            Public ReadOnly Units As Single
+        ''' <summary>The D3D depth bias of a draw (D3D11.3 15.10: DepthBias in codes of the depth format, SlopeScaledDepthBias,
+        ''' DepthBiasClamp), applied by Gl43.DepthBias.</summary>
+        Private Structure DepthBiasState
+            Public ReadOnly DepthBias As Single
+            Public ReadOnly Slope As Single
+            Public ReadOnly Clamp As Single
 
-            Public Sub New(enabled As Boolean, factor As Single, units As Single)
-                Me.Enabled = enabled
-                Me.Factor = factor
-                Me.Units = units
+            Public Sub New(depthBias As Single, slope As Single, clamp As Single)
+                Me.DepthBias = depthBias
+                Me.Slope = slope
+                Me.Clamp = clamp
             End Sub
 
-            Public Shared ReadOnly Disabled As New PolygonOffsetState(False, 0.0F, 0.0F)
+            Public Shared ReadOnly None As New DepthBiasState(0.0F, 0.0F, 0.0F)
         End Structure
 
         ' SKYRIM SE decal depth bias (Tools/re-docs/RE_SSE_PASS_GROUPS_DEPTH_2026-10-03.md 15): list 3 (group 2) uses
         ' rasterizer bias index tdb ? 6 + b51 : 0 (0x14151FDA8), list 4 (group 3) 0xA + b51 (0x14151FF57); tdb =
         ' ToggleDepthBias [0x1420D683A], 1 in the PE; b51 = 1 only in an interior cell or a kNoSky / kFixedDimensions
         ' worldspace (0x140657C90). The preview's weathers are exterior ones: indices 6 / 10 = DepthBias -1,
-        ' SlopeScaledDepthBias -0.65 (table 0x14102B8D8; clamp -100, never reached). kMAIN is D24_UNORM_S8_UINT, standard
-        ' Z (clear 1, LESS_EQUAL), so D3D's DepthBias * 2^-24 + Slope * MaxDepthSlope is GL's polygon offset (units = the
-        ' 24-bit r, factor = the slope), same sign. The z-prepass draws its decals with bias 0 (14.3).
+        ' SlopeScaledDepthBias -0.65 (table 0x14102B8D8), DepthBiasClamp -100 (0x14102B6DF). kMAIN is D24_UNORM_S8_UINT,
+        ' standard Z (clear 1, LESS_EQUAL): D3D11.3 15.10's DepthBias x r (r = one code) + Slope x MaxDepthSlope, applied by
+        ' Gl43.DepthBias (ola 4 v3: GL's polygon offset unit is the implementation's). The z-prepass draws its decals with bias 0 (14.3).
         Private Const SseDecalSlopeScaledDepthBias As Single = -0.65F
         Private Const SseDecalDepthBias As Single = -1.0F
+        Private Const SseDecalDepthBiasClamp As Single = -100.0F
 
 
-        ''' <summary>The depth bias of a colour draw, as a GL polygon offset (both games: D24 UNORM, standard Z - the D3D
-        ''' DepthBias in units of 2^-24 and the slope scale map 1:1). SSE: both decal lists (above). FO4: the bias index of
-        ''' Fo4RenderPassLaw (decal lists index 1 = -3 / -0.4, flag-45 effects index 4 = -9 / -1.2).</summary>
-        Private Function ResolvePolygonOffset(material As MaterialData) As PolygonOffsetState
+        ''' <summary>The D3D depth bias of a colour draw (both games: D24 UNORM, standard Z). SSE: both decal lists (above). FO4: the
+        ''' bias index of Fo4RenderPassLaw (decal lists index 1 = -3 / -0.4, flag-45 effects index 4 = -9 / -1.2).</summary>
+        Private Function ResolveDepthBias(material As MaterialData) As DepthBiasState
             Dim mb = material.MaterialBase
-            If mb Is Nothing OrElse MeshData.Shape.Wireframe Then Return PolygonOffsetState.Disabled
+            If mb Is Nothing OrElse MeshData.Shape.Wireframe Then Return DepthBiasState.None
             If Me.ParentModel.FrameIsSse Then
-                If Not mb.RendersAsDecal() Then Return PolygonOffsetState.Disabled
-                Return New PolygonOffsetState(True, SseDecalSlopeScaledDepthBias, SseDecalDepthBias)
+                If Not mb.RendersAsDecal() Then Return DepthBiasState.None
+                Return New DepthBiasState(SseDecalDepthBias, SseDecalSlopeScaledDepthBias, SseDecalDepthBiasClamp)
             End If
             Dim b = Fo4RenderPassLaw.BiasOf(material.Fo4Pass().BiasIndex)
-            If b.DepthBias = 0.0F AndAlso b.Slope = 0.0F Then Return PolygonOffsetState.Disabled
-            Return New PolygonOffsetState(True, b.Slope, b.DepthBias)
+            Return New DepthBiasState(b.DepthBias, b.Slope, b.Clamp)
         End Function
 
 
@@ -7001,9 +7165,10 @@ Public Class PreviewModel
                 If fx.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
                     target.SurfaceDrawStencil()
                     GL.Disable(EnableCap.Blend)
-                    GL.Enable(IndexedEnableCap.Blend, 6)
-                    GL.BlendFunc(6, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
-                    GL.ColorMask(6, False, False, False, True)
+                    Dim cb = Fo4DeferredTargets.SurfaceCoverageBuffer
+                    GL.Enable(IndexedEnableCap.Blend, cb)
+                    GL.BlendFunc(cb, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
+                    GL.ColorMask(cb, False, False, False, True)
                     Dim tq = fx.Value.Technique
                     Dim p = pm.ParentControl.SharedFo4Deferred.EffectSurfaceProgram(New Fo4EffectTech(tq), EngineCpuRoute())
                     If p Is Nothing Then Exit Sub
@@ -7014,8 +7179,6 @@ Public Class PreviewModel
                     p.SetMatrix4("appInvViewProj", fr.AppInvViewProj)
                     p.SetVector4Array("cb12_view", fr.View)
                     p.SetInt("uBaseOpacity", opacity)
-                    pm.EnsureFrameShadowUniforms(p)
-                    p.Use()
                     target.WithAlphaBound(2, Sub()
                                                  GL.BindVertexArray(EffectVaoFor(EngineCpuRoute(), tq))
                                                  GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
@@ -7024,11 +7187,12 @@ Public Class PreviewModel
                 End If
                 If gbuf.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
                     target.SurfaceDrawStencil()
-                    ' The six G-buffer RTs unblended (the premultiplied surface); the coverage target (buffer 6) accumulates a.
+                    ' The five G-buffer RTs unblended (the premultiplied surface); the coverage target (the buffer after them) accumulates a.
                     GL.Disable(EnableCap.Blend)
-                    GL.Enable(IndexedEnableCap.Blend, 6)
-                    GL.BlendFunc(6, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
-                    GL.ColorMask(6, False, False, False, True)
+                    Dim cb = Fo4DeferredTargets.SurfaceCoverageBuffer
+                    GL.Enable(IndexedEnableCap.Blend, cb)
+                    GL.BlendFunc(cb, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
+                    GL.ColorMask(cb, False, False, False, True)
                     Dim p = pm.ParentControl.SharedFo4Deferred.DecalBaseSurfaceProgram(New Fo4Technique(gbuf.Value.Technique), EngineCpuRoute())
                     If p Is Nothing Then Exit Sub
                     Dim mb = material.MaterialBase
@@ -7038,8 +7202,6 @@ Public Class PreviewModel
                     p.SetBool("bModelSpace", mb.ModelSpaceNormals)
                     p.SetBool("bDoubleSided", mb.TwoSided)
                     p.SetInt("uBaseOpacity", opacity)
-                    pm.EnsureFrameShadowUniforms(p)
-                    p.Use()
                     target.WithAlphaBound(2, Sub()
                                                  GL.BindVertexArray(EngineVaoFor(EngineCpuRoute(), gbuf.Value.Technique))
                                                  GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
@@ -7272,9 +7434,9 @@ Public Class PreviewModel
 
         End Sub
 
-        ''' <summary>The refraction-normals draw of this shape (RefractionLaw / RefractionSource), into the target the control
-        ''' bound: its game's VS (skinning and position as the colour pass), the normals PS, depth LESS_EQUAL against the
-        ''' frame (written only for FO4's Refraction_Writes_Depth), no blend. <paramref name="lodScale"/> = s of the LOD fade,
+        ''' <summary>The refraction-normals draw of this shape (RefractionLaw), into the target the control bound: Fallout 4 with its
+        ''' b07 technique (RenderRefractionNormalsFo4), Skyrim SE with <paramref name="program"/> (RefractionSource: its VS - skinning and
+        ''' position as the colour pass -, the normals PS), depth LESS_EQUAL against the frame, no blend. <paramref name="lodScale"/> = s of the LOD fade,
         ''' <paramref name="fadeCentre"/> = the world-bound centre its distance is measured from (PreviewModel.DrawRefractionNormals).
         ''' Returns False when the shape is not drawn (no refraction, missing technique, or faded out).</summary>
         Friend Function RenderRefractionNormals(program As Shader_Base_Class, projection As Matrix4, camera As OrbitCamera,
@@ -7292,6 +7454,8 @@ Public Class PreviewModel
                 fade = RefractionLaw.LodFade(c.Length, lodScale)
                 If fade < 0.0F Then Return False
             End If
+            ' Ola 4: Fallout 4's refraction normals are its b07 technique's (RenderRefractionNormalsFo4); the program below is Skyrim SE's.
+            If Not isSse Then Return RenderRefractionNormalsFo4(r, fade)
             Dim model As Matrix4 = MeshData.Transform
             Dim modelView As Matrix4 = view * model
             Dim normalMatrix As New OpenTK.Mathematics.Matrix3(modelView)
@@ -8650,18 +8814,16 @@ Public Class PreviewModel
             If gbuf.HasValue Then
                 ApplyFo4GBufferDraw(shader, material, gbuf.Value)
             ElseIf Me.ParentModel.FrameGBufferStage Then
-                For rt = 1 To 5 : GL.ColorMask(rt, False, False, False, False) : Next
-                If GateFo4EffectDecalMaskOpen Then GL.ColorMask(1, True, True, True, True) : GL.ColorMask(2, True, True, True, True) : GL.ColorMask(3, True, True, True, True) : GL.ColorMask(4, True, True, True, True) : GL.ColorMask(5, True, True, True, True)
+                For rt = 1 To 4 : GL.ColorMask(rt, False, False, False, False) : Next
+                If GateFo4EffectDecalMaskOpen Then GL.ColorMask(1, True, True, True, True) : GL.ColorMask(2, True, True, True, True) : GL.ColorMask(3, True, True, True, True) : GL.ColorMask(4, True, True, True, True)
             End If
             If fx.HasValue Then ApplyFo4EffectDraw(shader, material, fx.Value)
 
-            Dim polygonOffset = ResolvePolygonOffset(material)
-            If polygonOffset.Enabled Then
-                GL.Enable(EnableCap.PolygonOffsetFill)
-                GL.PolygonOffset(polygonOffset.Factor, polygonOffset.Units)
-            Else
-                GL.Disable(EnableCap.PolygonOffsetFill)
-            End If
+            Dim bias = ResolveDepthBias(material)
+            ' v5: a depth format whose unit cannot be measured leaves THIS draw without its bias, said in the frame's notice; the frame
+            ' goes on (Gl43.DepthBias).
+            Dim biasMissing = Gl43.DepthBias(bias.DepthBias, bias.Slope, bias.Clamp)
+            If biasMissing IsNot Nothing Then Me.ParentModel.ReportUndrawn(NoticeName(Nothing), biasMissing, FrameNoticeKind.DrawnDifferently)
 
             ' === Culling ===
             ' Se resuelve en la etapa de draw según el face mode efectivo del shape.
@@ -8691,12 +8853,10 @@ Public Class PreviewModel
         ''' <summary>A lighting shape's G-buffer draw (propuesta v3 E2/E4; Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md 2.3):
         ''' <list type="bullet">
         ''' <item>Write mode: technique bit 15 writes RGB (SetupTechnique 0x142203646..0x14220369D), except bit 15 with a blending
-        ''' NiAlphaProperty and bit 17 HAIR, RGBA (SetupGeometry 0x14220738B..0x142207428); one mode for RT 0x1A..0x1F. The app's shadow
-        ''' RT (attachment 5) is written whole and never blends (propuesta B).</item>
+        ''' NiAlphaProperty and bit 17 HAIR, RGBA (SetupGeometry 0x14220738B..0x142207428); one mode for RT 0x1A..0x1F.</item>
         ''' <item>Blend: SetupAlphaBlend 0x1422301E0 (Fo4SetupAlphaBlendMode), not called when technique AND 0x1000020 = 0x1000000
         ''' (0x142207116..0x142207120: the list's state, no blend); property bit 49 = mode 6 (0x14220784E..0x14220789C).</item>
         ''' <item>The record's constants by name (Fo4GBufferConstants) and the envmap slice registered inside this draw (rev-07).</item>
-        ''' <item>The frame's shadow uniforms on this program (PreviewModel.EnsureFrameShadowUniforms).</item>
         ''' </list></summary>
         Private Sub ApplyFo4GBufferDraw(shader As Shader_Base_Class, material As MaterialData, d As Fo4GBufferDraw)
             Dim mb = material.MaterialBase
@@ -8705,7 +8865,6 @@ Public Class PreviewModel
             Dim bit = Function(v As ULong, n As Integer) ((v >> n) And 1UL) <> 0UL
             Dim rgbOnly = (t And (1UI << 15)) <> 0UI AndAlso Not (ea.Present AndAlso ea.Blend AndAlso (t And (1UI << 17)) <> 0UI)
             For rt = 0 To 4 : GL.ColorMask(rt, True, True, True, Not rgbOnly) : Next
-            GL.ColorMask(5, True, True, True, True)
             Dim mode = Fo4GBufferBlendMode(material, d)
             If mode = 0 Then
                 GL.Disable(EnableCap.Blend)
@@ -8718,8 +8877,6 @@ Public Class PreviewModel
                 Next
                 ' Mode 6 (0x1418552AA): RT0 DEST_COLOR / ZERO, alpha ONE / ZERO; RT1..7 SRC_ALPHA / INV_SRC_ALPHA.
                 If mode = 6 Then GL.BlendFuncSeparate(0, BlendingFactorSrc.DstColor, BlendingFactorDest.Zero, BlendingFactorSrc.One, BlendingFactorDest.Zero)
-                GL.Disable(IndexedEnableCap.Blend, 5)
-                If GateFo4BlendRt5 Then GL.Enable(IndexedEnableCap.Blend, 5)
             End If
             shader.SetInt("uCoverageMode", 0)
 
@@ -8751,7 +8908,6 @@ Public Class PreviewModel
             If (t And Fo4GBufferTechnique.TechFace) <> 0UI Then
                 shader.BindTexture("t8", CInt(material.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.FaceSlot5, material.WrinklesTexture_ID)), TextureUnit.Texture8)
             End If
-            Me.ParentModel.EnsureFrameShadowUniforms(shader)
             shader.Use()
         End Sub
 
@@ -8857,11 +9013,7 @@ Public Class PreviewModel
         ''' <summary>Ola 3: the VAO of an effect draw of technique <paramref name="technique"/> - the GPU route's engine VAO, or on the CPU
         ''' route the one of its VS's CPU layout (Fo4EffectSource.EffectiveCpuLayout; a rigid VS has one route).</summary>
         Friend Function EffectVaoFor(cpuRoute As Boolean, technique As UInteger) As Integer
-            Select Case Fo4EffectSource.EffectiveCpuLayout(New Fo4EffectTech(technique).Key().Vs, cpuRoute)
-                Case Fo4CpuRouteLayout.Tbn : Return engineVaoCpuTbn
-                Case Fo4CpuRouteLayout.Rows : Return engineVaoCpuRows
-                Case Else : Return engineVaoGbuf
-            End Select
+            Return VaoOfLayout(Fo4EffectSource.EffectiveCpuLayout(New Fo4EffectTech(technique).Key().Vs, cpuRoute))
         End Function
 
         ''' <summary>SetupAlphaBlend 0x1422301E0 (Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md 3.2): without a blending
@@ -10132,7 +10284,7 @@ Public Class PreviewModel
         ' que el ARNES lee, y en un frame que no dibujo ni un mapa reportaba "2 casters". Dos checks
         ' (`strength-cero` y `sin-casters`) se apoyan justo en ese numero: quedaban midiendo contra un valor
         ' que describe una intencion, no lo que se dibujo.
-        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=cfg.Depth16) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
+        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=MapaEn16Bits(cfg)) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
 
         ' NI UN glGet NI UN ARRAY POR FRAME ACA. El doc de ShadowMapTarget.BindForWrite dice que los
         ' glGet de framebuffer son los que fuerzan a varios drivers a vaciar la lista de comandos diferida
@@ -10147,7 +10299,7 @@ Public Class PreviewModel
             ' El mapa del PERSONAJE usa la capa entera: viewport = lado reservado, escala de UV 1.0. La
             ' reserva-mas-grande-que-el-viewport es cosa del mapa ANCHO, cuyo tamano depende de la camara.
             _shadowUvScale(capa) = 1.0F
-            RenderDepthInto(ParentControl.ShadowTarget, capa, cfg.MapSize, _shadowFits(capa), depthShader, casters)
+            RenderDepthInto(ParentControl.ShadowTarget, capa, cfg.MapSize, _shadowFits(capa), depthShader, casters, filasD3D:=True)
         Next
         _shadowSettings = cfg
         _shadowActive = True
@@ -10212,7 +10364,7 @@ Public Class PreviewModel
                 ' de la config, asi que Ensure devuelve True sin recrear nada mientras el usuario no toque
                 ' la calidad ni las casillas.
                 ' Misma precision que el mapa del personaje: es UNA perilla para toda la feature, no dos.
-                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=cfg.Depth16) Then
+                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=MapaEn16Bits(cfg)) Then
                     ' El target no se pudo reservar: este frame no hay receptor, y los encuadres del frame
                     ' anterior no valen. Misma razon que la rama de arriba.
                     OlvidarEncuadresDeSuelo()
@@ -10240,7 +10392,7 @@ Public Class PreviewModel
                         _groundFits(capa) = gfit
                         _groundUvScale(capa) = ShadowMapMath.UvScaleDeCapa(gLog, cfg.MapSize)
                         _groundValida(capa) = True
-                        RenderDepthInto(ParentControl.GroundShadowTarget, capa, gLog, gfit, depthShader, casters)
+                        RenderDepthInto(ParentControl.GroundShadowTarget, capa, gLog, gfit, depthShader, casters, filasD3D:=False)
                         algunaDibujada = True
                     Next
                     ' NO SE LIMPIAN LAS CAPAS QUE NO CALIFICAN, aunque TexImage3D con IntPtr.Zero deje el
@@ -10280,10 +10432,14 @@ Public Class PreviewModel
     ''' es exactamente lo que devuelve el borde blanco. De eso depende que la reserva fija sea correcta.</param>
     Private Sub RenderDepthInto(target As ShadowMapTarget, capa As Integer, viewport As Integer,
                                 fit As ShadowMapMath.LightFit,
-                                depthShader As Shader_Base_Class, casters As List(Of RenderableMesh))
+                                depthShader As Shader_Base_Class, casters As List(Of RenderableMesh), filasD3D As Boolean)
         target.BindForWrite(capa, viewport)
 
         GL.Clear(ClearBufferMask.DepthBufferBit)
+        If FrameUsesFo4Deferred Then
+            RenderDepthIntoFo4(fit, casters, filasD3D)
+            Exit Sub
+        End If
         GL.Enable(EnableCap.DepthTest)
         GL.DepthFunc(DepthFunction.Lequal)
         GL.DepthMask(True)
@@ -10309,6 +10465,50 @@ Public Class PreviewModel
         Next
 
         GL.BindVertexArray(0)
+    End Sub
+
+    ''' <summary>The map's precision: Fallout 4 draws its maps in D16_UNORM, the engine's (re.md 7, H-1 closed: the DS descriptors of
+    ''' the shadow maps, 0x142234B8E..BEA, created by 0x141822330 as R16_TYPELESS / D16_UNORM; the unit of its DepthBias is 2^-16),
+    ''' every Fallout 4 frame (user decision 14-oct-2026, rev-E08: the 16-bit box is fixed and disabled in Fallout 4, LightRigForm);
+    ''' Skyrim SE takes the setting (PreviewShadowSettings.Depth16).</summary>
+    Private Function MapaEn16Bits(cfg As PreviewShadowSettings) As Boolean
+        Return Not FrameIsSse OrElse cfg.Depth16
+    End Function
+
+    ''' <summary>FALLOUT 4'S EMITTER (ola 4; D:\WinTmp\rc\ola4\re.md 2.2) into the layer the caller bound and cleared (the pass clears
+    ''' its target, 0x14224F578..596): the casters with their b07 technique (RenderableMesh.RenderShadowMapFo4), the frame rows of the
+    ''' light's camera (0x14182BC80 from 0x14224F59B..5B2: Fo4GBufferConstants.EngineFrameRows of the fit's view and orthographic
+    ''' projection, eye at the origin the view is anchored at, ShadowMapMath.Fit), depth LESS_EQUAL with writes (mode 3), no colour
+    ''' (the target has none), no blend, the bias of SetupTechnique's index 8 (Fo4UtilityTechnique.ShadowMapBias, D3D11.3 15.10
+    ''' on the 16-bit map through Gl43.DepthBias), the cull of each draw (its own). The map of
+    ''' a light the receiver reads (<paramref name="filasD3D"/>) is drawn in D3D rows (UPPER_LEFT: row 0 = clip y +1, the convention of
+    ''' its ShadowMapProj, Fo4DeferredLightLaw.ShadowMapProjRows); the ground catcher's wide map, an app receiver, in GL rows (the
+    ''' convention of its own lookup, GroundShadowShaderSource).</summary>
+    Private Sub RenderDepthIntoFo4(fit As ShadowMapMath.LightFit, casters As List(Of RenderableMesh), filasD3D As Boolean)
+        GL.Enable(EnableCap.DepthTest)
+        GL.DepthFunc(DepthFunction.Lequal)
+        GL.DepthMask(True)
+        GL.Disable(EnableCap.Blend)
+        GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+        Dim bias = Fo4UtilityTechnique.ShadowMapBias()
+        Dim biasMissing = Gl43.DepthBias(bias.DepthBias, bias.Slope, bias.Clamp)
+        If biasMissing IsNot Nothing Then
+            For Each mesh In casters : ReportUndrawn(mesh.NoticeName(Nothing), "Shadow map " & biasMissing, FrameNoticeKind.DrawnDifferently) : Next
+        End If
+        Dim origen = Gl43.Origin                                     ' the caller's origin, restored after the map
+        If filasD3D Then Gl43.ClipControl(ClipOrigin.UpperLeft)
+        Try
+            Dim rows = Fo4GBufferConstants.EngineFrameRows(fit.View, fit.Proj, Vector3.Zero)
+            RenderableMesh.ExtractFrustumPlanes(fit.ViewProj, _shadowPlanes)
+            For Each mesh In casters
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _shadowPlanes) Then Continue For
+                mesh.RenderShadowMapFo4(rows)
+            Next
+        Finally
+            If filasD3D Then Gl43.ClipControl(origen)
+            GL.Disable(EnableCap.PolygonOffsetFill)
+            GL.BindVertexArray(0)
+        End Try
     End Sub
 
     ''' <summary>Borra los encuadres del mapa ANCHO y apaga su cuenta. Se llama desde TODA salida en la que
@@ -10656,7 +10856,6 @@ Public Class PreviewModel
                              ParentControl.ShadowTarget, _shadowActive,
                              TextureUnit.Texture14, PreviewShadowSettings.NormalBiasTexels,
                              PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
-        _frameShadowPrograms.Clear()
 
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would
@@ -10938,27 +11137,14 @@ Public Class PreviewModel
         Public Layer As OverlayMaterialLayer
     End Structure
 
-    ''' <summary>The G-buffer programs that already have this frame's shadow uniforms (uniforms are per program).</summary>
-    Private ReadOnly _frameShadowPrograms As New HashSet(Of Shader_Base_Class)
-
-    ''' <summary>The frame's shadow uniforms on a G-buffer record's program, the first time the frame draws with it: the SAME values
-    ''' RenderAll uploads to the game shader (propuesta B: the G-buffer writes the shadow factor of every rig light).</summary>
-    Friend Sub EnsureFrameShadowUniforms(program As Shader_Base_Class)
-        If Not _frameShadowPrograms.Add(program) Then Return
-        UploadShadowUniforms(program, _shadowFits, _shadowCount, _shadowSlots, _shadowUvScale,
-                             ParentControl.ShadowTarget, _shadowActive,
-                             TextureUnit.Texture14, PreviewShadowSettings.NormalBiasTexels,
-                             PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
-    End Sub
-
     ''' <summary>What the FO4 light and composite passes receive this frame (propuesta D; Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md
-    ''' and opaque-fo4/transcripcion/notas.md 4.2, D9). Engine view = GL view with z negated. cb12[20..23] = inverse(A * P_e),
-    ''' cb12[24..27] = inverse(B * P_e) (D9: A maps z to 1.01 z - 0.01 w, B to 100 z; P_e = the frame projection's rows (already the
-    ''' engine's [0, 1] matrix, EngineCameraLaw.Perspective) times diag(1, 1, -1, 1)); cb12[12..14] = the rows of the engine view -&gt;
-    ''' world rotation. The sun = the rig's
-    ''' key (no IMGS Sunlight Scale, user decision rev-23 b); the fills = the other three rig lights (rev-21 b: shadow channel k + 1 of
-    ''' the G-buffer's shadow RT); the ambient from the RAW rig colours: sky -&gt; world Z+ facing, ground -&gt; Z-, the sides their
-    ''' mean (rev-22), the 3107 PS applies pow 2.2 after the dot.</summary>
+    ''' and opaque-fo4/transcripcion/notas.md 4.2, D9; ola 4). Engine view = GL view with z negated. The frame's cb12 rows
+    ''' (FrameEngineRows: 12..15, 20..23 = inverse(A * P_e), 35, 41..46) and 24..27 = inverse(B * P_e) (D9: A maps z to 1.01 z - 0.01 w,
+    ''' B to 100 z; P_e = the frame projection's rows times diag(1, 1, -1, 1)). The lights: the four rig lights in
+    ''' ShadowMapMath.LuzDelRig order, each a directional light (decision of the PLAN, ola 4) with its engine-view direction, its linear
+    ''' colour (no IMGS Sunlight Scale, user decision rev-23 b) and, when it casts this frame, its layer and framing of the frame's map
+    ''' (RenderShadowPass); the composite's sun = the key. The ambient from the RAW rig colours: sky -&gt; world Z+ facing, ground -&gt;
+    ''' Z-, the sides their mean (rev-22), the light PS applies pow 2.2 after the dot.</summary>
     Private Function BuildFo4DeferredFrame(projection As Matrix4, view As Matrix4) As Fo4DeferredFrame
         Dim nf = ParentControl.FrameNearFar
         ' cb12 20..23 and the engine view -> world rows 12..14: the frame's (Fo4GBufferConstants.EngineFrameRows, one owner with the
@@ -10977,17 +11163,24 @@ Public Class PreviewModel
             Dim dz = 0.5 * (sky(c) - ground(c))
             amb(c) = New Vector4(CSng(dz * r2.X), CSng(dz * r2.Y), CSng(dz * r2.Z), 0.5F * (sky(c) + ground(c)))
         Next
+        Dim lights(PreviewShadowSettings.MaxShadowLights - 1) As Fo4DeferredLight
+        For i = 0 To lights.Length - 1
+            Dim layer = If(_shadowActive, _shadowSlots(i), -1)
+            lights(i) = New Fo4DeferredLight With {.Dir = toEngineView(_frameLights.DirDeLuz(i)), .Color = _frameLights.DifusoDeLuz(i),
+                                                   .ShadowLayer = layer, .ShadowFit = If(layer >= 0, _shadowFits(layer), Nothing)}
+        Next
         Return New Fo4DeferredFrame With {
             .W = ParentControl.Width, .H = ParentControl.Height, .Near = nf.X, .Far = nf.Y,
-            .InvProj = fr.InvProj,
+            .Rows = fr,
             .InvProj1P = Fo4GBufferConstants.InverseProjectionRows(projection, 100.0, 0.0),
-            .ViewToWorld = {fr.InvView(0), fr.InvView(1), fr.InvView(2)},
-            .SunDir = toEngineView(_frameLights.KeyDir), .SunColor = _frameLights.KeyDiffuse,
-            .SunCastsShadow = _shadowActive AndAlso _shadowSlots(0) >= 0,
-            .FillDir = {toEngineView(_frameLights.Fill0Dir), toEngineView(_frameLights.Fill1Dir), toEngineView(_frameLights.BackDir)},
-            .FillColor = {_frameLights.Fill0Diffuse, _frameLights.Fill1Diffuse, _frameLights.BackDiffuse},
-            .FillShadowChannel = {1, 2, 3},
-            .Ambient = amb}
+            .View = view, .Eye = fr.Eye.Xyz,
+            .Lights = lights,
+            .Ambient = amb,
+            .ShadowMap = If(_shadowActive, ParentControl.ShadowTarget, Nothing),
+            .SunDir = lights(0).Dir, .SunColor = lights(0).Color,
+            .PostOn = FrameIsHdr,
+            .ShadowLift = Fo4DeferredLightLaw.RigShadowLift(rig.ShadowDarkness),
+            .ShadowRadiusGrowth = Fo4DeferredLightLaw.RigShadowRadiusScale(rig.ShadowSoftnessTexels) - 1.0F}
     End Function
 
     ''' <summary>The z-prepass and the opaque lists of a frame, in the engine's order (RenderAll). Fallout 4's deferred frame draws

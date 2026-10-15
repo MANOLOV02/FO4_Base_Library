@@ -213,6 +213,12 @@
   <ItemGroup>
     <EmbeddedResource Include="Fo4GBufferBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4GBufferBlocks.glsl.txt" />
     <EmbeddedResource Include="Fo4EffectBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4EffectBlocks.glsl.txt" />
+    <!-- Ola 4: the b06 / b07 / b10 / b11 / image-space programs' texts (Tools/ShaderTranscription/common/gen_block_vbs.py). -->
+    <EmbeddedResource Include="Fo4LightingBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4LightingBlocks.glsl.txt" />
+    <EmbeddedResource Include="Fo4UtilityBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4UtilityBlocks.glsl.txt" />
+    <EmbeddedResource Include="Fo4DFLightBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4DFLightBlocks.glsl.txt" />
+    <EmbeddedResource Include="Fo4DFCompositeBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4DFCompositeBlocks.glsl.txt" />
+    <EmbeddedResource Include="Fo4ImageSpaceBlocks.glsl.txt" LogicalName="FO4_Base_Library.Fo4ImageSpaceBlocks.glsl.txt" />
   </ItemGroup>
 
   <ItemGroup>
