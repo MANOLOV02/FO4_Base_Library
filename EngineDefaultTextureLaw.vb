@@ -4,8 +4,10 @@ Option Explicit On
 ''' <summary>THE engine default-texture law of both games: what the game samples in a material texture slot whose path is empty or
 ''' names a file absent from the game's data (user decision 7-oct-2026: the app draws the same, and the frame's notice says so). Pure,
 ''' no GL. Every branch cites Fallout4.exe 1.11.240 / SkyrimSE.exe 1.6.x (installed); ParityGate `engine-default-textures` checks it
-''' by hand with the directed mutants of <see cref="GateMutant"/>. Fallout 4 with an absent file: NotTraced (C4 L7); Skyrim SE's:
-''' measured (0x1414EC1A8..1E7, the engine's own "TEXTURE ERROR : Unable to load file %s").</summary>
+''' by hand with the directed mutants of <see cref="GateMutant"/>. Fallout 4 with an absent file: traced (ola 4b, 15-oct-2026,
+''' D:\WinTmp\rc\texfallback\re.md): the texture manager leaves the result NULL (0x1416A6FE7..7079 -&gt; 0x1417A3DCC..DED) and the
+''' loader by path 0x142182420 puts the member's default ladder there (0x1421825AC..5D9), the same as for an empty path, with no
+''' message; Skyrim SE's: measured (0x1414EC1A8..1E7, the engine's own "TEXTURE ERROR : Unable to load file %s").</summary>
 Friend Module EngineDefaultTextureLaw
 
     ''' <summary>A slot after the load. One predicate of "absent" (rev-03): the file is not in the game's data
@@ -21,8 +23,8 @@ Friend Module EngineDefaultTextureLaw
     End Enum
 
     ''' <summary>What the game samples. Own: the slot's texture. NoTexture: the draw does not sample the slot. PreviousDraw: the draw
-    ''' does not bind the slot but its pixel shader samples it. NotTraced: what the game samples is not traced (Fallout 4, a file absent
-    ''' from the data, C4 L7): the app keeps its own fallback.</summary>
+    ''' does not bind the slot but its pixel shader samples it. (NotTraced, Fallout 4's absent file before ola 4b, is gone: traced.)
+    ''' </summary>
     Friend Enum EngineTexture As Byte
         Own = 0
         Fo4DiffuseMap
@@ -35,7 +37,6 @@ Friend Module EngineDefaultTextureLaw
         SseDefCubeMap
         NoTexture
         PreviousDraw
-        NotTraced
     End Enum
 
     ''' <summary>The material slots the app samples (the engine member of each, per game and family, below).</summary>
@@ -87,7 +88,9 @@ Friend Module EngineDefaultTextureLaw
         Fo4DiffuseWhite                 ' FO4 lighting diffuse -> White (the app before C4)
         Fo4SmoothSpecNoWhiteSwap        ' FO4 smooth-spec keeps NormalMap (0x1421D3CE7..D09 dropped)
         Fo4GlowWithoutGlowMapBit        ' FO4 t3 counted as sampled without technique bit 14
-        Fo4MissingAsLadder              ' FO4 absent file given the NULL ladder (the untraced premise of L7 taken as law)
+        Fo4MissingOwnFallback           ' FO4 absent file: the app's own fallback instead of the ladder (the law before ola 4b)
+        Fo4EffectMaskMissingWhite       ' FO4 effect env mask absent: White (the ctor's default) instead of the raw ladder's NormalMap
+        Fo4FaceMissingWhite             ' FO4 face slot 5 absent: White instead of the raw ladder's NormalMap (the face apart from normal / glow)
         Fo4EffectGreyscaleEmptyBound    ' FO4 effect palette sampled with an empty path (bits 13 / 14 without the path test)
         EffectBaseEmptyAlwaysPrevious   ' an effect base without TEXTURE read as sampled without recolor
         SseMissingAsEmpty               ' SSE: an absent file takes the class fill (loader 0x1414EC0A0 dropped)
@@ -108,7 +111,11 @@ Friend Module EngineDefaultTextureLaw
     End Function
 
     ''' <summary>Fallout 4 lighting (BSLightingShaderMaterial and its classes). Empty: GetTexture 0x14216A1E0 (0x14216A257..288), the
-    ''' member's ladder (cube -> EyeCubeMap, sRGB -> DiffuseMap, raw -> NormalMap). Missing: NotTraced (C4 L7).</summary>
+    ''' member's ladder (cube -&gt; EyeCubeMap, sRGB -&gt; DiffuseMap, raw -&gt; NormalMap). Missing (ola 4b, traced): GetTexture calls
+    ''' 0x142182420 (0x14216A242) with the same cube / sRGB flags; the manager's result for an absent file is NULL (the demand
+    ''' 0x1416A6E50 returns 1 with no stream, 0x1416A6FE7..7079; 0x1417A3DCC..DED copies the entry only on 0) and 0x142182420 takes the
+    ''' ladder (0x1421825AC..5D9): the same texture as Empty, smooth-spec's NormalMap -&gt; White swap included (0x1421D3CE7..D09 compares
+    ''' the pointer). What is sampled stays the record's bits.</summary>
     Friend Function Fo4Lighting(slot As MaterialSlot, st As SlotState, c As Fo4LightingContext) As EngineTexture
         If st = SlotState.Loaded OrElse st = SlotState.NotLoadedByPreview Then Return EngineTexture.Own
         Dim sampled As Boolean
@@ -121,7 +128,7 @@ Friend Module EngineDefaultTextureLaw
             Case Else : sampled = False      ' EnvMask: +0xC8 nulled by 0x1421CF8F5..91A, no G-buffer record reads it; Lightmask: no FO4 member
         End Select
         If Not sampled Then Return EngineTexture.NoTexture
-        If st = SlotState.Missing AndAlso GateMutant <> DefaultTextureMutant.Fo4MissingAsLadder Then Return EngineTexture.NotTraced
+        If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
         Select Case slot
             Case MaterialSlot.Diffuse            ' +0x48 <- slot 0, sRGB (0x1421D3C72..C84)
                 Return If(GateMutant = DefaultTextureMutant.Fo4DiffuseWhite, EngineTexture.Fo4White, EngineTexture.Fo4DiffuseMap)
@@ -129,28 +136,38 @@ Friend Module EngineDefaultTextureLaw
                 Return If(GateMutant = DefaultTextureMutant.Fo4SmoothSpecNoWhiteSwap, EngineTexture.Fo4NormalMap, EngineTexture.Fo4White)
             Case MaterialSlot.Greyscale : Return EngineTexture.Fo4DiffuseMap     ' +0x68 <- slot 3, sRGB (0x1421D3CD2..CE1)
             Case MaterialSlot.Cube : Return EngineTexture.Fo4EyeCubeMap          ' slot 4 (0x14216A25A..25F)
-            Case Else : Return EngineTexture.Fo4NormalMap                        ' normal 0x1421D3C8D..C9B, glow 0x1421D0468..475, face 0x1421D168A..697
+            Case MaterialSlot.FaceSlot5                                           ' face 0x1421D168A..697, raw ladder
+                Return If(st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4FaceMissingWhite, EngineTexture.Fo4White, EngineTexture.Fo4NormalMap)
+            Case Else : Return EngineTexture.Fo4NormalMap                        ' normal 0x1421D3C8D..C9B, glow 0x1421D0468..475
         End Select
     End Function
 
-    ''' <summary>Fallout 4 effect (BSEffectShaderMaterial): an empty path keeps the ctor default (0x1422242F0, 0x142224980); Missing:
-    ''' NotTraced (C4 L7).</summary>
+    ''' <summary>Fallout 4 effect (BSEffectShaderMaterial): an empty path keeps the ctor default (0x1422242F0, 0x142224980). Missing
+    ''' (ola 4b, traced): the loader 0x142224980 calls 0x142182420 per member (0x1422249E3 / A79 / B13 / BBD / C5F; base and palette
+    ''' sRGB 0x1422249D6 / A6C, cube r9b 1 0x142224B03, mask raw 0x142224BB0 / call 0x142224BBD, normal raw 0x142224C52 / call
+    ''' 0x142224C5F) and gets the ladder
+    ''' (0x1421825AC..5D9): base and palette DiffuseMap, cube EyeCubeMap, mask and normal NormalMap (the mask is NOT the ctor's White).
+    ''' A named path sets TEXTURE (bit 2) and the palette bits 13 / 14 (0x142178150 tests the path, not the file): base and palette are
+    ''' bound (t0 0x142225800..803, t4).</summary>
     Friend Function Fo4Effect(slot As MaterialSlot, st As SlotState, c As EffectContext) As EngineTexture
         If st = SlotState.Loaded OrElse st = SlotState.NotLoadedByPreview Then Return EngineTexture.Own
         Select Case slot
             Case MaterialSlot.Diffuse
-                If st = SlotState.Missing Then Return If(GateMutant = DefaultTextureMutant.Fo4MissingAsLadder, EngineTexture.Fo4DiffuseMap, EngineTexture.NotTraced)
+                If st = SlotState.Missing Then Return If(GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback, EngineTexture.Own, EngineTexture.Fo4DiffuseMap)
                 ' TEXTURE (bit 2) off (0x142178150): no t0 bind (0x142225800..803); a recolor PS samples it (rec1003 L60, rec1430 L53).
                 If c.Recolor OrElse GateMutant = DefaultTextureMutant.EffectBaseEmptyAlwaysPrevious Then Return EngineTexture.PreviousDraw
                 Return EngineTexture.NoTexture
             Case MaterialSlot.Greyscale
                 If st = SlotState.Empty AndAlso GateMutant <> DefaultTextureMutant.Fo4EffectGreyscaleEmptyBound Then Return EngineTexture.NoTexture  ' bits 13/14 need the path
-                Return If(GateMutant = DefaultTextureMutant.Fo4MissingAsLadder OrElse st = SlotState.Empty, EngineTexture.Fo4DiffuseMap, EngineTexture.NotTraced)
+                If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
+                Return EngineTexture.Fo4DiffuseMap                                    ' sRGB ladder (Missing); Empty only under the mutant above
             Case MaterialSlot.Cube, MaterialSlot.EnvMask, MaterialSlot.Normal
                 If Not c.Envmap Then Return EngineTexture.NoTexture                   ' t5 / t7 / t1 under bit 19 only
-                If st = SlotState.Missing AndAlso GateMutant <> DefaultTextureMutant.Fo4MissingAsLadder Then Return EngineTexture.NotTraced
-                If slot = MaterialSlot.Cube Then Return EngineTexture.Fo4EyeCubeMap   ' ctor 0x14222435B
-                If slot = MaterialSlot.EnvMask Then Return If(st = SlotState.Empty, EngineTexture.Fo4White, EngineTexture.Fo4NormalMap)  ' ctor 0x14222437A / raw ladder
+                If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
+                If slot = MaterialSlot.Cube Then Return EngineTexture.Fo4EyeCubeMap   ' ctor 0x14222435B / cube ladder
+                If slot = MaterialSlot.EnvMask Then                                   ' ctor 0x14222437A (Empty) / raw ladder (Missing)
+                    Return If(st = SlotState.Empty OrElse GateMutant = DefaultTextureMutant.Fo4EffectMaskMissingWhite, EngineTexture.Fo4White, EngineTexture.Fo4NormalMap)
+                End If
                 Return EngineTexture.Fo4NormalMap                                     ' ctor 0x142224399
             Case Else
                 Return EngineTexture.NoTexture
@@ -220,8 +237,8 @@ Friend Module EngineDefaultTextureLaw
     End Function
 
     ''' <summary>The bytes (R, G, B, A, R8G8B8A8_UNORM) of a 2D built-in texture: the creator's dword, little-endian (FO4 0x14182C5B0,
-    ''' SSE 0x14101D750); SSE DefCubeMap: zeros (0x14101DDA0). Nothing for EyeCubeMap (a file) and for Own / NoTexture / PreviousDraw /
-    ''' NotTraced.</summary>
+    ''' SSE 0x14101D750); SSE DefCubeMap: zeros (0x14101DDA0). Nothing for EyeCubeMap (a file) and for Own / NoTexture / PreviousDraw.
+    ''' </summary>
     Friend Function Rgba(t As EngineTexture) As Byte()
         Select Case t
             Case EngineTexture.Fo4DiffuseMap

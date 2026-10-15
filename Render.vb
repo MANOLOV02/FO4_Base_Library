@@ -544,7 +544,7 @@ Public Class PreviewControl
 
     ''' <summary>The app's GL texture for a built-in texture of the engine (EngineDefaultTextureLaw). The ones whose bytes the app
     ''' already had are reused (same RGBA: defaultNormalTex, defaultWhiteTex, defaultSseEngineGenericTex, defaultSseMsnSpecTex; every
-    ''' texel the same value, so every sample is, whatever the size). 0 for Own, NoTexture, PreviousDraw, NotTraced and the cubes (the
+    ''' texel the same value, so every sample is, whatever the size). 0 for Own, NoTexture, PreviousDraw and the cubes (the
     ''' envmap cube is MaterialData.EnvmapTexturePath's; SSE DefCubeMap = no reflection, bCubemap off).</summary>
     Friend Function EngineDefaultTextureId(t As EngineDefaultTextureLaw.EngineTexture) As Integer
         Select Case t
@@ -4743,8 +4743,8 @@ Public Class PreviewModel
             End Function
 
             ''' <summary>The texture the game samples in <paramref name="slot"/>: <paramref name="ownId"/> when it loaded, else the app's
-            ''' copy of the engine's default; <paramref name="ownId"/> (0) when the engine has no texture of its own there or it is not
-            ''' traced (NoTexture / PreviousDraw / NotTraced / a cube): the caller keeps its fallback (HEAD).</summary>
+            ''' copy of the engine's default; <paramref name="ownId"/> (0) when the engine has no texture of its own there (NoTexture /
+            ''' PreviousDraw / a cube): the caller keeps its fallback (HEAD).</summary>
             Friend Function EngineSlotTextureId(slot As EngineDefaultTextureLaw.MaterialSlot, ownId As UInteger) As UInteger
                 Dim d = EngineSlotDefault(slot, SlotState(slot, ownId))
                 If d = EngineDefaultTextureLaw.EngineTexture.Own Then Return ownId
@@ -4783,7 +4783,7 @@ Public Class PreviewModel
                     If SlotPath(slot) <> "" Then Continue For
                     Dim d = EngineSlotDefault(slot, EngineDefaultTextureLaw.SlotState.Empty)
                     Select Case d
-                        Case EngineDefaultTextureLaw.EngineTexture.Own, EngineDefaultTextureLaw.EngineTexture.NoTexture, EngineDefaultTextureLaw.EngineTexture.NotTraced
+                        Case EngineDefaultTextureLaw.EngineTexture.Own, EngineDefaultTextureLaw.EngineTexture.NoTexture
                         Case EngineDefaultTextureLaw.EngineTexture.PreviousDraw
                             out.Add((PreviewModel.FrameNoticeKind.UndefinedInGame, RecolorWithoutBase))
                         Case Else
@@ -8406,8 +8406,8 @@ Public Class PreviewModel
             shader.SetBool("bEnvMask", envmapMaskTextureId <> 0)
             shader.SetBool("bNormalMap", normalTextureId <> 0)
             ' Kept on the resolved id on purpose (C4): greyscaleTextureId is already the law's - SSE: a missing palette gives
-            ' DefNormalMap (id <> 0), so this equals MaterialData.EngineRecolors().Color; FO4: a missing palette is NotTraced -> id 0 ->
-            ' no recolor, as before (rev-01: the pixels of an untraced branch do not change).
+            ' DefNormalMap (id <> 0), so this equals MaterialData.EngineRecolors().Color; FO4 (ola 4b, traced): a missing palette gives
+            ' the sRGB ladder's DiffuseMap (0x1421825AC..5D9, id <> 0): the recolor runs with the palette (128, 0, 255), as the game draws.
             shader.SetBool("bGreyscaleColor", materialBase.GrayscaleToPaletteColor AndAlso greyscaleTextureId <> 0)
             shader.SetBool("bSpecular", materialBase.SpecularEnabled AndAlso hasSpecularSource)
             If isSSE Then shader.SetBool("bHasSpecMap", hasSpecMap)
@@ -10767,8 +10767,9 @@ Public Class PreviewModel
     ''' the frame draws every shape as the game does.</summary>
     Friend Function FrameNoticeLines(Optional errors As Boolean = True, Optional warnings As Boolean = True) As List(Of String)
         Dim shapes = Function(n As Integer) $"{n} shape{If(n = 1, "", "s")}"
-        ' Fallout 4: what the game samples for an absent file is not traced (C4 L7) - the preview keeps its own fallback and says so.
-        Dim missingLabel = If(FrameIsSse, "Missing texture", "Missing texture, the game's fallback not traced")
+        ' Both games: the preview draws what the game samples for an absent file (SSE 0x1414EC1A8..1E7; FO4 the loader's ladder,
+        ' 0x1421825AC..5D9, ola 4b) and the path is listed (rev-08).
+        Const missingLabel As String = "Missing texture"
         Dim sections As (Kind As FrameNoticeKind, Map As SortedDictionary(Of String, SortedSet(Of String)), Line As Func(Of String, Integer, String))() = {
             (FrameNoticeKind.PreviewGap, FramePreviewGaps, Function(r, n) $"Not drawn by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.EngineUndrawn, FrameEngineUndrawn, Function(r, n) $"{r} ({shapes(n)})"),
