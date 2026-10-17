@@ -2880,6 +2880,33 @@ Public Class PreviewControl
                                        End Sub
         menu.Items.Add(helperShapes)
 
+        ' ===== Avisos del cuadro =====
+        ' Los mismos dos ajustes que las casillas "Show errors" / "Show warnings" del dialogo del rig (grupo Notices):
+        ' solo cambian el DIBUJO del aviso (PreviewModel.FrameNoticeLines lee Config_App al dibujar), asi que alcanza con
+        ' repintar (UpdateRequired), sin rearmar la geometria.
+        Dim noticesMenu As New ToolStripMenuItem("Show messages")
+        Dim showErrors As New ToolStripMenuItem("Show errors") With {
+            .Checked = Config_App.Current.Setting_ShowErrors,
+            .CheckOnClick = True,
+            .ToolTipText = "Show the errors in the notice at the top-left of the preview: missing textures, textures the preview did not load, what the preview cannot draw, and what the game does not draw."
+        }
+        AddHandler showErrors.Click, Sub()
+                                         Config_App.Current.Setting_ShowErrors = showErrors.Checked
+                                         UpdateRequired = True
+                                     End Sub
+        Dim showWarnings As New ToolStripMenuItem("Show warnings") With {
+            .Checked = Config_App.Current.Setting_ShowWarnings,
+            .CheckOnClick = True,
+            .ToolTipText = "Show the warnings in the notice at the top-left of the preview: values driven by a controller at rest, empty texture slots the game fills with a default, and values the game leaves undefined."
+        }
+        AddHandler showWarnings.Click, Sub()
+                                           Config_App.Current.Setting_ShowWarnings = showWarnings.Checked
+                                           UpdateRequired = True
+                                       End Sub
+        noticesMenu.DropDownItems.Add(showErrors)
+        noticesMenu.DropDownItems.Add(showWarnings)
+        menu.Items.Add(noticesMenu)
+
         menu.Items.Add(New ToolStripSeparator())
         Dim timeLabel As New ToolStripMenuItem($"Last update: {LastUpdateMs:F1} ms") With {.Enabled = False}
         menu.Items.Add(timeLabel)

@@ -1571,22 +1571,6 @@ Namespace Canon
                    sub_.Node.BySignature("CNAM") IsNot Nothing
         End Function
 
-
-        ''' <summary>Agrega una sustitucion vacia al final y la devuelve, lista para escribirle.
-        ''' <para>Escribe sobre el mismo arbol del record: no hay una lista aparte que despues haya
-        ''' que volcar. Guardar el record emite lo que se ve.</para></summary>
-        <Extension>
-        Public Function AgregarSustitucion(mswp As IMswp) As IMswp_MaterialSubstitutions
-            If mswp Is Nothing OrElse mswp.Node Is Nothing Then Return Nothing
-            Dim vista = TryCast(mswp, CanonView)
-            If vista Is Nothing Then Return Nothing
-            Dim cont = mswp.Node.ByFieldPath("Material Substitutions")
-            If cont Is Nothing Then Return Nothing
-            Dim nuevo = WbEdit.AgregarElemento(cont, vista.Context)
-            If nuevo Is Nothing Then Return Nothing
-            Return New MswpFO4_MaterialSubstitutions(nuevo, vista.Context, vista.Resolver)
-        End Function
-
         '======================================================================================
         ' Copiar y comparar records
         '======================================================================================
@@ -2094,17 +2078,31 @@ Namespace Canon
         ''' <summary>Reemplaza TODAS las sustituciones del record por las de la lista.
         ''' <para>Existe para el editor: la interfaz muestra una lista que el usuario reordena, agrega
         ''' y borra, y al aceptar hay que dejar el record igual a esa lista. Se rehace entera en vez
-        ''' de ir sincronizando elemento por elemento, que es donde aparecen los desfases.</para></summary>
+        ''' de ir sincronizando elemento por elemento, que es donde aparecen los desfases.</para>
+        ''' <para>⛔ CADA ELEMENTO SE AGREGA POR EL AGREGADOR GENERADO (<c>IMswp.AgregarMaterialSubstitutions</c>),
+        ''' que es la sede del esquema: crea el contenedor si el record no lo trae —un MSWP NUEVO nace sin
+        ''' él— y lo cuelga en la posición que DECLARA la definición (<c>WbSchemaGen_FO4.Rec_MSWP</c>: EDID,
+        ''' FNAM, Material Substitutions), por <c>WbEdit.EnsureFieldPath</c>. Acá había una
+        ''' <c>AgregarSustitucion</c> escrita a mano que buscaba el contenedor con <c>ByFieldPath</c> y, sin
+        ''' él, devolvía Nothing; esta función además salía antes si no lo encontraba. Resultado: el MSWP
+        ''' creado en el editor se guardaba SIN sustituciones y el guardado decía que había salido bien
+        ''' (inventario G15). Lo testifica <c>OutfitDraftSaveGate</c> C56.</para>
+        ''' <para>Si el record no trae el contenedor no hay nada que vaciar, y una lista vacía no lo crea.</para>
+        ''' <para>⛔ Un elemento que el agregador no puede crear TIRA: saltearlo dejaba el record con menos
+        ''' sustituciones que la lista sin que nadie se enterara. Los dos llamadores del editor ya corren esto
+        ''' bajo <c>Try</c>.</para></summary>
         <Extension>
         Public Sub ReemplazarSustituciones(mswp As IMswp, lista As IEnumerable(Of SustitucionEditable))
             If mswp Is Nothing OrElse mswp.Node Is Nothing Then Return
-            Dim cont = mswp.Node.ByFieldPath("Material Substitutions")
-            If cont Is Nothing Then Return
-            cont.LimpiarHijos()
+            mswp.Node.ByFieldPath("Material Substitutions")?.LimpiarHijos()
             If lista Is Nothing Then Return
             For Each x In lista
-                Dim nuevo = mswp.AgregarSustitucion()
-                If nuevo Is Nothing Then Continue For
+                Dim nuevo = mswp.AgregarMaterialSubstitutions()
+                If nuevo Is Nothing Then
+                    Throw New InvalidOperationException(
+                        "ReemplazarSustituciones: el agregador generado no pudo crear la sustitución " &
+                        "(el record no tiene contexto o el esquema no declara 'Material Substitutions').")
+                End If
                 x.Aplicar(nuevo)
             Next
         End Sub
