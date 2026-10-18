@@ -31,8 +31,12 @@ Public Module ArchiveEntryFactory
     ''' canónica del juego. Wardrobe Manager pasa el mismo valor en los dos.</param>
     ''' <param name="game">Juego explícito en vez de <c>Config_App.Current.Game</c>: el packer corre en
     ''' hilos del pool durante un bake y el global puede cambiar bajo sus pies.</param>
+    ''' <param name="preset">Nivel zlib del payload BA2 (FO4). <c>Default</c> para WM y NPC Manager (sus archives
+    ''' no cambian un byte); el empaquetador de FabricGen pide <c>Max</c> (contenido fijo, se archiva una vez: el
+    ''' tamaño manda sobre el tiempo de compresión). BSA no lo usa (LZ4 de marco).</param>
     Public Function MakeTextureEntry(dataDir As String, sourcePath As String, entryPath As String,
-                                     game As Config_App.Game_Enum) As VirtualEntry
+                                     game As Config_App.Game_Enum,
+                                     Optional preset As Ba2WriterCommon.ZlibPreset = Ba2WriterCommon.ZlibPreset.Default) As VirtualEntry
         Dim relUnderData = Path.GetRelativePath(dataDir, entryPath).Correct_Path_Separator
         Dim bytes = File.ReadAllBytes(sourcePath)
 
@@ -58,7 +62,7 @@ Public Module ArchiveEntryFactory
         Dim cpDx10 = PayloadCompressor.CompressForBa2Dx10(payload,
             version:=8UI,
             compressionFormat:=Ba2WriterCommon.CompressionFormat.Zip,
-            preset:=Ba2WriterCommon.ZlibPreset.Default)
+            preset:=preset)
         ve.Data = Nothing                           ' se suelta el payload crudo: río abajo sólo se usa el comprimido
         ve.PreCompressed = True
         ve.PreCompressedBytes = cpDx10.Bytes
@@ -89,7 +93,8 @@ Public Module ArchiveEntryFactory
     ''' <summary>Lo mismo que <see cref="MakeTextureEntry"/> pero para materiales (.bgsm/.bgem) y cualquier
     ''' otro archivo que NO sea textura: no hay metadata DX10, va entero por el camino GNRL/BSA.</summary>
     Public Function MakeMaterialEntry(dataDir As String, sourcePath As String, entryPath As String,
-                                      game As Config_App.Game_Enum) As VirtualEntry
+                                      game As Config_App.Game_Enum,
+                                      Optional preset As Ba2WriterCommon.ZlibPreset = Ba2WriterCommon.ZlibPreset.Default) As VirtualEntry
         Dim relUnderData = Path.GetRelativePath(dataDir, entryPath).Correct_Path_Separator
         Dim bytes = File.ReadAllBytes(sourcePath)
         Dim relDir As String = "", relFile As String = ""
@@ -111,7 +116,7 @@ Public Module ArchiveEntryFactory
             Dim cp = PayloadCompressor.CompressForBa2Gnrl(bytes,
                 version:=8UI,
                 compressionFormat:=Ba2WriterCommon.CompressionFormat.Zip,
-                preset:=Ba2WriterCommon.ZlibPreset.Default)
+                preset:=preset)
             ve.PreCompressed = True
             ve.PreCompressedBytes = cp.Bytes
             ve.PreCompressedCompSize = cp.CompSize
