@@ -219,8 +219,9 @@ Public Class FO4UnifiedMaterial_Class
     ' Save_To_Bgsm/Bgem nunca las escribe (NifShaderType es campo transitorio, ver más abajo). Un
     ' cambio en ellas NO es una "modificación del material a guardar a archivo" — se persiste con el
     ' NIF en el guardado normal del proyecto. El gating de los botones "Save/Save As material" y de
-    ' Revisa_Material (WM Editor_Form) las ignora vía IsMaterialFileDirty/AreEqualToMaterialFile, así
-    ' que cambiar el shader type a mano NO marca el material como sucio ni exige grabar un .bgsm.
+    ' Revisa_Material (WM Editor_Form) las ignora vía IsMaterialFileDirty/AreEqualToMaterialFile. Sin archivo de material
+    ' FO4 aplicado cambiar el shader type a mano NO marca el material como sucio; CON archivo el tipo es la cascada de
+    ' los flags del material (ver NifShaderType), así que elegirlo cambia esos flags y ESOS sí lo marcan.
     ' GetDifferences / AreEqualTo (FaceGenComparator, diagnóstico de bake) SÍ las comparan — esa
     ' comparación quiere ver el tipo de shader. Hoy solo el shader type; ampliar con evidencia.
     Public Shared ReadOnly NifShaderOnlyPropertyNames As String() = {NameOf(NifShaderType)}
@@ -378,8 +379,9 @@ Public Class FO4UnifiedMaterial_Class
     ''' <para><paramref name="vocabularioSk"/> = el bloque DESTINO habla el vocabulario de Skyrim (eje del bloque,
     ''' nunca Config_App). En SK no hay cita del motor para derivar el tipo desde los flags (el CK de SSE preserva el
     ''' tipo), asi que EnvironmentMapping y Glowmap NO se copian y el tipo queda Default: perdida declarada. En FO4 el
-    ''' tipo se deriva con la prioridad del factory (<see cref="ResolveEffectiveType"/>, FUN_142163BE0), porque sin
-    ''' archivo de material "el enum inline del NIF ES el tipo" y asi preview y juego coinciden.</para></summary>
+    ''' tipo es el que el factory 0x14216B610 da sobre los flags del material (<see cref="TipoDelFactory"/>), porque sin
+    ''' archivo de material el enum inline del NIF ES el tipo (LoadBinary 0x142178BF0 -> 0x1421CEB20) y asi preview y juego
+    ''' coinciden.</para></summary>
     Public Function ConvertidoA(tipoDestino As Type, vocabularioSk As Boolean) As FO4UnifiedMaterial_Class
         If tipoDestino Is Underlying_Material.GetType() Then
             Throw New ArgumentException($"The material is already {tipoDestino.Name}.", NameOf(tipoDestino))
@@ -418,46 +420,268 @@ Public Class FO4UnifiedMaterial_Class
             .Test = motor.Test, .TestRef = motor.Threshold})
 
         If tipoDestino Is GetType(BGSM) AndAlso Not vocabularioSk Then
-            conv._NifShaderType = TipoDeShaderDelFactory(conv.ResolveEffectiveType())
+            conv._NifShaderType = conv.TipoDelFactory(conv.EyeEnvironmentMapping)
         End If
         Return conv
     End Function
 
-    ''' <summary>El <c>BSLightingShaderType</c> que corresponde a cada material del factory de FO4
-    ''' (<see cref="ResolveEffectiveType"/>, FUN_142163BE0). ⛔ SEDE UNICA de este mapeo en la libreria.
-    ''' <para>Hay un segundo dueño PREEXISTENTE con otro orden de prioridad en el bake de FaceGen
-    ''' (FO4_NPC_Manager FaceGenBuilder.vb, rama del tipo horneado). El bake es capitulo cerrado y no se toca; en su
-    ''' dominio los dos ordenes no se contradicen ("el resto nunca coexiste").</para></summary>
-    Public Shared Function TipoDeShaderDelFactory(t As EffectiveLightingType) As NiflySharp.Enums.BSLightingShaderType
-        Select Case t
-            Case EffectiveLightingType.Eye : Return NiflySharp.Enums.BSLightingShaderType.EyeEnvmap
-            Case EffectiveLightingType.Envmap : Return NiflySharp.Enums.BSLightingShaderType.EnvironmentMap
-            Case EffectiveLightingType.Glowmap : Return NiflySharp.Enums.BSLightingShaderType.GlowShader
-            Case EffectiveLightingType.Face : Return NiflySharp.Enums.BSLightingShaderType.FaceTint
-            Case EffectiveLightingType.SkinTint : Return NiflySharp.Enums.BSLightingShaderType.SkinTint
-            Case EffectiveLightingType.HairTint : Return NiflySharp.Enums.BSLightingShaderType.HairTint
-            Case Else : Return NiflySharp.Enums.BSLightingShaderType.Default
-        End Select
+    ''' <summary>⛔ EL TIPO QUE DA EL FACTORY sobre los flags de ESTE material, con <paramref name="ojo"/> como bit 17: la clase que
+    ''' 0x14216B610 (Fallout4.exe 1.11.240; CK 0x142BC6F00) construye sobre los bits que deja el aplicador 0x14216AF90 (CK 0x142BC6860),
+    ''' que es el Shader Type que el CK escribe al guardar (SaveBinary CK 0x142BD96C0: material-&gt;GetType(), 0x142BD96D5..96FB).
+    ''' El bit 17 entra aparte porque el aplicador NO lo escribe (su lista cerrada no lo tiene): sale del bloque del NIF.
+    ''' No repite ni la cascada (<see cref="Fo4EngineMaterial.CascadaDelFactory"/>) ni el aplicador
+    ''' (<see cref="Fo4GBufferTechnique.MaterialFileTypeBits"/>, la parte del aplicador que alimenta la cascada): los llama. Sin
+    ''' asignaciones: el render lo lee varias veces por forma y cuadro. Tools\re-docs\RE_FO4_SHADER_TYPE_CK_SAVE_2026-10-19 §1-§2.</summary>
+    Private Function TipoDelFactory(ojo As Boolean) As NiflySharp.Enums.BSLightingShaderType
+        Dim f = Fo4GBufferTechnique.MaterialFileTypeBits(If(ojo, 1UL << 17, 0UL), Me)
+        Return CType(Fo4EngineMaterial.AppliedFeature(f), NiflySharp.Enums.BSLightingShaderType)
     End Function
 
-    ' NIF ShaderType — not part of BGSM/BGEM file format, stored here as runtime field
+    ''' <summary>⛔ DUEÑO UNICO DEL SHADER TYPE (decision del usuario 19-oct): el que lleva el bloque y el que el motor usa.
+    ''' <list type="bullet">
+    ''' <item>FO4 con archivo .bgsm aplicado (<see cref="ArchivoFo4Aplicado"/>): la cascada del factory sobre los flags del material
+    ''' (<see cref="TipoDelFactory"/>). El motor lee el campo del NIF (LoadBinary 0x142178BF0) sólo para elegir la clase con la que
+    ''' parsea la cola del bloque y la DESCARTA al aplicar el archivo (SetMaterial 0x142169620 suelta la vieja en 0x1421696B4); el
+    ''' CK escribe la clase del factory (RE §1.3, §2.2).</item>
+    ''' <item>Bloque de Skyrim, o FO4 sin archivo (sin nombre, o nombre que no resuelve: GetRelatedMaterial va a Create_From_Shader): el
+    ''' campo del bloque (<c>_NifShaderType</c>), que es la clase que construye LoadBinary (switch 0x1421CEB20) y la que el CK vuelve a
+    ''' escribir cuando no encuentra el archivo (0x142BD57A4 "Could not find material", RE §1.3).</item>
+    ''' <item>Archivo nombrado con payload VACIO (Deserialize sale antes de leerlo): el wrapper conserva el material que ya tenia. Uno
+    ''' nuevo (GetRelatedMaterial) es BGEM por defecto (<see cref="Underlying_Material"/> = NewBgemNormalized), asi que da Default por la
+    ''' rama BGEM del getter (IsBGEM True). Solo un wrapper que YA era BGSM (el editor re-deserializando) cae aca en el campo del
+    ''' bloque. Es el comportamiento de antes; esta ola no lo cambia.</item>
+    ''' </list>
+    ''' <paramref name="transcription"/>: la transcripcion FO4 (bake / export) escribe el bit 17 en 0 (<see cref="OjoDelBloque"/>), y el
+    ''' tipo se toma con ese mismo bit.</summary>
+    Private Function TipoDelBloque(transcription As Boolean, bloqueSk As Boolean) As NiflySharp.Enums.BSLightingShaderType
+#If DEBUG Then
+        ' Directed mutants of the gate fo4-shader-type (Fo4GBufferConstants.GateMutantOn, the one switch).
+        If Fo4GBufferConstants.GateMutantOn("st-block-ignores-file") Then Return _NifShaderType
+        If Fo4GBufferConstants.GateMutantOn("st-block-cascade-without-file") AndAlso Not bloqueSk AndAlso Not ArchivoFo4Aplicado() Then Return TipoDelFactory(EyeEnvironmentMapping)
+        If Fo4GBufferConstants.GateMutantOn("st-block-sk-cascade") AndAlso bloqueSk Then Return TipoDelFactory(EyeEnvironmentMapping)
+#End If
+        If bloqueSk OrElse Not ArchivoFo4Aplicado() Then Return _NifShaderType
+        Return TipoDelFactory(OjoDelBloque(transcription, bloqueSk))
+    End Function
+
+    ''' <summary>El bit 17 (Eye_Environment_Mapping) que lleva el bloque y que entra a la cascada.
+    ''' <list type="bullet">
+    ''' <item>Bloque de Skyrim, o FO4 sin archivo aplicado: el del material (<see cref="EyeEnvironmentMapping"/>), que en un bloque recien
+    ''' leido es el bit del NIF (Create_From_Shader).</item>
+    ''' <item>FO4 con archivo aplicado: el del bloque (<c>_NifEyeEnvironmentMapping</c>). El aplicador no lo escribe (0x14216AF90 / CK
+    ''' 0x142BC6860) y el CK guarda los flags del property como quedaron (BSShaderProperty::SaveBinary CK 0x142BC3171..3181), o sea con el
+    ''' bit del NIF; el bEnvironmentMappingEye del .bgsm no llega al bloque.</item>
+    ''' <item>Transcripcion FO4 (bake / export: corta el nombre del .bgsm): 0. Ley medida del FaceGen del CK, 0 de 14.136 formas con el bit
+    ''' (memoria 30-fo4-material-corpus-y-tipo-baked §4); vivia en FaceGenBuilder y se muda aca junto al tipo que la usa.</item>
+    ''' </list></summary>
+    Private Function OjoDelBloque(transcription As Boolean, bloqueSk As Boolean) As Boolean
+#If DEBUG Then
+        ' Directed mutants of the gate fo4-shader-type: the .bgsm's bEnvironmentMappingEye decides / the transcription keeps the bit.
+        If Fo4GBufferConstants.GateMutantOn("st-eye-from-bgsm") AndAlso Not bloqueSk AndAlso Not transcription AndAlso ArchivoFo4Aplicado() Then Return EyeEnvironmentMapping
+        If Fo4GBufferConstants.GateMutantOn("st-transcription-keeps-eye") AndAlso Not bloqueSk AndAlso transcription Then Return If(ArchivoFo4Aplicado(), _NifEyeEnvironmentMapping, EyeEnvironmentMapping)
+#End If
+        If bloqueSk Then Return EyeEnvironmentMapping
+        If transcription Then Return False
+        If ArchivoFo4Aplicado() Then Return _NifEyeEnvironmentMapping
+        Return EyeEnvironmentMapping
+    End Function
+
+    ''' <summary>The Shader Type <see cref="Save_To_Shader"/> writes into <paramref name="shad"/> of <paramref name="Nif"/> (the same
+    ''' function, so a caller that decides by it - the FaceGen bake's slot 5 - decides by what is written).</summary>
+    Public Function TipoQueSeEscribe(Nif As Nifcontent_Class_Manolo, shad As BSLightingShaderProperty, transcription As Boolean) As NiflySharp.Enums.BSLightingShaderType
+        FijarJuegoDelDestino(shad, Nif)
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("st-tipowritten-block") Then Return _NifShaderType
+#End If
+        Return TipoDelBloque(transcription, IsSkShader(shad))
+    End Function
+
+    ''' <summary>Un cambio de una entrada de la cascada: su nombre para la UI, el bit y el valor antes / despues.</summary>
+    Public Structure CambioDeEntradaDeTipo
+        Public Nombre As String
+        Public Bitn As Integer
+        Public Antes As Boolean
+        Public Despues As Boolean
+    End Structure
+
+    ''' <summary>(d) EL PLAN, unica sede del "que flags cambian": con archivo FO4 aplicado el tipo no se guarda, se elige cambiando las
+    ''' entradas de la cascada, lo minimo para que <see cref="TipoDelFactory"/> de <paramref name="t"/>: la entrada de ese tipo prendida y
+    ''' las de MAYOR prioridad apagadas (las de menor prioridad no cambian la clase: first match, 0x14216B649..0x14216B84B). Default =
+    ''' todas apagadas. Devuelve solo las entradas cuyo valor cambia. Un tipo que la cascada no puede dar con un archivo se rechaza
+    ''' (<see cref="TiposConArchivo"/>).</summary>
+    Private Function PlanParaElTipo(t As NiflySharp.Enums.BSLightingShaderType) As List(Of CambioDeEntradaDeTipo)
+#If DEBUG Then
+        If Not Fo4GBufferConstants.GateMutantOn("st-plan-accept-any") Then
+#End If
+        If Not TiposConArchivo().Contains(t) Then
+            Throw New ArgumentException($"With a Fallout 4 material file the shader type is the result of the material's flags, and no combination of them gives {t}.")
+        End If
+#If DEBUG Then
+        End If
+#End If
+        Dim plan As New List(Of CambioDeEntradaDeTipo)
+        For Each c In Fo4EngineMaterial.CascadaDelFactory
+            Dim e As EntradaDeLaCascada = Nothing
+            If Not EntradasDeLaCascada.TryGetValue(c.Bitn, e) Then Continue For
+            Dim destino = (c.Feature = CInt(t))
+            Dim actual = e.Leer(Me)
+#If DEBUG Then
+            ' Directed mutants of the gate fo4-shader-type: the plan keeps the higher-priority entries on / lists the unchanged ones /
+            ' also turns off the lower-priority ones.
+            If Fo4GBufferConstants.GateMutantOn("st-plan-keeps-higher") AndAlso actual AndAlso Not destino Then Continue For
+            If Fo4GBufferConstants.GateMutantOn("st-plan-lists-unchanged") AndAlso actual = destino Then plan.Add(New CambioDeEntradaDeTipo With {.Nombre = e.Nombre, .Bitn = c.Bitn, .Antes = actual, .Despues = destino})
+            If Fo4GBufferConstants.GateMutantOn("st-plan-lower-off") AndAlso destino Then
+                If actual <> destino Then plan.Add(New CambioDeEntradaDeTipo With {.Nombre = e.Nombre, .Bitn = c.Bitn, .Antes = actual, .Despues = destino})
+                Dim pasado = False
+                For Each c2 In Fo4EngineMaterial.CascadaDelFactory
+                    If c2.Bitn = c.Bitn Then pasado = True : Continue For
+                    Dim e2 As EntradaDeLaCascada = Nothing
+                    If pasado AndAlso EntradasDeLaCascada.TryGetValue(c2.Bitn, e2) AndAlso e2.Leer(Me) Then plan.Add(New CambioDeEntradaDeTipo With {.Nombre = e2.Nombre, .Bitn = c2.Bitn, .Antes = True, .Despues = False})
+                Next
+                Exit For
+            End If
+#End If
+            If actual <> destino Then plan.Add(New CambioDeEntradaDeTipo With {.Nombre = e.Nombre, .Bitn = c.Bitn, .Antes = actual, .Despues = destino})
+            If destino Then Exit For
+        Next
+        Return plan
+    End Function
+
+    ''' <summary>Aplica el plan de <see cref="PlanParaElTipo"/> y lo guarda para que el editor lo muestre y, si el usuario no lo
+    ''' confirma, lo deshaga exacto (<see cref="DeshacerUltimoAjusteDeTipo"/>).</summary>
+    Private Sub AjustarFlagsAlTipo(t As NiflySharp.Enums.BSLightingShaderType)
+        Dim plan = PlanParaElTipo(t)
+        For Each c In plan : EntradasDeLaCascada(c.Bitn).Poner(Me, c.Despues) : Next
+        _ultimoAjusteDeTipo = plan
+        Debug.Assert(TipoDelFactory(_NifEyeEnvironmentMapping) = t, "AjustarFlagsAlTipo: the cascade does not give the chosen type")
+    End Sub
+
+    ''' <summary>Estado de la UI, no del material (no se clona ni se compara): el ultimo plan que aplico el setter de
+    ''' <see cref="NifShaderType"/> con archivo FO4.</summary>
+    Private _ultimoAjusteDeTipo As List(Of CambioDeEntradaDeTipo) = Nothing
+
+    ''' <summary>Los flags que movio el ultimo cambio de tipo con archivo FO4 (vacio si no movio ninguno o no hubo).</summary>
+    Public Function UltimoAjusteDeTipo() As IReadOnlyList(Of CambioDeEntradaDeTipo)
+        Return If(_ultimoAjusteDeTipo, New List(Of CambioDeEntradaDeTipo))
+    End Function
+
+    ''' <summary>Vuelve cada flag del ultimo ajuste a su valor anterior (el "No" del editor): el material queda exactamente como estaba.</summary>
+    Public Sub DeshacerUltimoAjusteDeTipo()
+        If _ultimoAjusteDeTipo Is Nothing Then Return
+        For Each c In _ultimoAjusteDeTipo
+#If DEBUG Then
+            If Fo4GBufferConstants.GateMutantOn("st-undo-partial") AndAlso c.Bitn = 17 Then Continue For
+            If Fo4GBufferConstants.GateMutantOn("st-undo-forgets") Then Continue For
+#End If
+            EntradasDeLaCascada(c.Bitn).Poner(Me, c.Antes)
+        Next
+        _ultimoAjusteDeTipo = Nothing
+    End Sub
+
+    ''' <summary>Una entrada de la cascada que un archivo FO4 puede mover: su nombre en la UI y como se lee / escribe.</summary>
+    Private Structure EntradaDeLaCascada
+        Public Nombre As String
+        Public Leer As Func(Of FO4UnifiedMaterial_Class, Boolean)
+        Public Poner As Action(Of FO4UnifiedMaterial_Class, Boolean)
+    End Structure
+
+    ''' <summary>Las entradas de la cascada que un archivo FO4 puede mover, por bit: las cinco que el aplicador copia de bytes del .bgsm
+    ''' (bit 7 &lt;- +0x17A, 38 &lt;- +0xA1, 10 &lt;- +0x96, 21 &lt;- +0x97, 18 &lt;- +0x98: 0x14216B085..0x14216B2D0, la tabla
+    ''' Fo4GBufferTechnique.MaterialFileTypeBits) y el bit 17 del bloque. El 56 no tiene entrada: su byte +0x14A ningun .bgsm lo pone
+    ''' (<see cref="Fo4GBufferTechnique.MultiLayerByteOfAFile"/>).</summary>
+    Private Shared ReadOnly EntradasDeLaCascada As New Dictionary(Of Integer, EntradaDeLaCascada) From {
+        {17, New EntradaDeLaCascada With {.Nombre = "Eye environment mapping (NIF flag)", .Leer = Function(m) m._NifEyeEnvironmentMapping, .Poner = Sub(m, v) m._NifEyeEnvironmentMapping = v}},
+        {7, New EntradaDeLaCascada With {.Nombre = "Environment mapping", .Leer = Function(m) m.EnvironmentMapping, .Poner = Sub(m, v) m.EnvironmentMapping = v}},
+        {38, New EntradaDeLaCascada With {.Nombre = "Glow map", .Leer = Function(m) m.Glowmap, .Poner = Sub(m, v) m.Glowmap = v}},
+        {10, New EntradaDeLaCascada With {.Nombre = "Face", .Leer = Function(m) m.Facegen, .Poner = Sub(m, v) m.Facegen = v}},
+        {21, New EntradaDeLaCascada With {.Nombre = "Skin tint", .Leer = Function(m) m.SkinTint, .Poner = Sub(m, v) m.SkinTint = v}},
+        {18, New EntradaDeLaCascada With {.Nombre = "Hair", .Leer = Function(m) m.Hair, .Poner = Sub(m, v) m.Hair = v}}}
+
+    ''' <summary>Los Shader Types que la cascada puede dar con un archivo FO4 aplicado: Default y las clases de
+    ''' <see cref="Fo4EngineMaterial.CascadaDelFactory"/> con entrada movible (<see cref="EntradasDeLaCascada"/>). La lista del
+    ''' selector de tipo (ShaderTypeConverter) y la validacion del setter.</summary>
+    Friend Shared Function TiposConArchivo() As NiflySharp.Enums.BSLightingShaderType()
+        Dim l As New List(Of NiflySharp.Enums.BSLightingShaderType) From {NiflySharp.Enums.BSLightingShaderType.Default}
+        For Each c In Fo4EngineMaterial.CascadaDelFactory
+            If EntradasDeLaCascada.ContainsKey(c.Bitn) Then l.Add(CType(c.Feature, NiflySharp.Enums.BSLightingShaderType))
+        Next
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("st-tiposconarchivo-ml") Then l.Add(NiflySharp.Enums.BSLightingShaderType.MultiLayerParallax)
+#End If
+        Return l.ToArray()
+    End Function
+
+    ''' <summary>Los Shader Types que construye el switch de Skyrim SE (SkyrimSE.exe instalado, sha 846efccf...; BSLightingShaderProperty
+    ''' vtable RTTI 0x141B3E868, LoadBinary slot 24 0x141518860: lee el campo, 0x14151886D..0x1415188A3, y llama al switch 0x141524370,
+    ''' 0x1415188A7). Tabla 0x14152485C, 0x14 casos: 0-11, 14 (Snow, como el 10), 16 (Eye), 18 (como el 9) y 19 (como el 8) construyen
+    ''' una clase; 12, 13, 15, 17 y todo valor &gt; 0x13 caen en 0x141524848 (xor eax, eax: ningun material) y LoadBinary lo desreferencia
+    ''' igual (0x14151894E mov rax, [r14]): el juego no puede cargar ese bloque.</summary>
+    Private Shared ReadOnly TiposQueConstruyeSkyrimSE As NiflySharp.Enums.BSLightingShaderType() =
+        {0UI, 1UI, 2UI, 3UI, 4UI, 5UI, 6UI, 7UI, 8UI, 9UI, 10UI, 11UI, 14UI, 16UI, 18UI, 19UI}.
+        Select(Function(v) CType(v, NiflySharp.Enums.BSLightingShaderType)).ToArray()
+
+    ''' <summary>⛔ DUEÑO UNICO de "tipos validos por juego": los Shader Types para los que el LoadBinary del juego del bloque construye una
+    ''' clase de material. Fallout 4 = los que <see cref="Fo4EngineMaterial.InlineFeature"/> (el switch 0x1421CEB20, tabla 0x1421CEE7C)
+    ''' resuelve a una clase; fuera de la tabla 0x1421CEE71 devuelve ningun material (xor eax, eax) y LoadBinary lo desreferencia
+    ''' (0x142178CD6 mov rax, [r14]). Skyrim SE = <see cref="TiposQueConstruyeSkyrimSE"/>. (Medido: los dos switches construyen el mismo
+    ''' conjunto de valores; Dismemberment 20 no lo construye ninguno.)</summary>
+    Friend Shared Function TiposQueConstruyeElJuego(skyrim As Boolean) As NiflySharp.Enums.BSLightingShaderType()
+#If DEBUG Then
+        ' Directed mutants of the gate fo4-shader-type: one case of a game's switch added / dropped.
+        If Fo4GBufferConstants.GateMutantOn("st-games-sse-drop14") AndAlso skyrim Then Return TiposQueConstruyeSkyrimSE.Where(Function(t) CUInt(t) <> 14UI).ToArray()
+        If Fo4GBufferConstants.GateMutantOn("st-games-sse-add12") AndAlso skyrim Then Return TiposQueConstruyeSkyrimSE.Concat({CType(12UI, NiflySharp.Enums.BSLightingShaderType)}).ToArray()
+        If Fo4GBufferConstants.GateMutantOn("st-games-fo4-add20") AndAlso Not skyrim Then
+            Return [Enum].GetValues(Of NiflySharp.Enums.BSLightingShaderType)().Where(Function(t) Fo4EngineMaterial.InlineFeature(CInt(t)) >= 0 OrElse CUInt(t) = 20UI).ToArray()
+        End If
+        If Fo4GBufferConstants.GateMutantOn("st-games-fo4-drop19") AndAlso Not skyrim Then
+            Return [Enum].GetValues(Of NiflySharp.Enums.BSLightingShaderType)().Where(Function(t) Fo4EngineMaterial.InlineFeature(CInt(t)) >= 0 AndAlso CUInt(t) <> 19UI).ToArray()
+        End If
+#End If
+        If skyrim Then Return TiposQueConstruyeSkyrimSE
+        Return [Enum].GetValues(Of NiflySharp.Enums.BSLightingShaderType)().
+            Where(Function(t) Fo4EngineMaterial.InlineFeature(CInt(t)) >= 0).ToArray()
+    End Function
+
+    ''' <summary>¿El juego de esta forma construye su Shader Type? Con archivo FO4 aplicado siempre (la cascada solo da clases); sin
+    ''' archivo, el campo del bloque contra <see cref="TiposQueConstruyeElJuego"/>. False = el NIF trae un tipo que su juego no carga: el
+    ''' editor lo muestra igual (no se pierde) con un aviso.</summary>
+    Public Function TipoLoConstruyeSuJuego() As Boolean
+        If Not IsBGSM() OrElse ArchivoFo4Aplicado() Then Return True
+        Return TiposQueConstruyeElJuego(skyrim:=Not _nifIsFo4).Contains(_NifShaderType)
+    End Function
+
+    ''' <summary>La lista del selector de tipo: con archivo FO4 aplicado, <see cref="TiposConArchivo"/>; si no, los que construye el juego
+    ''' del bloque (<see cref="TiposQueConstruyeElJuego"/>), mas el tipo actual si el NIF trae uno que su juego no construye, para que se
+    ''' vea y no se pierda.</summary>
+    Friend Function TiposDelSelector() As NiflySharp.Enums.BSLightingShaderType()
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("st-selector-all") Then Return [Enum].GetValues(Of NiflySharp.Enums.BSLightingShaderType)()
+#End If
+        If ArchivoFo4Aplicado() Then Return TiposConArchivo()
+        Dim l = TiposQueConstruyeElJuego(skyrim:=Not _nifIsFo4).ToList()
+        If Not l.Contains(_NifShaderType) Then l.Add(_NifShaderType)
+        Return l.ToArray()
+    End Function
+
+    ''' <summary>The Shader Type field of the NIF block as LoadBinary reads it (0x142178C12..C26). With a FO4 material file applied it is
+    ''' only the file-less fallback (<see cref="TipoDelBloque"/>).</summary>
     Private _NifShaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default
 
     ''' <summary>SLSF1 bit 17 (Eye_Environment_Mapping) TAL COMO VIENE DEL NIF, guardado aparte del
     ''' material porque el motor NUNCA lo pisa desde el archivo de material.
-    ''' <para>SYNC: <c>Tools\re-docs\RE_shader_report.md</c> §1.4, RE de <c>Fallout4.exe</c> —
-    ''' <c>FUN_142163560</c> (0x142163560) es el MERGE y hace overwrite incondicional de los bits
-    ''' 7/10/18/21/38/56 desde los bool del material, pero **no escribe el bit 17**: *"Eye sobrevive
-    ''' del NIF inline (SLSF1 bit 17). Es el único tipo que el material no controla por flag."*
+    ''' <para>SYNC: <c>Tools\re-docs\RE_FO4_SHADER_TYPE_CK_SAVE_2026-10-19</c> §2.2, RE de <c>Fallout4.exe</c> 1.11.240 —
+    ''' el aplicador 0x14216AF90 (CK 0x142BC6860) hace overwrite incondicional de los bits
+    ''' 7/10/18/21/38/56 desde los bytes del material, pero **no escribe el bit 17** (lista cerrada de su <c>edx</c>):
+    ''' Eye sobrevive del NIF inline (SLSF1 bit 17). Es el único tipo que el material no controla por flag.
     ''' Por eso `EyeEnvironmentMapping` (que sale del BGSM) NO es la fuente del motor cuando hay
     ''' archivo de material, y este campo sí.</para></summary>
     Private _NifEyeEnvironmentMapping As Boolean = False
 
     ''' <summary>True cuando sobre este material se aplicó un ARCHIVO de material (.bgsm/.bgem).
-    ''' <para>Es el disparador del motor, no una preferencia: <c>FUN_14216EFB0</c> (0x14216EFB0) saca el
-    ''' path del material del property y recién ahí corren el merge (<c>FUN_142163560</c>) y el factory
-    ''' (<c>FUN_142163BE0</c>). Sin path, ninguno de los dos corre y el enum inline del NIF ES el tipo
-    ''' (ver 30-fo4-material-vs-nif). Se sella en <see cref="Deserialize"/>, que es la única puerta por
+    ''' <para>Es el disparador del motor, no una preferencia: el aplicador por geometria 0x1421769E0 / 0x142171420 (Fallout4.exe
+    ''' 1.11.240) saca el nombre del property, carga el archivo (0x1417A9D80) y, si carga, ApplyMaterialData 0x1421715E0 corre el merge
+    ''' 0x14216AF90 y el factory 0x14216B610. Sin nombre, o si no carga, ninguno de los dos corre y el enum inline del NIF ES el tipo
+    ''' (RE_FO4_SHADER_TYPE_CK_SAVE_2026-10-19 §2.2). Se sella en <see cref="Deserialize"/>, que es la única puerta por
     ''' la que entra un payload de material (GetRelatedMaterial llama ahí).</para></summary>
     Private _MaterialFileApplied As Boolean = False
     ' Env mask path for BGSM — NIF texture set slot 5. Not serialized in the .bgsm binary
@@ -497,7 +721,7 @@ Public Class FO4UnifiedMaterial_Class
         Get
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    Return _NifShaderType
+                    Return TipoDelBloque(transcription:=False, bloqueSk:=False)
                 Case GetType(BGEM)
                     Return NiflySharp.Enums.BSLightingShaderType.Default
             End Select
@@ -506,9 +730,16 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As NiflySharp.Enums.BSLightingShaderType)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    ' Desacoplado: setear el tipo NO toca flags. Tipo y flags son ejes
-                    ' ortogonales; los flags se editan por separado en el grid.
-                    _NifShaderType = value
+                    ' Con archivo FO4 aplicado el tipo ES la cascada de los flags: elegirlo mueve los flags (decision 19-oct (d)).
+                    ' Sin archivo (o Skyrim) es el campo del bloque y se edita solo, como siempre.
+#If DEBUG Then
+                    If Fo4GBufferConstants.GateMutantOn("st-setter-ignores") Then Exit Select
+#End If
+                    If ArchivoFo4Aplicado() Then
+                        AjustarFlagsAlTipo(value)
+                    Else
+                        _NifShaderType = value
+                    End If
                 Case GetType(BGEM)
                     ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
                     Exit Select
@@ -713,10 +944,9 @@ Public Class FO4UnifiedMaterial_Class
         End Select
     End Function
 
-    ''' <summary>Tipo efectivo de BSLightingShader que el engine resuelve por prioridad del factory
-    ''' (Fallout4.exe FUN_142163BE0): Eye&gt;Envmap&gt;Glowmap&gt;Face&gt;SkinTint&gt;HairTint&gt;Default.
-    ''' MultiLayer se omite (no hay PS forward en Shaders011.fxp block 6). Sirve para rutear el GLSL
-    ''' engine-faithful de forma MUTUAMENTE EXCLUYENTE (el engine corre UN shader por tipo).</summary>
+    ''' <summary>La clase de material con la que el motor dibuja la shape (<see cref="ResolveEffectiveType"/>), en el orden de la
+    ''' cascada del factory 0x14216B610 (Fallout4.exe 1.11.240): Eye&gt;Envmap&gt;Glowmap&gt;Face&gt;SkinTint&gt;HairTint&gt;
+    ''' MultiLayerParallax&gt;Default.</summary>
     Public Enum EffectiveLightingType
         [Default] = 0
         Envmap = 1
@@ -725,61 +955,63 @@ Public Class FO4UnifiedMaterial_Class
         SkinTint = 4
         HairTint = 5
         Eye = 6
+        MultiLayerParallax = 7
     End Enum
 
-    ''' <summary>Tipo efectivo por la prioridad del factory del engine (FUN_142163BE0).
-    ''' BGEM devuelve Default (su render va por el path bIsEffectShader, no por este tipo).</summary>
+    ''' <summary>La clase de material con la que el motor dibuja esta shape: <see cref="NifShaderType"/> (el duenio) leido como clase.
+    ''' Con archivo FO4 es la cascada del factory (Glowmap antes que Hair: un pelo con Glow_Map es material Glowmap y pierde el tint,
+    ''' y ESO es lo que hace el motor); sin archivo, la clase del switch de LoadBinary 0x1421CEB20 para el campo del bloque.
+    ''' BGEM devuelve Default (su render va por el path bIsEffectShader, no por este tipo). Los tipos que no son clases de
+    ''' iluminacion de la cascada (Parallax, Landscape...) dan Default: 0 formas en el corpus FO4
+    ''' (Tools\re-docs\CENSO_FO4_SHADER_TYPE_2026-10-19 §1).</summary>
     Public Function ResolveEffectiveType() As EffectiveLightingType
         If IsBGEM() Then Return EffectiveLightingType.[Default]
-        If IsEngineEye() Then Return EffectiveLightingType.Eye
-        If EnvironmentMapping Then Return EffectiveLightingType.Envmap
-        ' ORDEN DE PRIORIDAD, NO TOCAR SIN ABRIR EL BINARIO. Esta rutina replica el factory de material
-        ' de Fallout4.exe, que es una cascada sobre los flags en este orden exacto:
-        '     Eye_Environment_Mapping > Environment_Mapping > GLOW_MAP > Face > Skin_Tint > HAIR
-        ' Glowmap va ANTES que Hair: un material de pelo con Glow_Map se vuelve material Glowmap en el
-        ' factory y tampoco recibe la técnica Hair — pierde el tint, y ESO es lo que hace el motor.
-        ' Afecta a 3 materiales vanilla y a todo el pelo de mods tipo KS Hairdos.
-        ' Razonar desde las TÉCNICAS del shader lleva al orden equivocado: son otra cosa (otro enum, otro
-        ' constructor). Antes de reordenar acá, abrir la función del factory.
-        If Glowmap Then Return EffectiveLightingType.Glowmap
-        If Facegen Then Return EffectiveLightingType.Face
-        If SkinTint Then Return EffectiveLightingType.SkinTint
-        If Hair Then Return EffectiveLightingType.HairTint
-        Return EffectiveLightingType.[Default]
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("st-ml-unmapped") AndAlso NifShaderType = NiflySharp.Enums.BSLightingShaderType.MultiLayerParallax Then Return EffectiveLightingType.[Default]
+#End If
+        Select Case NifShaderType
+            Case NiflySharp.Enums.BSLightingShaderType.EyeEnvmap : Return EffectiveLightingType.Eye
+            Case NiflySharp.Enums.BSLightingShaderType.EnvironmentMap : Return EffectiveLightingType.Envmap
+            Case NiflySharp.Enums.BSLightingShaderType.GlowShader : Return EffectiveLightingType.Glowmap
+            Case NiflySharp.Enums.BSLightingShaderType.FaceTint : Return EffectiveLightingType.Face
+            Case NiflySharp.Enums.BSLightingShaderType.SkinTint : Return EffectiveLightingType.SkinTint
+            Case NiflySharp.Enums.BSLightingShaderType.HairTint : Return EffectiveLightingType.HairTint
+            Case NiflySharp.Enums.BSLightingShaderType.MultiLayerParallax : Return EffectiveLightingType.MultiLayerParallax
+            Case Else : Return EffectiveLightingType.[Default]
+        End Select
     End Function
 
-    ''' <summary>Bit 17 (Eye_Environment_Mapping) COMO LO VE EL MOTOR, no como lo declara el material.
-    ''' <para>El merge <c>FUN_142163560</c> pisa los bits de tipo desde los bool del .bgsm — pero el 17
-    ''' NO está en su lista, así que Eye sale del NIF inline aunque haya archivo de material
-    ''' (RE_shader_report.md §1.4: *"Eye sobrevive del NIF inline… es el único tipo que el material no
-    ''' controla por flag"*). Sin archivo de material el merge ni corre, y ahí el campo del material ES
-    ''' el del NIF por construcción (lo siembra <c>Create_From_Shader</c>), así que la rama de abajo da
-    ''' lo mismo en los dos sentidos.</para>
+    ''' <summary>¿El motor dibuja esta shape con la clase Eye? Predicado del duenio (<see cref="ResolveEffectiveType"/>).
+    ''' <para>Con archivo el bit 17 que entra a la cascada es el del NIF: el aplicador 0x14216AF90 no lo escribe
+    ''' (<see cref="OjoDelBloque"/>), así que el bEnvironmentMappingEye del .bgsm no decide.</para>
     ''' <para>MEDIDO sobre el corpus (230.791 entradas .nif de FO4, 1.116.077 shapes con .bgsm
     ''' resoluble): 70 shapes en 62 NIF tienen BGSM eye=1 con el bit 17 del NIF APAGADO — la app las
     ''' ruteaba como Eye y el motor no (54 van a Envmap, 16 a Default). El caso inverso —motor Eye y app
     ''' no— es <b>0 shapes</b>, así que este cambio no puede apagar un Eye legítimo.</para></summary>
     Public Function IsEngineEye() As Boolean
-        If IsBGEM() Then Return False
-        If _MaterialFileApplied Then Return _NifEyeEnvironmentMapping
-        Return EyeEnvironmentMapping
+        Return ResolveEffectiveType() = EffectiveLightingType.Eye
+    End Function
+
+    ''' <summary>¿El motor dibuja esta shape con la clase Face (FaceTint)? Predicado del duenio (<see cref="ResolveEffectiveType"/>);
+    ''' la unica puerta para "es la cara" en las dos apps (NPC Manager: tinte, overlays, TRI de chargen, slot 5 del bake).</summary>
+    Public Function IsEngineFace() As Boolean
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("st-face-raw") Then Return _NifShaderType = NiflySharp.Enums.BSLightingShaderType.FaceTint
+#End If
+        Return ResolveEffectiveType() = EffectiveLightingType.Face
     End Function
 
     ''' <summary>¿El motor trata esta shape como PIEL? Única puerta para los gates de sustitución de
     ''' textura de piel; nadie compara <see cref="NifShaderType"/> contra SkinTint por su cuenta.
-    ''' <para>El motor decide por el MATERIAL: <c>FUN_142163560</c> hace overwrite incondicional del bit
-    ''' 21 (Skin_Tint) desde el bool <c>+0x97</c> del ARCHIVO de material, y el factory
-    ''' <c>FUN_142163BE0</c> reconstruye el material desde los flags ya merged. El enum inline del NIF se
-    ''' descarta. Con el nombre de material VACÍO no corre ninguno de los dos y el enum inline SÍ es el
-    ''' tipo — por eso la rama.</para>
+    ''' <para>Predicado del duenio (<see cref="ResolveEffectiveType"/>): con archivo FO4 el aplicador 0x14216AF90 pisa el bit 21
+    ''' (Skin_Tint) desde el byte <c>+0x97</c> del ARCHIVO y el factory 0x14216B610 reconstruye la clase desde los flags ya
+    ''' merged; el enum inline del NIF se descarta. Sin archivo el enum inline SÍ es el tipo.</para>
     ''' <para>MEDIDO: 20 shapes en 9 NIF de FO4 declaran SkinTint en el NIF y su .bgsm dice
     ''' <c>bSkinTint = false</c> (los nueve de <c>Meshes\imAarwyn\AWNOveralls\</c>): la app les ponía las
     ''' texturas del CUERPO a la ropa. Régimen inline: 95.583 shapes FO4 + 120.431 SSE, 0 discrepancias
     ''' ⇒ esta rama no puede regresionar ahí y SSE no se mueve un bit.</para></summary>
     Public Function IsEngineSkinTint() As Boolean
-        If IsBGEM() Then Return False
-        If _MaterialFileApplied Then Return ResolveEffectiveType() = EffectiveLightingType.SkinTint
-        Return NifShaderType = NiflySharp.Enums.BSLightingShaderType.SkinTint
+        Return ResolveEffectiveType() = EffectiveLightingType.SkinTint
     End Function
 
     <Category("Textures")>
@@ -4464,15 +4696,13 @@ Public Class FO4UnifiedMaterial_Class
     ''' the material's colours written as resolved (byte-identical to the closed bake) and the NiAlphaProperty carrying the
     ''' engine's alpha state (WriteAlphaPropertyToShape). Outside a transcription the block keeps a colour nobody changed and its
     ''' own wetness.</param>
-    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False)
-        If Nif.Valid = False Then Exit Sub
-        Dim Mat = DirectCast(Underlying_Material, BGSM)
-        ' SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
-        ' único que sabe qué vocabulario de flags corresponde es el archivo donde se está ESCRIBIENDO.
-        ' Si el bloque arrastra un Type viejo — leído de otro NIF, o estampado por EnsureShaderGameType
-        ' durante la LECTURA — ese valor NO puede ganarle al destino: los switch de ShaderHelper caen a
-        ' `_ => false` y el material se escribiría con el idioma equivocado, EN SILENCIO. Cuando el Type
-        ' ya es el correcto (todos los casos vivos hoy) re-derivarlo da el mismo valor: no-op.
+    ''' <summary>SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
+    ''' único que sabe qué vocabulario de flags corresponde es el archivo donde se está ESCRIBIENDO.
+    ''' Si el bloque arrastra un Type viejo — leído de otro NIF, o estampado por EnsureShaderGameType
+    ''' durante la LECTURA — ese valor NO puede ganarle al destino: los switch de ShaderHelper caen a
+    ''' `_ => false` y el material se escribiría con el idioma equivocado, EN SILENCIO. Cuando el Type
+    ''' ya es el correcto (todos los casos vivos hoy) re-derivarlo da el mismo valor: no-op.</summary>
+    Private Shared Sub FijarJuegoDelDestino(shad As BSLightingShaderProperty, Nif As Nifcontent_Class_Manolo)
         Dim streamVer = Nif.Header.Version.StreamVersion
         If streamVer = 155 Then
             shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO76SF
@@ -4481,6 +4711,78 @@ Public Class FO4UnifiedMaterial_Class
         Else
             shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
         End If
+    End Sub
+
+    ''' <summary>⛔ ESCRITOR UNICO del Shader Type y de los bits que lo deciden: tipo = <see cref="TipoDelBloque"/>; bits 7 / 38 / 10 / 21 /
+    ''' 18 = los bools del material (con archivo FO4 son los bytes que el aplicador copia, 0x14216AF90); bit 17 = <see cref="OjoDelBloque"/>;
+    ''' bit 56 con archivo FO4 = el byte +0x14A del archivo (<see cref="Fo4GBufferTechnique.MultiLayerByteOfAFile"/>). Con archivo FO4 el
+    ''' bloque queda como lo guarda el CK: los flags mergeados (BSShaderProperty::SaveBinary CK 0x142BC3171..3181) y la clase que el factory
+    ''' saca de ellos (SaveBinary CK 0x142BD96C0), o sea tipo == cascada(flags del bloque). Skyrim: el tipo del bloque y las convenciones
+    ''' tipo-&gt;flag de SSE (assert-on). Lo usan Save_To_Shader, el guardado FO4 de Wardrobe Manager (SetRelatedMaterial) y el selector de
+    ''' tipo del editor. Skin_Tint y Face cierran la asimetria lector/escritor: Create_From_Shader los LEE del flag F4SPF1, y sin
+    ''' escritor el bit rancio mandaba en cuanto se cortaba el nombre del .bgsm (bake y export).</summary>
+    Public Sub EscribirTipoEnBloque(Nif As Nifcontent_Class_Manolo, shad As BSLightingShaderProperty, Optional transcription As Boolean = False)
+        Dim Mat = DirectCast(Underlying_Material, BGSM)
+        FijarJuegoDelDestino(shad, Nif)
+        Dim sk = IsSkShader(shad)
+        Dim tipo = TipoDelBloque(transcription, sk)
+        shad.ShaderType_SK_FO4 = tipo
+        shad.HasEnvironmentMapping = Mat.EnvironmentMapping
+        ' Convenciones tipo→flag de Skyrim (sweep SSE: ~99-100% en 73.128 shapes
+        ' vanilla): sin su flag el engine SK no aplica el comportamiento del tipo (un SkinTint
+        ' sin FaceGen_RGB_Tint no tintea). Assert-on solamente — nunca se apaga nada. Miembros
+        ' verificados en Bitflags.SkyrimShaderPropertyFlags{1,2}.g.cs. Path FO4 intocado.
+        If sk Then
+            Select Case tipo
+                Case NiflySharp.Enums.BSLightingShaderType.FaceTint
+                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Facegen_Detail_Map
+                    shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 Or NiflySharp.Enums.SkyrimShaderPropertyFlags2.Soft_Lighting
+                Case NiflySharp.Enums.BSLightingShaderType.SkinTint
+                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.FaceGen_RGB_Tint
+                Case NiflySharp.Enums.BSLightingShaderType.HairTint
+                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Hair_Soft_Lighting
+                Case NiflySharp.Enums.BSLightingShaderType.GlowShader
+                    shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 Or NiflySharp.Enums.SkyrimShaderPropertyFlags2.Glow_Map
+                Case NiflySharp.Enums.BSLightingShaderType.EnvironmentMap
+                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Environment_Mapping
+                Case NiflySharp.Enums.BSLightingShaderType.EyeEnvmap
+                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Eye_Environment_Mapping
+            End Select
+        End If
+        ' DESPUES de las convenciones de SSE, en el orden de siempre: en Skyrim Glow_Map y Eye_Environment_Mapping quedan los del
+        ' material aunque el tipo los afirme (asi escribia Save_To_Shader: el bloque tipo->flag antes, estos bits despues).
+        shad.HasGlowmap = Mat.Glowmap
+        ShaderHelper.SetFlagSF1(shad, HairFlagValue(shad), Mat.Hair)
+        ShaderHelper.SetFlagSF1(shad, SkinTintFlagValue(shad), Mat.SkinTint)
+        ShaderHelper.SetFlagSF1(shad, FacegenFlagValue(shad), Mat.Facegen)
+        ShaderHelper.SetFlagSF1(shad, EyeEnvironmentMappingFlagValue(shad), OjoDelBloque(transcription, sk))
+        If Not sk AndAlso ArchivoFo4Aplicado() Then
+            shad.ShaderFlags_F4SPF2 = If(Fo4GBufferTechnique.MultiLayerByteOfAFile,
+                                         shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Multi_Layer_Parallax,
+                                         shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Multi_Layer_Parallax)
+        End If
+#If DEBUG Then
+        ' Directed mutants of the gate fo4-shader-type (Fo4GBufferConstants.GateMutantOn, the one switch): one written bit / the type wrong.
+        If Fo4GBufferConstants.GateMutantOn("st-write-type-default") Then shad.ShaderType_SK_FO4 = NiflySharp.Enums.BSLightingShaderType.Default
+        If Fo4GBufferConstants.GateMutantOn("st-write-env") Then shad.HasEnvironmentMapping = Not Mat.EnvironmentMapping
+        If Fo4GBufferConstants.GateMutantOn("st-write-glow") Then shad.HasGlowmap = Not Mat.Glowmap
+        If Fo4GBufferConstants.GateMutantOn("st-write-hair") Then ShaderHelper.SetFlagSF1(shad, HairFlagValue(shad), Not Mat.Hair)
+        If Fo4GBufferConstants.GateMutantOn("st-write-skin") Then ShaderHelper.SetFlagSF1(shad, SkinTintFlagValue(shad), Not Mat.SkinTint)
+        If Fo4GBufferConstants.GateMutantOn("st-write-face") Then ShaderHelper.SetFlagSF1(shad, FacegenFlagValue(shad), Not Mat.Facegen)
+        If Fo4GBufferConstants.GateMutantOn("st-write-eye-bgsm") Then ShaderHelper.SetFlagSF1(shad, EyeEnvironmentMappingFlagValue(shad), Mat.EnvironmentMappingEye)
+        If Fo4GBufferConstants.GateMutantOn("st-write-ml56") AndAlso Not sk Then shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Multi_Layer_Parallax
+        If Fo4GBufferConstants.GateMutantOn("st-sse-conventions") AndAlso sk Then
+            shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 And Not (NiflySharp.Enums.SkyrimShaderPropertyFlags1.Facegen_Detail_Map Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.FaceGen_RGB_Tint Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Hair_Soft_Lighting Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Environment_Mapping)
+            shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 And Not NiflySharp.Enums.SkyrimShaderPropertyFlags2.Soft_Lighting
+        End If
+#End If
+    End Sub
+
+    Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional envmapMaskPath As String = "", Optional transcription As Boolean = False)
+        If Nif.Valid = False Then Exit Sub
+        Dim Mat = DirectCast(Underlying_Material, BGSM)
+        ' El tipo y sus bits primero (FijarJuegoDelDestino adentro): las escalas de abajo dependen del tipo escrito.
+        EscribirTipoEnBloque(Nif, shad, transcription)
         shad.DoubleSided = Mat.TwoSided
         shad.UVOffset = New TexCoord(Mat.UOffset, Mat.VOffset)
         shad.UVScale = New TexCoord(Mat.UScale, Mat.VScale)
@@ -4491,10 +4793,8 @@ Public Class FO4UnifiedMaterial_Class
         ' Sin downgrade EnvironmentMap→Default cuando falta la textura: lo refuta vanilla (50.303 shapes
         ' EnvironmentMap sin textura conservan el tipo — probe `invariantes`). La invariante confirmada
         ' que SÍ se conserva: EnvironmentMapScale = 1.0 cuando env mapping está OFF (882k shapes).
-        Dim effectiveShaderType = shaderType
         Dim effectiveEnvMapping = Mat.EnvironmentMapping
-        shad.HasEnvironmentMapping = effectiveEnvMapping
-        If effectiveShaderType = NiflySharp.Enums.BSLightingShaderType.EyeEnvmap Then
+        If shad.ShaderType_SK_FO4 = NiflySharp.Enums.BSLightingShaderType.EyeEnvmap Then
             ' Simétrico a Create (lee EyeCubemapScale para IsTypeEyeEnvironmentMap).
             shad.EyeCubemapScale = Mat.EnvironmentMappingMaskScale
         Else
@@ -4524,28 +4824,6 @@ Public Class FO4UnifiedMaterial_Class
             shad.SubsurfaceRolloff = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
         End If
         shad.ModelSpace = Mat.ModelSpaceNormals
-        shad.ShaderType_SK_FO4 = effectiveShaderType
-        ' Convenciones tipo→flag de Skyrim (sweep SSE: ~99-100% en 73.128 shapes
-        ' vanilla): sin su flag el engine SK no aplica el comportamiento del tipo (un SkinTint
-        ' sin FaceGen_RGB_Tint no tintea). Assert-on solamente — nunca se apaga nada. Miembros
-        ' verificados en Bitflags.SkyrimShaderPropertyFlags{1,2}.g.cs. Path FO4 intocado.
-        If shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK Then
-            Select Case effectiveShaderType
-                Case NiflySharp.Enums.BSLightingShaderType.FaceTint
-                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Facegen_Detail_Map
-                    shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 Or NiflySharp.Enums.SkyrimShaderPropertyFlags2.Soft_Lighting
-                Case NiflySharp.Enums.BSLightingShaderType.SkinTint
-                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.FaceGen_RGB_Tint
-                Case NiflySharp.Enums.BSLightingShaderType.HairTint
-                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Hair_Soft_Lighting
-                Case NiflySharp.Enums.BSLightingShaderType.GlowShader
-                    shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 Or NiflySharp.Enums.SkyrimShaderPropertyFlags2.Glow_Map
-                Case NiflySharp.Enums.BSLightingShaderType.EnvironmentMap
-                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Environment_Mapping
-                Case NiflySharp.Enums.BSLightingShaderType.EyeEnvmap
-                    shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Eye_Environment_Mapping
-            End Select
-        End If
         ' TintColorScale sube el ×2 del pelo SSE al dominio FLOAT (el storage BGSM es de bytes, techo 1.0).
         shad.HairTintColor = NifColor3ForSave(shad.HairTintColor, Mat.HairTintColor, Me.TintColorScale, keepBlock:=Not transcription)
         ' El skin-tone tiene UN solo escritor, compartido con el export a NIF: WriteSkinTintToShader.
@@ -4565,7 +4843,6 @@ Public Class FO4UnifiedMaterial_Class
         shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
         shad.SpecularColor = NifColor3ForSave(shad.SpecularColor, Mat.SpecularColor, keepBlock:=Not transcription)
         shad.SpecularStrength = Mat.SpecularMult
-        shad.HasGlowmap = Mat.Glowmap
         shad.HasTreeAnim = Mat.Tree
         shad.HasSoftlight = Mat.SubsurfaceLighting
         shad.HasRimlight = Mat.RimLighting
@@ -4580,7 +4857,6 @@ Public Class FO4UnifiedMaterial_Class
         shad.FresnelPower = Mat.FresnelPower
 
         shad.HasExternalEmittance = Mat.ExternalEmittance
-        shad.HasEyeEnvironmentMapping = Mat.EnvironmentMappingEye
         shad.RootMaterialName = Mat.RootMaterialPath
         shad.UseScreenSpaceReflections = Mat.ScreenSpaceReflections
         shad.WetnessControl_UseSSR = Mat.WetnessControlScreenSpaceReflections
@@ -4618,23 +4894,7 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF1(shad, ZBufferTestFlagValue(shad), Mat.ZBufferTest)
         ShaderHelper.SetFlagSF1(shad, RefractionFlagValue(shad), Mat.Refraction)
         ShaderHelper.SetFlagSF2(shad, AnisotropicLightingFlagValue(shad), Mat.AnisoLighting)
-        ShaderHelper.SetFlagSF1(shad, HairFlagValue(shad), Mat.Hair)
-        ' Skin_Tint y Face CIERRAN la asimetría lector/escritor: Create_From_Shader los LEE del flag
-        ' F4SPF1 (~:3349/:3351) y hasta acá nadie los ESCRIBÍA, así que el bit sobrevivía del bloque
-        ' destino en vez de salir del material. Con el shape todavía nombrando su .bgsm eso era inerte
-        ' (el motor reemplaza el material entero, 0x142169BB0); pero en cuanto se corta el nombre —bake de
-        ' FaceGen y export a NIF, los dos— el shader inline pasa a ser LEY y el bit rancio manda.
-        ' Se veía con una fuente MODDEADA que delega en su BGSM: su NIF trae Skin_Tint apagado inline
-        ' (al autor no le importa, el BGSM lo pisa), el BGSM trae bSkinTint=True, y el shape exportado
-        ' salía con ShaderType=SkinTint y el flag en 0 ⇒ el cuerpo no se tintaba mientras manos y nuca
-        ' —mallas VANILLA, que sí traen el bit inline— sí. Por eso el corpus vanilla nunca lo exhibió:
-        ' ahí el valor rancio COINCIDE con el correcto.
-        ' Son los 2 únicos huecos: de los 5 bools que derivan el ShaderType horneado (Glowmap, Facegen,
-        ' SkinTint, Hair, EnvironmentMapping), Glowmap/EnvMapping viajan por accessor propio de NiflySharp
-        ' y Hair ya tenía su helper; estos dos no tenían ninguno de los dos y quedaron afuera.
-        ShaderHelper.SetFlagSF1(shad, SkinTintFlagValue(shad), Mat.SkinTint)
-        ShaderHelper.SetFlagSF1(shad, FacegenFlagValue(shad), Mat.Facegen)
-        ShaderHelper.SetFlagSF1(shad, EyeEnvironmentMappingFlagValue(shad), Mat.EnvironmentMappingEye)
+        ' Environment_Mapping, Glow_Map, Hair, Skin_Tint, Face y Eye_Environment_Mapping: EscribirTipoEnBloque (arriba), junto al tipo.
 
         If Not IsSkShader(shad) Then
             If Mat.Tessellate Then
@@ -4855,9 +5115,14 @@ Public Class FO4UnifiedMaterial_Class
             ' no del payload, asi que va ANTES de todo early-return. El motor nunca lo pisa desde el
             ' material (ver el doc de _NifEyeEnvironmentMapping), o sea que el NIF es su unica sede.
             _NifEyeEnvironmentMapping = ShaderHelper.HasFlagSF1(shadCast, EyeEnvironmentMappingFlagValue(shadCast))
+            ' Y el Shader Type del bloque, por lo mismo: es el respaldo del duenio cuando el archivo no se aplica (Skyrim; o un payload
+            ' vacio sobre un wrapper que YA era BGSM: uno nuevo es BGEM por defecto y da Default por esa rama) y no viene del payload
+            ' (TipoDelBloque).
+            Dim bslspCast = TryCast(shadCast, BSLightingShaderProperty)
+            If bslspCast IsNot Nothing Then _NifShaderType = bslspCast.ShaderType_SK_FO4
         End If
-        ' Se llego aca ⇒ el property NOMBRA un archivo de material, que es exactamente el disparador de
-        ' FUN_14216EFB0. Va antes de los early-returns por lo mismo: un .bgem guardado como JSON o un
+        ' Se llego aca ⇒ el property NOMBRA un archivo de material, que es exactamente el disparador del aplicador por
+        ' geometria (0x1421769E0 / 0x142171420). Va antes de los early-returns por lo mismo: un .bgem guardado como JSON o un
         ' archivo vacio son igual de "material aplicado" para el motor.
         _MaterialFileApplied = True
         If Memory.Length = 0 Then Exit Sub
@@ -4906,20 +5171,8 @@ Public Class FO4UnifiedMaterial_Class
                 _suppressAutoPromotion = False
             End Try
         End If
-        If type Is GetType(BGSM) Then
-            ' Nif/shap pueden venir Nothing cuando se carga un material SUELTO sin NIF asociado
-            ' (p.ej. el preview de paleta greyscale del editor MSWP, que sólo necesita los campos
-            ' de textura del .bgsm). Sin NIF no hay shader inline que preservar → saltar el bloque.
-            ' Antes, Nif.GetShader(Nothing) lanzaba NullReferenceException, que el Catch de
-            ' TryLoadMaterialFromDictionary tragaba devolviendo Nothing (= "no palette").
-            If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default AndAlso Nif IsNot Nothing AndAlso shap IsNot Nothing Then
-                ' Desacoplado: el tipo NO se deriva de los flags del .bgsm (el .bgsm no lleva
-                ' tipo). Se preserva el tipo real del shader inline del NIF. Tipo y flags son
-                ' ejes ortogonales.
-                Dim bslsp = TryCast(Nif.GetShader(shap), BSLightingShaderProperty)
-                If bslsp IsNot Nothing Then _NifShaderType = bslsp.ShaderType_SK_FO4
-            End If
-        End If
+        ' (El Shader Type del bloque se sembro AL TOPE del metodo, con el bit 17: ver arriba. Con archivo FO4 el tipo es la cascada,
+        ' NifShaderType.)
         ' NOTE: ClearDirty() is NOT called here. The single snapshot is taken by the caller
         ' Deserialize(Diccionario,...) AFTER it loads the sidecar, so the sidecar-sourced
         ' _EnvmapMaskPath/flow/lighting state is part of the clean baseline (was a double
@@ -5536,6 +5789,15 @@ Public Class ShaderTypeConverter
     Public Sub New()
         MyBase.New(GetType(NiflySharp.Enums.BSLightingShaderType))
     End Sub
+
+    ''' <summary>The list is the material's (FO4UnifiedMaterial_Class.TiposDelSelector): with a Fallout 4 material file applied the
+    ''' types the factory's cascade can give; otherwise the types the block's game builds (plus the current one if the NIF carries a
+    ''' type its game does not build). Without a material at hand, every Shader Type.</summary>
+    Public Overrides Function GetStandardValues(context As ITypeDescriptorContext) As StandardValuesCollection
+        Dim m = TryCast(context?.Instance, FO4UnifiedMaterial_Class)
+        If m IsNot Nothing AndAlso m.IsBGSM() Then Return New StandardValuesCollection(m.TiposDelSelector())
+        Return MyBase.GetStandardValues(context)
+    End Function
 End Class
 
 Public Class DictionaryFilePickerEditor

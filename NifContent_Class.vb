@@ -441,8 +441,8 @@ Public Class Nifcontent_Class_Manolo
         Else
             ' Pass shap+Me so Deserialize can: (a) seed the three alpha fields from the NIF's
             ' NiAlphaProperty before applying the canonical-vs-Unknown rule (BGSM canonical
-            ' wins, BGSM Unknown defers to NIF); (b) resolve ShaderType from the NIF shader
-            ' when the BGSM-derived value is Default.
+            ' wins, BGSM Unknown defers to NIF); (b) seed the block's Shader Type and bit 17, the inputs of
+            ' FO4UnifiedMaterial_Class.NifShaderType (the factory's cascade with the file, the block's field without it).
             material.Deserialize(prefix & fullpath, matType, shap, Me)
         End If
 
@@ -488,6 +488,12 @@ Public Class Nifcontent_Class_Manolo
                 ' are hardcoded by MaterialLib). The renderer (OS/NifSkope) reads from
                 ' NiAlphaProperty, so we must sync the shape-local alpha state here too.
                 mat.WriteAlphaPropertyToShape(shap, Me)
+
+                ' Y EL SHADER TYPE CON LOS BITS QUE LO DECIDEN (decision 19-oct (b)): con el .bgsm el CK guarda la clase del factory y los
+                ' flags mergeados (SaveBinary CK 0x142BD96C0, BSShaderProperty::SaveBinary CK 0x142BC3171..3181). Escritor unico:
+                ' EscribirTipoEnBloque. El resto del shader inline no se toca (lo sigue mandando el archivo).
+                Dim lighting = TryCast(shad, BSLightingShaderProperty)
+                If lighting IsNot Nothing AndAlso TypeOf mat.Underlying_Material Is BGSM Then mat.EscribirTipoEnBloque(Me, lighting)
 
                 ' Y EL BIT Cast_Shadows, POR EL MISMO MOTIVO QUE EL ALPHA: es shape-local y el archivo
                 ' de material NO puede llevarlo. Sin esto el flag se LEIA del NIF (Deserialize lo siembra en

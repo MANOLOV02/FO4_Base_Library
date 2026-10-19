@@ -834,7 +834,7 @@ Partial Public Class Nifcontent_Class_Manolo
     Friend Sub EscribirMaterialEnShader(shap As INiShape, shad As INiShader, mat As FO4UnifiedMaterial_Class)
         Select Case shad.GetType
             Case GetType(BSLightingShaderProperty)
-                mat.Save_To_Shader(Me, shap, CType(shad, BSLightingShaderProperty), mat.NifShaderType, mat.EnvmapMaskTexture)
+                mat.Save_To_Shader(Me, shap, CType(shad, BSLightingShaderProperty), mat.EnvmapMaskTexture)
             Case GetType(BSEffectShaderProperty)
                 mat.Save_To_Shader(Me, shap, CType(shad, BSEffectShaderProperty))
             Case Else

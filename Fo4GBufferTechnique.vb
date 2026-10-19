@@ -36,32 +36,35 @@ Friend Module Fo4GBufferTechnique
         Return CUInt((vertexDesc And &HFFFFFFFFUL) >> 22) And &H3CUI
     End Function
 
-    ''' <summary>The bits the BGSM applicator 0x14216AF90 sets from the material's bytes (em\af90b.txt; reader 0x14216BF20, MaterialLib
-    ''' Deserialize order), as the unified material holds them: one table for the applied and the NIF-inline cases.</summary>
-    Private Function MaterialBits(mb As FO4UnifiedMaterial_Class) As (Bitn As Integer, Value As Boolean)()
-        Return {(7, mb.EnvironmentMapping),             ' +0x17A
-                (10, mb.Facegen),                       ' +0x96
-                (21, mb.SkinTint),                      ' +0x97
-                (12, mb.ModelSpaceNormals),             ' +0x90
-                (15, mb.Refraction),                    ' +0xBB
-                (16, mb.RefractionFalloff),             ' +0xC0
-                (18, mb.Hair),                          ' +0x98
-                (31, mb.ZBufferTest),                   ' +0xBA
-                (32, mb.ZBufferWrite),                  ' +0xB9
-                (20, mb.HideSecret),                    ' +0x93
-                (35, mb.DecalNoFade),                   ' +0x94
-                (61, mb.Tree),                          ' +0x9A
-                (4, mb.GrayscaleToPaletteColor),        ' +0x1BC
-                (53, mb.AnisoLighting),                 ' +0xB8
-                (9, mb.CastShadows),                    ' +0x9E
-                (19, mb.DissolveFade),                  ' +0xA0
-                (38, mb.Glowmap),                       ' +0xA1
-                (36, mb.TwoSided),                      ' +0x99
-                (0, mb.SpecularEnabled),                ' +0x8
-                (29, mb.ExternalEmittance),             ' +0x92
-                (25, mb.Tessellate),                    ' +0xA6
-                (54, mb.SkewSpecularAlpha)}             ' +0xA5
+    ''' <summary>The file byte +0x14A (Multi-layer parallax) the applicator turns into bit 56 and uses to clear bit 7. No .bgsm sets it: the
+    ''' reader 0x14216BF20..0x14216D618 never touches +0x14A and the struct's ctor 0x14216A4E0 leaves it 0 (0x14216A4EF xor esi, esi;
+    ''' 0x14216A69C mov [rdi+0x14A], sil). Tools\re-docs\RE_FO4_SHADER_TYPE_CK_SAVE_2026-10-19 hueco 2, closed here.</summary>
+    Friend Const MultiLayerByteOfAFile As Boolean = False
+
+    ''' <summary>The applicator 0x14216AF90's writes that FEED THE FACTORY'S CASCADE (bits 7, 56, 10, 21, 18, 38: Fo4EngineMaterial.
+    ''' CascadaDelFactory), from the material's bytes (em\af90b.txt; reader 0x14216BF20) as the unified material holds them. Its own
+    ''' function so the shader type (FO4UnifiedMaterial_Class.TipoDelFactory) reads only what decides it; MaterialFileBits applies it
+    ''' with the rest. SetBit one by one, no table built per call: the type is read on the render's hot path.</summary>
+    Friend Function MaterialFileTypeBits(f As ULong, mb As FO4UnifiedMaterial_Class) As ULong
+        f = SetBit(f, 7, mb.EnvironmentMapping AndAlso Not MultiLayerByteOfAFile)  ' +0x17A and not +0x14A (0x14216B085..0x14216B0A7)
+        f = SetBit(f, 56, MultiLayerByteOfAFile)                                   ' +0x14A (0x14216B203..0x14216B213)
+        f = SetBit(f, 10, mb.Facegen)                                              ' +0x96
+        f = SetBit(f, 21, mb.SkinTint)                                             ' +0x97
+        f = SetBit(f, 18, mb.Hair)                                                 ' +0x98
+        f = SetBit(f, 38, mb.Glowmap)                                              ' +0xA1
+#If DEBUG Then
+        ' Directed mutants of the gate fo4-shader-type: one write of the applicator dropped / added.
+        If Fo4GBufferConstants.GateMutantOn("st-applier-env-ignored") Then f = SetBit(f, 7, False)
+        If Fo4GBufferConstants.GateMutantOn("st-applier-glow-ignored") Then f = SetBit(f, 38, False)
+        If Fo4GBufferConstants.GateMutantOn("st-applier-skin-ignored") Then f = SetBit(f, 21, False)
+        If Fo4GBufferConstants.GateMutantOn("st-applier-ml-set") Then f = SetBit(f, 56, True)
+#End If
+        Return f
     End Function
+
+    ''' <summary>The struct bytes the v2 reader never writes, which keep the ctor value 0 (0x14216A4E0): +0x95, +0x9D, +0x18F, +0x190,
+    ''' +0x9B, +0x1A4, +0x1BD -&gt; bits 47, 62, 6, 8, 49, 30, 5 (Shared: no array per call).</summary>
+    Private ReadOnly BitsQueElLectorNoEscribe As Integer() = {47, 62, 6, 8, 49, 30, 5}
 
     ''' <summary>A NIF-inline shape: the bits the unified material reads 1:1 from the SAME bit of the NIF's BSLightingShaderProperty
     ''' (FO4UnifiedMaterial_Class.Create_From_Shader, FO4 path) and owns afterwards - the app's edits included. Every other bit stays
@@ -94,6 +97,42 @@ Friend Module Fo4GBufferTechnique
                 (61, mb.Tree)}                          ' HasTreeAnim
     End Function
 
+    ''' <summary>THE APPLICATOR 0x14216AF90's writes that come from the material file (the geometry's bits 1 and 37 are the caller's): the
+    ''' cascade's bits (MaterialFileTypeBits), the other bytes it copies (em\af90b.txt; MaterialLib Deserialize order), the decal pair, and
+    ''' the struct bytes the v2 reader never writes, which keep the ctor value 0 (0x14216A4E0). The only copy: EngineState (the render)
+    ''' calls it; FO4UnifiedMaterial_Class's shader type calls its cascade part.</summary>
+    Friend Function MaterialFileBits(f As ULong, mb As FO4UnifiedMaterial_Class) As ULong
+        f = MaterialFileTypeBits(f, mb)
+        f = SetBit(f, 12, mb.ModelSpaceNormals)         ' +0x90
+        f = SetBit(f, 15, mb.Refraction)                ' +0xBB
+        f = SetBit(f, 16, mb.RefractionFalloff)         ' +0xC0
+        f = SetBit(f, 31, mb.ZBufferTest)               ' +0xBA
+        f = SetBit(f, 32, mb.ZBufferWrite)              ' +0xB9
+        f = SetBit(f, 20, mb.HideSecret)                ' +0x93
+        f = SetBit(f, 35, mb.DecalNoFade)               ' +0x94
+        f = SetBit(f, 61, mb.Tree)                      ' +0x9A
+        f = SetBit(f, 4, mb.GrayscaleToPaletteColor)    ' +0x1BC
+        f = SetBit(f, 53, mb.AnisoLighting)             ' +0xB8
+        f = SetBit(f, 9, mb.CastShadows)                ' +0x9E
+        f = SetBit(f, 19, mb.DissolveFade)              ' +0xA0
+        f = SetBit(f, 36, mb.TwoSided)                  ' +0x99
+        f = SetBit(f, 0, mb.SpecularEnabled)            ' +0x8
+        f = SetBit(f, 29, mb.ExternalEmittance)         ' +0x92
+        f = SetBit(f, 25, mb.Tessellate)                ' +0xA6
+        f = SetBit(f, 54, mb.SkewSpecularAlpha)         ' +0xA5
+        ' +0x91 Decal -> bits 26 and 27 only when ApplyMaterialData's 3rd argument is 0 (0x14216B12A..0x14216B156: the
+        ' 5th argument of 0x14216AF90 = r15b = ApplyMaterialData's r8b, 0x1421715FC / 0x142171671); a material swap or a
+        ' LooksMenu overlay keeps the NIF's decal bits.
+        If mb.EngineAppliesDecalBits() Then
+            f = SetBit(f, 26, mb.Decal)
+            f = SetBit(f, 27, mb.Decal)
+        End If
+        For Each b In BitsQueElLectorNoEscribe
+            f = SetBit(f, b, False)
+        Next
+        Return f
+    End Function
+
     ''' <summary>The flags GetRenderPasses reads and the material the G-buffer constants read (Fo4EngineMaterial).
     ''' <paramref name="nifFlags"/> = F4SPF1 | F4SPF2 &lt;&lt; 32 of the NIF's block as loaded (<paramref name="nifBlock"/>). Without a
     ''' material file the material in memory owns the bits it reads 1:1 (InlineMaterialBits) and every field (FromInlineMaterial).</summary>
@@ -102,18 +141,7 @@ Friend Module Fo4GBufferTechnique
         Dim f = nifFlags
         Dim m As Fo4EngineLightingMaterial
         If mb.ArchivoFo4Aplicado() Then
-            ' Applicator 0x14216AF90: the table, then the struct bytes the v2 reader never writes keep the ctor value 0 (0x14216A4E0).
-            For Each b In MaterialBits(mb) : f = SetBit(f, b.Bitn, b.Value) : Next
-            ' +0x91 Decal -> bits 26 and 27 only when ApplyMaterialData's 3rd argument is 0 (0x14216B12A..0x14216B156: the
-            ' 5th argument of 0x14216AF90 = r15b = ApplyMaterialData's r8b, 0x1421715FC / 0x142171671); a material swap or a
-            ' LooksMenu overlay keeps the NIF's decal bits.
-            If mb.EngineAppliesDecalBits() Then
-                f = SetBit(f, 26, mb.Decal)
-                f = SetBit(f, 27, mb.Decal)
-            End If
-            For Each b In {47, 62, 6, 8, 56, 49, 30, 5}         ' +0x95, +0x9D, +0x18F, +0x190, +0x14A, +0x9B, +0x1A4, +0x1BD
-                f = SetBit(f, b, False)
-            Next
+            f = MaterialFileBits(f, mb)
             f = SetBit(f, 1, hasSkin)                          ' 0x14216B001..009 / 0x14216B05E: skin instance [geom+0x140]
             f = SetBit(f, 37, ColorOffset(vertexDesc) <> 0UI)  ' 0x14216B012..021 / 0x14216B070
             m = Fo4EngineMaterial.FromMaterialFile(mb, f)       ' 0x14216B610, after the flags (0x14217168F)

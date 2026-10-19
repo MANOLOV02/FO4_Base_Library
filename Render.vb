@@ -5334,7 +5334,7 @@ Public Class PreviewModel
                     If Not UseVertexColor Then Return False
                     Dim mb = MaterialBase
                     If mb Is Nothing Then Return True
-                    Return Not (mb.Tree OrElse mb.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim)
+                    Return Not mb.Tree
                 End Get
             End Property
             ' Resolve the GL blend factors for the active blend mode. Two cases mirror
@@ -9025,14 +9025,14 @@ Public Class PreviewModel
             Dim hasVertexColorData As Boolean = shapeGeom IsNot Nothing AndAlso shapeGeom.HasVertexColors
             Dim shaderUsesVertexAlpha As Boolean = nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha
 
-            ' Tree_Anim interpretation of vertex alpha (anim param vs transparency).
-            ' Triggered by either the BGSM.Tree flag OR the BSLightingShaderType.TreeAnim shader type;
-            ' vanilla content often sets only one of them for vegetation/grass.
+            ' Tree_Anim interpretation of vertex alpha (anim param vs transparency): the Tree flag (BGSM bTree / NIF Tree_Anim).
+            ' The raw TreeAnim Shader Type no longer decides (user decision 19-oct: it is carried by 0 FO4 shapes and by 0 of the
+            ' 89,905 SSE lighting shapes; census Tools\re-docs\CENSO_FO4_SHADER_TYPE_2026-10-19 sections 1 and 8).
             ' Tree vertex-alpha semantics: TreeAnim uses vertex ALPHA as a wind/anim param, not
             ' transparency, so it must not feed the vertex-alpha display. (The vColor RGB gamma-decode
             ' that used to be Tree-only is now universal in the BGSM base path -- the engine decodes
             ' vColor for every BGSM, not just trees.)
-            Dim isTreeAnim As Boolean = materialBase.Tree OrElse materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
+            Dim isTreeAnim As Boolean = materialBase.Tree
             ' Los dos predicados viven en MaterialData (UseVertexColor / UseVertexAlpha) porque el pase de
             ' SOMBRA necesita el mismo bShowVertexAlpha — vColor.a es el lado izquierdo del alpha-test, y si
             ' los dos pases discrepan la silueta que castea deja de ser la que se dibuja. Aca se leen de ahi;

@@ -56,16 +56,28 @@ Friend Module Fo4EngineMaterial
         Return w
     End Function
 
-    ''' <summary>The class 0x14216B610 creates for applied flags <paramref name="f"/> (0x14216B649..0x14216B84B, first match wins).</summary>
-    Private Function AppliedFeature(f As ULong) As Integer
-        Dim bit = Function(n As Integer) ((f >> n) And 1UL) <> 0UL
-        If bit(17) Then Return &H10
-        If bit(7) Then Return 1
-        If bit(38) Then Return 2
-        If bit(10) Then Return 4
-        If bit(21) Then Return 5
-        If bit(18) Then Return 6
-        If bit(56) Then Return &HB
+    ''' <summary>THE FACTORY'S CASCADE, the only copy in the library: 0x14216B610 (Fallout4.exe 1.11.240; the CK's twin 0x142BC6F00) tests the
+    ''' applied flags in this order and builds the first class that matches (0x14216B650 0x20000, 0x14216B68E 0x80, 0x14216B6CC bit 38,
+    ''' 0x14216B704 0x400, 0x14216B735 0x200000, 0x14216B794 0x40000, 0x14216B7D3 bit 56; none: the base class 0x14216B820). Feature = the
+    ''' class's GetType (vfunc +0x28: Eye 0x1421CFF50 = 0x10, Envmap 0x1421CF710 = 1, Glowmap 0x1421D0440 = 2, Face 0x1421D1580 = 4,
+    ''' SkinTint 0x1421D1930 = 5, HairTint 0x1421D1B30 = 6), which is also the Shader Type value SaveBinary writes (0x142178F9C; CK
+    ''' 0x142BD96DC). Source: Tools\re-docs\RE_FO4_SHADER_TYPE_CK_SAVE_2026-10-19 sections 0-2.</summary>
+    Friend ReadOnly CascadaDelFactory As (Bitn As Integer, Feature As Integer)() =
+        {(17, &H10), (7, 1), (38, 2), (10, 4), (21, 5), (18, 6), (56, &HB)}
+
+    ''' <summary>The class 0x14216B610 creates for applied flags <paramref name="f"/>: the first entry of <see cref="CascadaDelFactory"/>
+    ''' whose bit is set, else the base material (0).</summary>
+    Friend Function AppliedFeature(f As ULong) As Integer
+#If DEBUG Then
+        ' Directed mutants of the gate fo4-shader-type (Fo4GBufferConstants.GateMutantOn, the one switch): the cascade's order / entries.
+        If Fo4GBufferConstants.GateMutantOn("st-cascade-glow-before-env") AndAlso ((f >> 17) And 1UL) = 0UL AndAlso ((f >> 38) And 1UL) <> 0UL Then Return 2
+        If Fo4GBufferConstants.GateMutantOn("st-cascade-hair-before-skin") AndAlso ((f >> 17) And 1UL) = 0UL AndAlso ((f >> 7) And 1UL) = 0UL AndAlso
+           ((f >> 38) And 1UL) = 0UL AndAlso ((f >> 10) And 1UL) = 0UL AndAlso ((f >> 18) And 1UL) <> 0UL Then Return 6
+        If Fo4GBufferConstants.GateMutantOn("st-cascade-no-multilayer") Then f = f And Not (1UL << 56)
+#End If
+        For Each c In CascadaDelFactory
+            If ((f >> c.Bitn) And 1UL) <> 0UL Then Return c.Feature
+        Next
         Return 0
     End Function
 
