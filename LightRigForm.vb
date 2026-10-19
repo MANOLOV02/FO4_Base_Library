@@ -385,7 +385,12 @@ Partial Public Class LightRigForm
                 lutInfo = "LUT: none in the record"
             Else
                 ' THE post's own answer (SceneTargets.LutVolume, the one EnsureLut uses).
-                lutInfo = If(SceneTargets.LutVolume(lut) Is Nothing, $"LUT: {lut} not usable, post without LUT", $"LUT: {lut}")
+                Select Case SceneTargets.LutVolume(lut).State
+                    Case SceneTargets.LutLoad.Loaded : lutInfo = $"LUT: {lut}"
+                    Case SceneTargets.LutLoad.NoFile : lutInfo = $"LUT: {lut} not in the data: the game uses its identity LUT"
+                    Case SceneTargets.LutLoad.Rejected : lutInfo = $"LUT: {lut} rejected by the game's loader (it reads only uncompressed 24-bit RGB, 256 x 16): the game uses its identity LUT"
+                    Case Else : lutInfo = $"LUT: {lut} shorter than what the game's loader reads: undefined in the game, drawn with the identity LUT"
+                End Select
             End If
         End If
         ToolTip1.SetToolTip(cmbWeather, "Vanilla weathers of the game (DLC included). The effect shaders' light and the post-process come from the chosen weather and time of day." &

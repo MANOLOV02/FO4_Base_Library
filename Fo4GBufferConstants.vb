@@ -161,6 +161,10 @@ Friend Module Fo4GBufferConstants
     ''' "dfl-no-blendsplit", "dfl-smp-gl-rows") and Fo4DeferredTargets.Ensure ("dfl-cmp-lequal"); --fo4-camz, Fo4DeferredTargets.RunCameraZ
     ''' ("camz-clipinfos", "camz-dispatch-w"); --fo4-post-law, Fo4ImageSpaceChain ("post-bloom-row6", "post-offsets-no7", "post-drp-zw1",
     ''' "post-lut-noweight"); --fo4-refraction-normals, Render.vb RenderRefractionNormalsFo4 ("utl-refr-power0", "utl-eyepos-world").
+    ''' ParityGate (19-oct) fo4-lut-loader, SceneTargets.LutFromBytes ("lut-dx10-ignored", "lut-no-swap", "lut-xz-transposed",
+    ''' "lut-skip-flags", "lut-skip-bitcount", "lut-skip-width", "lut-skip-height", "lut-truncated-loaded", "lut-sig-check"; LutVolume
+    ''' "lut-volume-nofile"); alpha-sort-key,
+    ''' EngineWorldBound.AlphaSortKey / ViewDirection ("alpha-key-assoc", "alpha-key-translation", "alpha-dir-sign").
     ''' Nothing = the laws. Read only under #If DEBUG: a
     ''' Release build has no mutant branch.</summary>
     Friend GateVertexConstantsMutant As String = Nothing

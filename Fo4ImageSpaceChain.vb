@@ -407,15 +407,16 @@ Friend NotInheritable Class Fo4ImageSpaceChain
         GL.Enable(EnableCap.DepthTest)
     End Sub
 
-    ''' <summary>The image space's LUT as the engine samples it (SceneTargets.LutVolume: the 256 x 16 file unfolded to 16^3, UNORM,
-    ''' linear, clamped); 0 when the file does not load (retried every frame while the data dictionary cannot give it).</summary>
+    ''' <summary>The image space's LUT as the engine samples it (SceneTargets.LutVolume: the loader's 16^3 volume, UNORM, linear,
+    ''' clamped); 0 when the engine binds the identity instead. The verdict is kept per path; only NoFile is asked again next frame
+    ''' (the data dictionary may not give the file yet).</summary>
     Private Function EnsureLut(path As String) As Integer
-        If _lut <> 0 AndAlso String.Equals(_lutPath, path, StringComparison.OrdinalIgnoreCase) Then Return _lut
+        If _lutPath IsNot Nothing AndAlso String.Equals(_lutPath, path, StringComparison.OrdinalIgnoreCase) Then Return _lut
         If _lut <> 0 Then GL.DeleteTexture(_lut) : _lut = 0
         _lutPath = Nothing
-        Dim vol = SceneTargets.LutVolume(path)
-        If vol Is Nothing Then Return 0
-        _lut = Volume(vol)
+        Dim r = SceneTargets.LutVolume(path)
+        If r.State = SceneTargets.LutLoad.NoFile Then Return 0
+        If r.State = SceneTargets.LutLoad.Loaded Then _lut = Volume(r.Volume)
         _lutPath = path
         Return _lut
     End Function

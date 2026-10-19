@@ -11026,18 +11026,18 @@ Public Class PreviewModel
         ' 4. BLENDED — back to front, STABLE on equal keys (FO4 alpha list: bottom-up merge sort that keeps the
         ' left run first on equal keys, 0x14221DBD0/DBD2). Overlay layers that blend join this list with their
         ' base shape's key, after the blended meshes in insertion order.
-        ' The point is the game's world-bound centre (O-PT, EngineWorldBound; chunk C8).
+        ' The point is the game's world-bound centre (O-PT, EngineWorldBound; chunk C8), the key the engine's float32 dot with the
+        ' view direction, no translation and no radius (EngineWorldBound.AlphaSortKey, both games).
         BlendedDepthBuffer.Clear()
+        Dim alphaSortDir = EngineWorldBound.ViewDirection(viewMatrix)
         Dim seq = 0
         For Each mesh In BlendedMeshes
             ' O3.3: Frustum cull blended meshes too
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-            Dim viewPos = Vector3.TransformPosition(mesh.WorldBoundCentre(), viewMatrix)
-            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z, .Seq = seq}) : seq += 1
+            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = EngineWorldBound.AlphaSortKey(alphaSortDir, mesh.WorldBoundCentre()), .Seq = seq}) : seq += 1
         Next
         For Each it In _ovlBlended
-            Dim viewPos = Vector3.TransformPosition(it.Mesh.WorldBoundCentre(), viewMatrix)
-            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = it.Mesh, .Layer = it.Layer, .Depth = -viewPos.Z, .Seq = seq}) : seq += 1
+            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = it.Mesh, .Layer = it.Layer, .Depth = EngineWorldBound.AlphaSortKey(alphaSortDir, it.Mesh.WorldBoundCentre()), .Seq = seq}) : seq += 1
         Next
         Dim ordered = BlendedDepthBuffer.OrderByDescending(Function(d) d.Depth).ThenBy(Function(d) d.Seq).ToList()
         For Each item In ordered

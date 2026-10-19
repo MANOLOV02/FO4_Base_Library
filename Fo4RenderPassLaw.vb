@@ -136,14 +136,21 @@ Friend Module Fo4RenderPassLaw
     ''' (cb2[14].x; 0x1422274C8..509) and its MEMBRANE setup 0x142227B60, BSLightingShader SetupGeometry 0x14223B240 (forward),
     ''' BSDFCompositeShader SetupGeometry 0x1422174F0 without blend: MainPassAlphaThreshold; with a blending NiAlphaProperty the
     ''' composite writes the immediate 0x3F7EFEFF (254/255) instead (0x142217823..830). Bias for every ref - the z-prepass 0x1A
-    ''' 0x141828DE0 (0x141828F45..F65): PrepassAlphaThreshold. Bias plus 1/255 again for ref 4 - BSUtilityShader SetupGeometry
-    ''' 0x142241270, the shadow map (0x142241F41..F64): ShadowMapAlphaThreshold; also the per-instance builders 0x1421C9C00 (called
-    ''' from 0x1421C96A0) and 0x1422421D0 (role not traced), and 0x14223EC60 (the per-instance array [rbx+rsi*4+0x180..18C] of the
-    ''' instanced geometry, from the culling 0x1417E2830 -&gt; 0x1417E08C0; 0x14223F000..046); 0x1421DC470 builds the NVFlex debris
-    ''' (slot 48 of NVFlex::DebrisInstanceNode, vtable 0x1429147A0, through 0x1421DC070). The preview neither instances nor draws
-    ''' Flex debris. Not traced: 0x14181FAA0, 0x142207C80, 0x14223E850 (no static reference). Bits, not
-    ''' decimal literals: 0.00392153F is 0x3B80802E. Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 9.1;
-    ''' AUDIT_APP_VS_GAME_EFFECTS_SSE_2026-10-05.md D-B.</summary>
+    ''' 0x141828DE0 (0x141828F45..F65) and the same driver's merge-instanced list 6, 0x14181FAA0 (0x1418209A0..9B9; only
+    ''' BSMergeInstancedTriShape, whose vfunc 0x1F8 0x1417E93F0 returns this, built at runtime 0x14048F56B, never from a NIF):
+    ''' PrepassAlphaThreshold. Bias plus 1/255 again for ref 4 - BSUtilityShader SetupGeometry 0x142241270, the shadow map
+    ''' (0x142241F41..F64): ShadowMapAlphaThreshold; the G-buffer's cached constant block 0x142207C80 (called from
+    ''' BSLightingShaderProperty::GetRenderPasses 0x14217AAA7; 0x142208603..632), which fills the same slot +0x5A .w as
+    ''' SetupGeometry 0x142205540 with the same bits as MainPassAlphaThreshold; the per-instance builders 0x1421C9C00 (called from
+    ''' 0x1421C96A0) and 0x1422421D0 (role not traced); 0x14223EC60, the per-instance array (+0x8C) of BSInstanceGroup (geometry
+    ''' type 0xE), from the culling 0x1417E2830 (0x1417E2A7B) and 0x1417E2BC0 (0x1417E2E0B), w = 1.0 without the test
+    ''' (0x14223F000..046), and its twin 0x14223E850 (same law, no fade gate; no caller: no call/jmp, RIP-relative operand or
+    ''' absolute pointer reaches it); 0x1421DC470 builds the NVFlex debris (slot 48 of NVFlex::DebrisInstanceNode, vtable
+    ''' 0x1429147A0, through 0x1421DC070). The preview builds no merge-instanced shape, no instance group and no Flex debris. In
+    ''' every reader ref is the byte NiAlphaProperty+0x2A of the geometry ([geom+0x130]); a material file reaches it only through
+    ''' the writer that applies it (0x1421715E0, 0x1421719C5..19CC), modelled in FO4UnifiedMaterial_Class.ResolveEngineAlpha.
+    ''' Bits, not decimal literals: 0.00392153F is 0x3B80802E. Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 9.1;
+    ''' Tools/re-docs/RE_FO4_ALPHA_REF_WRITERS_2026-10-15 (readers 1, writers 2); AUDIT_APP_VS_GAME_EFFECTS_SSE_2026-10-05.md D-B.</summary>
     Private ReadOnly AlphaRefBias4 As Single = BitConverter.Int32BitsToSingle(&H3C008056)
 
     ''' <summary>Threshold of the colour passes (G-buffer of the world lighting, forward of the effects): ref * 1/255 + bias,

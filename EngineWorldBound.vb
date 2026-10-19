@@ -87,6 +87,34 @@ Friend Module EngineWorldBound
         Return If(s.HasValue, s.Value.Center, CType(Nothing, Vector3?))
     End Function
 
+    ''' <summary>The alpha list's sort key, one law in both exes: k = (d.y c.y + d.x c.x) + d.z c.z in float32, c = the world-bound
+    ''' centre (<see cref="Centre"/>), d = the view direction. FO4 0x14221DA70 (0x14221DB5A..DBB3; d = camera+0x70..0x78, the third
+    ''' column of the rotation-only view 0x14182D83C..D884). SSE 0x141555540 (0x14155563A..68F; d = camera+0x7C / +0x88 / +0x94),
+    ''' reached for the alpha list through the thunk 0x1415617D0, which clears r9 (the key's negation, 0x1415556A9..6B1, off). The
+    ''' radius is subtracted only with [accumulator+0x51] (FO4 0x14221DBB7..DBC4, SSE 0x141555693..6A0), which the world accumulator
+    ''' never sets (FO4: every ctor writes word [+0x50] = 1, census of .text; SSE: row O-PT of C8): not here. Sorted descending (the
+    ''' farthest first) and stable (FO4 0x14221DBCD..DBE0, SSE 0x1415556B4..6C7). Tools/re-docs/RE_FO4_ALPHA_ORDER_2026-10-19.
+    ''' <paramref name="viewDirection"/> is the direction of the app's camera (rig aware: the law is applied over it).</summary>
+    Friend Function AlphaSortKey(viewDirection As Vector3, centre As Vector3) As Single
+#If DEBUG Then
+        ' ParityGate alpha-sort-key's directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch). The translation is a fault
+        ' injection (no such input reaches this law): 4096 = the corpus' coordinate magnitude (RE 6.1). A per-shape radius and the view's
+        ' translation at the call site are the gate's text mutants of Render.vb.
+        If Fo4GBufferConstants.GateMutantOn("alpha-key-assoc") Then Return viewDirection.Y * centre.Y + (viewDirection.X * centre.X + viewDirection.Z * centre.Z)
+        If Fo4GBufferConstants.GateMutantOn("alpha-key-translation") Then Return ((viewDirection.Y * centre.Y + viewDirection.X * centre.X) + viewDirection.Z * centre.Z) + 4096.0F
+#End If
+        Return (viewDirection.Y * centre.Y + viewDirection.X * centre.X) + viewDirection.Z * centre.Z
+    End Function
+
+    ''' <summary>The view direction <see cref="AlphaSortKey"/> takes, read from a view matrix built by Matrix4.LookAt (row vectors:
+    ''' the third column is the camera's +Z, which looks away from the scene; the engine's d looks into it).</summary>
+    Friend Function ViewDirection(view As Matrix4) As Vector3
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("alpha-dir-sign") Then Return New Vector3(view.M13, view.M23, view.M33)   ' ParityGate alpha-sort-key
+#End If
+        Return New Vector3(-view.M13, -view.M23, -view.M33)
+    End Function
+
     ''' <summary>Ola 0c pto 25: the world bound sphere of <paramref name="shape"/> (WorldBound with its radius).</summary>
     Friend Function WorldSphere(shape As IRenderableShape, geo As SkinnedGeometry) As Sphere?
         Return WorldBound(shape, geo, withRadius:=True)

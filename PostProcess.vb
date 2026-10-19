@@ -1199,28 +1199,88 @@ Friend NotInheritable Class SceneTargets
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
     End Sub
 
-    ''' <summary>The 16^3 RGB volume of a legacy 256x16 LUT (UNORM, raw: the layout of the game's identity LUT,
-    ''' Textures\Effects\ColorLUT.dds measured: r = x mod 16, g = y, b = x div 16), or Nothing when the data dictionary cannot give
-    ''' the file, it does not decode or it is not 256x16: THE one answer to "does the post use this LUT", shared by
+    ''' <summary>What the FO4 LUT loader 0x14183D0F0 (called from 0x14218DCDE) makes of an image space's LUT file.</summary>
+    Friend Enum LutLoad
+        ''' <summary>The loader builds the 16^3 volume.</summary>
+        Loaded
+        ''' <summary>The data dictionary cannot give the file, or it is empty (stream size 0: 0x14183D14A -&gt; 0x14183D50A, no texture):
+        ''' the engine binds its identity LUT [0x143D872C8] (0x14218DCF1..D12).</summary>
+        NoFile
+        ''' <summary>The header fails one of the loader's four tests (0x14183D1C4..1EB -&gt; 0x14183D4DB, no texture): the identity LUT.</summary>
+        Rejected
+        ''' <summary>Hole, declared: the file is shorter than the bytes the loader reads (its header fields or its 0x3000 texel bytes).
+        ''' After the size-0 test the loader reads the buffer blindly (0x14183D199..1EB, 0x14183D260..3F9), so what the game samples is
+        ''' not defined; the preview draws the identity LUT.</summary>
+        Truncated
+    End Enum
+
+    ''' <summary>The image space's LUT as the FO4 loader 0x14183D0F0 builds it (<see cref="LutFromBytes"/>) from the file the data
+    ''' dictionary gives for <paramref name="path"/>: THE one answer to "which LUT does the post sample", shared by
     ''' Fo4ImageSpaceChain (its LUT texture) and the Rendering tab.</summary>
-    Friend Shared Function LutVolume(path As String) As Byte()
-        If String.IsNullOrEmpty(path) Then Return Nothing
+    Friend Shared Function LutVolume(path As String) As (State As LutLoad, Volume As Byte())
+        If String.IsNullOrEmpty(path) Then Return (LutLoad.NoFile, Nothing)
         Dim bytes As Byte() = Nothing
-        Try : bytes = FilesDictionary_class.GetBytes(path) : Catch : Return Nothing : End Try
-        If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
-        Dim dec = FaceTintCpuCompositor.DecodeDds(bytes)
-        If dec Is Nothing OrElse dec.Rgba8 Is Nothing OrElse dec.Width <> 256 OrElse dec.Height <> 16 Then Return Nothing
+        Try : bytes = FilesDictionary_class.GetBytes(path) : Catch : Return (LutLoad.NoFile, Nothing) : End Try
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("lut-volume-nofile") Then Return (LutLoad.NoFile, Nothing)   ' ParityGate fo4-lut-loader
+#End If
+        Return LutFromBytes(bytes)
+    End Function
+
+    ''' <summary>The loader 0x14183D0F0 over the file's bytes. It checks no 'DDS ' signature and reads no colour mask: it rejects the
+    ''' file unless the pixel-format flags (+0x50) carry DDPF_RGB 0x40 (0x14183D1C4), RGBBitCount (+0x58) is 24 (0x14183D1CD), the
+    ''' width (+0x10) is 256 (0x14183D1D8) and the height (+0xC) is 16 (0x14183D1E6). The texels start at +0x94 when the flags carry
+    ''' DDPF_FOURCC 4 and the FourCC (+0x54) is 'DX10' (0x30315844), else at +0x80 (0x14183D199..1C1); only the top level is read,
+    ''' 0x3000 bytes. Row y (outer loop, dest + y * 0x40, 0x14183D250..255) is read as 16 steps of 16 pixels (0x30 bytes each, the
+    ''' source continuous; dest + 0x400 per step, 0x14183D3EE..3F9), so pixel (X, y) of the 256 x 16 file is texel
+    ''' (X mod 16, y, X div 16) of the volume, and each 3-byte pixel gives R = byte 2, G = byte 1, B = byte 0 (0x14183D260..271; the
+    ''' fourth byte, alpha, is 0 and i3648 does not sample it). The volume is 16^3 R8G8B8A8_UNORM, one level (0x14183D1F1..21D); here
+    ''' RGB8, x fastest. Corpus: the 51 LUTs of the vanilla BA2 all pass, and ColorLUT.dds is the identity (17 k per channel) byte for
+    ''' byte (Tools/re-docs/RE_FO4_LUT_LOADER_2026-10-19).</summary>
+    Friend Shared Function LutFromBytes(bytes As Byte()) As (State As LutLoad, Volume As Byte())
+        If bytes Is Nothing OrElse bytes.Length = 0 Then Return (LutLoad.NoFile, Nothing)
+        ' The header fields the loader reads: height +0xC .. bit count +0x58 (4 bytes).
+        If bytes.Length < &H5C Then Return (LutLoad.Truncated, Nothing)
+        Dim flags = BitConverter.ToUInt32(bytes, &H50)
+        Dim dx10 = (flags And 4UI) <> 0 AndAlso BitConverter.ToUInt32(bytes, &H54) = &H30315844UI
+        Dim texels = If(dx10, &H94, &H80)
+        ' The four tests; each can be lifted only by its ParityGate mutant (Debug).
+        Dim testFlags = True, testBits = True, testW = True, testH = True
+#If DEBUG Then
+        ' ParityGate fo4-lut-loader's directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch).
+        If Fo4GBufferConstants.GateMutantOn("lut-dx10-ignored") Then texels = &H80
+        If Fo4GBufferConstants.GateMutantOn("lut-sig-check") AndAlso BitConverter.ToUInt32(bytes, 0) <> &H20534444UI Then Return (LutLoad.Rejected, Nothing)
+        testFlags = Not Fo4GBufferConstants.GateMutantOn("lut-skip-flags") : testBits = Not Fo4GBufferConstants.GateMutantOn("lut-skip-bitcount")
+        testW = Not Fo4GBufferConstants.GateMutantOn("lut-skip-width") : testH = Not Fo4GBufferConstants.GateMutantOn("lut-skip-height")
+#End If
+        If (testFlags AndAlso (flags And &H40UI) = 0) OrElse (testBits AndAlso BitConverter.ToUInt32(bytes, &H58) <> 24UI) OrElse
+           (testW AndAlso BitConverter.ToUInt32(bytes, &H10) <> 256UI) OrElse (testH AndAlso BitConverter.ToUInt32(bytes, &HC) <> 16UI) Then Return (LutLoad.Rejected, Nothing)
+#If DEBUG Then
+        If bytes.Length < texels + &H3000 AndAlso Fo4GBufferConstants.GateMutantOn("lut-truncated-loaded") Then
+            Dim padded(texels + &H3000 - 1) As Byte
+            Array.Copy(bytes, padded, bytes.Length)
+            bytes = padded
+        End If
+#End If
+        If bytes.Length < texels + &H3000 Then Return (LutLoad.Truncated, Nothing)
         Dim vol(16 * 16 * 16 * 3 - 1) As Byte
-        For b = 0 To 15
-            For g = 0 To 15
-                For r = 0 To 15
-                    Dim src = (g * 256 + b * 16 + r) * 4
-                    Dim dst = ((b * 16 + g) * 16 + r) * 3
-                    vol(dst) = dec.Rgba8(src) : vol(dst + 1) = dec.Rgba8(src + 1) : vol(dst + 2) = dec.Rgba8(src + 2)
+        Dim src = texels
+        For y = 0 To 15
+            For z = 0 To 15
+                For x = 0 To 15
+                    Dim dst = ((z * 16 + y) * 16 + x) * 3
+#If DEBUG Then
+                    If Fo4GBufferConstants.GateMutantOn("lut-xz-transposed") Then dst = ((x * 16 + y) * 16 + z) * 3
+#End If
+                    vol(dst) = bytes(src + 2) : vol(dst + 1) = bytes(src + 1) : vol(dst + 2) = bytes(src)
+#If DEBUG Then
+                    If Fo4GBufferConstants.GateMutantOn("lut-no-swap") Then vol(dst) = bytes(src) : vol(dst + 2) = bytes(src + 2)
+#End If
+                    src += 3
                 Next
             Next
         Next
-        Return vol
+        Return (LutLoad.Loaded, vol)
     End Function
 
     Private Sub FreeFrame()
