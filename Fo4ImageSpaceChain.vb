@@ -101,8 +101,17 @@ Friend NotInheritable Class Fo4ImageSpaceChain
     ''' <summary>The LUT of the image space (SceneTargets.LutVolume) and the identity LUT the engine binds for an empty slot ([0x143D872C8],
     ''' 0x14183F500: 16^3 RGBA8, r, g, b = 17 k, a = 255).</summary>
     Private _lut As Integer, _lutPath As String, _identityLut As Integer
-    ''' <summary>The tonemap's t3 while H5 is open: one texel (0, 0, 0, 0) - alpha 0 is no id 4, no pixel bypasses (see Run).</summary>
-    Private _noBypass As Integer
+    ''' <summary>The tonemap's t3: GlossTarget (RT 0x1E of this frame's G-buffer in GL rows, filled by the caller with
+    ''' Fo4DeferredTargets.CopyGlossGlRows), and the texel of its clear (alpha 1.0 = id 255, 0x1421F0BA0..BC1: no pixel bypasses) for a
+    ''' frame whose G-buffer stage did not run (see Run).</summary>
+    Private _glossT3, _glossCleared As Integer
+
+    ''' <summary>The frame-sized RGBA8 texture the caller fills with RT 0x1E in GL rows before Run (0 before Ensure).</summary>
+    Friend ReadOnly Property GlossTarget As Integer
+        Get
+            Return _glossT3
+        End Get
+    End Property
 
     ''' <summary>The four taps of HDRDownSample4 / RGB2Lum (0x142F98300: (+-1, +-1) x texel, weight 0.25, static) and the sixteen of
     ''' 16Lum (0x142F98340: {-1.5, -0.5, 0.5, 1.5}^2, 0.0625), read from the exe's .data.</summary>
@@ -171,8 +180,10 @@ Friend NotInheritable Class Fo4ImageSpaceChain
         _rt44 = Tex(SizedInternalFormat.R11fG11fB10f, Math.Max(w >> 2, 1), Math.Max(h >> 2, 1))
         _rt45 = Tex(SizedInternalFormat.R11fG11fB10f, Math.Max(w >> 2, 1), Math.Max(h >> 2, 1))
         _fbo = Gl43.CreateFramebuffer()
-        _noBypass = Tex(SizedInternalFormat.Rgba8, 1, 1)
-        Gl43.TexSubImage2D(_noBypass, TextureTarget.Texture2D, 0, 0, 0, 1, 1, PixelFormat.Rgba, PixelType.UnsignedByte, New Byte() {0, 0, 0, 0})
+        _glossT3 = Tex(SizedInternalFormat.Rgba8, w, h)
+        _glossCleared = Tex(SizedInternalFormat.Rgba8, 1, 1)
+        Dim clearedAlpha = CByte(Fo4DeferredTargets.GlossClearAlpha * 255.0F)   ' the G-buffer's clear, its one owner
+        Gl43.TexSubImage2D(_glossCleared, TextureTarget.Texture2D, 0, 0, 0, 1, 1, PixelFormat.Rgba, PixelType.UnsignedByte, New Byte() {0, 0, 0, clearedAlpha})
         EnsureGeometry()
         _w = w : _h = h
     End Sub
@@ -299,17 +310,20 @@ Friend NotInheritable Class Fo4ImageSpaceChain
 
     ''' <summary>Runs the chain over the scene target's radiance and coverage into <paramref name="displayFbo"/> (the display target):
     ''' see the class summary. <paramref name="imgs"/> = the frame's image space (its HNAM / CNAM / TNAM and LUT, PreviewImagingTable);
-    ''' the tonemap's t3 (RT 0x1E with [0x142F984D4] = 1, 0x14220A56C..604) is a declared hole (H5): what RT 0x1E's alpha holds when the
-    ''' post reads it is not traced - the G-buffer's own makes the shapes whose record writes id 4 (technique bit 23, Pipboy_Screen;
-    ''' the ensayo measured hair among them) skip the tonemap, which the game does not show - so t3 is a texel of alpha 0: no pixel
-    ''' bypasses, the frame as before ola 4 (_noBypass);
+    ''' the tonemap's t3 is RT 0x1E with [0x142F984D4] = 1 (0x14220A56C..604; FILT 0, 0x14220A587..5A7): i3700 skips the tonemap
+    ''' where its stored alpha is 4 (|t3.w 255 - 4| &lt; 0.25). Its writers in the world frame, census closed: the G-buffer clear (alpha
+    ''' 1.0), the G-buffer draws (id 4 only from technique bit 23 without bit 10, Pipboy_Screen; the hair's blend layers leave
+    ''' s^2 + (1 - s) d, which over base hair lands on 4 in a narrow band) and water (ids 2 / 3, not drawn by the preview); decals,
+    ''' effects, lights, forward and post do not touch it (Tools/re-docs/RE_FO4_TONEMAP_BYPASS_PROPCOLOR_2026-10-19, tema 1).
+    ''' <paramref name="gloss"/> = RT 0x1E in GL rows like the scene (the caller fills GlossTarget with
+    ''' Fo4DeferredTargets.CopyGlossGlRows when the frame's G-buffer stage ran), 0 otherwise (t3 = the clear's texel);
     ''' <paramref name="refractionNormals"/> = the frame's refraction normals target, 0 when the frame drew none (ISRefraction's
     ''' IsActive [0x143E71D99]); <paramref name="refractionTint"/> its Tint (RefractionLaw.ImageSpaceConstants);
     ''' <paramref name="setBackground"/> uploads the background's uniforms to Fragment_Present.</summary>
     Public Sub Run(progs As Fo4DeferredPrograms, unpremultiply As Shader_Base_Class, actorMean As Shader_Base_Class, present As Shader_Base_Class,
                    imgs As Fo4ImageSpace, sceneTex As Integer, coverageTex As Integer, bgShadowTex As Integer,
                    refractionNormals As Integer, refractionTint As Vector4, displayFbo As Integer, setBackground As Action(Of Shader_Base_Class),
-                   emptyVao As Integer)
+                   emptyVao As Integer, gloss As Integer)
         Dim origen = Gl43.Origin                                     ' the caller's origin, restored after the chain
         Gl43.ClipControl(ClipOrigin.UpperLeft)
         Try
@@ -360,12 +374,17 @@ Friend NotInheritable Class Fo4ImageSpaceChain
             Pass(blur, _rt45, bw, bh, {(0, _rt44, False)})
             ' The tonemap HDRTonemapBlendCinematic (i3700; ImageSpaceEffectHDR slot 9 0x14220A730): Param, Cinematic, Tint
             ' (Fo4ImageSpace.UploadTonemap), DynamicResolutionParam (1, 1, 1, 1) (0x14220A921); t0 RT 1 (FILT 0), t1 the bloom RT 0x45
-            ' (FILT 1, 0x14220A519), t2 the mean (FILT 0), t3 the hole H5 (_noBypass, see Run).
+            ' (FILT 1, 0x14220A519), t2 the mean (FILT 0), t3 RT 0x1E (FILT 0, 0x14220A587..5A7; see Run).
+            Dim t3 = If(gloss <> 0, gloss, _glossCleared)
+#If DEBUG Then
+            ' ShadowGate --fo4-post-law / --fo4-h5-scene mutant: the clear's texel whatever the frame's RT 0x1E (no pixel bypasses).
+            If Fo4GBufferConstants.GateMutantOn("h5-t3-cleared") Then t3 = _glossCleared
+#End If
             Dim tone = progs.ImageSpaceProgram(3700UI)
             tone.Use()
             imgs.UploadTonemap(tone)
             tone.SetVector4("DynamicResolutionParam", Vector4.One)
-            Pass(tone, _tone, _w, _h, {(0, _rt1, False), (1, _rt45, True), (2, _avg, False), (3, _noBypass, False)})
+            Pass(tone, _tone, _w, _h, {(0, _rt1, False), (1, _rt45, True), (2, _avg, False), (3, t3, False)})
             ' 3. ISRefraction (effect 5, i3658; its own Render 0x142255B70, RE_REFRACTION_BOTH 4.6): t0 the tonemapped image with
             ' +0x1C = 1 (FILT 1, bilinear), t1 the refraction normals with +0x1C = 0 (POINT).
             Dim graded = _tone
@@ -457,14 +476,14 @@ Friend NotInheritable Class Fo4ImageSpaceChain
     End Property
 
     Public Sub Free()
-        For Each t In {_rt1, _actor, _weight, _tone, _refracted, _present, _rt46, _avg, _rt44, _rt45, _noBypass}
+        For Each t In {_rt1, _actor, _weight, _tone, _refracted, _present, _rt46, _avg, _rt44, _rt45, _glossT3, _glossCleared}
             If t <> 0 Then GL.DeleteTexture(t)
         Next
         For Each pyr In {_pyrActor, _pyrWeight}
             For Each l In pyr : GL.DeleteTexture(l.Tex) : Next
             pyr.Clear()
         Next
-        _rt1 = 0 : _actor = 0 : _weight = 0 : _tone = 0 : _refracted = 0 : _present = 0 : _rt46 = 0 : _avg = 0 : _rt44 = 0 : _rt45 = 0 : _noBypass = 0
+        _rt1 = 0 : _actor = 0 : _weight = 0 : _tone = 0 : _refracted = 0 : _present = 0 : _rt46 = 0 : _avg = 0 : _rt44 = 0 : _rt45 = 0 : _glossT3 = 0 : _glossCleared = 0
         If _fbo <> 0 Then GL.DeleteFramebuffer(_fbo) : _fbo = 0
         _w = 0 : _h = 0
     End Sub

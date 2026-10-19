@@ -1983,7 +1983,12 @@ Public Class PreviewControl
         ' it back. Post on: the scene targets were cleared uniformly (BeginHdr), so their turn at the stage's end is exact either way.
         If _frameFbo <> _targets.HdrFramebuffer Then _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
         _fo4RowsD3D = True
+        _fo4GBufferThisFrame = True
     End Sub
+
+    ''' <summary>This frame's G-buffer stage ran (BeginFo4GBuffer): the post's tonemap reads its RT 0x1E (Fo4ImageSpaceChain.Run);
+    ''' reset when the frame ends.</summary>
+    Private _fo4GBufferThisFrame As Boolean
 
     ''' <summary>Fallout 4's G-buffer stage: the base pass of the translucent decals opens (Fo4DeferredTargets.BeginDecalBase), its
     ''' surface program with the frame's background (SubirUniformsDeFondo: the one function the background's programs take it from).
@@ -2270,10 +2275,12 @@ Public Class PreviewControl
                 Else
                     ' Fallout 4 (ola 4): the ImageSpaceManager's chain, ISRefraction inside it (effect 5, between the HDR and the LUT).
                     _fo4Post.Ensure(Me.Width, Me.Height)
+                    ' The tonemap's t3: RT 0x1E of this frame's G-buffer, in GL rows like the scene (EndFo4Stage turned the scene).
+                    If _fo4GBufferThisFrame Then _fo4.CopyGlossGlRows(_fo4Post.GlossTarget)
                     _fo4Post.Run(SharedFo4Deferred, SharedFo4PostApp.Unpremultiply, SharedFo4PostApp.ActorMean, SharedFo4PostApp.Present,
                                  row.Fo4ImageSpace, _targets.SceneTexture, _targets.CoverageTexture, _targets.BgShadowTexture,
                                  If(_Model.FrameRefractionActive, _refraction.NormalsTexture, 0), RefractionLaw.ImageSpaceConstants(False).Tint,
-                                 _targets.DisplayFramebuffer, AddressOf SubirUniformsDeFondo, _bgVao)
+                                 _targets.DisplayFramebuffer, AddressOf SubirUniformsDeFondo, _bgVao, If(_fo4GBufferThisFrame, _fo4Post.GlossTarget, 0))
                 End If
                 _frameFbo = _targets.DisplayFramebuffer
                 _lastFrameHdrScene = True
@@ -2283,6 +2290,7 @@ Public Class PreviewControl
             End If
         Finally
             Model.FrameIsHdr = False
+            _fo4GBufferThisFrame = False
         End Try
         If offscreen Then _targets.Present()
         If Not _statusDrawnInFrame Then DrawPreviewGapNotice()

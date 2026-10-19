@@ -66,8 +66,13 @@ Friend Module Fo4EffectConstants
 
     ''' <summary>PS PropertyColor (cb2), SG 0x142226EF9..FCA: rgb = powf([prop + 0x78] colour, 2.2), 1.0 when the pointer is null - the
     ''' ctor leaves it null (0x1421774F4) and the preview has no writer of it (re.md 6.2) -, so powf(1, 2.2) = 1; w = the pass alpha
-    ''' [prop + 0x28] (0x142226F3A), times [[geom + 0x48] + 0x13C] only when [pass + 0x4E] AND 0x80 (0x142226F86..FB5: the pass ctor
-    ''' 0x14221D35A writes 3 there and the preview has no other writer). [prop + 0x28] = GetRenderPasses' 0x1421694B0 of the material
+    ''' [prop + 0x28] (0x142226F3A), times [[prop + 0x48] + 0x13C] only when [pass + 0x4E] AND 0x80 (0x142226F86..FB5; the pass's +0x10
+    ''' is the property, 0x14221D33B; +0x48 its fade node). [pass + 0x4E] is the pass's mesh-LOD level: the ctors write 3
+    ''' (0x14221D35A, 0x142168D1D, 0x14221D47F) and GetRenderPasses the level, and bit 7 is set only by the group-9 LOD copies,
+    ''' [fadeNode + 0x11E] OR 0x80 (0x142177C17 effect, 0x14217AD8B lighting), for a geometry with bit 12 of +0x108 (NIF flags) and
+    ''' fadeNode + 0x11D != 2; [fadeNode + 0x13C] is the mesh-LOD crossfade progress (0x14217DA80). Corpus: the effect geometries with
+    ''' bit 12 are 443 BSMeshLODTriShape (precombined, architecture, scol), none in actors / armor / clothes / weapons: in the preview
+    ''' w is the pass alpha (Tools/re-docs/RE_FO4_TONEMAP_BYPASS_PROPCOLOR_2026-10-19, tema 2). [prop + 0x28] = GetRenderPasses' 0x1421694B0 of the material
     ''' alpha +0x54 (vfunc +0x198 = 0x142178940) times the fade [[prop + 0x48] + 0x1A0] (0x142177881..89E) when the accumulator's
     ''' first-person byte [r13 + 0xB0] is 0 (r13 = GetRenderPasses' 4th argument), the alpha alone without the fade when it is not
     ''' (0x142177869..87F). The preview is never first person (the same byte the technique reads, 0x142177A28) and its fade is 1

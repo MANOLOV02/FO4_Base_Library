@@ -209,9 +209,10 @@ Friend Module Fo4GBufferConstants
         BSA_BA2_Library_DLL.BethesdaArchive.Core.Ba2GateMutants.Name = name
     End Sub
 
-    ''' <summary>DEBUG ONLY (rev-B12): the mutant <paramref name="name"/> is on.</summary>
+    ''' <summary>DEBUG ONLY (rev-B12): the mutant <paramref name="name"/> is on. The same one switch may hold several names joined by
+    ''' '+' (item 5 r19f-01: "h5-clear-0+h5-t3-cleared" = HEAD's G-buffer clear and t3 together): each of them is on.</summary>
     Friend Function GateMutantOn(name As String) As Boolean
-        Return String.Equals(GateVertexConstantsMutant, name, StringComparison.Ordinal)
+        Return BSA_BA2_Library_DLL.BethesdaArchive.Core.Ba2GateMutants.Matches(GateVertexConstantsMutant, name)   ' the one reading
     End Function
 
     ''' <summary>DEBUG ONLY (ShadowGate --effect-scenes, ola 3 rev-C5): the scene bounds PreviewControl.GetSceneBounds returns (the

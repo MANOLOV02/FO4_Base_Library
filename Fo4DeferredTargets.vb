@@ -802,6 +802,19 @@ Friend NotInheritable Class Fo4DeferredTargets
 
     ''' <summary>The G-buffer's colour targets (RT 0x1A, 0x1B, 0x1D, 0x1E, 0x1F, 0x1421F30B0).</summary>
     Friend Const GBufferTargetCount As Integer = 5
+    ''' <summary>RT 0x1E's colour attachment in the G-buffer framebuffer (the order of GBufferTargetCount's list: o3).</summary>
+    Private Const GlossTargetIndex As Integer = 3
+    ''' <summary>RT 0x1E's clear alpha, 1.0 = id 255 (0x1421F310E mode 0, 0x1421F0BA0..BC1): THE value - BeginGBuffer clears with it
+    ''' and Fo4ImageSpaceChain's t3 texel for a frame without a G-buffer stage stores it (UNORM8: 255).</summary>
+    Friend Shared ReadOnly Property GlossClearAlpha As Single
+        Get
+#If DEBUG Then
+            ' ShadowGate --fo4-h5-scene / --fo4-post-law mutant: RT 0x1E cleared with alpha 0 instead of the engine's 1.0.
+            If Fo4GBufferConstants.GateMutantOn("h5-clear-0") Then Return 0.0F
+#End If
+            Return 1.0F
+        End Get
+    End Property
     ''' <summary>The draw buffer of the decals' base surface coverage: DecalBaseTarget.Begin attaches the coverage target after the
     ''' caller's colours (BeginDecalBase: the GBufferTargetCount G-buffer RTs), and Fragment_DecalBaseSurface writes oCoverage at
     ''' Fo4DeferredAppSource.SurfaceCoverageLocationGlsl - the one number, read here; ShadowGate --decal-base-surface checks it is
@@ -1004,7 +1017,9 @@ Friend NotInheritable Class Fo4DeferredTargets
     End Function
 
     ''' <summary>Opens the G-buffer stage: D3D row order (UPPER_LEFT; glFrontFace unchanged, propuesta A.2), every RT cleared (rev-29 b:
-    ''' 0), depth 1 / stencil 0 (0x1421F3151..0x1421F3164), sRGB writes on (rev-17).</summary>
+    ''' 0) except RT 0x1E's alpha, cleared to 1.0 = id 255 as the engine's clear (0x1421F310E mode 0, 0x1421F0BA0..BC1; its rgb,
+    ''' Sky + 0x138, is a declared hole the preview never reads where no shape drew), depth 1 / stencil 0 (0x1421F3151..0x1421F3164),
+    ''' sRGB writes on (rev-17).</summary>
     Public Sub BeginGBuffer()
         Gl43.ClipControl(ClipOrigin.UpperLeft)
         If GateNoUpperLeft Then Gl43.ClipControl(ClipOrigin.LowerLeft)
@@ -1014,7 +1029,7 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.DepthMask(True)
         Gl43.DrawBuffers(_fboG, GBufferTargetCount, GBufferBuffers)
         For i = 0 To GBufferTargetCount - 1
-            Gl43.ClearFramebuffer(_fboG, ClearBuffer.Color, i, New Single() {0.0F, 0.0F, 0.0F, 0.0F})
+            Gl43.ClearFramebuffer(_fboG, ClearBuffer.Color, i, New Single() {0.0F, 0.0F, 0.0F, If(i = GlossTargetIndex, GlossClearAlpha, 0.0F)})
         Next
         Gl43.ClearFramebuffer(_fboG, ClearBufferCombined.DepthStencil, 0, 1.0F, 0)
         _baseDrawn = False
@@ -1262,7 +1277,6 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' similar to a CPU memcpy"). <paramref name="format"/> is the image's: R11F_G11F_B10F, RGBA8 or DEPTH24_STENCIL8 (depth and
     ''' stencil together). The frame's own framebuffers are not touched (the image is attached to this class's pair).</summary>
     Public Sub MirrorRows(image As Integer, target As ImageTarget, format As SizedInternalFormat)
-        Dim isDs = format = SizedInternalFormat.Depth24Stencil8
         Dim scratch As Integer
         Select Case format
             Case SizedInternalFormat.R11fG11fB10f : scratch = _mirR11
@@ -1270,6 +1284,29 @@ Friend NotInheritable Class Fo4DeferredTargets
             Case SizedInternalFormat.Depth24Stencil8 : scratch = _mirDs
             Case Else : Throw New ArgumentException($"MirrorRows: no scratch image of format {format}", NameOf(format))
         End Select
+        BlitMirrored(image, target, scratch, format, copyBack:=True)
+    End Sub
+
+    ''' <summary>RT 0x1E (the G-buffer's gloss / material id, D3D rows: MirrorRows does not turn it at the stage's end) mirrored into
+    ''' <paramref name="dst"/>, an RGBA8 texture of the frame's size, in GL rows like the scene the post reads: the tonemap's t3
+    ''' (Fo4ImageSpaceChain.Run, 0x14220A587..5A7). RT 0x1E itself stays in D3D rows.</summary>
+    Friend Sub CopyGlossGlRows(dst As Integer)
+#If DEBUG Then
+        ' ShadowGate --fo4-h5-scene mutant: the copy without turning the rows (RT 0x1E's D3D rows under the scene's GL rows).
+        If Fo4GBufferConstants.GateMutantOn("h5-gloss-nomirror") Then
+            GL.CopyImageSubData(_gloss, ImageTarget.Texture2D, 0, 0, 0, 0, dst, ImageTarget.Texture2D, 0, 0, 0, 0, _w, _h, 1)
+            Return
+        End If
+#End If
+        BlitMirrored(_gloss, ImageTarget.Texture2D, dst, SizedInternalFormat.Rgba8, copyBack:=False)
+    End Sub
+
+    ''' <summary>The one mirrored blit (NEAREST, same size and format: nothing converted) of <paramref name="image"/> into the texture
+    ''' <paramref name="destination"/>; with <paramref name="copyBack"/> <paramref name="destination"/> is the scratch and the result
+    ''' goes back over <paramref name="image"/> raw (MirrorRows).</summary>
+    Private Sub BlitMirrored(image As Integer, target As ImageTarget, destination As Integer, format As SizedInternalFormat, copyBack As Boolean)
+        Dim isDs = format = SizedInternalFormat.Depth24Stencil8
+        Dim scratch = destination
         Dim att = If(isDs, FramebufferAttachment.DepthStencilAttachment, FramebufferAttachment.ColorAttachment0)
         Dim attach = Sub(fbo As Integer, img As Integer, tgt As ImageTarget)
                          If tgt = ImageTarget.Renderbuffer Then
@@ -1294,7 +1331,7 @@ Friend NotInheritable Class Fo4DeferredTargets
             GL.Disable(EnableCap.ScissorTest)
             Dim mask = If(isDs, ClearBufferMask.DepthBufferBit Or ClearBufferMask.StencilBufferBit, ClearBufferMask.ColorBufferBit)
             Gl43.BlitFramebuffer(_fboMirSrc, _fboMirDst, 0, 0, _w, _h, 0, _h, _w, 0, mask, BlitFramebufferFilter.Nearest)
-            GL.CopyImageSubData(scratch, ImageTarget.Texture2D, 0, 0, 0, 0, image, target, 0, 0, 0, 0, _w, _h, 1)
+            If copyBack Then GL.CopyImageSubData(scratch, ImageTarget.Texture2D, 0, 0, 0, 0, image, target, 0, 0, 0, 0, _w, _h, 1)
         Finally
             attach(_fboMirSrc, 0, target)
             attach(_fboMirDst, 0, ImageTarget.Texture2D)
