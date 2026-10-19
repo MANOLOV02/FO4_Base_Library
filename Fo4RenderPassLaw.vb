@@ -1,3 +1,27 @@
+''' <summary>Item 2b: how a world accumulator walks a list when it draws it - THE order inside a list, one owner per game
+''' (Fo4RenderPassLaw.ListWalk, SseRenderPassLaw.ListWalk), read by the render (PreviewModel.RebuildRenderBuckets /
+''' BuildFo4TechniqueSequences) and by the coverage (MaterialData.EngineCoverage.DrawsAfter).</summary>
+Friend Enum EngineListWalk
+    ''' <summary>No colour list.</summary>
+    None
+    ''' <summary>Fallout 4: a technique holder - G-buffer bucket 4, the sub-holder lists 3 / 4 (bit0 of +0x20 clear, ctor 0x14221DC70),
+    ''' forward bucket 0 - shader type, technique activation, packets, chain (PreviewModel.Fo4TechniqueBucketKeys; RE_FO4_TECHNIQUE_BUCKET_ORDER
+    ''' L5..L8).</summary>
+    TechniqueBuckets
+    ''' <summary>Skyrim SE: a batch list (+0x26 = 0, holder ctor 0x14155E1C0) - pass ID ascending (0x14155FC90 / 0x14155FF40), sub-list
+    ''' 0..4 (0x14155FED0), reverse registration inside (prepend 0x14155F024..02B, walk 0x1415601A9..1DB): the O-OP key
+    ''' (PreviewModel.SseBatchKey; RE_FO4_TECHNIQUE_BUCKET_ORDER Addendum r19b-4).</summary>
+    PassBatches
+    ''' <summary>A linked list the group APPENDS to, drawn head to tail: registration order (FO4 0x1422221C0 0x142222262..28F, walk
+    ''' 0x142220600; SSE 0x14155DD70 0x14155DDDC..E05, walk 0x14155DF50).</summary>
+    Registration
+    ''' <summary>A linked list the group PREPENDS to, drawn head to tail: reverse registration order (FO4 0x142222248..25D; SSE
+    ''' 0x14155DDBD..DD7).</summary>
+    RegistrationReverse
+    ''' <summary>The sorted alpha list (FO4 0x14221DA70, SSE 0x141555540; RE_FO4_ALPHA_ORDER 2).</summary>
+    AlphaSorted
+End Enum
+
 ''' <summary>HOW FALLOUT 4 DRAWS ONE SHAPE IN THE WORLD RENDER: its pass group, the stage and list it lands in, the depth test /
 ''' write / bias of its colour pass. One pure law (gate ParityGate `fo4-pass-law`), read by RenderAll / Render. Sources
 ''' (Fallout4.exe 1.11.240.0): Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md (groups and routing 3, G-buffer depth
@@ -50,7 +74,10 @@ Friend Module Fo4RenderPassLaw
         ''' edx = 4).</summary>
         GBufferOpaque
         ''' <summary>G-buffer list 0 (group 7, F4SF2 bit 1 LOD_Landscape): drawn after the decal lists 2 / 3 (0x1421F3C3B -&gt;
-        ''' 0x1421D5EA0) at 0x1421F3C4C, before 0x1421D8450 and list 1 (0x1421F3CD0). Its insertion order is not traced.</summary>
+        ''' 0x1421D5EA0) at 0x1421F3C4C, before 0x1421D8450, list 1 (0x1421F3CD0) and list 4 (0x1421F3CDC). A linked list (bit0 of
+        ''' +0x20, ctor 0x14221E2C3) that group 7 appends to (r9b = 0: 0x1421D4B78 -&gt; 0x1421D4EBE; 0x1422221C0 append
+        ''' 0x142222262..28F), drawn head to tail pass by pass (0x1421D6F50 -&gt; 0x142220CA0 -&gt; 0x142220600, next +0x40): registration
+        ''' order, no packet replay.</summary>
         GBufferLodLandscape
         ''' <summary>G-buffer list 3 (group 2) - lighting and effect decals.</summary>
         DecalOpaque
@@ -63,6 +90,25 @@ Friend Module Fo4RenderPassLaw
         ''' <summary>The sorted alpha list (group 1).</summary>
         Translucent
     End Enum
+
+    ''' <summary>Item 2b: the walk of each list the app routes to (EngineListWalk). List 0 (group 7): linked (ctor 0x14221E2C3), routing
+    ''' 0x1421D4B78 -&gt; 0x1421D4EBE (r9b = 0): append. List 0xE (group 0x14, the only group the app routes there): linked (ctor
+    ''' 0x14221E797), routing 0x1421D4C15..C1E (r9b = 1; jump table 0x1421D4F8C, index group - 1 = 0x13; group 0x13 goes to 0x1421D4C0A, r9b = 0):
+    ''' prepend; drawn at 0x1421F93D5 -&gt; 0x1421D6F50(acc, 0xE).</summary>
+    Friend Function ListWalk(list As Fo4List) As EngineListWalk
+        Select Case list
+            Case Fo4List.GBufferOpaque, Fo4List.DecalOpaque, Fo4List.DecalTranslucent, Fo4List.ForwardEffect : Return EngineListWalk.TechniqueBuckets
+            Case Fo4List.GBufferLodLandscape : Return EngineListWalk.Registration
+            Case Fo4List.ForwardBillboard
+#If DEBUG Then
+                ' Item 2b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): list 0xE walked as an appending list.
+                If Fo4GBufferConstants.GateMutantOn("lw-0xe-append") Then Return EngineListWalk.Registration
+#End If
+                Return EngineListWalk.RegistrationReverse
+            Case Fo4List.Translucent : Return EngineListWalk.AlphaSorted
+            Case Else : Return EngineListWalk.None
+        End Select
+    End Function
 
     ''' <summary>Why a shape has no colour pass (Fo4Pass.Drawn = False): the branch of GetRenderPasses that leaves it without one.</summary>
     Friend Enum Fo4NoPass

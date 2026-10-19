@@ -253,6 +253,77 @@ Friend Module Fo4GBufferTechnique
         Return If(psIn, $"vertex shader 0x{vs:X8}", $"pixel shader 0x{ps:X8}")
     End Function
 
+    ''' <summary>Item 2b: what BSDFPrePassShader 0x142207C80 reads to build a G-buffer pass's cached draw packet (HasDrawPacket):
+    ''' the pass's geometry, technique and group, and its property's state at registration (Tools/re-docs/
+    ''' RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19 1.3).</summary>
+    Friend Structure DrawPacketInputs
+        ''' <summary>byte [geom+0x158] (0x142207CDE) of a geometry the culling registered: 3 BSTriShape (0x1416D9F93), 4 BSDynamicTriShape
+        ''' (0x1416E4CCE), 5 BSMeshLODTriShape (0x1422433AC), 8 BSSubIndexTriShape (0x1417E6182) (MaterialData.Fo4GeometryType). The
+        ''' NiGeometry family never gets here: its culling registers no pass (NifSceneVisibility, r19b-02).</summary>
+        Public GeometryType As Integer
+        ''' <summary>The pass's technique [pass+0x48] (Technique).</summary>
+        Public Technique As UInteger
+        ''' <summary>The pass's group [pass+0x4C] (Technique's group).</summary>
+        Public Group As Integer
+        ''' <summary>The property's flags [prop+0x30] (MaterialData.Fo4Flags: applicator and slot-42 fixer).</summary>
+        Public Flags As ULong
+        ''' <summary>[[geom+0x138]+0x18] &lt;&gt; 0: the BSLightingShaderProperty has a controller (NiObjectNET +0x18).</summary>
+        Public PropertyController As Boolean
+        ''' <summary>The geometry's NiAlphaProperty ([[pass+0x18]+0x130], 0x14221D620) exists and has a controller ([+0x18]).</summary>
+        Public AlphaPropertyController As Boolean
+        ''' <summary>The material's ([prop+0x58]) UV offset +0xC / +0x10 and scale +0x1C / +0x20 of copy i = [0x143E5E0B4] (the two
+        ''' copies are equal after load: NIF 0x1421686C6..6FC, BGSM 0x14216BA90..BAE0; a controller writes them only on a property
+        ''' that already has one).</summary>
+        Public UvOffset As OpenTK.Mathematics.Vector2
+        Public UvScale As OpenTK.Mathematics.Vector2
+    End Structure
+
+    ''' <summary>Item 2b: does BSDFPrePassShader 0x142207C80 build this G-buffer pass's cached draw packet [pass+0] (its only caller,
+    ''' BSLightingShaderProperty::GetRenderPasses 0x14217AAA7, calls it in the world accumulator, byte [acc+0xB0] = 0; the preview draws
+    ''' no first person, whose accumulator 0x1421F03B5 sets 1)? Every exit without one goes to 0x142208CEC (Tools/re-docs/
+    ''' RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19 1.3). The packet decides the pass's place inside its technique
+    ''' (PreviewModel.Fo4TechniqueBucketKeys). No BSEffectShaderProperty pass has one (1.2: no effect path calls a packet constructor).</summary>
+    Friend Function HasDrawPacket(p As DrawPacketInputs) As Boolean
+        Dim t = p.Technique
+#If DEBUG Then
+        ' Item 2b oracles' directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch): one condition of 0x142207C80 dropped.
+        If Fo4GBufferConstants.GateMutantOn("pkt-geomtype-ignored") Then p.GeometryType = 3
+        If Fo4GBufferConstants.GateMutantOn("pkt-propctl-ignored") Then p.PropertyController = False
+        If Fo4GBufferConstants.GateMutantOn("pkt-alphactl-ignored") Then p.AlphaPropertyController = False
+        If Fo4GBufferConstants.GateMutantOn("pkt-uv-ignored") Then p.UvOffset = OpenTK.Mathematics.Vector2.Zero : p.UvScale = OpenTK.Mathematics.Vector2.One
+        Dim uvAlways = Fo4GBufferConstants.GateMutantOn("pkt-uv-always")
+        Dim programsIgnored = Fo4GBufferConstants.GateMutantOn("pkt-programs-ignored")
+#Else
+        Const uvAlways As Boolean = False, programsIgnored As Boolean = False
+#End If
+        Select Case p.GeometryType
+            Case 3, 4, 5, 8                                                               ' 0x142207CDE..CF4
+            Case Else : Return False
+        End Select
+        If (t And &H580000UI) <> 0UI Then Return False                                    ' 0x142207D09
+        If (t And (1UI << 30)) <> 0UI Then Return False                                   ' 0x142207D15
+        If p.Group = &HA Then Return False                                                ' 0x142207D1F
+        If p.PropertyController Then Return False                                         ' 0x142207D2A
+        If p.AlphaPropertyController Then Return False                                    ' 0x142207D35..D3F
+        If (t And (1UI << 24)) <> 0UI Then Return False                                   ' 0x142207D45
+        If Not Bit(p.Flags, 22) OrElse Bit(p.Flags, 49) Then Return False                ' 0x142207D4F..D6C
+        If (t And &H20UI) <> 0UI Then Return False                                        ' 0x142207D72
+        ' VS 0x142273B80 in the shader's table [+0xC0] and PS 0x142273C10 in [+0x150] (0x142207DAE..EAD): the tables BeginTechnique
+        ' looks up (0x142231AF7 / 0x142231BF4) - HasEnginePrograms, the source's closed lists.
+        If Not programsIgnored AndAlso Not HasEnginePrograms(t) Then Return False
+        If (t And &H22UI) = 2UI OrElse uvAlways Then                                      ' 0x142207EC2..ED7
+            ' ucomiss / jne: an unordered compare (NaN) sets ZF and passes as equal (0x142207EE3..F0D; 1.0 = [0x142929458]).
+            If Not (UcomissEqual(p.UvOffset.X, 0.0F) AndAlso UcomissEqual(p.UvOffset.Y, 0.0F) AndAlso
+                    UcomissEqual(p.UvScale.X, 1.0F) AndAlso UcomissEqual(p.UvScale.Y, 1.0F)) Then Return False
+        End If
+        Return True
+    End Function
+
+    ''' <summary>`ucomiss c, v` followed by `jne`: not taken when v = c or the compare is unordered (v NaN; c is never NaN here).</summary>
+    Private Function UcomissEqual(v As Single, c As Single) As Boolean
+        Return v = c OrElse Single.IsNaN(v)
+    End Function
+
     ''' <summary>id of the HS and of the DS (0x142273BB0 / 0x142273BE0, same body): AND 0xFFFEF7FF when bits 11 and 16 are both set,
     ''' else the technique; 0 when bits 19 and 20 are clear (0x142273BC8..BD2).</summary>
     Friend Function HullShaderId(technique As UInteger) As UInteger

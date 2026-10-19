@@ -134,8 +134,51 @@ Public Module NifSceneVisibility
         Return ($"{GameName(isSse)}: hidden by a visibility controller at rest",
                 $"Hidden by a visibility controller at rest: {GameName(isSse)} does not draw it")
     End Function
+    ''' <summary>Item 2b r19b-02: a geometry class Fallout 4's culling never registers (Fo4GeometryClass.NotRegistered).</summary>
+    Friend Function NoticeFo4NotRegistered(className As String) As (Drawn As String, Undrawn As String)
+        Return ($"Fallout 4: {className}, a NiGeometry class its culling never registers",
+                $"{className}, a NiGeometry class Fallout 4's culling never registers: Fallout 4 does not draw it")
+    End Function
+    ''' <summary>Item 2b r19b-13: a geometry class whose registration by Fallout 4's culling is not traced (Fo4GeometryClass.Untraced).</summary>
+    Friend Function NoticeFo4Untraced(className As String) As (Drawn As String, Undrawn As String)
+        Return ($"Fallout 4: {className}, a geometry class whose registration by the culling is not traced",
+                $"{className}: a geometry class whose registration by Fallout 4's culling is not traced - not drawn")
+    End Function
     Private Function GameName(isSse As Boolean) As String
         Return If(isSse, "Skyrim SE", "Fallout 4")
+    End Function
+
+    ''' <summary>Item 2b r19b-02: the exact class of a Fallout 4 geometry as the engine builds it from the NIF, for the laws that read it
+    ''' (Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19, Addendum r19b-02; RTTI and vtables in re2\rtti.py).</summary>
+    Friend Enum Fo4GeometryClass
+        ''' <summary>A class this law does not trace (not one of the app's loadable shape classes, Nifcontent_Class_Manolo.SupportedShape).</summary>
+        Untraced
+        ''' <summary>NiTriShape (vtable 0x142688778), NiTriStrips (0x14268AC00), BSLODTriShape (0x14268AF70), BSSegmentedTriShape
+        ''' (0x142687F28): NiTriBasedGeom : NiGeometry, not BSGeometry. Their OnVisible (slot 57) is 0x1416C9110 `ret` (BSSegmentedTriShape's
+        ''' 0x1416E6EC0 only calls it): the culling (NiNode::OnVisible 0x1416BF8C0 -&gt; BSCullingProcess 0x1417E1C60 -&gt; the object's slot
+        ''' 57, 0x1417E1D98 / 0x1417E1E45) never registers them in an accumulator - no pass, never drawn.</summary>
+        NotRegistered
+        ''' <summary>BSGeometry family: slot 57 = 0x1416D5720 registers the shape when it has a shader property (0x1416D5751..5764).</summary>
+        BSTriShape
+        BSDynamicTriShape
+        BSMeshLODTriShape
+        BSSubIndexTriShape
+    End Enum
+
+    ''' <summary>Item 2b r19b-02: <paramref name="shape"/>'s exact class (Fo4GeometryClass). The one table of the class names: the
+    ''' z-prepass class law (MaterialData.Fo4PrepassGeometryClass), the type byte (MaterialData.Fo4GeometryType) and the culling
+    ''' (Evaluate) read it.</summary>
+    Friend Function Fo4GeometryClassOf(shape As INiShape) As Fo4GeometryClass
+        If shape Is Nothing Then Return Fo4GeometryClass.Untraced
+        Dim t = shape.GetType()
+        If t Is GetType(BSTriShape) Then Return Fo4GeometryClass.BSTriShape
+        If t Is GetType(BSDynamicTriShape) Then Return Fo4GeometryClass.BSDynamicTriShape
+        If t Is GetType(BSMeshLODTriShape) Then Return Fo4GeometryClass.BSMeshLODTriShape
+        If t Is GetType(BSSubIndexTriShape) Then Return Fo4GeometryClass.BSSubIndexTriShape
+        If t Is GetType(NiTriShape) OrElse t Is GetType(NiTriStrips) OrElse t Is GetType(BSLODTriShape) OrElse t Is GetType(BSSegmentedTriShape) Then
+            Return Fo4GeometryClass.NotRegistered
+        End If
+        Return Fo4GeometryClass.Untraced
     End Function
 
     Public Function Evaluate(shape As IRenderableShape) As LoadState
@@ -148,8 +191,11 @@ Public Module NifSceneVisibility
     End Function
 
     ''' <summary>Evaluate with <paramref name="bounds"/> = the node bounds of this NIF in this frame (SceneBoundMemo.ForFrame, rev-13), or
-    ''' Nothing for a map of this call only.</summary>
-    Friend Function Evaluate(nif As Nifcontent_Class_Manolo, shape As INiShape, bounds As Dictionary(Of NiAVObject, NodeBound)) As LoadState
+    ''' Nothing for a map of this call only. <paramref name="cullingEngineIsSse"/> = the engine whose culling walks the scene (the
+    ''' frame's: RenderableMesh.SceneVisibility, r19b-13); Nothing = the NIF's own game (TracedEngine), for a caller without a frame.
+    ''' Only the geometry-class law reads it: the other laws stay the NIF's game's, as before.</summary>
+    Friend Function Evaluate(nif As Nifcontent_Class_Manolo, shape As INiShape, bounds As Dictionary(Of NiAVObject, NodeBound),
+                             Optional cullingEngineIsSse As Boolean? = Nothing) As LoadState
         If nif Is Nothing OrElse shape Is Nothing Then Return Nothing
         Dim chain = ParentChain(nif, shape)
         Dim engine = If(GateLoadLawsOnly, CType(Nothing, Boolean?), TracedEngine(nif))
@@ -180,6 +226,24 @@ Public Module NifSceneVisibility
                 cull = (nc.Drawn, nc.Undrawn)
                 causa = nc.Cause
             End If
+        End If
+        ' Item 2b r19b-02 / r19b-13: when Fallout 4's culling walks the scene (the frame's engine; without a frame, the NIF's game) it
+        ' reaches the object and calls its OnVisible (slot 57), which for the NiGeometry family is `ret` (Fo4GeometryClass.NotRegistered):
+        ' the last cut of the walk, after the node and bound laws above. A class this law does not trace (Untraced; none the app loads,
+        ' Nifcontent_Class_Manolo.SupportedShape): HUECO, declared in the notice, and not registered - no G-buffer pass is built for it.
+        Dim culler = If(GateLoadLawsOnly, CType(Nothing, Boolean?), If(cullingEngineIsSse, engine))
+        If cull.Undrawn Is Nothing AndAlso culler.HasValue AndAlso Not culler.Value Then
+            Select Case Fo4GeometryClassOf(shape)
+                Case Fo4GeometryClass.NotRegistered
+#If DEBUG Then
+                    ' Item 2b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): the law before r19b-02 - the culling registers
+                    ' the NiGeometry family (with MaterialData.Fo4GeometryType's type byte 0: no packet). Here and not in Fo4GeometryClassOf:
+                    ' since r19b-13 an Untraced class is not registered either, so a mutant returning Untraced no longer restores that law.
+                    If Fo4GBufferConstants.GateMutantOn("geomclass-notreg-ignored") Then Exit Select
+#End If
+                    cull = NoticeFo4NotRegistered(shape.GetType().Name)
+                Case Fo4GeometryClass.Untraced : cull = NoticeFo4Untraced(shape.GetType().Name)
+            End Select
         End If
         Return New LoadState(hidden, cull.Undrawn, cull.Drawn, causa)
     End Function

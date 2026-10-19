@@ -274,6 +274,35 @@ Friend Module SseRenderPassLaw
         List0 = 4
     End Enum
 
+    ''' <summary>Item 2b (Addendum r19b-4): how Skyrim SE's accumulator walks the list a pass lands in (EngineListWalk; the FO4 owner is
+    ''' Fo4RenderPassLaw.ListWalk). Holder ctor 0x14155E1C0: linked lists (bit 0) are 0, 0xD, 0xE, 0xF, 0x10 (0x14155E4CE, 0x14155E9A2,
+    ''' 0x14155EA05..ACB), lists 1..0xC are batches (+0x26 = 0, 0x14155E51A..E99B).
+    ''' <list type="bullet">
+    ''' <item>Opaque batch and lists 9 / 8 / 1 (OpaqueSlot): batches - PassBatches. List 0 (group 6, LOD landscape): linked, append
+    ''' (r9b = 0, 0x14151E6AD; 0x14155DDDC..E05) - Registration.</item>
+    ''' <item>List 0xD (billboards): linked; group 0x12 prepends (r9b = 1, 0x14151E792 -&gt; 0x14151E77B; 0x14155DDBD..DD7) -
+    ''' RegistrationReverse. Group 0x11 appends (0x14151E778) and is drawn after them; it is BSSkyShader's (0x1415536C8, Addendum
+    ''' r19b-5), which the preview never produces: the preview's list 0xD holds group 0x12 only.</item>
+    ''' <item>Lists 3 / 4 (decals): batches - PassBatches (0x141521190 with the list index, 0x14151FDDF..FE13 / 0x14151FFE8..20012).
+    ''' Group 2 reaches list 3 only with byte [acc+0x12C] (0x14151E632): the world accumulator's ctor 0x14151DEA0 sets it to 1
+    ''' (0x14151E0DD), only the console command ToggleDecals 0x140377E70 changes it (Addendum r19b-5) - Classify routes group 2 there.</item>
+    ''' <item>The alpha list: AlphaSorted (0x141555540).</item>
+    ''' </list></summary>
+    Friend Function ListWalk(list As SseList, slot As SseOpaqueSlot) As EngineListWalk
+        Select Case list
+            Case SseList.OpaqueBatch : Return If(slot = SseOpaqueSlot.List0, EngineListWalk.Registration, EngineListWalk.PassBatches)
+            Case SseList.Billboard
+#If DEBUG Then
+                ' Item 2b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): list 0xD walked as an appending list.
+                If Fo4GBufferConstants.GateMutantOn("sse-0xd-ascending") Then Return EngineListWalk.Registration
+#End If
+                Return EngineListWalk.RegistrationReverse
+            Case SseList.DecalOpaque, SseList.DecalTranslucent : Return EngineListWalk.PassBatches
+            Case SseList.Translucent : Return EngineListWalk.AlphaSorted
+            Case Else : Return EngineListWalk.None
+        End Select
+    End Function
+
     ''' <summary>The preview frame of the opaque order (D-L2): no point light and no shadow-casting light of the engine reach a shape
     ''' (AUDIT section 3: no point lights, the preview's own shadows), fade 1 (this module's header). So the descriptor's bits 3-8,
     ''' 13, 14 and 23 are 0, and [rsp+0x50] = [rsp+0x58] = 0 clear r9b (0x14151A8C3..8D3).</summary>
@@ -410,7 +439,7 @@ Friend Module SseRenderPassLaw
         Select Case r.Group
             Case 0, 6 : r.List = SseList.OpaqueBatch
             Case 1 : r.List = SseList.Translucent
-            Case 2 : r.List = SseList.DecalOpaque
+            Case 2 : r.List = SseList.DecalOpaque   ' only with byte [acc+0x12C] (0x14151E632): 1 in the world accumulator (Addendum r19b-5)
             Case 3 : r.List = SseList.DecalTranslucent
             Case &H12 : r.List = SseList.Billboard
             Case Else : r.List = SseList.None

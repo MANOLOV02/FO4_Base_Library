@@ -156,7 +156,10 @@ Public Interface IRenderableShape
     Property MaskedVertices As HashSet(Of Integer)
     ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
     ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets
-    ''' it). Drawn in list order = draw order (the app pre-sorts by LooksMenu priority ascending, so
-    ''' higher priority ends up on top); the lib just honors the order.</summary>
+    ''' it). The list order, by game: Fallout 4 = F4EE's ATTACH order under the shape's overlay node
+    ''' (ForEachOverlayBySlot, a std::multimap by priority: ascending, ties by insertion; f4ee
+    ''' OverlayInterface.h:123, OverlayInterface.cpp:425-451) - the lib draws them by the engine's list
+    ''' law (PreviewModel.BuildFo4TechniqueSequences, item 2b r19b-07); Skyrim SE = the draw order
+    ''' (SseOverlayCompositor.OrderForDraw), drawn in list order.</summary>
     Property OverlayLayers As IReadOnlyList(Of OverlayMaterialLayer)
 End Interface

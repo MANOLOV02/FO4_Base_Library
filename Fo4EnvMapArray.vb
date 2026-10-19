@@ -23,9 +23,34 @@ Friend NotInheritable Class Fo4EnvMapArray
     Private Structure Entry
         Public Tex As PreviewModel.Texture_Loaded_Class
         Public Texture As Integer
-        Public Dxgi As Integer            ' the promoted DXGI byte [tex+0x2D] of the cube (MakeSrgbDxgi of the file's format)
+        Public Header As EngineHeader     ' the engine's header of the cube's FILE (tex+0x28..0x2E, A.1)
         Public Stamp As Long
     End Structure
+
+    ''' <summary>The header the register compares (tex+0x28 height, +0x2A width, +0x2C mips, +0x2D promoted DXGI byte, +0x2E cube;
+    ''' RE_FO4_WORLD_ENVMAP 1.3, RE_FO4_TEXTURE_CREATION Addendum A.1): 0x14183E680 fills it from the FILE (the DDS header or the BA2
+    ''' record, MakeSRGB applied) before D3D, so it is read from the file's descriptor (EngineTextureCreationLaw.DescriptorOf), never
+    ''' from the preview's GL storage.</summary>
+    Friend Structure EngineHeader
+        Public Height As Integer
+        Public Width As Integer
+        Public Mips As Integer
+        Public Dxgi As Integer
+        Public Cube As Boolean
+    End Structure
+
+    ''' <summary>The engine's header of <paramref name="tex"/>'s file (its slot-4 sRGB request: MakeSRGB 0x14183E680), or Nothing when
+    ''' the file is not in the data, could not be read, is empty ([NiTexture+0x38] NULL: the register's tex == null, 0x14223993C) or
+    ''' shorter than its header (no header the engine could hold).</summary>
+    Friend Shared Function HeaderOf(tex As PreviewModel.Texture_Loaded_Class) As EngineHeader?
+        If tex Is Nothing Then Return Nothing
+        Dim d = EngineTextureCreationLaw.DescriptorOf(tex.Path)
+        If Not d.HasValue Then Return Nothing
+        Dim v = d.Value
+        If v.Source <> EngineTextureCreationLaw.DescriptorSource.DdsHeader AndAlso v.Source <> EngineTextureCreationLaw.DescriptorSource.Ba2Record Then Return Nothing
+        Return New EngineHeader With {.Height = v.Height, .Width = v.Width, .Mips = v.MipLevels,
+                                      .Dxgi = DirectXDDSLoader.MakeSrgbDxgi(v.Format), .Cube = v.Cube}
+    End Function
 
     Private Shared Function Same(e As Entry, tex As PreviewModel.Texture_Loaded_Class) As Boolean
         Return e.Tex IsNot Nothing AndAlso ReferenceEquals(e.Tex, tex) AndAlso e.Texture = tex.Texture_ID
@@ -35,8 +60,35 @@ Friend NotInheritable Class Fo4EnvMapArray
     Private ReadOnly _locked(SliceCount - 1) As Boolean
     Private ReadOnly _queue As New List(Of Integer)
     Private _array As Integer
-    Private _arrayW As Integer, _arrayH As Integer, _arrayLevels As Integer, _arrayFormat As Integer, _arrayDxgi As Integer
+    ''' <summary>The GL array's storage (its creation and the copies).</summary>
+    Private _arrayW As Integer, _arrayH As Integer, _arrayLevels As Integer, _arrayFormat As Integer
+    ''' <summary>The engine header of the array: its seed's (0x14181CDC0 copies the first queued cube's description).</summary>
+    Private _arrayHeader As EngineHeader
     Private _period As Long
+    ''' <summary>The entry whose queued cube created the array (CopyQueued: the first queued, 0x142239B7F..BB1).</summary>
+    Private _arraySeed As PreviewModel.Texture_Loaded_Class
+
+    ''' <summary>The array exists or a cube is queued to create it (0x142239B7F..BB1 creates it from the first queued): a cube the
+    ''' register accepts now does not create the array itself (RE_FO4_TEXTURE_CREATION Addendum A.3 / A.4).</summary>
+    Public ReadOnly Property Seeded As Boolean
+        Get
+            Return _array <> 0 OrElse _queue.Count > 0
+        End Get
+    End Property
+
+    ''' <summary>The array exists, or a cube is queued, because of ANOTHER cube than <paramref name="tex"/> (the slot's own loaded cube,
+    ''' Nothing when the preview did not load it): the engine creates the array from the first queued cube (0x142239B7F..BB1), so a cube
+    ''' that is that first one - in the preview, the one that seeded the array or heads the queue - is the cube whose creation reads
+    ''' [tex+8] (0x14181CDE3, A.4). The preview registers the slot's own cube before the notice asks (its frame runs first): Seeded alone
+    ''' would see the array this very cube created and answer for a model the engine never reaches.</summary>
+    Public Function SeededBefore(tex As PreviewModel.Texture_Loaded_Class) As Boolean
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("tcl-seed-self-counts") Then Return Seeded   ' ShadowGate --texture-creation's directed mutant
+#End If
+        If _array <> 0 Then Return tex Is Nothing OrElse Not ReferenceEquals(_arraySeed, tex)
+        If _queue.Count > 0 Then Return tex Is Nothing OrElse Not ReferenceEquals(_entries(_queue(0)).Tex, tex)
+        Return False
+    End Function
 
     ''' <summary>The array texture (0 before the first copy).</summary>
     Public ReadOnly Property Texture As Integer
@@ -61,28 +113,47 @@ Friend NotInheritable Class Fo4EnvMapArray
         Return immutable <> 0 AndAlso levels > 0
     End Function
 
+    ''' <summary>The header test of the register 0x142239930 (ENV 1.2; RE_FO4_TEXTURE_CREATION Addendum A.2), on a texture's header
+    ''' (height, width, promoted DXGI byte [+0x2D], cube byte [+0x2E], mips): with the array, all equal to the array's and mips &gt;=
+    ''' (0x142239942..980); without it, the same against the first queued cube (0x1422399AA..9EE, 0x142239CC0); with neither, width
+    ''' 128 alone (word[tex+0x2A] == 0x80, 7.2). Every header is the FILE's (EngineHeader: Register's own and the array's / queue's,
+    ''' MaterialData.SlotCreation's descriptor), as the engine compares them (A.1). The answer depends on the array of the CURRENT
+    ''' model only: the array is reset on every model load (user decision rev-09 b, Reset from PreviewModel's clean), so it is
+    ''' deterministic for the model shown.</summary>
+    Public Function AcceptsHeader(h As Integer, w As Integer, promotedDxgi As Integer, isCube As Boolean, mips As Integer) As Boolean
+        If _array = 0 AndAlso _queue.Count = 0 Then Return w = 128
+        Dim fromArray = _array <> 0
+        Return HeaderMatches(If(fromArray, _arrayHeader, _entries(_queue(0)).Header), fromArray, h, w, promotedDxgi, isCube, mips)
+    End Function
+
+    ''' <summary>The comparison of the register (pure): a header against the seed's - the array's (<paramref name="fromArray"/>,
+    ''' 0x142239942..980) or the first queued cube's (0x1422399AA..9EE, 0x142239CC0): height, width, promoted DXGI byte and cube byte
+    ''' equal, mips &gt;= (0x14223999F otherwise). AcceptsHeader's one body; ParityGate [T-envarray] calls it directly (no GL state).</summary>
+    Friend Shared Function HeaderMatches(seed As EngineHeader, fromArray As Boolean, h As Integer, w As Integer, promotedDxgi As Integer,
+                                         isCube As Boolean, mips As Integer) As Boolean
+#If DEBUG Then
+        ' The directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch): mips > for >= - ParityGate fo4-texture-creation-law
+        ' against the array, ShadowGate --texture-creation against the queue.
+        If (If(fromArray, Fo4GBufferConstants.GateMutantOn("tcl-envarray-mips-gt"), Fo4GBufferConstants.GateMutantOn("tcl-envarray-queue-mips-gt"))) Then
+            Return h = seed.Height AndAlso w = seed.Width AndAlso promotedDxgi = seed.Dxgi AndAlso isCube = seed.Cube AndAlso mips > seed.Mips
+        End If
+#End If
+        Return h = seed.Height AndAlso w = seed.Width AndAlso promotedDxgi = seed.Dxgi AndAlso isCube = seed.Cube AndAlso mips >= seed.Mips
+    End Function
+
     ''' <summary>The register 0x142239930: the slice of the material's slot-4 texture <paramref name="tex"/> (Nothing when the slot
-    ''' resolved to nothing), or -1. The compared format is the DXGI byte the loader PROMOTED (MakeSRGB 0x14183E680, ENV 13.3 / 16.2:
-    ''' DirectXDDSLoader.MakeSrgbDxgi of the file's DXGI), not the GL storage (rev-03: 0x1C / 0x57 / 0x58 share GL_RGBA8 and promote
-    ''' to three different bytes); the cube flag byte[+0x2E] is compared too (ENV 1.2, rev-46).</summary>
+    ''' resolved to nothing), or -1. The compared header is the FILE's (HeaderOf: the DXGI byte the loader PROMOTED, MakeSRGB
+    ''' 0x14183E680, ENV 13.3 / 16.2, rev-03; the cube byte [+0x2E], ENV 1.2, rev-46), never the GL storage's. A file whose header the
+    ''' app cannot read is not registered: no claim (declared).</summary>
     Public Function Register(tex As PreviewModel.Texture_Loaded_Class) As Integer
         If tex Is Nothing OrElse tex.Texture_ID = 0 Then Return -1                       ' 0x14223993C
         Dim cube = tex.Texture_ID
-        Dim w, h, lv, fmt As Integer
-        If Not Describe(cube, If(tex.Cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), w, h, lv, fmt) Then Return -1
-        Dim promoted = DirectXDDSLoader.MakeSrgbDxgi(tex.DGXFormat_Original)
-        If _array <> 0 Then
-            ' 0x142239942..0x142239980: same height, width, format and cube flag, mips >= the array's.
-            If h <> _arrayH OrElse w <> _arrayW OrElse promoted <> _arrayDxgi OrElse Not tex.Cubemap OrElse lv < _arrayLevels Then Return -1
-        ElseIf _queue.Count > 0 Then
-            ' 0x1422399AA..0x1422399EE: the same comparison against the first queued cube (0x142239CC0).
-            Dim first = _entries(_queue(0))
-            Dim w0, h0, lv0, f0 As Integer
-            Describe(first.Texture, TextureTarget.TextureCubeMap, w0, h0, lv0, f0)
-            If h <> h0 OrElse w <> w0 OrElse promoted <> first.Dxgi OrElse Not tex.Cubemap OrElse lv < lv0 Then Return -1
-        ElseIf w <> 128 Then
-            Return -1                                                                     ' word[tex+0x2A] == 0x80 (7.2)
-        ElseIf Not tex.Cubemap Then
+        Dim hdr = HeaderOf(tex)
+        If Not hdr.HasValue Then Return -1
+        Dim f = hdr.Value
+        If Not AcceptsHeader(f.Height, f.Width, f.Dxgi, f.Cube, f.Mips) Then
+            Return -1
+        ElseIf _array = 0 AndAlso _queue.Count = 0 AndAlso Not tex.Cubemap Then
             ' The engine seeds with the width alone; a 2D seed (no vanilla subject, declared) cannot become a cube array slice in GL.
             Return -1
         End If
@@ -111,7 +182,7 @@ Friend NotInheritable Class Fo4EnvMapArray
         If Not Same(_entries(best), tex) Then
             _entries(best).Tex = tex
             _entries(best).Texture = cube
-            _entries(best).Dxgi = promoted
+            _entries(best).Header = f
             _queue.Add(best)
         End If
         Return best
@@ -122,7 +193,8 @@ Friend NotInheritable Class Fo4EnvMapArray
         If _array = 0 AndAlso _queue.Count > 0 Then
             Dim w, h, lv, fmt As Integer
             If Describe(_entries(_queue(0)).Texture, TextureTarget.TextureCubeMap, w, h, lv, fmt) Then
-                _arrayW = w : _arrayH = h : _arrayLevels = lv : _arrayDxgi = _entries(_queue(0)).Dxgi
+                _arrayW = w : _arrayH = h : _arrayLevels = lv : _arrayHeader = _entries(_queue(0)).Header
+                _arraySeed = _entries(_queue(0)).Tex
                 _arrayFormat = DirectXDDSLoader.SrgbTwinOf(fmt)                ' the SRV is promoted to sRGB (13.3, 16.2)
                 _array = Gl43.CreateTexture(TextureTarget.TextureCubeMapArray)
                 Gl43.TexStorage3D(_array, TextureTarget3d.TextureCubeMapArray, lv, CType(_arrayFormat, SizedInternalFormat), w, h, SliceCount * 6)
@@ -154,6 +226,7 @@ Friend NotInheritable Class Fo4EnvMapArray
         Array.Clear(_locked, 0, _locked.Length)
         _queue.Clear()
         If _array <> 0 Then GL.DeleteTexture(_array) : _array = 0
-        _arrayW = 0 : _arrayH = 0 : _arrayLevels = 0 : _arrayFormat = 0 : _arrayDxgi = 0
+        _arrayW = 0 : _arrayH = 0 : _arrayLevels = 0 : _arrayFormat = 0 : _arrayHeader = Nothing
+        _arraySeed = Nothing
     End Sub
 End Class

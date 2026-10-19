@@ -132,7 +132,7 @@ Public Class FilesDictionary_class
             If IsNothing(pack) OrElse IsLosseFile Then Return Array.Empty(Of Byte)
             If Me.ArchiveGen <> gen0 Then Return Array.Empty(Of Byte)
             Try
-                Return pack.ExtractToMemory(Index)
+                Return ExtraerEntrada(pack, Index)
             Catch
                 Return Array.Empty(Of Byte)
             End Try
@@ -183,7 +183,7 @@ Public Class FilesDictionary_class
                 End If
             End If
 
-            Dim result As Byte()
+            Dim result As Byte() = Nothing
             Dim selloPublicable As SelloSuelto? = Nothing
 
             If IsLosseFile Then
@@ -193,46 +193,12 @@ Public Class FilesDictionary_class
                 ' bytes no son de ningún sello — se devuelven, pero NO se publican.
                 If SelloSuelto.Iguales(sello0, SelloSuelto.Leer(rutaSuelto)) Then selloPublicable = sello0
             Else
-                ' Por el pool de readers: abrir y cerrar el .ba2 en cada lectura es el costo que evita.
-                Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
-
-                ' EL SELLO ES UN BRACKET, NO UN CHEQUEO. Mirarlo sólo ANTES deja la ventana entre el
-                ' chequeo y el extract: otro hilo puede desmontar y reescribir el .ba2 en el medio, y el
-                ' `Index` viejo sobre el archive nuevo devuelve LOS BYTES DE OTRA ENTRADA — y encima se
-                ' cachean. Se lee antes y se RE-LEE después: el contador es MONOTÓNICO (`AddOrUpdate` con
-                ' v+1, ninguna clave se borra nunca), así que dos lecturas iguales PRUEBAN que nadie
-                ' invalidó en el medio.
-                Dim gen0 = FilesDictionary_class.ContentGenOf(archivePath)
-                If gen0 <> Me.ArchiveGen Then Return FilesDictionary_class.ReintentarTrasInvalidacion(Me)
-                Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
-                Dim returned As Boolean = False
-                Try
-                    leased = FilesDictionary_class.LeaseReader(archivePath)
-                    result = leased.Reader.ExtractToMemory(Index)
-                    ' NADA PUEDE RETORNAR ENTRE EL EXTRACT Y ESTE ReturnReader. Un `Return` temprano acá no
-                    ' poolea NI dispone: el FileStream queda inalcanzable (ni `ArchivePoolReaderCount` lo ve)
-                    ' reteniendo el .ba2 hasta el finalizer. El cierre del bracket va DESPUÉS del Try.
-                    FilesDictionary_class.ReturnReader(archivePath, leased)
-                    returned = True
-                Catch ex As Exception
-                    ' On error, dispose the leased reader rather than returning it
-                    If Not returned Then
-                        If leased.Reader IsNot Nothing Then
-                            Try : leased.Reader.Dispose() : Catch : End Try
-                        End If
-                        If leased.Stream IsNot Nothing Then
-                            Try : leased.Stream.Dispose() : Catch : End Try
-                        End If
-                    End If
-                    Return Array.Empty(Of Byte)
-                End Try
-
-                ' CIERRE DEL BRACKET, con el reader ya devuelto. Si el archive se invalidó mientras
-                ' extraíamos, estos bytes NO se pueden atribuir a ninguna generación: no se devuelven y —
-                ' sobre todo— no se publican en el caché por path, que es donde el daño se vuelve permanente.
-                If FilesDictionary_class.ContentGenOf(archivePath) <> gen0 Then
-                    Return FilesDictionary_class.ReintentarTrasInvalidacion(Me)
-                End If
+                ' Bajo el sello (LeerDelArchiveBajoSello): una lectura que el sello no puede atribuir a la generación vigente
+                ' no se devuelve ni —sobre todo— se publica en el caché por path, que es donde el daño se vuelve permanente.
+                Select Case LeerDelArchiveBajoSello(Function(reader, i) ExtraerEntrada(reader, i), result)
+                    Case LecturaSellada.Invalidada : Return FilesDictionary_class.ReintentarTrasInvalidacion(Me)
+                    Case LecturaSellada.Fallida : Return Array.Empty(Of Byte)
+                End Select
             End If
 
             If result IsNot Nothing AndAlso result.Length > 0 Then
@@ -246,6 +212,117 @@ Public Class FilesDictionary_class
             End If
 
             Return result
+        End Function
+
+        ''' <summary>The extraction GetBytes does under the seal (ExtractToMemory). DEBUG ONLY: ShadowGate --texture-creation's mutant
+        ''' "ba2-tile-refused" (Fo4GBufferConstants.GateMutantOn) refuses a BA2 DX10 entry whose tile byte is not 8, as the reader did
+        ''' before item 3.</summary>
+        Private Shared Function ExtraerEntrada(reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, i As Integer) As Byte()
+#If DEBUG Then
+            Dim rec = reader.EntriesFiles(i).Dx10Record
+            If Fo4GBufferConstants.GateMutantOn("ba2-tile-refused") AndAlso rec.HasValue AndAlso rec.Value.TileMode <> 8 Then
+                Throw New NotSupportedException($"BA2.DX10: TileMode={rec.Value.TileMode} (mutant ba2-tile-refused)")
+            End If
+#End If
+            Return reader.ExtractToMemory(i)
+        End Function
+
+        ''' <summary>The outcome of LeerDelArchiveBajoSello.</summary>
+        Private Enum LecturaSellada
+            ''' <summary>Read, and the archive's content generation did not move around it.</summary>
+            Leida
+            ''' <summary>This entry's generation is not the current one (before the lease or after the return): the value is
+            ''' nobody's; the caller delegates to the current entry of the same path.</summary>
+            Invalidada
+            ''' <summary>The lease or the read threw.</summary>
+            Fallida
+        End Enum
+
+        ''' <summary>THE read of this entry from its archive (one owner: GetBytes, ArchiveTextureInfo), by the pool of readers
+        ''' (opening and closing the .ba2 per read is the cost it avoids) and under the content generation's seal.
+        ''' <para>EL SELLO ES UN BRACKET, NO UN CHEQUEO. Mirarlo sólo ANTES deja la ventana entre el chequeo y la lectura: otro hilo
+        ''' puede desmontar y reescribir el .ba2 en el medio, y el `Index` viejo sobre el archive nuevo lee OTRA ENTRADA. Se lee antes
+        ''' y se RE-LEE después: el contador es MONOTÓNICO (`AddOrUpdate` con v+1, ninguna clave se borra nunca), así que dos
+        ''' lecturas iguales PRUEBAN que nadie invalidó en el medio.</para></summary>
+        Private Function LeerDelArchiveBajoSello(Of T)(leer As Func(Of BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Integer, T),
+                                                      ByRef valor As T) As LecturaSellada
+            Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
+            Dim gen0 = FilesDictionary_class.ContentGenOf(archivePath)
+            If gen0 <> Me.ArchiveGen Then Return LecturaSellada.Invalidada
+            Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
+            Dim returned As Boolean = False
+            Try
+                leased = FilesDictionary_class.LeaseReader(archivePath)
+                valor = leer(leased.Reader, Index)
+                ' NADA PUEDE RETORNAR ENTRE LA LECTURA Y ESTE ReturnReader. Un `Return` temprano acá no poolea NI dispone: el
+                ' FileStream queda inalcanzable (ni `ArchivePoolReaderCount` lo ve) reteniendo el .ba2 hasta el finalizer. El
+                ' cierre del bracket va DESPUÉS del Try.
+                FilesDictionary_class.ReturnReader(archivePath, leased)
+                returned = True
+            Catch ex As Exception
+                ' On error, dispose the leased reader rather than returning it
+                If Not returned Then
+                    If leased.Reader IsNot Nothing Then
+                        Try : leased.Reader.Dispose() : Catch : End Try
+                    End If
+                    If leased.Stream IsNot Nothing Then
+                        Try : leased.Stream.Dispose() : Catch : End Try
+                    End If
+                End If
+                Return LecturaSellada.Fallida
+            End Try
+            ' CIERRE DEL BRACKET, con el reader ya devuelto.
+            If FilesDictionary_class.ContentGenOf(archivePath) <> gen0 Then Return LecturaSellada.Invalidada
+            Return LecturaSellada.Leida
+        End Function
+
+        ''' <summary>What this ARCHIVE entry declares without being extracted (parsed when the reader opened the archive, so no I/O
+        ''' beyond a pooled lease), read under the same seal as GetBytes: its decompressed size (the sum of its chunks) and, for a
+        ''' BA2 DX10 entry, its texture record. Found False for a loose file or a read that failed; a read the seal rejects is
+        ''' delegated to the current entry of the same path.</summary>
+        Public Function ArchiveTextureInfo() As (Found As Boolean, DecompressedSize As Long, Dx10Record As BSA_BA2_Library_DLL.BethesdaArchive.Core.Ba2TextureRecord?)
+            If IsLosseFile Then Return (False, 0L, Nothing)
+            Dim info As (Size As Long, Record As BSA_BA2_Library_DLL.BethesdaArchive.Core.Ba2TextureRecord?) = Nothing
+            Select Case LeerDelArchiveBajoSello(Function(reader, i) (reader.EntriesFiles(i).DecompressedSize, reader.EntriesFiles(i).Dx10Record), info)
+                Case LecturaSellada.Leida : Return (True, info.Size, info.Record)
+                Case LecturaSellada.Invalidada
+                    Dim vigente = FilesDictionary_class.EntradaVigenteTrasInvalidacion(Me)
+                    If vigente IsNot Nothing Then Return vigente.ArchiveTextureInfo()
+            End Select
+            Return (False, 0L, Nothing)
+        End Function
+
+        ''' <summary>An ARCHIVE entry's first <paramref name="count"/> bytes (fewer when the file is shorter), under the same seal
+        ''' as GetBytes, decompressing no more than the reader must (BethesdaReader.ExtractPrefix: a GNRL zlib chunk inflates only
+        ''' those bytes). Nothing for a loose file or a read that failed; a read the seal rejects is delegated to the current entry.</summary>
+        Public Function ArchiveHead(count As Integer) As Byte()
+            If IsLosseFile Then Return Nothing
+            Dim head As Byte() = Nothing
+            Select Case LeerDelArchiveBajoSello(Function(reader, i) reader.ExtractPrefix(i, count), head)
+                Case LecturaSellada.Leida : Return head
+                Case LecturaSellada.Invalidada
+                    Dim vigente = FilesDictionary_class.EntradaVigenteTrasInvalidacion(Me)
+                    If vigente IsNot Nothing Then Return vigente.ArchiveHead(count)
+            End Select
+            Return Nothing
+        End Function
+
+        ''' <summary>A LOOSE entry's first <paramref name="count"/> bytes (fewer when the file is shorter) and its length, read
+        ''' from disk without the rest of the file. Nothing for an archive entry or a file that cannot be read.</summary>
+        Public Function ReadLooseHead(count As Integer, ByRef length As Long) As Byte()
+            length = 0
+            If Not IsLosseFile Then Return Nothing
+            Try
+                Using fs As New FileStream(IO.Path.Combine(FO4Path, Me.FullPath), FileMode.Open, FileAccess.Read, FileShare.Read Or FileShare.Delete)
+                    length = fs.Length
+                    Dim head(CInt(Math.Min(CLng(count), length)) - 1) As Byte
+                    fs.ReadExactly(head, 0, head.Length)
+                    Return head
+                End Using
+            Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException
+                length = 0
+                Return Nothing
+            End Try
         End Function
 
     End Class
@@ -482,11 +559,19 @@ Public Class FilesDictionary_class
     ''' <para>No recursa sin fin: si la entrada vigente es LA MISMA instancia que acaba de fallar, no hay a
     ''' quién delegar y se corta. Un segundo nivel encontraría ya esa misma instancia.</para></summary>
     Friend Shared Function ReintentarTrasInvalidacion(rechazada As File_Location) As Byte()
-        If rechazada Is Nothing OrElse String.IsNullOrEmpty(rechazada.FullPath) Then Return Array.Empty(Of Byte)
-        Dim vigente As File_Location = Nothing
-        If Not _dictionary.TryGetValue(NormalizeDictionaryKey(rechazada.FullPath), vigente) Then Return Array.Empty(Of Byte)
-        If vigente Is Nothing OrElse ReferenceEquals(vigente, rechazada) Then Return Array.Empty(Of Byte)
+        Dim vigente = EntradaVigenteTrasInvalidacion(rechazada)
+        If vigente Is Nothing Then Return Array.Empty(Of Byte)
         Return vigente.GetBytes()
+    End Function
+
+    ''' <summary>La entrada VIGENTE del path de una lectura que el sello rechazó, a la que delegar (ReintentarTrasInvalidacion,
+    ''' File_Location.ArchiveTextureInfo); Nothing si no hay o si es la misma instancia que falló (sin recursión sin fin).</summary>
+    Friend Shared Function EntradaVigenteTrasInvalidacion(rechazada As File_Location) As File_Location
+        If rechazada Is Nothing OrElse String.IsNullOrEmpty(rechazada.FullPath) Then Return Nothing
+        Dim vigente As File_Location = Nothing
+        If Not _dictionary.TryGetValue(NormalizeDictionaryKey(rechazada.FullPath), vigente) Then Return Nothing
+        If vigente Is Nothing OrElse ReferenceEquals(vigente, rechazada) Then Return Nothing
+        Return vigente
     End Function
 
     Private Shared Sub BumpArchiveContentGen(key As String)

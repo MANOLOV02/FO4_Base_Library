@@ -538,6 +538,11 @@ Public Class PreviewControl
     ''' 0x14182C5B0, dword 0xFFFF0080 at 0x14182CBD1; EngineDefaultTextureLaw.Rgba). What the game samples in an sRGB slot (diffuse,
     ''' palette, effect base) that is empty.</summary>
     Public defaultFo4DiffuseMapTex As Integer
+    ''' <summary>Fallout 4's NULL SRV in a 2D slot (EngineDefaultTextureLaw.SrvNull: a file the engine cannot create, the binder binds
+    ''' NULL and D3D11 reads (0, 0, 0, 0); RE_FO4_TEXTURE_CREATION_2026-10-19 5): 1x1 R8G8B8A8_UNORM of those bytes.</summary>
+    Public defaultSrvNullTex As Integer
+    ''' <summary>The same NULL SRV in the effect's cube slot (t5 under technique bit 19): a 1x1 cube of zeros.</summary>
+    Public defaultSrvNullCube As Integer
     Public Property BrushRadiusPx As Integer = 5
     Public Property InvertMasking As Boolean = False
 
@@ -545,9 +550,11 @@ Public Class PreviewControl
     ''' <summary>The app's GL texture for a built-in texture of the engine (EngineDefaultTextureLaw). The ones whose bytes the app
     ''' already had are reused (same RGBA: defaultNormalTex, defaultWhiteTex, defaultSseEngineGenericTex, defaultSseMsnSpecTex; every
     ''' texel the same value, so every sample is, whatever the size). 0 for Own, NoTexture, PreviousDraw and the cubes (the
-    ''' envmap cube is MaterialData.EnvmapTexturePath's; SSE DefCubeMap = no reflection, bCubemap off).</summary>
+    ''' envmap cube is MaterialData.EnvmapTexturePath's; SSE DefCubeMap = no reflection, bCubemap off; Fallout 4's NULL SRV in the
+    ''' cube slot: MaterialData.CubeIsSrvNull).</summary>
     Friend Function EngineDefaultTextureId(t As EngineDefaultTextureLaw.EngineTexture) As Integer
         Select Case t
+            Case EngineDefaultTextureLaw.EngineTexture.SrvNull : Return defaultSrvNullTex
             Case EngineDefaultTextureLaw.EngineTexture.Fo4DiffuseMap : Return defaultFo4DiffuseMapTex
             Case EngineDefaultTextureLaw.EngineTexture.Fo4NormalMap : Return defaultNormalTex
             Case EngineDefaultTextureLaw.EngineTexture.Fo4White, EngineDefaultTextureLaw.EngineTexture.SseDefaultWhiteMap : Return defaultWhiteTex
@@ -689,17 +696,26 @@ Public Class PreviewControl
         ' FO4 DefaultTexture_DiffuseMap (see the field): the engine's size, 1 mip, UNORM; the bytes from the one table of the law.
         defaultFo4DiffuseMapTex = CreateRgba8Texture(1, 1, EngineDefaultTextureLaw.Rgba(EngineDefaultTextureLaw.EngineTexture.Fo4DiffuseMap), mipped:=False)
 
-        ' Cubemap 4×4 blanco en todas las caras
-        defaultCubeMap = GL.GenTexture()
-        GL.BindTexture(TextureTarget.TextureCubeMap, defaultCubeMap)
+        ' FO4's NULL SRV (see the fields): the bytes from the one table of the law, in a 2D slot and in the effect's cube slot.
+        defaultSrvNullTex = CreateRgba8Texture(1, 1, EngineDefaultTextureLaw.Rgba(EngineDefaultTextureLaw.EngineTexture.SrvNull), mipped:=False)
+        defaultSrvNullCube = CreateColorCube(1, EngineDefaultTextureLaw.Rgba(EngineDefaultTextureLaw.EngineTexture.SrvNull))
 
-        ' Preparamos datos 4×4 blancos para cada cara
-        Dim faceData(4 * 4 * 4 - 1) As Byte
+        ' Cubemap 4×4 blanco en todas las caras
+        defaultCubeMap = CreateColorCube(4, {255, 255, 255, 255})
+    End Sub
+
+    ''' <summary>A uniform size x size cube of the RGBA8 <paramref name="rgba"/> on every face, linear, clamped (defaultCubeMap,
+    ''' defaultSrvNullCube).</summary>
+    Private Shared Function CreateColorCube(size As Integer, rgba As Byte()) As Integer
+        Dim cube = GL.GenTexture()
+        GL.BindTexture(TextureTarget.TextureCubeMap, cube)
+
+        Dim faceData(size * size * 4 - 1) As Byte
         For i As Integer = 0 To faceData.Length - 1 Step 4
-            faceData(i + 0) = 255
-            faceData(i + 1) = 255
-            faceData(i + 2) = 255
-            faceData(i + 3) = 255
+            faceData(i + 0) = rgba(0)
+            faceData(i + 1) = rgba(1)
+            faceData(i + 2) = rgba(2)
+            faceData(i + 3) = rgba(3)
         Next
 
         Dim faces As TextureTarget() = {
@@ -724,7 +740,7 @@ Public Class PreviewControl
             GL.TexImage2D(face,
                           level:=0,
                           internalformat:=PixelInternalFormat.Rgba,
-                          width:=4, height:=4,
+                          width:=size, height:=size,
                           border:=0,
                           format:=OpenTK.Graphics.OpenGL4.PixelFormat.Rgba,
                           type:=PixelType.UnsignedByte,
@@ -740,7 +756,8 @@ Public Class PreviewControl
         GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
 
         GL.BindTexture(TextureTarget.TextureCubeMap, 0)
-    End Sub
+        Return cube
+    End Function
 
 
     ' Sin consumidor fuera de este ensamblado (única referencia: su propia declaración).
@@ -3273,6 +3290,8 @@ Public Class PreviewControl
         If defaultDissolvePatternTex <> 0 Then GL.DeleteTexture(defaultDissolvePatternTex) : defaultDissolvePatternTex = 0
         If defaultFo4DiffuseMapTex <> 0 Then GL.DeleteTexture(defaultFo4DiffuseMapTex) : defaultFo4DiffuseMapTex = 0
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap) : defaultCubeMap = 0
+        If defaultSrvNullTex <> 0 Then GL.DeleteTexture(defaultSrvNullTex) : defaultSrvNullTex = 0
+        If defaultSrvNullCube <> 0 Then GL.DeleteTexture(defaultSrvNullCube) : defaultSrvNullCube = 0
         If _gl43Context <> IntPtr.Zero Then Gl43.ReleaseContext(_gl43Context) : _gl43Context = IntPtr.Zero
 #If DEBUG Then
         GL.DebugMessageCallback(Nothing, IntPtr.Zero)
@@ -3329,11 +3348,13 @@ Public Class PreviewModel
     Private ReadOnly OpaqueMeshes As New List(Of RenderableMesh)
     Private ReadOnly DecalMeshes As New List(Of RenderableMesh)
     ' Decals that BLEND are drawn after the opaque ones and before the ordinary alpha geometry in both engines:
-    ' FO4 G-buffer stage: groups 2/3 then group 4 (blended decal, test LESS_EQUAL no write; 0x1421D4AFB, 0x141855670);
+    ' FO4 G-buffer stage: list 4 (group 3, blended decal, test LESS_EQUAL no write; 0x1421D4AFB, 0x141855670) is its LAST list, after
+    ' bucket 4, lists 2 / 3, list 0 and list 1 (0x1421F3C21, 0x1421F3C3B, 0x1421F3C4C, 0x1421F3CD0, 0x1421F3CDC; item 2b);
     ' SSE: opaque decal group, then blended decal group, then the alpha list (0x14151EF40, 0x14151FD60, 0x14151FF00).
     Private ReadOnly DecalBlendedMeshes As New List(Of RenderableMesh)
     Private ReadOnly BlendedMeshes As New List(Of RenderableMesh)
-    ' FO4: G-buffer list 0 (group 7, LOD_Landscape), drawn after the decal lists 2 / 3 (0x1421F3C21 -> 3C3B -> 3C4C; C8, ola 0c).
+    ' FO4: G-buffer list 0 (group 7, LOD_Landscape), drawn after the decal lists 2 / 3 and before list 4 (0x1421F3C21 -> 3C3B -> 3C4C
+    ' -> 3CDC; C8, ola 0c, item 2b).
     Private ReadOnly Fo4LodLandscapeMeshes As New List(Of RenderableMesh)
     ' SSE: the billboard effects (group 0x12 -> list 0xD, drawn by the opaque finish after the opaque lists and before the
     ' decals, 0x14151EF40) and the shapes with no colour pass (SseRenderPassLaw: refraction lighting, kTempRefraction +
@@ -3367,9 +3388,11 @@ Public Class PreviewModel
         End Function
     End Structure
 
-    ''' <summary>O-OP: a mesh's place in the game's opaque draw order. Slot = the list in the finish (SSE SseOpaqueSlot; FO4 0), Pass =
-    ''' SSE pass ID / FO4 technique activation rank, SubList = SSE sub-list, NewestFirst = the list PREPENDS on register (drawn in
-    ''' reverse registration order: the first registered is drawn last and wins a depth tie).</summary>
+    ''' <summary>O-OP: a mesh's place in the game's draw order inside its list. SSE opaque batch: Slot = the list in the finish
+    ''' (SseOpaqueSlot), Pass = pass ID, SubList = sub-list. FO4 technique buckets (G-buffer bucket 4, decal lists 3 / 4, forward
+    ''' bucket 0; Fo4TechniqueBucketKeys): Slot = the pass's shader type, Pass = the technique's activation rank, SubList 0 = the
+    ''' recorded draw packets, 1 = the chain. NewestFirst = the list PREPENDS on register (drawn in reverse registration order: the
+    ''' first registered is drawn last and wins a depth tie).</summary>
     Friend Structure OpaqueOrder
         Public Slot As Integer
         Public Pass As UInteger
@@ -3382,14 +3405,19 @@ Public Class PreviewModel
     End Function
 
     Private Shared Function CompareOpaqueDrawOrder(x As RenderableMesh, y As RenderableMesh) As Integer
-        Dim a = x.OpaqueOrderKey, b = y.OpaqueOrderKey
+        Return CompareOpaqueOrder(x.OpaqueOrderKey, x.RegistrationKey, y.OpaqueOrderKey, y.RegistrationKey)
+    End Function
+
+    ''' <summary>O-OP on the keys themselves: slot, pass, sub-list, then registration (reversed where the list prepends). The one
+    ''' comparison of the render's opaque sort (CompareOpaqueDrawOrder) and of MaterialData.EngineCoverage.DrawsAfter.</summary>
+    Friend Shared Function CompareOpaqueOrder(a As OpaqueOrder, ra As RegistrationOrder, b As OpaqueOrder, rb As RegistrationOrder) As Integer
         Dim c = a.Slot.CompareTo(b.Slot)
         If c <> 0 Then Return c
         c = a.Pass.CompareTo(b.Pass)
         If c <> 0 Then Return c
         c = a.SubList.CompareTo(b.SubList)
         If c <> 0 Then Return c
-        c = x.RegistrationKey.CompareTo(y.RegistrationKey)
+        c = ra.CompareTo(rb)
         Return If(a.NewestFirst, -c, c)
     End Function
 
@@ -3435,44 +3463,159 @@ Public Class PreviewModel
     End Function
 
     ''' <summary>O-OP, Skyrim SE (D-L2): slot of the opaque finish 0x14151EF40, pass ID ascending, sub-list 0..4, reverse registration
-    ''' inside a sub-list (prepend 0x14155F024..02B). List 0 (LOD landscape): insertion not traced - registration order (declared).
+    ''' inside a sub-list (prepend 0x14155F024..02B). List 0 (LOD landscape): linked, append - registration order (SseRenderPassLaw.ListWalk;
+    ''' Addendum r19b-4: 0x14151E6AD, 0x14155DDDC..E05).
     ''' A shape without material (a helper the checkbox shows: the game draws none): after every game shape, registration order.</summary>
     Private Function SseOpaqueOrder(m As RenderableMesh) As OpaqueOrder
         Dim md = m.MeshData.Material
         If md?.MaterialBase Is Nothing Then Return New OpaqueOrder With {.Slot = Integer.MaxValue}
         Dim s = md.SseInputs()
         Dim slot = SseRenderPassLaw.OpaqueSlot(s)
-        If slot = SseRenderPassLaw.SseOpaqueSlot.List0 Then Return New OpaqueOrder With {.Slot = slot}
+        If SseRenderPassLaw.ListWalk(SseRenderPassLaw.SseList.OpaqueBatch, slot) = EngineListWalk.Registration Then Return New OpaqueOrder With {.Slot = slot}
+        Return SseBatchKey(s, slot)
+    End Function
+
+    ''' <summary>Item 2b (Addendum r19b-4): a shape's key in Skyrim SE's decal list 3 / 4 - a batch like the opaque one (pass ID ascending,
+    ''' sub-list 0..4, prepend inside: SseBatchKey), one list (Slot 0). Without material: after every game shape, as SseOpaqueOrder.</summary>
+    Private Function SseDecalOrder(m As RenderableMesh) As OpaqueOrder
+        Dim md = m.MeshData.Material
+        If md?.MaterialBase Is Nothing Then Return New OpaqueOrder With {.Slot = Integer.MaxValue}
+#If DEBUG Then
+        ' Item 2b oracles' directed mutants (Fo4GBufferConstants.GateMutantOn): the decal lists in registration order (HEAD's), and the
+        ' batch key without its sub-list.
+        If Fo4GBufferConstants.GateMutantOn("sse-decal-registration") Then Return New OpaqueOrder With {.Slot = 0}
+        If Fo4GBufferConstants.GateMutantOn("sse-decal-sublist-ignored") Then
+            Dim k = SseBatchKey(md.SseInputs(), 0) : k.SubList = 0 : Return k
+        End If
+#End If
+        Return SseBatchKey(md.SseInputs(), 0)
+    End Function
+
+    ''' <summary>The key of a pass in a Skyrim SE batch (EngineListWalk.PassBatches): the list's slot, pass ID (SseRenderPassLaw.PassId;
+    ''' ascending 0x14155FC90 / 0x14155FF40), sub-list (SseRenderPassLaw.SubList; 0..4, 0x14155FED0), reverse registration inside
+    ''' (prepend 0x14155F024..02B, walk 0x1415601A9..1DB).</summary>
+    Private Shared Function SseBatchKey(s As SseRenderPassLaw.SseShapeInputs, slot As Integer) As OpaqueOrder
         Return New OpaqueOrder With {.Slot = slot, .Pass = SseRenderPassLaw.PassId(s), .SubList = SseRenderPassLaw.SubList(s), .NewestFirst = True}
     End Function
 
-    ''' <summary>O-OP, Fallout 4 (D-L3): the G-buffer techniques in order of first activation (0x1422201F0 links a technique at the
-    ''' tail the first time its list gets a pass, 0x142220355..37F: the first registered shape of each technique, in registration
-    ''' order), reverse registration inside a technique (prepend 0x142221F51..F58). A shape the game's cull never registers (C-ANC,
-    ''' C-NAN, a helper: NifSceneVisibility) activates nothing and goes last (rev-07). A shape without a G-buffer technique (no pass,
-    ''' a preview gap): its own rank, in registration order.</summary>
-    Private Sub AssignFo4TechniqueActivation(list As List(Of RenderableMesh))
-        Dim rank As New Dictionary(Of UInteger, UInteger)
+    ''' <summary>Item 2b: one shape of a Fallout 4 technique-bucket list, in registration order (Fo4TechniqueBucketKeys).</summary>
+    Friend Structure Fo4BucketEntry
+        ''' <summary>The game's cull registers the shape (not hidden by an ancestor, not bound-culled, not a helper: NifSceneVisibility;
+        ''' C-ANC, C-NAN).</summary>
+        Public Registered As Boolean
+        ''' <summary>The shader type of its pass, the bucket of a sub-holder list (0x142180C30, table 0x143E5E350): 0 BSEffectShader,
+        ''' 4 BSDFPrePassShader (the lighting G-buffer pass; ctor 0x1422033D0, [+0x18] = 4).</summary>
+        Public ShaderType As Integer
+        ''' <summary>The pass's technique (Fo4GBufferTechnique.Technique / Fo4EffectTechnique.Technique); Nothing: no pass (a preview gap).</summary>
+        Public Technique As UInteger?
+        ''' <summary>The pass carries its cached draw packet (MaterialData.Fo4HasDrawPacket).</summary>
+        Public Packet As Boolean
+    End Structure
+
+    ''' <summary>Item 2b: the draw-order keys of one Fallout 4 technique-bucket list - G-buffer bucket 4, the decal lists 3 / 4, forward
+    ''' bucket 0 - from its shapes in registration order (Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19 2, 3):
+    ''' <list type="bullet">
+    ''' <item>Slot = the shader type: a sub-holder list (lists 3 / 4, bit0 of +0x20 clear) draws its type buckets 0..12 ascending
+    ''' (0x1421D6F50 -&gt; 0x1421D6CD0, 0x1421D6F99..FB6); bucket 4 and bucket 0 hold one type each.</item>
+    ''' <item>Pass = the technique's rank of first activation (0x1422201F0 links it at the tail when its chain is empty,
+    ''' 0x142220355..37F: its first registered pass, with a packet or not).</item>
+    ''' <item>Inside a technique the reader 0x14221F620 replays the recorded packets in registration order (append 0x14222259F..5AA,
+    ''' 0x14221F76E -&gt; 0x141820BF0): SubList 0, registration ascending; then it walks the chain drawing only the passes without a
+    ''' packet (prepend 0x142221F51..F58, walk 0x14221F773..798): SubList 1, NewestFirst.</item>
+    ''' </list>
+    ''' A shape the game's cull never registers activates nothing and goes last (rev-07). A shape without a technique: a rank of its
+    ''' own, in registration order (a preview gap).</summary>
+    Friend Shared Function Fo4TechniqueBucketKeys(entries As IReadOnlyList(Of Fo4BucketEntry)) As OpaqueOrder()
+        Dim keys(entries.Count - 1) As OpaqueOrder
+        Dim rank As New Dictionary(Of (Type As Integer, Technique As UInteger), UInteger)
         Dim nextRank As UInteger = 0
-        For Each m In list.OrderBy(Function(x) x.RegistrationKey)
-            Dim vis = m.SceneVisibility()
-            If vis.HiddenByAncestor OrElse vis.BoundCullReason IsNot Nothing OrElse m.MeshData.Shape.IsHelperShape Then
-                m.OpaqueOrderKey = New OpaqueOrder With {.Pass = UInteger.MaxValue} : Continue For
-            End If
-            Dim md = m.MeshData.Material
-            Dim t As UInteger? = Nothing
-            If md?.MaterialBase IsNot Nothing AndAlso Not md.MaterialBase.IsBGEM() Then
-                Dim g As Integer
-                t = md.Fo4Technique(md.Fo4Flags(), g)
-            End If
-            Dim r As UInteger
-            If t.HasValue Then
-                If Not rank.TryGetValue(t.Value, r) Then r = nextRank : rank(t.Value) = r : nextRank += 1UI
-                m.OpaqueOrderKey = New OpaqueOrder With {.Pass = r, .NewestFirst = True}
+        For i = 0 To entries.Count - 1
+            Dim e = entries(i)
+#If DEBUG Then
+            ' Item 2b oracles' directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch).
+            If Fo4GBufferConstants.GateMutantOn("tbo-packet-ignored") OrElse Fo4GBufferConstants.GateMutantOn("tbo-old-law") Then e.Packet = False
+            If Fo4GBufferConstants.GateMutantOn("tbo-type-ignored") Then e.ShaderType = 0
+#End If
+            If Not e.Registered Then
+                keys(i) = New OpaqueOrder With {.Slot = Integer.MaxValue, .Pass = UInteger.MaxValue}
+            ElseIf e.Technique.HasValue Then
+                Dim k = (e.ShaderType, e.Technique.Value)
+                Dim r As UInteger
+                If Not rank.TryGetValue(k, r) Then r = nextRank : rank(k) = r : nextRank += 1UI
+                keys(i) = New OpaqueOrder With {.Slot = e.ShaderType, .Pass = r, .SubList = If(e.Packet, 0, 1), .NewestFirst = Not e.Packet}
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("tbo-packet-reversed") AndAlso e.Packet Then keys(i).NewestFirst = True
+#End If
             Else
-                m.OpaqueOrderKey = New OpaqueOrder With {.Pass = nextRank}
+                keys(i) = New OpaqueOrder With {.Slot = e.ShaderType, .Pass = nextRank}
                 nextRank += 1UI
             End If
+        Next
+        Return keys
+    End Function
+
+    ''' <summary>Item 2b: the game's cull registers <paramref name="m"/> (Fo4BucketEntry.Registered): not under a hidden node (C-ANC), not
+    ''' cut by the culling (NifSceneVisibility.LoadState.BoundCullReason: C-NAN, pto 14, pto 3a and, r19b-02, a geometry class whose
+    ''' OnVisible never registers it), not a helper shape.</summary>
+    Private Shared Function CullRegisters(m As RenderableMesh) As Boolean
+        Dim vis = m.SceneVisibility()
+        Return Not (vis.HiddenByAncestor OrElse vis.BoundCullReason IsNot Nothing OrElse m.MeshData.Shape.IsHelperShape)
+    End Function
+
+    ''' <summary>Item 2b: the Fo4BucketEntry of one pass - a shape's (its material) or an overlay layer's (the layer's MaterialData: a
+    ''' clone of its base shape, r19b-07): a lighting material's G-buffer pass (type 4; MaterialData.Fo4Technique on Fo4Flags, its packet
+    ''' MaterialData.Fo4HasDrawPacket), an effect's pass (type 0; MaterialData.Fo4EffectTechniqueValue, never a packet). A shape without
+    ''' a material is routed to bucket 4 (RouteBucket), whose type is 4.</summary>
+    Private Shared Function Fo4BucketEntryOf(md As RenderableMesh.MaterialData, registered As Boolean) As Fo4BucketEntry
+        Dim efecto = md?.MaterialBase IsNot Nothing AndAlso md.MaterialBase.IsBGEM()
+        Dim e As New Fo4BucketEntry With {.Registered = registered, .ShaderType = If(efecto, 0, 4)}
+        If Not registered OrElse md?.MaterialBase Is Nothing Then Return e
+        If efecto Then
+            e.Technique = md.Fo4EffectTechniqueValue()
+        Else
+            Dim f = md.Fo4Flags()
+            Dim g As Integer
+            e.Technique = md.Fo4Technique(f, g)
+            If e.Technique.HasValue Then e.Packet = md.Fo4HasDrawPacket(f, e.Technique.Value, g)
+        End If
+        Return e
+    End Function
+
+    ''' <summary>Item 2b: a list of meshes put in the draw order of <paramref name="walk"/> (EngineListWalk, from its game's owner):
+    ''' sorted by registration, then WalkOrder with the O-OP key the caller wrote (CompareOpaqueDrawOrder) for a batch / technique
+    ''' bucket. The alpha list is sorted per frame (RenderAll); here, by registration.</summary>
+    Private Shared Sub SortByWalk(list As List(Of RenderableMesh), walk As EngineListWalk)
+        list.Sort(AddressOf CompareRegistration)
+        WalkOrder(list, walk, AddressOf CullRegisters, AddressOf CompareOpaqueDrawOrder)
+    End Sub
+
+    ''' <summary>Item 2b: THE one criterion of every list's order, both games. <paramref name="list"/> comes in registration order. The
+    ''' passes the game registers (<paramref name="registered"/>: CullRegisters) are put in the walk's order - a batch / technique
+    ''' bucket by <paramref name="byKey"/>, a prepending linked list reversed, an appending one kept. A shape the cull does not
+    ''' register has no pass in any list of the game: it goes after the registered ones, in registration order (rev-07).</summary>
+    Private Shared Sub WalkOrder(Of T)(list As List(Of T), walk As EngineListWalk, registered As Func(Of T, Boolean), byKey As Comparison(Of T))
+        Dim si = list.Where(registered).ToList()
+        Dim no = list.Where(Function(x) Not registered(x)).ToList()
+        Select Case walk
+            Case EngineListWalk.PassBatches, EngineListWalk.TechniqueBuckets
+                si.Sort(byKey)
+            Case EngineListWalk.RegistrationReverse
+                si.Reverse()
+        End Select
+        list.Clear() : list.AddRange(si) : list.AddRange(no)
+    End Sub
+
+    ''' <summary>Item 2b: writes RenderableMesh.OpaqueOrderKey for one Fallout 4 technique-bucket list (Fo4TechniqueBucketKeys) from
+    ''' its meshes' passes (Fo4BucketEntryOf), in registration order.</summary>
+    Private Sub AssignFo4TechniqueOrder(list As List(Of RenderableMesh))
+        Dim ordered = list.OrderBy(Function(x) x.RegistrationKey).ToList()
+        Dim entries(ordered.Count - 1) As Fo4BucketEntry
+        For i = 0 To ordered.Count - 1
+            entries(i) = Fo4BucketEntryOf(ordered(i).MeshData.Material, CullRegisters(ordered(i)))
+        Next
+        Dim keys = Fo4TechniqueBucketKeys(entries)
+        For i = 0 To ordered.Count - 1
+            ordered(i).OpaqueOrderKey = keys(i)
         Next
     End Sub
 
@@ -3482,6 +3625,22 @@ Public Class PreviewModel
             Return OpaqueMeshes
         End Get
     End Property
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (item 2b oracles, ShadowGate --draw-order / --technique-order-census): the colour-pass lists of the frame by
+    ''' name, in their draw order - Fallout 4's G-buffer bucket 4 ("opaque"), lists 3 / 4 ("decal" / "decalBlended"), list 0
+    ''' ("lodLandscape"), forward bucket 0 ("forwardEffect"), and the alpha / billboard lists.</summary>
+    Friend Function GateBucketLists() As Dictionary(Of String, IReadOnlyList(Of RenderableMesh))
+        Return New Dictionary(Of String, IReadOnlyList(Of RenderableMesh)) From {
+            {"opaque", OpaqueMeshes}, {"decal", DecalMeshes}, {"decalBlended", DecalBlendedMeshes}, {"lodLandscape", Fo4LodLandscapeMeshes},
+            {"forwardEffect", ForwardEffectMeshes}, {"blended", BlendedMeshes}, {"billboard", BillboardMeshes}}
+    End Function
+
+    ''' <summary>DEBUG ONLY (item 2b oracles): when not Nothing, every RenderableMesh.Render / RenderOverlayLayer call appends (mesh,
+    ''' decal base step, prepass, the overlay layer or Nothing) in call order - the frame's real draw sequence, frustum culling included.
+    ''' Nothing = off.</summary>
+    Friend Shared GateDrawLog As List(Of (Mesh As RenderableMesh, DecalBase As DecalBaseStep, Prepass As Boolean, Layer As OverlayMaterialLayer)) = Nothing
+#End If
 
     Public Sub MarkRenderBucketsDirty()
         RenderBucketsDirty = True
@@ -3517,7 +3676,7 @@ Public Class PreviewModel
         End If
         Select Case material.Fo4Pass().List
             Case Fo4RenderPassLaw.Fo4List.GBufferOpaque : Return RenderBucket.Opaque   ' bucket 4: one list, technique order (O-OP D-L3)
-            Case Fo4RenderPassLaw.Fo4List.GBufferLodLandscape : Return RenderBucket.Fo4LodLandscape   ' list 0, after the decals (C8)
+            Case Fo4RenderPassLaw.Fo4List.GBufferLodLandscape : Return RenderBucket.Fo4LodLandscape   ' list 0, after list 3, before list 4
             Case Fo4RenderPassLaw.Fo4List.DecalOpaque : Return RenderBucket.Decal
             Case Fo4RenderPassLaw.Fo4List.DecalTranslucent : Return RenderBucket.DecalBlended
             Case Fo4RenderPassLaw.Fo4List.ForwardEffect : Return RenderBucket.ForwardEffect
@@ -3576,23 +3735,51 @@ Public Class PreviewModel
             End Select
         Next
 
-        ' O-ST: every list in the game's registration order (a total key: List.Sort's instability cannot show). The opaque list in
-        ' the game's opaque draw order (O-OP). Huecos declarados (registration order kept): SSE list 0 / list 0xD / decal lists 3-2,
-        ' FO4 forward bucket 0 (the BSEffectShader technique of FO4 is not transcribed).
+        ' O-ST: every list in the game's registration order (a total key: List.Sort's instability cannot show), then each list in its
+        ' game's walk (EngineListWalk; one owner per game: Fo4RenderPassLaw.ListWalk / SseRenderPassLaw.ListWalk; SortByWalk): the
+        ' opaque list in O-OP; Fallout 4's technique buckets in their technique order (item 2b, Fo4TechniqueBucketKeys); Skyrim SE's
+        ' decal lists 3 / 4 as batches with the opaque batch's key (Addendum r19b-4, SseDecalOrder); the linked lists by append /
+        ' prepend (FO4 list 0 / 0xE, SSE list 0xD).
         AssignRegistrationOrder()
         If FrameIsSse Then
             For Each m In OpaqueMeshes : m.OpaqueOrderKey = SseOpaqueOrder(m) : Next
+            For Each m In DecalMeshes : m.OpaqueOrderKey = SseDecalOrder(m) : Next
+            For Each m In DecalBlendedMeshes : m.OpaqueOrderKey = SseDecalOrder(m) : Next
+            SortByWalk(DecalMeshes, SseRenderPassLaw.ListWalk(SseRenderPassLaw.SseList.DecalOpaque, SseRenderPassLaw.SseOpaqueSlot.Batch))
+            SortByWalk(DecalBlendedMeshes, SseRenderPassLaw.ListWalk(SseRenderPassLaw.SseList.DecalTranslucent, SseRenderPassLaw.SseOpaqueSlot.Batch))
+            ForwardEffectMeshes.Sort(AddressOf CompareRegistration)
         Else
-            AssignFo4TechniqueActivation(OpaqueMeshes)
+            AssignFo4TechniqueOrder(OpaqueMeshes)
+            AssignFo4TechniqueOrder(DecalMeshes)
+            AssignFo4TechniqueOrder(DecalBlendedMeshes)
+            AssignFo4TechniqueOrder(ForwardEffectMeshes)
+            DecalMeshes.Sort(AddressOf CompareOpaqueDrawOrder)
+            DecalBlendedMeshes.Sort(AddressOf CompareOpaqueDrawOrder)
+            ForwardEffectMeshes.Sort(AddressOf CompareOpaqueDrawOrder)
+#If DEBUG Then
+            ' Item 2b oracles' A/B instrument (Fo4GBufferConstants.GateMutantOn): the order before item 2b - lists 3 / 4 and forward
+            ' bucket 0 in registration order (bucket 4: packets ignored in Fo4TechniqueBucketKeys; list 0: its old stage).
+            If Fo4GBufferConstants.GateMutantOn("tbo-old-law") Then
+                DecalMeshes.Sort(AddressOf CompareRegistration)
+                DecalBlendedMeshes.Sort(AddressOf CompareRegistration)
+                ForwardEffectMeshes.Sort(AddressOf CompareRegistration)
+            End If
+#End If
         End If
-        OpaqueMeshes.Sort(AddressOf CompareOpaqueDrawOrder)
-        DecalMeshes.Sort(AddressOf CompareRegistration)
-        DecalBlendedMeshes.Sort(AddressOf CompareRegistration)
+        SortByWalk(OpaqueMeshes, If(FrameIsSse, SseRenderPassLaw.ListWalk(SseRenderPassLaw.SseList.OpaqueBatch, SseRenderPassLaw.SseOpaqueSlot.Batch),
+                                    Fo4RenderPassLaw.ListWalk(Fo4RenderPassLaw.Fo4List.GBufferOpaque)))
         BlendedMeshes.Sort(AddressOf CompareRegistration)
         BillboardMeshes.Sort(AddressOf CompareRegistration)
-        ForwardEffectMeshes.Sort(AddressOf CompareRegistration)
         Fo4LodLandscapeMeshes.Sort(AddressOf CompareRegistration)
         NoColourPassMeshes.Sort(AddressOf CompareRegistration)
+        If FrameIsSse Then
+            ' Item 2b (Addendum r19b-4): Skyrim SE's list 0xD prepends its group-0x12 billboards.
+            SortByWalk(BillboardMeshes, SseRenderPassLaw.ListWalk(SseRenderPassLaw.SseList.Billboard, SseRenderPassLaw.SseOpaqueSlot.Batch))
+        Else
+            ' Item 2b: Fallout 4's linked lists by their walk: list 0xE prepends, list 0 appends.
+            SortByWalk(BillboardMeshes, Fo4RenderPassLaw.ListWalk(Fo4RenderPassLaw.Fo4List.ForwardBillboard))
+            SortByWalk(Fo4LodLandscapeMeshes, Fo4RenderPassLaw.ListWalk(Fo4RenderPassLaw.Fo4List.GBufferLodLandscape))
+        End If
         RenderBucketsGame = FrameIsSse
 
         RenderBucketsDirty = False
@@ -3600,6 +3787,22 @@ Public Class PreviewModel
 
     ' The game the buckets were routed for: switching game re-routes them.
     Private RenderBucketsGame As Boolean
+
+    ''' <summary>The buckets (and the keys RebuildRenderBuckets writes: RenderableMesh.RegistrationKey / OpaqueOrderKey) are not those of
+    ''' the current scene: marked dirty, routed for the other game, or a mesh added or removed since. RenderAll rebuilds them then.</summary>
+    Private Function RenderBucketsStale() As Boolean
+        Return RenderBucketsDirty OrElse RenderBucketsGame <> FrameIsSse OrElse
+               (OpaqueMeshes.Count + DecalMeshes.Count + DecalBlendedMeshes.Count + BlendedMeshes.Count +
+                BillboardMeshes.Count + ForwardEffectMeshes.Count + Fo4LodLandscapeMeshes.Count + NoColourPassMeshes.Count) <> meshes.Count
+    End Function
+
+    ''' <summary>Item 2b r19b-06: the order keys the last RebuildRenderBuckets wrote are those of the current scene in the game
+    ''' <paramref name="isSse"/> names (MaterialData.EngineColourCoverage reads them on its caller's thread). False: stale - the reader
+    ''' cannot rebuild them itself (RebuildRenderBuckets runs on the render thread and touches GL: RefreshLeafPose_GL), so the order
+    ''' inside the list is unknown until the next frame.</summary>
+    Friend Function RenderKeysCurrent(isSse As Boolean) As Boolean
+        Return FrameIsSse = isSse AndAlso Not RenderBucketsStale()
+    End Function
     Public Class Texture_Loaded_Class
         Public Property Loaded As Boolean = False
         Public Property Cubemap As Boolean = False
@@ -3919,8 +4122,9 @@ Public Class PreviewModel
                 Return MaterialBase.ResolveEngineAlpha().Blend OrElse alpha < 1.0F
             End Function
 
-            ''' <summary>The GAME's blend for this material (its alpha at rest, RestAlpha). Read by what follows the engine and not the preview's
-            ''' drawing - Wardrobe Manager's occlusion tool (OcclusionRaytracer.ResolverMaterial, OcclusionMask_Form).</summary>
+            ''' <summary>The GAME's blend for this material (its alpha at rest, RestAlpha), as a predicate on the material (ShadowGate's
+            ''' alpha-zero check reads it). Wardrobe Manager's occlusion tool reads the game's coverage instead (EngineColourCoverage: the
+            ''' blend of the colour draw by the pass laws, not this predicate).</summary>
             Public ReadOnly Property EngineHasAlphaBlend As Boolean
                 Get
                     Return AlphaBlend(engine:=True)
@@ -3936,9 +4140,10 @@ Public Class PreviewModel
                 End Get
             End Property
 
-            ''' <summary>ref / 255 of the engine-resolved alpha state (ResolveEngineAlpha). Read by the occlusion tool
-            ''' (OcclusionRaytracer) and as the generic default upload of ApplyMaterial; the shadow pass does not read it (both
-            ''' games' branches set its threshold). NOT an engine law, which is one exe float32 writer per pass (AlphaRefLaw): the
+            ''' <summary>ref / 255 of the engine-resolved alpha state (ResolveEngineAlpha). Read only as ApplyMaterial's generic default
+            ''' upload and its [DRAW-STATE] seed, which each game's branch overwrites; the shadow pass does not read it (both games' branches
+            ''' set its threshold) and the occlusion tool reads EngineColourCoverage. NOT an engine law, which is one exe float32 writer per
+            ''' pass (AlphaRefLaw): the
             ''' FO4 colour pass takes Fo4RenderPassLaw.ColourPassAlphaTest (MainPassAlphaThreshold / EffectAlphaThreshold), the FO4
             ''' shadow pass Fo4RenderPassLaw.ShadowPassAlphaTest (ShadowMapAlphaThreshold, the BSUtilityShader writer), the FO4
             ''' z-prepass PrepassAlphaThreshold; the SSE colour pass and prepass SseRenderPassLaw.Classify, the SSE shadow pass
@@ -4320,6 +4525,27 @@ Public Class PreviewModel
                                                      PreviewAlpha(), HasBtedExtraData(), group, noPass)
             End Function
 
+            ''' <summary>Item 2b: the game builds this lighting pass's cached draw packet (Fo4GBufferTechnique.HasDrawPacket, 0x142207C80),
+            ''' for <paramref name="f"/> = Fo4Flags(), <paramref name="technique"/> / <paramref name="group"/> = Fo4Technique(f): the
+            ''' geometry's class (Fo4GeometryType), the controllers of the shader property and of the NiAlphaProperty the geometry draws
+            ''' with (ShaderChain's two chains; the NIF's NiAlphaProperty is the drawn one when TestRefReachesDraw) and the UV (RestUv: with
+            ''' no property controller, the material's). False for an effect (no effect pass has a packet) and for a geometry Fallout 4's
+            ''' culling does not register (Fo4GeometryType Nothing): no pass is built at all, so 0x142207C80 never runs - the bucket order
+            ''' already keeps such a shape out (CullRegisters, r19b-13).</summary>
+            Friend Function Fo4HasDrawPacket(f As ULong, technique As UInteger, group As Integer) As Boolean
+                Dim mb = MaterialBase
+                If mb Is Nothing OrElse mb.IsBGEM() Then Return False
+                Dim tipo = Fo4GeometryType(ParentMeshData.Shape?.NifShape)
+                If Not tipo.HasValue Then Return False
+                Dim chain = ShaderChain()
+                Dim uv = RestUv()
+                Return Fo4GBufferTechnique.HasDrawPacket(New Fo4GBufferTechnique.DrawPacketInputs With {
+                    .GeometryType = tipo.Value, .Technique = technique, .Group = group, .Flags = f,
+                    .PropertyController = chain IsNot Nothing AndAlso chain.Count > 0,
+                    .AlphaPropertyController = chain IsNot Nothing AndAlso _ctlAlphaChain IsNot Nothing AndAlso _ctlAlphaChain.Count > 0 AndAlso TestRefReachesDraw(),
+                    .UvOffset = uv.Offset, .UvScale = uv.Scale})
+            End Function
+
             ''' <summary>The engine draws this lighting shape and the preview cannot (Fo4GBufferDraw.Gap): it leaves every pass of the
             ''' frame - prepass, G-buffer, shadow casters - and is listed in the notice (rev-55 a, user decision 5-oct-2026).</summary>
             Friend Function Fo4PreviewGap(programs As Fo4DeferredPrograms) As Boolean
@@ -4360,12 +4586,485 @@ Public Class PreviewModel
                 Return Fo4RenderPassLaw.ShadowMapCasts(Fo4Inputs())
             End Function
 
-            ''' <summary>The material's slot-4 texture entry (EnvmapTexturePath): what the EnvMapArray registers (rev-03 / rev-46).</summary>
+            ''' <summary>THE FO4 COLOUR-PASS ALPHA TEST OF THIS MATERIAL: Fo4RenderPassLaw.ColourPassAlphaTest on the engine's NiAlphaProperty at
+            ''' rest (EngineAlphaAtRest; HasAlphaTest is its test bit) - an effect tests always, against EffectAlphaThreshold; a lighting
+            ''' shape when its property does, against MainPassAlphaThreshold. The one call site of that law for the colour pass:
+            ''' ApplyMaterial's FO4 branch and EngineColourCoverage read it here (gate `fo4-alpha-wiring`, rule f).</summary>
+            Friend Function Fo4ColourPassAlphaTest() As (Test As Boolean, Threshold As Single)
+                Return Fo4RenderPassLaw.ColourPassAlphaTest(MaterialBase.IsBGEM(), CBool(HasAlphaTest), EngineAlphaAtRest().Threshold)
+            End Function
+
+            ''' <summary>4/255 as the engines' kills compare it: `add r, a, l(-0.015686)` + `lt` + `discard_nz`, token 0xBC808081 - Fallout 4's
+            ''' G-buffer BLEND records (b09 rec2603 l. 55-58, rec2604 l. 58-61; Fo4GBufferSource FO4_L_M0_015686) and Skyrim SE's Hair
+            ''' DEPTH_WRITE_DECALS colour pass (Fragment_SSE SSE_L_M0_015686; RE_SSE_PASS_GROUPS_DEPTH 13.2). In IEEE float32 a + (-c) is
+            ''' a - c, so the cut keeps +c (0x3C808081).</summary>
+            Private Shared ReadOnly KillFourOver255 As Single = BitConverter.Int32BitsToSingle(&H3C808081)
+
+            ''' <summary>Why a cut's value has factors the CPU does not evaluate (EngineAlphaCut.Unknown); shown by the occlusion dialog.</summary>
+            Private Const EffectAlphaHole As String = "effect alpha not evaluated on the CPU (falloff by view angle, palette, soft depth)"
+            Private Const SsePrepassPaletteHole As String = "Skyrim SE effect z-prepass with palette alpha not evaluated on the CPU"
+            Private Const Fo4BlendRecordHole As String = "Fallout 4 G-buffer blend without technique bit 15: the record's output alpha is not traced"
+            ''' <summary>t9 of the DISMEMBERMENT_MEATCUFF records (technique AND 0x600000) is NOT a slot of the shape's material:
+            ''' BSDFPrePassShader vtable 0x1429157A0 slot 6 = 0x142205240 binds t9 / t10 / t11 = [arg2 + 0x48 / 0x50 / 0x60] (and +0xC0),
+            ''' arg2 = the +0x18 of entry 0 of the property's list [prop + 0x20] (0x142223010), passed only when that list is not empty
+            ''' (pass draw 0x14221FBED..FC37, after SetupMaterial = slot 4 with [prop + 0x58]). [prop + 0x20] is the property's extra data;
+            ''' entry 0 is the 'SMED' BSShaderMaterialExtraData whose +0x18 is a BSLightingShaderMaterialDismemberment (0x14040AE40, only
+            ''' caller 0x14040D370) created at runtime by dismemberment (the 'MeatCuff_%s' stump; flags 25 / 47 -> technique bit 21, flag 40
+            ''' -> bit 22, cleared by the load fixer): Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19, addendum r19b-6. Corpus: 0 of
+            ''' 1,183,572 lighting shapes with technique bit 21 / 22 and 0 properties with extra data, so no preview shape reaches slot 6:
+            ''' this hole is not reached in the preview. Declared only: the bank [state + 0x2D8] that +0xC0 binds (no effect in the
+            ''' preview).</summary>
+            Private Const Fo4BlendSlotHole As String = "Fallout 4 G-buffer blend whose output alpha reads t9 or a texture array (Fo4GBufferBlendOutput): not evaluated on the CPU"
+
+            ''' <summary>ONE ALPHA CUT OF A PASS as the engine's pixel shader computes it, in float32: the CPU twin of the compares the draws
+            ''' run (Fragment_FO4 bAlphaTest, the G-buffer records' kill, Fragment_SSE DO_ALPHA_TEST / Hair DEPTH_WRITE_DECALS,
+            ''' SsePrepassSource.ssePrepassKeeps, the FO4 z-prepass PS 3930). EngineColourCoverage fills it from the pass laws the draws read.
+            ''' The value is v = t * MaterialAlpha * vc (the engines' order: `mul` by the material alpha, then `mad` by the vertex alpha),
+            ''' t = the diffuse alpha (1 without <see cref="Texture"/>; saturate(1.05 t) with <see cref="TexScale105"/>), vc = the vertex
+            ''' alpha with <see cref="VertexAlpha"/> (else 1). Every compare is the engines' `lt` + `discard_nz` on value - threshold:
+            ''' equality is kept.
+            ''' <para>The last bit at exact equality is UNDEFINED, declared: the engines form value - threshold with `mad` (e.g. FO4 G-buffer
+            ''' `mad r0.w, r0.z, v6.w, -cb2[1].w`, SSE `mad r0.x, r0.w, v11.w, -cb11[0].x`, the BLEND kill `mad r0.y, cb2[2].x, r0.x,
+            ''' l(-0.015686)`), and Direct3D 11's floating-point rules only bound a fused operation such as mad: its result is "no less
+            ''' accurate than the worst possible serial ordering of evaluation of the unfused expansion", each step allowed 1 ULP
+            ''' (learn.microsoft.com/windows/win32/direct3d11/floating-point-rules) - so one rounding or two is the driver's choice, not
+            ''' the exe's. This cut rounds the
+            ''' product and then subtracts (the unfused form, as the app's GLSL without `fma`); where value and threshold meet within that
+            ''' last rounding the game's GPU may keep or discard.</para></summary>
+            Public Structure EngineAlphaCut
+                ''' <summary>The pass runs this cut; False keeps every fragment.</summary>
+                Public Test As Boolean
+                ''' <summary>The pass law's float32 threshold.</summary>
+                Public Threshold As Single
+                ''' <summary>A second threshold the same value is compared against (Skyrim SE z-prepass cb11[0].x =
+                ''' SseRenderPassLaw.SubgroupThreshold, SsePrepassSource); 0 = none: value - 0 &lt; 0 never holds for a value &gt;= 0.</summary>
+                Public ThresholdS As Single
+                ''' <summary>The diffuse alpha enters the value (False: 1).</summary>
+                Public Texture As Boolean
+                ''' <summary>The vertex alpha enters the value.</summary>
+                Public VertexAlpha As Boolean
+                ''' <summary>The value is (t * vc) * MaterialAlpha (the FO4 G-buffer BLEND records: `mul r2, t0, col0` before the
+                ''' `* AlphaScale.x`, Fo4GBufferBlendOutput) instead of (t * MaterialAlpha) * vc.</summary>
+                Public VertexAlphaFirst As Boolean
+                ''' <summary>The material-alpha factor of the value: 1 where the pass does not multiply it in.</summary>
+                Public MaterialAlpha As Single
+                ''' <summary>Skyrim SE lighting decal z-prepass (variant 0x22082): saturate(1.05 * texture alpha) before the vertex alpha.</summary>
+                Public TexScale105 As Boolean
+                ''' <summary>Skyrim SE Hair DEPTH_WRITE_DECALS colour pass (SsePass.HairDepthWriteDecal): value &lt; 4/255 discarded, then
+                ''' value = saturate(1.05 value) for the test and the output alpha (idx 9031 l. 62-69, 96).</summary>
+                Public HairDecal As Boolean
+                ''' <summary>Skyrim SE effect z-prepass (idx 11465): k = MaterialAlpha * vc, a0 = t * k; a0 against ThresholdS, a0 * vc
+                ''' against Threshold and ThresholdS.</summary>
+                Public EffectPrepass As Boolean
+                ''' <summary>Why the value has factors the CPU does not evaluate; Nothing = it is complete.</summary>
+                Public Unknown As String
+
+                ''' <summary>The cut can discard: it runs against a threshold above 0 (or the Hair kill).</summary>
+                Public ReadOnly Property Discards As Boolean
+                    Get
+                        Return Test AndAlso (Threshold > 0.0F OrElse ThresholdS > 0.0F OrElse HairDecal)
+                    End Get
+                End Property
+
+                Private Function Raw(texA As Single, vc As Single) As Single
+                    Dim t = If(Texture, texA, 1.0F)
+                    If TexScale105 Then t = Math.Min(1.0F, Math.Max(0.0F, t * 1.05F))
+                    Dim vcv = If(VertexAlpha, vc, 1.0F)
+                    Return If(VertexAlphaFirst, t * vcv * MaterialAlpha, t * MaterialAlpha * vcv)
+                End Function
+
+                ''' <summary>The value the pass tests and outputs as its alpha (with the Hair DEPTH_WRITE_DECALS rescale).</summary>
+                Public Function Value(texA As Single, vc As Single) As Single
+                    Dim v = Raw(texA, vc)
+                    Return If(HairDecal, Math.Min(1.0F, Math.Max(0.0F, 1.05F * v)), v)
+                End Function
+
+                ''' <summary>Does the pass keep the fragment of texture alpha <paramref name="texA"/> and vertex alpha <paramref name="vc"/>?
+                ''' Nothing: the value has factors the CPU does not evaluate (<see cref="Unknown"/>) and the cut can discard (a threshold
+                ''' above 0, or the Hair kill: Discards). A cut whose thresholds are 0 keeps every value &gt;= 0 whatever those factors are:
+                ''' a Fallout 4 effect without a NiAlphaProperty test is drawn against 0 (cb2[14].x = 0, 0x14222649A) and covers, with no
+                ''' notice (user decision 19-oct-2026; HOLE, declared: an authored falloff opacity below 0).</summary>
+                Public Function Keeps(texA As Single, vc As Single) As Boolean?
+                    If Not Test Then Return True
+                    If Unknown IsNot Nothing Then
+                        If Discards Then Return Nothing
+                        Return True
+                    End If
+                    If EffectPrepass Then
+                        Dim vcv = If(VertexAlpha, vc, 1.0F)
+                        Dim a0 = If(Texture, texA, 1.0F) * (MaterialAlpha * vcv)
+                        Dim a1 = a0 * vcv
+                        Return Not (a0 - ThresholdS < 0.0F) AndAlso Not (a1 - Threshold < 0.0F) AndAlso Not (a1 - ThresholdS < 0.0F)
+                    End If
+                    If HairDecal AndAlso Raw(texA, vc) - KillFourOver255 < 0.0F Then Return False
+                    Dim v = Value(texA, vc)
+#If DEBUG Then
+                    ' Item 1b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): equality discarded (`le` instead of `lt`).
+                    If Fo4GBufferConstants.GateMutantOn("cut-equal-discards") Then Return Not (v - Threshold <= 0.0F) AndAlso Not (v - ThresholdS < 0.0F)
+#End If
+                    Return Not (v - Threshold < 0.0F) AndAlso Not (v - ThresholdS < 0.0F)
+                End Function
+            End Structure
+
+            ''' <summary>A SHAPE'S COVERAGE IN THE GAME'S WORLD RENDER (EngineColourCoverage): the passes that can hide what is behind it and,
+            ''' for each, its cut; where it lands in the draw order; whether its colour draw writes depth or blends, and with which
+            ''' destination factor; the diffuse UV and address mode. Composing it by depth and draw order is the caller's
+            ''' (Wardrobe Manager's OcclusionRaytracer).</summary>
+            Public Structure EngineCoverage
+                ''' <summary>The game draws the shape's colour pass (Fo4Pass / SsePass Drawn, and no pass for an alpha at rest of 0).</summary>
+                Public Drawn As Boolean
+                ''' <summary>The list the colour draw lands in, as its rank in the world accumulator's order (larger = later; FO4
+                ''' Fo4DrawOrder, SSE the SseList value); 0 = no list. Inside one list: <see cref="ListOrder"/> and <see cref="DrawsAfter"/>.</summary>
+                Public DrawOrder As Integer
+                ''' <summary>How the game orders the draws inside that list (EngineListOrder).</summary>
+                Friend ListOrder As EngineListOrder
+                ''' <summary>The shape's world-bound centre (RenderableMesh.WorldBoundCentre, the point the alpha sort reads), its place in
+                ''' the game's registration (RenderableMesh.RegistrationKey) and its O-OP key - Skyrim SE's opaque batch (SseOpaqueOrder),
+                ''' Fallout 4's technique buckets (the render's RenderableMesh.OpaqueOrderKey, PreviewModel.Fo4TechniqueBucketKeys: item 2b);
+                ''' read on the caller's thread when the coverage is built. An overlay layer of a Fallout 4 technique bucket: its own
+                ''' registration and key (PreviewModel.Fo4OverlayOrders, item 2b r19b-07). HasMesh False: no renderable owns the material,
+                ''' or the keys of its model are stale (PreviewModel.RenderKeysCurrent, r19b-06): the order inside the list is unknown.</summary>
+                Friend HasMesh As Boolean
+                ''' <summary>The order inputs inside the list (centre, registration, the render's key) could be read: False when no renderable
+                ''' owns the material or its model's keys are stale (HasMesh) - DrawsAfter then answers Nothing inside the list.</summary>
+                Public ReadOnly Property OrderInputsRead As Boolean
+                    Get
+                        Return HasMesh
+                    End Get
+                End Property
+                Friend SortCentre As Vector3
+                Friend Registration As PreviewModel.RegistrationOrder
+                Friend OrderKey As PreviewModel.OpaqueOrder
+                ''' <summary>Item 2b r19b-07: 0 = a shape; n &gt; 0 = an overlay layer of the n-th base shape (PreviewModel.Fo4OverlayOrder.Group):
+                ''' the order between groups is state (F4EE's first-hole attach), not law.</summary>
+                Friend OverlayGroup As Integer
+                ''' <summary>Item 2b r19b-07: the activation rank of its technique is fixed by a shape (every shape registers before every
+                ''' layer); False only for a layer whose technique no shape of the list has.</summary>
+                Friend RankFixed As Boolean
+                ''' <summary>The shape has a z-prepass entry: depth written before every colour draw where <see cref="Prepass"/> keeps.</summary>
+                Public InPrepass As Boolean
+                Public Prepass As EngineAlphaCut
+                Public Colour As EngineAlphaCut
+                ''' <summary>The colour draw tests depth EQUAL (Skyrim SE opaque batch): it draws only where its own prepass wrote.</summary>
+                Public ColourOnPrepass As Boolean
+                Public ColourWritesDepth As Boolean
+                Public Blend As Boolean
+                ''' <summary>The colour draw's output alpha (the blend's source alpha) and the kill its program runs on it (Fallout 4
+                ''' G-buffer records with technique bit 15, blended or not); Test False elsewhere.</summary>
+                Public BlendSource As EngineAlphaCut
+                ''' <summary>The colour destination factor of the blend.</summary>
+                Friend BlendDst As BlendingFactor
+                ''' <summary>The UV the draws use (RestUv): uv * UvScale + UvOffset.</summary>
+                Public UvOffset As Vector2
+                Public UvScale As Vector2
+                ''' <summary>The diffuse slot's address mode (SamplerLaw, the material clamp): wrap on that axis, else clamp.</summary>
+                Public WrapU As Boolean
+                Public WrapV As Boolean
+
+                ''' <summary>The fraction of what is behind that the blend keeps (its colour destination factor, GL 4.6 17.3.6 / D3D11
+                ''' blend: result = src * Fs + dst * Fd) for the source alpha <paramref name="srcAlpha"/>; Nothing for a factor that depends
+                ''' on a colour (DEST_COLOR, SRC_COLOR, ...).</summary>
+                Public Function Transmittance(srcAlpha As Single) As Single?
+#If DEBUG Then
+                    ' Item 1b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): INV_SRC_ALPHA read as SRC_ALPHA.
+                    If Fo4GBufferConstants.GateMutantOn("cov-transmit-srcalpha") AndAlso BlendDst = BlendingFactor.OneMinusSrcAlpha Then Return srcAlpha
+#End If
+                    Select Case BlendDst
+                        Case BlendingFactor.Zero : Return 0.0F
+                        Case BlendingFactor.One : Return 1.0F
+                        Case BlendingFactor.SrcAlpha : Return srcAlpha
+                        Case BlendingFactor.OneMinusSrcAlpha : Return 1.0F - srcAlpha
+                        Case Else : Return Nothing
+                    End Select
+                End Function
+
+                ''' <summary>Does the game draw <paramref name="a"/>'s colour pass after <paramref name="b"/>'s, seen along
+                ''' <paramref name="viewDirection"/> (the direction the eye looks into the scene)? Nothing: the sources do not fix it.
+                ''' <list type="bullet">
+                ''' <item>Different lists: the accumulator's list order (DrawOrder).</item>
+                ''' <item>The alpha list (both games): descending and stable on EngineWorldBound.AlphaSortKey of the world-bound centre
+                ''' (FO4 0x14221DA70, 0x14221DBCD..DBE0; SSE 0x141555540, 0x1415556B4..6C7), equal keys in registration order (append,
+                ''' FO4 0x14222204C..079) - Tools/re-docs/RE_FO4_ALPHA_ORDER_2026-10-19 2, 2.2 and its SSE addendum.</item>
+                ''' <item>A linked list (FO4 lists 0 and 0xE, bit0 of +0x20, ctor 0x14221E2C3 / 0x14221E797): registration order, reversed
+                ''' where the group prepends (0x14 -&gt; 0xE, 0x1421D4BD0..C42; RE_FO4_ALPHA_ORDER 0, 1.1).</item>
+                ''' <item>Skyrim SE's opaque batch: O-OP (PreviewModel.CompareOpaqueOrder: slot, pass ID, sub-list, prepend 0x14155F024..02B).</item>
+                ''' <item>Fallout 4's technique buckets (bucket 4, the decal lists 3 / 4, forward bucket 0): the same comparison on the render's
+                ''' keys (PreviewModel.Fo4TechniqueBucketKeys: shader type, technique activation, the recorded packets in registration order,
+                ''' then the chain in reverse; Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19, item 2b). An overlay layer registers
+                ''' after every shape (r19b-07); between the layers of two base shapes the registration is state, so Nothing where the
+                ''' comparison reaches it - the same technique and packet run - or where both techniques were activated only by layers.</item>
+                ''' </list>
+                ''' Skyrim SE's other lists by their walk (SseRenderPassLaw.ListWalk; Addendum r19b-4 / r19b-5): list 0 of the opaque finish
+                ''' appends (registration), list 0xD prepends its group 0x12 (reverse registration), the decal lists 3 / 4 are batches (the
+                ''' render's key). Not fixed (Nothing): the keys of a stale model (HasMesh); one shape against itself.</summary>
+                Public Shared Function DrawsAfter(a As EngineCoverage, b As EngineCoverage, viewDirection As Vector3) As Boolean?
+                    If a.DrawOrder = 0 OrElse b.DrawOrder = 0 Then Return Nothing
+#If DEBUG Then
+                    ' Item 1b oracles' directed mutant: the accumulator's list order reversed.
+                    If Fo4GBufferConstants.GateMutantOn("cov-listorder-reversed") AndAlso a.DrawOrder <> b.DrawOrder Then Return a.DrawOrder < b.DrawOrder
+#End If
+                    If a.DrawOrder <> b.DrawOrder Then Return a.DrawOrder > b.DrawOrder
+                    If Not a.HasMesh OrElse Not b.HasMesh OrElse a.ListOrder <> b.ListOrder Then Return Nothing
+                    Dim reg = a.Registration.CompareTo(b.Registration)
+                    Select Case a.ListOrder
+                        Case EngineListOrder.AlphaSorted
+                            Dim ka = EngineWorldBound.AlphaSortKey(viewDirection, a.SortCentre)
+                            Dim kb = EngineWorldBound.AlphaSortKey(viewDirection, b.SortCentre)
+                            If ka > kb Then Return False
+                            If ka < kb Then Return True
+                            If reg = 0 Then Return Nothing
+                            Return reg > 0
+                        Case EngineListOrder.Registration
+                            If reg = 0 OrElse a.OverlayGroup <> 0 AndAlso b.OverlayGroup <> 0 AndAlso a.OverlayGroup <> b.OverlayGroup Then Return Nothing
+                            Return reg > 0
+                        Case EngineListOrder.RegistrationReverse
+                            If reg = 0 OrElse a.OverlayGroup <> 0 AndAlso b.OverlayGroup <> 0 AndAlso a.OverlayGroup <> b.OverlayGroup Then Return Nothing
+                            Return reg < 0
+                        Case EngineListOrder.OrderKey
+                            If (a.OverlayGroup <> 0 OrElse b.OverlayGroup <> 0) AndAlso a.OrderKey.Slot = b.OrderKey.Slot Then
+                                If a.OrderKey.Pass <> b.OrderKey.Pass Then
+                                    If Not a.RankFixed AndAlso Not b.RankFixed Then Return Nothing
+                                ElseIf a.OrderKey.SubList = b.OrderKey.SubList AndAlso a.OverlayGroup <> 0 AndAlso b.OverlayGroup <> 0 AndAlso
+                                       a.OverlayGroup <> b.OverlayGroup Then
+                                    Return Nothing
+                                End If
+                            End If
+                            Dim c = PreviewModel.CompareOpaqueOrder(a.OrderKey, a.Registration, b.OrderKey, b.Registration)
+                            If c = 0 Then Return Nothing
+                            Return c > 0
+                    End Select
+                    Return Nothing
+                End Function
+            End Structure
+
+            ''' <summary>How the game orders the draws inside one list (EngineCoverage.DrawsAfter).</summary>
+            Friend Enum EngineListOrder
+                Unknown
+                AlphaSorted
+                Registration
+                RegistrationReverse
+                ''' <summary>The render's O-OP key (EngineCoverage.OrderKey, PreviewModel.CompareOpaqueOrder).</summary>
+                OrderKey
+            End Enum
+
+            ''' <summary>The order inside a list (EngineCoverage.DrawsAfter) for its walk (EngineListWalk, from its game's one owner:
+            ''' Fo4RenderPassLaw.ListWalk / SseRenderPassLaw.ListWalk): the sorted alpha list; linked lists by append / prepend; batches and
+            ''' technique buckets by the render's key (RenderableMesh.OpaqueOrderKey).</summary>
+            Private Shared Function ListOrderOf(walk As EngineListWalk) As EngineListOrder
+                Select Case walk
+                    Case EngineListWalk.AlphaSorted : Return EngineListOrder.AlphaSorted
+                    Case EngineListWalk.Registration : Return EngineListOrder.Registration
+                    Case EngineListWalk.RegistrationReverse : Return EngineListOrder.RegistrationReverse
+                    Case EngineListWalk.TechniqueBuckets, EngineListWalk.PassBatches : Return EngineListOrder.OrderKey
+                    Case Else : Return EngineListOrder.Unknown
+                End Select
+            End Function
+
+            ''' <summary>The order Fallout 4's world accumulator draws a list in (Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 3.4,
+            ''' stages of 0x1421F9C90): G-buffer 0x1421F38B0 - z-prepass 0x14181FAA0, bucket 4 (0x1421F3C21), the decal lists 2 / 3
+            ''' (0x1421D5EA0), list 0 (0x1421F3C4C), list 4 (0x1421D6010) -; forward 0x1421F9100 - bucket 0 (0x1421F9214), list 0xE
+            ''' (0x1421F93D5) -; alpha finish 0x1421D5AC0 - the sorted list (0x1421D7120). Fo4List names them (G-buffer list 3 = group 2,
+            ''' list 4 = group 3). 0 = no list.</summary>
+            Private Shared Function Fo4DrawOrder(list As Fo4RenderPassLaw.Fo4List) As Integer
+                Select Case list
+                    Case Fo4RenderPassLaw.Fo4List.GBufferOpaque : Return 1
+                    Case Fo4RenderPassLaw.Fo4List.DecalOpaque : Return 2
+                    Case Fo4RenderPassLaw.Fo4List.GBufferLodLandscape : Return 3
+                    Case Fo4RenderPassLaw.Fo4List.DecalTranslucent : Return 4
+                    Case Fo4RenderPassLaw.Fo4List.ForwardEffect : Return 5
+                    Case Fo4RenderPassLaw.Fo4List.ForwardBillboard : Return 6
+                    Case Fo4RenderPassLaw.Fo4List.Translucent : Return 7
+                    Case Else : Return 0
+                End Select
+            End Function
+
+            ''' <summary>THE COVERAGE OF THIS SHAPE IN THE WORLD RENDER OF THE GAME <paramref name="isSse"/> names (what the player sees: the
+            ''' colour passes and the z-prepass before them - not the shadow map), built with the calls the draws make:
+            ''' <list type="bullet">
+            ''' <item>Pass, list, depth: Fo4RenderPassLaw.Classify(Fo4Inputs()) / SseRenderPassLaw.Classify(SseInputs()) (Fo4Pass / SsePass,
+            ''' ResolveColourDepthState); the game builds no pass for an alpha at rest of 0 (EngineAlphaSkipsPasses, L1c).</item>
+            ''' <item>Prepass cut: FO4 DrawFo4EnginePrepass (PrepassAlphaTest, PrepassThreshold, tex.a * saturate(vc + y), y = 0 with a
+            ''' COLOR stream: HasColorStream); SSE ApplySsePrepassState (PrepassThreshold, SubgroupThreshold, the decal variant).</item>
+            ''' <item>Colour cut: FO4 Fo4ColourPassAlphaTest (ApplyMaterial) with the G-buffer's vertex-alpha gate (GBufferTestVertexAlpha;
+            ''' no material alpha: tex.a [* vc.a], 9.1 / 10.2); SSE SsePass MainAlphaTest / MainAlphaThreshold (ApplyMaterial) on
+            ''' tex.a * alpha * vc.a (DO_ALPHA_TEST: `mul r0.w, r0.w, cb2[3].z` / `mad r0.x, r0.w, v11.w, -cb11[0].x`; the alpha also
+            ''' scales the threshold, SubgroupRefThreshold) with the Hair DEPTH_WRITE_DECALS rescale. The vertex alpha of Skyrim SE and of
+            ''' the effects is the one the draws feed (UseVertexAlpha).</item>
+            ''' <item>Blend: DecalColourBlend (ApplyMaterial's forward blend) / Fo4GBufferRt0Blend of Fo4GBufferBlendMode (the G-buffer
+            ''' draw); the FO4 G-buffer BLEND records' output alpha by PS id (Fo4GBufferBlendOutput, the closed census of the 103 records of
+            ''' Fo4GBufferSource.Records with technique bit 15: (AlphaScale.y = 1 ? A : 1) * AlphaScale.x, killed below 4/255).</item>
+            ''' <item>Order: the list (DrawOrder) and the order inside it (ListOrder, EngineCoverage.DrawsAfter).</item>
+            ''' <item>UV: RestUv; diffuse address: SamplerLaw.Slots (the draws' BindMaterialSamplers).</item>
+            ''' </list>
+            ''' An effect's alpha (falloff, palette, soft) is not evaluated on the CPU: its cuts carry Unknown. A shape without a material:
+            ''' the plain opaque state (ResolveColourDepthState).</summary>
+            Public Function EngineColourCoverage(isSse As Boolean) As EngineCoverage
+                Dim r As New EngineCoverage With {.Drawn = True, .ColourWritesDepth = True, .WrapU = True, .WrapV = True,
+                                                  .UvOffset = New Vector2(0.0F, 0.0F), .UvScale = New Vector2(1.0F, 1.0F)}
+                Dim mb = MaterialBase
+                If mb Is Nothing Then Return r
+                Dim uv = RestUv()
+                r.UvOffset = uv.Offset : r.UvScale = uv.Scale
+                Dim addr = SamplerLaw.Slots(SamplerInputs(isSse)).First(Function(s) s.Unit = SamplerLaw.AppUnit.Diffuse).Addr
+                r.WrapU = (addr And 2) <> 0 : r.WrapV = (addr And 1) <> 0
+                Dim alpha = PreviewAlpha()
+                ' The draw-order inputs, read here (the caller's thread): EngineCoverage.DrawsAfter compares them.
+                Dim malla = ParentMeshData?.ParentMesh
+                If malla?.ParentModel IsNot Nothing AndAlso malla.ParentModel.RenderKeysCurrent(isSse) Then
+                    r.HasMesh = True
+                    r.RankFixed = True
+                    r.SortCentre = malla.WorldBoundCentre()
+                    r.Registration = malla.RegistrationKey
+                End If
+                If isSse Then
+                    Dim inp = SseInputs()
+                    Dim p = SseRenderPassLaw.Classify(inp)
+                    r.Drawn = p.Drawn AndAlso Not EngineAlphaSkipsPasses()
+                    ' The two finishes' list order (SseList, 3.2); inside each list its walk (SseRenderPassLaw.ListWalk, Addendum r19b-4):
+                    ' the alpha list the sort, list 0 by registration, list 0xD reversed, the batches (opaque, decals 3 / 4) by the render's key.
+                    r.DrawOrder = CInt(p.List)
+                    r.ListOrder = ListOrderOf(SseRenderPassLaw.ListWalk(p.List, SseRenderPassLaw.OpaqueSlot(inp)))
+                    If r.ListOrder = EngineListOrder.OrderKey AndAlso r.HasMesh Then r.OrderKey = malla.OpaqueOrderKey
+#If DEBUG Then
+                    ' Item 2b oracles' directed mutant: the SSE coverage without the render's batch key.
+                    If Fo4GBufferConstants.GateMutantOn("cov-sse-orderkey-missing") Then r.OrderKey = Nothing
+#End If
+                    r.ColourOnPrepass = p.DepthFunc = SseRenderPassLaw.SseDepthFunc.Equal
+                    r.ColourWritesDepth = p.DepthWrite
+                    r.InPrepass = p.InPrepass
+                    Dim thrS = SseRenderPassLaw.SubgroupThreshold(inp)
+                    Dim va = UseVertexAlpha
+                    Dim bS = DecalColourBlend(Me, Nothing, True)
+                    r.Blend = bS.Enabled : r.BlendDst = bS.Dst
+                    If inp.IsEffect Then
+                        r.Prepass = New EngineAlphaCut With {.Test = p.PrepassAlphaTest, .Threshold = p.PrepassThreshold, .ThresholdS = thrS,
+                            .Texture = True, .VertexAlpha = va, .MaterialAlpha = alpha * alpha, .EffectPrepass = True,
+                            .Unknown = If(EngineRecolors().Alpha, SsePrepassPaletteHole, Nothing)}
+                        r.Colour = New EngineAlphaCut With {.Test = p.MainAlphaTest, .Threshold = p.MainAlphaThreshold, .Texture = True,
+                            .MaterialAlpha = 1.0F, .Unknown = EffectAlphaHole}
+                        ' The output alpha is unknown only where it matters: a blended draw (an unblended one writes over).
+                        r.BlendSource = New EngineAlphaCut With {.Texture = True, .MaterialAlpha = 1.0F, .Unknown = If(r.Blend, EffectAlphaHole, Nothing)}
+                    Else
+                        r.Prepass = New EngineAlphaCut With {.Test = p.PrepassAlphaTest, .Threshold = p.PrepassThreshold, .ThresholdS = thrS,
+                            .Texture = True, .VertexAlpha = va, .MaterialAlpha = 1.0F, .TexScale105 = inp.Decal OrElse inp.DynamicDecal}
+                        r.Colour = New EngineAlphaCut With {.Test = p.MainAlphaTest, .Threshold = p.MainAlphaThreshold, .Texture = True,
+                            .VertexAlpha = va, .MaterialAlpha = alpha, .HairDecal = p.HairDepthWriteDecal}
+#If DEBUG Then
+                        ' Item 1b oracles' directed mutant: the material alpha on one side only (the threshold), not in the value.
+                        If Fo4GBufferConstants.GateMutantOn("cov-sse-alpha-one-side") Then r.Colour.MaterialAlpha = 1.0F
+#End If
+                        r.BlendSource = New EngineAlphaCut With {.Texture = True, .VertexAlpha = va, .MaterialAlpha = alpha,
+                            .HairDecal = p.HairDepthWriteDecal}
+                    End If
+                    Return r
+                End If
+                Dim inF = Fo4Inputs()
+                Dim pf = Fo4RenderPassLaw.Classify(inF)
+                r.Drawn = pf.Drawn AndAlso Not EngineAlphaSkipsPasses()
+#If DEBUG Then
+                ' Item 1b oracles' directed mutant: what the game does not draw counted as drawn.
+                If Fo4GBufferConstants.GateMutantOn("cov-drawn-ignored") Then r.Drawn = True
+#End If
+                r.DrawOrder = Fo4DrawOrder(pf.List)
+                r.ListOrder = ListOrderOf(Fo4RenderPassLaw.ListWalk(pf.List))
+                ' The technique buckets' key depends on the whole list (activation): the one RebuildRenderBuckets assigned (item 2b); an
+                ' overlay layer's, the last Fallout 4 frame's (PreviewModel.Fo4OverlayOrders, r19b-07) - none yet: unknown.
+                Dim enlazada = r.ListOrder = EngineListOrder.Registration OrElse r.ListOrder = EngineListOrder.RegistrationReverse
+                If (r.ListOrder = EngineListOrder.OrderKey OrElse enlazada) AndAlso r.HasMesh Then
+                    If OverrideRelatedMaterial Is Nothing Then
+                        If Not enlazada Then r.OrderKey = malla.OpaqueOrderKey
+                    Else
+                        Dim capa As PreviewModel.Fo4OverlayOrder
+                        If malla.ParentModel.Fo4OverlayOrders.TryGetValue(Me, capa) Then
+                            r.OrderKey = capa.Key : r.Registration = capa.Registration
+                            r.OverlayGroup = capa.Group : r.RankFixed = capa.RankFixed
+                        Else
+                            r.HasMesh = False
+                        End If
+                    End If
+                End If
+                r.ColourWritesDepth = pf.DepthWrite
+                r.InPrepass = pf.InPrepass
+                r.Prepass = New EngineAlphaCut With {.Test = pf.PrepassAlphaTest, .Threshold = pf.PrepassThreshold, .Texture = True,
+                    .VertexAlpha = inF.HasColorStream, .MaterialAlpha = 1.0F}
+                Dim atC = Fo4ColourPassAlphaTest()
+#If DEBUG Then
+                ' Item 1b oracles' directed mutant: the colour pass with the z-prepass law (no ref-4 constant).
+                If Fo4GBufferConstants.GateMutantOn("cov-fo4-colour-prepass-law") AndAlso atC.Test Then atC.Threshold = Fo4RenderPassLaw.PrepassAlphaThreshold(EngineAlphaAtRest().Threshold)
+#End If
+                If inF.IsEffect Then
+                    r.Colour = New EngineAlphaCut With {.Test = atC.Test, .Threshold = atC.Threshold, .Texture = True, .MaterialAlpha = 1.0F,
+                        .Unknown = EffectAlphaHole}
+                    Dim bE = DecalColourBlend(Me, Nothing, False)
+                    r.Blend = bE.Enabled : r.BlendDst = bE.Dst
+                    ' The output alpha is unknown only where it matters: a blended draw (an unblended one writes over).
+                    r.BlendSource = New EngineAlphaCut With {.Texture = True, .MaterialAlpha = 1.0F, .Unknown = If(r.Blend, EffectAlphaHole, Nothing)}
+#If DEBUG Then
+                    ' Item 1b oracles' directed mutant: the effect's alpha taken as evaluated (tex.a), against the user's decision.
+                    If Fo4GBufferConstants.GateMutantOn("cov-effect-evaluated") Then r.Colour.Unknown = Nothing : r.BlendSource.Unknown = Nothing
+#End If
+                    Return r
+                End If
+                r.Colour = New EngineAlphaCut With {.Test = atC.Test, .Threshold = atC.Threshold, .Texture = True,
+                    .VertexAlpha = pf.GBufferTestVertexAlpha, .MaterialAlpha = 1.0F}
+#If DEBUG Then
+                ' Item 1b oracles' directed mutant: the G-buffer test without the vertex alpha.
+                If Fo4GBufferConstants.GateMutantOn("cov-fo4-va-none") Then r.Colour.VertexAlpha = False
+                ' Item 1b oracles' A/B instrument (--occlusion-ab): the colour threshold HEAD's tool used (AlphaTestThreshold = ref/255).
+                If Fo4GBufferConstants.GateMutantOn("cov-head-threshold") AndAlso r.Colour.Test Then r.Colour.Threshold = AlphaTestThreshold
+#End If
+                If inF.LightingTechnique.HasValue Then
+                    Dim t = inF.LightingTechnique.Value
+                    Dim bL = Fo4GBufferRt0Blend(Fo4GBufferBlendMode(Me, t, Fo4Flags(), alpha))
+                    r.Blend = bL.Enabled : r.BlendDst = bL.Dst
+                    Dim ea = EngineAlphaAtRest()
+                    ' AlphaScale.y = 1 exactly when the NiAlphaProperty blends (ApplyFo4GBufferDraw: Fo4GBufferConstants.AlphaScale(t, alpha,
+                    ' ea.Present AndAlso ea.Blend), 0x1422073BB..3D6); then the record's A enters, else 1.
+                    Dim conTextura = ea.Present AndAlso ea.Blend
+                    If (t And (1UI << 15)) <> 0UI Then
+                        Dim corte As New EngineAlphaCut With {.Test = True, .Threshold = KillFourOver255, .Texture = conTextura, .MaterialAlpha = alpha}
+                        Dim forma As Fo4GBufferBlendOutput.AlphaSource
+                        If Not Fo4GBufferBlendOutput.Forms.TryGetValue(Fo4GBufferTechnique.PixelShaderId(t), forma) Then
+                            corte.Unknown = Fo4BlendRecordHole
+                        ElseIf conTextura Then
+#If DEBUG Then
+                            ' Item 1b oracles' directed mutant: every record's output alpha read as t0.w.
+                            If Fo4GBufferConstants.GateMutantOn("cov-blendform-diffuse") Then forma = Fo4GBufferBlendOutput.AlphaSource.Diffuse
+#End If
+                            Select Case forma
+                                Case Fo4GBufferBlendOutput.AlphaSource.DiffuseTimesVertex : corte.VertexAlpha = True : corte.VertexAlphaFirst = True
+                                Case Fo4GBufferBlendOutput.AlphaSource.Slot9, Fo4GBufferBlendOutput.AlphaSource.DiffuseArray : corte.Unknown = Fo4BlendSlotHole
+                            End Select
+                        End If
+                        r.BlendSource = corte
+                    Else
+                        ' No bit 15: no kill on the output alpha; it is unknown only for a blended draw (the notice: not for an opaque layer).
+                        r.BlendSource = New EngineAlphaCut With {.Texture = True, .MaterialAlpha = alpha, .Unknown = If(r.Blend, Fo4BlendRecordHole, Nothing)}
+                    End If
+                End If
+                Return r
+            End Function
+
+            ''' <summary>The material's slot-4 texture entry (EnvmapTexturePath): what the EnvMapArray registers (rev-03 / rev-46).
+            ''' Nothing for a cube the engine cannot create (CubeIsSrvNull): the register 0x142239930 refuses its header (0xFF,
+            ''' 0x14223999F; constant .x 0, 0x142205947..961) or the file is empty (0x14220593A): no reflection. A header the register
+            ''' accepts is not the law (EngineTextureCreationLaw.LightingCubeVerdict: NotLaw) and keeps the preview's own cube.</summary>
             Friend Function EnvmapTexture() As Texture_Loaded_Class
+                If CubeIsSrvNull Then Return Nothing
                 Dim tex As Texture_Loaded_Class = Nothing
                 TryGetTexture(EnvmapTexturePath, tex)
                 Return tex
             End Function
+
+            ''' <summary>The slot-4 cube is a file Fallout 4 cannot create and the material samples it (EngineSlotDefault =
+            ''' SrvNull): the effect binds its NULL SRV, zeros (ApplyMaterial binds defaultSrvNullCube), the lighting registers no
+            ''' slice (EnvmapTexture).</summary>
+            Friend ReadOnly Property CubeIsSrvNull As Boolean
+                Get
+                    Dim c = EngineDefaultTextureLaw.MaterialSlot.Cube
+                    Return EngineSlotDefault(c, SlotState(c, EnvmapTexture_ID)) = EngineDefaultTextureLaw.EngineTexture.SrvNull
+                End Get
+            End Property
 
             ''' <summary>Fallout 4's G-buffer pass of this lighting material (propuesta v3 E1, v5): its technique (Fo4GBufferTechnique,
             ''' GetRenderPasses 0x14217A050), group, flags and the record's program. Nothing when GetRenderPasses builds no G-buffer pass.
@@ -4514,11 +5213,38 @@ Public Class PreviewModel
                 Return d
             End Function
 
+            ''' <summary>Item 2b: byte [geom+0x158] of a geometry the culling registers (read by 0x142207CDE), by its exact class
+            ''' (NifSceneVisibility.Fo4GeometryClassOf): 3 BSTriShape (0x1416D9F93), 4 BSDynamicTriShape (0x1416E4CCE), 5 BSMeshLODTriShape
+            ''' (0x1422433AC), 8 BSSubIndexTriShape (0x1417E6182) - census of every `mov byte [reg+0x158], imm8` of .text, Tools/re-docs/
+            ''' RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19 scripts/geomtype.txt. Nothing for every other class: Fallout 4's culling registers it
+            ''' with no pass (the NiGeometry family, r19b-02) or its registration is not traced (Untraced) - NifSceneVisibility leaves both
+            ''' unregistered in a Fallout 4 frame (r19b-13), so the order never asks for their packet.</summary>
+            Private Shared Function Fo4GeometryType(geo As NiflySharp.INiShape) As Integer?
+                Select Case NifSceneVisibility.Fo4GeometryClassOf(geo)
+                    Case NifSceneVisibility.Fo4GeometryClass.BSTriShape : Return 3
+                    Case NifSceneVisibility.Fo4GeometryClass.BSDynamicTriShape : Return 4
+                    Case NifSceneVisibility.Fo4GeometryClass.BSMeshLODTriShape : Return 5
+                    Case NifSceneVisibility.Fo4GeometryClass.BSSubIndexTriShape : Return 8
+                    Case Else
+#If DEBUG Then
+                        ' Item 2b oracles' directed mutant (with NifSceneVisibility.Fo4GeometryClassOf): the class law before r19b-02 - the
+                        ' NiGeometry family registered, without a type byte (no packet).
+                        If Fo4GBufferConstants.GateMutantOn("geomclass-notreg-ignored") Then Return 0
+#End If
+                        Return Nothing
+                End Select
+            End Function
+
             ''' <summary>The FO4 z-prepass takes only these exact geometry classes (RTTI 0x143449778 BSTriShape, 0x1438DF4C0
-            ''' BSSubIndexTriShape, 0x143E71B70 BSMeshLODTriShape; instanced geometry is runtime-only).</summary>
+            ''' BSSubIndexTriShape, 0x143E71B70 BSMeshLODTriShape: an RTTI compare, not the type byte; instanced geometry is runtime-only),
+            ''' by NifSceneVisibility.Fo4GeometryClassOf.</summary>
             Private Shared Function Fo4PrepassGeometryClass(geo As NiflySharp.INiShape) As Boolean
-                Dim n = geo.GetType().Name
-                Return n = "BSTriShape" OrElse n = "BSSubIndexTriShape" OrElse n = "BSMeshLODTriShape"
+                Select Case NifSceneVisibility.Fo4GeometryClassOf(geo)
+                    Case NifSceneVisibility.Fo4GeometryClass.BSTriShape, NifSceneVisibility.Fo4GeometryClass.BSSubIndexTriShape,
+                         NifSceneVisibility.Fo4GeometryClass.BSMeshLODTriShape
+                        Return True
+                    Case Else : Return False
+                End Select
             End Function
 
             ''' <summary>What the sampler law reads (SamplerLaw.SamplerInputs): the material's clamp value - lighting from the NIF's
@@ -4763,10 +5489,44 @@ Public Class PreviewModel
                     .SpecularMsn = mb.SpecularEnabled AndAlso mb.ModelSpaceNormals})
             End Function
 
-            ''' <summary>The slot's state (rev-03): loaded / no path / absent from the data / in the data but not loaded by the preview.</summary>
+            ''' <summary>The slot's state (rev-03): loaded / no path / absent from the data / in the data but not loaded by the preview /
+            ''' (Fallout 4) in the data and the engine cannot create it in this slot (SlotCreation), which wins.</summary>
             Friend Function SlotState(slot As EngineDefaultTextureLaw.MaterialSlot, ownId As UInteger) As EngineDefaultTextureLaw.SlotState
                 Dim p = SlotPath(slot)
-                Return EngineDefaultTextureLaw.StateOf(p, ownId <> 0, TextureFileExists(p))
+                Dim inData = TextureFileExists(p)
+                Dim rejects = inData AndAlso SlotCreation(slot).Outcome = EngineTextureCreationLaw.CreationOutcome.Rejected
+                Return EngineDefaultTextureLaw.StateOf(p, ownId <> 0, inData, rejects)
+            End Function
+
+            ''' <summary>Fallout 4's creation verdict of the file in <paramref name="slot"/> (EngineTextureCreationLaw.Verdict with the
+            ''' slot's sRGB flag, EngineDefaultTextureLaw.Fo4SlotLoadsSrgb; the slot-4 cube by its family: the effect's
+            ''' EffectCubeVerdict, the lighting's LightingCubeVerdict against the EnvMapArray's header test now). Unread for Skyrim SE
+            ''' (the law transcribes Fallout4.exe), a slot without a path, a file not in the data or one the app cannot read.</summary>
+            Friend Function SlotCreation(slot As EngineDefaultTextureLaw.MaterialSlot) As EngineTextureCreationLaw.CreationVerdict
+                Dim unread = EngineTextureCreationLaw.CreationVerdict.Make(EngineTextureCreationLaw.CreationOutcome.Unread, Nothing)
+                If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return unread
+                Dim d = EngineTextureCreationLaw.DescriptorOf(SlotPath(slot))
+                If Not d.HasValue Then Return unread
+                If slot = EngineDefaultTextureLaw.MaterialSlot.Cube Then
+                    If MaterialBase.IsBGEM() Then Return EngineTextureCreationLaw.EffectCubeVerdict(d.Value)
+                    Dim h = d.Value
+                    ' Against the EnvMapArray as the current model left it: the array is reset on every model load (user decision
+                    ' rev-09 b), so the verdict depends on the model shown alone and is deterministic.
+                    Dim envArray = ParentMeshData.ParentMesh.ParentModel.ParentControl.Fo4EnvMap
+                    Dim accepts = envArray.AcceptsHeader(h.Height, h.Width, DirectXDDSLoader.MakeSrgbDxgi(h.Format), h.Cube, h.MipLevels)
+                    ' Seeded by ANOTHER cube (F3): the slot's own cube, registered by the preview's frame before this asks, is not a seed.
+                    Dim ownCube As Texture_Loaded_Class = Nothing
+                    TryGetTexture(SlotPath(slot), ownCube)
+                    Return EngineTextureCreationLaw.LightingCubeVerdict(h, accepts, envArray.SeededBefore(ownCube))
+                End If
+                Return EngineTextureCreationLaw.Verdict(d.Value, EngineDefaultTextureLaw.Fo4SlotLoadsSrgb(slot))
+            End Function
+
+            ''' <summary>Fallout 4: the material samples <paramref name="slot"/> when it names a file that is in the data. The law
+            ''' answers SrvNull for RejectedByEngine exactly in the slots it samples with a named path (Fo4Lighting: the record's
+            ''' bits; Fo4Effect: the path and bit 19) and NoTexture elsewhere, so it is asked with that state.</summary>
+            Private Function SamplesNamedFile(slot As EngineDefaultTextureLaw.MaterialSlot) As Boolean
+                Return EngineSlotDefault(slot, EngineDefaultTextureLaw.SlotState.RejectedByEngine) = EngineDefaultTextureLaw.EngineTexture.SrvNull
             End Function
 
             ''' <summary>The texture the game samples in <paramref name="slot"/>: <paramref name="ownId"/> when it loaded, else the app's
@@ -4790,21 +5550,76 @@ Public Class PreviewModel
             ''' does not reproduce it: "Texture not loaded by the preview: path");</item>
             ''' <item>every EMPTY slot the game samples with a default that is not neutral (EngineDefaultTextureLaw.IsNeutral) -&gt;
             ''' EmptyTextureSlot (the slot's name);</item>
-            ''' <item>an effect base that is empty under a recolor -&gt; UndefinedInGame (RecolorWithoutBase).</item>
+            ''' <item>an effect base that is empty under a recolor -&gt; UndefinedInGame (RecolorWithoutBase);</item>
+            ''' <item>Fallout 4 (EngineTextureCreationLaw), every file its loader creates and the material samples, one line per file:
+            ''' the engine cannot create it -&gt; RejectedTexture ("path (rule; slot)": the game samples zeros, and so does the
+            ''' preview); the game crashes reading it -&gt; CrashingTexture (an error: the data is wrong; it says whether the preview
+            ''' loaded it); the game reads it inconsistently -&gt; UndefinedInGame when the preview drew its own load, DrawnDifferently
+            ''' (an error, "not loaded by the preview") when the preview could not load it. Such a file is not listed a second time
+            ''' as not loaded by the preview.</item>
             ''' </list>
             ''' A slot the SSE fold stands in for (DiffuseTexture_ID / NormalTexture_ID through a per-NPC key) counts as loaded.</summary>
             Friend Function TextureNotices() As List(Of (Kind As PreviewModel.FrameNoticeKind, Reason As String))
                 Dim out As New List(Of (Kind As PreviewModel.FrameNoticeKind, Reason As String))
+                Dim created As New List(Of (Slot As EngineDefaultTextureLaw.MaterialSlot, Path As String, Verdict As EngineTextureCreationLaw.CreationVerdict))
+                If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then
+                    For Each slot In EngineDefaultTextureLaw.Fo4LoadedSlots(MaterialBase.IsBGEM())
+                        Dim sp = SlotPath(slot)
+                        If sp = "" OrElse Not TextureFileExists(sp) OrElse Not SamplesNamedFile(slot) Then Continue For
+                        created.Add((slot, sp, SlotCreation(slot)))
+                    Next
+                End If
                 Dim diffusePath = SlotPath(EngineDefaultTextureLaw.MaterialSlot.Diffuse), normalPath = SlotPath(EngineDefaultTextureLaw.MaterialSlot.Normal)
+                Dim previewLoaded = Function(path As String) As Boolean
+                                        If GetTextureID(path) <> 0 Then Return True
+                                        If String.Equals(path, diffusePath, StringComparison.OrdinalIgnoreCase) AndAlso DiffuseTexture_ID <> 0 Then Return True
+                                        Return String.Equals(path, normalPath, StringComparison.OrdinalIgnoreCase) AndAlso NormalTexture_ID <> 0
+                                    End Function
                 For Each p In Textures_Path_List.Append(SlotPath(EngineDefaultTextureLaw.MaterialSlot.Cube)).Distinct(StringComparer.OrdinalIgnoreCase)
-                    If p = "" OrElse GetTextureID(p) <> 0 Then Continue For
-                    If String.Equals(p, diffusePath, StringComparison.OrdinalIgnoreCase) AndAlso DiffuseTexture_ID <> 0 Then Continue For
-                    If String.Equals(p, normalPath, StringComparison.OrdinalIgnoreCase) AndAlso NormalTexture_ID <> 0 Then Continue For
+                    If p = "" OrElse previewLoaded(p) Then Continue For
                     If TextureFileExists(p) Then
-                        out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, "Texture not loaded by the preview: " & p))
+                        Dim uses = created.Where(Function(c) String.Equals(c.Path, p, StringComparison.OrdinalIgnoreCase)).ToList()
+                        Dim explained = uses.Count > 0 AndAlso uses.All(Function(c) c.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.Rejected OrElse
+                                                                                    c.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.NotLaw OrElse
+                                                                                    c.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.Unread)
+                        If Not explained Then out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, "Texture not loaded by the preview: " & p))
                     Else
                         out.Add((PreviewModel.FrameNoticeKind.MissingTexture, p))
                     End If
+                Next
+                Dim notLawListed As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+                Dim unreadListed As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+                For Each c In created
+                    Select Case c.Verdict.Outcome
+                        Case EngineTextureCreationLaw.CreationOutcome.Rejected
+                            out.Add((PreviewModel.FrameNoticeKind.RejectedTexture, $"{c.Path} ({c.Verdict.Cause}; {SlotNoticeName(c.Slot)})"))
+                        Case EngineTextureCreationLaw.CreationOutcome.NotLaw
+                            ' Not the law: one line per file, a crash first (r19c-02 / r19c-03); its class by what the game and the
+                            ' preview do - a crash or a file the preview could not load is an error, an undefined value drawn from the
+                            ' preview's own load a warning.
+                            If Not notLawListed.Add(c.Path) Then Continue For
+                            Dim w = created.Where(Function(x) x.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.NotLaw AndAlso
+                                                              String.Equals(x.Path, c.Path, StringComparison.OrdinalIgnoreCase)).
+                                            OrderByDescending(Function(x) x.Verdict.Crashes).First()
+                            Dim loaded = previewLoaded(w.Path)
+                            If w.Verdict.Crashes Then
+                                out.Add((PreviewModel.FrameNoticeKind.CrashingTexture,
+                                         $"{w.Path} ({w.Verdict.Cause}; {SlotNoticeName(w.Slot)}{If(loaded, "", "; not loaded by the preview")})"))
+                            ElseIf loaded Then
+                                out.Add((PreviewModel.FrameNoticeKind.UndefinedInGame, $"Texture the game reads inconsistently ({w.Verdict.Cause}), drawn as the preview loads it: {w.Path}"))
+                            Else
+                                out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, $"Texture not loaded by the preview, which the game reads inconsistently ({w.Verdict.Cause}): {w.Path}"))
+                            End If
+                        Case EngineTextureCreationLaw.CreationOutcome.Unread
+                            ' r19d-H1: a file in the data whose header or record the app could not read - what the game does with it
+                            ' is not evaluated (a gap of the preview: an error), one line per file. The lighting cube is then not
+                            ' registered (Fo4EnvMapArray.Register: no header, -1), so the preview draws no reflection for it.
+                            If Not unreadListed.Add(c.Path) Then Continue For
+                            Dim drawn = If(Not previewLoaded(c.Path), "not loaded by the preview either",
+                                           If(c.Slot = EngineDefaultTextureLaw.MaterialSlot.Cube AndAlso Not MaterialBase.IsBGEM(), "the preview draws no reflection for it",
+                                              "the preview draws it as it loaded it"))
+                            out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, $"Texture whose header the preview cannot read, so what the game does with it is not evaluated ({drawn}): {c.Path}"))
+                    End Select
                 Next
                 For Each slot In [Enum].GetValues(GetType(EngineDefaultTextureLaw.MaterialSlot)).Cast(Of EngineDefaultTextureLaw.MaterialSlot)()
                     If SlotPath(slot) <> "" Then Continue For
@@ -6707,7 +7522,8 @@ Public Class PreviewModel
             ' Rev-13: the node bounds of one NIF are computed once per frame (PreviewModel.FrameSceneBounds), not once per shape.
             Dim shp = MeshData?.Shape
             _sceneVis = If(shp?.NifContent Is Nothing OrElse ParentModel Is Nothing OrElse frame < 0, NifSceneVisibility.Evaluate(shp),
-                           NifSceneVisibility.Evaluate(shp.NifContent, shp.NifShape, ParentModel.FrameSceneBounds.ForFrame(frame, shp.NifContent)))
+                           NifSceneVisibility.Evaluate(shp.NifContent, shp.NifShape, ParentModel.FrameSceneBounds.ForFrame(frame, shp.NifContent),
+                                                       cullingEngineIsSse:=ParentModel.FrameIsSse))
             _sceneVisFrame = frame
             Return _sceneVis
         End Function
@@ -7049,18 +7865,22 @@ Public Class PreviewModel
             Me.ParentModel.ParentControl.FrameDecalBase.DepthDrawAlpha()
         End Sub
 
-        ''' <summary>The colour blend of a translucent decal's draw on RT 0 (Fallout 4's G-buffer) or on the radiance target, from the one
-        ''' place its colour draw takes it: a G-buffer record (<paramref name="gbuf"/>) Fo4GBufferBlendMode (ApplyFo4GBufferDraw; mode 6
-        ''' = RT 0 DEST_COLOR / ZERO, 0x1418552AA); otherwise under HasAlphaBlend (ApplyMaterial), a Fallout 4 effect Fo4EffectBlend,
-        ''' Skyrim SE Calculate_Blending. Enabled False: the draw is not blended.</summary>
+        ''' <summary>RT 0's colour blend of a Fallout 4 G-buffer draw in blend mode <paramref name="mode"/> (Fo4GBufferBlendMode): 0 not
+        ''' blended; mode 6 = RT 0 DEST_COLOR / ZERO (0x1418552AA); otherwise the D3D table 0x141855180 (Fo4BlendModeFactors).</summary>
+        Friend Shared Function Fo4GBufferRt0Blend(mode As Integer) As (Enabled As Boolean, Src As BlendingFactor, Dst As BlendingFactor)
+            If mode = 0 Then Return (False, BlendingFactor.One, BlendingFactor.Zero)
+            If mode = 6 Then Return (True, BlendingFactor.DstColor, BlendingFactor.Zero)
+            Dim m = Fo4BlendModeFactors(mode)
+            Return (True, m.ColorSrc, m.ColorDst)
+        End Function
+
+        ''' <summary>The colour blend of a draw on RT 0 (Fallout 4's G-buffer) or on the radiance target, from the one place its colour
+        ''' draw takes it: a G-buffer record (<paramref name="gbuf"/>) Fo4GBufferRt0Blend of Fo4GBufferBlendMode (ApplyFo4GBufferDraw);
+        ''' otherwise under HasAlphaBlend (ApplyMaterial), a Fallout 4 effect Fo4EffectBlend, Skyrim SE Calculate_Blending. Enabled False:
+        ''' the draw is not blended. Read by the translucent decals' base and by MaterialData.EngineColourCoverage (a Fallout 4 lighting
+        ''' shape there takes Fo4GBufferRt0Blend on its technique, the G-buffer draw's law without the record).</summary>
         Friend Shared Function DecalColourBlend(material As MaterialData, gbuf As Fo4GBufferDraw?, isSse As Boolean) As (Enabled As Boolean, Src As BlendingFactor, Dst As BlendingFactor)
-            If gbuf.HasValue Then
-                Dim mode = Fo4GBufferBlendMode(material, gbuf.Value)
-                If mode = 0 Then Return (False, BlendingFactor.One, BlendingFactor.Zero)
-                If mode = 6 Then Return (True, BlendingFactor.DstColor, BlendingFactor.Zero)
-                Dim m = Fo4BlendModeFactors(mode)
-                Return (True, m.ColorSrc, m.ColorDst)
-            End If
+            If gbuf.HasValue Then Return Fo4GBufferRt0Blend(Fo4GBufferBlendMode(material, gbuf.Value))
             If Not material.HasAlphaBlend Then Return (False, BlendingFactor.One, BlendingFactor.Zero)
             If isSse Then
                 Dim b = material.Calculate_Blending()
@@ -7340,6 +8160,9 @@ Public Class PreviewModel
             If Not IsDrawable() Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
             If Not ssePrepass AndAlso EngineSkipsEffectDraw(MeshData.Material) Then Exit Sub
+#If DEBUG Then
+            If PreviewModel.GateDrawLog IsNot Nothing Then PreviewModel.GateDrawLog.Add((Me, decalBase, ssePrepass, Nothing))
+#End If
             '=============================== MATRICES ===============================
             Dim model As Matrix4 = MeshData.Transform
             Dim view As Matrix4 = camera.GetViewMatrix()
@@ -7734,6 +8557,9 @@ Public Class PreviewModel
             If Not IsDrawable() Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
             If Not ssePrepass AndAlso EngineSkipsEffectDraw(OverlayMaterialData(layer)) Then Exit Sub
+#If DEBUG Then
+            If PreviewModel.GateDrawLog IsNot Nothing Then PreviewModel.GateDrawLog.Add((Me, decalBase, ssePrepass, layer))
+#End If
 
             '=============================== MATRICES (identical to Render) ===============================
             Dim model As Matrix4 = MeshData.Transform
@@ -8081,13 +8907,9 @@ Public Class PreviewModel
 
             ' FO4: EACH SLOT IN THE COLOUR SPACE THE ENGINE LOADS IT. The flag is per material class and per
             ' slot, passed to the texture set's loader (BSShaderTextureSet vtable+0x158 = 0x14216A1E0 ->
-            ' 0x142182420 -> 0x1417A3A60 -> MakeSRGB 0x14183E680):
-            '  - effect (BSEffectShaderMaterial, 0x1422249CE..C52): base, palette, cube sRGB; normal, mask raw.
-            '  - lighting (every BSLightingShaderMaterial class; common part 0x1421D3C60): slot 0 diffuse sRGB
-            '    (ALSO with greyscale-to-palette: the prepass re-encodes its index, pow(t0.g, 1/2.2) in b09
-            '    rec2985), 1 normal raw, 2 glow raw, 3 greyscale palette sRGB, 7 smooth-spec raw; Envmap/Eye/
-            '    MultiLayerParallax (0x1421CF8C0 / 0x1421D00A0 / 0x1421D3330) slot 4 cube sRGB; Face (0x1421D15C0)
-            '    slot 5 raw. The env mask (slot 5) is raw.
+            ' 0x142182420 -> 0x1417A3A60 -> MakeSRGB 0x14183E680): EngineDefaultTextureLaw.Fo4SlotLoadsSrgb, its one
+            ' owner (the creation law reads it too). The diffuse is sRGB ALSO with greyscale-to-palette: the prepass
+            ' re-encodes its index, pow(t0.g, 1/2.2) in b09 rec2985.
             ' The paths are the ones the *_ID properties resolve, so a slot whose id came from elsewhere (the eye
             ' env-mask swap, a composer) is left alone; SSE stays on its raw pipeline.
             If isSSE Then
@@ -8105,14 +8927,15 @@ Public Class PreviewModel
                 lightingTextureId = material.SlotTextureInColorSpace(tpS(materialBase.LightingTexture), lightingTextureId, False)
             Else
                 Dim tp = Function(p As String) FO4UnifiedMaterial_Class.CorrectTexturePath(p)
-                diffuseTextureId = material.SlotTextureInColorSpace(tp(materialBase.Diffuse_or_Base_Texture), diffuseTextureId, True)
-                normalTextureId = material.SlotTextureInColorSpace(tp(materialBase.NormalTexture), normalTextureId, False)
-                greyscaleTextureId = material.SlotTextureInColorSpace(tp(materialBase.GreyscaleTexture), greyscaleTextureId, True)
-                envmapTextureId = material.SlotTextureInColorSpace(material.EnvmapTexturePath, envmapTextureId, True)
-                envmapMaskTextureId = material.SlotTextureInColorSpace(material.SlotPath(EngineDefaultTextureLaw.MaterialSlot.EnvMask), envmapMaskTextureId, False)
+                Dim srgbOf = Function(s As EngineDefaultTextureLaw.MaterialSlot) EngineDefaultTextureLaw.Fo4SlotLoadsSrgb(s)
+                diffuseTextureId = material.SlotTextureInColorSpace(tp(materialBase.Diffuse_or_Base_Texture), diffuseTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.Diffuse))
+                normalTextureId = material.SlotTextureInColorSpace(tp(materialBase.NormalTexture), normalTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.Normal))
+                greyscaleTextureId = material.SlotTextureInColorSpace(tp(materialBase.GreyscaleTexture), greyscaleTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.Greyscale))
+                envmapTextureId = material.SlotTextureInColorSpace(material.EnvmapTexturePath, envmapTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.Cube))
+                envmapMaskTextureId = material.SlotTextureInColorSpace(material.SlotPath(EngineDefaultTextureLaw.MaterialSlot.EnvMask), envmapMaskTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.EnvMask))
                 If Not materialBase.IsBGEM() Then
-                    glowTextureId = material.SlotTextureInColorSpace(tp(materialBase.GlowTexture), glowTextureId, False)
-                    smoothSpecTextureId = material.SlotTextureInColorSpace(tp(materialBase.SmoothSpecTexture), smoothSpecTextureId, False)
+                    glowTextureId = material.SlotTextureInColorSpace(tp(materialBase.GlowTexture), glowTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.Glow))
+                    smoothSpecTextureId = material.SlotTextureInColorSpace(tp(materialBase.SmoothSpecTexture), smoothSpecTextureId, srgbOf(EngineDefaultTextureLaw.MaterialSlot.Slot7))
                 End If
             End If
 
@@ -8164,6 +8987,12 @@ Public Class PreviewModel
             envmapMaskTextureId = material.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.EnvMask, envmapMaskTextureId)
 
             Dim hasCubemap = material.HasCubemap
+            ' A slot-4 cube Fallout 4 cannot create: its NULL SRV, zeros (EngineDefaultTextureLaw.SrvNull; the lighting's cube goes
+            ' through the EnvMapArray instead, MaterialData.EnvmapTexture).
+            If material.CubeIsSrvNull Then
+                envmapTextureId = CUInt(Me.ParentModel.ParentControl.defaultSrvNullCube)
+                hasCubemap = True
+            End If
             Dim hasAlphaBlend = material.HasAlphaBlend
             Dim hasAlphaTest = material.HasAlphaTest
             Dim shape = Me.MeshData.Shape
@@ -8693,9 +9522,10 @@ Public Class PreviewModel
                 shader.SetBool("bSseHairDepthWriteDecal", Not isBGEM AndAlso ssePass.HairDepthWriteDecal)
                 shader.SetBool("bSsePrepass", False)
             Else
-                ' FO4 colour pass: its alpha test and threshold (Fo4RenderPassLaw.ColourPassAlphaTest; an effect tests always,
-                ' 0 without a test). Overrides the generic upload. The shadow pass has its own writer (ShadowPassAlphaTest).
-                Dim atC = Fo4RenderPassLaw.ColourPassAlphaTest(isBGEM, CBool(hasAlphaTest), material.EngineAlphaAtRest().Threshold)
+                ' FO4 colour pass: its alpha test and threshold (MaterialData.Fo4ColourPassAlphaTest, the one call site of
+                ' Fo4RenderPassLaw.ColourPassAlphaTest; an effect tests always, 0 without a test). Overrides the generic upload. The
+                ' shadow pass has its own writer (ShadowPassAlphaTest).
+                Dim atC = material.Fo4ColourPassAlphaTest()
                 shader.SetBool("bAlphaTest", atC.Test)
                 shader.SetFloat("alphaThreshold", atC.Threshold)
                 testSubido = atC.Test
@@ -10678,6 +11508,14 @@ Public Class PreviewModel
     ''' <summary>C4: this frame's empty texture slots sampled with a non-neutral default: slot name -&gt; shapes.</summary>
     Friend ReadOnly FrameEmptyTextureSlots As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
+    ''' <summary>Item 3 (19-oct-2026): this frame's texture files Fallout 4 cannot create (FrameNoticeKind.RejectedTexture): "path
+    ''' (rule; slot)" -&gt; shapes.</summary>
+    Friend ReadOnly FrameRejectedTextures As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Item 3 (r19c-03): this frame's texture files with which Fallout 4 crashes (FrameNoticeKind.CrashingTexture):
+    ''' "path (rule; slot)" -&gt; shapes.</summary>
+    Friend ReadOnly FrameCrashingTextures As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
     ''' <summary>C10 rev-04: this frame's shapes whose drawn value of a material variable comes from a shader controller at rest
     ''' (FrameNoticeKind.DrivenByControllerAtRest): the variables' names -&gt; shapes.</summary>
     Friend ReadOnly FrameDrivenAtRest As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
@@ -10697,9 +11535,9 @@ Public Class PreviewModel
     ''' view vector), which the preview draws its own way (FrameNoticeKind.UndefinedInGame).</summary>
     Friend ReadOnly FrameUndefinedInGame As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
-    ''' <summary>The nine kinds of the frame's notice, one map each (DrawnDifferently / UndefinedInGame / MissingTexture /
-    ''' EmptyTextureSlot: C4, the engine's default textures; DrivenByControllerAtRest: C10). Each kind has one severity
-    ''' (SeverityOf).</summary>
+    ''' <summary>The kinds of the frame's notice, one map each (DrawnDifferently / UndefinedInGame / MissingTexture /
+    ''' EmptyTextureSlot: C4, the engine's default textures; DrivenByControllerAtRest: C10; RejectedTexture: item 3). Each kind has
+    ''' one severity (SeverityOf).</summary>
     Friend Enum FrameNoticeKind
         ''' <summary>The game draws it, the preview cannot (FramePreviewGaps).</summary>
         PreviewGap
@@ -10727,12 +11565,21 @@ Public Class PreviewModel
         ''' <summary>Ola 1 (editor rule, 12-oct-2026): the shape is closer to the eye than the game's near plane; the preview lowers its
         ''' near to draw it (PreviewControl.UpdateProjection), so the depth precision differs from the game's (FrameCloserThanGameNear).</summary>
         CloserThanGameNear
+        ''' <summary>Item 3 (19-oct-2026): a texture file in the data that Fallout 4 cannot create (EngineTextureCreationLaw: the
+        ''' binder binds a NULL SRV and samples zeros, and so does the preview; FrameRejectedTextures). An error like a missing
+        ''' texture: the data is wrong (user's criterion, 19-oct-2026).</summary>
+        RejectedTexture
+        ''' <summary>Item 3 (r19c-03): a texture file with which Fallout 4 reads an invalid address and crashes
+        ''' (EngineTextureCreationLaw.CreationVerdict.Crashes: the effect's empty cube, A.5; a lighting cube the environment array
+        ''' accepts with no array yet, A.4; FrameCrashingTextures). An error: the data is wrong (user's criterion).</summary>
+        CrashingTexture
     End Enum
 
     ''' <summary>The two classes of the frame's notice (user decision 12-oct-2026), each with its checkbox: "Show errors"
     ''' (Config_App.Setting_ShowErrors) and "Show warnings" (Config_App.Setting_ShowWarnings).</summary>
     Friend Enum FrameNoticeSeverity
-        ''' <summary>The shape is not seen as in the game: data missing, a gap of the preview, or a shape the game does not draw.</summary>
+        ''' <summary>The shape is not seen as in the game: data missing or the game cannot use, a gap of the preview, or a shape the
+        ''' game does not draw.</summary>
         [Error]
         ''' <summary>The shape is drawn as the game draws it, with a remark: a default, a controller at rest, an undefined value.</summary>
         Warning
@@ -10741,9 +11588,15 @@ Public Class PreviewModel
     ''' <summary>The severity of <paramref name="kind"/> (user decision 12-oct-2026: what the game does not draw is an error, in the
     ''' composite and in the piece view alike).</summary>
     Friend Shared Function SeverityOf(kind As FrameNoticeKind) As FrameNoticeSeverity
+#If DEBUG Then
+        ' ParityGate fo4-texture-creation-law's directed mutant (Fo4GBufferConstants.GateMutantOn, the one switch).
+        If Fo4GBufferConstants.GateMutantOn("ntc-rejected-warning") AndAlso kind = FrameNoticeKind.RejectedTexture Then Return FrameNoticeSeverity.Warning
+        If Fo4GBufferConstants.GateMutantOn("ntc-crash-warning") AndAlso kind = FrameNoticeKind.CrashingTexture Then Return FrameNoticeSeverity.Warning
+#End If
         Select Case kind
             Case FrameNoticeKind.PreviewGap, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.DrawnForEditing,
-                 FrameNoticeKind.DrawnDifferently, FrameNoticeKind.MissingTexture
+                 FrameNoticeKind.DrawnDifferently, FrameNoticeKind.MissingTexture, FrameNoticeKind.RejectedTexture,
+                 FrameNoticeKind.CrashingTexture
                 Return FrameNoticeSeverity.Error
             Case FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot,
                  FrameNoticeKind.DrivenByControllerAtRest, FrameNoticeKind.TransformDrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
@@ -10769,6 +11622,8 @@ Public Class PreviewModel
             Case FrameNoticeKind.DrawnDifferently : map = FrameDrawnDifferently
             Case FrameNoticeKind.UndefinedInGame : map = FrameUndefinedInGame
             Case FrameNoticeKind.MissingTexture : map = FrameMissingTextures
+            Case FrameNoticeKind.RejectedTexture : map = FrameRejectedTextures
+            Case FrameNoticeKind.CrashingTexture : map = FrameCrashingTextures
             Case FrameNoticeKind.EmptyTextureSlot : map = FrameEmptyTextureSlots
             Case FrameNoticeKind.DrivenByControllerAtRest : map = FrameDrivenAtRest
             Case FrameNoticeKind.TransformDrivenByControllerAtRest : map = FrameTransformDrivenAtRest
@@ -10787,7 +11642,8 @@ Public Class PreviewModel
     ''' reason with its shape count - the preview's gaps ("Not drawn by the preview (n shapes): reason"), the game's own ("reason
     ''' (n shapes)": each such reason already says that the game does not draw it), then what the game does not draw and the preview
     ''' does ("Drawn by the preview, not by the game (n shapes): reason"), what it shows at its animated maximum, then C4's texture
-    ''' lines ("Drawn differently by the preview", "Missing texture", "Empty texture slot"), then C10's ("Value driven by a controller
+    ''' lines ("Drawn differently by the preview", "Missing texture", item 3's "Texture the game cannot create", "Empty texture
+    ''' slot"), then C10's ("Value driven by a controller
     ''' at rest", rev-04) and ola 0c parte 2's ("Transform driven by a controller at rest"). The errors come first, then the warnings
     ''' (SeverityOf); <paramref name="errors"/> /
     ''' <paramref name="warnings"/> False leave that class out (the window's notice: "Show errors" / "Show warnings"). Empty when
@@ -10804,6 +11660,8 @@ Public Class PreviewModel
             (FrameNoticeKind.DrawnDifferently, FrameDrawnDifferently, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.UndefinedInGame, FrameUndefinedInGame, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.MissingTexture, FrameMissingTextures, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
+            (FrameNoticeKind.RejectedTexture, FrameRejectedTextures, Function(r, n) $"Texture the game cannot create, sampled as zero ({shapes(n)}): {r}"),
+            (FrameNoticeKind.CrashingTexture, FrameCrashingTextures, Function(r, n) $"Texture that crashes the game ({shapes(n)}): {r}"),
             (FrameNoticeKind.EmptyTextureSlot, FrameEmptyTextureSlots, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
             (FrameNoticeKind.DrivenByControllerAtRest, FrameDrivenAtRest, Function(r, n) $"Value driven by a controller at rest ({shapes(n)}): {r}"),
             (FrameNoticeKind.TransformDrivenByControllerAtRest, FrameTransformDrivenAtRest, Function(r, n) $"Transform driven by a controller at rest ({shapes(n)}): {r}"),
@@ -10829,6 +11687,8 @@ Public Class PreviewModel
         FrameDrawnDifferently.Clear()
         FrameUndefinedInGame.Clear()
         FrameMissingTextures.Clear()
+        FrameRejectedTextures.Clear()
+        FrameCrashingTextures.Clear()
         FrameEmptyTextureSlots.Clear()
         FrameDrivenAtRest.Clear()
         FrameTransformDrivenAtRest.Clear()
@@ -10890,9 +11750,7 @@ Public Class PreviewModel
         ' stop rendering all meshes whose VBOs are still valid just because the CPU-side shapedata
         ' was evicted by the LRU, which is an unnecessary regression in render quality.
 
-        If RenderBucketsDirty OrElse RenderBucketsGame <> FrameIsSse OrElse
-           (OpaqueMeshes.Count + DecalMeshes.Count + DecalBlendedMeshes.Count + BlendedMeshes.Count +
-            BillboardMeshes.Count + ForwardEffectMeshes.Count + Fo4LodLandscapeMeshes.Count + NoColourPassMeshes.Count) <> meshes.Count Then
+        If RenderBucketsStale() Then
             RebuildRenderBuckets()
 
             ' SACADO: el re-orden de OPAQUE y CUTOUT (hoy un solo bucket OPAQUE, chunk C8) por `DiffuseTexture_ID` (era la optimizacion "O3.5",
@@ -10946,6 +11804,8 @@ Public Class PreviewModel
 
         ' The overlay layers' buckets (they are shapes of their own: same routing as the meshes).
         CollectOverlayItems()
+        ' Item 2b r19b-07: Fallout 4's technique buckets with their overlay layers, in the engine's order.
+        If Not FrameIsSse Then BuildFo4TechniqueSequences()
         ' The frame's notice: every visible shape and layer this frame does not draw, with its reason.
         If Not GateNoUndrawnCensus Then ReportUndrawnShapes()
 
@@ -10993,8 +11853,8 @@ Public Class PreviewModel
 
         ' FO4 forward stage (0x1421F9100), after the whole G-buffer: bucket 0 (opaque effects), then list 0xE.
         If Not FrameIsSse Then
-            DrawBucket(ForwardEffectMeshes, _ovlForwardEffect, projection, camera)
-            DrawBucket(BillboardMeshes, _ovlBillboard, projection, camera)
+            DrawFo4Sequence(_fo4SeqForwardEffect, projection, camera)
+            DrawFo4Sequence(_fo4SeqBillboard, projection, camera)
         End If
 
         ' 3b. RECEPTOR DE SUELO — la silueta del personaje sobre el plano del piso.
@@ -11160,10 +12020,147 @@ Public Class PreviewModel
     ''' <summary>GATE ONLY (no UI): True skips the SSE SAO composite over the opaque scene.</summary>
     Friend Shared GateDisableSseComposite As Boolean = False
 
+    ''' <summary>An overlay layer of <see cref="Mesh"/> or, in a Fallout 4 technique sequence (BuildFo4TechniqueSequences), with
+    ''' <see cref="Layer"/> Nothing, the shape itself.</summary>
     Private Structure OverlayItem
         Public Mesh As RenderableMesh
         Public Layer As OverlayMaterialLayer
+        ''' <summary>The layer's position in its shape's OverlayLayers (F4EE's attach order, r19b-07; CollectOverlayItems).</summary>
+        Public Attach As Integer
     End Structure
+
+    ''' <summary>Item 2b r19b-07: an overlay layer's place in a Fallout 4 technique bucket (BuildFo4TechniqueSequences): its key
+    ''' (Fo4TechniqueBucketKeys), its registration (RegistrationOrder: after every shape, then its group, then its attach position), its
+    ''' group (1.. = its base shape, in the base shapes' registration order) and whether its technique's activation rank is fixed by
+    ''' a shape (a shape registers before every layer).</summary>
+    Friend Structure Fo4OverlayOrder
+        Public Key As OpaqueOrder
+        Public Registration As RegistrationOrder
+        Public Group As Integer
+        Public RankFixed As Boolean
+    End Structure
+
+    ''' <summary>Item 2b r19b-07: the overlay layers' Fo4OverlayOrder of the last Fallout 4 frame, by the layer's MaterialData
+    ''' (RenderableMesh.OverlayMaterialData). A new dictionary per frame, published by one reference assignment: a reader on another
+    ''' thread (MaterialData.EngineColourCoverage) sees one whole frame.</summary>
+    Friend Fo4OverlayOrders As IReadOnlyDictionary(Of RenderableMesh.MaterialData, Fo4OverlayOrder) =
+        New Dictionary(Of RenderableMesh.MaterialData, Fo4OverlayOrder)()
+
+    ''' <summary>Item 2b r19b-07: Fallout 4's technique buckets - G-buffer bucket 4, decal lists 3 / 4, forward bucket 0 - with their
+    ''' overlay layers, in the engine's draw order (BuildFo4TechniqueSequences).</summary>
+    Private ReadOnly _fo4SeqOpaque As New List(Of OverlayItem)
+    Private ReadOnly _fo4SeqDecal As New List(Of OverlayItem)
+    Private ReadOnly _fo4SeqDecalBlended As New List(Of OverlayItem)
+    Private ReadOnly _fo4SeqForwardEffect As New List(Of OverlayItem)
+    ''' <summary>Item 2b: Fallout 4's linked lists 0xE and 0 with their overlay layers, in the walk of Fo4RenderPassLaw.ListWalk.</summary>
+    Private ReadOnly _fo4SeqBillboard As New List(Of OverlayItem)
+    Private ReadOnly _fo4SeqLodLandscape As New List(Of OverlayItem)
+
+    ''' <summary>Item 2b r19b-07 (Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19, Addendum r19b-07): a LooksMenu overlay layer is a
+    ''' clone of its base shape (CreateClone, f4ee OverlayInterface.cpp:152) under the "[Overlays]" node, which F4EE attaches with
+    ''' AttachChild(node, false) at the END of the actor root's children (OverlayInterface.cpp:38-49; NiNode::AttachChild 0x1416BE690,
+    ''' 0x1416BE764..797): NiNode::OnVisible walks the children 0..n-1 (0x1416BF910..930), so every layer registers after the shapes.
+    ''' Under it one node per (slot, base shape) attached with AttachChild(true) - the first free hole, 0x1416BE6CD..6FA: their order
+    ''' depends on the holes earlier deletions left (DestroyOverlaySlot :51-66), state, not law; the preview takes its base shapes'
+    ''' registration order (declared; EngineCoverage.DrawsAfter answers Nothing where it decides). Under each, the clones in
+    ''' ForEachOverlayBySlot's order (std::multimap by priority, OverlayInterface.h:123, :425-451: priority ascending, ties by
+    ''' insertion) = the base shape's OverlayLayers order (IRenderableShape.OverlayLayers). Each clone is a pass of its own material's
+    ''' list, with the same law of shader type, technique activation and packet as any shape (Fo4BucketEntryOf on the layer's
+    ''' MaterialData). A layer of a shape the cull does not register is not registered either (its node chain is not traced: the base
+    ''' shape's state, declared).</summary>
+    Private Sub BuildFo4TechniqueSequences()
+        Dim grupos As New Dictionary(Of RenderableMesh, Integer)(ReferenceEqualityComparer.Instance)
+        For Each m In AllOverlayItems().Select(Function(x) x.Mesh).Distinct().OrderBy(Function(x) x.RegistrationKey)
+            grupos(m) = grupos.Count + 1
+        Next
+        Dim orders As New Dictionary(Of RenderableMesh.MaterialData, Fo4OverlayOrder)(ReferenceEqualityComparer.Instance)
+        Fo4MergeList(OpaqueMeshes, _ovlOpaque, _fo4SeqOpaque, grupos, orders)
+        Fo4MergeList(DecalMeshes, _ovlDecal, _fo4SeqDecal, grupos, orders)
+        Fo4MergeList(DecalBlendedMeshes, _ovlDecalBlended, _fo4SeqDecalBlended, grupos, orders)
+        Fo4MergeList(ForwardEffectMeshes, _ovlForwardEffect, _fo4SeqForwardEffect, grupos, orders)
+        Fo4LinkedList(BillboardMeshes, _ovlBillboard, _fo4SeqBillboard, Fo4RenderPassLaw.ListWalk(Fo4RenderPassLaw.Fo4List.ForwardBillboard), grupos, orders)
+        Fo4LinkedList(Fo4LodLandscapeMeshes, _ovlLodLandscape, _fo4SeqLodLandscape, Fo4RenderPassLaw.ListWalk(Fo4RenderPassLaw.Fo4List.GBufferLodLandscape), grupos, orders)
+        Fo4OverlayOrders = orders
+    End Sub
+
+    ''' <summary>Item 2b: one Fallout 4 linked list with its layers: the shapes in registration order, then the layers by group and attach
+    ''' position (they register after every shape, r19b-07), in the list's walk (WalkOrder: a prepending list puts the layers
+    ''' FIRST, in reverse). Each layer's registration and group go to <paramref name="orders"/> for the coverage.</summary>
+    Private Shared Sub Fo4LinkedList(shapes As List(Of RenderableMesh), layers As List(Of OverlayItem), seq As List(Of OverlayItem),
+                                     walk As EngineListWalk, grupos As Dictionary(Of RenderableMesh, Integer),
+                                     orders As Dictionary(Of RenderableMesh.MaterialData, Fo4OverlayOrder))
+        seq.Clear()
+        For Each m In shapes.OrderBy(Function(x) x.RegistrationKey) : seq.Add(New OverlayItem With {.Mesh = m}) : Next
+        For Each it In layers.OrderBy(Function(x) grupos(x.Mesh)).ThenBy(Function(x) x.Attach)
+            seq.Add(it)
+            orders(it.Mesh.OverlayMaterialData(it.Layer)) = New Fo4OverlayOrder With {
+                .Registration = New RegistrationOrder(Integer.MaxValue, grupos(it.Mesh), it.Attach), .Group = grupos(it.Mesh), .RankFixed = True}
+        Next
+        WalkOrder(seq, walk, Function(it) CullRegisters(it.Mesh), Nothing)
+    End Sub
+
+    ''' <summary>One technique bucket with its layers (BuildFo4TechniqueSequences): the shapes in registration order, then the layers by
+    ''' group and attach position; the keys of the whole list (Fo4TechniqueBucketKeys - the shapes' are the ones RebuildRenderBuckets
+    ''' wrote, their prefix does not depend on what registers later); the sequence sorted by CompareOpaqueOrder.</summary>
+    Private Shared Sub Fo4MergeList(shapes As List(Of RenderableMesh), layers As List(Of OverlayItem), seq As List(Of OverlayItem),
+                                    grupos As Dictionary(Of RenderableMesh, Integer), orders As Dictionary(Of RenderableMesh.MaterialData, Fo4OverlayOrder))
+        seq.Clear()
+        If layers.Count = 0 Then
+            For Each m In shapes : seq.Add(New OverlayItem With {.Mesh = m}) : Next
+            Return
+        End If
+        Dim items = shapes.OrderBy(Function(x) x.RegistrationKey).Select(Function(m) New OverlayItem With {.Mesh = m}).
+                    Concat(layers.OrderBy(Function(it) grupos(it.Mesh)).ThenBy(Function(it) it.Attach)).ToList()
+#If DEBUG Then
+        ' Item 2b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): the layers registered in reverse attach order.
+        If Fo4GBufferConstants.GateMutantOn("ovl-attach-reversed") Then
+            items = shapes.OrderBy(Function(x) x.RegistrationKey).Select(Function(m) New OverlayItem With {.Mesh = m}).
+                    Concat(layers.OrderBy(Function(it) grupos(it.Mesh)).ThenByDescending(Function(it) it.Attach)).ToList()
+        End If
+#End If
+        Dim entries(items.Count - 1) As Fo4BucketEntry
+        Dim regs(items.Count - 1) As RegistrationOrder
+        Dim deFormas As New HashSet(Of (Type As Integer, Technique As UInteger))
+        For i = 0 To items.Count - 1
+            Dim it = items(i)
+            If it.Layer Is Nothing Then
+                entries(i) = Fo4BucketEntryOf(it.Mesh.MeshData.Material, CullRegisters(it.Mesh))
+                regs(i) = it.Mesh.RegistrationKey
+                If entries(i).Registered AndAlso entries(i).Technique.HasValue Then deFormas.Add((entries(i).ShaderType, entries(i).Technique.Value))
+            Else
+                entries(i) = Fo4BucketEntryOf(it.Mesh.OverlayMaterialData(it.Layer), CullRegisters(it.Mesh))
+                regs(i) = New RegistrationOrder(Integer.MaxValue, grupos(it.Mesh), it.Attach)
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("ovl-attach-reversed") Then regs(i) = New RegistrationOrder(Integer.MaxValue, grupos(it.Mesh), -it.Attach)
+#End If
+            End If
+        Next
+        Dim keys = Fo4TechniqueBucketKeys(entries)
+        For i = 0 To items.Count - 1
+            If items(i).Layer Is Nothing Then Continue For
+            Dim e = entries(i)
+            orders(items(i).Mesh.OverlayMaterialData(items(i).Layer)) = New Fo4OverlayOrder With {
+                .Key = keys(i), .Registration = regs(i), .Group = grupos(items(i).Mesh),
+                .RankFixed = e.Technique.HasValue AndAlso deFormas.Contains((e.ShaderType, e.Technique.Value))}
+        Next
+        Dim idx = Enumerable.Range(0, items.Count).ToList()
+        idx.Sort(Function(x, y) CompareOpaqueOrder(keys(x), regs(x), keys(y), regs(y)))
+        For Each i In idx : seq.Add(items(i)) : Next
+    End Sub
+
+    ''' <summary>A Fallout 4 technique sequence (BuildFo4TechniqueSequences) in its order: a shape (frustum-culled like DrawBucket) or an
+    ''' overlay layer (CollectOverlayItems culled it with its shape).</summary>
+    Private Sub DrawFo4Sequence(seq As List(Of OverlayItem), projection As Matrix4, camera As OrbitCamera,
+                                Optional decalBase As DecalBaseStep = DecalBaseStep.None)
+        For Each it In seq
+            If it.Layer Is Nothing Then
+                If Not RenderableMesh.IsAABBInFrustum(it.Mesh.BoundsMin, it.Mesh.BoundsMax, _framePlanes) Then Continue For
+                it.Mesh.Render(projection, camera, decalBase:=decalBase)
+            Else
+                it.Mesh.RenderOverlayLayer(projection, camera, it.Layer, decalBase:=decalBase)
+            End If
+        Next
+    End Sub
 
     ''' <summary>What the FO4 light and composite passes receive this frame (propuesta D; Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md
     ''' and opaque-fo4/transcripcion/notas.md 4.2, D9; ola 4). Engine view = GL view with z negated. The frame's cb12 rows
@@ -11241,28 +12238,47 @@ Public Class PreviewModel
 
         FrameAoListOn = True
         ' 1. OPAQUE — the game's opaque order (SSE: batch / lists 9-8-1-0; FO4: G-buffer techniques, alpha test included; chunk C8)
-        For Each mesh In OpaqueMeshes
-            ' O3.3: Skip meshes whose AABB is entirely outside the view frustum
-            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-            mesh.Render(projection, camera)
-        Next
-
         ' OVERLAY LAYERS (LooksMenu / RaceMenu): each layer is a shape of its own in the engine and goes to the
         ' group its MATERIAL routes it to, like any shape (no final pass): opaque, opaque decal, blended
-        ' decal, or the alpha list keyed with its base shape's depth (the clone shares the base's bound).
-        For Each it In _ovlOpaque : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+        ' decal, or the alpha list keyed with its base shape's depth (the clone shares the base's bound). Fallout 4's technique
+        ' buckets draw shapes and layers in one sequence, in the engine's order (item 2b r19b-07, BuildFo4TechniqueSequences);
+        ' Skyrim SE's lists draw the layers after the shapes.
+        If FrameIsSse Then
+            For Each mesh In OpaqueMeshes
+                ' O3.3: Skip meshes whose AABB is entirely outside the view frustum
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
+                mesh.Render(projection, camera)
+            Next
+            For Each it In _ovlOpaque : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+        Else
+            DrawFo4Sequence(_fo4SeqOpaque, projection, camera)
+        End If
 
         ' SSE list 0xD (billboard effects): after the opaque lists, before the decals (0x14151EF40).
         If FrameIsSse Then DrawBucket(BillboardMeshes, _ovlBillboard, projection, camera)
 
         FrameAoListOn = True
         ' 3. DECAL — opaque decals, then blended decals (and decal overlay layers) in their own group.
-        For Each mesh In DecalMeshes
-            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-            mesh.Render(projection, camera)
-        Next
-        For Each it In _ovlDecal : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+        If FrameIsSse Then
+            For Each mesh In DecalMeshes
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
+                mesh.Render(projection, camera)
+            Next
+            For Each it In _ovlDecal : it.Mesh.RenderOverlayLayer(projection, camera, it.Layer) : Next
+        Else
+            DrawFo4Sequence(_fo4SeqDecal, projection, camera)
+        End If
         FrameAoListOn = False
+        ' C8 (ola 0c), item 2b: Fallout 4's G-buffer list 0 - group 7, LOD_Landscape - after the decal lists 2 / 3 (0x1421F3C21 ->
+        ' 0x1421F3C3B -> 0x1421F3C4C), before 0x1421D8450, list 1 (0x1421F3CD0) and list 4, the translucent decals (0x1421F3CDC).
+        ' Registration order inside it (Fo4List GBufferLodLandscape: group 7 appends).
+#If DEBUG Then
+        ' Item 2b oracles' directed mutant (Fo4GBufferConstants.GateMutantOn): the stage before item 2b, list 0 after list 4.
+        Dim lod0StageOld = Fo4GBufferConstants.GateMutantOn("tbo-lod0-stage-old") OrElse Fo4GBufferConstants.GateMutantOn("tbo-old-law")
+        If Not FrameIsSse AndAlso Not lod0StageOld Then DrawFo4Sequence(_fo4SeqLodLandscape, projection, camera)
+#Else
+        If Not FrameIsSse Then DrawFo4Sequence(_fo4SeqLodLandscape, projection, camera)
+#End If
         ' THE BASE OF THE TRANSLUCENT DECALS, BOTH GAMES (user decisions 5-oct-2026 and 7-oct-2026; an app pass, neither engine has
         ' one; DecalBaseTarget): where nothing opaque is behind them, the farthest decal of group 3 that paints a pixel lays a plain
         ' surface there - albedo = the preview's background, normal = its geometric normal - lit as any surface of its game, with that
@@ -11277,9 +12293,9 @@ Public Class PreviewModel
            (FrameGBufferStage AndAlso Not GateFo4SkipDecalBase OrElse FrameIsSse AndAlso Not GateSseSkipDecalBase) Then
             Dim filters = CType(FrameSamplerFilter.Clone(), Integer())
             Dim baseDraws = Sub()
-                                DrawBucket(DecalBlendedMeshes, _ovlDecalBlended, projection, camera, DecalBaseStep.Depth)
+                                DrawDecalTranslucent(projection, camera, DecalBaseStep.Depth)
                                 ParentControl.FrameDecalBase.BeginSurfaces()
-                                DrawBucket(DecalBlendedMeshes, _ovlDecalBlended, projection, camera, DecalBaseStep.Surface)
+                                DrawDecalTranslucent(projection, camera, DecalBaseStep.Surface)
                             End Sub
             If FrameGBufferStage Then
                 If ParentControl.BeginFo4DecalBase() Then
@@ -11294,10 +12310,20 @@ Public Class PreviewModel
             End If
             Array.Copy(filters, FrameSamplerFilter, filters.Length)
         End If
-        If Not GateDecalColourSkip Then DrawBucket(DecalBlendedMeshes, _ovlDecalBlended, projection, camera)
-        ' C8 (ola 0c): Fallout 4's G-buffer list 0 - group 7, LOD_Landscape - after the decal lists 2 / 3 (0x1421F3C21 -> 0x1421F3C3B ->
-        ' 0x1421F3C4C) and before 0x1421D8450 / list 1 (0x1421F3CD0). Registration order inside it (its insertion is not traced).
-        If Not FrameIsSse Then DrawBucket(Fo4LodLandscapeMeshes, _ovlLodLandscape, projection, camera)
+        If Not GateDecalColourSkip Then DrawDecalTranslucent(projection, camera)
+#If DEBUG Then
+        If Not FrameIsSse AndAlso lod0StageOld Then DrawFo4Sequence(_fo4SeqLodLandscape, projection, camera)
+#End If
+    End Sub
+
+    ''' <summary>The translucent decals - Fallout 4's list 4 as its technique sequence with its layers (item 2b r19b-07), Skyrim SE's
+    ''' list with its layers after the shapes - for <paramref name="decalBase"/>'s step.</summary>
+    Private Sub DrawDecalTranslucent(projection As Matrix4, camera As OrbitCamera, Optional decalBase As DecalBaseStep = DecalBaseStep.None)
+        If FrameIsSse Then
+            DrawBucket(DecalBlendedMeshes, _ovlDecalBlended, projection, camera, decalBase)
+        Else
+            DrawFo4Sequence(_fo4SeqDecalBlended, projection, camera, decalBase)
+        End If
     End Sub
 
     ''' <summary>The step of the translucent decals' base pass a draw makes (RenderableMesh.Render / RenderOverlayLayer).</summary>
@@ -11475,10 +12501,11 @@ Public Class PreviewModel
             Dim layers = mesh.MeshData.Shape?.OverlayLayers
             If layers Is Nothing OrElse layers.Count = 0 Then Continue For
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-            For Each layer In layers
+            For posicion = 0 To layers.Count - 1
+                Dim layer = layers(posicion)
                 If layer Is Nothing OrElse layer.Material Is Nothing Then Continue For
                 Dim md = mesh.OverlayMaterialData(layer)
-                Dim it As New OverlayItem With {.Mesh = mesh, .Layer = layer}
+                Dim it As New OverlayItem With {.Mesh = mesh, .Layer = layer, .Attach = posicion}
                 If md.MaterialBase Is Nothing Then Continue For
                 Select Case RouteBucket(md, False)
                     Case RenderBucket.Opaque : _ovlOpaque.Add(it)

@@ -20,6 +20,12 @@ Friend Module EngineDefaultTextureLaw
         Missing = 2
         ''' <summary>A path whose file is in the data but the preview did not load it (its upload failed): a preview gap, not the law.</summary>
         NotLoadedByPreview = 3
+        ''' <summary>Fallout 4 only: a path whose file is in the data and the engine cannot create (EngineTextureCreationLaw.Verdict
+        ''' Rejected). The NiTexture exists (0x1416C98DC..8F0; path A 0x1416C9AEA), so neither the ladder nor the smooth-spec White
+        ''' swap applies (that one compares the pointer, 0x1421D3CE7..D09), and the binder binds its NULL SRV (lighting
+        ''' 0x1422044E0..4FD, effect 0x142225809..82F; RE_FO4_TEXTURE_CREATION_2026-10-19 5). Wins over Loaded and NotLoadedByPreview
+        ''' (StateOf): what the preview loaded is not what the game samples.</summary>
+        RejectedByEngine = 4
     End Enum
 
     ''' <summary>What the game samples. Own: the slot's texture. NoTexture: the draw does not sample the slot. PreviousDraw: the draw
@@ -37,6 +43,9 @@ Friend Module EngineDefaultTextureLaw
         SseDefCubeMap
         NoTexture
         PreviousDraw
+        ''' <summary>Fallout 4: the NULL SRV the binder binds for a file the engine cannot create (SlotState.RejectedByEngine); the
+        ''' flush 0x1418248A0..8C3 passes it to PSSetShaderResources and D3D11 reads 0 in every channel (Rgba).</summary>
+        SrvNull
     End Enum
 
     ''' <summary>The material slots the app samples (the engine member of each, per game and family, below).</summary>
@@ -102,8 +111,40 @@ Friend Module EngineDefaultTextureLaw
     End Enum
     Friend GateMutant As DefaultTextureMutant = DefaultTextureMutant.None
 
+    ''' <summary>The sRGB flag Fallout 4's loader passes for <paramref name="slot"/> (the 5th argument of 0x142182420, the dl of
+    ''' MakeSRGB 0x14183E680, RE_FO4_TEXTURE_CREATION_2026-10-19 1.3), the same in both families for the slots they share. Lighting
+    ''' (common part 0x1421D3C60): slot 0 diffuse sRGB (0x1421D3C72..C84), 1 normal, 2 glow and 7 smooth-spec raw, 3 greyscale
+    ''' palette sRGB (0x1421D3CD2..CE1), slot 4 cube sRGB (Envmap / Eye / MultiLayerParallax 0x1421CF8C0 / 0x1421D00A0 /
+    ''' 0x1421D3330), Face slot 5 raw (0x1421D15C0). Effect (0x1422249CE..C52): base, palette, cube sRGB (0x1422249D6 / A6C / B06);
+    ''' mask, normal raw (0x1422249A6 / BB0 / C52).</summary>
+    Friend Function Fo4SlotLoadsSrgb(slot As MaterialSlot) As Boolean
+#If DEBUG Then
+        ' ParityGate fo4-texture-creation-law's directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch).
+        If Fo4GBufferConstants.GateMutantOn("dtl-srgb-palette-raw") AndAlso slot = MaterialSlot.Greyscale Then Return False
+#End If
+        Select Case slot
+            Case MaterialSlot.Diffuse, MaterialSlot.Greyscale, MaterialSlot.Cube : Return True
+            Case Else : Return False
+        End Select
+    End Function
+
+    ''' <summary>The slots whose file Fallout 4's loader of the family creates: lighting +0x48 / +0x50 / +0x58 / +0x60 / +0x68
+    ''' (0x1421D3C72..CE1), the cube (slot 4, GetTexture 0x14216A214..224) and the Face class's slot 5 (0x1421D168A..697) - not the
+    ''' env mask, whose +0xC8 is the default (0x1421CF8F5..91A); effect: base, palette, cube, mask, normal (0x142224980:
+    ''' 0x1422249E3 / A79 / B13 / BBD / C5F).</summary>
+    Friend Function Fo4LoadedSlots(effect As Boolean) As MaterialSlot()
+        If effect Then Return {MaterialSlot.Diffuse, MaterialSlot.Greyscale, MaterialSlot.Cube, MaterialSlot.EnvMask, MaterialSlot.Normal}
+        Return {MaterialSlot.Diffuse, MaterialSlot.Normal, MaterialSlot.Glow, MaterialSlot.Slot7, MaterialSlot.Greyscale, MaterialSlot.Cube, MaterialSlot.FaceSlot5}
+    End Function
+
     ''' <param name="inData">The file is in the game's data (FilesDictionary_class.TryGetEntry).</param>
-    Friend Function StateOf(path As String, loaded As Boolean, inData As Boolean) As SlotState
+    ''' <param name="engineRejects">Fallout 4: the engine cannot create that file in this slot (EngineTextureCreationLaw.Verdict
+    ''' Rejected for the slot's sRGB flag); it wins over what the preview loaded.</param>
+    Friend Function StateOf(path As String, loaded As Boolean, inData As Boolean, Optional engineRejects As Boolean = False) As SlotState
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("dtl-rejected-loses") AndAlso loaded Then Return SlotState.Loaded
+#End If
+        If inData AndAlso engineRejects AndAlso Not String.IsNullOrEmpty(path) Then Return SlotState.RejectedByEngine
         If loaded Then Return SlotState.Loaded
         If String.IsNullOrEmpty(path) Then Return SlotState.Empty
         If inData Then Return SlotState.NotLoadedByPreview
@@ -128,6 +169,16 @@ Friend Module EngineDefaultTextureLaw
             Case Else : sampled = False      ' EnvMask: +0xC8 nulled by 0x1421CF8F5..91A, no G-buffer record reads it; Lightmask: no FO4 member
         End Select
         If Not sampled Then Return EngineTexture.NoTexture
+        ' A file the engine cannot create: its NiTexture, so no ladder and no White swap; the NULL SRV is bound (SlotState doc). The
+        ' cube is not bound by SetupMaterial: the register 0x142239930 takes its texture, whose header 0x14183E680 filled before D3D
+        ' failed (RE_FO4_TEXTURE_CREATION Addendum A.1 / A.2); refused (header unlike the array's, or fewer mips) it gives 0xFF
+        ' (0x14223999F) and the constant .x 0 (0x142205947..961): no reflection, the zeros of SrvNull add none either (the preview
+        ' registers nothing, MaterialData.EnvmapTexture). An empty file: no reflection (0x14220593A) save the global cube of
+        ' 0x14220591E..938 (not traced). A header the register accepts never reaches this state: LightingCubeVerdict makes it NotLaw.
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("dtl-rejected-white") AndAlso st = SlotState.RejectedByEngine AndAlso slot = MaterialSlot.Slot7 Then Return EngineTexture.Fo4White
+#End If
+        If st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
         If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
         Select Case slot
             Case MaterialSlot.Diffuse            ' +0x48 <- slot 0, sRGB (0x1421D3C72..C84)
@@ -153,16 +204,35 @@ Friend Module EngineDefaultTextureLaw
         If st = SlotState.Loaded OrElse st = SlotState.NotLoadedByPreview Then Return EngineTexture.Own
         Select Case slot
             Case MaterialSlot.Diffuse
+                ' A file the engine cannot create: a named path (TEXTURE set, t0 bound); a failed creation binds the object's NULL SRV
+                ' (0x142225827), an empty file the NULL texture (0x14222582C) (RE_FO4_TEXTURE_CREATION Addendum A.5).
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("dtl-effect-rejected-ladder") AndAlso st = SlotState.RejectedByEngine Then Return EngineTexture.Fo4DiffuseMap
+#End If
+                If st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
                 If st = SlotState.Missing Then Return If(GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback, EngineTexture.Own, EngineTexture.Fo4DiffuseMap)
                 ' TEXTURE (bit 2) off (0x142178150): no t0 bind (0x142225800..803); a recolor PS samples it (rec1003 L60, rec1430 L53).
                 If c.Recolor OrElse GateMutant = DefaultTextureMutant.EffectBaseEmptyAlwaysPrevious Then Return EngineTexture.PreviousDraw
                 Return EngineTexture.NoTexture
             Case MaterialSlot.Greyscale
                 If st = SlotState.Empty AndAlso GateMutant <> DefaultTextureMutant.Fo4EffectGreyscaleEmptyBound Then Return EngineTexture.NoTexture  ' bits 13/14 need the path
+                ' t4 is bound under bits 13 / 14 only (test ecx, 0x6000, 0x142225919; A.5), and they need flag 4 / 5 AND the palette path
+                ' (0x142178282..2C3, Fo4EffectTechnique; c.Recolor): bound, a failed creation binds its NULL SRV (0x142225937 / 0x14222593F).
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("dtl-palette-rejected-bound") AndAlso st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
+                If Fo4GBufferConstants.GateMutantOn("dtl-missing-palette-bound") AndAlso st = SlotState.Missing Then Return EngineTexture.Fo4DiffuseMap
+#End If
+                If st = SlotState.RejectedByEngine Then Return If(c.Recolor, EngineTexture.SrvNull, EngineTexture.NoTexture)
+                ' An absent file: the same bind - the path is named, so the flag 4 / 5 decides (0x142178282..2C3; A.5, 0x142225919);
+                ' without it t4 is not bound whatever the loader put in +0x60.
+                If st = SlotState.Missing AndAlso Not c.Recolor Then Return EngineTexture.NoTexture
                 If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
                 Return EngineTexture.Fo4DiffuseMap                                    ' sRGB ladder (Missing); Empty only under the mutant above
             Case MaterialSlot.Cube, MaterialSlot.EnvMask, MaterialSlot.Normal
                 If Not c.Envmap Then Return EngineTexture.NoTexture                   ' t5 / t7 / t1 under bit 19 only
+                ' A.5: mask t7 / normal t1 bind NULL through 0x1421DAF40 (0x1421DAF45 / 0x1421DAF4A); the cube t5 binds the NULL SRV of a
+                ' failed creation (0x142225C1E) - its empty file is NotLaw (EngineTextureCreationLaw.EffectCubeVerdict), never this state.
+                If st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
                 If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
                 If slot = MaterialSlot.Cube Then Return EngineTexture.Fo4EyeCubeMap   ' ctor 0x14222435B / cube ladder
                 If slot = MaterialSlot.EnvMask Then                                   ' ctor 0x14222437A (Empty) / raw ladder (Missing)
@@ -178,6 +248,7 @@ Friend Module EngineDefaultTextureLaw
     ''' the engine's "TEXTURE ERROR : Unable to load file %s" (0x1414EC1A8..1E7); an empty path -> the class fill (base 0x141523F00,
     ''' Glowmap / Envmap vf10). A slot the class does not sample: NoTexture.</summary>
     Friend Function SseLighting(slot As MaterialSlot, st As SlotState, c As SseLightingContext) As EngineTexture
+        If st = SlotState.RejectedByEngine Then Throw New ArgumentException("RejectedByEngine is Fallout 4's (EngineTextureCreationLaw transcribes Fallout4.exe)", NameOf(st))
         If st = SlotState.Loaded OrElse st = SlotState.NotLoadedByPreview Then Return EngineTexture.Own
         If Not SseLightingSamples(slot, c) Then Return EngineTexture.NoTexture
         If st = SlotState.Missing AndAlso GateMutant <> DefaultTextureMutant.SseMissingAsEmpty Then
@@ -221,6 +292,7 @@ Friend Module EngineDefaultTextureLaw
 
     ''' <summary>Skyrim SE effect (ctor 0x1415560A0; SetupMaterial 0x141556C40).</summary>
     Friend Function SseEffect(slot As MaterialSlot, st As SlotState, c As EffectContext) As EngineTexture
+        If st = SlotState.RejectedByEngine Then Throw New ArgumentException("RejectedByEngine is Fallout 4's (EngineTextureCreationLaw transcribes Fallout4.exe)", NameOf(st))
         If st = SlotState.Loaded OrElse st = SlotState.NotLoadedByPreview Then Return EngineTexture.Own
         Select Case slot
             Case MaterialSlot.Diffuse
@@ -237,8 +309,9 @@ Friend Module EngineDefaultTextureLaw
     End Function
 
     ''' <summary>The bytes (R, G, B, A, R8G8B8A8_UNORM) of a 2D built-in texture: the creator's dword, little-endian (FO4 0x14182C5B0,
-    ''' SSE 0x14101D750); SSE DefCubeMap: zeros (0x14101DDA0). Nothing for EyeCubeMap (a file) and for Own / NoTexture / PreviousDraw.
-    ''' </summary>
+    ''' SSE 0x14101D750); SSE DefCubeMap: zeros (0x14101DDA0); Fallout 4's NULL SRV: zeros (D3D11 reads 0 from an unbound slot,
+    ''' RE_FO4_TEXTURE_CREATION_2026-10-19 5 and D:\WinTmp\rc\texfallback\re.md 3). Nothing for EyeCubeMap (a file) and for Own /
+    ''' NoTexture / PreviousDraw.</summary>
     Friend Function Rgba(t As EngineTexture) As Byte()
         Select Case t
             Case EngineTexture.Fo4DiffuseMap
@@ -250,6 +323,11 @@ Friend Module EngineDefaultTextureLaw
             Case EngineTexture.SseDefHeightMap : Return {0, 0, 0, 255}      ' 0xFF000000 (0x14101DA80)
             Case EngineTexture.SseDefaultWhiteMap : Return {255, 255, 255, 255} ' 0xFFFFFFFF (0x14101DC37)
             Case EngineTexture.SseDefCubeMap : Return {0, 0, 0, 0}          ' zero data (0x14101DDA0..DDA7)
+            Case EngineTexture.SrvNull
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("dtl-srvnull-alpha") Then Return {0, 0, 0, 255}
+#End If
+                Return {0, 0, 0, 0}                                         ' NULL SRV (PSSetShaderResources 0x1418248A0..8C3)
             Case Else : Return Nothing
         End Select
     End Function

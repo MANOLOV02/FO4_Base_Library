@@ -982,9 +982,9 @@ Public Module SseOverlayCompositor
     ''' árbol es: <b>TODOS los <c>[Ovl]</c> ascendentes, y después TODOS los <c>[SOvl]</c> ascendentes</b>.
     ''' NO es un único índice compartido.</para>
     ''' <para>⛔ ACÁ ESTUVO EL DEFECTO Y NO ERA LA CITA, ERA EL PASO SIGUIENTE: esta función decía "⇒ el orden
-    ''' de dibujo es", y ese <i>⇒</i> no sale de ninguna fuente. Quién dibuja primero entre hermanos COPLANARES
-    ''' lo decide el acumulador del motor, que ni skee ni f4ee tocan (no hay un solo <c>reverse</c>/<c>rbegin</c>
-    ''' en los dos plugins). Enganchar ≠ dibujar. Ver <see cref="DrawOrderKey"/>.</para>
+    ''' de dibujo es", y ese <i>⇒</i> no sale de la cita del enganche. Quién dibuja primero entre hermanos COPLANARES
+    ''' lo decide el acumulador del motor (ni skee ni f4ee lo tocan), leído en el Addendum r19b-3: la lista 4 antepone y se
+    ''' recorre desde la cabeza. Enganchar ≠ dibujar. Ver <see cref="DrawOrderKey"/>.</para>
     ''' <para>Ordenar por <see cref="ParseOvlIndex"/> a secas —que saltea la <c>S</c>— empataba
     ''' <c>[SOvl0]</c> con <c>[Ovl0]</c>. Con el offset, el pool magic queda entero de un lado de la
     ''' clave, que es lo que hace el motor al instalarlos.</para>
@@ -1016,13 +1016,16 @@ Public Module SseOverlayCompositor
 
     ''' <summary>EL ORDEN DE DIBUJO de skee = el INVERSO del de instalación (<see cref="CompositeOrderKey"/>).
     ''' Ascendente = de ABAJO hacia ARRIBA: el de clave más baja se dibuja primero y el último gana en los solapes.
-    ''' <para><b>DE DÓNDE SALE.</b> La CITA (OverlayInterface.cpp:659-668 y :257) da el orden en que skee ENGANCHA
-    ''' los nodos: <c>[Ovl0]…[OvlN]</c> y después <c>[SOvl0]…[SOvlM]</c>. La MEDICIÓN es un reporte in-game
-    ''' (2026-08-28) que dice que lo que se ve ENCIMA es el PRIMER nodo enganchado, o sea que el motor dibuja los
-    ''' hermanos coplanares al revés del enganche. Las dos cosas juntas dan esta clave. NO hay cita del binario
-    ''' para el paso enganche→dibujo: eso vive en el acumulador del motor y no está leído. Si algún día se lee y
-    ''' dice otra cosa, lo que cambia es ESTA función y nada más — es el único lugar donde la app afirma quién
-    ''' queda arriba.</para>
+    ''' <para><b>DE DÓNDE SALE (leído del motor y del plugin; Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19, Addendum r19b-3).</b>
+    ''' skee ENGANCHA <c>[Ovl0]…[OvlN]</c> y después <c>[SOvl0]…[SOvlM]</c> (OverlayInterface.cpp:659-668), cada uno con
+    ''' <c>AttachChild(newShape, false)</c> = al final (:259; SkyrimSE.exe 0x140EE1BE7..C25) ⇒ registro = instalación (NiNode::OnVisible
+    ''' 0x140EE2D10..D33). El clon lleva SLSF1 Decal forzado (<c>g_overlayForceDecal</c>, :206-208, default true en main.cpp:133) y la
+    ''' NiAlphaProperty 0x12ED (blend 6/7 + alpha test; <c>g_overlayAlphaOverride</c>, :242-248) ⇒ grupo 3 ⇒ lista 4 de decals
+    ''' translúcidos en modo lote, que ANTEPONE cada pase al registrarlo (0x14155F024..02B) y se recorre desde la cabeza
+    ''' (0x1415601A9..1DB) ⇒ inverso al registro; LESS_EQUAL sin escritura (0x14151FF2B..FF50) y el mismo bias para todos ⇒ queda
+    ''' ARRIBA el PRIMER enganchado. Coincide con la medición in-game del 2026-08-28. Caso NO modelado, declarado: <c>bForceDecal=0</c>
+    ''' en skee64.ini (el clon iría a la lista alfa ⇒ arriba el último); la app usa el default true. Si algún día cambia, lo que
+    ''' cambia es ESTA función y nada más — es el único lugar donde la app afirma quién queda arriba.</para>
     ''' <para><b>CONSECUENCIA QUE NO ES UN CASO ESPECIAL:</b> como la inversión es del orden TOTAL, el pool magic
     ''' —que se engancha ÚLTIMO— se dibuja PRIMERO, o sea que queda DEBAJO de todo el pool normal. Antes la app
     ''' lo ponía encima; sale de la misma aritmética, sin excepción escrita a mano.</para>

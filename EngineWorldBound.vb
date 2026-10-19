@@ -102,6 +102,10 @@ Friend Module EngineWorldBound
         ' translation at the call site are the gate's text mutants of Render.vb.
         If Fo4GBufferConstants.GateMutantOn("alpha-key-assoc") Then Return viewDirection.Y * centre.Y + (viewDirection.X * centre.X + viewDirection.Z * centre.Z)
         If Fo4GBufferConstants.GateMutantOn("alpha-key-translation") Then Return ((viewDirection.Y * centre.Y + viewDirection.X * centre.X) + viewDirection.Z * centre.Z) + 4096.0F
+        ' ShadowGate --order-ab's instrument: the key before item 2, -TransformPosition(c, view).Z (view.M?3 = -viewDirection, exact).
+        If Fo4GBufferConstants.GateMutantOn("alpha-key-old") Then
+            Return -(((centre.X * -viewDirection.X + centre.Y * -viewDirection.Y) + centre.Z * -viewDirection.Z) + Fo4GBufferConstants.GateAlphaOldViewM43)
+        End If
 #End If
         Return (viewDirection.Y * centre.Y + viewDirection.X * centre.X) + viewDirection.Z * centre.Z
     End Function

@@ -162,10 +162,16 @@ Public Module DirectXDDSLoader
         Gl43.GetTexParameter(texId, If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), GetTextureParameter.TextureImmutableLevels, levels)
         Gl43.GetTexLevelParameter(texId, If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), 0, GetTextureParameter.TextureInternalFormat, fmt)
         If GL.GetError() <> ErrorCode.NoError OrElse levels <= 0 Then DrainGlErrors() : Return 0
-        Dim storageSrgb As Boolean, twin As Integer
-        If Not TwinColorSpaceFormat(fmt, storageSrgb, twin) Then Return 0
-        If storageSrgb = wantSrgb Then Return 0
-        If storageSrgb AndAlso IsAuthoredSrgbDxgi(dxgiOriginal) Then Return 0
+        Dim twin As Integer
+        If EngineRgba8View(dxgiOriginal, wantSrgb, twin) Then
+            If fmt = twin Then Return 0
+        Else
+            Dim storageSrgb As Boolean
+            If Not TwinColorSpaceFormat(fmt, storageSrgb, twin) Then Return 0
+            If storageSrgb = wantSrgb Then Return 0
+            If wantSrgb AndAlso Not SrgbSlotPromotes(dxgiOriginal) Then Return 0   ' MakeSRGB keeps the code: the sRGB slot samples it UNORM
+            If storageSrgb AndAlso IsAuthoredSrgbDxgi(dxgiOriginal) Then Return 0
+        End If
 
         Dim target = If(cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D)
         Dim view = GL.GenTexture()
@@ -179,7 +185,7 @@ Public Module DirectXDDSLoader
         Dim prevBinding As Integer = 0
         GL.GetInteger(If(cubemap, GetPName.TextureBindingCubeMap, GetPName.TextureBinding2D), prevBinding)
         GL.BindTexture(target, view)
-        ApplySamplingState(target, levels, False, cubemap)
+        ApplySamplingState(target, levels, twin = GL_RGBA8UI OrElse twin = GL_RGBA8I, cubemap)
         For Each sw In {GL_TEXTURE_SWIZZLE_R, GL_TEXTURE_SWIZZLE_G, GL_TEXTURE_SWIZZLE_B, GL_TEXTURE_SWIZZLE_A}
             Dim v As Integer = 0
             Gl43.GetTexParameter(texId, target, CType(sw, GetTextureParameter), v)
@@ -232,6 +238,42 @@ Public Module DirectXDDSLoader
             Case Else : Return False
         End Select
         Return True
+    End Function
+
+    ''' <summary>The GL format of the view the engine creates for an R8G8B8A8_UINT / SNORM / SINT file (DXGI 30 / 31 / 32): in an
+    ''' sRGB slot MakeSRGB 0x14183E680 makes the texture R8G8B8A8_UNORM_SRGB (29) over the same bytes (RE_FO4_TEXTURE_CREATION
+    ''' 2.3, jt_e680_out.txt; fmt_table.txt: created and viewed), so GL_SRGB8_ALPHA8; in a raw slot its own format (GL_RGBA8UI /
+    ''' GL_RGBA8_SNORM / GL_RGBA8I: 31 is sampled as SNORM, fmt_support_warp.txt bit 0x200; 30 / 32 cannot be sampled,
+    ''' EngineTextureCreationLaw NotLaw). The five share GL 4.3's 32-bit view class, so either is a view of the other's storage.
+    ''' False for every other DXGI code.</summary>
+    Private Function EngineRgba8View(dxgiOriginal As Integer, wantSrgb As Boolean, ByRef glInternal As Integer) As Boolean
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("gl-rgba8view-off") Then Return False    ' ShadowGate --texture-creation's directed mutant
+#End If
+        Select Case dxgiOriginal
+            Case 30 : glInternal = If(wantSrgb, GL_SRGB8_ALPHA8, GL_RGBA8UI)
+            Case 31 : glInternal = If(wantSrgb, GL_SRGB8_ALPHA8, GL_RGBA8_SNORM)
+            Case 32 : glInternal = If(wantSrgb, GL_SRGB8_ALPHA8, GL_RGBA8I)
+            Case Else : Return False
+        End Select
+        Return True
+    End Function
+
+    Const GL_SRGB8_ALPHA8 As Integer = &H8C43
+    Const GL_RGBA8UI As Integer = &H8D7C
+    Const GL_RGBA8_SNORM As Integer = &H8F97
+    Const GL_RGBA8I As Integer = &H8D8E
+
+    ''' <summary>Fallout 4: an sRGB slot samples the file in an sRGB format, i.e. MakeSRGB 0x14183E680 (dl = 1) rewrites its code
+    ''' (MakeSrgbDxgi changes it; RE_FO4_TEXTURE_CREATION_2026-10-19 2.3, the five-row table). A code it keeps is created and sampled as
+    ''' it is (UNORM, float, BC4 / BC5, R8G8_B8G8 ...): no promotion. Skyrim SE: True (its pipeline is raw; the FO4 law is not its own).
+    ''' The codes authored _SRGB are mapped to their sRGB GL format before the promotion.</summary>
+    Friend Function SrgbSlotPromotes(dxgiOriginal As Integer) As Boolean
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("gl-srgb-promote-all") Then Return True   ' ShadowGate --texture-creation's directed mutant
+#End If
+        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return True
+        Return MakeSrgbDxgi(dxgiOriginal) <> dxgiOriginal
     End Function
 
     ''' <summary>DXGI formats a DDS can be AUTHORED in as sRGB.</summary>
@@ -289,6 +331,12 @@ Public Module DirectXDDSLoader
             Return 0
         End If
 
+        ' R8G8B8A8_TYPELESS (27) has no sampled meaning of its own: the wrapper maps it to GL_RGBA8 for Fallout 4, whose sRGB slot
+        ' makes it R8G8B8A8_UNORM_SRGB (MakeSRGB 0x14183E680) - a Fallout 4 law. Skyrim SE's loader is not traced for it, and the
+        ' installed SSE Data has no such file (item 3 census, 40,049 .dds: no DXGI 21, 22, 27, 46, 47, 68 or 69): not loaded, as
+        ' before. (21, 46, 68, 69 are decoded to what any D3D11 view of their DXGI format reads - the format's meaning, no game's.)
+        If tex.DxgiCodeOriginal = 27 AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return 0
+
         Dim target = If(tex.IsCubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D)
         Dim texID As Integer = 0
         ' PBO que hubiera bindeado al entrar. Se LEE adentro del Try (ver la nota del bindeo, más abajo), no
@@ -317,6 +365,7 @@ Public Module DirectXDDSLoader
 
         Dim needsAlphaFromRedSwizzle As Boolean = False
         Dim needsAlphaOneSwizzle As Boolean = False
+        Dim needsGreenZeroSwizzle As Boolean = False
 
         Dim mipLevels As Integer = Math.Max(1, tex.Miplevels)
         Dim faces As Integer = Math.Max(1, tex.Faces)
@@ -434,6 +483,13 @@ Public Module DirectXDDSLoader
 
         ' Segunda pasada: DXGI final manda. Aca corregimos formatos especiales aunque la tabla venga mal.
         Select Case tex.DxgiCodeFinal
+            Case 21 ' R32_FLOAT_X8X24_TYPELESS: the wrapper uploads the 8-byte texel as GL_RG32F (OpenGL_MapFormats.cpp); D3D's view
+                    ' reads R and leaves G, B at 0 and A at 1 (DirectXTex LoadScanline, same format: (R, 0, 0, 1)), so G is zeroed.
+                needsGreenZeroSwizzle = True
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("gl-21-noswizzle") Then needsGreenZeroSwizzle = False    ' ShadowGate --texture-creation
+#End If
+
             Case 65 ' A8_UNORM
                 glInternal = &H8229 ' GL_R8
                 glFormat = &H1903   ' GL_RED
@@ -526,14 +582,15 @@ Public Module DirectXDDSLoader
         End Select
 
         ' sRGB decode AT LOAD, exactly like the engine: the renderer carries a per-texture sRGB flag and,
-        ' for color textures, MakeSRGB (Fallout4.exe FUN_14183e1c0) rewrites the texture format UNORM->_SRGB
+        ' for color textures, MakeSRGB (Fallout4.exe 0x14183E680) rewrites the texture format UNORM->_SRGB
         ' BEFORE the SRV is created, so the GPU gamma-decodes on sample (that is why the engine shaders never
         ' pow() the diffuse). The previewer mirrors it here. 'srgb' is True only for COLOR textures (diffuse /
         ' base color), passed by the caller from the material's texture role. We upgrade the chosen UNORM GL
         ' format to its sRGB variant. Formats already sRGB (DDS authored _SRGB, e.g. BC7_UNORM_SRGB mods) were
         ' mapped to an sRGB GL format above and DO NOT appear here -> idempotent, NO double decode. Data formats
-        ' (BC5/BC4/single-channel) have no sRGB variant and fall through untouched.
-        If srgb Then
+        ' (BC5/BC4/single-channel) have no sRGB variant and fall through untouched. A code MakeSRGB keeps (SrgbSlotPromotes False:
+        ' R8G8_B8G8 / G8R8_G8B8, which DirectXTex hands over as R8G8B8A8) is sampled UNORM by the engine even in an sRGB slot.
+        If srgb AndAlso SrgbSlotPromotes(tex.DxgiCodeOriginal) Then
             Select Case glInternal
                 Case &H83F0 : glInternal = GL_COMPRESSED_SRGB_S3TC_DXT1_EXT          ' BC1 RGB  -> sRGB
                 Case &H83F1 : glInternal = GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT    ' BC1 RGBA -> sRGB
@@ -542,6 +599,13 @@ Public Module DirectXDDSLoader
                 Case &H8E8C : glInternal = &H8E8D                                    ' BC7_UNORM -> BC7_SRGB
                 Case &H8058 : glInternal = &H8C43                                    ' RGBA8 -> SRGB8_ALPHA8
             End Select
+            ' R8G8B8A8_UINT / SNORM / SINT: the engine samples the same bytes as R8G8B8A8_UNORM_SRGB (EngineRgba8View).
+            Dim engineView As Integer
+            If EngineRgba8View(tex.DxgiCodeFinal, True, engineView) Then
+                glInternal = engineView
+                glFormat = &H1908   ' GL_RGBA
+                glType = &H1401     ' GL_UNSIGNED_BYTE
+            End If
         End If
 
         If glInternal = 0 Then
@@ -677,6 +741,8 @@ Public Module DirectXDDSLoader
                 GL.TexParameter(target, CType(GL_TEXTURE_SWIZZLE_A, TextureParameterName), CInt(GL_RED))
             ElseIf needsAlphaOneSwizzle Then
                 GL.TexParameter(target, CType(GL_TEXTURE_SWIZZLE_A, TextureParameterName), CInt(GL_ONE))
+            ElseIf needsGreenZeroSwizzle Then
+                GL.TexParameter(target, CType(GL_TEXTURE_SWIZZLE_G, TextureParameterName), CInt(GL_ZERO))
             End If
 
             ' Certify upload success. A silent GL error here means the texture is allocated

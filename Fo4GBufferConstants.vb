@@ -165,9 +165,49 @@ Friend Module Fo4GBufferConstants
     ''' "lut-skip-flags", "lut-skip-bitcount", "lut-skip-width", "lut-skip-height", "lut-truncated-loaded", "lut-sig-check"; LutVolume
     ''' "lut-volume-nofile"); alpha-sort-key,
     ''' EngineWorldBound.AlphaSortKey / ViewDirection ("alpha-key-assoc", "alpha-key-translation", "alpha-dir-sign").
+    ''' Item 2b oracles (19-oct): ParityGate fo4-technique-bucket-law and ShadowGate --draw-order - PreviewModel.Fo4TechniqueBucketKeys
+    ''' ("tbo-packet-ignored", "tbo-packet-reversed", "tbo-type-ignored"; "tbo-old-law" = the whole order before item 2b, also in
+    ''' RebuildRenderBuckets and the stage), the G-buffer stage of list 0 in DrawOpaqueStage
+    ''' ("tbo-lod0-stage-old"), Fo4GBufferTechnique.HasDrawPacket ("pkt-geomtype-ignored", "pkt-propctl-ignored", "pkt-alphactl-ignored",
+    ''' "pkt-uv-ignored", "pkt-uv-always", "pkt-programs-ignored"); round 2: NifSceneVisibility.Fo4GeometryClassOf ("geomclass-notreg-ignored"),
+    ''' Fo4RenderPassLaw.ListWalk ("lw-0xe-append"), PreviewModel.Fo4MergeList ("ovl-attach-reversed");
+    ''' item 1b oracles (19-oct): ParityGate occlusion-coverage-oracle and Tools\OcclusionRaytracerGate - MaterialData.EngineColourCoverage
+    ''' ("cov-fo4-colour-prepass-law", "cov-sse-alpha-one-side", "cov-fo4-va-none", "cov-drawn-ignored", "cov-blendform-diffuse",
+    ''' "cov-effect-evaluated"), EngineAlphaCut.Keeps ("cut-equal-discards"), EngineCoverage.Transmittance ("cov-transmit-srcalpha") and
+    ''' DrawsAfter ("cov-listorder-reversed"); the A/B instrument of the oracles' --occlusion-ab ("cov-head-threshold": HEAD's ref/255);
+    ''' item 2b round 3 (Skyrim SE list order): PreviewModel.SseDecalOrder ("sse-decal-registration", "sse-decal-sublist-ignored"),
+    ''' SseRenderPassLaw.ListWalk ("sse-0xd-ascending"), the SSE EngineColourCoverage ("cov-sse-orderkey-missing"); the A/B instrument of
+    ''' ShadowGate --order-ab, EngineWorldBound.AlphaSortKey ("alpha-key-old": the key before item 2, with GateAlphaOldViewM43).
+    ''' Item 3 oracles (19-oct): ParityGate fo4-texture-creation-law - EngineTextureCreationLaw ("tcl-e050-fourcc-first",
+    ''' "tcl-e050-numeric", "tcl-e050-lum-masks", "tcl-bpp-100", "tcl-b-word", "tcl-b-mips256", "tcl-b-cube-faces", "tcl-a-mips-max",
+    ''' "tcl-no-srgb-rescue", "tcl-integer-sampled", "tcl-big-accepted", "tcl-bc-mult4-off", "tcl-packed-odd-off", "tcl-mips-chain-off",
+    ''' "tcl-cube-square-off", "tcl-short-off", "tcl-empty-notlaw", "tcl-lightcube-accepts-ignored", "tcl-effectcube-empty-rejected",
+    ''' "tcl-tile-unread", "tcl-reader-dx10-as-header"), Fo4EnvMapArray.AcceptsHeader ("tcl-envarray-mips-gt"), EngineDefaultTextureLaw
+    ''' ("dtl-rejected-loses", "dtl-rejected-white", "dtl-effect-rejected-ladder", "dtl-srvnull-alpha", "dtl-srgb-palette-raw"),
+    ''' PreviewModel.SeverityOf ("ntc-rejected-warning"); fo4-texture-creation-corpus ("tcl-e050-rgb24", "tcl-a-cube-bit");
+    ''' fo4-texture-creation-reader ("tcl-reader-hw-swapped"); EngineDefaultTextureLaw ("dtl-palette-rejected-bound",
+    ''' "dtl-missing-palette-bound"). ShadowGate --texture-creation (19-oct): DirectXDDSLoader ("gl-21-noswizzle", "gl-rgba8view-off",
+    ''' "gl-srgb-promote-all"), FilesDictionary_class.File_Location ("ba2-tile-refused"), Fo4EnvMapArray.AcceptsHeader's queue branch
+    ''' ("tcl-envarray-queue-mips-gt"), and the library ones above it reuses. Round r19c (19-oct): EngineTextureCreationLaw
+    ''' ("tcl-crash-unflagged", "tcl-lightcube-seed-ignored", "tcl-negcache-off"), PreviewModel.SeverityOf ("ntc-crash-warning"),
+    ''' Fo4EnvMapArray.SeededBefore ("tcl-seed-self-counts").
     ''' Nothing = the laws. Read only under #If DEBUG: a
     ''' Release build has no mutant branch.</summary>
     Friend GateVertexConstantsMutant As String = Nothing
+
+    ''' <summary>DEBUG ONLY (ShadowGate --order-ab): the M43 of the view matrix the frame sorts with (OrbitCamera.GetViewMatrix), read
+    ''' by the A/B instrument "alpha-key-old" - the key before item 2, -Vector3.TransformPosition(centre, view).Z, which is
+    ''' -(((c.x M13 + c.y M23) + c.z M33) + M43) in float32 (OpenTK's TransformPosition, left to right).</summary>
+    Friend GateAlphaOldViewM43 As Single = 0.0F
+
+    ''' <summary>DEBUG ONLY (user decision 19-oct-2026, "una sola entrada, dos switches"): THE entry point of the gates' mutants. Each
+    ''' library keeps its own switch - this module's GateVertexConstantsMutant (GateMutantOn) and the BA2 library's Ba2GateMutants, which
+    ''' cannot see this one (the dependency goes the other way) - and this sets BOTH to <paramref name="name"/> (Nothing = the laws).
+    ''' ParityGate / ShadowGate --gate-mutant and ParityGate's runner of directed mutants (LutAlphaOrderGates.ConMutantes) call it.</summary>
+    Friend Sub SetGateMutant(name As String)
+        GateVertexConstantsMutant = name
+        BSA_BA2_Library_DLL.BethesdaArchive.Core.Ba2GateMutants.Name = name
+    End Sub
 
     ''' <summary>DEBUG ONLY (rev-B12): the mutant <paramref name="name"/> is on.</summary>
     Friend Function GateMutantOn(name As String) As Boolean
