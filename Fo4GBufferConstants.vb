@@ -224,6 +224,12 @@ Friend Module Fo4GBufferConstants
     ''' writes it over the frame's own reduction, the rest of the post unchanged), so a frame can be shown with another frame's
     ''' exposure and contrast pivot. Nothing = the frame's own mean.</summary>
     Friend GateAvgLumOverride As Single? = Nothing
+
+    ''' <summary>DEBUG ONLY (the texture-readiness gate, D:\WinTmp\rc\texready\propuesta.md): when set, every background texture
+    ''' load (PreviewModel.Process_Textures_GL) waits on it before decoding until the gate sets it - so the frames a load spans,
+    ''' and what the host does meanwhile (a second MarkDirty(Shapes), a scene swap), are the gate's to choose. A cancellation
+    ''' ends the wait. Nothing = the loads run at once.</summary>
+    Friend GateTextureLoadHold As Threading.ManualResetEventSlim = Nothing
 #End If
 
     ''' <summary>WorldView (VS constant 3, cb2, 4 rows; D:\WinTmp\rc\ola2b\re.md 2.3), SetupGeometry 0x142206BC9..C86 (the pre-built

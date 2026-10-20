@@ -54,6 +54,16 @@ Public Module DirectXDDSLoader
         End Using
     End Function
 
+    ''' <summary>Drops a decoded texture's pixel arrays (each level's Data, then the list): the one release of decoded levels
+    ''' that are uploaded, discarded or no longer needed. Nothing is a no-op.</summary>
+    Public Sub ReleaseDecodedLevels(tex As DirectXTexWrapperCLI.TextureLoaded)
+        If tex Is Nothing OrElse tex.Levels Is Nothing Then Return
+        For Each lvl In tex.Levels
+            lvl.Data = Nothing         ' rompe la referencia al Byte()
+        Next
+        tex.Levels.Clear()
+    End Sub
+
     ''' <summary>
     ''' Convierte un DDS a Bitmap .NET (nivel 0).
     ''' </summary>
@@ -80,10 +90,7 @@ Public Module DirectXDDSLoader
             ' —67 MB en un 4096²— colgados hasta el finalizador, fuera del heap administrado.
             bmp.UnlockBits(bd)
         End Try
-        For Each lvl In tex.Levels
-            lvl.Data = Nothing         ' rompe la referencia al Byte()
-        Next
-        tex.Levels.Clear()
+        ReleaseDecodedLevels(tex)
 
         Return bmp
     End Function
@@ -920,12 +927,7 @@ Public Module DirectXDDSLoader
         result.MarkLoaderStorage()
 
         ' Free pixel data now that it has been uploaded to GPU
-        If tex.Levels IsNot Nothing Then
-            For Each lvl In tex.Levels
-                lvl.Data = Nothing
-            Next
-            tex.Levels.Clear()
-        End If
+        ReleaseDecodedLevels(tex)
 
         Return result
     End Function

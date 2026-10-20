@@ -1063,12 +1063,158 @@ Public Class PreviewControl
     '''   Pose         ? incremental (skeleton, bone matrices, optional morphs)
     '''   Morphs       ? lightweight (reapply morphs, update skin buffers)
     ''' </summary>
+    ''' <summary>The standing pipeline failure's card ("Render failed: reason"), Nothing when the last run completed: THE failure
+    ''' state (<see cref="RecordRenderFailure"/>). Read by RenderScene (the card), RenderTimer_Tick (no run of its own while it
+    ''' stands) and hosts or gates (<see cref="RenderFailure"/>).</summary>
+    Private _renderFailure As String = Nothing
+
+    ''' <summary>The intent's <see cref="RenderIntent.ContentSerial"/> when the standing failure happened: the pipeline runs again only
+    ''' once the host changed the content since (shapes, morphs, textures, a forced reload: RenderIntent.ContentChanges).</summary>
+    Private _renderFailureSerial As Integer
+
+    ''' <summary>The standing failure's card ("Render failed: reason"), or Nothing: the last run that got past the pipeline's guards
+    ''' completed. A content change of the host (RenderIntent.ContentChanges) runs the pipeline again; a run that completes clears it.</summary>
+    Public ReadOnly Property RenderFailure As String
+        Get
+            Return _renderFailure
+        End Get
+    End Property
+
+    ''' <summary>What the preview shows for its current request - THE observable a host that waits for "drawn" waits on (round 5): Failed
+    ''' while a failure stands for it (no content change since: <see cref="RenderFailure"/> is the card), Loading while the request has
+    ''' not run yet or its textures load, Ready when it ran and its texture set is ready. It never stays Loading after a failure.</summary>
+    Public ReadOnly Property RenderState As PreviewRenderState
+        Get
+            If _renderFailure IsNot Nothing AndAlso (_renderIntent Is Nothing OrElse _renderIntent.ContentSerial = _renderFailureSerial) AndAlso
+               Not GateStateIgnoresFailure() Then Return PreviewRenderState.Failed
+            If _renderIntent IsNot Nothing AndAlso _renderIntent.HasWork Then Return PreviewRenderState.Loading
+            If _Model Is Nothing OrElse Not _Model.TexturesReady Then Return PreviewRenderState.Loading
+            Return PreviewRenderState.Ready
+        End Get
+    End Property
+
+    ''' <summary>THE frame readouts' guard (CaptureBitmap, CaptureSceneLinear, FrameNotices; round 5, tr-10): while a render failure
+    ''' stands the frame is its card, not a scene, so a readout throws <see cref="RenderFailedException"/> (the card) - no host and no
+    ''' gate takes the card for the scene or the last scene's notices for this one, and a headless host fails where it reads.</summary>
+    Private Sub ThrowIfRenderFailed()
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("render-failure-capture-silent") Then Return
+#End If
+        If _renderFailure IsNot Nothing Then Throw New RenderFailedException(_renderFailure)
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (gates): how many failures the policy wrote to the log (one per distinct failure).</summary>
+    Friend GateRenderFailuresLogged As Integer = 0
+    ''' <summary>DEBUG ONLY (gates): how many frames drew the failure card (RenderScene).</summary>
+    Friend GateRenderFailureCardsDrawn As Integer = 0
+#End If
+
+    ''' <summary>Gate mutant "render-failure-no-card" (DEBUG): the failure card is not drawn. Release: False.</summary>
+    Private Shared Function GateHidesFailureCard() As Boolean
+#If DEBUG Then
+        Return Fo4GBufferConstants.GateMutantOn("render-failure-no-card")
+#Else
+        Return False
+#End If
+    End Function
+
+    ''' <summary>Gate mutant "render-failure-retries" (DEBUG): a standing failure runs again with no content change. Release: False.</summary>
+    Private Shared Function GateRetriesFailure() As Boolean
+#If DEBUG Then
+        Return Fo4GBufferConstants.GateMutantOn("render-failure-retries")
+#Else
+        Return False
+#End If
+    End Function
+
+    ''' <summary>Gate mutant "render-state-ignores-failure" (DEBUG): RenderState never reports Failed. Release: False.</summary>
+    Private Shared Function GateStateIgnoresFailure() As Boolean
+#If DEBUG Then
+        Return Fo4GBufferConstants.GateMutantOn("render-state-ignores-failure")
+#Else
+        Return False
+#End If
+    End Function
+
     Private Sub ExecuteRenderPipeline()
         If _isTearingDown Then Return
         Dim intent = _renderIntent
         If intent Is Nothing OrElse Not intent.HasWork Then Return
         If Me.Disposing OrElse Me.IsDisposed OrElse Not Visible Then Return
-        If intent.Shapes Is Nothing OrElse Not intent.Shapes.Any() Then
+        ' A standing failure runs again only after a content change of the host (RenderIntent.ContentSerial: shapes, morphs, textures,
+        ' a forced reload) - from any entry point: the timer, InvalidateRender, RenderShapes. A pose or camera change does not re-run it
+        ' (round 5, tr-09: an animation over a failed full reload ran it every frame); its flags wait with the failed run's.
+        If _renderFailure IsNot Nothing AndAlso intent.ContentSerial = _renderFailureSerial AndAlso Not GateRetriesFailure() Then Return
+        ' Every run that gets past these guards ends one of two ways, each with ONE owner here:
+        ' - it completes (a render, or the empty scene): a standing failure ends, and the post-texture-upload hook is settled
+        '   (PreviewModel.SettlePostTextureUploadHook, its one owner with ProcessPendingTextureUploads) against the model as the run
+        '   left it - its current meshes' texture set (round 3, tr-05): fired now when nothing is left to load, else armed;
+        ' - a step throws (a host's IMorphResolver, say): THE failure policy (RecordRenderFailure, user decision 20-oct-2026 "error
+        '   card and wait"): the card "Render failed: reason", the log once per distinct failure, no run again until a content change of
+        '   the host; the hook is NOT settled - it waits, registered, for the next run that completes (round 4).
+        Dim completed = False
+        Dim emptyScene = False
+        Try
+            ' The host's enumerable is enumerated once, here inside the Try, in Debug and Release alike (tr-06)
+            emptyScene = intent.Shapes Is Nothing OrElse Not intent.Shapes.Any()
+            RunRenderPipeline(intent, emptyScene)
+            completed = True
+            _renderFailure = Nothing
+        Catch ex As Exception
+            RecordRenderFailure(ex, intent)
+        Finally
+            Dim settle = completed AndAlso Model IsNot Nothing
+#If DEBUG Then
+            If Not completed AndAlso Fo4GBufferConstants.GateMutantOn("render-failure-settles") Then settle = Model IsNot Nothing
+            If completed AndAlso emptyScene AndAlso Fo4GBufferConstants.GateMutantOn("texready-settle-skips-empty") Then settle = False
+#End If
+            If settle Then Model.SettlePostTextureUploadHook()
+        End Try
+    End Sub
+
+    ''' <summary>THE pipeline's policy for a step that throws (user decision 20-oct-2026, "error card and wait"), the same for the full
+    ''' reload, the morph, pose and texture branches and the empty scene: the preview shows the card "Render failed: reason" on every
+    ''' repaint (RenderScene, the status card channel), the failure goes to the log once per distinct failure, the timer that
+    ''' services repaints stays alive (a full reload's Clean stopped it), no entry point runs the pipeline again before a content change
+    ''' of the host (the guard of ExecuteRenderPipeline, RenderIntent.ContentSerial), the frame readouts throw (ThrowIfRenderFailed), and the
+    ''' post-texture-upload hook stops waiting on this run (its watchdog would count through a failure of unknown length): it stays
+    ''' registered and the next run that completes settles it, with a fresh deadline. The exception is not rethrown to the caller of
+    ''' the run (an interactive host would replace the card the user decided on - MeshPicker renders an empty scene on it): the card,
+    ''' the log, <see cref="RenderFailure"/> / <see cref="RenderState"/> and the readouts' RenderFailedException are its report.</summary>
+    Private Sub RecordRenderFailure(ex As Exception, intent As RenderIntent)
+        ' the reason the host's step gave: a parallel step wraps it (AggregateException); a single cause is shown as itself
+        Dim cause = ex
+        Dim agg = TryCast(ex, AggregateException)
+        If agg IsNot Nothing Then
+            Dim inner = agg.Flatten().InnerExceptions
+            If inner.Count = 1 Then cause = inner(0)
+        End If
+        Dim card = "Render failed: " & cause.Message
+        Dim distinct = Not String.Equals(card, _renderFailure, StringComparison.Ordinal)
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("render-failure-logs-each") Then distinct = True
+#End If
+        If distinct Then
+            Logger.LogLazy(Function() $"[Render] {card}{Environment.NewLine}{ex}")
+#If DEBUG Then
+            GateRenderFailuresLogged += 1
+#End If
+        End If
+        _renderFailure = card
+        _renderFailureSerial = intent.ContentSerial
+        Model?.EndPostTextureUploadWait()
+        If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Return
+        If RenderTimer IsNot Nothing AndAlso Not RenderTimer.Enabled Then RenderTimer.Start()
+        UpdateRequired = True
+        Invalidate()
+    End Sub
+
+    ''' <summary>One run of the pipeline's work for <paramref name="intent"/> (ExecuteRenderPipeline: the guards before it, the failure
+    ''' policy and the post-texture-upload hook's settlement after it). <paramref name="emptyScene"/>: the intent has no shape
+    ''' (evaluated once by the caller).</summary>
+    Private Sub RunRenderPipeline(intent As RenderIntent, emptyScene As Boolean)
+        If emptyScene Then
             Model.FloorOffset = 0
             Model.Clean(False)
             Model.CleanTextures()
@@ -1426,17 +1572,7 @@ Public Class PreviewControl
             RefreshRender()
         End If
 
-        ' If the caller registered a PostTextureUploadAction but the pipeline didn't actually
-        ' kick off a background load (texture cache reuse / PreserveTextureCache / no new
-        ' shapes), TexturesReady never transitioned False→True so the watchdog hook below
-        ' never fires. Run the action synchronously here instead — same observable outcome,
-        ' just with zero defer. The watchdog deadline armed by LoadTexturesAsync is the only
-        ' code path that ever sets _postTextureUploadDeadlineUtc; if it's still Nothing here
-        ' it means no async load began, so the success action is safe to fire immediately.
-        If Model.TexturesReady AndAlso intent.PostTextureUploadAction IsNot Nothing _
-           AndAlso Not Model.HasPendingPostTextureDeadline Then
-            Model.FlushPostTextureUploadHookSyncSuccess()
-        End If
+        ' (the post-texture-upload hook is settled by ExecuteRenderPipeline after this run, whichever way it ends)
 
         intent.ClearDirty()
     End Sub
@@ -2253,7 +2389,13 @@ Public Class PreviewControl
         End If
         Model.FrameIsHdr = hdr
         Try
-            If Model.Can_Render Then
+            If _renderFailure IsNot Nothing AndAlso Not GateHidesFailureCard() Then
+                ' The standing failure's card (RecordRenderFailure), on every repaint while it stands: the status card channel
+                Processing_Status(_renderFailure)
+#If DEBUG Then
+                GateRenderFailureCardsDrawn += 1
+#End If
+            ElseIf Model.Can_Render Then
                 UpdateProjection(False)
                 Model.RenderAll(projection, camera)
             End If
@@ -2500,6 +2642,7 @@ Public Class PreviewControl
     Public Function CaptureSceneLinear() As Single()
         If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
         DrawPendingFrame()
+        ThrowIfRenderFailed()
         If Not _lastFrameHdrScene OrElse _targets.SceneTexture = 0 Then Return Nothing
         Dim prevPackAlignment As Integer = 4
         Try
@@ -2521,6 +2664,7 @@ Public Class PreviewControl
     ''' (Setting_ShowErrors: DrawPreviewGapNotice draws them on the window, not into the captured target). Empty without a
     ''' model. Reads only.</summary>
     Public Function FrameNotices() As IReadOnlyList(Of String)
+        ThrowIfRenderFailed()
         If _Model Is Nothing Then Return Array.Empty(Of String)()
         Return _Model.FrameNoticeLines()
     End Function
@@ -2528,6 +2672,7 @@ Public Class PreviewControl
     Public Function CaptureBitmap() As Bitmap
         If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
         DrawPendingFrame()
+        ThrowIfRenderFailed()
 
         Dim bmp As New Bitmap(Me.Width, Me.Height, Imaging.PixelFormat.Format32bppArgb)
         Dim rect As New Rectangle(0, 0, bmp.Width, bmp.Height)
@@ -3093,14 +3238,16 @@ Public Class PreviewControl
         ' Tick scheduled before Clean()'s timer.Stop() can still arrive.
         If _isTearingDown OrElse RenderTimer Is Nothing OrElse Me.Disposing OrElse Me.IsDisposed Then Exit Sub
 
-        ' Pull-based: if the intent has pending work, execute the pipeline
+        ' Pull-based: if the intent has pending work, execute the pipeline (a standing failure runs again only after a content
+        ' change of the host: ExecuteRenderPipeline's guard)
         If _renderIntent IsNot Nothing AndAlso _renderIntent.HasWork Then
             ExecuteRenderPipeline()
         End If
 
         ' On-demand repaint: any subsystem (mouse, texture loader, callback) that
-        ' set UpdateRequired=True schedules a paint this tick.
-        Dim texturesPending As Boolean = (Model IsNot Nothing AndAlso Not Model.TexturesReady)
+        ' set UpdateRequired=True schedules a paint this tick. Textures still loading count too - not while a failure stands: its
+        ' card is what the preview shows (RenderScene), repainted on demand and by the heartbeat below.
+        Dim texturesPending As Boolean = (_renderFailure Is Nothing AndAlso Model IsNot Nothing AndAlso Not Model.TexturesReady)
         Dim onDemand As Boolean = UpdateRequired OrElse texturesPending
 
         ' Red de seguridad: si no se presento un frame en ~1 s, forzar uno. Cubre la perdida del front buffer
@@ -3318,33 +3465,94 @@ Public Class PreviewModel
     ''' textures (normal/spec/mask/flow) are NOT added -> they stay linear.</summary>
     Public ReadOnly SRGBTexturePaths As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
     Public Can_Render As Boolean = False
-    Public Property TexturesReady As Boolean = True
+    ''' <summary>The current texture set is ready: every path the current meshes and their overlay layers sample is resolved -
+    ''' loaded (Textures_Dictionary) or given up after its failures (Last_Loaded_Textures) - and none of them has a load still in
+    ''' flight. DERIVED on every read - the current meshes and their layers WALKED (VisitCurrentTexturePaths, allocation free:
+    ''' it is read 3-4 times a frame), each path judged by PathReady - never stored (THE TEXTURE-LOAD STATE, above
+    ''' Process_Textures_GL), so no writer can contradict it: a Clean, a same-scene reload with a load in flight, a cancellation,
+    ''' an eviction or a failed upload all show here by what they did to that state. Read on the GL thread.</summary>
+    Public ReadOnly Property TexturesReady As Boolean
+        Get
+#If DEBUG Then
+            If _gateMutantForcedReady Then Return True
+            ' "texready-walk-allocates": the round-3 law, the set collected into a HashSet on every read; "texready-set-stored": the
+            ' round-2 law, the set as the last launch stored it
+            If Fo4GBufferConstants.GateMutantOn("texready-walk-allocates") OrElse Fo4GBufferConstants.GateMutantOn("texready-set-stored") Then
+                For Each p In CurrentTextureSet()
+                    If Not PathReady(p) Then Return False
+                Next
+                Return True
+            End If
+#End If
+            Dim v As New ReadyVisitor With {.Model = Me}
+            Return VisitCurrentTexturePaths(v)
+        End Get
+    End Property
+
+    ''' <summary>THE readiness law of one path: resolved - loaded (Textures_Dictionary) or given up after its failures
+    ''' (Last_Loaded_Textures) - and not in flight. <see cref="TexturesReady"/> holds when it holds for every path of the current set.
+    ''' Allocation free.</summary>
+    Private Function PathReady(p As String) As Boolean
+        If _inFlightTextures.ContainsKey(p) Then
+#If DEBUG Then
+            Return Fo4GBufferConstants.GateMutantOn("texready-ignore-inflight")   ' the mutant: a path in flight counts as ready
+#Else
+            Return False
+#End If
+        End If
+        Return Textures_Dictionary.ContainsKey(p) OrElse Last_Loaded_Textures.Contains(p)
+    End Function
+
+    ''' <summary>A path neither resolved nor in flight: a load is due for it (ProcessPendingTextureUploads launches one).</summary>
+    Private Function PathOutstanding(p As String) As Boolean
+        Return Not _inFlightTextures.ContainsKey(p) AndAlso Not (Textures_Dictionary.ContainsKey(p) OrElse Last_Loaded_Textures.Contains(p))
+    End Function
 
 
-    ''' <summary>UTC deadline for the post-texture-upload watchdog. Set when a background
-    ''' upload begins (TexturesReady False→pending). When <see cref="ProcessPendingTextureUploads"/>
-    ''' detects this deadline has passed without all uploads completing, it fires
-    ''' <see cref="RenderIntent.PostTextureUploadTimeoutAction"/> instead of waiting forever.
-    ''' Cleared (Nothing) once either the success or timeout action has fired so the next render
-    ''' starts with a clean slate.</summary>
+    ''' <summary>The post-texture-upload hook is waiting for this render's textures, and this is its watchdog's UTC deadline
+    ''' (DateTime.MaxValue: no watchdog, <see cref="RenderIntent.PostTextureUploadTimeoutMs"/> 0). Armed only by
+    ''' <see cref="SettlePostTextureUploadHook"/>, after a pipeline run that leaves a hook registered while the textures are
+    ''' not ready; disarmed when the hook fires (success or timeout, InvokePostTextureUploadHook) and when a cancellation drops
+    ''' the in-flight loads (<see cref="CancelPendingTextureUploads"/>) or a run fails (PreviewControl.RecordRenderFailure) -
+    ''' <see cref="EndPostTextureUploadWait"/>: the run that follows and completes arms it again, with a fresh deadline, for its own
+    ''' textures. Nothing = not waiting.</summary>
     Private _postTextureUploadDeadlineUtc As DateTime?
 
-    ''' <summary>True iff <see cref="LoadTexturesAsync"/> armed a watchdog deadline whose
-    ''' callbacks have not yet fired. Used by <see cref="PreviewControl.ExecuteRenderPipeline"/>
-    ''' to distinguish "no async load needed, fire hook synchronously" from "async load in
-    ''' progress, let the watchdog handle it".</summary>
+    ''' <summary>True while the post-texture-upload hook waits for this render's textures (armed by
+    ''' <see cref="SettlePostTextureUploadHook"/>, see _postTextureUploadDeadlineUtc): a host that waits for the frame the hook's
+    ''' work is in reads it with <see cref="TexturesReady"/>.</summary>
     Public ReadOnly Property HasPendingPostTextureDeadline As Boolean
         Get
             Return _postTextureUploadDeadlineUtc.HasValue
         End Get
     End Property
 
-    ''' <summary>Synchronous success-path dispatch of the post-texture-upload hook for the case
-    ''' when the pipeline did NOT trigger an async load (texture cache reuse / no new shapes).
-    ''' Same one-shot semantics as the watchdog success path: clear callbacks first, invoke
-    ''' inside Try, MarkRenderBucketsDirty after.</summary>
-    Public Sub FlushPostTextureUploadHookSyncSuccess()
-        InvokePostTextureUploadHook(success:=True)
+    ''' <summary>Ends the post-texture-upload hook's wait - its action stays registered and the next run that completes settles
+    ''' it, with a fresh deadline: a cancellation of the loads (CancelPendingTextureUploads) and a failed run
+    ''' (PreviewControl.RecordRenderFailure).</summary>
+    Friend Sub EndPostTextureUploadWait()
+        _postTextureUploadDeadlineUtc = Nothing
+    End Sub
+
+    ''' <summary>THE post-texture-upload hook's decision after every pipeline run that gets past its guards and completes
+    ''' (PreviewControl.ExecuteRenderPipeline, in a Finally: a render or the empty scene; a run a step throws in settles nothing -
+    ''' the failure policy ends the wait and the next run that completes settles it);
+    ''' its other half is <see cref="ProcessPendingTextureUploads"/>. A registered hook fires NOW when the textures are ready -
+    ''' nothing to wait for: a cached set, PreserveTextureCache, a load that already finished, an empty scene -; otherwise it
+    ''' waits for the loads the run launched, its watchdog
+    ''' armed once (a wait already armed keeps its deadline: the same textures are still loading), and
+    ''' ProcessPendingTextureUploads fires it on the frame the set becomes ready, or its timeout action when the deadline passes
+    ''' first. Exactly once either way: firing clears the actions and the wait (InvokePostTextureUploadHook).</summary>
+    Public Sub SettlePostTextureUploadHook()
+        Dim intent = ParentControl.Intent
+        If intent.PostTextureUploadAction Is Nothing Then Return
+        If TexturesReady Then
+            InvokePostTextureUploadHook(success:=True)
+        ElseIf Not _postTextureUploadDeadlineUtc.HasValue Then
+            _postTextureUploadDeadlineUtc = If(intent.PostTextureUploadTimeoutMs > 0,
+                                               DateTime.UtcNow.AddMilliseconds(intent.PostTextureUploadTimeoutMs),
+                                               DateTime.MaxValue)
+        End If
     End Sub
     Public meshes As New List(Of RenderableMesh)
     Private ReadOnly ParentControl As PreviewControl
@@ -4048,15 +4256,21 @@ Public Class PreviewModel
 
             Public ReadOnly Property MaterialBase As FO4UnifiedMaterial_Class
                 Get
-                    ' Overlay layer: bind the override material (the app pre-configured it). Same
-                    ' null-safety as the base path below.
-                    If OverrideRelatedMaterial IsNot Nothing Then
-                        If OverrideRelatedMaterial.material Is Nothing Then Return New FO4UnifiedMaterial_Class()
-                        Return OverrideRelatedMaterial.material
-                    End If
-                    Dim rel = ParentMeshData.Shape.ShapeMaterial
-                    If rel Is Nothing OrElse rel.material Is Nothing Then Return New FO4UnifiedMaterial_Class()
-                    Return rel.material
+                    ' No material (an override without one, or the shape's own missing): an empty one stands in. Same null-safety
+                    ' as MaterialOrNothing, which reads the same material without allocating that stand-in.
+                    Dim m = MaterialOrNothing
+                    If m Is Nothing Then Return New FO4UnifiedMaterial_Class()
+                    Return m
+                End Get
+            End Property
+
+            ''' <summary>The material <see cref="MaterialBase"/> reads - the overlay override's when set (the app pre-configured it), else the
+            ''' shape's own -, or Nothing when there is none (MaterialBase then stands in an empty one, whose texture slots are all empty).
+            ''' Read without allocating: the texture-readiness walk (PreviewModel.TexturesReady) visits it every frame.</summary>
+            Friend ReadOnly Property MaterialOrNothing As FO4UnifiedMaterial_Class
+                Get
+                    If OverrideRelatedMaterial IsNot Nothing Then Return OverrideRelatedMaterial.material
+                    Return ParentMeshData.Shape.ShapeMaterial?.material
                 End Get
             End Property
 
@@ -5381,14 +5595,21 @@ Public Class PreviewModel
             ''' mapping whose cube is missing, the engine's default cube.</summary>
             Public ReadOnly Property EnvmapTexturePath As String
                 Get
-                    Dim declared = FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture)
-                    ' FO4 lighting AND effect: an empty or unresolvable slot-4 path loads EyeCubeMap (0x142182420 -> 0x1421825B6;
-                    ' lighting 0x14216A257..288, effect 0x142224B20..41; Tools/re-docs/RE_FO4_WORLD_ENVMAP_2026-10-03.md 9.2, 19).
-                    If Config_App.Current.Game = Config_App.Game_Enum.Skyrim OrElse Not MaterialBase.EnvironmentMapping Then Return declared
-                    If TextureFileExists(declared) Then Return declared
-                    Return FO4UnifiedMaterial_Class.CorrectTexturePath(EngineEffectDefaultCube)
+                    Return EnvmapTexturePathOf(MaterialBase)
                 End Get
             End Property
+
+            ''' <summary>The envmap path material <paramref name="m"/> binds: the declared one, or, for a FO4 material with environment
+            ''' mapping whose cube is missing, the engine's default cube. Allocation free once the paths are CorrectTexturePath's cache
+            ''' hits (the texture-readiness walk reads it every frame).</summary>
+            Friend Shared Function EnvmapTexturePathOf(m As FO4UnifiedMaterial_Class) As String
+                Dim declared = FO4UnifiedMaterial_Class.CorrectTexturePath(m.EnvmapTexture)
+                ' FO4 lighting AND effect: an empty or unresolvable slot-4 path loads EyeCubeMap (0x142182420 -> 0x1421825B6;
+                ' lighting 0x14216A257..288, effect 0x142224B20..41; Tools/re-docs/RE_FO4_WORLD_ENVMAP_2026-10-03.md 9.2, 19).
+                If Config_App.Current.Game = Config_App.Game_Enum.Skyrim OrElse Not m.EnvironmentMapping Then Return declared
+                If TextureFileExists(declared) Then Return declared
+                Return FO4UnifiedMaterial_Class.CorrectTexturePath(EngineEffectDefaultCube)
+            End Function
 
             ''' <summary>A FO4 material slot in the colour space the engine loads it (the sRGB flag each material
             ''' class passes per slot, see ApplyMaterial). <paramref name="id"/> must be the id this entry resolves
@@ -5666,23 +5887,40 @@ Public Class PreviewModel
 
             Public ReadOnly Property Textures_Path_List As IEnumerable(Of String)
                 Get
-                    Return {FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.NormalTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.Diffuse_or_Base_Texture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.SmoothSpecTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.GreyscaleTexture),
-                     EnvmapTexturePath,
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.FlowTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.GlowTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.DisplacementTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.InnerLayerTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.LightingTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.SpecularTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.WrinklesTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.DistanceFieldAlphaTexture),
-                     FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapMaskTexture)
-                                              }
+                    Dim m = MaterialBase
+                    Dim paths(TextureSlotCount - 1) As String
+                    For slot = 0 To TextureSlotCount - 1
+                        paths(slot) = TexturePathOfSlot(m, slot)
+                    Next
+                    Return paths
                 End Get
             End Property
+
+            ''' <summary>The number of texture slots <see cref="Textures_Path_List"/> lists (<see cref="TexturePathOfSlot"/>).</summary>
+            Friend Const TextureSlotCount As Integer = 14
+
+            ''' <summary>Slot <paramref name="slot"/>'s texture path of material <paramref name="m"/>, CorrectTexturePath'd: THE slot list
+            ''' <see cref="Textures_Path_List"/> enumerates (in this order) and the texture-readiness walk visits without allocating
+            ''' (PreviewModel.TexturesReady: a corrected path is a cache hit of CorrectTexturePath, an empty one its literal "").</summary>
+            Friend Shared Function TexturePathOfSlot(m As FO4UnifiedMaterial_Class, slot As Integer) As String
+                Select Case slot
+                    Case 0 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.NormalTexture)
+                    Case 1 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.Diffuse_or_Base_Texture)
+                    Case 2 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.SmoothSpecTexture)
+                    Case 3 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.GreyscaleTexture)
+                    Case 4 : Return EnvmapTexturePathOf(m)
+                    Case 5 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.FlowTexture)
+                    Case 6 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.GlowTexture)
+                    Case 7 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.DisplacementTexture)
+                    Case 8 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.InnerLayerTexture)
+                    Case 9 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.LightingTexture)
+                    Case 10 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.SpecularTexture)
+                    Case 11 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.WrinklesTexture)
+                    Case 12 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.DistanceFieldAlphaTexture)
+                    Case 13 : Return FO4UnifiedMaterial_Class.CorrectTexturePath(m.EnvmapMaskTexture)
+                    Case Else : Throw New ArgumentOutOfRangeException(NameOf(slot))
+                End Select
+            End Function
 
             ''' <summary>The COLOR textures of this material that the GPU must gamma-decode (sRGB) at load,
             ''' decided PER-SLOT from how the engine shaders sample each one (a slot is sRGB iff its sample is
@@ -10168,24 +10406,56 @@ Public Class PreviewModel
     ' Phase 1 runs on a background thread (DDS I/O + decompression, no GL calls).
     ' Phase 2 runs on the GL thread each frame (upload a limited batch via PBO).
     ' Between phases, meshes are hidden (TexturesReady=False) and a status overlay is shown.
+    '
+    ' THE TEXTURE-LOAD STATE, ONE OWNER (19-oct-2026; the race it closes: D:\WinTmp\rc\dxw\informe.md - a same-scene reload set
+    ' TexturesReady True while the first scene's load was still in flight). Everything below is read and written ONLY on the GL
+    ' thread (the control's UI thread: the pipeline, RenderAll, the hosts' Clean* calls). The background task touches none of
+    ' it: it decodes its own copy of the paths and hands back one TextureLoadBatch through _pendingTextureUploads, the one
+    ' structure the two threads share (a ConcurrentQueue).
+    '   the current texture set  every path the current meshes and their overlay layers sample, DERIVED from the meshes on
+    '                      every use and never stored - so no run that changed the meshes and stopped before its texture step (a
+    '                      host step throwing between LoadShapesParallel and Setup_GL) can leave TexturesReady judging another set
+    '                      (round 3, tr-05). WALKED without allocating where it is read every frame (VisitCurrentTexturePaths:
+    '                      TexturesReady, the retry), COLLECTED into a HashSet only where a load is launched (CurrentTextureSet:
+    '                      Process_Textures_GL) - round 4.
+    '   _inFlightTextures  path -> ticket of the load that will resolve it. A path enters when a load is launched for it and
+    '                      leaves when that load's entry is applied (uploaded, or its failure registered) or when the GL thread
+    '                      drops it (CancelPendingTextureUploads, CleanSingleTexture). An entry whose ticket is no longer its
+    '                      path's is stale and is discarded, so a dropped load can never write the dictionary late.
+    '   TexturesReady      derived on every read, never stored: every path of the current set ready (PathReady: resolved -
+    '                      Textures_Dictionary or Last_Loaded_Textures - and not in flight).
+    ' A launched ticket hands back exactly one batch (its decode, or a failure batch when the decode threw) - or none when the GL
+    ' thread cancelled it, and then its paths were already dropped by the canceller. A load in flight is never relaunched nor
+    ' cancelled by a new launch: a second launch takes only the paths nobody is loading.
+
+    ''' <summary>One background load's result for the GL thread: the ticket it was launched with, each requested path's decoded
+    ''' texture (Nothing: not loaded) and, when the decode itself threw, the reason (every entry Nothing then).</summary>
+    Private NotInheritable Class TextureLoadBatch
+        Public ReadOnly Ticket As Integer
+        Public ReadOnly Entries As Dictionary(Of String, DirectXTexWrapperCLI.TextureLoaded)
+        Public ReadOnly Failure As String
+
+        Public Sub New(ticket As Integer, entries As Dictionary(Of String, DirectXTexWrapperCLI.TextureLoaded), failure As String)
+            Me.Ticket = ticket
+            Me.Entries = entries
+            Me.Failure = failure
+        End Sub
+    End Class
 
     ''' <summary>
-    ''' Queue of batches produced by background DDS loading, waiting for GL upload.
-    ''' Each entry contains the texture paths and their decompressed pixel data.
+    ''' Batches produced by the background loads, waiting for the GL upload (THE TEXTURE-LOAD STATE).
     ''' Written by background tasks, read only on the GL thread.
     ''' </summary>
-    Private ReadOnly _pendingTextureUploads As New ConcurrentQueue(Of Dictionary(Of String, DirectXTexWrapperCLI.TextureLoaded))
+    Private ReadOnly _pendingTextureUploads As New ConcurrentQueue(Of TextureLoadBatch)
 
     ''' <summary>
-    ''' Cancellation source for the currently running background texture load.
-    ''' Replaced atomically when a new load is requested.
+    ''' Cancellation of every load launched since the last <see cref="CancelPendingTextureUploads"/>: one source for all of them,
+    ''' so a cancellation stops them at once. Created by the first launch after a cancellation.
     ''' </summary>
     Private _backgroundLoadCts As Threading.CancellationTokenSource = Nothing
 
-    ''' <summary>
-    ''' The currently running background texture load task, used for awaiting/checking completion.
-    ''' </summary>
-    Private _backgroundLoadTask As Task = Task.CompletedTask
+    ''' <summary>The ticket of the last launched load: each launch of <see cref="Process_Textures_GL"/> takes the next one.</summary>
+    Private _textureLoadTicket As Integer = 0
 
     ''' <summary>
     ''' Maximum number of individual textures to upload to GL per frame.
@@ -10193,11 +10463,103 @@ Public Class PreviewModel
     ''' </summary>
     Private Const MaxTextureUploadsPerFrame As Integer = 64
 
-    ''' <summary>
-    ''' Set of texture paths currently queued for background loading (to avoid duplicate loads).
-    ''' Cleared when background task completes or is cancelled.
-    ''' </summary>
-    Private ReadOnly _pendingBackgroundPaths As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+    ''' <summary>A visit of the current texture set's paths (<see cref="VisitCurrentTexturePaths"/>): Visit returns False to stop.</summary>
+    Private Interface ITexturePathVisitor
+        Function Visit(path As String) As Boolean
+    End Interface
+
+    ''' <summary>THE walk of the current texture set (THE TEXTURE-LOAD STATE): every texture slot path
+    ''' (MaterialData.TexturePathOfSlot, the slot list of Textures_Path_List) of every current mesh's material and of each of its
+    ''' overlay layers' materials (LooksMenu/tattoos: a layer's textures MUST also be uploaded or the overlay renders untextured/white),
+    ''' empty paths skipped, a mesh or layer without a material skipped (MaterialBase's stand-in for it has every slot empty).
+    ''' Allocation free: indexed loops over the lists, the materials read through MaterialOrNothing, the visitor a Structure called
+    ''' through a constrained generic (no boxing). Returns False when the visitor stopped it. GL thread.</summary>
+    Private Function VisitCurrentTexturePaths(Of TVisitor As {Structure, ITexturePathVisitor})(ByRef visitor As TVisitor) As Boolean
+        For mi = 0 To meshes.Count - 1
+            Dim md = meshes(mi).MeshData
+            If Not VisitMaterialTexturePaths(md.Material.MaterialOrNothing, visitor) Then Return False
+            ' No-overlay path (every WM render, every untattooed NPC): OverlayLayers is Nothing -> nothing visited
+            Dim layers = md.Shape?.OverlayLayers
+            If layers Is Nothing Then Continue For
+            For li = 0 To layers.Count - 1
+                Dim layer = layers(li)
+                If layer Is Nothing OrElse layer.Material Is Nothing Then Continue For
+                If Not VisitMaterialTexturePaths(layer.Material.material, visitor) Then Return False
+            Next
+        Next
+        Return True
+    End Function
+
+    Private Shared Function VisitMaterialTexturePaths(Of TVisitor As {Structure, ITexturePathVisitor})(m As FO4UnifiedMaterial_Class, ByRef visitor As TVisitor) As Boolean
+        If m Is Nothing Then Return True
+        For slot = 0 To RenderableMesh.MaterialData.TextureSlotCount - 1
+            Dim p = RenderableMesh.MaterialData.TexturePathOfSlot(m, slot)
+            If p <> "" AndAlso Not visitor.Visit(p) Then Return False
+        Next
+        Return True
+    End Function
+
+    ''' <summary>Stops at the first path of the current set that is not ready (TexturesReady).</summary>
+    Private Structure ReadyVisitor
+        Implements ITexturePathVisitor
+        Public Model As PreviewModel
+        Public Function Visit(path As String) As Boolean Implements ITexturePathVisitor.Visit
+            Return Model.PathReady(path)
+        End Function
+    End Structure
+
+    ''' <summary>Stops at the first path of the current set a load is due for (ProcessPendingTextureUploads' retry).</summary>
+    Private Structure OutstandingVisitor
+        Implements ITexturePathVisitor
+        Public Model As PreviewModel
+        Public Function Visit(path As String) As Boolean Implements ITexturePathVisitor.Visit
+            Return Not Model.PathOutstanding(path)
+        End Function
+    End Structure
+
+    ''' <summary>Collects every path of the current set (CurrentTextureSet).</summary>
+    Private Structure CollectVisitor
+        Implements ITexturePathVisitor
+        Public Paths As HashSet(Of String)
+        Public Function Visit(path As String) As Boolean Implements ITexturePathVisitor.Visit
+            Paths.Add(path)
+            Return True
+        End Function
+    End Structure
+
+    ''' <summary>The current texture set COLLECTED (the same walk): only where a load is launched (Process_Textures_GL) and for a gate's
+    ''' diagnostics - the per-frame readers walk it (TexturesReady, the retry). GL thread.</summary>
+    Private Function CurrentTextureSet() As HashSet(Of String)
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("texready-set-stored") Then Return New HashSet(Of String)(_gateMutantStoredSet, StringComparer.OrdinalIgnoreCase)
+#End If
+        Dim v As New CollectVisitor With {.Paths = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)}
+        VisitCurrentTexturePaths(v)
+        Return v.Paths
+    End Function
+
+    ''' <summary>Path -&gt; ticket of the load that will resolve it (THE TEXTURE-LOAD STATE).</summary>
+    Private ReadOnly _inFlightTextures As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (gate mutant "texready-clean-true"): the old law kept as a stored override - Clean set the flag True
+    ''' and only a launch lowered it - so the readiness gate can show that it breaks the invariant.</summary>
+    Private _gateMutantForcedReady As Boolean = False
+
+    ''' <summary>DEBUG ONLY (gate mutant "texready-set-stored"): the round-2 law kept as stored state - the set as the last
+    ''' Process_Textures_GL computed it, emptied by Clean - so the readiness gate can show it judges a set that is not the
+    ''' current meshes' (tr-05).</summary>
+    Private ReadOnly _gateMutantStoredSet As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>DEBUG ONLY (the readiness gate's diagnostics, not its oracle): the texture-load state as the GL thread holds it.
+    ''' GivenUp: the paths given up after MaxTextureUploadAttempts failed uploads (RegisterUploadFailure; a success or an eviction
+    ''' clears a path's count) - resolved for <see cref="TexturesReady"/> without a texture, so a gate can tell a path given up from
+    ''' a path missing while ready claims otherwise.</summary>
+    Friend Function GateTextureLoadState() As (Wanted As String(), InFlight As String(), QueuedBatches As Integer, HookDeadlineUtc As DateTime?, GivenUp As String())
+        Return (CurrentTextureSet().ToArray(), _inFlightTextures.Keys.ToArray(), _pendingTextureUploads.Count, _postTextureUploadDeadlineUtc,
+                _uploadFailureCount.Where(Function(kv) kv.Value >= MaxTextureUploadAttempts).Select(Function(kv) kv.Key).ToArray())
+    End Function
+#End If
 
     ''' <summary>Saca <paramref name="path"/> del diccionario tras una subida FALLIDA, LIBERANDO el handle GL.
     ''' Borrar la entrada a secas deja el nombre de GL huerfano —fuera del diccionario, asi que
@@ -10247,29 +10609,19 @@ Public Class PreviewModel
         End If
     End Sub
 
+    ''' <summary>Launches one background load for the paths of the current texture set (CurrentTextureSet: the current meshes
+    ''' and their overlay layers) that are neither resolved nor already in flight, and records the set's colour paths. A load in flight is never
+    ''' relaunched nor cancelled here: the same scene reloaded (Clean without a cancellation) keeps waiting for it, and
+    ''' <see cref="TexturesReady"/> stays False until its batch is applied. GL thread.</summary>
     Public Sub Process_Textures_GL()
         If Me.ParentControl.IsDisposed Then Exit Sub
 
-        ' Collect all texture paths needed by current meshes that are not yet loaded
-        Dim texturas As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-        texturas.UnionWith(
-            Me.meshes.
-                SelectMany(Function(pf) pf.MeshData.Material.Textures_Path_List).
-                Where(Function(pf) pf <> "").
-                Distinct(StringComparer.OrdinalIgnoreCase).
-                Where(Function(pf) Textures_Dictionary.ContainsKey(pf) = False))
-
-        ' Overlay layers (LooksMenu/tattoos): each layer's material textures MUST also be uploaded or
-        ' the overlay renders untextured/white. Reuse the SAME 14-slot Textures_Path_List by building
-        ' a transient MaterialData with OverrideRelatedMaterial = layer.Material (no path-list dup).
-        ' No-overlay path (every WM render, every untattooed NPC): OverlayLayers is Nothing -> this
-        ' adds nothing, so the loaded set is byte-identical to before.
-        texturas.UnionWith(
-            Me.meshes.
-                SelectMany(Function(pf) RenderableMesh.EnumerateOverlayTexturePaths(pf.MeshData)).
-                Where(Function(pf) pf <> "").
-                Distinct(StringComparer.OrdinalIgnoreCase).
-                Where(Function(pf) Textures_Dictionary.ContainsKey(pf) = False))
+        ' The current texture set: every texture path the current meshes and their overlay layers sample
+        Dim wanted = CurrentTextureSet()
+#If DEBUG Then
+        _gateMutantStoredSet.Clear()                ' "texready-set-stored": the round-2 law stored the set here
+        _gateMutantStoredSet.UnionWith(wanted)
+#End If
 
         ' Record which of those paths are COLOR textures (base color) so the GL upload decodes them sRGB,
         ' like the engine's per-texture sRGB flag. Persistent + additive: a path's role is stable, and the
@@ -10285,190 +10637,180 @@ Public Class PreviewModel
             Next
         Next
 
-        texturas.ExceptWith(Last_Loaded_Textures)
+        ' What to load: the set's paths that are not resolved (loaded, or given up after their failures) and that no load has
+        ' in flight
+        Dim pathsArray = wanted.Where(Function(p) Not Textures_Dictionary.ContainsKey(p) AndAlso
+                                                          Not Last_Loaded_Textures.Contains(p) AndAlso
+                                                          Not _inFlightTextures.ContainsKey(p)).ToArray()
+        If pathsArray.Length = 0 Then Exit Sub
 
-        ' Also exclude paths already queued for background loading
-        SyncLock _pendingBackgroundPaths
-            texturas.ExceptWith(_pendingBackgroundPaths)
-        End SyncLock
-
-        If texturas.Count = 0 Then Exit Sub
-
-        ' Cancel any previous background load that hasn't finished
-        If _backgroundLoadCts IsNot Nothing Then
-            _backgroundLoadCts.Cancel()
-            _backgroundLoadCts.Dispose()
-        End If
-        _backgroundLoadCts = New Threading.CancellationTokenSource()
+#If DEBUG Then
+        _gateMutantForcedReady = False             ' "texready-clean-true": the old law lowered the flag only here, at a launch
+#End If
+        If _backgroundLoadCts Is Nothing Then _backgroundLoadCts = New Threading.CancellationTokenSource()
         Dim ct = _backgroundLoadCts.Token
-
-        ' Mark textures as not ready — meshes will be hidden until all uploads complete
-        TexturesReady = False
-
-        ' Arm the post-texture-upload watchdog if the caller registered a timeout action with
-        ' a positive deadline. If timeout is 0 or no action was registered, leave the deadline
-        ' Nothing — the success path still works without watchdog.
-        Dim intent = ParentControl.Intent
-        If intent.PostTextureUploadAction IsNot Nothing AndAlso intent.PostTextureUploadTimeoutMs > 0 Then
-            _postTextureUploadDeadlineUtc = DateTime.UtcNow.AddMilliseconds(intent.PostTextureUploadTimeoutMs)
-        Else
-            _postTextureUploadDeadlineUtc = Nothing
-        End If
-
-        ' Track which paths we are about to load
-        Dim pathsArray = texturas.ToArray()
-        SyncLock _pendingBackgroundPaths
-            For Each p In pathsArray
-                _pendingBackgroundPaths.Add(p)
-            Next
-        End SyncLock
+        _textureLoadTicket += 1
+        Dim ticket = _textureLoadTicket
+        For Each p In pathsArray
+            _inFlightTextures(p) = ticket
+        Next
 
         ' Capture control reference before entering the background thread
         Dim controlRef = Me.ParentControl
 
-        ' Launch background DDS loading task (Phase 1: I/O + decompression, no GL)
-        _backgroundLoadTask = Task.Run(
+        ' Launch background DDS loading task (Phase 1: I/O + decompression, no GL). It hands back exactly one batch for its
+        ' ticket, or none when the GL thread cancelled it (and then its paths were already dropped).
+        Task.Run(
             Sub()
+                Dim batch As TextureLoadBatch = Nothing
                 Try
+#If DEBUG Then
+                    ' Gates only (Fo4GBufferConstants.GateTextureLoadHold): the load waits for the gate to release it, so the
+                    ' frames it spans are the gate's to choose; a cancellation ends the wait (OperationCanceledException below).
+                    Fo4GBufferConstants.GateTextureLoadHold?.Wait(ct)
+#End If
                     ct.ThrowIfCancellationRequested()
                     Dim loaded = DirectXDDSLoader.LoadTexturesFromDictionary_Background(
                         pathsArray, useCompress:=True, forceOpenGL:=True, ct:=ct)
+                    If ct.IsCancellationRequested Then
+                        ' cancelled while decoding: nothing to hand back, the decoded pixels go now
+                        For Each v In loaded.Values
+                            DirectXDDSLoader.ReleaseDecodedLevels(v)
+                        Next
+                        Return
+                    End If
+                    batch = New TextureLoadBatch(ticket, loaded, Nothing)
+                Catch ex As OperationCanceledException
+                    Return                                  ' cancelled by the GL thread, which already dropped this ticket's paths
+                Catch ex As Exception
+                    ' The decode itself failed: every path of the ticket comes back not loaded, with the reason, and the GL
+                    ' thread registers each failure (RegisterUploadFailure: retried, then given up)
+                    Logger.LogLazy(Function() $"[Render] Background texture load failed: {ex.Message}")
+                    Dim failed As New Dictionary(Of String, DirectXTexWrapperCLI.TextureLoaded)(pathsArray.Length, StringComparer.OrdinalIgnoreCase)
+                    For Each p In pathsArray
+                        failed(p) = Nothing
+                    Next
+                    batch = New TextureLoadBatch(ticket, failed, ex.Message)
+                End Try
 
-                    ct.ThrowIfCancellationRequested()
+                ' Enqueue result for GL-thread upload (Phase 2)
+                _pendingTextureUploads.Enqueue(batch)
 
-                    ' Enqueue result for GL-thread upload (Phase 2)
-                    _pendingTextureUploads.Enqueue(loaded)
-
-                    ' Signal the GL thread to wake up and process pending uploads. Setting
-                    ' UpdateRequired alone is enough — the RenderTimer_Tick polls for it and
-                    ' calls Invalidate() guarded by Context.IsCurrent so we don't steal the
-                    ' GL context from a sibling PreviewControl (e.g. an active modal editor)
-                    ' just because a background-thread texture decode happened to finish.
+                ' Signal the GL thread to wake up and process pending uploads. Setting
+                ' UpdateRequired alone is enough — the RenderTimer_Tick polls for it and
+                ' calls Invalidate() guarded by Context.IsCurrent so we don't steal the
+                ' GL context from a sibling PreviewControl (e.g. an active modal editor)
+                ' just because a background-thread texture decode happened to finish.
+                Try
                     If controlRef IsNot Nothing AndAlso Not controlRef.IsDisposed AndAlso controlRef.IsHandleCreated Then
                         controlRef.BeginInvoke(Sub() controlRef.UpdateRequired = True)
                     End If
-                Catch ex As OperationCanceledException
-                    ' Cancelled — remove paths from pending set so they can be retried
-                    SyncLock _pendingBackgroundPaths
-                        For Each p In pathsArray
-                            _pendingBackgroundPaths.Remove(p)
-                        Next
-                    End SyncLock
-                Catch ex As Exception
-                    ' On unexpected failure, remove pending paths and log
-                    SyncLock _pendingBackgroundPaths
-                        For Each p In pathsArray
-                            _pendingBackgroundPaths.Remove(p)
-                        Next
-                    End SyncLock
-                    Logger.LogLazy(Function() $"[Render] Background texture load failed: {ex.Message}")
+                Catch ex As InvalidOperationException
+                    ' the control's handle went away between the check and the call: no GL thread left to wake
                 End Try
             End Sub, ct)
-
-        ' Return immediately — meshes are hidden (TexturesReady=False) until
-        ' ProcessPendingTextureUploads() uploads all textures and sets TexturesReady=True.
     End Sub
 
     ''' <summary>
     ''' O4.1 Phase 2 — Called on the GL thread each frame (from RenderAll).
-    ''' Drains the pending texture upload queue, uploading up to MaxTextureUploadsPerFrame
-    ''' textures per frame to avoid frame-time spikes.
-    ''' Updates Textures_Dictionary with the new GL texture IDs and triggers a repaint.
+    ''' Applies the background loads' batches, up to MaxTextureUploadsPerFrame textures per frame: an entry whose ticket is still
+    ''' its path's is uploaded (or its failure registered) and leaves the in-flight set; a stale one (its path dropped by a
+    ''' cancellation or <see cref="CleanSingleTexture"/>) is discarded. Then the retries of the set's failed or evicted paths,
+    ''' and the post-texture-upload hook's other half (<see cref="SettlePostTextureUploadHook"/>): fired on the frame the set is
+    ''' ready, or its timeout action when the watchdog's deadline passes first.
+    ''' Returns whether the current texture set is ready this frame - <see cref="TexturesReady"/>, from this frame's own walk:
+    ''' RenderAll draws by it, so the steady state walks the set once per frame (round 4).
     ''' </summary>
-    Public Sub ProcessPendingTextureUploads()
-        If Me.ParentControl.IsDisposed Then Exit Sub
+    Public Function ProcessPendingTextureUploads() As Boolean
+        If Me.ParentControl.IsDisposed Then Return False
 
         Dim uploadedThisFrame As Integer = 0
         Dim anyUploaded As Boolean = False
+        Dim batch As TextureLoadBatch = Nothing
 
-        ' Process batches from the queue
-        If Not _pendingTextureUploads.IsEmpty Then
-            While Not _pendingTextureUploads.IsEmpty AndAlso uploadedThisFrame < MaxTextureUploadsPerFrame
-                Dim batch As Dictionary(Of String, DirectXTexWrapperCLI.TextureLoaded) = Nothing
+        ' Process batches from the queue; one not finished this frame stays at the head for the next
+        While uploadedThisFrame < MaxTextureUploadsPerFrame AndAlso _pendingTextureUploads.TryPeek(batch)
+            Dim keysToRemove As New List(Of String)
+            For Each kvp In batch.Entries
+                If uploadedThisFrame >= MaxTextureUploadsPerFrame Then Exit For
 
-                ' Peek at current batch; we may not finish it in one frame
-                If Not _pendingTextureUploads.TryPeek(batch) Then Exit While
-                If batch Is Nothing Then
-                    _pendingTextureUploads.TryDequeue(batch)
-                    Continue While
+                Dim path = kvp.Key
+                Dim tex = kvp.Value
+                keysToRemove.Add(path)
+
+                ' Applied only if this ticket still owns the path; else stale (dropped by a cancellation or an eviction)
+                Dim owner As Integer
+                Dim live = _inFlightTextures.TryGetValue(path, owner) AndAlso owner = batch.Ticket
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("texready-apply-stale") Then live = True
+#End If
+                If Not live Then
+                    DirectXDDSLoader.ReleaseDecodedLevels(tex)
+                    Continue For
                 End If
+                _inFlightTextures.Remove(path)
 
-                ' Upload textures from this batch, up to per-frame limit
-                Dim keysToRemove As New List(Of String)
-                For Each kvp In batch
-                    If uploadedThisFrame >= MaxTextureUploadsPerFrame Then Exit For
+                Try
+                    Dim result = DirectXDDSLoader.UploadTextureToGL(tex, path, SRGBTexturePaths.Contains(path))
 
-                    Dim path = kvp.Key
-                    Dim tex = kvp.Value
-
-                    Try
-                        Dim result = DirectXDDSLoader.UploadTextureToGL(tex, path, SRGBTexturePaths.Contains(path))
-
-                        If result IsNot Nothing AndAlso result.Loaded AndAlso result.Texture_ID > 0 Then
-                            ' Re-upload to an existing key: free the previous GL texture before
-                            ' overwriting, or its handle leaks. Render buckets are rebuilt this frame
-                            ' via MarkRenderBucketsDirty (below), so no live bucket keeps the old ID.
-                            Dim old As Texture_Loaded_Class = Nothing
-                            If Textures_Dictionary.TryGetValue(path, old) AndAlso old IsNot Nothing AndAlso
-                               old.Texture_ID > 0 AndAlso old.Texture_ID <> result.Texture_ID Then
-                                old.ReleaseViews()
-                                GL.DeleteTexture(old.Texture_ID)
-                            End If
-                            ' DIAGNOSTICO (Logger.Enabled): QUE ARCHIVO quedo detras de CADA nombre de textura GL.
-                            ' Los nombres se RECICLAN: GenTexture devuelve el menor libre, y cualquier DeleteTexture
-                            ' previo (el compose del pliegue borra sus intermedios) libera nombres bajos. Sin este
-                            ' mapeo no se puede distinguir "otro id" de "otra imagen", que son dos bugs distintos.
-                            If Logger.Enabled Then
-                                Dim pth = path, nid = result.Texture_ID
-                                Dim oid = If(old Is Nothing, 0UI, old.Texture_ID)
-                                Dim sz = result.Size, srgb = result.IsSRGB
-                                Dim mx As Integer = -1
-                                Try
-                                    Gl43.GetTexParameter(CInt(nid), If(result.Cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), GetTextureParameter.TextureMaxLevel, mx)
-                                    If GL.GetError() <> ErrorCode.NoError Then mx = -1
-                                Catch
-                                    mx = -1
-                                End Try
-                                Dim mxv = mx
-                                Logger.LogLazy(Function() $"[TEX-UPLOAD] id={nid} (prev={oid}) {sz.Width}x{sz.Height} maxLevel={mxv} sRGB={srgb} '{pth}'")
-                            End If
-                            Textures_Dictionary(path) = result
-                            Last_Loaded_Textures.Add(path)
-                            _uploadFailureCount.Remove(path)
-                        Else
-                            OlvidarTexturaLiberandoHandle(path)
-                            RegisterUploadFailure(path, "silent")
+                    If result IsNot Nothing AndAlso result.Loaded AndAlso result.Texture_ID > 0 Then
+                        ' Re-upload to an existing key: free the previous GL texture before
+                        ' overwriting, or its handle leaks. Render buckets are rebuilt this frame
+                        ' via MarkRenderBucketsDirty (below), so no live bucket keeps the old ID.
+                        Dim old As Texture_Loaded_Class = Nothing
+                        If Textures_Dictionary.TryGetValue(path, old) AndAlso old IsNot Nothing AndAlso
+                           old.Texture_ID > 0 AndAlso old.Texture_ID <> result.Texture_ID Then
+                            old.ReleaseViews()
+                            GL.DeleteTexture(old.Texture_ID)
                         End If
-                    Catch ex As Exception
-                        Logger.LogLazy(Function() $"[Render] GL upload failed for '{path}': {ex.Message}")
+                        ' DIAGNOSTICO (Logger.Enabled): QUE ARCHIVO quedo detras de CADA nombre de textura GL.
+                        ' Los nombres se RECICLAN: GenTexture devuelve el menor libre, y cualquier DeleteTexture
+                        ' previo (el compose del pliegue borra sus intermedios) libera nombres bajos. Sin este
+                        ' mapeo no se puede distinguir "otro id" de "otra imagen", que son dos bugs distintos.
+                        If Logger.Enabled Then
+                            Dim pth = path, nid = result.Texture_ID
+                            Dim oid = If(old Is Nothing, 0UI, old.Texture_ID)
+                            Dim sz = result.Size, srgb = result.IsSRGB
+                            Dim mx As Integer = -1
+                            Try
+                                Gl43.GetTexParameter(CInt(nid), If(result.Cubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D), GetTextureParameter.TextureMaxLevel, mx)
+                                If GL.GetError() <> ErrorCode.NoError Then mx = -1
+                            Catch
+                                mx = -1
+                            End Try
+                            Dim mxv = mx
+                            Logger.LogLazy(Function() $"[TEX-UPLOAD] id={nid} (prev={oid}) {sz.Width}x{sz.Height} maxLevel={mxv} sRGB={srgb} '{pth}'")
+                        End If
+                        Textures_Dictionary(path) = result
+                        Last_Loaded_Textures.Add(path)
+                        _uploadFailureCount.Remove(path)
+                    Else
                         OlvidarTexturaLiberandoHandle(path)
-                        RegisterUploadFailure(path, ex.Message)
-                    End Try
+                        RegisterUploadFailure(path, If(batch.Failure, "silent"))
+                    End If
+                Catch ex As Exception
+                    Logger.LogLazy(Function() $"[Render] GL upload failed for '{path}': {ex.Message}")
+                    OlvidarTexturaLiberandoHandle(path)
+                    RegisterUploadFailure(path, ex.Message)
+                End Try
 
-                    ' Remove from pending tracking
-                    SyncLock _pendingBackgroundPaths
-                        _pendingBackgroundPaths.Remove(path)
-                    End SyncLock
+                uploadedThisFrame += 1
+                anyUploaded = True
+            Next
 
-                    keysToRemove.Add(path)
-                    uploadedThisFrame += 1
-                    anyUploaded = True
-                Next
+            ' Remove applied (or discarded) entries from the batch
+            For Each key In keysToRemove
+                batch.Entries.Remove(key)
+            Next
 
-                ' Remove uploaded entries from the batch
-                For Each key In keysToRemove
-                    batch.Remove(key)
-                Next
-
-                ' If the batch is now empty, dequeue it
-                If batch.Count = 0 Then
-                    _pendingTextureUploads.TryDequeue(batch)
-                Else
-                    ' Batch still has remaining textures — stop for this frame
-                    Exit While
-                End If
-            End While
-        End If
+            ' If the batch is now empty, dequeue it
+            If batch.Entries.Count = 0 Then
+                _pendingTextureUploads.TryDequeue(batch)
+            Else
+                ' Batch still has remaining textures — stop for this frame
+                Exit While
+            End If
+        End While
 
         ' If textures were uploaded, rebuild render buckets (for texture sort order)
         ' and trigger a repaint so the new textures are visible immediately
@@ -10478,46 +10820,45 @@ Public Class PreviewModel
             ParentControl.Invalidate()
         End If
 
-        ' If there are STILL pending textures (batch not fully processed or more batches),
+        ' If there are STILL pending batches (one not fully processed or more batches),
         ' keep the render loop active so the next frame processes more uploads
         If Not _pendingTextureUploads.IsEmpty Then
             ParentControl.UpdateRequired = True
         End If
 
-        ' Check if all textures are now loaded (queue empty AND no background task running).
-        ' Before declaring Ready, call Process_Textures_GL to catch any textures that were
-        ' dropped due to a prior cancellation (cancel removes paths from _pendingBackgroundPaths
-        ' but the new task may not have included them, leaving them unloaded indefinitely).
-        If _pendingTextureUploads.IsEmpty AndAlso (_backgroundLoadTask Is Nothing OrElse _backgroundLoadTask.IsCompleted) Then
-            Process_Textures_GL()  ' no-op if all mesh textures are already loaded or pending
-            ' Only mark Ready if the retry check found nothing new to queue
-            If _pendingTextureUploads.IsEmpty AndAlso (_backgroundLoadTask Is Nothing OrElse _backgroundLoadTask.IsCompleted) Then
-                If Not TexturesReady Then
-                    TexturesReady = True
-                    ' Fire the post-texture-upload hook BEFORE the repaint so any GL state the
-                    ' callback mutates (e.g. re-uploading a diffuse with bake passes applied)
-                    ' is visible in the same frame the textures become ready. The hook is the
-                    ' single point where post-upload work is sequenced relative to the False→True
-                    ' transition — replaces the per-app polling timer that competed with the
-                    ' pipeline order. Watchdog deadline (if armed) is cleared on success too so
-                    ' a stale deadline can't fire after a healthy completion.
-                    InvokePostTextureUploadHook(success:=True)
-                    ParentControl.UpdateRequired = True
-                    ParentControl.Invalidate()
-                End If
+        ' This frame's readiness: ONE walk of the current set, without allocating, stopped at the first path not ready (round 4).
+        ' Only when the set is not ready, a second walk looks for a path a load is due for - neither resolved nor in flight:
+        ' failed below MaxTextureUploadAttempts (RegisterUploadFailure), evicted by a host (CleanSingleTexture, CleanTextures), or of
+        ' a mesh whose run stopped before its texture step - and Process_Textures_GL launches it (it takes only such paths).
+        Dim readyWalk As New ReadyVisitor With {.Model = Me}
+        Dim ready = VisitCurrentTexturePaths(readyWalk)
+        If Not ready Then
+            Dim dueWalk As New OutstandingVisitor With {.Model = Me}
+            If Not VisitCurrentTexturePaths(dueWalk) Then Process_Textures_GL()
+        End If
+#If DEBUG Then
+        ' the gate mutants that replace the readiness law act on this frame's readiness through TexturesReady
+        If _gateMutantForcedReady OrElse Fo4GBufferConstants.GateMutantOn("texready-walk-allocates") OrElse
+           Fo4GBufferConstants.GateMutantOn("texready-set-stored") Then ready = TexturesReady
+#End If
+
+        ' The hook waiting for this render's textures (armed by SettlePostTextureUploadHook): fired on the frame the set is ready,
+        ' BEFORE the repaint, so any GL state its callback mutates (e.g. re-uploading a diffuse with bake passes applied) is
+        ' visible in the same frame the textures become ready; or its timeout action once the deadline passes without them. Its
+        ' callback may change the scene (a re-render from inside it): the frame's readiness is read again after it.
+        If _postTextureUploadDeadlineUtc.HasValue Then
+            If ready Then
+                InvokePostTextureUploadHook(success:=True)
+                ParentControl.UpdateRequired = True
+                ParentControl.Invalidate()
+                ready = TexturesReady
+            ElseIf DateTime.UtcNow >= _postTextureUploadDeadlineUtc.Value Then
+                InvokePostTextureUploadHook(success:=False)
+                ready = TexturesReady
             End If
         End If
-
-        ' Watchdog: if a deadline was armed and we're still not ready by the time it elapses,
-        ' fire the timeout action instead of leaving the caller waiting forever. This covers
-        ' BA2 corruption, FilesDictionary misses that drop a path, and cancelled background
-        ' loads that left an upload queue in an inconsistent state. Done AFTER the success
-        ' branch so a healthy late completion in the same frame still wins over the deadline.
-        If Not TexturesReady AndAlso _postTextureUploadDeadlineUtc.HasValue _
-           AndAlso DateTime.UtcNow >= _postTextureUploadDeadlineUtc.Value Then
-            InvokePostTextureUploadHook(success:=False)
-        End If
-    End Sub
+        Return ready
+    End Function
 
     ''' <summary>One-shot dispatch of the post-texture-upload hook. Reads the appropriate
     ''' callback (success vs timeout) from the active <see cref="RenderIntent"/>, clears BOTH
@@ -10532,8 +10873,14 @@ Public Class PreviewModel
         ' Clear BEFORE invoking so a re-entrant render kicked off inside the callback (typical:
         ' the callback runs RefreshFaceTintLivePreview which calls InvalidateRender) cannot see
         ' the already-firing hook and double-dispatch.
-        intent.PostTextureUploadAction = Nothing
-        intent.PostTextureUploadTimeoutAction = Nothing
+        Dim oneShot = True
+#If DEBUG Then
+        oneShot = Not Fo4GBufferConstants.GateMutantOn("texready-hook-not-one-shot")
+#End If
+        If oneShot Then
+            intent.PostTextureUploadAction = Nothing
+            intent.PostTextureUploadTimeoutAction = Nothing
+        End If
         _postTextureUploadDeadlineUtc = Nothing
         If hook Is Nothing Then Return
         Try
@@ -10571,52 +10918,42 @@ Public Class PreviewModel
         FilesDictionary_class.ClearBytesCache()
     End Sub
 
-    ''' <summary>Cancels any in-flight background texture load + drains the pending upload queue
-    ''' + clears the pending-paths tracker. Does NOT touch <see cref="Textures_Dictionary"/>,
+    ''' <summary>Cancels every in-flight background texture load and drops its paths from the in-flight set at once (a batch
+    ''' that still arrives is stale and is discarded, ProcessPendingTextureUploads), frees the batches waiting for upload, and
+    ''' ends a waiting post-texture-upload hook's wait (the render that follows arms it again, with a fresh deadline, for its own
+    ''' textures: SettlePostTextureUploadHook). Does NOT touch <see cref="Textures_Dictionary"/>,
     ''' <see cref="Last_Loaded_Textures"/>, or the raw-bytes cache — already-uploaded GL textures
     ''' stay live and reusable. Used by the shape-set-swap path when the caller opted into
     ''' <see cref="RenderIntent.PreserveTextureCache"/>: cancelling pending uploads is unsafe to
     ''' skip because the in-flight loads were keyed on the previous shape set's texture paths and
     ''' could race with the new set's loads, but tearing down the GPU-resident cache is wasteful
-    ''' when the caller knows the new set will mostly reuse the same textures.</summary>
+    ''' when the caller knows the new set will mostly reuse the same textures. GL thread.</summary>
     Public Sub CancelPendingTextureUploads()
-        ' O4.1: Cancel any in-flight background texture load and drain the pending queue
         If _backgroundLoadCts IsNot Nothing Then
             _backgroundLoadCts.Cancel()
             _backgroundLoadCts.Dispose()
             _backgroundLoadCts = Nothing
         End If
+        _inFlightTextures.Clear()
         ' Drain and discard pending uploads (free decompressed pixel data)
-        Dim discarded As Dictionary(Of String, DirectXTexWrapperCLI.TextureLoaded) = Nothing
+        Dim discarded As TextureLoadBatch = Nothing
         While _pendingTextureUploads.TryDequeue(discarded)
-            If discarded IsNot Nothing Then
-                For Each kvp In discarded
-                    If kvp.Value IsNot Nothing AndAlso kvp.Value.Levels IsNot Nothing Then
-                        For Each lvl In kvp.Value.Levels
-                            lvl.Data = Nothing
-                        Next
-                        kvp.Value.Levels.Clear()
-                    End If
-                Next
-            End If
+            For Each v In discarded.Entries.Values
+                DirectXDDSLoader.ReleaseDecodedLevels(v)
+            Next
         End While
-        SyncLock _pendingBackgroundPaths
-            _pendingBackgroundPaths.Clear()
-        End SyncLock
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("texready-cancel-keeps-deadline") Then Return
+#End If
+        EndPostTextureUploadWait()
     End Sub
     Public Sub CleanSingleTexture(Cual As String)
         Try
             Cual = FO4UnifiedMaterial_Class.CorrectTexturePath(Cual)
-            ' O4.1: Also remove from pending background paths so it can be re-requested
-            SyncLock _pendingBackgroundPaths
-                _pendingBackgroundPaths.Remove(Cual)
-            End SyncLock
-            ' Remove from any already-decoded batches waiting in _pendingTextureUploads.
-            ' Without this, a batch queued before the single-texture invalidation can re-upload
-            ' the obsolete GL texture right after we deleted it (hot-reload race condition).
-            For Each batch In _pendingTextureUploads
-                batch.Remove(Cual)
-            Next
+            ' Drop it from the in-flight set: its load's entry - decoded or still decoding - is then stale and is discarded
+            ' (ProcessPendingTextureUploads), so the obsolete image can never be uploaded right after this eviction (the
+            ' hot-reload race); if the current set samples the path, the next Process_Textures_GL loads it again.
+            _inFlightTextures.Remove(Cual)
             ' — Eliminar texturas cargadas —
             Dim seen As New HashSet(Of UInteger)
             For Each t In Textures_Dictionary.Values.Where(Function(pf) pf.Path.Equals(Cual, StringComparison.OrdinalIgnoreCase))
@@ -10641,7 +10978,13 @@ Public Class PreviewModel
     Public Sub Clean(ShowText As Boolean)
         Cleaned = True
         Can_Render = False
-        TexturesReady = True
+        ' The meshes go, and with them the current texture set (derived from them, CurrentTextureSet). A load in flight is NOT
+        ' cancelled here: the same scene reloaded waits for it (Process_Textures_GL), and a host that swaps the scene cancels it
+        ' (CancelPendingTextureUploads).
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("texready-clean-true") Then _gateMutantForcedReady = True
+        _gateMutantStoredSet.Clear()                    ' "texready-set-stored": the round-2 law emptied the stored set here
+#End If
         If Not IsNothing(ParentControl.RenderTimer) Then ParentControl.RenderTimer.Stop()
         ParentControl.EnsureContextCurrent()
         ParentControl.UpdateRequired = True
@@ -11750,15 +12093,16 @@ Public Class PreviewModel
         FrameRefractionActive = False
         ' A FO4 effect draw masks the alpha of draw buffer 0 (ApplyMaterial): every frame starts with all channels.
         GL.ColorMask(True, True, True, True)
-        ' O4.1: Process pending background texture uploads (Phase 2) each frame
-        ProcessPendingTextureUploads()
+        ' O4.1: Process pending background texture uploads (Phase 2) each frame; it returns whether the current texture set is
+        ' ready this frame, from its own walk of the set (one walk per frame in the steady state, round 4)
+        Dim texturesReadyThisFrame = ProcessPendingTextureUploads()
 
         ' El piso procedural usa el mismo rig resuelto que las mallas y debe seguir siendo valido en las
         ' salidas tempranas de carga de texturas y modelo vacio. Resolverlo no depende de ninguna textura.
         ResolveFrameLights(camera)
 
         ' Hide meshes while textures are still loading — show status overlay instead
-        If Not TexturesReady Then
+        If Not texturesReadyThisFrame Then
             If Floor IsNot Nothing AndAlso Floor.Enabled = True Then Floor.Render(projection, camera, FloorOffset)
             ParentControl.Processing_Status("Texturing...")
             ParentControl.UpdateRequired = True

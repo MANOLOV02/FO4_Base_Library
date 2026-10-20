@@ -163,6 +163,27 @@ Public Enum RenderDirtyFlags
     Force = 32
 End Enum
 
+''' <summary>What a preview shows for its current request (PreviewControl.RenderState): THE observable a host that waits for "drawn"
+''' waits on - it leaves Loading for Ready or Failed, never stays Loading after a failure.</summary>
+Public Enum PreviewRenderState
+    ''' <summary>The request has not run yet, or its textures are still loading.</summary>
+    Loading = 0
+    ''' <summary>The request ran and its texture set is ready.</summary>
+    Ready = 1
+    ''' <summary>A step of the request's run threw: the preview shows the card (PreviewControl.RenderFailure) until a content change of
+    ''' the host (RenderIntent.ContentChanges).</summary>
+    Failed = 2
+End Enum
+
+''' <summary>A frame readout (PreviewControl.CaptureBitmap, CaptureSceneLinear, FrameNotices) asked for while the preview shows a render
+''' failure's card: there is no scene to read. The message is the card ("Render failed: reason").</summary>
+Public NotInheritable Class RenderFailedException
+    Inherits Exception
+    Public Sub New(card As String)
+        MyBase.New(card)
+    End Sub
+End Class
+
 ''' <summary>
 ''' Declarative render intent — the pull-based pipeline's input.
 ''' Apps set WHAT changed (dirty flags) and provide resolvers for HOW to handle it.
@@ -206,8 +227,9 @@ Public Class RenderIntent
     ''' se hereda al siguiente vaciado.</summary>
     Public Property EmptyStatusText As String = Nothing
 
-    ''' <summary>One-shot callback invoked exactly once after the next False→True transition of
-    ''' <see cref="PreviewModel.TexturesReady"/> caused by background uploads completing.
+    ''' <summary>One-shot callback invoked exactly once when this render's textures are ready
+    ''' (<see cref="PreviewModel.SettlePostTextureUploadHook"/>, after every pipeline run whichever way it ends: right then when
+    ''' nothing is left to load, else on the frame <see cref="PreviewModel.TexturesReady"/> becomes True - ProcessPendingTextureUploads).
     ''' Receives the <see cref="PreviewModel"/> so the callback can read / mutate
     ''' <c>Textures_Dictionary</c> entries that just got their GL TexIDs assigned.
     ''' <para>Use case: post-texture-bake passes (face tint compositor, skin softlight, body
@@ -218,18 +240,22 @@ Public Class RenderIntent
     ''' immediately after the callback returns, so any mesh sort by Texture_ID is rebuilt next
     ''' frame.</para>
     ''' <para>Lifecycle: NOT cleared by <see cref="ClearDirty"/> — survives across the pipeline
-    ''' execution that triggers texture loading, until either the False→True transition fires it
-    ''' or <see cref="PostTextureUploadTimeoutMs"/> elapses, whichever comes first. After firing
+    ''' execution that triggers texture loading, until it fires on the textures being ready or
+    ''' <see cref="PostTextureUploadTimeoutMs"/> elapses, whichever comes first. After firing
     ''' (or timing out) the property is reset to Nothing automatically; the caller registers a
     ''' fresh action per render that needs post-texture work.</para>
-    ''' <para>Edge: if textures are already ready when the pipeline finishes (no background load
-    ''' needed because cache reuse / PreserveTextureCache), the hook fires immediately at the end
-    ''' of the pipeline — same observable behaviour as a zero-delay False→True transition.</para></summary>
+    ''' <para>Cases, each firing it once: a new load (on the frame its textures are uploaded); the same scene
+    ''' reloaded while its load is in flight (on the frame that load's textures are uploaded - the reload does
+    ''' not make them ready); a scene swap that cancels the loads (for the new scene's textures, its watchdog
+    ''' restarted); a preserved or warm texture cache, or an empty scene (after the pipeline run: nothing to wait for). A run a
+    ''' step throws in (the failure policy: the card "Render failed: reason", no run again until the host changes something) does
+    ''' not fire it: it stays registered and the next run that completes settles it, its watchdog restarted.</para></summary>
     Public Property PostTextureUploadAction As Action(Of PreviewModel)
 
     ''' <summary>Watchdog timeout (ms) for <see cref="PostTextureUploadAction"/>. If the
-    ''' False→True transition has not happened by this deadline (BA2 corrupt, FilesDictionary
-    ''' miss, cancelled background load that left a path orphaned), the pipeline invokes
+    ''' textures are not ready by this deadline - counted from the end of the pipeline run that left the
+    ''' hook waiting, restarted by the render after a cancellation of the loads - (BA2 corrupt,
+    ''' FilesDictionary miss, a load that never finishes), the pipeline invokes
     ''' <see cref="PostTextureUploadTimeoutAction"/> instead of the success action and clears
     ''' both. 0 disables the watchdog (action waits forever).</summary>
     Public Property PostTextureUploadTimeoutMs As Integer = 7200
@@ -269,9 +295,33 @@ Public Class RenderIntent
         Return DirtyShapes.Contains(shape)
     End Function
 
+    ''' <summary>The dirty flags that change WHAT the preview shows - shapes, morphs, textures (materials included), a forced reload (the
+    ''' apps' settings changes mark it) -: a content change of the host. Pose and Camera change how it is viewed, not what. Census of
+    ''' <see cref="RenderDirtyFlags"/>: None, Shapes, Pose, Morphs, Textures, Camera, Force.</summary>
+    Public Const ContentChanges As RenderDirtyFlags = RenderDirtyFlags.Shapes Or RenderDirtyFlags.Morphs Or RenderDirtyFlags.Textures Or RenderDirtyFlags.Force
+
+    ''' <summary>Counts the host's content changes (a MarkDirty carrying a <see cref="ContentChanges"/> flag): a standing render failure
+    ''' runs again only once this moved (PreviewControl.ExecuteRenderPipeline) - a pose or camera change never re-runs it.</summary>
+    Public ReadOnly Property ContentSerial As Integer
+        Get
+            Return _contentSerial
+        End Get
+    End Property
+    Private _contentSerial As Integer = 0
+
+    ''' <summary>The one count of a MarkDirty: a content change moves <see cref="ContentSerial"/>.</summary>
+    Private Sub CountChange(flags As RenderDirtyFlags)
+        Dim content = (flags And ContentChanges) <> RenderDirtyFlags.None
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("render-failure-view-retries") Then content = True   ' the round-4 law: every MarkDirty
+#End If
+        If content Then _contentSerial += 1
+    End Sub
+
     ''' <summary>Accumulate dirty flags (OR semantics — never clears existing flags).</summary>
     Public Sub MarkDirty(flags As RenderDirtyFlags)
         _dirty = _dirty Or flags
+        CountChange(flags)
     End Sub
 
     ''' <summary>Mark dirty flags AND restrict the affected shapes. Useful for multi-actor
@@ -280,12 +330,14 @@ Public Class RenderIntent
     Public Sub MarkDirty(flags As RenderDirtyFlags, ParamArray shapes As IRenderableShape())
         _dirty = _dirty Or flags
         If shapes IsNot Nothing Then DirtyShapes.UnionWith(shapes)
+        CountChange(flags)
     End Sub
 
     ''' <summary>Mark dirty flags AND restrict the affected shapes (collection overload).</summary>
     Public Sub MarkDirty(flags As RenderDirtyFlags, shapes As IEnumerable(Of IRenderableShape))
         _dirty = _dirty Or flags
         If shapes IsNot Nothing Then DirtyShapes.UnionWith(shapes)
+        CountChange(flags)
     End Sub
 
     ''' <summary>Clear all dirty flags + shape subset after pipeline execution. Also resets
@@ -294,9 +346,9 @@ Public Class RenderIntent
     ''' <para>Does NOT touch <see cref="PostTextureUploadAction"/>,
     ''' <see cref="PostTextureUploadTimeoutAction"/> or <see cref="PostTextureUploadTimeoutMs"/>:
     ''' those have their own one-shot lifecycle managed by the post-texture-upload watchdog
-    ''' inside the render loop, because the False→True transition that fires them happens
-    ''' asynchronously after this method has already returned (background texture load completes
-    ''' over several frames).</para></summary>
+    ''' inside the render loop, because the moment that fires them (this render's textures ready,
+    ''' PreviewModel.SettlePostTextureUploadHook) comes asynchronously after this method has already
+    ''' returned (background texture load completes over several frames).</para></summary>
     Public Sub ClearDirty()
         _dirty = RenderDirtyFlags.None
         DirtyShapes.Clear()
