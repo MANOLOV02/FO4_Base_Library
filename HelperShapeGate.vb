@@ -40,7 +40,12 @@ Public Module HelperShapeGate
     ''' <summary>Lo mismo con el estado ya evaluado y la vista: el render lo pasa memoizado por frame (RenderableMesh.IsDrawable).
     ''' Friend: el estado sólo lo arma la lib.</summary>
     Friend Function IsShapeDrawable(shape As IRenderableShape, vis As NifSceneVisibility.LoadState, drawEngineSkippedForEditing As Boolean) As Boolean
-        Return IsShapeShown(shape, vis) AndAlso DrawnBy(vis.BoundCullReason IsNot Nothing, drawEngineSkippedForEditing)
+        Dim skips = vis.GameSkips
+#If DEBUG Then
+        ' ParityGate fo4-attach-law / ShadowGate --attach-law directed mutant: the composite view reads only the culling (the law before 7b)
+        If Fo4GBufferConstants.GateMutantOn("ga-composite-draws-nested") Then skips = vis.BoundCullReason IsNot Nothing
+#End If
+        Return IsShapeShown(shape, vis) AndAlso DrawnBy(skips, drawEngineSkippedForEditing)
     End Function
 
     ''' <summary>La parte de la CASILLA: RenderHide, helper shape y ancestro oculto (C-ANC). Sin C-NAN: el aviso del frame la usa
@@ -72,7 +77,11 @@ Public Module HelperShapeGate
 
     ''' <summary>La composición del oclusor, pura (gate scene-visibility).</summary>
     Friend Function OccluderBy(isHelper As Boolean, vis As NifSceneVisibility.LoadState) As Boolean
-        Return Not isHelper AndAlso Not vis.HiddenByAncestor AndAlso vis.BoundCullReason Is Nothing
+        Dim skips = vis.GameSkips
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("ga-occluder-ignores-attach") Then skips = vis.BoundCullReason IsNot Nothing
+#End If
+        Return Not isHelper AndAlso Not vis.HiddenByAncestor AndAlso Not skips
     End Function
 
 End Module

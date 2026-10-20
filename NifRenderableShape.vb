@@ -300,6 +300,22 @@ Public Class NifRenderableShape
     Public Property TintColor As Color = Color.White Implements IRenderableShape.TintColor
     Public Property ApplyZaps As Boolean = False Implements IRenderableShape.ApplyZaps
     Public Property CoveredSlotsMask As UInteger = 0 Implements IRenderableShape.CoveredSlotsMask
+    ''' <summary>Ola 7b: the path the NIF was read from (a FilesDictionary key or a file), when the host knows it; Nothing otherwise.</summary>
+    Public Property SourcePath As String
+    Private _gameAttach As GameAttachKind = GameAttachKind.Unknown
+    ''' <summary>See <see cref="IRenderableShape.GameAttach"/>.</summary>
+    Public Property GameAttach As GameAttachKind Implements IRenderableShape.GameAttach
+        Get
+#If DEBUG Then
+            ' ParityGate fo4-attach-law directed mutant: a shape no host declared is worn by default.
+            If _gameAttach = GameAttachKind.Unknown AndAlso Fo4GBufferConstants.GateMutantOn("ga-default-biped") Then Return GameAttachLaw.Resolve(SourcePath, NifContent, GameAttachKind.BipedWorn)
+#End If
+            Return GameAttachLaw.Resolve(SourcePath, NifContent, _gameAttach)
+        End Get
+        Set(value As GameAttachKind)
+            _gameAttach = value
+        End Set
+    End Property
     ''' <summary>Ver <see cref="IRenderableShape.OccluderConDispositivo"/>. False = sin dispositivo.</summary>
     Public Property OccluderConDispositivo As Boolean = False Implements IRenderableShape.OccluderConDispositivo
     ''' <summary>Ver <see cref="IRenderableShape.OccluderSlotMask"/>. 0 = la raza no reserva ninguno.</summary>
@@ -318,12 +334,12 @@ Public Class NifRenderableShape
     ''' Previously this filtered to BSTriShape-only via a TryCast — that filter is gone, so
     ''' NiTriShape and BSLODTriShape are now rendered alongside the BSTriShape family.
     ''' </summary>
-    Public Shared Function FromNif(nif As Nifcontent_Class_Manolo) As List(Of NifRenderableShape)
+    Public Shared Function FromNif(nif As Nifcontent_Class_Manolo, Optional sourcePath As String = Nothing) As List(Of NifRenderableShape)
         Dim result As New List(Of NifRenderableShape)
         Dim idx = 0
         For Each shape In nif.GetShapes()
             If Nifcontent_Class_Manolo.SupportedShape(shape.GetType) AndAlso ShapeGeometryFactory.IsSupported(shape) Then
-                result.Add(New NifRenderableShape(nif, shape, idx))
+                result.Add(New NifRenderableShape(nif, shape, idx) With {.SourcePath = sourcePath})
                 idx += 1
             End If
         Next

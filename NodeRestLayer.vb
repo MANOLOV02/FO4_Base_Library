@@ -117,15 +117,22 @@ Friend Module NodeRestLayer
         Friend ReadOnly Driven As New List(Of String)
         Friend ReadOnly Holes As New List(Of String)
         ''' <summary>Blocks the layer would move on a chain the shape draws as the file (SkinningHelper.NifOwnDrawnWorld: a skinned shape
-        ''' mounted on the skeleton).</summary>
+        ''' mounted on the skeleton). Ola 7b ronda 3: noted where the rest law is not traced (NoteMounted, RestLawTrace.Untraced: Skyrim SE,
+        ''' Fallout 4's head parts, loose NIFs) - the notice as before 7b.</summary>
         Friend ReadOnly Excluded As New List(Of String)
+        ''' <summary>Ola 7b: skin bones of a skinned shape mounted on the skeleton that the skeleton does not resolve and whose OWN controller
+        ''' writes at rest - Fallout 4's biped (NoteMounted, RestLawTrace.Biped): the bones the biped re-parents under the skeleton root with
+        ''' that controller (0x14035F9B3..F9C8). Its NIF ancestors' controllers do not reach it there (AttachParent 0x1416C9080).</summary>
+        Friend ReadOnly Reparented As New List(Of String)
     End Class
 
     ''' <summary>What the layer did to one shape, for the frame's notice (RenderableMesh.ReportUndrawn): the driven blocks drawn at rest,
-    ''' the excluded ones, the holes - each the distinct names joined in first-seen order, Nothing when none.</summary>
+    ''' the excluded ones, the re-parented ones (Ola 7b), the holes - each the distinct names joined in first-seen order, Nothing when
+    ''' none.</summary>
     Friend NotInheritable Class ShapeLayer
         Friend Driven As String
         Friend Excluded As String
+        Friend Reparented As String
         Friend Hole As String
     End Class
 
@@ -133,8 +140,9 @@ Friend Module NodeRestLayer
     Friend Function Summary(rep As ChainReport) As ShapeLayer
         If rep Is Nothing Then Return Nothing
         Dim join = Function(l As List(Of String)) If(l.Count = 0, Nothing, String.Join(", ", l.Distinct(StringComparer.Ordinal)))
-        Dim r As New ShapeLayer With {.Driven = join(rep.Driven), .Excluded = join(rep.Excluded), .Hole = join(rep.Holes)}
-        If r.Driven Is Nothing AndAlso r.Excluded Is Nothing AndAlso r.Hole Is Nothing Then Return Nothing
+        Dim r As New ShapeLayer With {.Driven = join(rep.Driven), .Excluded = join(rep.Excluded), .Reparented = join(rep.Reparented),
+                                      .Hole = join(rep.Holes)}
+        If r.Driven Is Nothing AndAlso r.Excluded Is Nothing AndAlso r.Reparented Is Nothing AndAlso r.Hole Is Nothing Then Return Nothing
         Return r
     End Function
 
@@ -177,12 +185,49 @@ Friend Module NodeRestLayer
 
     ''' <summary>The blocks the layer would move on <paramref name="o"/>'s chain, added to <paramref name="report"/>.Excluded: a chain the
     ''' shape does not draw with the layer (a skinned shape mounted on the skeleton: its NIF-own bones and skin root drawn as the file,
-    ''' its resolved bones drawn by the skeleton).</summary>
+    ''' its resolved bones drawn by the skeleton). Ola 7b ronda 3: the note where the rest law is not traced (NoteMounted).</summary>
     Friend Sub NoteExcluded(o As NiAVObject, nif As Nifcontent_Class_Manolo, report As ChainReport)
         If report Is Nothing OrElse Not ChainHasController(o, nif) Then Return
         Dim probe As New ChainReport()
         If DrawnGlobalOrNothing(o, nif, probe) IsNot Nothing Then report.Excluded.AddRange(probe.Driven)
     End Sub
+
+    ''' <summary>Ola 7b: <paramref name="o"/> (a skin bone the skeleton does not resolve, of a shape mounted on the skeleton by Fallout 4's
+    ''' biped) added to <paramref name="report"/>.Reparented when ITS OWN controller chain writes a component at rest (DrawnLocal): the biped
+    ''' re-parents the node under the skeleton root with its local and its controllers (0x14035F9B3..F9C8, AttachParent 0x1416C9080), so only
+    ''' its own controllers move it there; the preview draws it as the file.</summary>
+    Friend Sub NoteReparented(o As NiAVObject, nif As Nifcontent_Class_Manolo, report As ChainReport)
+        If report Is Nothing OrElse o Is Nothing OrElse o.Controller Is Nothing OrElse o.Controller.IsEmpty() Then Return
+        Dim driven = False
+        Dim hole As String = Nothing
+        If DrawnLocal(o, nif, driven, hole) IsNot Nothing AndAlso driven Then report.Reparented.Add(If(o.Name?.String, ""))
+    End Sub
+
+    ''' <summary>Ola 7b ronda 3 (r19i-01): THE note of a node of a skinned shape mounted on the skeleton - a skin bone the skeleton resolves,
+    ''' one it does not (<paramref name="unresolvedBone"/>), the skin root - by the shape's rest trace (<paramref name="trace"/>,
+    ''' GameAttachLaw.RestTraceOf, its one owner): Untraced (Skyrim SE, Fallout 4's head parts, loose NIFs, *_faceBones files) the chain as
+    ''' before 7b (NoteExcluded, the V1 notice); Biped (Fallout 4's biped) only a skin bone the skeleton does not resolve, by its own
+    ''' controller (NoteReparented, F2: re.md 1.2 / 2); ConnectPoint (Fallout 4's connect point) nothing (re.md 9.6).</summary>
+    Friend Sub NoteMounted(o As NiAVObject, nif As Nifcontent_Class_Manolo, report As ChainReport, trace As RestLawTrace, unresolvedBone As Boolean)
+        Select Case trace
+            Case RestLawTrace.Biped
+                If unresolvedBone Then NoteReparented(o, nif, report)
+            Case RestLawTrace.ConnectPoint
+                ' traced: the connect point notes nothing
+            Case Else
+                NoteExcluded(o, nif, report)
+        End Select
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ParityGate fo4-attach-law / ShadowGate --attach-law, mutant "ga-f1-annotated"): the notice of a chain the
+    ''' layer would move, as Ola 0c parte 2 gave it (NoteExcluded: the whole chain of a bone the skeleton resolves), into Reparented.</summary>
+    Friend Sub GateNoteChain(o As NiAVObject, nif As Nifcontent_Class_Manolo, report As ChainReport)
+        If report Is Nothing OrElse Not ChainHasController(o, nif) Then Return
+        Dim probe As New ChainReport()
+        If DrawnGlobalOrNothing(o, nif, probe) IsNot Nothing Then report.Reparented.AddRange(probe.Driven)
+    End Sub
+#End If
 
     ''' <summary>DrawnGlobalOrNothing, or the file's world when it gives Nothing (the file's bits).</summary>
     Friend Function DrawnGlobal(o As NiAVObject, nif As Nifcontent_Class_Manolo, Optional report As ChainReport = Nothing) As Transform_Class

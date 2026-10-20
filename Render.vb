@@ -3567,7 +3567,7 @@ Public Class PreviewModel
     ''' OnVisible never registers it), not a helper shape.</summary>
     Private Shared Function CullRegisters(m As RenderableMesh) As Boolean
         Dim vis = m.SceneVisibility()
-        Return Not (vis.HiddenByAncestor OrElse vis.BoundCullReason IsNot Nothing OrElse m.MeshData.Shape.IsHelperShape)
+        Return Not (vis.HiddenByAncestor OrElse vis.GameSkips OrElse m.MeshData.Shape.IsHelperShape)
     End Function
 
     ''' <summary>Item 2b: the Fo4BucketEntry of one pass - a shape's (its material) or an overlay layer's (the layer's MaterialData: a
@@ -5863,10 +5863,19 @@ Public Class PreviewModel
             MeshData.Meshgeometry = Nothing
         End Sub
 
+        ''' <summary>Ola 7b (p7b-01): the path the game puts this mesh's shape through (IRenderableShape.GameAttach, resolved: a
+        ''' *_faceBones.nif is face input), fixed when the mesh is built - the host declares it before the render -; each frame's notices
+        ''' read it.</summary>
+        Friend ReadOnly GameAttach As GameAttachKind
+
         Public Sub New(data As MeshData_Class, Parent_Model As PreviewModel)
             MeshData = data
             ParentModel = Parent_Model
             MeshData.ParentMesh = Me
+            ' Ola 7b (p7b-01): the attach path and the biped's skinned attach, once, when the mesh is built. LoadShapesParallel builds the
+            ' meshes in parallel: both only read the shape and its NIF, as the extraction before this does.
+            GameAttach = If(data.Shape Is Nothing, GameAttachKind.Unknown, data.Shape.GameAttach)
+            _outsideSkinnedAttach = NifSceneVisibility.OutsideAttachOf(data.Shape)
         End Sub
 
         ''' <summary>
@@ -7521,6 +7530,11 @@ Public Class PreviewModel
 
         Private _sceneVisFrame As Integer = -1
         Private _sceneVis As NifSceneVisibility.LoadState
+        ''' <summary>Ola 7b (p7b-01): the biped's skinned attach leaves this mesh's shape out of the actor (NifSceneVisibility.OutsideAttachOf),
+        ''' evaluated once, when the mesh is built (the constructor): it reads only what this load fixes - the NIF's tree and skin instances,
+        ''' which this load's extraction reads too, and the host's declared path -, so each frame's SceneVisibility reads it and allocates
+        ''' nothing for it. A structural edit of the NIF reaches the preview through a reload, which builds new meshes.</summary>
+        Private ReadOnly _outsideSkinnedAttach As Boolean
 
         ''' <summary>This shape's NifSceneVisibility.LoadState (chunk C3), evaluated once per frame (PreviewModel.FrameSerial, the memo of
         ''' MaterialData.Fo4EngineState: an edit between frames - WM's UpdateBounds, Make helper - is read on the next one).</summary>
@@ -7529,9 +7543,12 @@ Public Class PreviewModel
             If frame >= 0 AndAlso frame = _sceneVisFrame Then Return _sceneVis
             ' Rev-13: the node bounds of one NIF are computed once per frame (PreviewModel.FrameSceneBounds), not once per shape.
             Dim shp = MeshData?.Shape
-            _sceneVis = If(shp?.NifContent Is Nothing OrElse ParentModel Is Nothing OrElse frame < 0, NifSceneVisibility.Evaluate(shp),
-                           NifSceneVisibility.Evaluate(shp.NifContent, shp.NifShape, ParentModel.FrameSceneBounds.ForFrame(frame, shp.NifContent),
-                                                       cullingEngineIsSse:=ParentModel.FrameIsSse))
+            ' Ola 7b: plus the biped's skinned attach, fixed when the mesh was built (_outsideSkinnedAttach): read, not evaluated (p7b-01).
+            _sceneVis = If(shp?.NifContent Is Nothing OrElse ParentModel Is Nothing OrElse frame < 0,
+                           NifSceneVisibility.WithGameAttach(NifSceneVisibility.Evaluate(shp?.NifContent, shp?.NifShape), _outsideSkinnedAttach),
+                           NifSceneVisibility.WithGameAttach(
+                               NifSceneVisibility.Evaluate(shp.NifContent, shp.NifShape, ParentModel.FrameSceneBounds.ForFrame(frame, shp.NifContent),
+                                                           cullingEngineIsSse:=ParentModel.FrameIsSse), _outsideSkinnedAttach))
             _sceneVisFrame = frame
             Return _sceneVis
         End Function
@@ -7639,6 +7656,23 @@ Public Class PreviewModel
             If shp Is Nothing OrElse shp.Wireframe OrElse shp.NifShape Is Nothing Then Exit Sub
             Dim vis = SceneVisibility()
             If Not HelperShapeGate.IsShapeShown(shp, vis) Then Exit Sub
+            ' Ola 7b (user decision 19-oct-2026): a *_faceBones.nif opened by hand is drawn, with the notice that the game only reads it
+            ' as face input (GameAttachKind.FaceBonesInput, the mesh's path fixed when it was built: p7b-01); listed once, under the base shape.
+            If layer Is Nothing AndAlso GameAttach = GameAttachKind.FaceBonesInput Then
+                ParentModel.ReportUndrawn(NoticeName(Nothing), GameAttachLaw.FaceBonesNotice, FrameNoticeKind.DrawnForEditing)
+            End If
+            ' Ola 7b: the biped's skinned attach (GameAttachLaw.OutsideSkinnedAttach) leaves the shape out of the actor before any culling
+            ' (0x14035ED52..EDBB): composite view not drawn (EngineUndrawn), piece view drawn for editing (DrawnForEditing). Listed once.
+            If vis.OutsideAttachReason IsNot Nothing Then
+                If layer Is Nothing Then
+                    If DrawEngineSkippedForEditing() Then
+                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.OutsideAttachShown, FrameNoticeKind.DrawnForEditing)
+                    Else
+                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.OutsideAttachReason, FrameNoticeKind.EngineUndrawn)
+                    End If
+                End If
+                Exit Sub
+            End If
             ' C-NAN (chunk C3) first: the game's culling never reaches GetRenderPasses for it (BSCullingProcess SSE 0x140FEDA82, FO4
             ' 0x1417E1C6D), so no later reason applies. Listed once, under the base shape (its overlay layers leave every pass with it
             ' and are not NIF shapes with a bound of their own). A shape with its OWN hidden bit or without a shader (IsHelperShape)
@@ -7696,13 +7730,19 @@ Public Class PreviewModel
                 If driven IsNot Nothing Then pm.ReportUndrawn(name, driven, FrameNoticeKind.DrivenByControllerAtRest)
                 ' Ola 0c parte 2 (user decision 12-oct-2026, option 1): the blocks whose transform this shape is drawn with comes from a
                 ' NiTransformController at rest (NodeRestLayer, SkinnedGeometry.RestLayer); the ones it draws as the file (a skinned
-                ' shape mounted on the skeleton) and the controllers not determinable, as drawn differently.
+                ' shape mounted on the skeleton) and the controllers not determinable, as drawn differently. Ola 7b ronda 3: which mounted
+                ' chains are listed is the shape's rest trace (GameAttachLaw.RestTraceOf, NodeRestLayer.NoteMounted): untraced (Skyrim SE,
+                ' Fallout 4's head parts, loose NIFs) as before 7b; Fallout 4's biped only the skin bones the game re-parents with their own
+                ' controller (GameAttachLaw.ReparentedNotice); Fallout 4's connect point none.
                 Dim rl = MeshData.Meshgeometry.RestLayer
                 If rl IsNot Nothing Then
                     If rl.Driven IsNot Nothing Then pm.ReportUndrawn(name, rl.Driven, FrameNoticeKind.TransformDrivenByControllerAtRest)
                     If rl.Excluded IsNot Nothing Then
                         pm.ReportUndrawn(name, $"transform driven by a controller at rest, not applied - skinned shape mounted on the skeleton (drawn as the file or by the skeleton; the game NOT TRACED): {rl.Excluded}",
                                          FrameNoticeKind.DrawnDifferently)
+                    End If
+                    If rl.Reparented IsNot Nothing Then
+                        pm.ReportUndrawn(name, GameAttachLaw.ReparentedNotice(rl.Reparented), FrameNoticeKind.DrawnDifferently)
                     End If
                     If rl.Hole IsNot Nothing Then pm.ReportUndrawn(name, $"transform at rest not determinable: {rl.Hole}", FrameNoticeKind.DrawnDifferently)
                 End If

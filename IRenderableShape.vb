@@ -112,6 +112,10 @@ Public Interface IRenderableShape
     ''' (the default; e.g. Wardrobe_Manager never sets it, so its render is unaffected). Read by the
     ''' render per-segment index filter (EnsureZapIndexBuffer → BSTriShapeGeometry.ComputeHiddenTriangles).</summary>
     Property CoveredSlotsMask As UInteger
+    ''' <summary>Ola 7b: how the game puts this shape's NIF into an actor (<see cref="GameAttachKind"/>, one law owner
+    ''' <see cref="GameAttachLaw"/>). Set by the host that knows the record path; Unknown = no attach law. The getter resolves a
+    ''' Fallout 4 *_faceBones.nif to FaceBonesInput whatever was set (GameAttachLaw.Resolve).</summary>
+    Property GameAttach As GameAttachKind
     ''' <summary>Estado del slot <b>occluder</b> de este actor, que el resolver <c>0x14035E3B0</c> calcula
     ''' una sola vez y NO saca de <see cref="CoveredSlotsMask"/>: arranca en 0
     ''' (<c>0x14035E418 xor bpl,bpl</c>) y se enciende sólo si <c>table[D]+0x28 ≠ table[D]+0x10</c>

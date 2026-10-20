@@ -92,10 +92,15 @@ Public Structure SkinnedGeometry
     Public BoneMatsDrawn() As Matrix4d
     ''' <summary>Ola 0c parte 2: the shape's own NIF chain (its geometry's world, its NIF-own bones, its skin root) is drawn with
     ''' NodeRestLayer - an unskinned shape, or a skinned one none of whose bones the skeleton resolves (SkinningHelper.NifOwnDrawn). A
-    ''' skinned shape mounted on the skeleton keeps the file's (user decision 12-oct-2026: the *_faceBones shapes; hole notice).</summary>
+    ''' skinned shape mounted on the skeleton keeps the file's (user decision 12-oct-2026: the *_faceBones shapes); what its notice lists is
+    ''' the shape's rest trace (RestTrace, NodeRestLayer.NoteMounted).</summary>
     Public NifOwnDrawn As Boolean
     ''' <summary>Ola 0c parte 2: what the layer did to this shape, for the frame's notice (RenderableMesh.ReportUndrawn); Nothing = nothing.</summary>
     Friend RestLayer As NodeRestLayer.ShapeLayer
+    ''' <summary>Ola 7b ronda 3 (r19i-01): the rest-layer law the trace covers for this shape (GameAttachLaw.RestTraceOf), fixed when the
+    ''' geometry is extracted (ExtractSkinnedGeometry); the pose updates (RecomputeGPUBoneMatrices) read it. A geometry no extraction made
+    ''' keeps the default, Untraced: the notes as before 7b.</summary>
+    Friend RestTrace As RestLawTrace
     ''' <summary>O-PT (chunk C8): each palette bone's posed global (without skin-to-bone) and the skin root's - what
     ''' EngineWorldBound.Centre places the bone spheres with. Written where BoneMatsPose is.</summary>
     Public BoneWorldPose() As Transform_Class
@@ -663,6 +668,8 @@ Public Class SkinningHelper
         ' Ola 0c parte 2: the drawn pose (NodeRestLayer) of the NIF-own bones; matsDrawn stays Nothing while no bone differs.
         Dim ownDrawn = NifOwnDrawn(shape, bones, effectiveSkel)
         Dim layerRep As New NodeRestLayer.ChainReport()
+        ' Ola 7b ronda 3: the rest-layer law the trace covers for this shape, once (GameAttachLaw.RestTraceOf); kept in the geometry.
+        Dim trace = GameAttachLaw.RestTraceOf(shape)
         Dim matsDrawn() As Matrix4d = Nothing
         For k = 0 To bones.Count - 1
             Dim localT = boneTrans(k)
@@ -689,15 +696,20 @@ Public Class SkinningHelper
             ' Single-bone draws bone 0 only: only its chain goes to the notice (RecomputeGPUBoneMatrices' single-bone branch, the same).
             Dim boneRep = If(singleboneskinning AndAlso k > 0, Nothing, layerRep)
             If IsNothing(SkeletonBone) Then
-                Dim drawnT = NifOwnDrawnWorld(bones(k), shape.NifContent, ownDrawn, boneRep)
+                Dim drawnT = NifOwnDrawnWorld(bones(k), shape.NifContent, ownDrawn, boneRep, trace)
                 If drawnT IsNot Nothing Then
                     If matsDrawn Is Nothing Then matsDrawn = CType(matsPose.Clone(), Matrix4d())
                     poseT = drawnT
                 End If
             Else
-                ' A bone the skeleton draws: what the layer would move on its NIF chain is reported as excluded.
-                NodeRestLayer.NoteExcluded(bones(k), shape.NifContent, boneRep)
+                ' A bone the skeleton draws, noted by the shape's rest trace (NodeRestLayer.NoteMounted): untraced, what the layer would move
+                ' on its NIF chain, as before 7b; Fallout 4's biped and connect point nothing - the skin uses the actor's node of that name
+                ' (0x14035F890 -> 0x1416C6510), so the NIF's controllers on it or its ancestors never reach the skin.
+                NodeRestLayer.NoteMounted(bones(k), shape.NifContent, boneRep, trace, unresolvedBone:=False)
             End If
+#If DEBUG Then
+            If Fo4GBufferConstants.GateMutantOn("ga-f1-annotated") AndAlso Not IsNothing(SkeletonBone) Then NodeRestLayer.GateNoteChain(bones(k), shape.NifContent, boneRep)
+#End If
             If matsDrawn IsNot Nothing Then matsDrawn(k) = poseT.ComposeTransforms(localT).ToMatrix4d()
             boneWorld(k) = poseT
 
@@ -987,8 +999,9 @@ Public Class SkinningHelper
             .BoneMatsDrawn = matsDrawn,
             .NifOwnDrawn = ownDrawn,
             .BoneWorldPose = If(shape.IsSkinned AndAlso bones.Count > 0, boneWorld, Nothing),
-            .SkinRootPose = SkinRootWorld(shape, effectiveSkel, Nothing, singleboneskinning, ownDrawn, layerRep),
+            .SkinRootPose = SkinRootWorld(shape, effectiveSkel, Nothing, singleboneskinning, ownDrawn, layerRep, trace),
             .RestLayer = NodeRestLayer.Summary(layerRep),
+            .RestTrace = trace,
             .DrawTriangleOrder = shapeGeom.GetEngineDrawTriangleOrder(),
             .DrawTriangleOrderFor = flatIndices,
             .Indices = flatIndices,
@@ -1110,7 +1123,8 @@ Public Class SkinningHelper
     ''' the skeleton bone of that name (posed; bind in single-bone mode), else the NIF node (NifOwnWorld: drawn when
     ''' <paramref name="ownDrawn"/>). Nothing without a skin root.</summary>
     Friend Shared Function SkinRootWorld(shape As IRenderableShape, skel As SkeletonInstance, cache As SkeletonGlobalTransformCache,
-                                         singleBone As Boolean, ownDrawn As Boolean, report As NodeRestLayer.ChainReport) As Transform_Class
+                                         singleBone As Boolean, ownDrawn As Boolean, report As NodeRestLayer.ChainReport,
+                                         Optional trace As RestLawTrace = RestLawTrace.Untraced) As Transform_Class
         Dim nif = shape?.NifContent
         Dim ns = shape?.NifShape
         If nif Is Nothing OrElse ns?.SkinInstanceRef Is Nothing OrElse ns.SkinInstanceRef.IsEmpty() Then Return Nothing
@@ -1127,7 +1141,12 @@ Public Class SkinningHelper
         If es IsNot Nothing AndAlso es.SkeletonDictionary.TryGetValue(rootNode.Name.String, bone) Then
             Return If(singleBone, CachedBindMount(bone, cache), CachedDisplay(bone, cache))
         End If
-        Return NifOwnWorld(rootNode, nif, ownDrawn, report)
+        Dim rootIsBone = False
+#If DEBUG Then
+        ' ParityGate fo4-attach-law directed mutant: the skin root annotated like a bone (the law before 7b)
+        rootIsBone = Fo4GBufferConstants.GateMutantOn("ga-root-annotated")
+#End If
+        Return NifOwnWorld(rootNode, nif, ownDrawn, report, trace, unresolvedBone:=rootIsBone)
     End Function
 
     ''' <summary>THE world transform of a shape's own NIF block AS DRAWN: shape T/R/S x the parent chain (Outfit Studio Anim.cpp:692-704
@@ -1155,17 +1174,28 @@ Public Class SkinningHelper
     End Function
 
     ''' <summary>Ola 0c parte 2: the world of a NIF-own node (a bone the skeleton does not resolve, a skin root) as the shape draws it,
-    ''' or Nothing when that is the file's: NodeRestLayer.DrawnGlobalOrNothing when <paramref name="ownDrawn"/>; else Nothing, and the
-    ''' blocks the layer would move are reported as excluded (ChainReport.Excluded).</summary>
-    Friend Shared Function NifOwnDrawnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport) As Transform_Class
+    ''' or Nothing when that is the file's: NodeRestLayer.DrawnGlobalOrNothing when <paramref name="ownDrawn"/>; else Nothing, and the node
+    ''' noted by the shape's rest trace (NodeRestLayer.NoteMounted; Ola 7b ronda 3): <paramref name="trace"/> Untraced - the default, the law
+    ''' before 7b - reports the blocks the layer would move as excluded; Fallout 4's biped notes a skin bone the skeleton does not resolve
+    ''' (<paramref name="unresolvedBone"/>; a skin root is not one) by its own controller.</summary>
+    Friend Shared Function NifOwnDrawnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport,
+                                            Optional trace As RestLawTrace = RestLawTrace.Untraced, Optional unresolvedBone As Boolean = True) As Transform_Class
         If ownDrawn Then Return NodeRestLayer.DrawnGlobalOrNothing(node, nif, report)
-        NodeRestLayer.NoteExcluded(node, nif, report)
+#If DEBUG Then
+        ' ParityGate fo4-attach-law directed mutants, Fallout 4's biped: the bone not noted at all / the whole chain noted (the law before 7b)
+        If trace = RestLawTrace.Biped AndAlso unresolvedBone Then
+            If Fo4GBufferConstants.GateMutantOn("ga-reparented-off") Then Return Nothing
+            If Fo4GBufferConstants.GateMutantOn("ga-chain-annotated") Then NodeRestLayer.GateNoteChain(node, nif, report) : Return Nothing
+        End If
+#End If
+        NodeRestLayer.NoteMounted(node, nif, report, trace, unresolvedBone)
         Return Nothing
     End Function
 
     ''' <summary>NifOwnDrawnWorld, or the file's world (Transform_Class.GetGlobalTransform) when it gives Nothing.</summary>
-    Friend Shared Function NifOwnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport) As Transform_Class
-        Return If(NifOwnDrawnWorld(node, nif, ownDrawn, report), Transform_Class.GetGlobalTransform(node, nif))
+    Friend Shared Function NifOwnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport,
+                                       Optional trace As RestLawTrace = RestLawTrace.Untraced, Optional unresolvedBone As Boolean = True) As Transform_Class
+        Return If(NifOwnDrawnWorld(node, nif, ownDrawn, report, trace, unresolvedBone), Transform_Class.GetGlobalTransform(node, nif))
     End Function
 
     ''' <summary>Matrix4d -> Matrix4. Se usa al GUARDAR en <c>PerVertexSkinMatrix</c>: el blend sigue
@@ -2248,14 +2278,17 @@ Public Class SkinningHelper
                 geo.BoneMatsBind(k) = matBind
                 geo.BoneMatsPose(k) = matPose
                 If IsNothing(SkeletonBone) Then
-                    Dim drawnT = NifOwnDrawnWorld(bones(k), shape.NifContent, ownDrawn, layerRep)
+                    Dim drawnT = NifOwnDrawnWorld(bones(k), shape.NifContent, ownDrawn, layerRep, geo.RestTrace)
                     If drawnT IsNot Nothing Then
                         If matsDrawn Is Nothing Then matsDrawn = CType(geo.BoneMatsPose.Clone(), Matrix4d())
                         poseT = drawnT
                     End If
                 Else
-                    NodeRestLayer.NoteExcluded(bones(k), shape.NifContent, layerRep)
+                    NodeRestLayer.NoteMounted(bones(k), shape.NifContent, layerRep, geo.RestTrace, unresolvedBone:=False)
                 End If
+#If DEBUG Then
+                If Fo4GBufferConstants.GateMutantOn("ga-f1-annotated") AndAlso Not IsNothing(SkeletonBone) Then NodeRestLayer.GateNoteChain(bones(k), shape.NifContent, layerRep)
+#End If
                 If matsDrawn IsNot Nothing Then matsDrawn(k) = poseT.ComposeTransforms(localT).ToMatrix4d()
                 If geo.BoneWorldPose Is Nothing OrElse geo.BoneWorldPose.Length <> bones.Count Then ReDim geo.BoneWorldPose(bones.Count - 1)
                 geo.BoneWorldPose(k) = poseT
@@ -2267,7 +2300,7 @@ Public Class SkinningHelper
             ' La paleta se arma DESPUES del loop y con BuildPosePalette, no inline: es la misma
             ' fórmula que usan Extract y la recomposición perezosa, y tiene que salir del mismo sitio.
             ' Cuesta una segunda pasada sobre ≤60 huesos.
-            geo.SkinRootPose = SkinRootWorld(shape, effectiveSkel, globalCache, singleboneskinning, ownDrawn, layerRep)
+            geo.SkinRootPose = SkinRootWorld(shape, effectiveSkel, globalCache, singleboneskinning, ownDrawn, layerRep, geo.RestTrace)
             geo.RestLayer = NodeRestLayer.Summary(layerRep)
             precomputedBoneMatrices = BuildPosePalette(If(geo.BoneMatsDrawn, geo.BoneMatsPose), GlobalTransform)
             For k = 0 To bones.Count - 1
@@ -2321,9 +2354,12 @@ Public Class SkinningHelper
                 Dim bindT As Transform_Class
                 If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
                     bindT = CachedBindMount(SkeletonBone, globalCache)
-                    NodeRestLayer.NoteExcluded(bones(0), shape.NifContent, layerRep)
+                    NodeRestLayer.NoteMounted(bones(0), shape.NifContent, layerRep, geo.RestTrace, unresolvedBone:=False)
+#If DEBUG Then
+                    If Fo4GBufferConstants.GateMutantOn("ga-f1-annotated") Then NodeRestLayer.GateNoteChain(bones(0), shape.NifContent, layerRep)
+#End If
                 Else
-                    bindT = NifOwnWorld(bones(0), shape.NifContent, ownDrawn, layerRep)
+                    bindT = NifOwnWorld(bones(0), shape.NifContent, ownDrawn, layerRep, geo.RestTrace)
                 End If
                 Mtot = GlobalTransform * bindT.ComposeTransforms(localT).ToMatrix4d()
             ElseIf shape.IsSkinned Then

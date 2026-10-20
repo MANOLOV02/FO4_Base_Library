@@ -47,6 +47,27 @@ Public Module NifSceneVisibility
         Public ReadOnly BoundCullShown As String
         ''' <summary>Rev-18: when a node of radius 0 cuts it (pto 14), which branch of the law did (the sweep reads it); None otherwise.</summary>
         Friend ReadOnly NodeCause As NodeCullCause
+        ''' <summary>Ola 7b: why the biped's skinned attach leaves it out of the actor (GameAttachLaw.OutsideSkinnedAttach), as a
+        ''' COMPOSITE view's notice says it; Nothing = the attach keeps it.</summary>
+        Public ReadOnly OutsideAttachReason As String
+        ''' <summary>The same reason as a PIECE view's notice says it (drawn for editing). Nothing exactly when OutsideAttachReason is.</summary>
+        Public ReadOnly OutsideAttachShown As String
+        ''' <summary>The game does not draw it: its culling (BoundCullReason) or the biped's attach (OutsideAttachReason). The one test the
+        ''' draw gate, the occluder gate and the cull registration read.</summary>
+        Public ReadOnly Property GameSkips As Boolean
+            Get
+                Return BoundCullReason IsNot Nothing OrElse OutsideAttachReason IsNot Nothing
+            End Get
+        End Property
+        ''' <summary>Ola 7b: <paramref name="s"/> with the attach reason.</summary>
+        Friend Sub New(s As LoadState, outsideAttachReason As String, outsideAttachShown As String)
+            Me.HiddenByAncestor = s.HiddenByAncestor
+            Me.BoundCullReason = s.BoundCullReason
+            Me.BoundCullShown = s.BoundCullShown
+            Me.NodeCause = s.NodeCause
+            Me.OutsideAttachReason = outsideAttachReason
+            Me.OutsideAttachShown = outsideAttachShown
+        End Sub
         Public Sub New(hiddenByAncestor As Boolean, boundCullReason As String, boundCullShown As String)
             Me.HiddenByAncestor = hiddenByAncestor
             Me.BoundCullReason = boundCullReason
@@ -183,7 +204,22 @@ Public Module NifSceneVisibility
 
     Public Function Evaluate(shape As IRenderableShape) As LoadState
         If shape Is Nothing Then Return Nothing
-        Return Evaluate(shape.NifContent, shape.NifShape)
+        Return WithGameAttach(Evaluate(shape.NifContent, shape.NifShape), OutsideAttachOf(shape))
+    End Function
+
+    ''' <summary>Ola 7b: the biped's skinned attach leaves <paramref name="shape"/> out of the actor (GameAttachLaw.OutsideSkinnedAttach,
+    ''' which the host's declared path decides, IRenderableShape.GameAttach) - the law's one caller. It reads only what a load fixes (the
+    ''' NIF's tree and skin instances, the declared path): a mesh evaluates it once, when it is built (RenderableMesh), and each frame reads
+    ''' that value (p7b-01).</summary>
+    Friend Function OutsideAttachOf(shape As IRenderableShape) As Boolean
+        Return GameAttachLaw.OutsideSkinnedAttach(shape)
+    End Function
+
+    ''' <summary>Ola 7b: <paramref name="state"/> plus the biped's skinned attach (<paramref name="outsideAttach"/>, OutsideAttachOf). The
+    ''' NIF-only Evaluate overloads do not know the path and leave it out. LoadState is a structure: nothing is allocated.</summary>
+    Friend Function WithGameAttach(state As LoadState, outsideAttach As Boolean) As LoadState
+        If Not outsideAttach Then Return state
+        Return New LoadState(state, GameAttachLaw.OutsideAttachNotice, GameAttachLaw.OutsideAttachShownNotice)
     End Function
 
     Public Function Evaluate(nif As Nifcontent_Class_Manolo, shape As INiShape) As LoadState
