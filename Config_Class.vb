@@ -644,9 +644,22 @@ Public Class Config_App
                 Current.Settings_RenderGrid = Default_RenderGrid_Settings()
                 hayQueGrabar = True
             End If
-            ' El rig y las sombras del preview NO tienen rama aca a proposito: se invalidan por RENOMBRE de
-            ' la clave, asi que no hay dato viejo que detectar ni que grabar. Ver el bloque de
-            ' `Setting_LightRig_*`.
+            ' Un cambio de SIGNIFICADO del rig y de las sombras del preview no tiene rama aca: se invalida por RENOMBRE de la
+            ' clave (ver el bloque de `Setting_LightRig_*`). Lo que si tiene rama es un cambio de RANGO con el mismo significado,
+            ' que no tira el rig del usuario: la blandura de la sombra (decision del usuario 21-oct-2026, «ya no se puede poner
+            ' valor menor que dos y si estaba guardado lo lleva a 2»). La regla es PURA y vive en
+            ' PreviewLightRig.WithShadowSoftnessInRange; aca se aplica a los dos rigs, se registra en el log y se graba UNA vez.
+            For Each esSse In {False, True}
+                Dim guardado = If(esSse, Current.Setting_LightRig_SSE, Current.Setting_LightRig_FO4)
+                Dim enRango = PreviewLightRig.WithShadowSoftnessInRange(guardado, esSse)
+                If enRango.ShadowSoftnessTexels <> guardado.ShadowSoftnessTexels Then
+                    Dim juego = If(esSse, "Skyrim SE", "Fallout 4")
+                    Dim antes = guardado.ShadowSoftnessTexels, despues = enRango.ShadowSoftnessTexels
+                    Logger.LogLazy(Function() $"[CFG] {juego} light rig: Softness {antes.ToString(Globalization.CultureInfo.InvariantCulture)} -> {despues.ToString(Globalization.CultureInfo.InvariantCulture)}, brought into its game's range (PreviewLightRig.WithShadowSoftnessInRange); the config is saved.")
+                    If esSse Then Current.Setting_LightRig_SSE = enRango Else Current.Setting_LightRig_FO4 = enRango
+                    hayQueGrabar = True
+                End If
+            Next
             ' MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
             ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0, o sea
             ' que la estrenaria APAGADA sin haberlo pedido. Si el archivo declara una version anterior,

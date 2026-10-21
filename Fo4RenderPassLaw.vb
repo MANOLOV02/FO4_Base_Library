@@ -241,7 +241,8 @@ Friend Module Fo4RenderPassLaw
         Return (test, MainPassAlphaThreshold(ref))
     End Function
 
-    ''' <summary>THE alpha test of a FO4 shape's shadow-map pass (Render.RenderDepthOnly; Shader_Class SHADOW SYNC CONTRACT): a
+    ''' <summary>THE alpha test of a FO4 shape's shadow-map pass (RenderableMesh.RenderShadowMapFo4: its utility technique's bit 7 and
+    ''' AlphaTestRef, ola 4): a
     ''' lighting shape (the only family that has one, ShadowMapCasts). BSLightingShaderProperty slot 44 0x14217B8F0 sets the
     ''' BSUtilityShader technique bit 7 only with the NiAlphaProperty test bit 9 (0x14217BB32..B4A), and BSUtilityShader
     ''' SetupGeometry writes ShadowMapAlphaThreshold. Gates: `fo4-pass-law` (values), `fo4-alpha-wiring` (call site).</summary>
@@ -256,8 +257,11 @@ Friend Module Fo4RenderPassLaw
     ''' preview has no fade: s.Alpha is the alpha it draws), when its flags carry 0xC008004 (F4SF1 2 Temp_Refraction, 15
     ''' Refraction, 26 / 27 decal; 0x14217B975..97F) or when its NiAlphaProperty blends (+0x28 bit 0, 0x14217B981..98A).
     ''' After those it needs Cast_Shadows (flags bit 9, 0x14217B996..99B): the caster filter reads it as
-    ''' FO4UnifiedMaterial_Class.CastShadows (its one owner), not here. Hole, declared: the LOD_Objects branch (flags bit 34 in
-    ''' mode 0x10, 0x14217B98C..9A5) - mode 0x10 is not a pass the preview draws. Gate: `fo4-pass-law`.</summary>
+    ''' FO4UnifiedMaterial_Class.CastShadows (its one owner), not here. Hole, declared (traced, OPEN: inventory C6): without
+    ''' Cast_Shadows the pass is still built when the flags carry bit 34 (LOD_Objects) and the mode is 0x10 (0x14217B98C..9A5: bt 9,
+    ''' test 0x400000000, cmp ebp 0x10) - the mode of the directional shadow map the preview draws since ola 4
+    ''' (Fo4UtilityTechnique.ShadowMapTechnique); the caster filter (PreviewModel.RenderShadowPass) requires CastShadows, so a
+    ''' LOD_Objects shape without Cast_Shadows casts in the game and not in the preview. Gate: `fo4-pass-law`.</summary>
     Friend Function ShadowMapCasts(s As Fo4ShapeInputs) As Boolean
         If s.IsEffect Then Return False
         If Not (s.Alpha >= 1.0F) Then Return False

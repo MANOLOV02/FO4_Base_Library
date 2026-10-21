@@ -1,5 +1,5 @@
 ﻿''' <summary>THE APP'S SKINNED-NORMAL LAW in GLSL - ONE text for the three vertex stages that skin (the transcribed engine VS,
-''' Vertex_FO4, Vertex_SSE; user decisions D2 and revisor-22, 12-oct-2026). It is the line-by-line transcription of the VB law
+''' Fallout 4's edit views (Shader_Class_Fo4EditView), Vertex_SSE; user decisions D2 and revisor-22, 12-oct-2026). It is the line-by-line transcription of the VB law
 ''' FastSkin.UnVertice / EsDegenerada / Rotar (FastSkin.vb:139-188, 256-293, 519-538): cofactors / determinant, identity when
 ''' degenerate (three guards, EpsDetRel), zero-length vector kept. ASCII, no double quotes (a VB Const String).</summary>
 Friend Module AppSkinLaw

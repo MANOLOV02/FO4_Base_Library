@@ -79,8 +79,13 @@ End Class
 ''' Sunlight (225, 225, 225).</para>
 ''' <para>DLightColor (cb of the BSEffect PS, the LIGHTING technique's directional term) =
 ''' powf(sun colour, 2.2) * sun dimmer * ImageSpace SunlightScale (0x1422265DA..643, light+0x17C..0x184, +0x144,
-''' ISM+0x98); the sun colour of an effect is the weather's Effect Lighting. Hole, declared: the dimmer
-''' (light+0x144) is not traced -> 1.</para>
+''' ISM+0x98); the sun colour of an effect is the weather's Effect Lighting. The sun dimmer (NiLight+0x144) is 1.0, the value the app
+''' takes (RE 21-oct-2026): the world's sun is Sky+0x38 (ShadowSceneNode::SetSunLight 0x1421BB7C0, called with [Sky+0x38] at
+''' 0x140C37A60..A92), created by the sky's init with +0x144 = 1.0 (0x1406C6B61; the NiLight ctor also writes 1.0, 0x1416D9B4C); the
+''' sky's per-frame update (0x1406C6ED0) writes +0x120 / +0x12C / +0x138 / +0x17C and not +0x144, and none of the 103 direct writers of
+''' [reg + 0x144] (93 functions) touches the sun. The deferred sun reads the same field (pow(NiLight+0x12C..0x134, 2.2) x NiLight+0x144,
+''' 0x1422475CD..635). Minor hole, declared: the 1,095 wide (qword / xmmword) writes that cover +0x144 are not classified by class (a
+''' live read of [[[0x143E5DF60]+0x1F8]+0xB8]+0x144 would close it).</para>
 ''' <para>The sun's light (the directional the lit shaders receive) = powf(Sunlight, 2.2) * fade * SunlightScale
 ''' (0x14223C47F; Tools/re-docs/DISENO_CLIMA_Y_HORA_PREVIEW_2026-10-01.md 2.4): the same image-space factor as
 ''' DLightColor.</para></summary>

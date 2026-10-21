@@ -183,9 +183,38 @@ Public Structure PreviewLightRig
     ' efectivamente dejo de coincidir con el preset. Ver Coincide.
 
     ''' <summary>Radio del kernel de PCF en TEXELES del mapa. Fraccionario: la parte entera son los taps y
-    ''' el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo. Acotado a
-    ''' <c>PreviewShadowSettings.MaxPcfRadius</c> al subirlo.</summary>
+    ''' el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo. Siempre en el rango de su juego
+    ''' (<see cref="WithShadowSoftnessInRange"/>): lo garantiza quien lo escribe, no quien lo lee.</summary>
     Public Property ShadowSoftnessTexels As Single
+
+    ''' <summary>The lowest Softness a game's preview draws (user decision 21-oct-2026). Fallout 4: the default rig's value (2.0 texels,
+    ''' Fo4DeferredLightLaw.DefaultRigSoftness), the one that maps to the game's own filter (16 Poisson taps within +-3 texels,
+    ''' rev-E08): the preview's shadow is only ever softer than the game's, never harder - on its engine receiver and on the ground
+    ''' catcher, which take the same knob. Skyrim SE: 0 - there the knob drives the preview's PCF receiver, an app receiver with no
+    ''' game filter to match.</summary>
+    Public Shared Function ShadowSoftnessFloor(isSse As Boolean) As Single
+        Return If(isSse, 0.0F, Fo4DeferredLightLaw.DefaultRigSoftness)
+    End Function
+
+    ''' <summary>THE RIG WITH ITS SOFTNESS IN ITS GAME'S RANGE, [ShadowSoftnessFloor, PreviewShadowSettings.MaxPcfRadius]: Fallout 4
+    ''' [2, 4], Skyrim SE [0, 4] (no floor). User decision 21-oct-2026, verbatim: "ya no se puede poner valor menor que dos y si
+    ''' estaba guardado lo lleva a 2. No parche". The range is kept where a value ENTERS the rig, never where it is read: the knob
+    ''' cannot leave it (LightRigForm: Minimum / Maximum from this range), every preset is in it (2.0), and a rig saved outside it
+    ''' (before the floor existed, or edited by hand) is brought into it ONCE, at the config's load (Config_App.LoadConfig, which
+    ''' logs it and saves the file) - so the stored value IS the value every receiver draws (PreviewModel.RenderShadowPass,
+    ''' Fo4DeferredLightLaw.RigShadowRadiusScale) and the preset combo matches it as it is. Pure: a gate tests it without the user's
+    ''' config.</summary>
+    Public Shared Function WithShadowSoftnessInRange(rig As PreviewLightRig, isSse As Boolean) As PreviewLightRig
+#If DEBUG Then
+        ' Ola 7f tester round 2 (ParityGate softness-floor, ShadowGate --ola7f e5 / e9): the rule without the floor (a saved 0.5 stays).
+        If Fo4GBufferConstants.GateMutantOn("softness-no-floor") Then
+            rig.ShadowSoftnessTexels = Math.Clamp(rig.ShadowSoftnessTexels, 0.0F, CSng(PreviewShadowSettings.MaxPcfRadius))
+            Return rig
+        End If
+#End If
+        rig.ShadowSoftnessTexels = Math.Clamp(rig.ShadowSoftnessTexels, ShadowSoftnessFloor(isSse), CSng(PreviewShadowSettings.MaxPcfRadius))
+        Return rig
+    End Function
 
     ''' <summary>Cuanto oscurece la sombra: <c>factor = 1 - Darkness*(1-crudo)</c>, acotado a [0,1] al
     ''' subirlo. 1 = la luz ocluida se apaga del todo, que es lo que hace el motor. Menos de 1 NO es fiel;

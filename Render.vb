@@ -300,7 +300,9 @@ End Class
 Public Class PreviewControl
     Inherits OpenTK.GLControl.GLControl
     Private overlay As TextOverlayRenderer
-    Public SharedActiveShader As Shader_Class_Fo4
+    ''' <summary>Fallout 4's edit views (Shader_Class_Fo4EditView, ola 7f): the wireframe and the shader debug views - the game's shapes
+    ''' are drawn by its transcribed programs (SharedFo4Deferred).</summary>
+    Public SharedFo4EditViewShader As Shader_Class_Fo4EditView
     Public SharedSSEShader As Shader_Class_SSE
     Public SharedFloorShader As Floor_Shader_Class
     ''' <summary>Programa del quad de fondo (fade radial). Ver <see cref="PaintBackground"/>.</summary>
@@ -326,10 +328,9 @@ Public Class PreviewControl
     ''' bindeado aunque el shader no lea ningun atributo (los vertices salen de <c>gl_VertexID</c>), asi
     ''' que existe solo para satisfacer esa regla: no tiene VBO ni buffers colgando.</summary>
     Private _bgVao As Integer = 0
-    ''' <summary>Programas del pase de profundidad del shadow map. Son el VS de cada juego (el MISMO que
-    ''' usa el pase iluminado, sin copia del skinning) + el fragment de alpha-test de
-    ''' <see cref="ShadowDepthShaderSource"/>. Ver Shadow_Depth_Shader_Fo4.</summary>
-    Public SharedShadowFO4Shader As Shadow_Depth_Shader_Fo4
+    ''' <summary>El programa del pase de profundidad del shadow map de Skyrim SE: Vertex_SSE (el MISMO que usa el pase iluminado,
+    ''' sin copia del skinning) + el fragment de alpha-test de <see cref="ShadowDepthShaderSource"/>. Fallout 4 dibuja sus mapas
+    ''' con la tecnica utilitaria del motor (RenderableMesh.RenderShadowMapFo4, ola 4).</summary>
     Public SharedShadowSSEShader As Shadow_Depth_Shader_SSE
     ''' <summary>Programa del receptor de sombra del suelo. Ver GroundShadowShaderSource.</summary>
     Public SharedGroundShadowShader As Ground_Shadow_Shader_Class
@@ -388,20 +389,13 @@ Public Class PreviewControl
     End Class
 
     Public Event ColorPicked As EventHandler(Of ColorPickedEventArgs)
+    ''' <summary>The frame's own program, chosen by the active game: Skyrim SE's game shader (Shader_Class_SSE), or Fallout 4's edit
+    ''' views (Shader_Class_Fo4EditView: the wireframe and the debug views; the game's shapes draw with SharedFo4Deferred). The
+    ''' chosen program IS the source of truth of which game is drawn (PreviewModel.FrameIsSse).</summary>
     Public ReadOnly Property CurrentShader As Shader_Base_Class
         Get
             If Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso SharedSSEShader IsNot Nothing Then Return SharedSSEShader
-            Return SharedActiveShader
-        End Get
-    End Property
-
-    ''' <summary>El programa de profundidad del juego activo. Mismo eje que <see cref="CurrentShader"/>:
-    ''' el shader elegido ES la fuente de verdad de que juego se esta dibujando, y los dos pases tienen
-    ''' que coincidir o el pase de sombra correria un VS con otra convencion de skinning.</summary>
-    Friend ReadOnly Property CurrentShadowShader As Shader_Base_Class
-        Get
-            If Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso SharedShadowSSEShader IsNot Nothing Then Return SharedShadowSSEShader
-            Return SharedShadowFO4Shader
+            Return SharedFo4EditViewShader
         End Get
     End Property
     ''' <summary>Playback mode for fast pose ticks: suppresses camera/cursor-style UI churn
@@ -1688,14 +1682,14 @@ Public Class PreviewControl
         TraceBoot("OnLoad: ApplyResize", sw)
         GenerateDefaultTextures()
         TraceBoot("OnLoad: GenerateDefaultTextures", sw)
-        SharedActiveShader = New Shader_Class_Fo4
+        SharedFo4EditViewShader = New Shader_Class_Fo4EditView
         SharedSSEShader = New Shader_Class_SSE
         SharedFloorShader = New Floor_Shader_Class
         SharedBackgroundShader = New Background_Shader_Class
         SharedPostSseShader = New PostProcess_Sse_Shader_Class
         SharedLumPartialsShader = New Luminance_Partials_Shader_Class
         SharedLumResolveShader = New Luminance_Resolve_Shader_Class
-        TraceBoot("OnLoad: forward / floor / background / SSE post programs", sw)
+        TraceBoot("OnLoad: FO4 edit views / SSE / floor / background / SSE post programs", sw)
         ' rev-50 / v4 B-rev-05: a program set that does not compile or link leaves ITS game without a frame (the status card names
         ' the error, FrameUnavailable), never the control - and the other game - dead. The refraction image-space pass runs in both.
         Try
@@ -1727,10 +1721,10 @@ Public Class PreviewControl
         End Try
         TraceBoot($"OnLoad: Fallout 4 programs (Fo4DeferredPrograms; error: {If(Fo4ProgramError, "none")})", sw)
         _bgVao = GL.GenVertexArray()
-        ' Los dos programas de profundidad se compilan SIEMPRE, aunque las sombras esten apagadas: el
-        ' costo es un link por juego al abrir el control, y tenerlos condicionados al setting significaria
-        ' compilar GLSL en medio de un frame la primera vez que alguien prende la opcion.
-        SharedShadowFO4Shader = New Shadow_Depth_Shader_Fo4
+        ' El programa de profundidad de Skyrim SE se compila SIEMPRE, aunque las sombras esten apagadas: el
+        ' costo es un link al abrir el control, y tenerlo condicionado al setting significaria compilar GLSL
+        ' en medio de un frame la primera vez que alguien prende la opcion. Fallout 4 dibuja sus mapas con la
+        ' tecnica utilitaria del motor (Fo4DeferredPrograms.UtilityProgram), que no necesita uno de la app.
         SharedShadowSSEShader = New Shadow_Depth_Shader_SSE
         SharedGroundShadowShader = New Ground_Shadow_Shader_Class
         TraceBoot("OnLoad: shadow depth programs", sw)
@@ -2321,7 +2315,7 @@ Public Class PreviewControl
     Private Function FramePostOn() As Boolean
         If _bgVao = 0 OrElse CurrentShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None OrElse
            Not _Model.FrameImaging.Settings.ApplyPostProcess Then Return False
-        If CurrentShader Is SharedActiveShader Then Return SharedFo4Deferred IsNot Nothing AndAlso SharedFo4PostApp IsNot Nothing
+        If CurrentShader Is SharedFo4EditViewShader Then Return SharedFo4Deferred IsNot Nothing AndAlso SharedFo4PostApp IsNot Nothing
         If CurrentShader Is SharedSSEShader Then Return SharedPostSseShader IsNot Nothing AndAlso SharedLumPartialsShader IsNot Nothing AndAlso SharedLumResolveShader IsNot Nothing
         Return False
     End Function
@@ -2357,7 +2351,7 @@ Public Class PreviewControl
     Private Sub RenderScene()
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         If _Model Is Nothing Then Exit Sub
-        If SharedActiveShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
+        If SharedFo4EditViewShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
         ApplyResize(False)
         Me.EnsureContextCurrent()
         ' rev-E05 / E11: the window's depth unit when the start could not measure it (the window was not drawable yet at OnLoad), at
@@ -3345,9 +3339,9 @@ Public Class PreviewControl
             _Model = Nothing
         End If
 
-        If SharedActiveShader IsNot Nothing Then
-            SharedActiveShader.Dispose()
-            SharedActiveShader = Nothing
+        If SharedFo4EditViewShader IsNot Nothing Then
+            SharedFo4EditViewShader.Dispose()
+            SharedFo4EditViewShader = Nothing
         End If
 
         If SharedSSEShader IsNot Nothing Then
@@ -3409,11 +3403,6 @@ Public Class PreviewControl
         If _saoPointSampler <> 0 Then GL.DeleteSampler(_saoPointSampler) : _saoPointSampler = 0
         If _gateWhite <> 0 Then GL.DeleteTexture(_gateWhite) : _gateWhite = 0
         _samplers?.Dispose() : _samplers = Nothing
-
-        If SharedShadowFO4Shader IsNot Nothing Then
-            SharedShadowFO4Shader.Dispose()
-            SharedShadowFO4Shader = Nothing
-        End If
 
         If SharedShadowSSEShader IsNot Nothing Then
             SharedShadowSSEShader.Dispose()
@@ -3871,6 +3860,20 @@ Public Class PreviewModel
     ''' decal base step, prepass, the overlay layer or Nothing) in call order - the frame's real draw sequence, frustum culling included.
     ''' Nothing = off.</summary>
     Friend Shared GateDrawLog As List(Of (Mesh As RenderableMesh, DecalBase As DecalBaseStep, Prepass As Boolean, Layer As OverlayMaterialLayer)) = Nothing
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ola 7f tester): the colour draws (shapes and overlay layers) a frame without a debug view gave the edit
+    ''' views' program without a wireframe - it has no output for them (Shader_Class_Fo4EditView); ShadowGate prints it after every
+    ''' run ([editview-census]) and a count above 0 turns the run red.</summary>
+    Friend Shared GateEditViewWithoutReason As Integer = 0
+#End If
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate --ola7f e11, ola 7f round 2 tester): probe the frame's filter state around the edit views'
+    ''' prepass t0 (RenderableMesh.ApplyFo4EditViewDepthCut); the binds probed and how many wrote a slot.</summary>
+    Friend Shared GateProbeEditViewFilter As Boolean = False
+    Friend Shared GateEditViewFilterBinds As Integer = 0
+    Friend Shared GateEditViewFilterWrites As Integer = 0
+#End If
 #End If
 
     Public Sub MarkRenderBucketsDirty()
@@ -3926,8 +3929,8 @@ Public Class PreviewModel
         End Get
     End Property
 
-    ''' <summary>The frame is Fallout 4's deferred frame: every FO4 frame except a debug view, which draws the shapes' raw values
-    ''' through Fragment_FO4's debug block (rev-20: no forward lighting exists for a lighting shape).</summary>
+    ''' <summary>The frame is Fallout 4's deferred frame: every FO4 frame except a debug view, which draws the shapes' vectors
+    ''' through the edit-view program (Shader_Class_Fo4EditView; rev-20: no forward lighting exists for a lighting shape).</summary>
     Friend ReadOnly Property FrameUsesFo4Deferred As Boolean
         Get
             Return Not FrameIsSse AndAlso Shader_Base_Class.DebugView = ShaderDebugView.None
@@ -4370,7 +4373,7 @@ Public Class PreviewModel
 
             ''' <summary>The PREVIEW's blend for this material (PreviewAlpha): equal to EngineHasAlphaBlend except for an alpha-0 base
             ''' shape drawn with a forced alpha (C2 L5, both games: 1 in a view that draws for editing; ola 0c pto 19). Read by the drawing
-            ''' (buckets, face mode, bHasAlphaBlend).</summary>
+            ''' (buckets, face mode, ApplyMaterial's blend).</summary>
             Public ReadOnly Property HasAlphaBlend As Boolean
                 Get
                     Return AlphaBlend(engine:=False)
@@ -4858,7 +4861,7 @@ Public Class PreviewModel
             Private Const Fo4BlendSlotHole As String = "Fallout 4 G-buffer blend whose output alpha reads t9 or a texture array (Fo4GBufferBlendOutput): not evaluated on the CPU"
 
             ''' <summary>ONE ALPHA CUT OF A PASS as the engine's pixel shader computes it, in float32: the CPU twin of the compares the draws
-            ''' run (Fragment_FO4 bAlphaTest, the G-buffer records' kill, Fragment_SSE DO_ALPHA_TEST / Hair DEPTH_WRITE_DECALS,
+            ''' run (the G-buffer records' kill, Fragment_SSE DO_ALPHA_TEST / Hair DEPTH_WRITE_DECALS,
             ''' SsePrepassSource.ssePrepassKeeps, the FO4 z-prepass PS 3930). EngineColourCoverage fills it from the pass laws the draws read.
             ''' The value is v = t * MaterialAlpha * vc (the engines' order: `mul` by the material alpha, then `mad` by the vertex alpha),
             ''' t = the diffuse alpha (1 without <see cref="Texture"/>; saturate(1.05 t) with <see cref="TexScale105"/>), vc = the vertex
@@ -5514,6 +5517,21 @@ Public Class PreviewModel
             ''' <summary>How Fallout 4 draws this material (Fo4RenderPassLaw.Classify).</summary>
             Friend Function Fo4Pass() As Fo4RenderPassLaw.Fo4Pass
                 Return Fo4RenderPassLaw.Classify(Fo4Inputs())
+            End Function
+
+            ''' <summary>cb2[0] of this shape's z-prepass alpha-test PS (rec3930): .x the threshold (Fo4Pass().PrepassThreshold,
+            ''' 0x141828F45..F65), .y 0 with a COLOR stream, else 10000 (0x141828F6A..F8D). Its one writer, read by the prepass draw
+            ''' (DrawFo4EnginePrepass) and by the edit views' prepass cut (ApplyFo4EditViewDepthCut).</summary>
+            Friend Function Fo4PrepassPsConstants() As Vector4
+                Dim inp = Fo4Inputs()
+                Return New Vector4(Fo4RenderPassLaw.Classify(inp).PrepassThreshold, If(inp.HasColorStream, 0.0F, 10000.0F), 0.0F, 0.0F)
+            End Function
+
+            ''' <summary>cb2[4] of this shape's z-prepass VS (TexcoordOffset of the rest UV, RestUv): its one writer, read by the prepass
+            ''' draw (DrawFo4EnginePrepass) and by the edit views' prepass cut (ApplyFo4EditViewDepthCut).</summary>
+            Friend Function Fo4PrepassTexcoord() As Vector4
+                Dim uv = RestUv()
+                Return Fo4GBufferConstants.TexcoordOffset(uv.Offset, uv.Scale)
             End Function
 
             ''' <summary>Whether and how this material refracts (RefractionLaw): the material's refraction fields, the
@@ -6420,6 +6438,15 @@ Public Class PreviewModel
             _engineMin = Integer.MaxValue : _engineMax = -1
         End Sub
 
+        ''' <summary>Does this shape's z-prepass alpha-test VAO carry the COLOR stream? Its layout is the engine's of the desc under
+        ''' PrepassAlphaMask (0x141828E34; the VAO EngineVao builds for the prepass), read by Fo4EngineVertexLayout.Elements: VS 3929
+        ''' reads COLOR0.w as its TEXCOORD0.z (rec3929 L48), and without the element the attribute is GL's current generic value
+        ''' (0, 0, 0, 1) - w = 1. The edit views' prepass cut feeds its TEXCOORD0.z the same way (ApplyFo4EditViewDepthCut; ola 7f round
+        ''' 2).</summary>
+        Friend Function PrepassStreamHasColor() As Boolean
+            Return Fo4EngineVertexLayout.Elements(_engineDesc And Fo4EngineVertexLayout.PrepassAlphaMask).Any(Function(e) e.Semantic = Fo4EngineVertexLayout.Sem.Color0)
+        End Function
+
         Friend Function PrepassAlphaTestOfThisShape() As Boolean
             Return Fo4RenderPassLaw.Classify(MeshData.Material.Fo4Inputs()).PrepassAlphaTest     ' the call Render.vb:6179-6181 makes today
         End Function
@@ -6564,8 +6591,7 @@ Public Class PreviewModel
             BindUtilityVertexStage(p, md, cpu, t, rows)
             If (t And Fo4UtilityTechnique.TechAlphaTest) <> 0UI Then
                 p.SetVector4("AlphaTestRef", New Vector4(at.Threshold, 0.0F, 0.0F, 0.0F))
-                Gl43.BindTextureUnit(0, TextureTarget.Texture2D, CInt(md.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, md.DiffuseTexture_ID)))
-                BindMaterialSamplers(md, New List(Of SamplerLaw.SlotSampler) From {SamplerLaw.UtilityDiffuse(md.SamplerInputs(False))})
+                BindUtilityBaseTexture(md)
             End If
             If Fo4UtilityTechnique.CullsBack(flags) Then
                 GL.Enable(EnableCap.CullFace) : GL.CullFace(TriangleFace.Back)
@@ -6612,8 +6638,7 @@ Public Class PreviewModel
             If Fo4GBufferConstants.GateMutantOn("utl-refr-power0") Then p.SetVector4("RefractionPower", New Vector4(0.0F, 0.0F, 0.0F, 0.0F))
             If Fo4GBufferConstants.GateMutantOn("utl-eyepos-world") Then p.SetVector4("EyePos", New Vector4(If(r.Falloff, fr.Eye.Xyz, Vector3.Zero), If(r.UsesLodFade, fade, 1.0F)))
 #End If
-            Gl43.BindTextureUnit(0, TextureTarget.Texture2D, CInt(md.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, md.DiffuseTexture_ID)))
-            BindMaterialSamplers(md, New List(Of SamplerLaw.SlotSampler) From {SamplerLaw.UtilityDiffuse(md.SamplerInputs(False))})
+            BindUtilityBaseTexture(md)
             GL.Disable(EnableCap.Blend)
             GL.Enable(EnableCap.DepthTest)
             GL.DepthFunc(DepthFunction.Lequal)
@@ -6633,11 +6658,69 @@ Public Class PreviewModel
             Return True
         End Function
 
+        ''' <summary>t0 OF A FALLOUT 4 UTILITY DRAW of <paramref name="md"/> - the z-prepass alpha test (DrawFo4EnginePrepass), the shadow
+        ''' map (RenderShadowMapFo4), the refraction normals (RenderRefractionNormalsFo4): the material's base texture [mat + 0x48]
+        ''' (its engine default when the slot is empty or the file absent: EngineDefaultTextureLaw, Diffuse) at unit 0 with the sampler
+        ''' SamplerLaw.UtilityDiffuse (ADDR mat + 0x70, FILT 3). The callers unbind it (UnbindMaterialSamplers).
+        ''' <para><paramref name="unit"/>: unit 0 for the utility draws; the edit views' AppUnit.EditViewPrepassT0 for their prepass cut
+        ''' (ApplyFo4EditViewDepthCut), which passes <paramref name="recordFrameFilter"/> False (BindMaterialSamplers).</para></summary>
+        Private Sub BindUtilityBaseTexture(md As MaterialData, Optional unit As SamplerLaw.AppUnit = SamplerLaw.AppUnit.Diffuse, Optional recordFrameFilter As Boolean = True)
+            Gl43.BindTextureUnit(CInt(unit), TextureTarget.Texture2D, CInt(md.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, md.DiffuseTexture_ID)))
+            Dim sl = SamplerLaw.UtilityDiffuse(md.SamplerInputs(False))
+            sl.Unit = unit
+            BindMaterialSamplers(md, New List(Of SamplerLaw.SlotSampler) From {sl}, recordFrameFilter)
+        End Sub
+
+        ''' <summary>THE CUT OF A SHAPE'S DEPTH IN FALLOUT 4'S FRAME, for the edit views (Shader_Class_Fo4EditView; ola 7f round 2, p7f-03,
+        ''' user decision 21-oct-2026: the debug views cut by transparency with the game's prepass rule, the normal frame's, not with the
+        ''' colour pass's test). A shape the frame's z-prepass draws (PreviewModel.DrawnByPrepass, the membership DrawOpaqueStage draws
+        ''' by, and a frame with its prepass on: not GateDisablePrepass) takes its depth from the prepass - the views' frame runs the
+        ''' same DrawOpaqueStage, and the shape's own draw then tests without writing (ResolveColourDepthState) - so the views keep the
+        ''' prepass's fragments: its alpha test when the entry is the 0x1A one (PrepassAlphaTest), with the prepass's own constants
+        ''' (MaterialData.Fo4PrepassPsConstants, Fo4PrepassTexcoord), its own t0 (BindUtilityBaseTexture, at the views' unit) and its own
+        ''' PS text (Fo4GBufferSource.PrepassAlphaKill, in the views' program). Any other shape keeps its colour pass's test
+        ''' (ApplyMaterial, MaterialData.Fo4ColourPassAlphaTest). The t0 bind does not record the frame's sampler filter state: the
+        ''' views are the app's drawing, not a draw of the engine's frame.</summary>
+        Private Sub ApplyFo4EditViewDepthCut(shader As Shader_Base_Class, material As MaterialData)
+            Dim enPrepass = Not PreviewModel.GateDisablePrepass AndAlso Me.ParentModel.DrawnByPrepass(material)
+#If DEBUG Then
+            ' Ola 7f tester round 2 (ShadowGate --ola7f e10): the views without the prepass's cut (their colour pass's test, round 1).
+            If Fo4GBufferConstants.GateMutantOn("editview-no-prepass-cut") Then enPrepass = False
+#End If
+            Dim conTest = enPrepass AndAlso material.Fo4Pass().PrepassAlphaTest
+            shader.SetBool("bFo4PrepassCut", enPrepass)
+            shader.SetBool("bFo4PrepassAlphaTest", conTest)
+            If Not conTest Then Exit Sub
+            shader.SetVector4("cb2_ps0", material.Fo4PrepassPsConstants())
+            shader.SetVector4("uFo4PrepassTexcoord", material.Fo4PrepassTexcoord())
+            shader.SetBool("bFo4PrepassVertexAlpha", PrepassStreamHasColor())
+#If DEBUG Then
+            ' Ola 7f tester round 2 (ShadowGate --ola7f e10): the real vertex alpha instead of the prepass VAO's (no COLOR0: 1).
+            If Fo4GBufferConstants.GateMutantOn("editview-vertex-alpha") Then shader.SetBool("bFo4PrepassVertexAlpha", True)
+#End If
+#If DEBUG Then
+            ' Ola 7f tester round 2 (ShadowGate --ola7f e11): the probe of the frame's per-slot filter state around the views' t0 - every
+            ' slot set to a sentinel, the bind, then whether any slot was written, and the state put back as it was (the frame unchanged).
+            ' Mutant editview-t0-records-filter: the bind records its filter (recordFrameFilter True).
+            If PreviewModel.GateProbeEditViewFilter Then
+                Dim est = Me.ParentModel.FrameSamplerFilter
+                Dim guardado = CType(est.Clone(), Integer())
+                For i = 0 To est.Length - 1 : est(i) = -7 : Next
+                BindUtilityBaseTexture(material, SamplerLaw.AppUnit.EditViewPrepassT0, recordFrameFilter:=Fo4GBufferConstants.GateMutantOn("editview-t0-records-filter"))
+                If est.Any(Function(x) x <> -7) Then PreviewModel.GateEditViewFilterWrites += 1
+                PreviewModel.GateEditViewFilterBinds += 1
+                Array.Copy(guardado, est, est.Length)
+                Exit Sub
+            End If
+#End If
+            BindUtilityBaseTexture(material, SamplerLaw.AppUnit.EditViewPrepassT0, recordFrameFilter:=False)
+        End Sub
+
         ''' <summary>cb2 World of this geometry, the ONE writer of the G-buffer and the prepass: SetupGeometry 0x142205B77..0x142205BF0
         ''' takes the geometry's world NiTransform (r14 + 0x70, 0x1422059AE: NiAVObject world - rotation rows x scale, translation)
         ''' and writes its rows (0x142205C68..0x142205CA9); the prepass writes the same composition (0x141828AEC..B5F). The app's
         ''' world of a rigid shape = its palette's one matrix (SkinningHelper.RecomputeGPUBoneMatrices: ShapeGlobalTransform, what
-        ''' Vertex_FO4 draws it with) x MeshData.Transform.</summary>
+        ''' the edit views' VS draws it with) x MeshData.Transform.</summary>
         Friend Function EngineGeometryWorld() As Vector4()
             Return Fo4GBufferConstants.EngineWorldRows(EngineGeometryModel())
         End Function
@@ -6717,6 +6800,12 @@ Public Class PreviewModel
         ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-gbuffer-scenes (12) mutant. True binds World = the identity (the law before the
         ''' fix of 12-oct-2026: MeshData.Transform alone).</summary>
         Friend Shared GateWorldIdentity As Boolean = False
+
+#If DEBUG Then
+        ''' <summary>DEBUG ONLY (ola 7f tester, ShadowGate --ola7f e3): a GL texture DrawFo4EnginePrepass binds to unit 0 (sampler
+        ''' unbound) right after its program, before its own t0: the prepass's depth must not depend on it. 0 = off.</summary>
+        Friend Shared GatePrepassJunkT0 As Integer = 0
+#End If
 
         ''' <summary>The engine VS's constants of this draw (H6): World, TexcoordOffset, the frame rows, the palette, and the app foot's
         ''' uniforms (mask / weight / zap). World only for a technique without bit 2 (rigid): SetupGeometry skips its block for a
@@ -7445,7 +7534,7 @@ Public Class PreviewModel
             GL.EnableVertexAttribArray(1)
             GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 0, 0)
 
-            ' PRE-SKIN NORMALS (location 11) — a copy of the same array; Vertex_FO4 does not declare it.
+            ' PRE-SKIN NORMALS (location 11) — a copy of the same array; the edit views' VS does not declare it.
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboPreSkinNormal)
             GL.BufferData(BufferTarget.ArrayBuffer, nrmF.Length * 3 * 4, nrmF, BufferUsageHint.DynamicDraw)
             GL.EnableVertexAttribArray(11)
@@ -8110,13 +8199,19 @@ Public Class PreviewModel
         ''' <summary>Binds the engine's sampler of each material texture unit (SamplerLaw) for this draw: the material's clamp or
         ''' the slot's fixed address mode, the slot's filter (an inherited one reads the frame's per-slot state, an explicit one
         ''' writes it), the non-mip form for a single-level texture. <paramref name="soloUnidades"/> limits it to those units (the
-        ''' utility passes: prepass, shadow map, refraction).</summary>
-        Private Sub BindMaterialSamplers(material As MaterialData, slots As List(Of SamplerLaw.SlotSampler))
+        ''' utility passes: prepass, shadow map, refraction). <paramref name="recordFrameFilter"/> False: an explicit filter is used
+        ''' but not written to the frame's per-slot state (the edit views' prepass t0, ApplyFo4EditViewDepthCut: not a draw of the
+        ''' engine's frame, so the filter the later draws inherit stays the frame's).</summary>
+        Private Sub BindMaterialSamplers(material As MaterialData, slots As List(Of SamplerLaw.SlotSampler), Optional recordFrameFilter As Boolean = True)
             Dim cache = Me.ParentModel.ParentControl.Samplers
             Dim estado = Me.ParentModel.FrameSamplerFilter
             For Each sl In slots
                 Dim filt = sl.Filt
-                If filt = SamplerLaw.FiltInherit Then filt = estado(sl.EngineSlot) Else estado(sl.EngineSlot) = filt
+                If filt = SamplerLaw.FiltInherit Then
+                    filt = estado(sl.EngineSlot)
+                ElseIf recordFrameFilter Then
+                    estado(sl.EngineSlot) = filt
+                End If
                 Dim unidad = CInt(sl.Unit)
                 GL.ActiveTexture(TextureUnit.Texture0 + unidad)
                 Dim tex As Integer
@@ -8135,7 +8230,7 @@ Public Class PreviewModel
         End Sub
         Private _samplerUnitsBound As Integer
 
-        ''' <summary>The z-prepass state of a draw (Skyrim SE, SseRenderPassLaw / SsePrepassSource): depth only - the
+        ''' <summary>The z-prepass state of a draw (Skyrim SE only: Fallout 4's is DrawFo4EnginePrepass), SseRenderPassLaw / SsePrepassSource: depth only - the
         ''' colour masked off, no blend, depth test + write - and the prepass alpha test's uniforms. Called after
         ''' ApplyMaterial, which leaves bSsePrepass off for every colour draw.</summary>
         Private Sub ApplySsePrepassState(shader As Shader_Base_Class, material As MaterialData)
@@ -8161,17 +8256,36 @@ Public Class PreviewModel
         ''' <summary>FO4 z-prepass (0x14181FAA0): engine VS 3928 without a PS (rigid, group 0x19) or VS 3929 + PS 3930 (alpha test, 0x1A),
         ''' over the prepass VAO (desc masks 0x141828B77 / 0x141828E34); cb2[0..3] = World (0x141828AEC..B5F, the SAME EngineWorldRows),
         ''' cb2[0].x = the threshold (0x141828F45..F65), cb2[0].y = 0 with a COLOR stream else 10000, cb2[4] = TexcoordOffset; colour off
-        ''' (write mode 0, 0x1421F3A3E). Skinned shapes never get here (mask 0x33480684, RE_FO4_PASS_GROUPS_DEPTH 10.4).</summary>
+        ''' (write mode 0, 0x1421F3A3E). Skinned shapes never get here (mask 0x33480684, RE_FO4_PASS_GROUPS_DEPTH 10.4).
+        ''' <para>THE DRAW'S OWN STATE, no colour program's (ola 7f): the alpha test's t0 is the entry's texture, +0x20 = [[mat + 0x48] +
+        ''' 0x38] with mat = [prop + 0x58] (BSLightingShaderProperty vfunc 0x1C8 0x14217C740, read at 0x1421D4E12..E2B, registered
+        ''' 0x1421D4E83 -&gt; 0x14181F983), bound to PS slot 0 (PSSetShaderResources 0x141828FA3..FBC); its sampler (PSSetSamplers
+        ''' 0x141828FBF..90C) = the state table 0x1438E25F0 built by 0x141856390 - index (address x 5 + filter) x 16 + LOD - at the
+        ''' address of the entry's +0x40 = [mat + 0x70] (0x1421D4E70 -&gt; 0x14181F9B4), filter 3 = anisotropic (the draw's base
+        ''' 0x1438E2770 = 0x1438E25F0 + 3 x 16 entries) and the texture's LOD byte +0x3C: BindUtilityBaseTexture, SamplerLaw.UtilityDiffuse.
+        ''' The prepass VAO takes this shape's element buffer with the zap filter of every draw (EnsureZapIndexBuffer).</para></summary>
         Private Sub DrawFo4EnginePrepass(material As MaterialData, faceMode As Integer)
             Dim inp = material.Fo4Inputs()
             Dim pass = Fo4RenderPassLaw.Classify(inp)
             Dim progs = Me.ParentModel.ParentControl.SharedFo4Deferred
             Dim p = If(pass.PrepassAlphaTest, progs.PrepassAlpha, progs.PrepassRigid)
             p.Use()
+#If DEBUG Then
+            ' Ola 7f tester (ShadowGate --ola7f e3): unit 0 holds a texture of the gate's (and no sampler) when the prepass starts, so
+            ' a draw that does not bind its own t0 reads it.
+            If GatePrepassJunkT0 <> 0 Then Gl43.BindTextureUnit(0, TextureTarget.Texture2D, GatePrepassJunkT0) : GL.BindSampler(0, 0)
+#End If
             Dim w = EngineGeometryWorld()
-            Dim uv = material.RestUv()
-            p.SetVector4Array("cb2", {New Vector4(w(0).X, w(0).Y, w(0).Z, w(0).W), w(1), w(2), w(3), Fo4GBufferConstants.TexcoordOffset(uv.Offset, uv.Scale)})
-            If pass.PrepassAlphaTest Then p.SetVector4("cb2_ps0", New Vector4(pass.PrepassThreshold, If(inp.HasColorStream, 0.0F, 10000.0F), 0.0F, 0.0F))
+            p.SetVector4Array("cb2", {New Vector4(w(0).X, w(0).Y, w(0).Z, w(0).W), w(1), w(2), w(3), material.Fo4PrepassTexcoord()})
+            If pass.PrepassAlphaTest Then
+                p.SetVector4("cb2_ps0", material.Fo4PrepassPsConstants())
+#If DEBUG Then
+                ' Ola 7f tester (ShadowGate --ola7f e3): the prepass without its own t0 - unit 0 keeps whatever the last draw left.
+                If Not Fo4GBufferConstants.GateMutantOn("prepass-no-t0") Then BindUtilityBaseTexture(material)
+#Else
+                BindUtilityBaseTexture(material)
+#End If
+            End If
             Dim fr = Me.ParentModel.FrameEngineRows
             p.SetVector4Array("cb12_viewproj", fr.ViewProj)
             p.SetVector4("cb12_35", fr.Eye)
@@ -8183,8 +8297,10 @@ Public Class PreviewModel
             GL.DepthMask(True)
             ApplyFaceMode(faceMode)
             GL.BindVertexArray(engineVaoPrepass)
+            EnsureZapIndexBuffer()
             GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
             GL.BindVertexArray(0)
+            UnbindMaterialSamplers()
         End Sub
 
         ''' <summary>The base depth draw of a translucent decal (both games, PreviewModel.DrawOpaqueStage; user decisions 5-oct-2026 and
@@ -8472,16 +8588,17 @@ Public Class PreviewModel
             Public Group As Integer
         End Structure
 
-        ''' <summary>The program a draw of <paramref name="md"/> uses: the frame's game shader, in Fallout 4's G-buffer stage a lighting
-        ''' shape's record program (<paramref name="gbuf"/> set), or in Fallout 4's deferred frame an effect's transcribed program
-        ''' (<paramref name="fx"/> set, ola 3; a wireframe keeps the game shader's edit view). Nothing = nothing is drawn: a lighting shape
-        ''' without a G-buffer pass, a technique the engine has no programs for (MissingPrograms / Undrawn), or a preview gap (Gap) - the
-        ''' frame's notice lists the last two (PreviewModel.ReportUndrawnShapes, before the frame draws). The prepass keeps the game shader
-        ''' (its depth-only branch).</summary>
+        ''' <summary>The program a draw of <paramref name="md"/> uses: the frame's own program (PreviewControl.CurrentShader: Skyrim SE's
+        ''' game shader, Fallout 4's edit views), in Fallout 4's G-buffer stage a lighting shape's record program (<paramref name="gbuf"/>
+        ''' set), or in Fallout 4's deferred frame an effect's transcribed program (<paramref name="fx"/> set, ola 3; a wireframe keeps the
+        ''' edit views). Nothing = nothing is drawn: a lighting shape without a G-buffer pass, a technique the engine has no programs for
+        ''' (MissingPrograms / Undrawn), or a preview gap (Gap) - the frame's notice lists the last two (PreviewModel.ReportUndrawnShapes,
+        ''' before the frame draws). Skyrim SE's z-prepass keeps its game shader (its depth-only branch); Fallout 4's never gets here
+        ''' (DrawFo4EnginePrepass).</summary>
         Private Function ColourDrawProgram(md As MaterialData, prepass As Boolean, ByRef gbuf As Fo4GBufferDraw?, ByRef fx As Fo4EffectDraw?) As Shader_Base_Class
             gbuf = Nothing : fx = Nothing
             Dim pm = Me.ParentModel
-            If prepass OrElse md?.MaterialBase Is Nothing Then Return pm.ParentControl.CurrentShader
+            If prepass Then Return pm.ParentControl.CurrentShader
             If md.MaterialBase.IsBGEM() Then
                 If Not pm.FrameUsesFo4Deferred OrElse MeshData.Shape.Wireframe Then Return pm.ParentControl.CurrentShader
                 fx = md.Fo4EffectPass(pm.ParentControl.SharedFo4Deferred)
@@ -8512,6 +8629,12 @@ Public Class PreviewModel
 #If DEBUG Then
             If PreviewModel.GateDrawLog IsNot Nothing Then PreviewModel.GateDrawLog.Add((Me, decalBase, ssePrepass, Nothing))
 #End If
+            ' FALLOUT 4'S Z-PREPASS: the engine's own draw - its program, constants, t0 and state (DrawFo4EnginePrepass) - and no colour
+            ' program's.
+            If ssePrepass AndAlso Not Me.ParentModel.FrameIsSse Then
+                DrawFo4EnginePrepass(MeshData.Material, ResolveDrawFaceMode(MeshData.Material))
+                Exit Sub
+            End If
             '=============================== MATRICES ===============================
             Dim model As Matrix4 = MeshData.Transform
             Dim view As Matrix4 = camera.GetViewMatrix()
@@ -8528,6 +8651,11 @@ Public Class PreviewModel
             Dim gbuf As Fo4GBufferDraw? = Nothing
             Dim fx As Fo4EffectDraw? = Nothing
             Dim shader = ColourDrawProgram(MeshData.Material, ssePrepass, gbuf, fx)
+#If DEBUG Then
+            ' Ola 7f tester (ShadowGate, every run: [editview-census]): a colour draw of a normal frame given the edit views' program.
+            If shader IsNot Nothing AndAlso shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader AndAlso
+               Shader_Base_Class.DebugView = ShaderDebugView.None AndAlso Not MeshData.Shape.Wireframe Then PreviewModel.GateEditViewWithoutReason += 1
+#End If
             If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
             If shader Is Nothing Then Exit Sub
             shader.Use()
@@ -8561,11 +8689,6 @@ Public Class PreviewModel
             Dim faceMode = ResolveDrawFaceMode(MeshData.Material)
             Dim writeDepth As Boolean = ResolveColourDepthState(MeshData.Material).Write
 
-            If ssePrepass AndAlso Not Me.ParentModel.FrameIsSse Then
-                DrawFo4EnginePrepass(MeshData.Material, faceMode)
-                If ssbo_BoneMatrices > 0 Then GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
-                Return
-            End If
             If ssePrepass Then
                 ApplySsePrepassState(shader, MeshData.Material)
                 ApplyFaceMode(faceMode)
@@ -8708,13 +8831,13 @@ Public Class PreviewModel
             Return True
         End Function
 
-        ''' <summary>Dibuja esta malla en el shadow map. Espejo REDUCIDO de <see cref="Render"/>: el MISMO
-        ''' VAO, el MISMO SSBO de huesos y el MISMO vertex shader — lo unico que cambia son las matrices
-        ''' (las de la luz en vez de las de la camara) y el fragment, que solo hace el alpha-test.
+        ''' <summary>Dibuja esta malla en el shadow map de SKYRIM SE (Fallout 4: RenderShadowMapFo4, la tecnica b07 del motor). Espejo
+        ''' REDUCIDO de <see cref="Render"/>: el MISMO VAO, el MISMO SSBO de huesos y el MISMO vertex shader (Vertex_SSE) — lo unico que
+        ''' cambia son las matrices (las de la luz en vez de las de la camara) y el fragment, que solo hace el alpha-test.
         '''
         ''' <para>SOLO LLEGAN FORMAS DE ILUMINACION OPACAS: el filtro de casters (MaterialData.EngineShadowMapCasts) deja
-        ''' afuera los efectos, el blend, el alfa &lt; 1 y la refraccion, como los dos motores (Fo4RenderPassLaw /
-        ''' SseRenderPassLaw.ShadowMapCasts). Por eso este pase no tiene rama de efecto ni camino translucido.</para>
+        ''' afuera los efectos, el blend, el alfa &lt; 1 y la refraccion, como el motor (SseRenderPassLaw.ShadowMapCasts). Por eso
+        ''' este pase no tiene rama de efecto ni camino translucido.</para>
         '''
         ''' <para>QUE UNIFORMS HAY QUE SUBIR Y POR QUE ESOS. El unico dato del vertex shader que el
         ''' fragment de profundidad consume es <c>vColor.a</c>, y en el VS ese canal depende de UNA sola
@@ -8737,71 +8860,38 @@ Public Class PreviewModel
             shadowShader.SetMatrix4("matModel", model)
             shadowShader.SetMatrix4("matModelView", modelView)
 
-            Dim materialBase = MeshData.Material.MaterialBase
-            shadowShader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
+            Dim material = MeshData.Material
+            shadowShader.SetBool("bModelSpace", material.MaterialBase.ModelSpaceNormals)
 
             Dim shape = MeshData.Shape
             shadowShader.SetBool("bApplyZap", shape.ApplyZaps)
             ' bShowMask / bShowWeight / bWireframe / bShowVertexColor NO se suben: no afectan ni
             ' gl_Position ni vColor.a, que es todo lo que este pase mira.
 
-            ' EL RECORTE: un umbral duro (CUTOUT), el del escritor del shadow map de cada juego. NO HAY camino translucido:
-            ' el blend y el alfa < 1 no proyectan en ningun motor (FO4 0x14217B95C..98A, SSE 0x14151B3C3..405) y el filtro
-            ' de casters los deja afuera (MaterialData.EngineShadowMapCasts).
-            Dim doAlphaTest As Boolean = MeshData.Material.HasAlphaTest
-            Dim umbralSombra As Single = 0.5F   ' a shape without a material; both games' branches set it below
-            ' THE SHADOW-MAP WRITER'S TEST AND THRESHOLD, each game's own (SHADOW SYNC CONTRACT). FO4:
-            ' Fo4RenderPassLaw.ShadowPassAlphaTest - the NiAlphaProperty test bit against ShadowMapAlphaThreshold (BSUtilityShader
-            ' 0x142241F41..F64). SSE: SseRenderPassLaw.ShadowAlphaTest (chunk C11) - the NiAlphaProperty test (utility technique
-            ' bit 7, 0x14151B641..65A) against the batch's cb11[0].x (SubgroupThreshold, the exe's float32 law).
-            If Config_App.Current.Game = Config_App.Game_Enum.Fallout4 AndAlso materialBase IsNot Nothing Then
-                Dim atS = Fo4RenderPassLaw.ShadowPassAlphaTest(doAlphaTest, MeshData.Material.EngineAlphaAtRest().Threshold)
-                doAlphaTest = atS.Test
-                umbralSombra = atS.Threshold
-            ElseIf Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso materialBase IsNot Nothing Then
-                Dim atSse = SseRenderPassLaw.ShadowAlphaTest(MeshData.Material.SseInputs())
-                doAlphaTest = atSse.Test
-                umbralSombra = atSse.Threshold
-            End If
-            Dim usaTextura As Boolean = doAlphaTest
-            shadowShader.SetBool("bAlphaTest", doAlphaTest)
-            ' `bShowTexture` ES EL DEL SHAPE, EL MISMO QUE MANDA EL PASE ILUMINADO — NO `usaTextura`: el
-            ' uniform tendria DOS significados distintos en dos programas. Y `doAlphaTest` NO lleva
+            ' EL RECORTE: un umbral duro (CUTOUT), el del escritor del shadow map de Skyrim SE (SHADOW SYNC CONTRACT):
+            ' SseRenderPassLaw.ShadowAlphaTest (chunk C11) - el test del NiAlphaProperty (bit 7 de la tecnica utilitaria,
+            ' 0x14151B641..65A) contra el cb11[0].x del lote (SubgroupThreshold, la ley float32 del exe). NO HAY camino translucido:
+            ' el blend y el alfa < 1 no proyectan (0x14151B3C3..405) y el filtro de casters los deja afuera
+            ' (MaterialData.EngineShadowMapCasts).
+            Dim atSse = SseRenderPassLaw.ShadowAlphaTest(material.SseInputs())
+            shadowShader.SetBool("bAlphaTest", atSse.Test)
+            ' `bShowTexture` ES EL DEL SHAPE, EL MISMO QUE MANDA EL PASE ILUMINADO — NO el test (`atSse.Test`): el
+            ' uniform tendria DOS significados distintos en dos programas. Y el test NO lleva
             ' `AndAlso shape.ShowTexture`: con la textura apagada este pase dejaria de descartar mientras el
             ' iluminado sigue haciendolo (su `bAlphaTest` nunca estuvo gateado por la textura).
             shadowShader.SetBool("bShowTexture", shape.ShowTexture)
-            ' El fragment de profundidad es UNO para los dos juegos y la cantidad que testea difiere: SSE mete el
-            ' escalar Alpha del material DENTRO de la cantidad y FO4 no (chunk C11, DECISIONES 1). El juego lo decide
-            ' ACA, que es el unico lugar que lo sabe.
-            shadowShader.SetBool("bLeySse", Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
-            ' EL GATE DEL ALPHA DE VERTICE ES `UseVertexAlpha` PARA LAS DOS FAMILIAS Y LOS DOS JUEGOS — el
-            ' MISMO que manda el pase iluminado a su vertex shader. La ley tiene DOS pisos:
-            '   · el VS del pase iluminado gatea SIEMPRE con UseVertexAlpha (es el unico que escribe vColor.a);
-            '   · encima, el fragment de FO4 —solo el de FO4— vuelve a gatear con UseVertexColor.
-            ' El predicado neto de FO4 es `UseVertexAlpha AND UseVertexColor`, y como `UseVertexAlpha` YA
-            ' IMPLICA `UseVertexColor` (ver la propiedad), se reduce a UseVertexAlpha. SSE no tiene el segundo
-            ' piso: usa `vColor.a` crudo, gateado solo por el VS.
-            ' Mandar `UseVertexColor` acá —transplantando el gate del fragment de FO4— rompe Tree/TreeAnim
-            ' (UseVertexColor True con UseVertexAlpha False): el iluminado deja vColor.a en 1.0 y la sombra usa
-            ' el alpha real del vertice.
-            ' FO4 lighting: the lit test multiplies the vertex alpha only under the G-buffer's gate (Fo4RenderPassLaw) - the
-            ' same gate here, so the cast silhouette is the drawn one. Hole, declared (H-S3): the FO4 SHADOWMAP PS multiplies
-            ' the vertex alpha by its own variant (b07 t00004083 / t04004083), not transcribed.
-            Dim fo4LitGate = Config_App.Current.Game <> Config_App.Game_Enum.Fallout4 OrElse MeshData.Material.Fo4Pass().GBufferTestVertexAlpha
-            shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso MeshData.Material.UseVertexAlpha AndAlso fo4LitGate)
-            If usaTextura Then
-                shadowShader.SetFloat("alphaThreshold", umbralSombra)
-                ' El escalar Alpha del material: el cutout de SSE lo mete DENTRO de la cantidad (chunk C11, DECISIONES 1); FO4 no lo lee.
-                shadowShader.SetFloat("uMaterialAlpha", If(materialBase Is Nothing, 1.0F, MeshData.Material.PreviewAlpha()))
-                If materialBase IsNot Nothing Then
-                    ' The shadow's UV is the colour pass's (the alpha test samples the same texel): RestUv, C10.
-                    Dim uv = MeshData.Material.RestUv()
-                    shadowShader.SetVector2("uvOffset", uv.Offset)
-                    shadowShader.SetVector2("uvScale", uv.Scale)
-                Else
-                    shadowShader.SetVector2("uvOffset", Vector2.Zero)
-                    shadowShader.SetVector2("uvScale", Vector2.One)
-                End If
+            ' EL GATE DEL ALPHA DE VERTICE ES `UseVertexAlpha`, el MISMO que manda el pase iluminado a su vertex shader (el unico que
+            ' escribe vColor.a); Skyrim SE usa `vColor.a` crudo, gateado solo por el VS. Mandar `UseVertexColor` aca rompe Tree/TreeAnim
+            ' (UseVertexColor True con UseVertexAlpha False): el iluminado deja vColor.a en 1.0 y la sombra usaria el alpha real del vertice.
+            shadowShader.SetBool("bShowVertexAlpha", atSse.Test AndAlso material.UseVertexAlpha)
+            If atSse.Test Then
+                shadowShader.SetFloat("alphaThreshold", atSse.Threshold)
+                ' El escalar Alpha del material: el cutout de Skyrim SE lo mete DENTRO de la cantidad (chunk C11, DECISIONES 1).
+                shadowShader.SetFloat("uMaterialAlpha", material.PreviewAlpha())
+                ' The shadow's UV is the colour pass's (the alpha test samples the same texel): RestUv, C10.
+                Dim uv = material.RestUv()
+                shadowShader.SetVector2("uvOffset", uv.Offset)
+                shadowShader.SetVector2("uvScale", uv.Scale)
                 ' - EL MISMO FALLBACK que el pase iluminado ya
                 ' tiene: sin diffuse va la BLANCA, no el ID 0. Hoy coinciden por casualidad (un sampler2D
                 ' sobre la textura 0, que esta incompleta, devuelve (0,0,0,1), o sea .a = 1 igual que la
@@ -8809,7 +8899,7 @@ Public Class PreviewModel
                 ' en el. Dos pases que llegan al mismo alpha por mecanismos distintos es justo lo que el
                 ' contrato de sincronia prohibe.
                 ' The colour pass's diffuse (EngineDefaultTextureLaw): its alpha is what the alpha test of this pass reads.
-                Dim idDifuso = MeshData.Material.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, MeshData.Material.DiffuseTexture_ID)
+                Dim idDifuso = material.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.Diffuse, material.DiffuseTexture_ID)
                 If idDifuso = 0 Then idDifuso = CUInt(Me.ParentModel.ParentControl.defaultWhiteTex)
                 shadowShader.BindTexture("texDiffuse", idDifuso, TextureUnit.Texture0)
             End If
@@ -8821,12 +8911,9 @@ Public Class PreviewModel
                 GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, ssbo_BoneMatrices)
             End If
 
-            ' The shadow maps are drawn by the utility shader: t0 the material's clamp / aniso (SSE 0x141567010, FO4
-            ' 0x142240F40). Effects never reach this pass (MaterialData.EngineShadowMapCasts).
-            If materialBase IsNot Nothing Then
-                Dim si = MeshData.Material.SamplerInputs(Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
-                BindMaterialSamplers(MeshData.Material, New List(Of SamplerLaw.SlotSampler) From {SamplerLaw.UtilityDiffuse(si)})
-            End If
+            ' The shadow maps are drawn by the utility shader: t0 the material's clamp / aniso (0x141567010). Effects never reach this
+            ' pass (MaterialData.EngineShadowMapCasts).
+            BindMaterialSamplers(material, New List(Of SamplerLaw.SlotSampler) From {SamplerLaw.UtilityDiffuse(material.SamplerInputs(True))})
             GL.BindVertexArray(vao)
             ' Mismo filtro de indices que el pase iluminado: un triangulo zapeado no puede castear.
             EnsureZapIndexBuffer()
@@ -8940,6 +9027,11 @@ Public Class PreviewModel
             ' program is in use; the rest of the game's effect VS (uv, colour, falloff, TBN) is its technique's transcribed b05 VS (ola 3).
             Dim enginePos = Not ssePrepass AndAlso EnginePositions()
             Dim shader = ColourDrawProgram(overlayMat, ssePrepass, gbuf, fx)
+#If DEBUG Then
+            ' Ola 7f tester (ShadowGate, every run: [editview-census]): an overlay layer's colour draw given the edit views' program.
+            If shader IsNot Nothing AndAlso shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader AndAlso
+               Shader_Base_Class.DebugView = ShaderDebugView.None AndAlso Not MeshData.Shape.Wireframe Then PreviewModel.GateEditViewWithoutReason += 1
+#End If
             If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
             If shader Is Nothing Then Exit Sub
             shader.Use()
@@ -9254,8 +9346,8 @@ Public Class PreviewModel
             Dim lightingTextureId = material.LightingTexture_ID
             Dim WrinklesTextureId = material.WrinklesTexture_ID
 
-            ' FO4 = engine-faithful path (Fragment_FO4, always on); Skyrim = Fragment_SSE (its own path).
-            ' The shader instance is the single source of truth for which game we are rendering.
+            ' Skyrim SE = Fragment_SSE (its game shader); Fallout 4 = its transcribed programs (gbuf / fx) or its edit views
+            ' (Shader_Class_Fo4EditView). The shader instance is the single source of truth for which game we are rendering.
             Dim isSSE As Boolean = TypeOf shader Is Shader_Class_SSE
             ' Skyrim SE: what the pass and technique laws read (MaterialData.SseInputs), ONCE per draw, and the lighting technique TYPE
             ' (SseRenderPassLaw.LitTechniqueType, the full selector; -1 for an effect and outside Skyrim SE): Eye (16) the radial
@@ -9611,12 +9703,8 @@ Public Class PreviewModel
             ' SSE ANISO_LIGHTING = technique bit 16 (SLSF2 Anisotropic_Lighting) in ANY technique type: the light's specular
             ' is the shifted-normal lobe 0.7*a1 (PS 0x00010201 rec 4112); the HairTint technique adds the second, tinted lobe
             ' (0x06010203 rec 8996); both times max(L.z, 0) in the PS space (Fragment_SSE directionalLight, uSseLitSpace).
-            ' FO4 hair is Kajiya-Kay through its flow map (Fragment_FO4). Gated isSSE.
+            ' Gated isSSE (Fallout 4's hair is its G-buffer record's).
             If isSSE Then shader.SetBool("bAnisoLighting", materialBase.AnisoLighting)
-            ' Alpha-blend (forward b6) vs opaque (deferred): gates the strong forward material-cube envmap.
-            ' Opaque BGSM (pierce-type chrome gems) render deferred where the engine uses the scene IBL,
-            ' not the material cube -- so the forward *3 over-grays them. (Eye keeps it via its inline path.)
-            shader.SetBool("bHasAlphaBlend", hasAlphaBlend OrElse If(isSSE, sseLitType = &H10, materialBase.IsEngineEye()))
             shader.SetBool("bAlphaTest", hasAlphaTest)
             shader.SetBool("bEnvMask", envmapMaskTextureId <> 0)
             shader.SetBool("bNormalMap", normalTextureId <> 0)
@@ -9635,10 +9723,6 @@ Public Class PreviewModel
             ' subsurface the engine does not apply. Face/body parity: MatchBodySkinSubsurfaceToFace.
             shader.SetBool("bSoftlight", materialBase.SubsurfaceLighting)
             shader.SetBool("bGlowmap", materialBase.Glowmap AndAlso glowTextureId <> 0)
-            ' Hair (FO4 carries Hair=true AND Glowmap=true): the glow slot holds the _f strand FLOW map,
-            ' not a glow. bHair drives the Kajiya-Kay anisotropic specular + hair tint, robust vs the type.
-            shader.SetBool("bHair", materialBase.Hair)
-            shader.SetBool("bHasGlowTex", glowTextureId <> 0)
             ' bLightmask: the _sk subsurface map drives the SSS/rim mask, incl. facegen (engine t12, above).
             ' FACEGEN sin _sk: True igual — arriba quedó bindeado el default NEGRO del engine (SSS=0);
             ' con False el shader caería al fallback softMask=albedo (eso es solo para NO-facegen).
@@ -9725,10 +9809,6 @@ Public Class PreviewModel
                 shader.SetVector3("tintColor", tintVec)
             End If
 
-            ' SkinTint deferred W3C soft-light strength = the skin tone .w (engine material+0xCC). The app
-            ' SkinTintAlpha carries it (default 1.0 = full). Consumed by Fragment_FO4 uEffectiveType==4.
-            shader.SetFloat("skinTintStrength", materialBase.SkinTintAlpha)
-
             ' FaceGen detail map (SSE only): texture-set slot 3 (DisplacementTexture) -> material+0xA8 -> engine
             ' PS t4, el MULTIPLICADOR AMPLIFICADO de la cadena. Ley completa (Shader_Class, DXBC + RE):
             '   albedo = softlight(diffuse(t0), facetint(t3, slot 6)) * ((detail(t4, slot 3) + off) * 255/64)
@@ -9781,9 +9861,6 @@ Public Class PreviewModel
             Dim isBGEM As Boolean = materialBase.IsBGEM
             shader.SetBool("bIsEffectShader", isBGEM)
             shader.SetBool("bDecal", materialBase.Decal)
-            ' T2: 'shaderType' (NifShaderType enum) was dead code in the GLSL. Send the effective type
-            ' (factory priority) instead, consumed by the engine-faithful per-type branch (linear path).
-            shader.SetInt("uEffectiveType", CInt(materialBase.ResolveEffectiveType()))
             If isSSE Then
                 ' Fragment_SSE's effect inputs (Fallout 4's are its transcribed programs' constants, ola 3: ApplyFo4EffectDraw).
                 shader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
@@ -10024,6 +10101,8 @@ Public Class PreviewModel
 
             ' Texture sampling: the engine's sampler of each slot (SamplerLaw, game-aware).
             BindMaterialSamplers(material, SamplerLaw.Slots(material.SamplerInputs(isSSE)))
+            ' Fallout 4's edit views: the cut of each shape's depth in the frame - the z-prepass's for a prepass shape (ola 7f round 2).
+            If shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader Then ApplyFo4EditViewDepthCut(shader, material)
 
             ' FALLOUT 4'S G-BUFFER STAGE: a lighting shape's record state replaces the forward blend / mask above; an effect decal of
             ' the G-buffer lists writes RT 0x1A only (notas G-buffer 6.3: its PS has one output; NT6, the others masked).
@@ -10126,7 +10205,8 @@ Public Class PreviewModel
                 shader.BindTexture("t15", Me.ParentModel.ParentControl.defaultDissolvePatternTex, TextureUnit.Texture15)
             End If
             ' FACE (technique bit 31): t8 = the Face class's +0xC0, texture-set slot 5 raw (0x1421D168A..697), bound by SetupMaterial
-            ' 0x142204EB0..FCC; empty = DefaultTexture_NormalMap (EngineDefaultTextureLaw); absent from the data: not traced (C4 L7).
+            ' 0x142204EB0..FCC; empty or absent from the data = DefaultTexture_NormalMap, the raw ladder (0x1421D168A..697, ola 4b;
+            ' EngineDefaultTextureLaw).
             If (t And Fo4GBufferTechnique.TechFace) <> 0UI Then
                 shader.BindTexture("t8", CInt(material.EngineSlotTextureId(EngineDefaultTextureLaw.MaterialSlot.FaceSlot5, material.WrinklesTexture_ID)), TextureUnit.Texture8)
             End If
@@ -11573,8 +11653,10 @@ Public Class PreviewModel
         ' del dialogo, que hace exactamente esta cuenta.
         If Not cfg.Enabled Then SoltarMapasDeSombra() : Exit Sub
 
-        Dim depthShader = ParentControl.CurrentShadowShader
-        If depthShader Is Nothing Then SoltarMapasDeSombra() : Exit Sub
+        ' Skyrim SE draws its maps with the app's depth program (RenderDepthOnly); Fallout 4 with the engine's emitter
+        ' (RenderDepthIntoFo4, its b07 technique), which takes no program of the app.
+        Dim depthShader As Shader_Base_Class = If(FrameIsSse, ParentControl.SharedShadowSSEShader, Nothing)
+        If FrameIsSse AndAlso depthShader Is Nothing Then SoltarMapasDeSombra() : Exit Sub
 
         ' CASTERS. El gate es CastShadows del material resuelto, que ya es game-aware (bit 9 de SF1 en
         ' FO4 y en SK; y en FO4 el BGSM PISA al NIF, ver 30-fo4-material-vs-nif). Sobre el corpus vanilla
@@ -11641,6 +11723,7 @@ Public Class PreviewModel
         ' PreviewShadowSettings: es parte del set de luces igual que la temperatura o el balance key/fill.
         ' Se copia al frame aca, junto al reparto de capas, porque UploadShadowUniforms corre despues y no
         ' tiene el rig a mano.
+        ' In its game's range at the source (PreviewLightRig.WithShadowSoftnessInRange: the knob, the presets, the config's load).
         _shadowSoftness = rigVivo.ShadowSoftnessTexels
         _shadowDarkness = rigVivo.ShadowDarkness
         _shadowCount = ShadowMapMath.SlotsDeSombra(rigVivo, _shadowSlots)
@@ -11814,7 +11897,7 @@ Public Class PreviewModel
         target.BindForWrite(capa, viewport)
 
         GL.Clear(ClearBufferMask.DepthBufferBit)
-        If FrameUsesFo4Deferred Then
+        If Not FrameIsSse Then
             RenderDepthIntoFo4(fit, casters, filasD3D)
             Exit Sub
         End If
@@ -11964,7 +12047,7 @@ Public Class PreviewModel
 
         ' | LA SUAVIDAD ES CONTINUA: el radio entero es el techo y el SOBRANTE viaja en el espaciado de
         ' los taps, que es lo que hace continuo el desenfoque sin cambiar la cantidad de muestras.
-        Dim soft As Single = Math.Clamp(_shadowSoftness, 0.0F, PreviewShadowSettings.MaxPcfRadius)
+        Dim soft As Single = _shadowSoftness           ' the rig's, in its game's range at the source (PreviewLightRig.WithShadowSoftnessInRange)
         Dim radio As Integer = CInt(Math.Ceiling(soft))
         shader.SetInt("uShadowPcfRadius", radio)
         Dim paso As Single = If(radio > 0, soft / radio, 1.0F)
@@ -12530,11 +12613,14 @@ Public Class PreviewModel
         AbrirCronometroDeProfundidad()
         RenderShadowPass()
         CerrarCronometroDeProfundidad()
-        ' Y los uniforms que el fragment iluminado necesita, una sola vez para todos los draws del frame.
-        UploadShadowUniforms(ParentControl.CurrentShader, _shadowFits, _shadowCount, _shadowSlots, _shadowUvScale,
-                             ParentControl.ShadowTarget, _shadowActive,
-                             TextureUnit.Texture14, PreviewShadowSettings.NormalBiasTexels,
-                             PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
+        ' Y los uniforms que el fragment iluminado de Skyrim SE necesita, una sola vez para todos los draws del frame. Fallout 4's
+        ' lights take the map from the frame (BuildFo4DeferredFrame, Fo4DeferredTargets.RunLights); its edit views light nothing.
+        If FrameIsSse Then
+            UploadShadowUniforms(ParentControl.SharedSSEShader, _shadowFits, _shadowCount, _shadowSlots, _shadowUvScale,
+                                 ParentControl.ShadowTarget, _shadowActive,
+                                 TextureUnit.Texture14, PreviewShadowSettings.NormalBiasTexels,
+                                 PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
+        End If
 
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would
@@ -13002,15 +13088,21 @@ Public Class PreviewModel
             .ShadowRadiusGrowth = Fo4DeferredLightLaw.RigShadowRadiusScale(rig.ShadowSoftnessTexels) - 1.0F}
     End Function
 
+    ''' <summary>THE Z-PREPASS'S MEMBERSHIP: does this frame's z-prepass draw the material <paramref name="md"/> (a shape's or an
+    ''' overlay layer's)? Skyrim SE: SseRenderPassLaw InPrepass; Fallout 4: Fo4RenderPassLaw InPrepass and drawable by the preview
+    ''' (no Fo4PreviewGap). Its readers: DrawOpaqueStage (which draws it, when the frame's prepass is on: not GateDisablePrepass) and
+    ''' Fallout 4's edit views, whose cut of such a shape is the prepass's (RenderableMesh ApplyFo4EditViewDepthCut; ola 7f round 2).</summary>
+    Friend Function DrawnByPrepass(md As RenderableMesh.MaterialData) As Boolean
+        If md?.MaterialBase Is Nothing Then Return False
+        Return If(FrameIsSse, md.SsePass().InPrepass,
+                  md.Fo4Pass().InPrepass AndAlso Not md.Fo4PreviewGap(ParentControl.SharedFo4Deferred))
+    End Function
+
     ''' <summary>The z-prepass and the opaque lists of a frame, in the engine's order (RenderAll). Fallout 4's deferred frame draws
     ''' them inside its G-buffer stage (FrameGBufferStage).</summary>
     Private Sub DrawOpaqueStage(projection As Matrix4, camera As OrbitCamera)
         FrameBillboardEffectDrawn = False
-        Dim enPrepass = Function(md As RenderableMesh.MaterialData) As Boolean
-                            If md?.MaterialBase Is Nothing Then Return False
-                            Return If(FrameIsSse, md.SsePass().InPrepass,
-                                      md.Fo4Pass().InPrepass AndAlso Not md.Fo4PreviewGap(ParentControl.SharedFo4Deferred))
-                        End Function
+        Dim enPrepass = Function(md As RenderableMesh.MaterialData) DrawnByPrepass(md)
         If Not GateDisablePrepass Then
             GL.ColorMask(False, False, False, False)
             For Each mesh In meshes

@@ -881,17 +881,23 @@ Partial Public Class LightRigForm
         Return Config_App.Current.Game = Config_App.Game_Enum.Skyrim
     End Function
 
-    ''' <summary>The tooltips of the shadow controls whose meaning depends on the game (rev-E08, user decision 14-oct-2026): on
-    ''' Fallout 4, Softness and Darkness are the rig's entries over the game's own receiver (Fo4DeferredLightLaw.RigShadowRadiusScale,
-    ''' RigShadowLift; the default rig is the game) and the 16-bit box is fixed; on Skyrim SE they drive the preview's PCF receiver.
-    ''' The ground catcher takes them as texels and darkness on both games.</summary>
+    ''' <summary>The tooltips and the Softness range of the shadow controls whose meaning depends on the game (rev-E08, user decision
+    ''' 14-oct-2026): on Fallout 4, Softness and Darkness are the rig's entries over the game's own receiver
+    ''' (Fo4DeferredLightLaw.RigShadowRadiusScale, RigShadowLift; the default rig is the game), Softness cannot go below the game's
+    ''' value (PreviewLightRig.ShadowSoftnessFloor, user decision 21-oct-2026) and the 16-bit box is fixed; on Skyrim SE they drive the
+    ''' preview's PCF receiver. The ground catcher takes them as texels and darkness on both games. The knob's range is its game's
+    ''' (PreviewLightRig.WithShadowSoftnessInRange: [ShadowSoftnessFloor, PreviewShadowSettings.MaxPcfRadius]); the rig it shows is
+    ''' already in it (the config's load migrates a saved one).</summary>
     Private Sub PonerAyudasDeSombraPorJuego()
+        tShadowSoft.Minimum = PreviewLightRig.ShadowSoftnessFloor(EsSkyrim())
+        tShadowSoft.Maximum = PreviewShadowSettings.MaxPcfRadius
         If EsSkyrim() Then
             ToolTip1.SetToolTip(tShadowSoft, "Shadow softness: the radius of the shadow filter, in shadow-map texels (also on the ground catcher).")
             ToolTip1.SetToolTip(tShadowStrength, "Shadow darkness: 1.0 is a full shadow; lower values let light through (shadow factor = 1 - Darkness x (1 - lit)).")
         Else
             ToolTip1.SetToolTip(tShadowSoft, "Shadow softness: scales the radius of Fallout 4's own shadow filter (16 Poisson samples within 3 texels). " &
-                                "2.0, every preset's value, is the game's filter; 4.0 doubles its radius, 0 samples one point. " &
+                                "2.0, every preset's value and the minimum, is the game's filter: the preview's shadow is never harder than the game's. " &
+                                "4.0 doubles its radius. " &
                                 "On the ground catcher it is the filter radius in texels.")
             ToolTip1.SetToolTip(tShadowStrength, "Shadow darkness: 1.0 is the game's shadow; lower values let light through " &
                                 "(shadow = mix(1, game shadow, Darkness)). Also used by the ground catcher.")

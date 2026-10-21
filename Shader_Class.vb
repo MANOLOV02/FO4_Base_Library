@@ -116,15 +116,6 @@ End Class
 
 Public Class Floor_Shader_Class
     Inherits Shader_Base_Class
-    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
-    ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
-    ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
-    ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
-    ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
-    ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
-    ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
-    ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_Floor As String =
 "#version 430
 " & Gl43.ClipGlsl & "layout(location = 0) in vec3 vertexPosition;
@@ -251,43 +242,37 @@ void main()
     End Sub
 End Class
 
-Public Class Shader_Class_Fo4
+''' <summary>FALLOUT 4'S EDIT VIEWS: the wireframe and the shader debug views (ShaderDebugView), an app program (ola 7f, user decisions
+''' 21-oct-2026: a small vector program without lighting or shadow; the wireframe drawn on top of the frame as before). Every shape the
+''' game draws goes through the game's transcribed programs (G-buffer records, effects, utility, lights, composites, post); this one
+''' draws only what the game has no counterpart for: a shape in wireframe (RenderableMesh.ColourDrawProgram, any frame) and every
+''' shape of a frame with a debug view (PreviewModel.FrameUsesFo4Deferred False). PreviewControl.CurrentShader in Fallout 4.
+''' <para>Its vertex stage is the app's skinning (the Fallout 4 GPU blend in the engine's order and weights, AppSkinLaw after it), so the
+''' geometry it draws is the geometry the edit views always drew. The GLSL is PURE ASCII and has NO double quote (it lives in a VB
+''' Const String); the glsl-ascii gate covers it.</para></summary>
+Public Class Shader_Class_Fo4EditView
     Inherits Shader_Base_Class
-    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
-    ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
-    ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
-    ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
-    ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
-    ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
-    ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
-    ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
-    Friend Const Vertex_FO4 As String = "
+
+    Friend Const Vertex_Fo4EditView As String = "
 #version 430
-" & Gl43.ClipGlsl & "// invariant: the FO4 z-prepass and the G-buffer colour pass are draws of this same VS (their DXBC position code is
-// identical, Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 10.3).
-// The depth one draw writes is tested by another program's draw: gl_Position must come out identical across programs, which GLSL
-// guarantees only for an invariant output (GLSL 4.60 4.8.1). In Fallout 4's deferred frame the G-buffer records (ola 2) and the
-// effects (ola 3, Fo4EffectSource) draw with the engine's own VS; this one draws the FO4 debug views, the wireframes, the
-// refraction normals and the shadow depth.
+" & Gl43.ClipGlsl & "// FALLOUT 4'S EDIT VIEWS (Shader_Class_Fo4EditView): the wireframe and the shader debug views. Not the engine's: the game's shapes are
+// drawn by its transcribed programs.
+// invariant: gl_Position is fixed by its expression and its inputs, whatever else a program computes (GLSL 4.60 4.8.1) - the
+// expression below is the one the edit views always had, so the geometry they draw did not move when this program was cut down.
 invariant gl_Position;
 uniform mat4 matProjection;
 uniform mat4 matView;
-uniform mat4 matModel;
 uniform mat4 matModelView;
 uniform mat3 mv_normalMatrix;
-uniform vec3 color;
-uniform vec3 subColor;
+uniform vec3 color;          // the shape's wire colour (IRenderableShape.Wirecolor)
 
 uniform bool bModelSpace;   // Model Space Normals: needs the object->view matrix in the VS (MSN CPU-skin path)
-uniform bool bShowTexture;
 uniform bool bShowMask;
-uniform bool bShowWeight;
 uniform bool bShowVertexColor;
 uniform bool bShowVertexAlpha;
 uniform bool bApplyZap;
-
-uniform bool bWireframe;
+uniform vec4 uFo4PrepassTexcoord;   // cb2[4] of the shape's z-prepass VS (MaterialData.Fo4PrepassTexcoord): the prepass's cut
+uniform bool bFo4PrepassVertexAlpha; // the prepass VAO carries COLOR0 (RenderableMesh.PrepassStreamHasColor)
 
 layout(location = 0) in vec3 vertexPosition;
 layout(location = 1) in vec3 vertexNormal;
@@ -297,7 +282,6 @@ layout(location = 4) in vec3 vertexColors;
 layout(location = 5) in float vertexAlpha;
 layout(location = 6) in vec2 vertexUV;
 layout(location = 7) in float vertexMask;
-layout(location = 8) in float vertexWeight;
 layout(location = 9) in vec4 boneIndicesF;   // bone palette indices as float (cast to int in shader)
 layout(location = 10) in vec4 boneWeightsIn; // normalized bone weights
 
@@ -309,7 +293,7 @@ uniform int uBoneCount;
 // SYNC: CPU/GPU skinning. The blend here has FIVE twin sites; changing weights,
 // fallback or matrix composition in one of them WITHOUT the others is a silent bug
 // (it compiles, throws nothing, and only the other path renders wrong):
-//   1. The GPU blend: TWO texts, one per game's law - Vertex_FO4 (Fallout 4: the engine's order and weights) and
+//   1. The GPU blend: TWO texts, one per game's law - this VS (Fallout 4: the engine's order and weights) and
 //      Vertex_SSE (Skyrim SE: normalized weights); the normal law they apply after it, AppSkinLaw.Glsl, is ONE text
 //      included by both and by the transcribed engine VS (G-buffer).
 //   2. SkinningHelper.BlendBoneMatrices        (CPU blend, double precision)
@@ -318,53 +302,40 @@ uniform int uBoneCount;
 //   5. Render.UpdateSkinBuffers_GL             (CPU pre-skin path)
 //   + SkinBakeMath / FaceGenBuildPipeline      (the bake: the engine's weights, its own accumulation)
 // Fallout 4 (D21, user decision 12-oct-2026): view and bake use the engine's law (Fo4EngineSkin: w3 = 1 - sat(...); the view
-// blends in its order 1, 0, 2, 3, in Single), always. Skyrim SE / other slot counts: weights normalized at extract (sum=1) for the
-// GPU and at runtime (1/sumW, double) for the CPU.
+// blends in its order 1, 0, 2, 3, in Single), always.
 //   - N goes by the inverse-transpose of the blended 3x3 and T/B by the blended 3x3, in BOTH routes: GPU by AppSkinLaw.Glsl
 //     (this VS, the other game's VS and the transcribed engine VS), CPU by FastSkin.UnVertice / TransformarDirecto - the same law
 //     transcribed (AppSkinLaw summary).
 // Parity test: flip Setting_GPUSkinning on a posed/morphed shape - must look identical.
-// See memory 00-reglas-ui-y-vb.md (section 10) and 00-reglas-comentarios.md.
 
-struct DirectionalLight
+// The rig's light directions (ApplyMaterial, PreviewModel.FrameLights): the TBN error view (DebugMode 4) measures the light
+// each TBN would give along them. Nothing is lit here.
+struct RigLightDirection
 {
-	vec3 diffuse;
 	vec3 direction;
 };
 
-uniform DirectionalLight frontal;
-uniform DirectionalLight directional0;
-uniform DirectionalLight directional1;
-uniform DirectionalLight directional2;
+uniform RigLightDirection frontal;
+uniform RigLightDirection directional0;
+uniform RigLightDirection directional1;
+uniform RigLightDirection directional2;
 
 out vec3 lightFrontal;
 out vec3 lightDirectional0;
 out vec3 lightDirectional1;
 out vec3 lightDirectional2;
 
-out vec3 viewDirRaw;
 out mat3 mv_tbn;
 out mat3 v_msnMatrix;   // MSN: object->view normal matrix (skinning+view), used by the Fragment MSN branch
 
 out float maskFactor;
 flat out int ZappedVert;
-out vec3 weightColor;
 
 out vec4 vColor;
 out vec2 vUV;
-// The G-buffer records' COLOR input (FO4 VS rec2288 L119..122: rgb = exp2(2.2 * log2(c)), a raw), D3D semantics.
-out vec4 vGbufVcol;
-// WORLD-space position of the skinned vertex. Only consumer: the shadow lookup in the fragment.
-// matModel is Identity today (nobody ever writes MeshData.Transform), so this is skinnedPos verbatim
-// -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
-// introduced, which is the same thing hemiAmbient() does with the normal.
-out vec3 vWorldPos;
+out vec3 vFo4PrepassTexcoord;   // the z-prepass VS's TEXCOORD0.xyz (rec3929), for the prepass's cut in the fragment stage
 
-" & AppEditViewsSource.ColorRamp & "
-
-" & D3d11SemanticsSource.Glsl & "
 " & AppSkinLaw.Glsl & "
-" & RefractionSource.Vertex_Glsl & "
 void main(void)
 {
 	// Initialization
@@ -385,9 +356,12 @@ void main(void)
         }
 
    	}
-	weightColor = vec3(1.0, 1.0, 1.0);
 	vColor = vec4(1.0, 1.0, 1.0, 1.0);
 	vUV = vertexUV;
+	// The z-prepass VS's TEXCOORD0 (rec3929 L47-48: mad o1.xy, v1.xyxx, cb2[4].zwzz, cb2[4].xyxx / mov o1.z, v2.w): the UV through the
+	// prepass's cb2[4] and its COLOR0.w, per vertex as the prepass computes them - COLOR0.w is the vertex alpha when the prepass
+	// VAO carries the stream, else GL's current generic attribute, (0, 0, 0, 1) (GL 4.6 10.2; nothing in the app sets it): 1.
+	vFo4PrepassTexcoord = vec3(vertexUV * uFo4PrepassTexcoord.zw + uFo4PrepassTexcoord.xy, bFo4PrepassVertexAlpha ? vertexAlpha : 1.0);
 
 	if (bShowVertexColor)
 	{
@@ -434,8 +408,6 @@ void main(void)
 	    // NORMAL and of nothing else -- applying it to the tangent pushes it out of the tangent plane as
 	    // soon as there is shear, and a blend of two different bone rotations ALWAYS has shear, which means
 	    // every vertex of an elbow, a knee or a shoulder.
-	    // This is the render half of the SkinningHelper.PorMatriz3x3 fix: the bake was corrected first and
-	    // the render kept the old law, which left RENDER==BAKE broken on TWO channels instead of one.
 	    skinnedTangent = normalize(mat3(skinMatrix) * vertexTangent);
 	    skinnedBitangent = normalize(mat3(skinMatrix) * vertexBitangent);
 	    // MSN: object->view normal matrix = (model->view normal) * (object->world skin normal matrix)
@@ -458,7 +430,6 @@ void main(void)
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
 	gl_Position = gl43ClipToGl(matProjection * vec4(vPos, 1.0));
-	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
 	vec3 mv_normal = mv_normalMatrix * skinnedNormal;
@@ -469,444 +440,126 @@ void main(void)
               mv_bitangent.x, mv_bitangent.y, mv_bitangent.z,
               mv_normal.x,    mv_normal.y,    mv_normal.z);
 
-	viewDirRaw = normalize(-vPos);
-	refractVertex(skinnedNormal, vPos);
-
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
 	lightDirectional2 = normalize(mat3(matView) * directional2.direction);
 
-	if (!bShowTexture || bWireframe)
-	{
-		vColor *= clamp(vec4(color, 1.0), 0.0, 1.0);
-	}
-
-	if (!bWireframe)
-	{
-		vColor.rgb *= subColor;
-
-		if (bShowWeight)
-		{
-			weightColor = colorRamp(vertexWeight);
-		}
-	}
-	vGbufVcol = vec4(d3d_exp2(2.2 * d3d_log2(vColor.r)), d3d_exp2(2.2 * d3d_log2(vColor.g)),
-	                 d3d_exp2(2.2 * d3d_log2(vColor.b)), vColor.a);
+	// The wire colour tints the line (rgb); the .w is the literal 1.0, so vColor.a stays the vertex alpha the alpha test reads.
+	vColor *= clamp(vec4(color, 1.0), 0.0, 1.0);
 }
 "
-    Friend Const Fragment_FO4 As String = "
+
+    Friend Shared ReadOnly Fragment_Fo4EditView As String = "
 #version 430
 
-// ##################################################################################################
-// ####  SHADOW SYNC CONTRACT -- RENDER SHADERS MUST SYNCHRONIZE THEIR LOGIC WITH THE SHADOW PASS  ###
-// ##################################################################################################
-//
-//   ANY CHANGE TO THE ALPHA LOGIC IN THIS SHADER MUST BE MIRRORED IN THE SHADOW DEPTH PASS:
-//   ==>  ShadowDepthShaderSource.Fragment_ShadowDepth  (Shader_Class.vb)
-//   And the other way round: that pass points back here. The GLSL alpha logic is written twice and
-//   must stay in step. The THRESHOLD is not GLSL: Render.vb uploads it per pass, each from its own
-//   law -- FO4: Fo4RenderPassLaw.ColourPassAlphaTest for the lit pass, .ShadowPassAlphaTest for the
-//   shadow pass (two exe writers, equal in value for the 256 refs: gate fo4-pass-law); SSE:
-//   SseRenderPassLaw for the lit pass, SseRenderPassLaw.ShadowAlphaTest for the shadow (the batch's cb11[0].x).
-//
-// WHY. The shadow map is drawn by a DIFFERENT program, and that program decides WHICH FRAGMENT
-// EXISTS using the same alpha this shader uses. If the two stop agreeing, the shadow silhouette
-// stops being the silhouette of the object on screen: shadow appears for geometry that was
-// discarded, or is missing for geometry that is drawn. Nothing reports it -- it just looks wrong,
-// and the cause is two files away.
-//
-// THE LIST. Touch any of these here, and go fix Fragment_ShadowDepth in the same commit -- for the
-// LIGHTING shader (.bgsm), the only family the depth pass draws:
-//   * the ALPHA TEST -- which quantity is compared (its threshold is uploaded per pass, see above)
-//   * the VERTEX ALPHA -- and which predicate gates it
-//   * the MATERIAL ALPHA SCALAR -- whether it enters the test or is applied afterwards
-//   * the ZAP discard
-//   * SKINNING -- if a vertex moves, its shadow moves too
-//   * the UV transform (offset / scale) used to sample the diffuse
-// The EFFECT shader (.bgem) is NOT mirrored: neither engine draws an effect into a shadow map (FO4
-// BSEffectShaderProperty slot 44 = 0x142168DA0 xor eax,eax; ret -- SSE slot 0x2B builds a pass only in
-// mode 0xC, 0x14152A0C2), nor a lighting shape that blends, whose alpha is below 1 or that refracts (FO4
-// slot 44 0x14217B95C..98A; SSE slot 0x2B 0x14151B3C3..405), nor a decal (FO4 flags 0xC000000; SSE: a
-// declared hole, kept out as before). The caster filter keeps them out
-// (Fo4RenderPassLaw / SseRenderPassLaw.ShadowMapCasts): the depth pass is a cutout and nothing else.
-//
-// !!!! TWO GAMES, TWO LAWS -- NOT ONE. Fallout 4 and Skyrim SE do NOT agree here, and the depth pass
-// carries BOTH, selected by the bLeySse uniform. Measured, and it caused a real bug when someone
-// assumed there was only one law:
-//   lighting shader (.bgsm) material scalar: SSE multiplies it BEFORE the test, FO4 after.
-// So a change that is correct for one game can be wrong for the other. Check both, always.
-//
-// ALSO: this GLSL lives inside a VB Const String. It must be PURE ASCII, and it must NOT contain a
-// double quote -- a quote closes the VB literal, and escaping it as a pair sends a stray quote to
-// the driver. The glsl-ascii gate in Tools/ParityGate enforces both.
-// ##################################################################################################
-
-/*
- * BodySlide and Outfit Studio
- * Shaders by jonwd7 and ousnius
- * https://github.com/ousnius/3rd party references/BodySlide-and-Outfit-Studio
- * http://www.niftools.org/
- * Modified By Manolo For WardrobeManager
- */
+// FALLOUT 4'S EDIT VIEWS (Shader_Class_Fo4EditView). What it draws, and nothing else:
+//  * a WIREFRAME (bWireframe): the line in the shape's wire colour (or its diffuse with the texture on) times the mask view, with
+//    the shape's WireAlpha; drawn on top of the frame (PreviewModel.RenderDisplayOverlays after the post, or in the display target).
+//  * a SHADER DEBUG VIEW (DebugMode 1..5, ShaderDebugView): the shape's vectors as RGB - no lighting, no shadow. Each shape keeps the
+//    fragments the frame keeps: the hide / zap discards and the cut of its depth in the frame (ola 7f round 2, p7f-03, user
+//    decision 21-oct-2026) - a shape the z-prepass draws (bFo4PrepassCut: Fo4RenderPassLaw InPrepass) takes its depth from the
+//    prepass, so it keeps the prepass's fragments: the prepass's own alpha test (the 0x1A entry, bFo4PrepassAlphaTest), its very
+//    text (Fo4GPre_rec3930, Fo4GBufferSource.PrepassAlphaKill, included below), on the prepass VS's TEXCOORD0 and the prepass's
+//    t0 and constants; any other shape, the alpha test of its colour pass (bAlphaTest / alphaThreshold:
+//    Fo4RenderPassLaw.ColourPassAlphaTest; the lighting shape's tested value tex.a [* vColor.a] under the G-buffer's vertex-alpha
+//    gate, an effect's 1.0) - and the output alpha its blend reads (a lighting shape's material alpha, an effect 1.0).
+// The program has no output for a filled shape without a debug view: ColourDrawProgram never draws one with it.
+// ALSO: this GLSL lives inside a VB String. PURE ASCII, and NO double quote. The glsl-ascii gate in Tools/ParityGate enforces both.
 
 uniform sampler2D texDiffuse;
 uniform sampler2D texNormal;
-uniform samplerCube texCubemap;
-uniform sampler2D texEnvMask;
-uniform sampler2D texGreyscale;
-uniform sampler2D texFaceTintOverlay;   // TETI/TEND composed tint layers, blended on top of diffuse
 
 uniform bool bShowTexture;
-uniform bool bShowMask;
-uniform bool bShowWeight;
 uniform bool bWireframe;
 uniform bool bApplyZap;
-
+uniform bool bHide;
 uniform bool bNormalMap;
 uniform bool bModelSpace;
-uniform bool bCubemap;
-uniform bool bEnvMap;
-uniform bool bEnvMask;
 uniform bool bAlphaTest;
-uniform bool bGreyscaleColor;
-uniform bool bDoubleSided;
-uniform bool bHide;
-uniform bool bHasFaceTintOverlay;       // true when composed face tint texture is bound
-
 uniform bool bIsEffectShader;
-// What this draw adds to the coverage of the HDR target (attachment 1; see SceneTargets): 0 = the draw is not
-// blended and covers its pixel (writes 1), 1 = blended and contributes its own light (writes its alpha;
-// the caller blends attachment 1 with ONE / ONE_MINUS_SRC_ALPHA), 2 = blended with a destination-only factor
-// (multiplicative modes: adds no light of its own, writes 0 and leaves the coverage as it was).
-uniform int uCoverageMode;
-// Post off (Apply post-process unchecked) and not a debug view: this shader applies the 2.3.8 display law
-// itself (see the tail of the lit block). uSceneToLinear = Shader_Base_Class.SceneToLinearExponent.
-uniform bool bLegacyDisplay;
-uniform float uSceneToLinear;
-
-uniform mat4 matModel;
-uniform mat4 matModelViewInverse;
-uniform float DebugMode;
-
-uniform	vec2 uvOffset;
-uniform vec2 uvScale;
-uniform float envReflection;
-uniform float alpha;
-uniform float WireAlpha;
-
-uniform float alphaThreshold;
-// Translucent-decal base depth draw of an effect decal (DecalBaseTarget; RenderableMesh.DecalBaseMode): the fragments its blend
-// leaves unchanged give no base. 0 / 2 keep every fragment that survives the effect's own discards; 1 discards alpha <= 0 (modes
-// 1/2, source SRC_ALPHA); 3 discards all; 4 discards alpha >= 1.
-uniform int uDecalBaseMode;
 // The G-buffer's alpha test multiplies the vertex alpha only with technique bit 0 (F4SF2 Vertex_Colors) and without
 // bits 10 / 6 (Tree_Anim; Tessellate + Dismemberment, Meatcuff, Face + eye data): Fo4RenderPassLaw.
 uniform bool bFo4GBufferTestVertexAlpha;
 
-
-// Engine-faithful FO4 path (Fallout4.exe). This fragment is FO4-only (Skyrim uses Fragment_SSE),
-// so the engine path is unconditional here -- no runtime flag.
-uniform bool bShowVertexColor;  // mesh has authored vertex colors AND the toggle is on (gates the BGEM vertex blend)
-
+uniform float DebugMode;
+uniform vec2 uvOffset;
+uniform vec2 uvScale;
+uniform float alpha;
+uniform float WireAlpha;
+uniform float alphaThreshold;
 
 in vec3 lightFrontal;
 in vec3 lightDirectional0;
 in vec3 lightDirectional1;
 in vec3 lightDirectional2;
 
-in vec3 viewDirRaw;
 in mat3 mv_tbn;
 in mat3 v_msnMatrix;   // MSN: object->view normal matrix from the vertex shader
 
 in float maskFactor;
 flat in int ZappedVert;
-in vec3 weightColor;
 
 in vec4 vColor;
 in vec2 vUV;
 
 layout(location = 0) out vec4 fragColor;
-layout(location = 1) out vec4 coverageOut;
 
-// El engine RENORMALIZA el vector de vista POR PIXEL. Los 18 PS de BSLighting de FO4 (la poblacion
-// COMPLETA del bloque b06 en Shaders011.fxp) abren con
-//     dp3 r0.x, v6.xyzx, v6.xyzx ; rsq r0.x, r0.x ; mul r0.yzw, r0.xxxx, v6.xxyz
-// y de ahi salen el half-vector (`mad r7.yzw, v6.xxyz, r0.xxxx, cb2[0].xxyz`), N.V y la reflexion
-// del cubemap. El VS de la app ya emitia normalize(-vPos), pero la INTERPOLACION lo desnormaliza a
-// lo ancho del triangulo. viewDirRaw = varying crudo; viewDir = unitario, fijado al entrar a main().
-vec3 viewDir = vec3(0.0);
-
-vec3 normal = vec3(0.0);
-
-vec2 uv = vec2(0.0);
-vec3 albedo = vec3(0.0);
-
-vec4 baseMap = vec4(0.0);
-// Equivalente al r1 del motor = el diffuse COMPUESTO (con el overlay de FaceTint ya aplicado) y SIN
-// vColor. `baseMap` NO sirve para eso: es el t0 crudo, antes del overlay. En el motor r1 ES la cabeza
-// ya horneada por la pasada b12 FaceCustom -- la app parte esa textura en diffuse + overlay, asi que
-// el analogo fiel es el compuesto, no la mitad. Usarlo en subsurface y transmision evita que esos dos
-// terminos corran sobre piel SIN TINTAR mientras el resto de la iluminacion usa la tintada.
-//
-// LA LEY, medida sobre los 18 PS del forward (poblacion COMPLETA del bloque b06):
-// **los tres consumidores -- transmision, subsurface y el multiply del albedo -- leen SIEMPRE EL MISMO
-// REGISTRO r1. 18 de 18, sin excepcion.** Eso es lo que obliga a que `diffuseComposed` siga al albedo:
-// congelarlo en el sample (que es lo que hacia) dejaba subsurface y transmision corriendo sobre la
-// textura base mientras el difuso principal usaba la ya procesada.
-// QUE ES r1 depende de la tecnica, y NO siempre esta procesado -- en 11 de los 18 es el sample crudo de
-// t0 y ahi `diffuseComposed = diffRgb` ya era correcto. Los 7 donde importa:
-//   rec1499 (tecnica 4 FACE)      L70-72 : la curva `2a-a*a` escribe r1  -> ANTES de L146 y L285
-//   rec1500 (tecnica 5 SKIN_TINT) L70-73 : la curva `a*a + 2*a*tint*(1-a)` escribe r1 -> ANTES de L147 y L286
-//   los 5 con GRADIENT_REMAP (0x041,0x051,0x141,0x641,0x651): r1 = sample_l del LUT de paleta en t15,
-//     o sea un REEMPLAZO TOTAL, no una curva. En rec1504 (0x641): L68 el sample, L154 la transmision
-//     (`mul r7.yzw, r1.xxzw, cb1[7].yyyy`), L164 el subsurface, L293 el multiply del albedo.
-//     Esos numeros valen para 4 de los 5; 0x141 tiene la misma estructura con otras lineas (71/157/167/311).
-// PRECISION sobre L293: es el multiply del ALBEDO, no la ultima instruccion. En rec1504 la cola real es
-// L296 `mad o0.xyz, r0.xyzx, r1.xzwx, r8.yzwy`, y para entonces r1.xzw ya fue PISADO en L294-295 por
-// `lerp(1, cb1[1].xyz, v7.y)` (el tinte de pelo). O sea el registro se reusa despues; lo que importa aca
-// es el valor que tiene mientras alimenta a los tres consumidores, y ese es el mismo para los tres.
-//
-// NO depende de este inicializador: main() lo asigna INCONDICIONALMENTE junto al albedo (ver la nota de
-// la invariante ahi). El valor de aca es solo para que la global este definida.
-vec4 normalMap = vec4(0.0);
-
-#ifndef M_PI
-	#define M_PI 3.1415926535897932384626433832795
-#endif
-
-#define FLT_EPSILON 1.192092896e-07F // smallest such that 1.0 + FLT_EPSILON != 1.0
-
-
-
-
-
-
-" & LegacyDisplaySource.Tonemap_Glsl & "
-
-vec4 colorLookup(in float x, in float y)
-{
-	return texture(texGreyscale, vec2(clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)));
-}
-
+// THE Z-PREPASS'S CUT (ola 7f round 2, p7f-03): ApplyMaterial, Render ApplyFo4EditViewDepthCut - from Fo4RenderPassLaw.Classify
+// (InPrepass, PrepassAlphaTest), the prepass's PS constants (cb2[0] of rec3930: MaterialData.Fo4PrepassPsConstants, the prepass
+// draw's own writer) and its t0 (the material's base texture with SamplerLaw.UtilityDiffuse, at SamplerLaw.AppUnit.EditViewPrepassT0).
+uniform bool bFo4PrepassCut;
+uniform bool bFo4PrepassAlphaTest;
+uniform vec4 cb2_ps0;
+layout(binding = " & CStr(CInt(SamplerLaw.AppUnit.EditViewPrepassT0)) & ") uniform sampler2D t0;
+in vec3 vFo4PrepassTexcoord;
+// The prepass PS's input TEXCOORD0, set from vFo4PrepassTexcoord before Fo4GPre_rec3930 reads it.
+vec4 gbuf_TEXCOORD0;
+" & D3d11SemanticsSource.Glsl & Fo4GBufferSource.PrepassAlphaKill() & "
 // Tangent-space normal of a two-channel normal-map texel: xy = rg * 2 - 1, z = sqrt(1 - min(x^2 + y^2, 1)). The game clamps
 // before the root in every b05 PS that rebuilds z (202 of 202: `dp2 / min r, r, l(1.0) / add -r, 1 / sqrt`, e.g. rec0828):
-// a texel outside the unit disk gives z = 0, not NaN. ONE owner: the drawn normal and the TBN debug view (gate fo4-effect-ps-law).
+// a texel outside the unit disk gives z = 0, not NaN. The TBN error view decodes the map with it (gate fo4-effect-ps-law).
 vec3 fo4TangentNormal(in vec3 texel)
 {
 	vec2 xy = texel.rg * 2.0 - 1.0;
 	return vec3(xy, sqrt(1.0 - min(dot(xy, xy), 1.0)));
 }
 
-
-
-// 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
-
 void main(void)
 {
-	viewDir = normalize(viewDirRaw);   // engine: rsq(dot(v6,v6)) por pixel, ver la nota del varying
-    uv = vUV * uvScale + uvOffset;
-	vec4 color = vColor;
-	// vColor RGB -> LINEAR (pow 2.2) before the lit-albedo multiply. The FO4 engine ALWAYS gamma-decodes
-	// the vertex color: BGSM does it in the VERTEX shader (forward rec1481 + deferred rec2288, both
-	// L119-121: o = pow(COLOR0,2.2)) and the PS multiplies that linear value; BGEM does it in the PS
-	// (rec1083 base*=pow(vColor,2.2), its VS rec0260 L46 passes vColor raw). NET for both = albedo *
-	// pow(vColor,2.2). The old raw-vColor here (BGSM-crudo) was a misread: the PS not re-powing it
-	// did NOT mean raw, because the VS had already decoded it. Universal (NOT tree-gated -- Tree was
-	// just one BGSM with non-white vColor). RGB only; vColor.a (color.a) stays raw for the alpha-test
-	// (the VS decodes rgb only: o.w = vColor.w). White verts (=1) -> pow=1 -> no change.
-	// El pelo del FORWARD NO lleva vColor: en la tecnica 6 la cola es `mad o0.xyz, r0, r1, spec`
-	// con r1 = lerp(1, HairTintColor, vColor.g) -- el tint OCUPA EL LUGAR del vertex color, no se
-	// suma a el (la tecnica 2, en cambio, cierra con `mad o0.xyz, r0, v7.xyzx, spec`). La app
-	// plegaba vColor aca Y aplicaba el tint mas abajo, o sea los dos. Se excluye el fold en el mismo
-	// caso EXACTO en que se aplica el tint (tipo 5 + alpha-blend), para no dejar al pelo alpha-test
-	// -- que va por el diferido y no lleva el lerp -- sin vColor y sin tint.
-	// INVARIANTE DEL SHADER, no un default: `albedo == vcFold * diffuseComposed` en todo momento.
-	// diffuseComposed es el albedo SIN el vertex color = el analogo del r1 del motor. Los dos se asignan
-	// JUNTOS, aca y dentro de bShowTexture, para que no puedan desincronizarse. Antes diffuseComposed
-	// dependia de un inicializador global y se quedaba en su valor inicial cuando bShowTexture era false.
-	// El diffuse `neutro` es BLANCO, no negro: con la textura apagada el albedo vale vcFold, o sea
-	// diffuseComposed = 1. Eso es exactamente lo que hacia el shader antes de introducir la variable
-	// (el subsurface multiplicaba por `albedo` directamente), asi que la vista sin textura no cambia.
-	// REVERTIDA la exclusion del vColor en el pelo (`(uEffectiveType==5 && bHasAlphaBlend) ? vec3(1.0)`).
-	// La medicion que la motivaba SIGUE SIENDO CIERTA: en la tecnica 6 del forward el PS ni siquiera
-	// recibe el RGB del vertex color (`dcl_input_ps linear v7.yw` en rec1502/1503, `v7.xyw` en
-	// rec1504/1505 -- nunca .z) y el lerp del tint OCUPA su lugar. Pero en ESTA app no compraba nada:
-	//  1) INERTE en la practica. NpcMaterialResolver (:152) fuerza GrayscaleToPaletteColor=True en TODO
-	//     el pelo, asi que corre el bloque de recolor de paleta, que PISA `albedo` entero unas lineas
-	//     mas abajo y descarta este valor. Solo llegaba a importar en pelo SIN paleta, que aca no hay.
-	//  2) TENIA COSTO. `vColor.rgb` no es solo el vertex color de la malla: el VS le pliega `subColor`
-	//     (el tinte por-shape de Wardrobe Manager) y el wirecolor. Forzar 1.0 los mataba a los tres.
-	// O sea: cero beneficio medible y una regresion real. Vuelve al comportamiento de HEAD.
-	vec3 vcFold = pow(max(vColor.rgb, 0.0), vec3(2.2));
-	albedo = vcFold;
-
-	if (!bWireframe)
+	vec2 uv = vUV * uvScale + uvOffset;
+	// Every texture is read here, before any discard: the implicit derivatives stay defined (uniform branches only).
+	vec4 baseMap = vec4(1.0);
+	if (bShowTexture)
+		baseMap = texture(texDiffuse, uv);
+	vec4 normalTexel = vec4(0.5, 0.5, 1.0, 1.0);
+	if (bShowTexture && bNormalMap)
+		normalTexel = texture(texNormal, uv);
+	// The z-prepass's alpha test of a prepass shape (the 0x1A entry): the prepass PS's own text on its TEXCOORD0 and its t0.
+	bool prepassKill = false;
+	if (!bWireframe && bFo4PrepassCut && bFo4PrepassAlphaTest)
 	{
-		if (bShowTexture)
-		{
-			// Diffuse Texture
-			baseMap = texture(texDiffuse, uv);
-			color.a *= baseMap.a;
-			vec3 diffRgb = baseMap.rgb;
-
-			// FaceTint overlay (TETI/TEND tint layers, premultiplied-over). The engine bakes the
-			// whole face into ONE diffuse and samples it sRGB once; the app splits it into
-			// diffuse + overlay. For color-space consistency, composite the overlay in the
-			// texture NATIVE space (G22) and decode the COMBINED result once (C1) -- matching the
-			// engine. Legacy path keeps the original order (overlay over the lit-space albedo).
-			if (bHasFaceTintOverlay)
-			{
-				vec4 ov = texture(texFaceTintOverlay, uv);
-				diffRgb = diffRgb * (1.0 - ov.a) + ov.rgb;
-			}
-			albedo *= diffRgb;
-
-			// Diffuse texture without lighting
-			color.rgb = albedo;
-
-			// El sampleo del normal map se SACO de adentro de `if (bLightEnabled)`. Motivo: el bloque
-			// del cubemap del EFFECT shader (BGEM, mas abajo) NO esta anidado bajo bLightEnabled y sin
-			// embargo lee normalMap.a y `normal`. Hoy eso no explota por un solo motivo: el uniform esta
-			// CABLEADO a True en el unico call-site que existe (Render.vb, `SetBool(bLightEnabled, True)`;
-			// no hay otro seteo en todo el arbol). Es una trampa latente, no un bug vivo.
-			// Sacar el sampleo de aca es IDENTICO en comportamiento mientras el uniform sea True, y
-			// elimina la mitad de la trampa sin reestructurar nada.
-			// LA OTRA MITAD -- el calculo de `normal` -- tambien se subio: vive mas abajo, en la nota que
-			// arranca con: LA NORMAL SE CALCULA ACA. Con las dos afuera, `bLightEnabled = False` SI es un
-			// estado soportado en este fragment.
-			// `Fragment_SSE` lleva EL MISMO arreglo, con las dos mitades subidas y medido igual (10/10
-			// frames byte-identicos). Los dos juegos quedan con la misma ley; si alguien toca uno, el otro.
-			if (bNormalMap)
-			{
-				normalMap = texture(texNormal, uv);
-			}
-
-		}
-
-
-		// LA NORMAL SE CALCULA ACA, FUERA DE `bLightEnabled`, y no adentro como estaba.
-		// Motivo: el bloque del EFFECT shader (BGEM) de mas abajo NO esta anidado bajo
-		// bLightEnabled: es su HERMANO, los dos cuelgan de `if (!bWireframe)`. Y sin embargo lee
-		// `normal` (su falloff NdotV y el reflect() del cubemap) y `normalMap.a`. Con el calculo adentro,
-		// `bLightEnabled = False` dejaba a `normal` en su valor inicial vec3(0.0) y el camino
-		// BGEM leia basura. No explotaba por un solo motivo: el uniform esta cableado a True en
-		// el unico call-site que existe. Era una trampa esperando a que alguien agregue otro.
-		//
-		// POR QUE ES IDENTICO mientras el uniform sea True: ninguna sentencia que quedo en el medio
-		// LEE `normal`, `normalMap` ni `geoNormal`, y nada de lo que se movio lee `albedo`. La
-		// formulacion importa: -no hay nada en el medio- seria FALSO -- el recolor de grises escribe
-		// `albedo`, y la cola de este bloque (`if (bModelSpace) geoNormal = normal;` y el flip de doble
-		// cara) ahora pasa por encima de el. Vale porque son disjuntos, no porque no haya nada.
-		// MEDIDO, no argumentado: ShadowGate frame a frame contra HEAD, 10/10 frames byte-identicos, con
-		// control positivo (una linea de mas en este mismo bloque SI mueve pixeles) y control de
-		// determinismo entre dos procesos.
-		//
-		// El recolor de escala de grises se QUEDA adentro de bLightEnabled: toca `albedo`, no la
-		// normal, asi que subirlo seria un cambio de conducta que nadie pidio.
-		//
-		// `Fragment_SSE` tenia la MISMA trampa y se arreglo igual, en el mismo lote. Alli tambien
-		// `if (bLightEnabled)` abre y CIERRA antes de `if (bIsEffectShader)` -- son hermanos --, y el
-		// effect leia `normal` en DOS sitios que no cuelgan de bLightEnabled: el
-		// `abs(dot(normal, viewDir))` del falloff y el `reflect(-viewDir, normal)` del cubemap. Verificado
-		// contando profundidad de llaves, no por indentacion. Si se toca uno de los dos fragments, tocar el otro.
-		
-		// Arranca neutra (en shapes MSN mv_tbn es degenerada -> se usa la matriz objeto->vista)
-		if (bModelSpace)
-			normal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
-		else
-			normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
-
-		if (bShowTexture && bNormalMap)
-		{
-			if (bModelSpace)
-			{
-				// Model Space Normals: the normal map stores an OBJECT-space normal (all 3 channels,
-				// no z-reconstruction), transformed by the object->view normal matrix (v_msnMatrix,
-				// built in the VS). FO4 engine convention (prepass VS rec2215 -> PS rec2698): the VS
-				// passes the object->view matrix rows in v1/v2/v3 and the PS reorders the sampled
-				// (R,G,B)=(X,Z,Y) -> .rbg before the transform (same NIF object-space convention as SSE).
-				normal = normalize(v_msnMatrix * (normalMap.rbg * 2.0 - 1.0));
-			}
-			else
-			{
-				// Tangent-space normal with the game's z law (fo4TangentNormal: z = sqrt(1 - min(x^2 + y^2, 1))).
-				normal = fo4TangentNormal(normalMap.rgb);
-
-				// Tangent space map
-				normal = normalize(mv_tbn * normal);
-			}
-		}
-
-		// Double-sided: flip normal for back faces
-		if (bDoubleSided && !gl_FrontFacing)
-		{
-			normal = -normal;
-		}
-
-		// The lighting of the lighting shapes is the FO4 deferred frame's (Fo4DeferredTargets: G-buffer, lights, composite;
-		// propuesta v3 E4), its effects the transcribed b05 programs' (ola 3, Fo4EffectSource). This fragment draws only the
-		// wireframes, the debug views (an effect too: the debug block writes the colour) and the prepass.
-
-		if (bShowMask)
-		{
-          color.rgb *= maskFactor;
-		}
-
-		if (bShowWeight)
-		{
-			color.rgb *= weightColor;
-		}
-
-		// SALIDA LINEAL HDR, COMO EL MOTOR: 0 de los 18 PS de b06 contienen la constante de Hable y las 18
-		// colas escriben lineal a o0 (`mad o0.xyz, ...` sin curva, sin pow, sin _sat); los PS de b05 (BGEM)
-		// tampoco. El tonemap, el encode y la LUT son POST-PROCESO sobre el buffer compuesto (ImageSpace HDR
-		// i3700 + GammaCorrectLUT i3648): los hace la pasada de PostProcess.vb, no este shader.
-		// POST OFF (bLegacyDisplay): THE 2.3.8 DISPLAY TAIL, NOT THE ENGINE, applied to the value in the space 2.3.8 gave it:
-		// linear then and now -> Hable / Hable(1), then 1/2.2. (An effect's display law, pow 1/2.2, is Fo4EffectSource.AppMain's.)
-		if (bLegacyDisplay)
-			color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
-	}
-	else
-	{
-    vec3 shaded = color.rgb ;
-     if (bShowTexture)
-     {
-     shaded=texture(texDiffuse, uv).rgb;
-      }
-     shaded *= maskFactor;
-     color = vec4(shaded, WireAlpha) ;
+		gbuf_TEXCOORD0 = vec4(vFo4PrepassTexcoord, 0.0);
+		Fo4GPre_rec3930(prepassKill);
 	}
 
-	// Sin clamp: el motor escribe o0 sin _sat sobre un target R11G11B10_FLOAT (rgb y alpha crudos). El
-	// camino wireframe se dibuja en el target de display (RGBA8), que satura al escribir.
-	fragColor = color;
-
-
+	if (bWireframe)
+	{
+		vec3 shaded = bShowTexture ? baseMap.rgb : vColor.rgb;
+		fragColor = vec4(shaded * maskFactor, WireAlpha);
+	}
 
 //====================DEBUG MODE==========================
 if (DebugMode > 0.0) {
-    // OJO: LAS VISTAS SON MODEL-SPACE AWARE, Y NO ES UN ADORNO. En una shape MSN `mv_tbn` es
-    // DEGENERADA -- lo dice el propio camino iluminado de este fragment, unas lineas mas arriba:
-    // `Arranca neutra (en shapes MSN mv_tbn es degenerada -> se usa la matriz objeto->vista)`.
-    // La version anterior de este bloque derivaba las TRES direcciones de `mv_tbn` sin mirar
-    // `bModelSpace` y llevaba escrito `no MSN in FO4`, que es FALSO: este mismo fragment declara
-    // `uniform bool bModelSpace` y `in mat3 v_msnMatrix`, y su camino iluminado se bifurca con ellos.
-    // O sea que sobre una cabeza o un cuerpo _msn las vistas dibujaban una matriz basura y el modo 4
-    // reportaba un `error de TBN` calculado sobre esa basura.
-    // LA LEY SE COPIA DEL CAMINO ILUMINADO DE ESTE MISMO SHADER, no se inventa una para el debug.
+    // THE VIEWS ARE MODEL-SPACE AWARE. On an MSN shape mv_tbn is DEGENERATE: the normal comes from the map through the
+    // object->view matrix (v_msnMatrix), as the game's MSN programs decode it (prepass VS rec2215 -> PS rec2698: the VS
+    // passes the object->view rows, the PS reorders the sampled (R,G,B) = (X,Z,Y) -> .rbg before the transform).
     vec3 dbgNormal;
     if (bModelSpace) {
-        // EN MSN LA NORMAL DE LA GEOMETRIA ES LA DEL MAPA, no la semilla. Lo dice el camino iluminado
-        // de este mismo fragment, que en esta rama hace `geoNormal = normal` con la razon escrita al
-        // lado: la semilla `v_msnMatrix * (0,0,1)` es el eje +Z del OBJETO, o sea una direccion
-        // CONSTANTE por shape -- dibujarla pinta la cabeza entera de un color plano que no dice nada
-        // del fragmento. El mapa guarda la normal de objeto (no una perturbacion tangente), asi que
-        // decodificarlo ES leer la normal de la geometria.
-        // Se muestrea texNormal y NO se reusa `normalMap`: esa variable arranca en vec4(0.0) y solo se
-        // llena dentro de la rama de iluminacion, asi que con bLightEnabled apagado saldria negra.
+        // ON MSN THE GEOMETRY NORMAL IS THE MAP'S: the seed v_msnMatrix * (0,0,1) is the object's +Z, a constant direction per
+        // shape; the map stores the object-space normal, so decoding it IS reading the geometry normal.
         if (bShowTexture && bNormalMap) {
-            dbgNormal = normalize(v_msnMatrix * (texture(texNormal, uv).rbg * 2.0 - 1.0));
+            dbgNormal = normalize(v_msnMatrix * (normalTexel.rbg * 2.0 - 1.0));
         } else {
             dbgNormal = normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0));
         }
@@ -914,19 +567,16 @@ if (DebugMode > 0.0) {
         dbgNormal = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
     }
 
-    // Gris plano = `esta vista NO APLICA a esta shape`. Tangente, bitangente y error de TBN solo
-    // existen si hay base tangente; en model-space no la hay. Pintar gris es lo unico honesto:
-    // dibujar `mv_tbn` degenerada seria inventar un dato, y dejar pasar el render iluminado haria
-    // creer que la shape esta sana. Ademas se lee de una: las piezas _msn saltan a la vista.
+    // Flat grey = this view does NOT APPLY to this shape: tangent, bitangent and TBN error exist only with a tangent basis,
+    // and a model-space shape has none.
     vec4 noAplica = vec4(0.5, 0.5, 0.5, 1.0);
 
     if (abs(DebugMode - 1.0) < 0.5) {
-        // Modo 1: la normal GEOMETRICA (la semilla del camino iluminado), en espacio de vista.
-        // No lleva el normal map: para eso estan los modos 5 (mapa crudo) y el render normal.
+        // Mode 1: the GEOMETRIC normal in view space (the normal map only where it is the geometry: MSN, above).
         fragColor = vec4(dbgNormal * 0.5 + 0.5, 1.0);
     }
     else if (abs(DebugMode - 2.0) < 0.5) {
-        // Modo 2: tangentes. Solo en tangent-space.
+        // Mode 2: tangents. Tangent space only.
         if (bModelSpace) {
             fragColor = noAplica;
         } else {
@@ -934,7 +584,7 @@ if (DebugMode > 0.0) {
         }
     }
     else if (abs(DebugMode - 3.0) < 0.5) {
-        // Modo 3: bitangentes. Solo en tangent-space.
+        // Mode 3: bitangents. Tangent space only.
         if (bModelSpace) {
             fragColor = noAplica;
         } else {
@@ -942,160 +592,103 @@ if (DebugMode > 0.0) {
         }
     }
     else if (abs(DebugMode - 4.0) < 0.5) {
-        // Modo 4: error de TBN. NO APLICA en model-space: ahi no hay TBN que comparar -- la normal
-        // sale del mapa por v_msnMatrix y `mv_tbn` es degenerada.
+        // Mode 4: TBN error - the NIF's TBN against a Gram-Schmidt one, in the normal and in the light each gives along the rig's
+        // directions. NOT APPLICABLE in model space: there is no TBN to compare. Like every view it keeps the frame's discards
+        // and alpha test below (it used to return here and skip them).
         if (bModelSpace) {
             fragColor = noAplica;
-            return;
-        }
-        vec3 Tm = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
-        vec3 Bm = normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
-        vec3 Nm = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
-
-        vec3 Tgs = normalize(Tm - Nm * dot(Nm, Tm));
-        vec3 Bx  = normalize(cross(Nm, Tgs));
-        float h  = sign(dot(Bm, Bx));
-        mat3 tbn_fixed = mat3(Tgs, Bx * h, Nm);
-
-        vec3 n_ts = vec3(0.0, 0.0, 1.0);
-        vec3 nA;
-        vec3 nB;
-        if (bShowTexture && bNormalMap) {
-            vec3 nm = fo4TangentNormal(texture(texNormal, uv).rgb);   // the drawn normal's z law (rev-08)
-            n_ts = nm;
-            nA = normalize(mv_tbn   * n_ts);
-            nB = normalize(tbn_fixed * n_ts);
         } else {
-            nA = normalize(mv_tbn   * n_ts);
-            nB = normalize(tbn_fixed * n_ts);
+            vec3 Tm = normalize(mv_tbn * vec3(1.0, 0.0, 0.0));
+            vec3 Bm = normalize(mv_tbn * vec3(0.0, 1.0, 0.0));
+            vec3 Nm = normalize(mv_tbn * vec3(0.0, 0.0, 1.0));
+
+            vec3 Tgs = normalize(Tm - Nm * dot(Nm, Tm));
+            vec3 Bx  = normalize(cross(Nm, Tgs));
+            float h  = sign(dot(Bm, Bx));
+            mat3 tbn_fixed = mat3(Tgs, Bx * h, Nm);
+
+            vec3 n_ts = vec3(0.0, 0.0, 1.0);
+            if (bShowTexture && bNormalMap) {
+                n_ts = fo4TangentNormal(normalTexel.rgb);   // the game's z law (rev-08)
+            }
+            vec3 nA = normalize(mv_tbn   * n_ts);
+            vec3 nB = normalize(tbn_fixed * n_ts);
+
+            float errN = 0.5 * length(nA - nB);
+
+            float IA = max(dot(nA, lightFrontal), 0.0)
+                     + max(dot(nA, lightDirectional0), 0.0)
+                     + max(dot(nA, lightDirectional1), 0.0)
+                     + max(dot(nA, lightDirectional2), 0.0);
+
+            float IB = max(dot(nB, lightFrontal), 0.0)
+                     + max(dot(nB, lightDirectional0), 0.0)
+                     + max(dot(nB, lightDirectional1), 0.0)
+                     + max(dot(nB, lightDirectional2), 0.0);
+
+            float errL = abs(IA - IB);
+
+            float E = clamp(max(errN, errL), 0.0, 1.0);
+
+            float good = 1.0 - smoothstep(0.0, 0.15, E);
+            float bad  = smoothstep(0.0, 0.15, E);
+            float hvis = h * 0.5 + 0.5;
+
+            fragColor = vec4(bad, good, hvis, 1.0);
         }
-
-        float errN = 0.5 * length(nA - nB);
-
-        float IA = max(dot(nA, lightFrontal), 0.0)
-                 + max(dot(nA, lightDirectional0), 0.0)
-                 + max(dot(nA, lightDirectional1), 0.0)
-                 + max(dot(nA, lightDirectional2), 0.0);
-
-        float IB = max(dot(nB, lightFrontal), 0.0)
-                 + max(dot(nB, lightDirectional0), 0.0)
-                 + max(dot(nB, lightDirectional1), 0.0)
-                 + max(dot(nB, lightDirectional2), 0.0);
-
-        float errL = abs(IA - IB);
-
-        float E = clamp(max(errN, errL), 0.0, 1.0);
-
-        float good = 1.0 - smoothstep(0.0, 0.15, E);
-        float bad  = smoothstep(0.0, 0.15, E);
-        float hvis = h * 0.5 + 0.5;
-
-        fragColor = vec4(bad, good, hvis, 1.0);
-        return;
     }
     else if (abs(DebugMode - 5.0) < 0.5) {
-        // Modo 5: EL NORMAL MAP CRUDO, tal cual lo devuelve el sampler. Sin decodificar (nada de
-        // *2-1), sin reconstruir Z y sin pasar por la TBN: se ve el contenido del archivo, que es
-        // justo lo que hace falta para distinguir la textura esta mal de la TBN esta mal.
-        // Sin textura de normales se dibuja el plano neutro (0.5, 0.5, 1.0), que es lo que un normal
-        // map tangent-space trae donde la superficie no se desvia.
-        if (bShowTexture && bNormalMap) {
-            fragColor = vec4(texture(texNormal, uv).rgb, 1.0);
-        } else {
-            fragColor = vec4(0.5, 0.5, 1.0, 1.0);
-        }
+        // Mode 5: THE RAW NORMAL MAP, as the sampler returns it: not decoded, no rebuilt Z, never through the TBN. Without a
+        // normal map, the neutral plane (0.5, 0.5, 1.0) a tangent-space map holds where the surface does not deviate.
+        fragColor = vec4(normalTexel.rgb, 1.0);
     }
 }
 //===================END DEBUG MODE=======================
 
-if (bHide)
-	    {
-            discard;
-	    }
+	if (bHide)
+		discard;
+	if (bApplyZap && ZappedVert == 1)
+		discard;
 
-  	if (bApplyZap) // Codigo Manolo para el ZAP
-    {
-  //  if (!bShowMask)
-   // {
-  	    if (ZappedVert==1)
-	    {
-    	    discard;
-	    }
-        }
-    //}
-
-   	if (!bWireframe)
+	if (!bWireframe)
 	{
-		// ALPHA TEST = ENGINE-faithful (rec1498 L284): discard if (diffuse.a * vColor.a) < ref. The test
-		// uses the TEXTURE*VERTEX alpha only -- NOT the material Alpha scalar (which is the OUTPUT/blend
-		// alpha = cb2[2].z, applied AFTER the test). The old order (NifSkope fo4_default.frag) multiplied
-		// material Alpha in BEFORE the test, over-discarding cutouts when Alpha<1. For BGSM, fragColor.a
-		// here is vColor.a*baseMap.a (color.a, pre material-alpha) -> matches the engine LHS. For BGEM,
-		// fragColor.a is effAlpha which already carries BaseColor.a*PropertyColor.w -- the factors the
-		// engine's BGEM alpha test uses (rec1103 L48) -- so it is tested as-is.
-		// COMPARADOR: el engine descarta con `<` estricto, o sea CONSERVA la igualdad (GEQUAL).
-		// FO4 rec1498 L284-286:  mad r0.x, r1.w, v7.w, -cb2[3].x ; lt r0.x, r0.x, l(0) ; discard_nz r0.x
-		//   -> descarta si (alpha - ref) < 0, es decir si alpha < ref.
-		// Identico en SSE (define DO_ALPHA_TEST, +6 instr, con cb11[0].x de ref).
-		// The world lighting of FO4 is drawn by the G-buffer pass (BSDFPrePassShader), not by these forward PS: same
-		// compare, threshold Fo4RenderPassLaw.MainPassAlphaThreshold (the exe's float32 ref * 1/255 + bias). A FO4 effect
-		// (BGEM) tests in every non-MEMBRANE b05 PS (780 of 780) against Fo4RenderPassLaw.EffectAlphaThreshold (0 without a
-		// test: discards only alpha < 0). MEMBRANE (technique bit 9, runtime only, 0 of 339 corpus techniques) is not drawn
-		// here: its 102 PS discard only on cb2[14].y.
-		// El `<=` de la app descartaba tambien alpha == ref. Con alpha de 8 bits y refs tipicas
-		// (128/255) la igualdad EXACTA es frecuente en un cutout dibujado a mano, asi que comia una
-		// franja de pixeles que el motor conserva. Pasa a `<`.
-		// BGSM / NIF lighting: the G-buffer's own test value, tex.a [* vc.a] (9.1, 10.2: COLOR0.w linear).
-		float alphaTestValue = fragColor.a;
-		if (!bIsEffectShader)
-			alphaTestValue = (bShowTexture ? baseMap.a : 1.0) * (bFo4GBufferTestVertexAlpha ? vColor.a : 1.0);
-		if (bAlphaTest)
-			if (alphaTestValue < alphaThreshold) // GL_GEQUAL (engine: discard si alpha < ref)
+		// THE CUT OF THE SHAPE'S DEPTH IN THE FRAME. A shape the z-prepass draws: the prepass's fragments (prepassKill; an entry
+		// without the test cuts nothing). Any other shape: its colour pass's test (engine: discard if alpha < ref, the equality
+		// KEPT) - a lighting shape tests its texture alpha [x the vertex alpha under the G-buffer's gate]; an effect tests the value
+		// this view writes (1.0).
+		if (bFo4PrepassCut)
+		{
+			if (prepassKill)
 				discard;
-
-		// REVERTIDO a `*= alpha`. La MEDICION del motor es correcta -- los 18 PS del forward escriben
-		// `mov o0.w, cb2[2].z`, o sea alpha CONSTANTE del material, y el alpha de textura y vertice
-		// alimentan solo el test -- pero aplicarla aca rompe DOS cosas que el motor no tiene y la app si:
-		//  1) EL ALPHA DE VERTICE ES UNA FEATURE VIVA: el VS hace `if (bShowVertexAlpha) vColor.a =
-		//     vertexAlpha`, y el uniform sale de un TOGGLE DEL USUARIO + dato del NIF
-		//     (Render.vb: ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim).
-		//     Con el alpha constante ese degradado desaparece y el toggle deja de hacer nada en FO4.
-		//  2) EL PASE DE OVERLAYS (tatuajes / LooksMenu) dibuja LA MISMA geometria como decal coplanar
-		//     con SrcAlpha/InvSrcAlpha y DepthMask(False), y su transparencia la lleva el ALPHA DE LA
-		//     TEXTURA del overlay (un tatuaje es casi todo transparente). El motor no tiene ese pase.
-		//     Si el material del slot es .bgsm -> bIsEffectShader = false -> con alpha constante el
-		//     decal sale OPACO y tapa la cabeza entera.
-		// O sea: la ley del motor vale para el camino que el motor tiene; este shader ademas sirve
-		// pases que el motor no tiene. Se conserva el multiply y se deja la medicion documentada.
+		}
+		else
+		{
+			float alphaTestValue = bIsEffectShader ? fragColor.a : baseMap.a * (bFo4GBufferTestVertexAlpha ? vColor.a : 1.0);
+			if (bAlphaTest && alphaTestValue < alphaThreshold)
+				discard;
+		}
+		// The output alpha the draw's blend reads (ApplyMaterial: Fo4GBufferBlendMode / Fo4EffectBlend): a lighting shape's
+		// material alpha, an effect's 1.0.
 		if (!bIsEffectShader)
 			fragColor.a *= alpha;
 	}
-
-	if ((uDecalBaseMode == 1 && fragColor.a <= 0.0) || uDecalBaseMode == 3 || (uDecalBaseMode == 4 && fragColor.a >= 1.0)) discard;
-
-	// Coverage of the HDR target (ignored when the draw buffer 1 does not exist: display target).
-	if (uCoverageMode == 1)
-		coverageOut = vec4(fragColor.a, fragColor.a, 0.0, fragColor.a);
-	else if (uCoverageMode == 2)
-		coverageOut = vec4(0.0);
-	else
-		coverageOut = vec4(1.0);
 }
 "
     Sub New()
-        MyBase.New(Vertex_FO4, Fragment_FO4)
+        MyBase.New(Vertex_Fo4EditView, Fragment_Fo4EditView)
     End Sub
 End Class
 
 Public Class Shader_Class_SSE
     Inherits Shader_Base_Class
-    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA DE SKYRIM SE.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
-    ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
-    ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
+    ''' arriba de todo, en <c>Fragment_SSE</c> y en <c>ShadowDepthShaderSource.Fragment_ShadowDepth</c>: ahi lo ve quien
+    ''' edita la logica, que es donde tiene que estar. Los dos se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
-    ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
-    ''' de la sombra sin que nada lo reporte.</para>
+    ''' el pase iluminado.</b> Tocar uno sin el otro rompe la silueta de la sombra sin que nada lo reporte. Fallout 4 no
+    ''' entra: dibuja sus mapas con la tecnica utilitaria del motor (b07, RenderableMesh.RenderShadowMapFo4), cuyo test
+    ''' de alpha es el de su programa transcripto.</para>
     ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_SSE As String = "
@@ -1157,7 +750,7 @@ uniform int uBoneCount;
 // SYNC: CPU/GPU skinning. The blend here has FIVE twin sites; changing weights,
 // fallback or matrix composition in one of them WITHOUT the others is a silent bug
 // (it compiles, throws nothing, and only the other path renders wrong):
-//   1. The GPU blend: TWO texts, one per game's law - Vertex_FO4 (Fallout 4: the engine's order and weights) and
+//   1. The GPU blend: TWO texts, one per game's law - Shader_Class_Fo4EditView.Vertex_Fo4EditView (Fallout 4: the engine's order and weights) and
 //      Vertex_SSE (Skyrim SE: normalized weights); the normal law they apply after it, AppSkinLaw.Glsl, is ONE text
 //      included by both and by the transcribed engine VS (G-buffer).
 //   2. SkinningHelper.BlendBoneMatrices        (CPU blend, double precision)
@@ -1206,7 +799,7 @@ out vec2 vUV;
 // introduced, which is the same thing hemiAmbient() does with the normal.
 out vec3 vWorldPos;
 
-// SSE EFFECT FALLOFF, PER VERTEX (BSEffect VS t00010153: o1.z). Same law as Vertex_FO4; off on geometry without
+// SSE EFFECT FALLOFF, PER VERTEX (BSEffect VS t00010153: o1.z). Off on geometry without
 // vertex normals (model-space-normal geometry), where the PS keeps its per-pixel evaluation.
 uniform bool bVertexFalloff;
 uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
@@ -1383,9 +976,9 @@ void main(void)
 //   ==>  ShadowDepthShaderSource.Fragment_ShadowDepth  (Shader_Class.vb)
 //   And the other way round: that pass points back here. The GLSL alpha logic is written twice and
 //   must stay in step. The THRESHOLD is not GLSL: Render.vb uploads it per pass, each from its own
-//   law -- FO4: Fo4RenderPassLaw.ColourPassAlphaTest for the lit pass, .ShadowPassAlphaTest for the
-//   shadow pass (two exe writers, equal in value for the 256 refs: gate fo4-pass-law); SSE:
-//   SseRenderPassLaw for the lit pass, SseRenderPassLaw.ShadowAlphaTest for the shadow (the batch's cb11[0].x).
+//   law -- SseRenderPassLaw for the lit pass, SseRenderPassLaw.ShadowAlphaTest for the shadow (the batch's cb11[0].x).
+//   Skyrim SE only: Fallout 4 draws its shadow maps with the engine's utility technique (b07,
+//   RenderableMesh.RenderShadowMapFo4), whose alpha test is its transcribed program's.
 //
 // WHY. The shadow map is drawn by a DIFFERENT program, and that program decides WHICH FRAGMENT
 // EXISTS using the same alpha this shader uses. If the two stop agreeing, the shadow silhouette
@@ -1408,11 +1001,10 @@ void main(void)
 // declared hole, kept out as before). The caster filter keeps them out
 // (Fo4RenderPassLaw / SseRenderPassLaw.ShadowMapCasts): the depth pass is a cutout and nothing else.
 //
-// !!!! TWO GAMES, TWO LAWS -- NOT ONE. Fallout 4 and Skyrim SE do NOT agree here, and the depth pass
-// carries BOTH, selected by the bLeySse uniform. Measured, and it caused a real bug when someone
-// assumed there was only one law:
-//   lighting shader (.bgsm) material scalar: SSE multiplies it BEFORE the test, FO4 after.
-// So a change that is correct for one game can be wrong for the other. Check both, always.
+// !!!! THE QUANTITY IS SKYRIM SE'S. The material alpha scalar of a lighting shader (.bgsm) enters it BEFORE the
+// test (cb2[3].z, the DO_ALPHA_TEST block below) and the depth pass mirrors that. Fallout 4 tests without it, after,
+// only for the blend (its own law, in its transcribed programs): a law correct for one game can be wrong for the
+// other, never copy one into the other.
 //
 // ALSO: this GLSL lives inside a VB Const String. It must be PURE ASCII, and it must NOT contain a
 // double quote -- a quote closes the VB literal, and escaping it as a pair sends a stray quote to
@@ -1489,7 +1081,7 @@ uniform bool bEffectLighting;
 // L of the effect PS (cb2[7] + up to 4 point lights, no N.L): the effect light of the chosen weather and moment kept
 // in the game's proportion to the preview key (PreviewImagingRow.EffectLightForKey), raw. Flat: one value per draw.
 uniform vec3 effectLight;
-// APP OPTION, NOT THE ENGINE: see Fragment_FO4 (bLegacyDisplay, uSceneToLinear).
+// APP OPTION, NOT THE ENGINE: the post-off 2.3.8 display tail (LegacyDisplaySource; ApplyMaterial uploads both).
 uniform bool bLegacyDisplay;
 uniform float uSceneToLinear;
 // The falloff arrives from the VS (vEffectFalloff), see Vertex_SSE.
@@ -1564,7 +1156,7 @@ layout(location = 3) out vec4 aoNormalOut;
 // SSE SNOW o3 -> kSNOW_SPECALPHA (RT 0x70, R8G8_UNORM, 0x14153B87B..8A3): written only while draw buffer 4 is bound (SSE + post,
 // the opaque MRT) and only by a snow draw (Render.vb masks buffer 4 for every other draw: a PS without o3 leaves the RT as it is).
 layout(location = 4) out vec4 snowSpecAlphaOut;
-// THE TRANSLUCENT DECALS' BASE (DecalBaseTarget; user decision 7-oct-2026). uDecalBaseMode: as in Fragment_FO4 - the base depth
+// THE TRANSLUCENT DECALS' BASE (DecalBaseTarget; user decision 7-oct-2026). uDecalBaseMode (RenderableMesh.DecalBaseMode; Fallout 4's effect foot reads the same modes, Fo4EffectSource) - the base depth
 // draw of a decal whose colour blend's source factor is SRC_ALPHA keeps only its fragments with alpha > 0 (RenderableMesh.
 // DecalBaseMode). uSseDecalBaseSurface: the base SURFACE draw - the same program, inputs and discards as the decal's depth draw
 // (so the same fragments), lit as a plain surface: albedo = the preview's background at the pixel (the SSE scene is raw,
@@ -1579,7 +1171,7 @@ uniform int uSseAoEffectClass;   // SseAoEffectNormal: 0 lighting (sseAoLitNorma
 uniform vec4 uSseSsrParams;      // cb2[7] of PS 4255: (fSpecMaskBegin, fSpecMaskBegin + fSpecMaskSpan, 0, SSRParams.w)
 in vec3 vSseAoEffectNormal;      // TEXCOORD7.yzw of the bit-26 effect VS
 vec3 sseAoLitNormal = vec3(0.0, 0.0, 1.0);
-// What this draw adds to the coverage of the HDR target (see SceneTargets / Fragment_FO4): 0 unblended (1),
+// What this draw adds to the coverage of the HDR target (see SceneTargets): 0 unblended (1),
 // 1 blended with its own light (alpha), 2 destination-only blend (0).
 uniform int uCoverageMode;
 
@@ -1925,7 +1517,7 @@ void main(void)
 			// Diffuse texture without lighting
 			color.rgb = albedo;
 
-			// El sampleo del normal map va FUERA de `bLightEnabled`, igual que en Fragment_FO4: el bloque
+			// El sampleo del normal map va FUERA de `bLightEnabled`: el bloque
 			// del EFFECT shader (bIsEffectShader) es HERMANO de bLightEnabled, no esta anidado bajo el, y
 			// lee `normalMap`. Con el sampleo adentro, un bLightEnabled=False dejaba normalMap en su valor
 			// inicial y el camino BGEM leia basura.
@@ -1953,11 +1545,11 @@ void main(void)
 						//   G-buffer: o2.w  = smoothstep(cb2[7].x, cb2[7].y, MASK) * cb2[7].w
 						// El EXPONENTE es cb1[4].w = un ESCALAR del material (uniform glossiness), NO un canal
 						// de la textura: Skyrim no tiene glossiness por pixel. Por eso specGloss se deja en 1.0
-						// y NO se lee .g (eso es la convencion de FO4, ver Fragment_FO4).
+						// y NO se lee .g (eso es la convencion de FO4).
 						// OJO: el highlight ya usaba el uniform `glossiness` crudo, asi que specGloss no lo
 						// tocaba; su unico otro consumidor era el LOD del cubemap, que resulto ser una
 						// invencion de la app y ya se elimino (ver el bloque del cubemap). specGloss queda
-						// hoy sin efecto real, se conserva por simetria con Fragment_FO4.
+						// hoy sin efecto real: se conservaba por simetria con el fragment forward de FO4, retirado en la ola 7f.
 						// Cual textura es el MASK lo decide MODELSPACENORMALS, no la presencia del slot 7:
 						// Render.vb hace ese gate y bindea aca el slot 7 (t2 del engine).
 						specMap = texture(texSpecular, uv);
@@ -1992,8 +1584,7 @@ void main(void)
 			}
 		}
 
-		// LA NORMAL SE CALCULA ACA, FUERA DE `bLightEnabled`, y no adentro como estaba. Es el MISMO
-		// arreglo que ya lleva Fragment_FO4, por el mismo motivo y con la misma prueba.
+		// LA NORMAL SE CALCULA ACA, FUERA DE `bLightEnabled`, y no adentro como estaba.
 		// Motivo: `if (bIsEffectShader)` NO esta anidado bajo bLightEnabled -- es su HERMANO, los dos
 		// cuelgan de `if (!bWireframe)`; bLightEnabled ABRE y CIERRA antes de que el effect empiece.
 		// Y el effect lee `normal` en DOS sitios que no cuelgan de bLightEnabled: el
@@ -2017,8 +1608,8 @@ void main(void)
 		}
 
 		// GEOMETRIC normal, captured before the normal map perturbs `normal`. Used ONLY for the
-		// shadow normal-offset -- shading keeps using the perturbed one. Same reason as in the FO4
-		// fragment: offsetting along a normal-mapped direction turns part of the push into a lateral
+		// shadow normal-offset -- shading keeps using the perturbed one. The reason: offsetting along a
+		// normal-mapped direction turns part of the push into a lateral
 		// slide along the surface and leaves acne that follows the TEXTURE detail.
 		vec3 geoNormal = normal;
 
@@ -2077,7 +1668,7 @@ void main(void)
 				// dedicated GrayscaleSampler. In SSE the recolor is exclusively a BSEffectShaderProperty
 				// feature, handled in the effect path below (bIsEffectShader). So a BSLightingShaderProperty
 				// that carries the SLSF1 greyscale flag is rendered WITHOUT recolor by the engine -> no-op
-				// here. (FO4 differs: its lighting shader rec2389/rec2963 DO recolor; see Fragment_FO4.)
+				// here. (FO4 differs: its lighting shader rec2389/rec2963 DO recolor.)
 				// The material flag is preserved for round-trip; only the lit render ignores it.
 
 
@@ -2136,7 +1727,7 @@ void main(void)
 			if (uSseDecalBaseSurface)
 				normal = geoNormal;
 
-			// SHADOW. Same law and same placement as the FO4 fragment (see the SHADOWS uniform block):
+			// SHADOW (see the SHADOWS uniform block):
 			// the SSE DEFSHADOW path multiplies the DIRECTIONAL by the mask and adds the ambient after,
 			// so scaling each light-s own diffuse here reproduces it and leaves hemiAmbient() alone.
 			// EVERY light with a layer casts; the branches are uniform per draw.
@@ -2197,9 +1788,9 @@ void main(void)
 				// `mad r5.xyz, v6.xyzx, r0.xxxx, cb2[0].xyzx` = normalize(V) + L, y un half-vector correcto
 				// exige V = superficie->ojo. (cb2[0] es L=superficie->luz, probado por el wrap del difuso
 				// `div_sat (N.cb2[0] + w)/(1+w)`.)
-				// OJO: FO4 hace lo CONTRARIO y por eso NO se toca Fragment_FO4: alli el shader agrega un
+				// OJO: FO4 hace lo CONTRARIO (su ley vive en sus programas transcriptos): alli el shader agrega un
 				// `mov r0.yzw, -r0.yzw` despues del mad (b06 rec1507 t=0x101), o sea samplea con
-				// V - 2(N.V)N = reflect(viewDir,N), que es justo lo que Fragment_FO4 ya hace -- con el
+				// V - 2(N.V)N = reflect(viewDir,N) -- con el
 				// MISMO varying superficie->ojo (`add o6.xyz, -r1.xyzx, cb2[7].xyzx`, 18/18 de sus VS).
 				// FO4 es antipodal en sus DOS familias (BGSM + BGEM): 205/205 sampleos de cubo llevan ese
 				// `mov` final. El raro es FO4, no Skyrim.
@@ -2223,7 +1814,7 @@ void main(void)
 				// (`mul r4.xyz, r4.xyzx, cb2[3].yyyy`). Multiplicar el cubemap por el SpecularMult del
 				// material era una divergencia lisa y llana; se quita. cb2[3].x queda SIN ligar (la app no
 				// tiene ese campo del property) y se asume 1.0, que es el neutro -- no se inventa un valor.
-				// FO4 es OTRO caso y por eso Fragment_FO4 SI lleva specularStrength aca: alli el engine
+				// FO4 es OTRO caso (sus programas transcriptos): alli el engine
 				// multiplica por cb2[11].y = SpecMult (b06 rec1507 L290). Gate por shader, no por uniform.
 				cube.rgb *= envReflection;
 				if ((bEnvMask && !bGlowmap) || bSseMultiLayer)
@@ -2446,7 +2037,7 @@ void main(void)
 
 //====================DEBUG MODE==========================
 if (DebugMode > 0.0) {
-    // MISMA ESTRUCTURA QUE EL BLOQUE DE Fragment_FO4, y la ley de cada rama copiada del camino
+    // MISMA ESTRUCTURA QUE EL BLOQUE DE FALLOUT 4 (Shader_Class_Fo4EditView), y la ley de cada rama copiada del camino
     // ILUMINADO DE ESTE fragment -- que no es igual al de FO4 y por eso no se puede compartir el
     // texto: en tangent-space SSE NO reconstruye el canal azul (usa los tres canales del mapa tal
     // cual) y FO4 si lo reconstruye. Ver los dos `if (bShowTexture && bNormalMap)` de cada fragment.
@@ -2695,7 +2286,8 @@ End Module
 ''' <summary>THE REFRACTION OF BOTH GAMES, in one place (Tools/re-docs/RE_REFRACTION_BOTH_2026-10-03.md): the refraction-normals
 ''' pass of a refracting shape (BSUtilityShader technique bit 9; SSE 0x141520A10, FO4 0x1421D6540) and the image-space
 ''' ISRefraction that distorts the scene with it (SSE PS idx 15822, FO4 rec 3658). The vertex part is included by Vertex_SSE
-''' and Vertex_FO4 (the pass draws a shape with its game's VS); the two fragments are programs of their own (RefractionPass,
+''' (Skyrim SE's pass draws a shape with its game's VS; Fallout 4's is its b07 technique, RenderRefractionNormalsFo4); the two
+''' fragments are programs of their own (RefractionPass,
 ''' Render.vb). ASCII only (GLSL).</summary>
 Friend Module RefractionSource
     ''' <summary>Per-vertex terms of the normals VS (SSE idx 10969.., FO4 rec 1692..), computed by every draw of the VS and read
@@ -2954,7 +2546,8 @@ End Module
 ''' <summary>THE DISPLAY CURVE OF 2.3.8 (Hable, A..F = .15/.50/.10/.20/.02/.30) and its lit tail, in ONE place (each
 ''' fragment keeps its own effect tail, since 2.3.8 treated the effect differently per game). It is NOT the
 ''' engine: the game tonemaps in its post (PostProcess.vb). It is the law of the frames that do not go through
-''' that post - the floor of a direct frame and the post-off tail of Fragment_FO4/Fragment_SSE - and it is
+''' that post - the floor of a direct frame and the post-off tail of Fragment_SSE and of Fallout 4's direct resolve
+''' (Fo4DeferredTargets) - and it is
 ''' the curve those frames had in 2.3.8 (user decision, 2-oct-2026). ASCII only, no double quotes.</summary>
 Friend Module LegacyDisplaySource
     Friend Const Tonemap_Glsl As String = "
@@ -2980,27 +2573,29 @@ vec3 legacyLitDisplay(in vec3 x, in float toLinear)
 "
 End Module
 
-''' <summary>El fragment del pase de profundidad del shadow map. UNA sola fuente para los dos juegos:
-''' lo unico que hace es el alpha-test, y esa ley NO es la misma en FO4 y en SSE (ver bLeySse).
+''' <summary>El fragment del pase de profundidad del shadow map de SKYRIM SE (Shadow_Depth_Shader_SSE): lo unico que hace es el
+''' alpha-test, con la cantidad del pase iluminado de Skyrim SE. Fallout 4 no pasa por aca: dibuja sus mapas con la tecnica
+''' utilitaria del motor (b07, RenderableMesh.RenderShadowMapFo4, ola 4).
 ''' <para>NO LLEVA VERTEX SHADER PROPIO, y eso es el punto. El blend de skinning tiene CINCO sitios
-''' gemelos declarados en el SYNC de Vertex_FO4; un VS de sombra seria el SEXTO, y desincronizarlo no
+''' gemelos declarados en el SYNC de Vertex_SSE; un VS de sombra seria el SEXTO, y desincronizarlo no
 ''' rompe el build ni tira: deja la sombra de una malla posada en la posicion de bind. En vez de eso el
-''' pase reusa Vertex_FO4 / Vertex_SSE tal cual y les entrega matView = lightView y matProjection =
+''' pase reusa Vertex_SSE tal cual y le entrega matView = lightView y matProjection =
 ''' lightOrtho, con lo que su `gl_Position = matProjection * (matModelView * pos)` ya cae en clip-space
 ''' de la luz. El VS calcula ademas varyings que este fragment no consume (TBN, direcciones de luz):
 ''' es legal en GLSL y es el precio de no duplicar el skinning.</para></summary>
 Friend Module ShadowDepthShaderSource
 
     ''' <summary>VIEW-space direction -&gt; WORLD (needs matModel and matModelViewInverse declared before it). ONE copy for every
-    ''' fragment that takes the shadow lookup's normal or the hemisphere to world: Fragment_SSE and the FO4 G-buffer entry.</summary>
+    ''' fragment that takes the shadow lookup's normal or the hemisphere to world: Fragment_SSE.</summary>
     Friend Const WorldDirGlsl As String = "vec3 toWorldDir(in vec3 v)
 {
 	return normalize(vec3(matModel * (matModelViewInverse * vec4(v, 0.0))));
 }
 "
 
-    ''' <summary>UNA SOLA DEFINICION del lookup de sombra, concatenada dentro de los TRES fragments que
-    ''' la usan (FO4, SSE y el receptor de suelo). Antes estaba copiada en el de FO4 y el de SSE: dos
+    ''' <summary>UNA SOLA DEFINICION del lookup de sombra, concatenada dentro de los DOS fragments que
+    ''' la usan (Fragment_SSE y el receptor de suelo; los receptores de Fallout 4 son sus luces transcriptas). Antes
+    ''' estaba copiada en un fragment de FO4 y en el de SSE: dos
     ''' copias de una convencion —el normal-offset, el signo del bias, el kernel del PCF— es exactamente
     ''' el modo de falla que documenta el SYNC del vertex shader, y ademas el suelo habria sido la tercera.
     ''' <para>El bloque de uniforms va separado del de la funcion porque en los fragments iluminados los
@@ -3096,27 +2691,27 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm, in int layer)
 	return 1.0 - uShadowIntensity * (1.0 - sum / (side * side));
 }"
 
-    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE ILUMINADO DE SKYRIM SE.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
-    ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
-    ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
+    ''' arriba de todo, en <c>Fragment_SSE</c> y en este fragment: ahi lo ve quien edita la logica, que es donde tiene que
+    ''' estar. Los dos se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
-    ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
-    ''' de la sombra sin que nada lo reporte.</para>
+    ''' el pase iluminado.</b> Tocar uno sin el otro rompe la silueta de la sombra sin que nada lo reporte.</para>
     ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Fragment_ShadowDepth As String = "
 #version 430
 
 // ##################################################################################################
-// ####  SHADOW SYNC CONTRACT -- THIS PASS MIRRORS THE ALPHA LAW OF BOTH RENDER SHADERS  ############
+// ####  SHADOW SYNC CONTRACT -- THIS PASS MIRRORS THE ALPHA LAW OF SKYRIM SE'S RENDER SHADER  ######
 // ##################################################################################################
 //
 //   THE OTHER HALF OF THIS CONTRACT LIVES IN:
-//   ==>  Shader_Class_Fo4.Fragment_FO4   (Fallout 4 lit pass)
 //   ==>  Shader_Class_SSE.Fragment_SSE   (Skyrim SE lit pass)
-//   Each of those carries the same contract pointing back here. CHANGING EITHER OF THEM WITHOUT
-//   CHANGING THIS FILE IS A BUG, even if everything still compiles and every gate stays green.
+//   It carries the same contract pointing back here. CHANGING IT WITHOUT CHANGING THIS FILE IS A
+//   BUG, even if everything still compiles and every gate stays green.
+//   Skyrim SE only: Fallout 4 draws its shadow maps with the engine's utility technique (b07,
+//   RenderableMesh.RenderShadowMapFo4), whose alpha test is its transcribed program's.
 //
 // WHAT THIS PASS IS. It writes the shadow map, so it decides WHICH FRAGMENT EXISTS. It does not
 // shade anything: the ONLY thing it computes is whether a fragment survives, and that has to be
@@ -3124,33 +2719,26 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm, in int layer)
 // silhouette stops matching the object that is drawn -- shadow for geometry discarded on screen,
 // or no shadow for geometry that is visible.
 //
-// WHAT REACHES IT: opaque LIGHTING shapes only, as in both engines. Neither engine draws an effect
-// (.bgem) into a shadow map (FO4 BSEffectShaderProperty slot 44 = 0x142168DA0 xor eax,eax; ret --
-// SSE slot 0x2B builds a pass only in mode 0xC, 0x14152A0C2), nor a lighting shape that blends,
-// whose alpha is below 1 or that refracts (FO4 slot 44 0x14217B95C..98A; SSE slot 0x2B
-// 0x14151B3C3..405), nor a decal (FO4 flags 0xC000000; SSE: a declared hole, kept out as before).
-// The caster filter keeps them out (Fo4RenderPassLaw / SseRenderPassLaw
-// .ShadowMapCasts), so there is no effect branch and no translucent path here: a fragment passes a
-// hard threshold or it is discarded.
+// WHAT REACHES IT: opaque LIGHTING shapes only, as in the engine. Skyrim SE draws no effect (.bgem)
+// into a shadow map (slot 0x2B builds a pass only in mode 0xC, 0x14152A0C2), nor a lighting shape that
+// blends, whose alpha is below 1 or that refracts (slot 0x2B 0x14151B3C3..405), nor a decal (a declared
+// hole, kept out as before). The caster filter keeps them out (SseRenderPassLaw.ShadowMapCasts), so
+// there is no effect branch and no translucent path here: a fragment passes a hard threshold or it is
+// discarded.
 //
-// !!!! ONE FRAGMENT, TWO GAMES. Shader_Class builds TWO programs out of this single fragment, one
-// with Vertex_FO4 and one with Vertex_SSE, and the tested quantity is NOT the same in both. The
-// uniform bLeySse selects it. Measured divergence: the material alpha scalar -- the SSE lit pass
-// multiplies it BEFORE its test, FO4 after (and only for the blend). Mirrored here on purpose
-// (chunk C11, DECISIONES 1), although the SSE SHADOWMAP PS tests t0.a [* vc] without it.
+// THE QUANTITY: the Skyrim SE lit pass multiplies the material alpha scalar in BEFORE its test
+// (cb2[3].z). Mirrored here on purpose (chunk C11, DECISIONES 1), although the SSE SHADOWMAP PS
+// tests t0.a [* vc] without it.
 //
 // WHAT MUST BE MIRRORED, in both directions:
-//   * the alpha test quantity (NOT its threshold: Render.vb uploads it per pass -- FO4
-//     Fo4RenderPassLaw.ShadowPassAlphaTest, equal in value to the lit pass's for the 256 refs, gate
-//     fo4-pass-law; SSE SseRenderPassLaw.ShadowAlphaTest, gate sse-pass-law)
+//   * the alpha test quantity (NOT its threshold: Render.vb uploads it per pass --
+//     SseRenderPassLaw.ShadowAlphaTest, gate sse-pass-law)
 //   * the vertex alpha and the predicate that gates it
 //   * the material alpha scalar, and WHERE it is applied
 //   * the zap discard, the skinning, and the UV transform
 //
 // NOT MIRRORED, on purpose: everything about SHADING (lighting, tint, specular, emissive, cubemap).
 // This pass has no colour output. Only what decides EXISTENCE belongs here.
-// A DECLARED HOLE (H-S3): the FO4 SHADOWMAP PS multiplies the vertex alpha by its own variant
-// (b07 t00004083 / t04004083), not transcribed; Render.vb gates vColor.a as the G-buffer does.
 //
 // ALSO: this GLSL lives inside a VB Const String. PURE ASCII, and NO double quote -- a quote closes
 // the VB literal. The glsl-ascii gate in Tools/ParityGate enforces both.
@@ -3161,14 +2749,9 @@ uniform vec2 uvOffset;
 uniform vec2 uvScale;
 uniform float alphaThreshold;
 uniform bool bAlphaTest;
-uniform float uMaterialAlpha;  // the material Alpha scalar: only SSE puts it into the quantity (bLeySse)
+uniform float uMaterialAlpha;  // the material Alpha scalar: it enters the tested quantity (Skyrim SE's lit law)
 uniform bool bShowTexture;
 uniform bool bApplyZap;
-// ONE fragment for both games (Shader_Class builds two programs over it). LIGHTING SHADER (.bgsm):
-//   FO4 : tests diffuse.a * vColor.a and multiplies the Alpha scalar AFTERWARDS (only for the blend)
-//   SSE : multiplies the Alpha scalar BEFORE the test (cb2[3].z), so it ENTERS the left-hand side
-// The caller says which game runs.
-uniform bool bLeySse;
 
 in vec4 vColor;
 in vec2 vUV;
@@ -3187,9 +2770,8 @@ void main(void)
 		// `color.a *= baseMap.a` lives INSIDE that if: with the toggle off the factor is 1.0. Gating this
 		// block by bShowTexture made the shadow keep the whole card of a shape the lit pass still cuts.
 		float dTexA = bShowTexture ? texture(texDiffuse, uv).a : 1.0;
-		// SAME left-hand side as the lit pass: SSE multiplies the material scalar in BEFORE its test,
-		// FO4 tests without it.
-		float aTex = dTexA * vColor.a * (bLeySse ? uMaterialAlpha : 1.0);
+		// SAME left-hand side as the lit pass: Skyrim SE multiplies the material scalar in BEFORE its test.
+		float aTex = dTexA * vColor.a * uMaterialAlpha;
 		// CUTOUT: a hard threshold, strict `<` so equality is KEPT.
 		if (aTex < alphaThreshold)
 			discard;
@@ -3210,15 +2792,6 @@ End Module
 ''' chapa rectangular apoyada en el aire.</para></summary>
 Friend Module GroundShadowShaderSource
 
-    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
-    ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
-    ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
-    ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
-    ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
-    ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
-    ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
-    ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_Ground As String = "
 #version 430
 " & Gl43.ClipGlsl & "layout(location = 0) in vec2 aCorner;   // unit quad, [-1..1] on both axes
@@ -3346,15 +2919,8 @@ Public Class Ground_Shadow_Shader_Class
     End Sub
 End Class
 
-''' <summary>Programa de profundidad para assets FO4: Vertex_FO4 + el fragment de sombra.</summary>
-Public Class Shadow_Depth_Shader_Fo4
-    Inherits Shader_Base_Class
-    Sub New()
-        MyBase.New(Shader_Class_Fo4.Vertex_FO4, ShadowDepthShaderSource.Fragment_ShadowDepth)
-    End Sub
-End Class
-
-''' <summary>Programa de profundidad para assets SSE: Vertex_SSE + el MISMO fragment de sombra.</summary>
+''' <summary>Programa de profundidad de Skyrim SE: Vertex_SSE + el fragment de sombra (Fallout 4 dibuja sus mapas con la
+''' tecnica utilitaria del motor, RenderableMesh.RenderShadowMapFo4).</summary>
 Public Class Shadow_Depth_Shader_SSE
     Inherits Shader_Base_Class
     Sub New()
@@ -3363,7 +2929,7 @@ Public Class Shadow_Depth_Shader_SSE
 End Class
 
 ''' <summary>Las vistas de depuracion del fragment shader. Cada valor es el numero que el bloque
-''' <c>DEBUG MODE</c> compara adentro del GLSL, en los DOS juegos: <c>Fragment_FO4</c> (linea del
+''' <c>DEBUG MODE</c> compara adentro del GLSL, en los DOS juegos: <c>Shader_Class_Fo4EditView.Fragment_Fo4EditView</c> (linea del
 ''' <c>if (DebugMode &gt; 0.0)</c>) y <c>Fragment_SSE</c>.
 ''' <para>⛔ LOS NUMEROS SON EL CONTRATO CON EL GLSL. El uniform <c>DebugMode</c> es un <c>float</c> y el
 ''' shader decide con <c>abs(DebugMode - N) &lt; 0.5</c>: renumerar o reordenar este enum cambia lo que
@@ -3506,15 +3072,16 @@ Public MustInherit Class Shader_Base_Class
     ''' <para>⛔ <c>Shared</c> A PROPOSITO, Y ESO ARREGLA UN DEFECTO. Antes era un campo de INSTANCIA
     ''' (<c>Public Debugmode As Integer</c>) y el unico que lo escribia —el atajo F1..F5 de Wardrobe
     ''' Manager, y solo bajo <c>#If DEBUG</c>— lo hacia sobre <c>CurrentShader</c>, o sea sobre el programa
-    ''' del JUEGO ACTIVO. Como <c>Shader_Class_Fo4</c> y <c>Shader_Class_SSE</c> son dos instancias
+    ''' del JUEGO ACTIVO. Como el programa de FO4 y <c>Shader_Class_SSE</c> son dos instancias
     ''' distintas, cada una con su propio campo, cambiar de juego dejaba la vista atras sin decir nada.
     ''' Compartida, la eleccion vale para los dos, que es lo que el combo promete.</para>
     ''' <para>NO SE PERSISTE, y es deliberado: no vive en <c>Config_App</c> ni en ningun archivo. Arranca
     ''' en <see cref="ShaderDebugView.None"/> en cada corrida y el boton "Reset rendering to defaults" la
     ''' devuelve a None. Es una ayuda de inspeccion, no un ajuste del usuario.</para>
-    ''' <para>ALCANCE, MEDIDO Y NO SUPUESTO. El unico que lee esto es <c>ApplyMaterial</c>, o sea el pase
-    ''' ILUMINADO del preview, y <c>RenderScene</c> —su unico camino de entrada— no se llama desde ningun
-    ''' camino de bake. EL BAKE NO PASA POR ACA: <c>BakeAllRunner</c> crea un <c>PreviewControl</c> solo
+    ''' <para>ALCANCE, MEDIDO Y NO SUPUESTO. Lo leen <c>ApplyMaterial</c> (el uniform <c>DebugMode</c>),
+    ''' <c>PreviewModel.FrameUsesFo4Deferred</c> (un cuadro FO4 con vista de depuracion no es el diferido: lo dibuja
+    ''' <c>Shader_Class_Fo4EditView</c>) y <c>PreviewControl.FramePostOn</c> (sin post), todos bajo <c>RenderScene</c>
+    ''' —su unico camino de entrada—, que no se llama desde ningun camino de bake. EL BAKE NO PASA POR ACA: <c>BakeAllRunner</c> crea un <c>PreviewControl</c> solo
     ''' para tener contexto GL, le PARA el <c>RenderTimer</c> ("no queremos renders del control") y compone
     ''' contra FBOs con los shaders propios de <c>FaceTintCompositor</c>, que no tienen este uniform. Lo
     ''' que SI la ve es <c>CaptureBitmap</c> —los dos "Save render screenshot" y la captura opcional del
@@ -3535,7 +3102,7 @@ Public MustInherit Class Shader_Base_Class
 
     ''' <summary>Color sRGB-&gt;lineal (powf 2.2), como sube el engine los colores de material al CB
     ''' (Fallout4.exe SetupMaterial, DAT_142475358=2.2). Usar SOLO cuando LinearPipeline esta ON;
-    ''' gateado en los call-sites de Render.vb (el helper lo comparten Fragment_FO4 y Fragment_SSE).</summary>
+    ''' gateado en los call-sites de Render.vb (MaterialColor, la rama de Fallout 4).</summary>
     Public Shared Function Color_to_Vector_Linear(color As Color) As Vector3
         Return New Vector3(CSng(Math.Pow(color.R / 255.0F, 2.2)),
                            CSng(Math.Pow(color.G / 255.0F, 2.2)),

@@ -1564,6 +1564,19 @@ void main() {}
         Throw New ArgumentOutOfRangeException(NameOf(rec))
     End Function
 
+    ''' <summary>THE Z-PREPASS'S ALPHA TEST as one GLSL text (ola 7f round 2, p7f-03): the function Fo4GPre_rec3930 of the transcribed PS
+    ''' 3930 (the 0x1A entry, with VS 3929), without its declarations and its main - kill = tex(t0, TEXCOORD0.xy).a x sat(TEXCOORD0.z +
+    ''' cb2[0].y) - cb2[0].x &lt; 0 (0x141828F45..F8D). Its readers: the prepass's own program (PrepassFragment(3930), the whole block)
+    ''' and Fallout 4's edit views (Shader_Class_Fo4EditView), which declare gbuf_TEXCOORD0, cb2_ps0 and t0 and include
+    ''' D3d11SemanticsSource.Glsl: the views cut with the prepass's very text, not a copy of it.</summary>
+    Friend Function PrepassAlphaKill() As String
+        Dim t = ProgramText("Fo4GPre_rec3930")
+        Dim i = t.IndexOf("void Fo4GPre_rec3930(", StringComparison.Ordinal)
+        Dim j = t.IndexOf("void main()", StringComparison.Ordinal)
+        If i < 0 OrElse j < i Then Throw New InvalidOperationException("Fo4GBufferBlocks.glsl.txt: the function of Fo4GPre_rec3930 was not found")
+        Return t.Substring(i, j - i)
+    End Function
+
     ''' <summary>A z-prepass PS of the fxp tail: 3930 (alpha test, with 3929), 3933, 3936.</summary>
     Friend Function PrepassFragment(rec As Integer) As String
         Select Case rec
@@ -1599,7 +1612,8 @@ void main() {}
                r.InDefines & StageInputsBlock & r.Fn & vbLf & "#define FO4_GBUF_ENTRY " & r.FnName & vbLf & AppMain
     End Function
 
-    ''' <summary>GATE ONLY: the transcribed BSEffect decal PS, oracle of Fragment_FO4's BGEM path drawn into the G-buffer (one runtime owner of the BGEM law).</summary>
+    ''' <summary>GATE ONLY: the transcribed BSEffect decal PS drawn into the G-buffer (the runtime's owner of the BGEM law is the
+    ''' effect's transcribed program, Fo4EffectSource).</summary>
     Friend Function EffectDecalFragmentOf(effectTechnique As UInteger) As String
         Dim r = EffectDecals(effectTechnique)
         Return Header430 & D3d11SemanticsSource.Glsl & Literals & EffectCommon & r.Fn & vbLf & "#define FO4_GDECAL_ENTRY " & r.FnName & vbLf & EffectAppMain

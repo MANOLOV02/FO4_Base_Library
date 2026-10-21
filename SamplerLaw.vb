@@ -23,6 +23,9 @@ Friend Module SamplerLaw
         Detail = 8
         Height = 11
         InnerLayer = 12
+        ''' <summary>Fallout 4's edit views (Shader_Class_Fo4EditView): the z-prepass's t0 for the prepass's cut (ola 7f round 2, p7f-03;
+        ''' Render ApplyFo4EditViewDepthCut) - its own unit, so its sampler (UtilityDiffuse) does not replace the colour slot 0's.</summary>
+        EditViewPrepassT0 = 13
     End Enum
 
     Friend Const FiltInherit As Integer = -1
@@ -99,8 +102,10 @@ Friend Module SamplerLaw
         Return r
     End Function
 
-    ''' <summary>The utility shader's t0 (z-prepass alpha test, shadow maps): SSE lighting +0x70 / effect +0x80, FILT 3
-    ''' (0x141567010); FO4 always mat+0x48 with mat+0x70 (0x142240F40).</summary>
+    ''' <summary>The utility draws' t0 (z-prepass alpha test, shadow maps, refraction normals): SSE lighting +0x70 / effect +0x80,
+    ''' FILT 3 (0x141567010); FO4 always mat+0x48 with mat+0x70 - the shadow map's BSUtilityShader (0x142240F40) and the z-prepass's
+    ''' own draw (0x141828FA3..90C: the entry's texture [mat+0x48], its sampler from the table 0x1438E25F0 of 0x141856390 at
+    ''' address [mat+0x70], filter 3; RenderableMesh.DrawFo4EnginePrepass).</summary>
     Friend Function UtilityDiffuse(s As SamplerInputs) As SlotSampler
         Return New SlotSampler With {.Unit = AppUnit.Diffuse, .EngineSlot = 0, .Addr = s.Clamp And 3, .Filt = 3}
     End Function

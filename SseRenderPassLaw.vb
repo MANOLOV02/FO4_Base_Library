@@ -205,9 +205,9 @@ Friend Module SseRenderPassLaw
         Return t
     End Function
 
-    ''' <summary>THE alpha test of a SSE shape's shadow-map pass: whether it runs and against which threshold, the pair of
-    ''' Fo4RenderPassLaw.ShadowPassAlphaTest for RenderDepthOnly (Shader_Class SHADOW SYNC CONTRACT; the compared quantity is
-    ''' Fragment_ShadowDepth's, app design). Test: the lighting slot 0x2B builds the utility SHADOWMAP technique with bit 7 (the
+    ''' <summary>THE alpha test of a SSE shape's shadow-map pass: whether it runs and against which threshold, for RenderDepthOnly
+    ''' (Shader_Class SHADOW SYNC CONTRACT; the compared quantity is Fragment_ShadowDepth's, app design; Fallout 4's pair is
+    ''' Fo4RenderPassLaw.ShadowPassAlphaTest, read by RenderShadowMapFo4). Test: the lighting slot 0x2B builds the utility SHADOWMAP technique with bit 7 (the
     ''' only SHADOWMAP PS that discard: 34 of 177 utility PS, bit 7 or stipple) exactly when the NiAlphaProperty has its test
     ''' bit 9 (0x14151B641..65A); SLSF2 bit 54 (No_Transparency_Multisampling) does not enter the technique. Threshold: cb11[0].x
     ''' of the batch, SubgroupThreshold (shadow-map finish 0x1415206A0 -> slot 0x2B -> 0x141521190 -> 0x14155FF40 ->

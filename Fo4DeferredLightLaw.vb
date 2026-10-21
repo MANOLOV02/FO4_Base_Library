@@ -105,15 +105,16 @@ Friend Module Fo4DeferredLightLaw
 
     ''' <summary>The default rig's softness (PreviewLightRig.DefaultPreset, "Portrait": 2.0 texels, the value every preset has): the
     ''' value that maps to the game's filter (rev-E08).</summary>
-    Private ReadOnly DefaultRigSoftness As Single = PreviewLightRig.DefaultPreset().Rig.ShadowSoftnessTexels
+    Friend ReadOnly DefaultRigSoftness As Single = PreviewLightRig.DefaultPreset().Rig.ShadowSoftnessTexels
 
-    ''' <summary>APP (rev-E08): the scale of the game's Poisson radius for the rig's Softness, softness / the default rig's softness,
-    ''' with the softness bounded to [0, PreviewShadowSettings.MaxPcfRadius] as the rig's other receivers bound it (UploadShadowUniforms):
-    ''' 2.0 (every preset; the default) -&gt; 1 = the game's +-3 texels; 4.0 -&gt; 2 (+-6 texels); 0 -&gt; 0 (the 16 taps on the centre: the
-    ''' hardware's 2 x 2 comparison only). A saved rig keeps its stored value: the same number now reads as this ratio on Fallout 4's
-    ''' engine receiver (and still as texels of PCF radius on Skyrim SE's and on the ground's).</summary>
+    ''' <summary>APP (rev-E08): the scale of the game's Poisson radius for the rig's Softness, softness / the default rig's softness:
+    ''' 2.0 (every preset; the default; Fallout 4's floor) -&gt; 1 = the game's +-3 texels; 4.0 -&gt; 2 (+-6 texels). The stored Softness
+    ''' is in Fallout 4's range [DefaultRigSoftness, PreviewShadowSettings.MaxPcfRadius] at the source (PreviewLightRig
+    ''' .WithShadowSoftnessInRange; user decision 21-oct-2026: only softer than the game, never harder - a rig saved below it is
+    ''' migrated at the config's load): the number reads as this ratio on Fallout 4's engine receiver (and as texels of PCF radius on
+    ''' the ground's).</summary>
     Friend Function RigShadowRadiusScale(softnessTexels As Single) As Single
-        Return Math.Clamp(softnessTexels, 0.0F, CSng(PreviewShadowSettings.MaxPcfRadius)) / DefaultRigSoftness
+        Return softnessTexels / DefaultRigSoftness
     End Function
 
     ''' <summary>APP (rev-E08): the value of the sun PS's AppShadowLift uniform for the rig's Darkness D: 1 - D, D bounded to [0, 1] as

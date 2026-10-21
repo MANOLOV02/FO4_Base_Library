@@ -12,7 +12,8 @@
 ''' The engine adds -eye to each row's w before weighting (L52-53); the CPU leaves it out and the CPU-route VS subtracts s * eye
 ''' (s = the same chain over the weights alone), by distributivity (asm2glsl.cpu_route_body).
 ''' <para>THE ONE RULE OF FALLOUT 4 (user decision 12-oct-2026, D21: the checkbox "Replicate engine skin-weight normalization" is
-''' gone): the view (G-buffer, Vertex_FO4's shadow and forward, picking, bounds, the legacy VBOs) and the bake use this law, always
+''' gone): the view (G-buffer, the edit views' VS (Shader_Class_Fo4EditView), picking, bounds, the legacy VBOs) and the bake use this
+''' law, always
 ''' (UsesEngineLaw). The bake keeps its own accumulation (SkinningHelper.BlendBoneMatrices) with these weights - the CPU SkinBlend
 ''' of the engine and the CK, CreationKit.exe 0x142B73230 = Fallout4.exe 0x141837390, instruction for instruction: w3 computed, not
 ''' read, no renormalisation. Skyrim SE keeps its normalised law (not verified by RE there).</para></summary>
@@ -46,8 +47,8 @@ Public Module Fo4EngineSkin
     End Function
 
     ''' <summary>THE GATE, one for the view and the bake (user decision 12-oct-2026, D21): Fallout 4 and a 4-slot skin. Every path of
-    ''' the view - the CPU route's stream, the per-vertex skin matrix (Vertex_FO4's CPU skinning, the shadow, picking, bounds, the
-    ''' world cache), Vertex_FO4's GPU weights - and the bake's weights. The law is 4-slot (rec2304 L47-61): a skin with another slot
+    ''' the view - the CPU route's stream, the per-vertex skin matrix (the edit views' CPU skinning, picking, bounds, the
+    ''' world cache), the edit views' GPU weights (Shader_Class_Fo4EditView) - and the bake's weights. The law is 4-slot (rec2304 L47-61): a skin with another slot
     ''' count has none to replicate; Skyrim SE keeps its normalised law.</summary>
     Public Function UsesEngineLaw(weightsPerVertex As Integer) As Boolean
         Return weightsPerVertex = Slots AndAlso Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Fallout4

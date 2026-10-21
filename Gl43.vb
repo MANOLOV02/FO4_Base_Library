@@ -536,6 +536,10 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
     ''' while the current context's clip buffer is the one at ClipBinding; otherwise InvalidOperationException (no draw reads an
     ''' unbound uniform block, whose contents GL leaves undefined). UseProgram(0) is not checked.</summary>
     Friend Shared Sub UseProgram(program As Integer)
+#If DEBUG Then
+        ' Ola 7f tester (ShadowGate --ola7f e1 / e4): every program a draw binds, in order, while a gate holds the list.
+        If program <> 0 AndAlso GateUseLog IsNot Nothing Then GateUseLog.Add(program)
+#End If
         If program <> 0 Then
             Dim st = Current()
             Dim bound As Integer
@@ -544,6 +548,11 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         End If
         GL.UseProgram(program)
     End Sub
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ola 7f tester, ShadowGate --ola7f): the GL program ids UseProgram bound, in order, while not Nothing.</summary>
+    Friend Shared GateUseLog As List(Of Integer) = Nothing
+#End If
 
     ''' <summary>GATE ONLY (ShadowGate --fo4-deferred-scene, law gl43-unbound-clip): <paramref name="attached"/> False detaches the
     ''' clip buffer from ClipBinding, True puts it back.</summary>

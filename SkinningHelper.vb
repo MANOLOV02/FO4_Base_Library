@@ -802,7 +802,7 @@ Public Class SkinningHelper
                 '   2. `Dim ckWg(3) As Single` adentro = alocacion en heap POR VERTICE -> al scratch por hilo
                 '   3. la ley del motor por vertice sin corto-circuito de la compuerta (hoy Fo4EngineSkin.UsesEngineLaw)
                 '   4. `AMatrix4(Mtot)` -> Matrix4 intermedia -> indexador -> 12 escrituras
-                ' LA VISTA DE FALLOUT 4 (D21): la matriz por vértice y los pesos de GPU de Vertex_FO4 van por la ley del motor
+                ' LA VISTA DE FALLOUT 4 (D21): la matriz por vértice y los pesos de GPU del VS de vistas de edicion van por la ley del motor
                 ' (Fo4EngineSkin), siempre. Ver FillPerVertexSkinMatrix.
                 Dim motorVista = hasSkin AndAlso Fo4EngineSkin.UsesEngineLaw(skinWpv)
                 perVertexEsMotor = motorVista
@@ -813,8 +813,8 @@ Public Class SkinningHelper
                                                              Dim baseIdx = i * 4
 
                                                              If motorVista Then
-                                                                 ' Los cuatro pesos del motor (w3 = 1 - sat) tal cual, y los índices del NIF: Vertex_FO4
-                                                                 ' los suma en el orden del VS del motor (Shader_Class Vertex_FO4).
+                                                                 ' Los cuatro pesos del motor (w3 = 1 - sat) tal cual, y los índices del NIF: el VS de
+                                                                 ' vistas de edicion los suma en el orden del VS del motor (Shader_Class_Fo4EditView).
                                                                  Dim r0, r1, r2 As Vector4, s As Single
                                                                  Fo4EngineSkin.BlendSkin(filasMotor, skinFlatIdx, skinFlatWgt, i * 4, scE.CkW, r0, r1, r2, s)
                                                                  For j = 0 To 3
@@ -1928,8 +1928,8 @@ Public Class SkinningHelper
         Dim wpv = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, 4)
         Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso skinning.VertexCount = vc)
         Dim sinSkin = If(palette.Length > 0, palette(0), Matrix4d.Identity)
-        ' LA VISTA DE FALLOUT 4 (decisión del usuario 12-oct-2026, D21): esta matriz alimenta el skinning de CPU de Vertex_FO4, la
-        ' sombra, el picking, los bounds y el world cache, y en FO4 va SIEMPRE por la ley del motor (Fo4EngineSkin.BlendSkin, la
+        ' LA VISTA DE FALLOUT 4 (decisión del usuario 12-oct-2026, D21): esta matriz alimenta el skinning de CPU del VS de vistas de
+        ' edicion, el picking, los bounds y el world cache, y en FO4 va SIEMPRE por la ley del motor (Fo4EngineSkin.BlendSkin, la
         ' misma función que el stream de la ruta CPU). Una sola compuerta para la vista y el horneado: Fo4EngineSkin.UsesEngineLaw.
         If hasSkin AndAlso Fo4EngineSkin.UsesEngineLaw(wpv) Then
             Dim rows As Vector4() = Nothing

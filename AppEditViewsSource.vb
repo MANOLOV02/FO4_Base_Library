@@ -1,5 +1,6 @@
-﻿''' <summary>THE APP'S EDIT-VIEW GLSL shared by the vertex stages that draw the edit views (Vertex_FO4, Vertex_SSE and the foot of the
-''' transcribed engine VS, Fo4GBufferSource.AppVertexFoot): ONE text (ola 2, propuesta H6). ASCII, no double quotes.</summary>
+﻿''' <summary>THE APP'S EDIT-VIEW GLSL shared by the vertex stages that draw the weight view (Vertex_SSE, the foot of the transcribed
+''' engine VS, Fo4GBufferSource.AppVertexFoot, and of the effects', Fo4EffectSource): ONE text (ola 2, propuesta H6). ASCII, no
+''' double quotes.</summary>
 Friend Module AppEditViewsSource
     ''' <summary>The bone-weight colour ramp of the weight view (moved here from Vertex_FO4 / Vertex_SSE, same text).</summary>
     Friend Const ColorRamp As String = "vec3 colorRamp(in float value)

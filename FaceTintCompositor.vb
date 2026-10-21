@@ -472,8 +472,8 @@ Public Module FaceTintCompositor
         Return (New (Name As String, Text As String)() {
             ("FACETINT-VERTEX", VertexShaderSource),
             ("FACETINT-FRAGMENT", FragmentShaderSource),
-            ("RENDER-FO4-VERTEX", Shader_Class_Fo4.Vertex_FO4),
-            ("RENDER-FO4-FRAGMENT", Shader_Class_Fo4.Fragment_FO4),
+            ("RENDER-FO4-EDITVIEW-VERTEX", Shader_Class_Fo4EditView.Vertex_Fo4EditView),
+            ("RENDER-FO4-EDITVIEW-FRAGMENT", Shader_Class_Fo4EditView.Fragment_Fo4EditView),
             ("RENDER-FLOOR-VERTEX", Floor_Shader_Class.Vertex_Floor),
             ("RENDER-FLOOR-FRAGMENT", Floor_Shader_Class.Fragment_Floor),
             ("RENDER-SSE-VERTEX", Shader_Class_SSE.Vertex_SSE),

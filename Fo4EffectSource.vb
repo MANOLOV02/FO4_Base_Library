@@ -120,8 +120,8 @@ void main()
 vec2 efxSvPosition;
 "
     Friend Const AppMain As String = "// APP ENTRY of the engine effect PS (ola 3): the record's engine_main writes o0 and its kill (its own alpha test against
-// AlphaTestRef); SV_POSITION.xy = gl_FragCoord.xy (the frame is in D3D rows, as the G-buffer stage). After it, the app's parts the
-// effects had in Fragment_FO4: the flat view, mask / weight / hide / zap, the translucent decals' base modes, the coverage of the
+// AlphaTestRef); SV_POSITION.xy = gl_FragCoord.xy (the frame is in D3D rows, as the G-buffer stage). After it, the app's parts of
+// the draw: the flat view, mask / weight / hide / zap, the translucent decals' base modes, the coverage of the
 // HDR target and, post off, the 2.3.8 display law of an effect (pow 1/2.2).
 in float maskFactor;
 in vec3 weightColor;

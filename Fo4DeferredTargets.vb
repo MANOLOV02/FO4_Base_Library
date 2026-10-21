@@ -18,7 +18,8 @@ void main() {}
 "
 
     ''' <summary>POST OFF (direct frame, user rule: the material goes always): the composite's radiance through the 2.3.8 display tail
-    ''' that Fragment_FO4 applied to lit surfaces (LegacyDisplaySource, one copy). Drawn at z = 1 with GREATER: only engine geometry.
+    ''' of lit surfaces (LegacyDisplaySource.legacyLitDisplay, one copy; Fragment_SSE's post-off tail reads it too). Drawn at z = 1
+    ''' with GREATER: only engine geometry.
     ''' With the translucent decals' base in the frame (uCoverageBlend; user decision 7-oct-2026, DecalBaseTarget): the radiance is
     ''' premultiplied by the composite's coverage (rev-19, as the post reads it, Fragment_PostFo4); un-premultiplied, through the
     ''' tail, and mixed over the background already in the display target with that coverage (blend colour SRC_ALPHA /
@@ -85,9 +86,9 @@ void main()
     ''' backgroundAt wants the rows of the display (PostProcess.vb Fragment_PostFo4), so y = H - y.</item>
     ''' <item>o1 (RT 0x1B): the decal's geometric normal with the records' encode (rec2762 L75-91: engine view = (x, y, -z_gl),
     ''' z = min(z, 0), normalised, xy / sqrt(8 - 8 z) + 0.5), NOT premultiplied (a direction: the decals blend theirs over it as the
-    ''' engine blends a decal's over a surface's). Geometric normal = AppMain's and Fragment_FO4's geoNormal law: the interpolated
+    ''' engine blends a decal's over a surface's). Geometric normal = AppMain's geoNormal law: the interpolated
     ''' vertex normal (mv_tbn column 2), flipped on back faces of a double-sided shape; MSN: the map's normal (v_msnMatrix * t1.rbg,
-    ''' Fragment_FO4's MSN branch).</item>
+    ''' the decode of Fallout 4's MSN programs: VS rec2215 -&gt; PS rec2698).</item>
     ''' <item>o2 (RT 0x1D) = 0: no SSR mask, no cube, no envmap, cb2[5].x = 0 (rec2762 L92-107 with zero constants).</item>
     ''' <item>o3 (RT 0x1E) = (0, 0, 0, 1): no gloss, no specular, SpecularParam.w = 0; id 255 = the default of the 245 PS
     ''' (mov o3.w, 1.0; RE_FO4_DEFERRED_FRAME 6, ids).</item>
@@ -830,7 +831,8 @@ Friend NotInheritable Class Fo4DeferredTargets
     Private _quadVao, _quadVbo, _triVao, _triVbo, _emptyVao As Integer
     Private _point, _cubeSampler, _shadowCompare, _aoSampler As Integer
     ''' <summary>The 1x1 inputs the composite's pass 2 reads where the preview runs no producer (Fo4DeferredTargets.RunComposite2):
-    ''' t9 = 1 (no AO: decision Q-AO open, the frame as before), t14 = 0 (no SSR: the SSLR chain's owner is not traced, re.md H-9;
+    ''' t9 = 1 (no AO: user decision 14-oct-2026 Q-AO, declared - the preview runs no SAO), t14 = 0 (no SSR: the SSLR chain's owner
+    ''' is not traced, re.md H-9;
     ''' RE_FO4_DEFERRED_FRAME 17.5).</summary>
     Private _noAo, _noSsr As Integer
     Private Shared ReadOnly GBufferBuffers As DrawBuffersEnum() = {DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1,
@@ -1050,7 +1052,8 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' 0 / 1 / 2 of RT 0x28 (a mip the target does not have, n &lt; 3, is no image: its writes are dropped, as a null UAV's), CB0[0] =
     ''' g_ClipInfos = (n f, n - f, f, 0) from the camera's near / far (+0xF0..+0xFC, 0x14220D18A..192), dispatch
     ''' ((W &gt;&gt; 1) + 7) &gt;&gt; 3 x ((H &gt;&gt; 1) + 7) &gt;&gt; 3 (0x14220D10F..112, 0x14220D164..1A7; W' = ceil(W sx), sx = 1). It runs in
-    ''' every frame: RT 0x28 is the composite's input whatever the post does (the SAO's own passes, slots 1..9, are decision Q-AO).</summary>
+    ''' every frame: RT 0x28 is the composite's input whatever the post does (the SAO's own passes, slots 1..9, are not run: user
+    ''' decision 14-oct-2026 Q-AO, no AO).</summary>
     Private Sub RunCameraZ(progs As Fo4DeferredPrograms, near As Single, far As Single)
         Dim p = progs.ImageSpaceProgram(3860UI)
         p.Use()
@@ -1343,7 +1346,7 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' (Fo4DeferredLightLaw.CompositePass2: 0xB60 rec3495 with the post, 0x160 rec3505 without). Inputs (SetupTechnique 0x142216AC0
     ''' and SetupGeometry 0x1422174F0, DF 4.2, RE_SAO_BOTH 2.6): t1 RT 0x1B, t2 RT 0x1D, t3 RT 0x1E, t4 RT 0x1F, t5 RT 0x21, t6 RT
     ''' 0x22, t7 the depth, t8 the envmap array, t10 RT 2, t15 RT 0x28; with APPLY_AO t9 = RT 0x27 (CLAMP, bilinear) and with SSLR
-    ''' t14 = RT 7 - the preview binds 1 and 0 there (_noAo: decision Q-AO open; _noSsr: re.md H-9, the frame as before). Constants:
+    ''' t14 = RT 7 - the preview binds 1 and 0 there (_noAo: no AO, user decision 14-oct-2026 Q-AO; _noSsr: re.md H-9, the frame as before). Constants:
     ''' VPOSOffset (1 / W, 1 / H, 1, 1) (0x142217560..5D0), DynamicResolutionParams (Fo4DeferredLightLaw, 0x14221765F..659), the
     ''' cb0 of SetupTechnique (SSSSSParams (fSSSSSPower 4.0, fSSSSSDepthCorrection 2.5, fSSSSS1stPersonDepthMultiplier 9.0)
     ''' 0x142217097..0B2; SSLRParams0.x fSSLRIntensity 1.0, SSLRParams1.z fSSLRBlendingPower 1.0, DF 17.2), the sun of FOG
