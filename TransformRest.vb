@@ -8,8 +8,11 @@ Imports NiflySharp.Enums
 ''' 1.11.240.0 and SkyrimSE.exe (the interpolator side is the same code in both: D:\WinTmp\rc\ola0c\re7\cmpr.py, pairs1-3.txt;
 ''' resultado5 R2). The time: ControllerRestLaw.ControllerTimeAtRest; the derived key data: KeyFillLaw; the quaternion arithmetic:
 ''' QuaternionLaw.
-''' <para>Holes, declared: a controller whose interpolator is a NiPathInterpolator (FO4 7, SSE 28 in the corpus) or a
-''' NiLookAtInterpolator (SSE 5) is NOT TRACED - nothing; a Point3 QUADRATIC / TBC channel evaluated past its last key reads that
+''' <para>A controller whose interpolator is a NiPathInterpolator (FO4 7, SSE 28 in the corpus): its rest on the path is postponed
+''' (user order 20-oct-2026) - nothing is written, its block keeps the file's position, and `onPath` says so (the frame notice
+''' PathControllerAtRest).</para>
+''' <para>Holes, declared: a controller whose interpolator is a NiLookAtInterpolator (SSE 5) is NOT TRACED - nothing; a Point3
+''' QUADRATIC / TBC channel evaluated past its last key reads that
 ''' key's B / C coefficients, which the load never writes (KeyFillLaw.Point3Coefficients; the key array comes from the allocator
 ''' 0x141657DE0 with only the time set, 0x141771FA0): not determinable; the sin / cos of the exe beyond 10000 (QuaternionLaw.SinCos):
 ''' not determinable; a float key of type 0 returns the caller's stack (0x14174C3A0 = SSE 0x140F6EC50: ret): not determinable. Each
@@ -36,12 +39,27 @@ Friend Module TransformRestLaw
 
     ''' <summary>NiTransformController::Update (FO4 0x141745490, SSE 0x140F69760) at the controller's first update: its time from
     ''' ControllerRestLaw.ControllerTimeAtRest (Nothing = no write), the interpolator's output (TransformInterpolatorAt) written per
-    ''' valid component. <paramref name="hole"/> = why nothing is determinable (Nothing when the law simply writes nothing).</summary>
-    Friend Function TransformAtRest(c As NiTransformController, interp As NiInterpolator, data As NiTransformData, ByRef hole As String) As TransformRest?
+    ''' valid component. <paramref name="hole"/> = why nothing is determinable (Nothing when the law simply writes nothing).
+    ''' <paramref name="onPath"/> = a path controller the game updates at rest (its time has a value) and the preview does not
+    ''' evaluate: nothing written, the file's position stays.</summary>
+    Friend Function TransformAtRest(c As NiTransformController, interp As NiInterpolator, data As NiTransformData, ByRef hole As String,
+                                    Optional ByRef onPath As Boolean = False) As TransformRest?
         hole = Nothing
+        onPath = False
         Dim t = ControllerRestLaw.ControllerTimeAtRest(c)
         If Not t.HasValue Then Return Nothing
-        If TypeOf interp Is NiPathInterpolator OrElse TypeOf interp Is NiLookAtInterpolator Then
+#If DEBUG Then
+        ' Ola 7e tester (ParityGate transform-rest-law (12), ShadowGate --notice-classes c5 / s4): HEAD's law, the path a hole.
+        If Fo4GBufferConstants.GateMutantOn("rest-path-dropped") AndAlso TypeOf interp Is NiPathInterpolator Then
+            hole = $"{interp.GetType().Name}: NOT TRACED"
+            Return Nothing
+        End If
+#End If
+        If TypeOf interp Is NiPathInterpolator Then
+            onPath = True
+            Return Nothing
+        End If
+        If TypeOf interp Is NiLookAtInterpolator Then
             hole = $"{interp.GetType().Name}: NOT TRACED"
             Return Nothing
         End If

@@ -13,7 +13,7 @@ Imports OpenTK.Graphics.OpenGL4
 ''' </list>
 ''' Held declared: the exact semantics of the period counter [0x143E5DFA0] (6): the preview's period is its frame; the engine's
 ''' linear subresource copy that shifts the faces of a cube with MORE mips than the array (1.4) is not reproduced (vanilla has none:
-''' every compatible cube is 128x128x8, 5).</summary>
+''' every compatible cube is 128x128x8, 5); Register returns the frame notice's line for it (ola 7e, FrameNoticeId.EnvCubeMoreMipsThanArray).</summary>
 Friend NotInheritable Class Fo4EnvMapArray
     Private Const SliceCount As Integer = 42
 
@@ -145,7 +145,30 @@ Friend NotInheritable Class Fo4EnvMapArray
     ''' resolved to nothing), or -1. The compared header is the FILE's (HeaderOf: the DXGI byte the loader PROMOTED, MakeSRGB
     ''' 0x14183E680, ENV 13.3 / 16.2, rev-03; the cube byte [+0x2E], ENV 1.2, rev-46), never the GL storage's. A file whose header the
     ''' app cannot read is not registered: no claim (declared).</summary>
-    Public Function Register(tex As PreviewModel.Texture_Loaded_Class) As Integer
+    Public Function Register(tex As PreviewModel.Texture_Loaded_Class) As (Slice As Integer, ShiftedFaces As String)
+        Dim slice = RegisterSlice(tex)
+        If slice < 0 Then Return (slice, Nothing)
+        ' Ola 7e (7c-8, C18): the seed is the array's header, else the first queued cube's (AcceptsHeader, HeaderMatches: mips >= is
+        ' accepted); the seed itself, or no seed yet, shifts nothing.
+        Dim seed As EngineHeader
+        If _array <> 0 Then
+            seed = _arrayHeader
+        ElseIf _queue.Count > 0 AndAlso _queue(0) <> slice Then
+            seed = _entries(_queue(0)).Header
+        Else
+            Return (slice, Nothing)
+        End If
+        Dim mine = _entries(slice).Header
+#If DEBUG Then
+        ' Ola 7e tester (ShadowGate --texture-creation [G-shift]): the shift never named (HEAD).
+        If Fo4GBufferConstants.GateMutantOn("c18-no-shift") Then Return (slice, Nothing)
+#End If
+        If mine.Mips <= seed.Mips Then Return (slice, Nothing)
+        Return (slice, $"environment cube with {mine.Mips} mips in the world's cube array of {seed.Mips}: the game's copy shifts its faces, the preview's does not")
+    End Function
+
+    ''' <summary>The slice of Register (the engine's register, 0x142239930), or -1.</summary>
+    Private Function RegisterSlice(tex As PreviewModel.Texture_Loaded_Class) As Integer
         If tex Is Nothing OrElse tex.Texture_ID = 0 Then Return -1                       ' 0x14223993C
         Dim cube = tex.Texture_ID
         Dim hdr = HeaderOf(tex)

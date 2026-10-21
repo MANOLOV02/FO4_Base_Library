@@ -36,6 +36,7 @@ Friend Module NodeRestLayer
         Friend Data As NiTransformData
         Friend Rest As TransformRestLaw.TransformRest?
         Friend Hole As String
+        Friend OnPath As Boolean
 
         Friend Function Matches(c As NiTransformController, interp As NiInterpolator, data As NiTransformData) As Boolean
             If c.Flags.Value <> Flags OrElse Not Same(c.Frequency, Frequency) OrElse Not Same(c.Phase, Phase) OrElse
@@ -58,19 +59,21 @@ Friend Module NodeRestLayer
     Private ReadOnly Memo As New ConditionalWeakTable(Of NiTransformController, RestMemo)()
 
     ''' <summary>What <paramref name="c"/> writes at rest (TransformRestLaw.TransformAtRest), from the memo while its inputs are the same.</summary>
-    Private Function ControllerRest(nif As Nifcontent_Class_Manolo, c As NiTransformController, ByRef hole As String) As TransformRestLaw.TransformRest?
+    Private Function ControllerRest(nif As Nifcontent_Class_Manolo, c As NiTransformController, ByRef hole As String, ByRef onPath As Boolean) As TransformRestLaw.TransformRest?
         Dim interp = nif.GetBlock(c.Interpolator)
         Dim ti = TryCast(interp, NiTransformInterpolator)
         Dim data = If(ti Is Nothing, Nothing, nif.GetBlock(ti.Data))
         Dim m As RestMemo = Nothing
         If Memo.TryGetValue(c, m) AndAlso m.Matches(c, interp, data) Then
             hole = m.Hole
+            onPath = m.OnPath
             Return m.Rest
         End If
         Dim h As String = Nothing
-        Dim r = TransformRestLaw.TransformAtRest(c, interp, data, h)
+        Dim p As Boolean
+        Dim r = TransformRestLaw.TransformAtRest(c, interp, data, h, p)
         m = New RestMemo With {.Flags = c.Flags.Value, .Frequency = c.Frequency, .Phase = c.Phase, .StartTime = c.StartTime,
-                               .StopTime = c.StopTime, .Interp = interp, .Data = data, .Rest = r, .Hole = h}
+                               .StopTime = c.StopTime, .Interp = interp, .Data = data, .Rest = r, .Hole = h, .OnPath = p}
         If ti IsNot Nothing Then
             m.PoseT = ti.Transform.Translation
             m.PoseR = ti.Transform.Rotation
@@ -78,14 +81,17 @@ Friend Module NodeRestLayer
         End If
         Memo.AddOrUpdate(c, m)
         hole = h
+        onPath = p
         Return r
     End Function
 
     ''' <summary>The local transform <paramref name="o"/> is drawn with: its NIF local (Transform_Class of the block) with each component
     ''' a NiTransformController of its chain writes at rest. <paramref name="driven"/> = some controller of the chain writes a component;
-    ''' <paramref name="hole"/> gets the reason a controller of the chain is not determinable (its components are not written).
-    ''' Nothing when the block is not a NiNode or a shape.</summary>
-    Friend Function DrawnLocal(o As NiAVObject, nif As Nifcontent_Class_Manolo, ByRef driven As Boolean, ByRef hole As String) As Transform_Class
+    ''' <paramref name="hole"/> gets the reason a controller of the chain is not determinable (its components are not written);
+    ''' <paramref name="onPath"/> the block's name when one of its controllers is a path controller at rest (TransformRestLaw.TransformAtRest:
+    ''' nothing written, the file's position stays). Nothing when the block is not a NiNode or a shape.</summary>
+    Friend Function DrawnLocal(o As NiAVObject, nif As Nifcontent_Class_Manolo, ByRef driven As Boolean, ByRef hole As String,
+                               Optional ByRef onPath As String = Nothing) As Transform_Class
         Dim local As Transform_Class
         Dim sh = TryCast(o, INiShape)
         If sh IsNot Nothing Then
@@ -100,8 +106,10 @@ Friend Module NodeRestLayer
             Dim tc = TryCast(c, NiTransformController)
             If tc Is Nothing Then Continue For
             Dim h As String = Nothing
-            Dim r = ControllerRest(nif, tc, h)
+            Dim p As Boolean
+            Dim r = ControllerRest(nif, tc, h, p)
             If h IsNot Nothing Then hole = $"{If(o.Name?.String, "")}: {h}"
+            If p Then onPath = If(o.Name?.String, "")
             If Not r.HasValue Then Continue For
             Dim v = r.Value
             If v.Translation.HasValue Then local.Translation = v.Translation.Value : driven = True
@@ -116,6 +124,8 @@ Friend Module NodeRestLayer
     Friend NotInheritable Class ChainReport
         Friend ReadOnly Driven As New List(Of String)
         Friend ReadOnly Holes As New List(Of String)
+        ''' <summary>Ola 7e (user order 20-oct-2026): the blocks of the chain with a path controller at rest, drawn at the file's position.</summary>
+        Friend ReadOnly Paths As New List(Of String)
         ''' <summary>Blocks the layer would move on a chain the shape draws as the file (SkinningHelper.NifOwnDrawnWorld: a skinned shape
         ''' mounted on the skeleton). Ola 7b ronda 3: noted where the rest law is not traced (NoteMounted, RestLawTrace.Untraced: Skyrim SE,
         ''' Fallout 4's head parts, loose NIFs) - the notice as before 7b.</summary>
@@ -134,6 +144,7 @@ Friend Module NodeRestLayer
         Friend Excluded As String
         Friend Reparented As String
         Friend Hole As String
+        Friend Path As String
     End Class
 
     ''' <summary>The shape's ShapeLayer from the report its drawing collected; Nothing when the layer did nothing to it.</summary>
@@ -141,8 +152,9 @@ Friend Module NodeRestLayer
         If rep Is Nothing Then Return Nothing
         Dim join = Function(l As List(Of String)) If(l.Count = 0, Nothing, String.Join(", ", l.Distinct(StringComparer.Ordinal)))
         Dim r As New ShapeLayer With {.Driven = join(rep.Driven), .Excluded = join(rep.Excluded), .Reparented = join(rep.Reparented),
-                                      .Hole = join(rep.Holes)}
-        If r.Driven Is Nothing AndAlso r.Excluded Is Nothing AndAlso r.Reparented Is Nothing AndAlso r.Hole Is Nothing Then Return Nothing
+                                      .Hole = join(rep.Holes), .Path = join(rep.Paths)}
+        If r.Driven Is Nothing AndAlso r.Excluded Is Nothing AndAlso r.Reparented Is Nothing AndAlso r.Hole Is Nothing AndAlso
+           r.Path Is Nothing Then Return Nothing
         Return r
     End Function
 
@@ -158,13 +170,15 @@ Friend Module NodeRestLayer
         While cur IsNot Nothing
             Dim driven = False
             Dim hole As String = Nothing
-            Dim local = DrawnLocal(cur, nif, driven, hole)
+            Dim onPath As String = Nothing
+            Dim local = DrawnLocal(cur, nif, driven, hole, onPath)
             If local Is Nothing Then Exit While
             If driven Then
                 anyDriven = True
                 report?.Driven.Add(If(cur.Name?.String, ""))
             End If
             If hole IsNot Nothing Then report?.Holes.Add(hole)
+            If onPath IsNot Nothing Then report?.Paths.Add(onPath)
             glob = If(glob Is Nothing, local, local.ComposeTransforms(glob))
             cur = nif.GetParentNode(cur)
         End While

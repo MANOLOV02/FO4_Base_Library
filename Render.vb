@@ -2445,14 +2445,15 @@ Public Class PreviewControl
     ''' game, but never silent) and the ones the game does not draw while the preview does (FrameDrawnForEditing, 6-oct-2026) -
     ''' top-left on the WINDOW after the frame is presented (rev-59): CaptureBitmap reads the scene target, so captures (NPC
     ''' portraits, gate PNGs) never carry it - except when the offscreen targets could not be allocated and the capture reads the
-    ''' front buffer. The text wraps at the window's width less the margin on each side. "Show errors" / "Show warnings" off
-    ''' (Config_App.Setting_ShowErrors / Setting_ShowWarnings) leave that class of lines out (PreviewModel.SeverityOf); the census
-    ''' is not touched.</summary>
+    ''' front buffer. The text wraps at the window's width less the margin on each side. "Show errors" / "Show warnings" / "Show
+    ''' info" off (Config_App.Setting_ShowErrors / Setting_ShowWarnings / Setting_ShowInfo) leave that class of lines out
+    ''' (PreviewModel.SeverityOf of each line's notice, ola 7e); the census is not touched.</summary>
     Private Sub DrawPreviewGapNotice()
         If overlay Is Nothing OrElse _Model Is Nothing Then Exit Sub
         Dim cfg = Config_App.Current
         Dim lines = _Model.FrameNoticeLines(errors:=cfg Is Nothing OrElse cfg.Setting_ShowErrors,
-                                            warnings:=cfg Is Nothing OrElse cfg.Setting_ShowWarnings)
+                                            warnings:=cfg Is Nothing OrElse cfg.Setting_ShowWarnings,
+                                            info:=cfg Is Nothing OrElse cfg.Setting_ShowInfo)
         If lines.Count = 0 Then Exit Sub
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
         GL.Viewport(0, 0, Me.Width, Me.Height)
@@ -2661,8 +2662,12 @@ Public Class PreviewControl
 
     ''' <summary>The last frame's notice lines (PreviewModel.FrameNoticeLines: what it did not draw as the game does - the
     ''' preview's gaps, the game's own undrawn shapes, missing textures...), whether or not the window shows them
-    ''' (Setting_ShowErrors: DrawPreviewGapNotice draws them on the window, not into the captured target). Empty without a
-    ''' model. Reads only.</summary>
+    ''' (Setting_ShowErrors / Setting_ShowWarnings / Setting_ShowInfo: DrawPreviewGapNotice draws them on the window, not into the
+    ''' captured target). Ola 7e contract: EVERY line of the three classes, errors first, then warnings, then info - the same lines
+    ''' as before the three classes, plus the notices the ola added (7c and the user's decisions: particles, water, Fallout 4's sky,
+    ''' the Pip-Boy screen, a shape that could not be loaded, C18's cube mips, A22's bound, the path controller); some others changed
+    ''' class or label. A host without a window that fails on a line it does not expect sees each of them only when its scene
+    ''' has the case. Empty without a model. Reads only.</summary>
     Public Function FrameNotices() As IReadOnlyList(Of String)
         ThrowIfRenderFailed()
         If _Model Is Nothing Then Return Array.Empty(Of String)()
@@ -3051,14 +3056,14 @@ Public Class PreviewControl
         menu.Items.Add(helperShapes)
 
         ' ===== Avisos del cuadro =====
-        ' Los mismos dos ajustes que las casillas "Show errors" / "Show warnings" del dialogo del rig (grupo Notices):
-        ' solo cambian el DIBUJO del aviso (PreviewModel.FrameNoticeLines lee Config_App al dibujar), asi que alcanza con
+        ' Los mismos tres ajustes que las casillas "Show errors" / "Show warnings" / "Show info" del dialogo del rig (grupo Notices,
+        ' ola 7e): solo cambian el DIBUJO del aviso (PreviewModel.FrameNoticeLines lee Config_App al dibujar), asi que alcanza con
         ' repintar (UpdateRequired), sin rearmar la geometria.
         Dim noticesMenu As New ToolStripMenuItem("Show messages")
         Dim showErrors As New ToolStripMenuItem("Show errors") With {
             .Checked = Config_App.Current.Setting_ShowErrors,
             .CheckOnClick = True,
-            .ToolTipText = "Show the errors in the notice at the top-left of the preview: missing textures, textures the preview did not load, what the preview cannot draw, and what the game does not draw."
+            .ToolTipText = PreviewModel.ShowErrorsTip
         }
         AddHandler showErrors.Click, Sub()
                                          Config_App.Current.Setting_ShowErrors = showErrors.Checked
@@ -3067,14 +3072,24 @@ Public Class PreviewControl
         Dim showWarnings As New ToolStripMenuItem("Show warnings") With {
             .Checked = Config_App.Current.Setting_ShowWarnings,
             .CheckOnClick = True,
-            .ToolTipText = "Show the warnings in the notice at the top-left of the preview: values driven by a controller at rest, empty texture slots the game fills with a default, and values the game leaves undefined."
+            .ToolTipText = PreviewModel.ShowWarningsTip
         }
         AddHandler showWarnings.Click, Sub()
                                            Config_App.Current.Setting_ShowWarnings = showWarnings.Checked
                                            UpdateRequired = True
                                        End Sub
+        Dim showInfo As New ToolStripMenuItem("Show info") With {
+            .Checked = Config_App.Current.Setting_ShowInfo,
+            .CheckOnClick = True,
+            .ToolTipText = PreviewModel.ShowInfoTip
+        }
+        AddHandler showInfo.Click, Sub()
+                                       Config_App.Current.Setting_ShowInfo = showInfo.Checked
+                                       UpdateRequired = True
+                                   End Sub
         noticesMenu.DropDownItems.Add(showErrors)
         noticesMenu.DropDownItems.Add(showWarnings)
+        noticesMenu.DropDownItems.Add(showInfo)
         menu.Items.Add(noticesMenu)
 
         menu.Items.Add(New ToolStripSeparator())
@@ -4824,6 +4839,10 @@ Public Class PreviewModel
 
             ''' <summary>Why a cut's value has factors the CPU does not evaluate (EngineAlphaCut.Unknown); shown by the occlusion dialog.</summary>
             Private Const EffectAlphaHole As String = "effect alpha not evaluated on the CPU (falloff by view angle, palette, soft depth)"
+            ''' <summary>The pass gap of a vertex desc with UV2 / LAND data (EngineLayoutUnsupported: NiflySharp's BSVertexData.Sync has
+            ''' no field for them, the preview has no source), for both Fallout 4 passes (the G-buffer's and the effect's): one text
+            ''' (FrameNoticeId.PassGap; the line reads "Not drawn by the preview (n shapes): ...", ola 7e wording).</summary>
+            Private Const UnreadVertexDataGap As String = "Vertex data the NIF reader does not support (UV2 / LAND)"
             Private Const SsePrepassPaletteHole As String = "Skyrim SE effect z-prepass with palette alpha not evaluated on the CPU"
             Private Const Fo4BlendRecordHole As String = "Fallout 4 G-buffer blend without technique bit 15: the record's output alpha is not traced"
             ''' <summary>t9 of the DISMEMBERMENT_MEATCUFF records (technique AND 0x600000) is NOT a slot of the shape's material:
@@ -5342,7 +5361,7 @@ Public Class PreviewModel
                 If d.Gap = "" Then
                     Dim errorText As String = Nothing
                     d.Program = programs.GBufferProgram(New Fo4Technique(t.Value), errorText, EngineCpuRouteOf())
-                    If d.Program Is Nothing Then d.Gap = "program build failed: " & errorText Else If EngineLayoutUnsupportedOf() Then d.Gap = "vertex desc with UV2 / LAND data: NiflySharp does not read them (BSVertexData.Sync), the preview has no source"
+                    If d.Program Is Nothing Then d.Gap = "program build failed: " & errorText Else If EngineLayoutUnsupportedOf() Then d.Gap = UnreadVertexDataGap
                 End If
                 Return d
             End Function
@@ -5428,8 +5447,12 @@ Public Class PreviewModel
                     If d.Program Is Nothing Then
                         d.Gap = "program build failed: " & errorText
                     ElseIf EngineLayoutUnsupportedOf() Then
-                        d.Gap = "vertex desc with UV2 / LAND data: NiflySharp does not read them (BSVertexData.Sync), the preview has no source"
+                        d.Gap = UnreadVertexDataGap
                         d.Program = Nothing
+#If DEBUG Then
+                        ' Ola 7e tester (ShadowGate --notice-classes c8): the effect pass with HEAD's second copy of the text.
+                        If Fo4GBufferConstants.GateMutantOn("uv2-effect-old-text") Then d.Gap = "vertex desc with UV2 / LAND data: NiflySharp does not read them (BSVertexData.Sync), the preview has no source"
+#End If
                     End If
                 End If
                 Return d
@@ -5768,7 +5791,7 @@ Public Class PreviewModel
                 Return If(id <> 0, CUInt(id), ownId)
             End Function
 
-            ''' <summary>The recolor-without-base line (rev-07 / rev-11): a warning, FrameNoticeKind.UndefinedInGame (the game draws
+            ''' <summary>The recolor-without-base line (rev-07 / rev-11): a warning, FrameNoticeId.RecolorWithoutBase (the game draws
             ''' it, reading the previous draw's t0; the preview draws white).</summary>
             Friend Const RecolorWithoutBase As String = "Recolor without a base texture: drawn white; the game reads the previous draw's texture"
 
@@ -5787,9 +5810,10 @@ Public Class PreviewModel
             ''' (an error, "not loaded by the preview") when the preview could not load it. Such a file is not listed a second time
             ''' as not loaded by the preview.</item>
             ''' </list>
-            ''' A slot the SSE fold stands in for (DiffuseTexture_ID / NormalTexture_ID through a per-NPC key) counts as loaded.</summary>
-            Friend Function TextureNotices() As List(Of (Kind As PreviewModel.FrameNoticeKind, Reason As String))
-                Dim out As New List(Of (Kind As PreviewModel.FrameNoticeKind, Reason As String))
+            ''' A slot the SSE fold stands in for (DiffuseTexture_ID / NormalTexture_ID through a per-NPC key) counts as loaded. Each
+            ''' line names its notice (PreviewModel.FrameNoticeId, ola 7e), whose kind and class PreviewModel.NoticeClass gives.</summary>
+            Friend Function TextureNotices() As List(Of (Id As PreviewModel.FrameNoticeId, Reason As String))
+                Dim out As New List(Of (Id As PreviewModel.FrameNoticeId, Reason As String))
                 Dim created As New List(Of (Slot As EngineDefaultTextureLaw.MaterialSlot, Path As String, Verdict As EngineTextureCreationLaw.CreationVerdict))
                 If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then
                     For Each slot In EngineDefaultTextureLaw.Fo4LoadedSlots(MaterialBase.IsBGEM())
@@ -5811,9 +5835,9 @@ Public Class PreviewModel
                         Dim explained = uses.Count > 0 AndAlso uses.All(Function(c) c.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.Rejected OrElse
                                                                                     c.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.NotLaw OrElse
                                                                                     c.Verdict.Outcome = EngineTextureCreationLaw.CreationOutcome.Unread)
-                        If Not explained Then out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, "Texture not loaded by the preview: " & p))
+                        If Not explained Then out.Add((PreviewModel.FrameNoticeId.TextureNotLoaded, "Texture not loaded by the preview: " & p))
                     Else
-                        out.Add((PreviewModel.FrameNoticeKind.MissingTexture, p))
+                        out.Add((PreviewModel.FrameNoticeId.MissingTexture, p))
                     End If
                 Next
                 Dim notLawListed As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -5821,7 +5845,7 @@ Public Class PreviewModel
                 For Each c In created
                     Select Case c.Verdict.Outcome
                         Case EngineTextureCreationLaw.CreationOutcome.Rejected
-                            out.Add((PreviewModel.FrameNoticeKind.RejectedTexture, $"{c.Path} ({c.Verdict.Cause}; {SlotNoticeName(c.Slot)})"))
+                            out.Add((PreviewModel.FrameNoticeId.RejectedTexture, $"{c.Path} ({c.Verdict.Cause}; {SlotNoticeName(c.Slot)})"))
                         Case EngineTextureCreationLaw.CreationOutcome.NotLaw
                             ' Not the law: one line per file, a crash first (r19c-02 / r19c-03); its class by what the game and the
                             ' preview do - a crash or a file the preview could not load is an error, an undefined value drawn from the
@@ -5832,12 +5856,12 @@ Public Class PreviewModel
                                             OrderByDescending(Function(x) x.Verdict.Crashes).First()
                             Dim loaded = previewLoaded(w.Path)
                             If w.Verdict.Crashes Then
-                                out.Add((PreviewModel.FrameNoticeKind.CrashingTexture,
+                                out.Add((PreviewModel.FrameNoticeId.CrashingTexture,
                                          $"{w.Path} ({w.Verdict.Cause}; {SlotNoticeName(w.Slot)}{If(loaded, "", "; not loaded by the preview")})"))
                             ElseIf loaded Then
-                                out.Add((PreviewModel.FrameNoticeKind.UndefinedInGame, $"Texture the game reads inconsistently ({w.Verdict.Cause}), drawn as the preview loads it: {w.Path}"))
+                                out.Add((PreviewModel.FrameNoticeId.TextureReadInconsistently, $"Texture the game reads inconsistently ({w.Verdict.Cause}), drawn as the preview loads it: {w.Path}"))
                             Else
-                                out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, $"Texture not loaded by the preview, which the game reads inconsistently ({w.Verdict.Cause}): {w.Path}"))
+                                out.Add((PreviewModel.FrameNoticeId.TextureNotLoadedReadInconsistently, $"Texture not loaded by the preview, which the game reads inconsistently ({w.Verdict.Cause}): {w.Path}"))
                             End If
                         Case EngineTextureCreationLaw.CreationOutcome.Unread
                             ' r19d-H1: a file in the data whose header or record the app could not read - what the game does with it
@@ -5847,7 +5871,7 @@ Public Class PreviewModel
                             Dim drawn = If(Not previewLoaded(c.Path), "not loaded by the preview either",
                                            If(c.Slot = EngineDefaultTextureLaw.MaterialSlot.Cube AndAlso Not MaterialBase.IsBGEM(), "the preview draws no reflection for it",
                                               "the preview draws it as it loaded it"))
-                            out.Add((PreviewModel.FrameNoticeKind.DrawnDifferently, $"Texture whose header the preview cannot read, so what the game does with it is not evaluated ({drawn}): {c.Path}"))
+                            out.Add((PreviewModel.FrameNoticeId.TextureHeaderUnread, $"Texture whose header the preview cannot read, so what the game does with it is not evaluated ({drawn}): {c.Path}"))
                     End Select
                 Next
                 For Each slot In [Enum].GetValues(GetType(EngineDefaultTextureLaw.MaterialSlot)).Cast(Of EngineDefaultTextureLaw.MaterialSlot)()
@@ -5856,9 +5880,9 @@ Public Class PreviewModel
                     Select Case d
                         Case EngineDefaultTextureLaw.EngineTexture.Own, EngineDefaultTextureLaw.EngineTexture.NoTexture
                         Case EngineDefaultTextureLaw.EngineTexture.PreviousDraw
-                            out.Add((PreviewModel.FrameNoticeKind.UndefinedInGame, RecolorWithoutBase))
+                            out.Add((PreviewModel.FrameNoticeId.RecolorWithoutBase, RecolorWithoutBase))
                         Case Else
-                            If Not EngineDefaultTextureLaw.IsNeutral(slot, d) Then out.Add((PreviewModel.FrameNoticeKind.EmptyTextureSlot, SlotNoticeName(slot)))
+                            If Not EngineDefaultTextureLaw.IsNeutral(slot, d) Then out.Add((PreviewModel.FrameNoticeId.EmptyTextureSlot, SlotNoticeName(slot)))
                     End Select
                 Next
                 Return out
@@ -6533,7 +6557,7 @@ Public Class PreviewModel
             If p Is Nothing Then
                 Dim missing = Fo4UtilitySource.MissingEnginePrograms(t) IsNot Nothing
                 pm.ReportUndrawn(NoticeName(Nothing), $"Shadow map technique 0x{t:X8}: {errorText}",
-                                 If(missing, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.PreviewGap))
+                                 If(missing, FrameNoticeId.ShadowMapWithoutEngineProgram, FrameNoticeId.ShadowMapProgramGap))
                 Exit Sub
             End If
             p.Use()
@@ -6573,7 +6597,7 @@ Public Class PreviewModel
             If p Is Nothing Then
                 Dim missing = Fo4UtilitySource.MissingEnginePrograms(t) IsNot Nothing
                 pm.ReportUndrawn(NoticeName(Nothing), $"Refraction normals technique 0x{t:X8}: {errorText}",
-                                 If(missing, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.PreviewGap))
+                                 If(missing, FrameNoticeId.RefractionNormalsWithoutEngineProgram, FrameNoticeId.RefractionNormalsProgramGap))
                 Return False
             End If
             Dim fr = pm.FrameEngineRows
@@ -6656,13 +6680,13 @@ Public Class PreviewModel
             Dim key = New Fo4Technique(t).Key()
             ' The host IS drawn by an engine stage but its position cannot be captured: the overlay keeps the app's position, said so.
             If key.Hs <> 0UI Then                                        ' a tessellated host: its last stage's vertices are not the mesh's
-                pm.ReportUndrawn(NoticeName(Nothing), OverlayTessellatedHostNotice, FrameNoticeKind.DrawnDifferently)
+                pm.ReportUndrawn(NoticeName(Nothing), OverlayTessellatedHostNotice, FrameNoticeId.OverlayTessellatedHost)
                 Return False
             End If
             Dim cpu = EngineCpuRoute()
             Dim p = programs.EnginePositionProgram(key.Vs, cpu)
             If p Is Nothing Then
-                pm.ReportUndrawn(NoticeName(Nothing), OverlayNoPositionProgramNotice, FrameNoticeKind.DrawnDifferently)
+                pm.ReportUndrawn(NoticeName(Nothing), OverlayNoPositionProgramNotice, FrameNoticeId.OverlayHostStageNotBuilt)
                 Return False
             End If
             Dim n = MeshData.Meshgeometry.Vertices.Length
@@ -7766,6 +7790,22 @@ Public Class PreviewModel
             Return If(s.HasValue, s.Value.Center, CType(MeshData.Meshgeometry.Boundingcenter, Vector3))
         End Function
 
+        ''' <summary>Ola 7e (7c-8, A22): WorldBoundCentre read by a pass of THIS frame (the alpha sort, the refraction fade): a shape the
+        ''' preview cannot build the game's sphere for is placed by its vertex box centre, and the frame's notice says so
+        ''' (FrameNoticeId.PlacedWithoutEngineBound, <paramref name="layer"/> naming an overlay layer). The occlusion dialog's reading
+        ''' (EngineCoverage) is not a frame and keeps WorldBoundCentre.</summary>
+        Friend Function FrameWorldBoundCentre(layer As OverlayMaterialLayer) As Vector3
+#If DEBUG Then
+            ' Ola 7e tester (ShadowGate --notice-classes c7): the vertex box centre without the notice (HEAD).
+            If Fo4GBufferConstants.GateMutantOn("a22-no-notice") Then Return WorldBoundCentre()
+#End If
+            If Not WorldBoundSphere().HasValue Then ParentModel?.ReportUndrawn(NoticeName(layer), WorldBoundMissingNotice, FrameNoticeId.PlacedWithoutEngineBound)
+            Return WorldBoundCentre()
+        End Function
+
+        ''' <summary>The reason line of FrameNoticeId.PlacedWithoutEngineBound.</summary>
+        Friend Const WorldBoundMissingNotice As String = "the preview could not build its world bound from the skin's bone bounds: alpha sort and refraction fade use its vertex box centre"
+
         Private _sceneVisFrame As Integer = -1
         Private _sceneVis As NifSceneVisibility.LoadState
         ''' <summary>Ola 7b (p7b-01): the biped's skinned attach leaves this mesh's shape out of the actor (NifSceneVisibility.OutsideAttachOf),
@@ -7805,11 +7845,17 @@ Public Class PreviewModel
             Return HelperShapeGate.IsShapeDrawable(shp, SceneVisibility(), DrawEngineSkippedForEditing())
         End Function
 
+        ''' <summary>The frame notice's name of <paramref name="shape"/> ("name [idx]": its name and its index in the model), for a
+        ''' shape with or without a renderable (NoticeName; PreviewModel.LoadShapesParallel for one that could not be loaded).</summary>
+        Friend Shared Function ShapeNoticeName(shape As IRenderableShape) As String
+            Return $"{shape.ShapeName} [{shape.ShapeIndex}]"
+        End Function
+
         ''' <summary>The name the frame's notice lists this shape (or its overlay layer <paramref name="layer"/>) under: one entry per
         ''' instance - the shape name and the mesh's index in the model ("name [idx]", two NIFs may carry shapes of the same name),
         ''' then the layer's position ("name [idx] (overlay n)").</summary>
         Friend Function NoticeName(layer As OverlayMaterialLayer) As String
-            Dim name = $"{MeshData.ShapeName} [{MeshData.Idx}]"
+            Dim name = ShapeNoticeName(MeshData.Shape)
             If layer Is Nothing Then Return name
             Dim layers = MeshData.Shape?.OverlayLayers
             Dim n = 0
@@ -7871,14 +7917,23 @@ Public Class PreviewModel
         ''' <summary>F-A0 / S-ND: the material alpha 0 (or NaN) for which the GAME builds no pass (MaterialData.EngineAlphaSkipsPasses,
         ''' on the alpha at rest, RestAlpha), as the notice says it: Drawn = the reason when the preview shows the shape, Undrawn = when it
         ''' does not. "at rest" when an alpha controller writes it (MaterialData.RestWrites(Alpha), ola 0c pto 19); a base shape drawn for
-        ''' editing (L5) is drawn with MaterialData.PreviewAlpha, which the reason states. Nothing when the law does not cut.</summary>
-        Friend Function AlphaZeroNotice(md As MaterialData, layer As OverlayMaterialLayer) As (Drawn As String, Undrawn As String)?
+        ''' editing (L5) is drawn with MaterialData.PreviewAlpha, which the reason states. Nothing when the law does not cut. Ola 7e: the
+        ''' notice of each form (DrawnId / UndrawnId) - alpha 0 a value the file chose (info), NaN a wrong value (error).</summary>
+        Friend Function AlphaZeroNotice(md As MaterialData, layer As OverlayMaterialLayer) As (Drawn As String, Undrawn As String, DrawnId As FrameNoticeId, UndrawnId As FrameNoticeId)?
             If Not md.EngineAlphaSkipsPasses() Then Return Nothing
             Dim game = If(Me.ParentModel.FrameIsSse, "Skyrim SE", "Fallout 4")
-            Dim what = $"Material alpha {If(Single.IsNaN(md.RestAlpha()), "NaN", "0")}{If(md.RestWrites(RestVariable.Alpha), " at rest (an alpha controller animates it)", "")}"
+            Dim isNaN = Single.IsNaN(md.RestAlpha())
+            Dim what = $"Material alpha {If(isNaN, "NaN", "0")}{If(md.RestWrites(RestVariable.Alpha), " at rest (an alpha controller animates it)", "")}"
             Dim shownAs = If(layer Is Nothing,
                              $"; shown with alpha {md.PreviewAlpha().ToString("0.###", Globalization.CultureInfo.InvariantCulture)}", "")
-            Return ($"{game}: {what}{shownAs}", $"{what}: {game} does not draw it")
+#If DEBUG Then
+            ' Ola 7e tester (ShadowGate --notice-classes c2 / s5): NaN listed with the notices of 0 (D-1 undone).
+            If isNaN AndAlso Fo4GBufferConstants.GateMutantOn("ntc-alpha-nan-as-zero") Then
+                Return ($"{game}: {what}{shownAs}", $"{what}: {game} does not draw it", FrameNoticeId.AlphaZeroShown, FrameNoticeId.AlphaZeroNotDrawn)
+            End If
+#End If
+            Return ($"{game}: {what}{shownAs}", $"{what}: {game} does not draw it",
+                    If(isNaN, FrameNoticeId.AlphaNaNShown, FrameNoticeId.AlphaZeroShown), If(isNaN, FrameNoticeId.AlphaNaNNotDrawn, FrameNoticeId.AlphaZeroNotDrawn))
         End Function
 
         ''' <summary>Lists this shape - or its overlay layer <paramref name="layer"/>, a shape of its own in the engine - in the frame's
@@ -7897,16 +7952,16 @@ Public Class PreviewModel
             ' Ola 7b (user decision 19-oct-2026): a *_faceBones.nif opened by hand is drawn, with the notice that the game only reads it
             ' as face input (GameAttachKind.FaceBonesInput, the mesh's path fixed when it was built: p7b-01); listed once, under the base shape.
             If layer Is Nothing AndAlso GameAttach = GameAttachKind.FaceBonesInput Then
-                ParentModel.ReportUndrawn(NoticeName(Nothing), GameAttachLaw.FaceBonesNotice, FrameNoticeKind.DrawnForEditing)
+                ParentModel.ReportUndrawn(NoticeName(Nothing), GameAttachLaw.FaceBonesNotice, FrameNoticeId.FaceBonesInput)
             End If
             ' Ola 7b: the biped's skinned attach (GameAttachLaw.OutsideSkinnedAttach) leaves the shape out of the actor before any culling
             ' (0x14035ED52..EDBB): composite view not drawn (EngineUndrawn), piece view drawn for editing (DrawnForEditing). Listed once.
             If vis.OutsideAttachReason IsNot Nothing Then
                 If layer Is Nothing Then
                     If DrawEngineSkippedForEditing() Then
-                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.OutsideAttachShown, FrameNoticeKind.DrawnForEditing)
+                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.OutsideAttachShown, FrameNoticeId.OutsideSkinnedAttachShown)
                     Else
-                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.OutsideAttachReason, FrameNoticeKind.EngineUndrawn)
+                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.OutsideAttachReason, FrameNoticeId.OutsideSkinnedAttachNotDrawn)
                     End If
                 End If
                 Exit Sub
@@ -7919,9 +7974,9 @@ Public Class PreviewModel
             If vis.BoundCullReason IsNot Nothing Then
                 If layer Is Nothing AndAlso Not shp.IsHelperShape Then
                     If DrawEngineSkippedForEditing() Then
-                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.BoundCullShown, FrameNoticeKind.DrawnForEditing)
+                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.BoundCullShown, vis.BoundCullShownId)
                     Else
-                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.BoundCullReason, FrameNoticeKind.EngineUndrawn)
+                        ParentModel.ReportUndrawn(NoticeName(Nothing), vis.BoundCullReason, vis.BoundCullReasonId)
                     End If
                 End If
                 Exit Sub
@@ -7938,26 +7993,33 @@ Public Class PreviewModel
                     Dim shown = Not precombined AndAlso PreviewGap(md) Is Nothing AndAlso EngineUndrawnNotice(md) Is Nothing AndAlso
                                 Not md.DrawnAlphaSkipsPasses(pm.FrameIsSse)
                     If shown Then
-                        pm.ReportUndrawn(name, alpha0.Value.Drawn, FrameNoticeKind.DrawnForEditing)
+                        pm.ReportUndrawn(name, alpha0.Value.Drawn, alpha0.Value.DrawnId)
                     Else
-                        pm.ReportUndrawn(name, alpha0.Value.Undrawn, FrameNoticeKind.EngineUndrawn)
+                        pm.ReportUndrawn(name, alpha0.Value.Undrawn, alpha0.Value.UndrawnId)
                     End If
                     Exit Sub
                 End If
             End If
             If precombined Then
-                pm.ReportUndrawn(name, PrecombinedGap, FrameNoticeKind.PreviewGap)
+                pm.ReportUndrawn(name, PrecombinedGap, FrameNoticeId.PrecombinedGeometry)
                 Exit Sub
             End If
             If md?.MaterialBase Is Nothing Then Exit Sub
             Dim gap = PreviewGap(md)
             If gap IsNot Nothing Then
-                pm.ReportUndrawn(name, gap, FrameNoticeKind.PreviewGap)
+                ' Ola 7e (user decision 20-oct-2026): a record that reads the Pip-Boy / menu screen render target says so in the user's
+                ' words (PipboyScreenNotice); any other gap of the pass is listed as the record declares it.
+                Dim screen = gap.Contains(PipboyScreenTarget, StringComparison.Ordinal)
+#If DEBUG Then
+                ' Ola 7e tester (ShadowGate --notice-classes c10, --fo4-gbuffer-scenes 11): the record's gap back (the guard undone).
+                If Fo4GBufferConstants.GateMutantOn("pipboy-unrecognized") Then screen = False
+#End If
+                pm.ReportUndrawn(name, If(screen, PipboyScreenNotice, gap), If(screen, FrameNoticeId.PipboyScreenNotDrawn, FrameNoticeId.PassGap))
                 Exit Sub
             End If
             Dim why = EngineUndrawnNotice(md)
             If why IsNot Nothing Then
-                pm.ReportUndrawn(name, why, FrameNoticeKind.EngineUndrawn)
+                pm.ReportUndrawn(name, why, FrameNoticeId.EngineDrawsNoPass)
                 Exit Sub
             End If
             ' C10 rev-04 (user decision 7-oct-2026): a value this shape's draw takes from a shader controller at rest, not from the block
@@ -7965,7 +8027,7 @@ Public Class PreviewModel
             ' only (an overlay layer has no NIF property), never a helper shape the user chose to see.
             If layer Is Nothing AndAlso Not shp.IsHelperShape Then
                 Dim driven = md.RestDrivenNotice()
-                If driven IsNot Nothing Then pm.ReportUndrawn(name, driven, FrameNoticeKind.DrivenByControllerAtRest)
+                If driven IsNot Nothing Then pm.ReportUndrawn(name, driven, FrameNoticeId.ValueDrivenAtRest)
                 ' Ola 0c parte 2 (user decision 12-oct-2026, option 1): the blocks whose transform this shape is drawn with comes from a
                 ' NiTransformController at rest (NodeRestLayer, SkinnedGeometry.RestLayer); the ones it draws as the file (a skinned
                 ' shape mounted on the skeleton) and the controllers not determinable, as drawn differently. Ola 7b ronda 3: which mounted
@@ -7974,15 +8036,16 @@ Public Class PreviewModel
                 ' controller (GameAttachLaw.ReparentedNotice); Fallout 4's connect point none.
                 Dim rl = MeshData.Meshgeometry.RestLayer
                 If rl IsNot Nothing Then
-                    If rl.Driven IsNot Nothing Then pm.ReportUndrawn(name, rl.Driven, FrameNoticeKind.TransformDrivenByControllerAtRest)
+                    If rl.Driven IsNot Nothing Then pm.ReportUndrawn(name, rl.Driven, FrameNoticeId.TransformDrivenAtRest)
                     If rl.Excluded IsNot Nothing Then
                         pm.ReportUndrawn(name, $"transform driven by a controller at rest, not applied - skinned shape mounted on the skeleton (drawn as the file or by the skeleton; the game NOT TRACED): {rl.Excluded}",
-                                         FrameNoticeKind.DrawnDifferently)
+                                         FrameNoticeId.MountedTransformNotTraced)
                     End If
                     If rl.Reparented IsNot Nothing Then
-                        pm.ReportUndrawn(name, GameAttachLaw.ReparentedNotice(rl.Reparented), FrameNoticeKind.DrawnDifferently)
+                        pm.ReportUndrawn(name, GameAttachLaw.ReparentedNotice(rl.Reparented), FrameNoticeId.ReparentedBoneTransform)
                     End If
-                    If rl.Hole IsNot Nothing Then pm.ReportUndrawn(name, $"transform at rest not determinable: {rl.Hole}", FrameNoticeKind.DrawnDifferently)
+                    If rl.Hole IsNot Nothing Then pm.ReportUndrawn(name, $"transform at rest not determinable: {rl.Hole}", FrameNoticeId.TransformRestNotDeterminable)
+                    If rl.Path IsNot Nothing Then pm.ReportUndrawn(name, rl.Path, FrameNoticeId.PathControllerAtRest)
                 End If
             End If
             ' C4: missing textures, empty slots sampled with a non-neutral default, what the preview draws differently
@@ -7990,7 +8053,7 @@ Public Class PreviewModel
             ' precombined, the preview's gap, the game's own law). A helper shape the user chose to see is not listed.
             If PreviewModel.GateNoTextureNoticeCensus OrElse (layer Is Nothing AndAlso shp.IsHelperShape) Then Exit Sub
             For Each n In md.TextureNotices()
-                pm.ReportUndrawn(name, n.Reason, n.Kind)
+                pm.ReportUndrawn(name, n.Reason, n.Id)
             Next
             ' TECHNIQUE NOTICES of Skyrim SE (what the preview draws differently because of the technique), under the same exits as
             ' C4's lines above: only a shape the frame draws as the game does, never a helper shape the user chose to see.
@@ -7999,15 +8062,15 @@ Public Class PreviewModel
             ' layout has no TEXCOORD2 for it (0x141011AB8..B0E) and what it draws is not traced; the preview reflects about the vertex
             ' normal (Fragment_SSE bEyeRadial).
             If pm.FrameIsSse AndAlso md.SseLitTechniqueType() = &H10 AndAlso layer Is Nothing AndAlso vboEyeCenter = 0 Then
-                pm.ReportUndrawn(name, SseEyeWithoutEyeData, FrameNoticeKind.DrawnDifferently)
+                pm.ReportUndrawn(name, SseEyeWithoutEyeData, FrameNoticeId.SseEyeWithoutEyeData)
             End If
             ' S-P (user decision 6-oct-2026): a Parallax technique whose view vector the game leaves unwritten (ParallaxViewNotice).
             Dim parallaxV = ParallaxViewNotice(md)
-            If parallaxV IsNot Nothing Then pm.ReportUndrawn(name, parallaxV, FrameNoticeKind.UndefinedInGame)
+            If parallaxV IsNot Nothing Then pm.ReportUndrawn(name, parallaxV, FrameNoticeId.ParallaxUndefinedView)
             ' S-N: the composite's snow sparkles are not drawn (their colour, iSnowSparklesColor 2, comes from the scene: not traced).
             If pm.FrameIsSse AndAlso Not md.MaterialBase.IsBGEM() AndAlso
                SseRenderPassLaw.SnowTechnique(md.SseInputs(), SseRenderPassLaw.ImprovedSnowExeDefault) Then
-                pm.ReportUndrawn(name, SnowSparklesNotDrawn, FrameNoticeKind.DrawnDifferently)
+                pm.ReportUndrawn(name, SnowSparklesNotDrawn, FrameNoticeId.SnowSparklesNotDrawn)
             End If
         End Sub
 
@@ -8783,6 +8846,16 @@ Public Class PreviewModel
         ' Shape-derived state (TintColor/ShowTexture/...) still resolves to the BASE shape, matching
         ' how ApplyMaterial reads MeshData.Shape directly (~2905-2925).
         Private _overlayMaterialCache As Dictionary(Of OverlayMaterialLayer, MaterialData)
+
+        ''' <summary>Ola 7e: the overlay layer whose MaterialData is <paramref name="material"/> (GetOverlayMaterialData's cache), Nothing for
+        ''' the shape's own material: a notice raised while ApplyMaterial draws a layer names the layer (NoticeName).</summary>
+        Private Function OverlayLayerOf(material As MaterialData) As OverlayMaterialLayer
+            If _overlayMaterialCache Is Nothing OrElse material Is MeshData.Material Then Return Nothing
+            For Each kv In _overlayMaterialCache
+                If kv.Value Is material Then Return kv.Key
+            Next
+            Return Nothing
+        End Function
 
         ''' <summary>The transient MaterialData of an overlay layer (shared with RenderOverlayLayer).</summary>
         Friend Function OverlayMaterialData(layer As OverlayMaterialLayer) As MaterialData
@@ -9742,8 +9815,7 @@ Public Class PreviewModel
             End If
             ' Fallout 4's effect constants are its transcribed programs' (ola 3: ApplyFo4EffectDraw, Fo4EffectConstants).
             ' SOFT (FO4 technique bit 12 / SSE bit 18 = SLSF1 bit 30, the BGEM's SoftEnabled; no setting can turn it
-            ' off, and the preview is not first person): the fade reads the scene depth copied this frame. Before the
-            ' copy (the opaque groups) there is none: no fade (hole, see RenderAll).
+            ' off, and the preview is not first person): the fade reads the scene depth copied this frame.
             ' Fallout 4 (ola 3): its effect's technique says SOFT (bit 12, MaterialData.Fo4EffectTechniqueValue: flag 30).
             Dim softOn = If(fx.HasValue, (fx.Value.Technique And Fo4EffectTechnique.TechSoft) <> 0UI,
                             isBGEM AndAlso materialBase.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft)
@@ -9756,8 +9828,9 @@ Public Class PreviewModel
                     Me.ParentModel.FrameSceneDepthValid = True
                 End If
             End If
-            ' SSE reads the copy RenderAll took after the opaque groups; an effect drawn before it (the opaque groups)
-            ' waits on the z-prepass question (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md).
+            ' SSE reads the copy RenderAll takes after its z-prepass, before every colour pass (DrawOpaqueStage): in a frame it is
+            ' always there; only the gates' GateDisablePrepass / GateDisableSoft leave none. Open (RE): whether the game's ds[7]
+            ' (copied at the end of 0x141538FA0) holds what the preview's prepass draws (RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03 6.1-6.2).
             softOn = softOn AndAlso Me.ParentModel.FrameSceneDepthValid
             shader.SetBool("bSoftEffect", softOn)
             ' What this draw uploads as its alpha test, for the [DRAW-STATE] log: the generic upload above, overwritten by each
@@ -9966,7 +10039,7 @@ Public Class PreviewModel
             ' v5: a depth format whose unit cannot be measured leaves THIS draw without its bias, said in the frame's notice; the frame
             ' goes on (Gl43.DepthBias).
             Dim biasMissing = Gl43.DepthBias(bias.DepthBias, bias.Slope, bias.Clamp)
-            If biasMissing IsNot Nothing Then Me.ParentModel.ReportUndrawn(NoticeName(Nothing), biasMissing, FrameNoticeKind.DrawnDifferently)
+            If biasMissing IsNot Nothing Then Me.ParentModel.ReportUndrawn(NoticeName(Nothing), biasMissing, FrameNoticeId.DepthBiasNotMeasured)
 
             ' === Culling ===
             ' Se resuelve en la etapa de draw según el face mode efectivo del shape.
@@ -10036,7 +10109,13 @@ Public Class PreviewModel
             shader.SetVector4("SpecularParam2", Fo4GBufferConstants.SpecularParam2(t, w(1), w(0)))
             shader.SetVector4("WetnessControl_Spec", Fo4GBufferConstants.WetnessControlSpec(t, em.Feature = 1, w(0), w(1), w(2), w(5), em.Ssr, em.WetSsr))
             ' The envmap slice: registered INSIDE this draw (rev-07), only with property bit 7 (ENV 2.3).
-            Dim slice = If(bit(d.Flags, 7), Me.ParentModel.ParentControl.Fo4EnvMap.Register(material.EnvmapTexture()), -1)
+            Dim slice = -1
+            If bit(d.Flags, 7) Then
+                Dim reg = Me.ParentModel.ParentControl.Fo4EnvMap.Register(material.EnvmapTexture())
+                slice = reg.Slice
+                ' Ola 7e (7c-8, C18): a cube with more mips than the array - the engine's copy shifts its faces, the preview's does not.
+                If reg.ShiftedFaces IsNot Nothing Then Me.ParentModel.ReportUndrawn(NoticeName(OverlayLayerOf(material)), reg.ShiftedFaces, FrameNoticeId.EnvCubeMoreMipsThanArray)
+            End If
             shader.SetVector4("CubeMapIdxR_EnvmapScaleG", Fo4GBufferConstants.CubeMapIdxEnvmapScale(d.Flags, slice, em.MaterialD0, w(3)))
             shader.SetVector4("cb12_30", Vector4.Zero)
             Dim cpuRoute = EngineCpuRoute()
@@ -10318,14 +10397,47 @@ Public Class PreviewModel
         ' cambiara, que es exactamente lo que vuelve irreproducible un reporte de bug.
         Dim lista = LoadedShapes
         Dim porIndice(lista.Count - 1) As RenderableMesh
-        Parallel.For(0, lista.Count, Sub(i) porIndice(i) = LoadShapeSafe(lista(i), resolver))
+        Dim fallas(lista.Count - 1) As String
+        Parallel.For(0, lista.Count, Sub(i) porIndice(i) = LoadShapeSafe(lista(i), resolver, fallas(i)))
         ' `LoadShapeSafe` devuelve Nothing para una shape que no se pudo cargar: esos huecos se saltean, y
-        ' las que si cargaron conservan su posicion relativa.
+        ' las que si cargaron conservan su posicion relativa. Ola 7e (p7e-06): la que fallo por una excepcion va al aviso del
+        ' cuadro con su motivo (ReportUndrawnShapes la lista con las formas que el cargador no toma).
+        For i = 0 To fallas.Length - 1
+#If DEBUG Then
+            ' Ola 7e tester (ShadowGate --notice-classes c13): the failure ignored - the shape left out with no line (HEAD).
+            If Fo4GBufferConstants.GateMutantOn("shape-load-failed-ignored") Then Continue For
+#End If
+            If fallas(i) IsNot Nothing Then _untakenNotices.Add((RenderableMesh.ShapeNoticeName(lista(i)), $"Shape could not be loaded: {fallas(i)}", FrameNoticeId.ShapeLoadFailed))
+        Next
         For i = 0 To porIndice.Length - 1
             If porIndice(i) IsNot Nothing Then meshes.Add(porIndice(i))
         Next
+        ' Ola 7e: the shapes the loader leaves out of each NIF these shapes come from, once per NIF (ReportUndrawnShapes lists them).
+        For Each nif In lista.Select(Function(s) s.NifContent).Where(Function(n) n IsNot Nothing)
+            If Not _untakenNifs.Add(nif) Then Continue For
+            For Each u In NifRenderableShape.UntakenShapesOf(nif)
+                _untakenNotices.Add(($"{u.Name} (block {u.Block})", u.Reason, u.Id))
+            Next
+        Next
         MarkRenderBucketsDirty()
     End Sub
+
+    ''' <summary>Ola 7e: the NIFs of the loaded shapes whose untaken shapes are already listed, and those shapes (name, reason, notice:
+    ''' NifRenderableShape.UntakenShapesOf). Filled by LoadShapesParallel (the one place shapes enter `meshes`), emptied by Clean (the
+    ''' one place they leave).</summary>
+    Private ReadOnly _untakenNifs As New HashSet(Of Nifcontent_Class_Manolo)(ReferenceEqualityComparer.Instance)
+    Private ReadOnly _untakenNotices As New List(Of (Shape As String, Reason As String, Id As FrameNoticeId))
+
+    ''' <summary>The reason line of FrameNoticeId.WaterShaderNotSupported (the user's wording, 20-oct-2026).</summary>
+    Friend Const WaterShaderNotice As String = "Water shader not supported"
+    ''' <summary>The reason line of FrameNoticeId.SkyShaderNotSupported (the user's wording, 20-oct-2026; Fallout 4 only).</summary>
+    Friend Const SkyShaderNotice As String = "Sky shader not supported"
+    ''' <summary>The render target the Pip-Boy and the menu screens are drawn into, as the records that read it declare it in their
+    ''' gap (Fo4GBufferSource.Records t4, Fo4EffectSource.PixelShaders t6: "[0x143E5DFC4]", bound by 0x14183A300 - generated from the
+    ''' binder census). FrameNoticeId.PipboyScreenNotDrawn.</summary>
+    Friend Const PipboyScreenTarget As String = "[0x143E5DFC4]"
+    ''' <summary>The reason line of FrameNoticeId.PipboyScreenNotDrawn (user decision 20-oct-2026; 0 corpus shapes: a guard).</summary>
+    Friend Const PipboyScreenNotice As String = "Shows the Pip-Boy / menu screen image, which only exists in the game"
 
     Public Sub BakeOrInvertPose(inverse As Boolean)
         If LoadedShapes.Count = 0 Then Exit Sub
@@ -10345,10 +10457,20 @@ Public Class PreviewModel
         SkinningHelper.BakeFromMemoryUsingOriginal(Shape, mesh.MeshData.Meshgeometry, inverse:=inverse, ApplyMorph:=False, RemoveZaps:=False, SingleBoneSkinning)
     End Sub
 
-    Private Function LoadShapeSafe(shape As IRenderableShape, Optional resolver As ISkeletonResolver = Nothing) As RenderableMesh
+    ''' <summary>The renderable of <paramref name="shape"/>, or Nothing: a shape without a NIF block, or one whose build threw - then
+    ''' <paramref name="failure"/> is the exception's message (ola 7e p7e-06: the frame notice's ShapeLoadFailed).</summary>
+    Private Function LoadShapeSafe(shape As IRenderableShape, resolver As ISkeletonResolver, ByRef failure As String) As RenderableMesh
         Try
             ' 1) Obtener shape + geometría skinned (polimórfico via IShapeGeometry).
             If IsNothing(shape.NifShape) Then Return Nothing
+            ' Ola 7e round 4 (r19k-01a): the loader's one law for every host (Nifcontent_Class_Manolo.TakesShape) - a shape it does not
+            ' take is not drawn, whatever list the host passed; the frame notice lists it (UntakenShapesOf of the same NIF).
+            Dim tomaSumidero = shape.NifContent Is Nothing OrElse shape.NifContent.TakesShape(shape.NifShape)
+#If DEBUG Then
+            ' Ola 7e tester (ShadowGate --notice-classes --sse, s6): the sink without its filter (round 3) - a host's untaken shape drawn.
+            If Fo4GBufferConstants.GateMutantOn("sink-unfiltered") Then tomaSumidero = True
+#End If
+            If Not tomaSumidero Then Return Nothing
             Dim skel As SkeletonInstance = resolver?.ResolveFor(shape)
             Dim geom = SkinningHelper.ExtractSkinnedGeometry(shape, SingleBoneSkinning, RecalculateNormals, skel)
 
@@ -10363,6 +10485,7 @@ Public Class PreviewModel
 
             Return Renderable
         Catch ex As Exception
+            failure = ex.Message
             Logger.LogLazy(Function() "[Render] BuildRenderable EXCEPTION: " & ex.Message)
 #If DEBUG Then
             Debugger.Break()
@@ -11004,6 +11127,13 @@ Public Class PreviewModel
         _groundActive = False
         _groundCount = 0
         meshes.Clear()
+        _untakenNifs.Clear()
+#If DEBUG Then
+        ' Ola 7e tester (ShadowGate --notice-classes c4): the untaken shapes' notices kept across Clean.
+        If Not Fo4GBufferConstants.GateMutantOn("untaken-not-cleared") Then _untakenNotices.Clear()
+#Else
+        _untakenNotices.Clear()
+#End If
         OpaqueMeshes.Clear()
         DecalMeshes.Clear()
         DecalBlendedMeshes.Clear()
@@ -11741,7 +11871,7 @@ Public Class PreviewModel
         Dim bias = Fo4UtilityTechnique.ShadowMapBias()
         Dim biasMissing = Gl43.DepthBias(bias.DepthBias, bias.Slope, bias.Clamp)
         If biasMissing IsNot Nothing Then
-            For Each mesh In casters : ReportUndrawn(mesh.NoticeName(Nothing), "Shadow map " & biasMissing, FrameNoticeKind.DrawnDifferently) : Next
+            For Each mesh In casters : ReportUndrawn(mesh.NoticeName(Nothing), "Shadow map " & biasMissing, FrameNoticeId.ShadowMapDepthBiasNotMeasured) : Next
         End If
         Dim origen = Gl43.Origin                                     ' the caller's origin, restored after the map
         If filasD3D Then Gl43.ClipControl(ClipOrigin.UpperLeft)
@@ -11915,6 +12045,10 @@ Public Class PreviewModel
     ''' (FrameNoticeKind.TransformDrivenByControllerAtRest): the driven blocks' names -&gt; shapes.</summary>
     Friend ReadOnly FrameTransformDrivenAtRest As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
+    ''' <summary>Ola 7e (user order 20-oct-2026): this frame's shapes whose chain holds a path controller at rest, drawn at the file's
+    ''' position (FrameNoticeKind.PathControllerAtRest): the blocks' names -&gt; shapes.</summary>
+    Friend ReadOnly FramePathControllerAtRest As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
+
     ''' <summary>Ola 1 (editor rule): this frame's shapes closer to the eye than the game's near plane (EngineCameraLaw.NearDistance),
     ''' drawn with the lowered near (FrameNoticeKind.CloserThanGameNear): the reason -&gt; shapes.</summary>
     Friend ReadOnly FrameCloserThanGameNear As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
@@ -11926,9 +12060,9 @@ Public Class PreviewModel
     ''' view vector), which the preview draws its own way (FrameNoticeKind.UndefinedInGame).</summary>
     Friend ReadOnly FrameUndefinedInGame As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
-    ''' <summary>The kinds of the frame's notice, one map each (DrawnDifferently / UndefinedInGame / MissingTexture /
-    ''' EmptyTextureSlot: C4, the engine's default textures; DrivenByControllerAtRest: C10; RejectedTexture: item 3). Each kind has
-    ''' one severity (SeverityOf).</summary>
+    ''' <summary>The kinds of the frame's notice, one map each and one line label each (FrameNoticeLines): HOW the preview treated the
+    ''' shape (not drawn, drawn for editing, drawn differently, a texture line...). Not the notice's class: the class is the notice's
+    ''' own (FrameNoticeId, NoticeClass; ola 7e) - one kind can hold notices of different classes (EngineUndrawn, DrawnForEditing).</summary>
     Friend Enum FrameNoticeKind
         ''' <summary>The game draws it, the preview cannot (FramePreviewGaps).</summary>
         PreviewGap
@@ -11937,10 +12071,11 @@ Public Class PreviewModel
         ''' <summary>The game does not draw it, the preview draws it so that it can be edited (FrameDrawnForEditing).</summary>
         DrawnForEditing
         ''' <summary>C4 extension (rev-07 / rev-11): the game draws it, the preview draws it differently and cannot reproduce it
-        ''' (FrameDrawnDifferently): a texture in the data the preview did not load, an SSE eye without eye data, snow sparkles.</summary>
+        ''' (FrameDrawnDifferently): a texture in the data the preview did not load, snow sparkles, a transform at rest it does not apply.</summary>
         DrawnDifferently
         ''' <summary>The game draws it with a value it leaves undefined, the preview draws it its own way (FrameUndefinedInGame): a
-        ''' recolor without a base texture (the previous draw's t0), a Parallax technique without its view vector.</summary>
+        ''' recolor without a base texture (the previous draw's t0), a Parallax technique without its view vector, a texture the game
+        ''' reads inconsistently, an SSE eye without its reflection centre (ola 7e: it was listed as DrawnDifferently).</summary>
         UndefinedInGame
         ''' <summary>C4: a texture path absent from the game's data (FrameMissingTextures).</summary>
         MissingTexture
@@ -11953,47 +12088,250 @@ Public Class PreviewModel
         ''' write at the clock's origin, and so does the preview (NodeRestLayer, a drawing layer); what the editors show and save is the
         ''' block's (FrameTransformDrivenAtRest).</summary>
         TransformDrivenByControllerAtRest
+        ''' <summary>Ola 7e (user order 20-oct-2026, the path's rest postponed): a NiTransformController whose interpolator is a
+        ''' NiPathInterpolator, at rest; the preview does not compute the game's rest on the path, so its block keeps the file's position
+        ''' (TransformRestLaw.TransformAtRest writes nothing; FramePathControllerAtRest).</summary>
+        PathControllerAtRest
         ''' <summary>Ola 1 (editor rule, 12-oct-2026): the shape is closer to the eye than the game's near plane; the preview lowers its
         ''' near to draw it (PreviewControl.UpdateProjection), so the depth precision differs from the game's (FrameCloserThanGameNear).</summary>
         CloserThanGameNear
         ''' <summary>Item 3 (19-oct-2026): a texture file in the data that Fallout 4 cannot create (EngineTextureCreationLaw: the
-        ''' binder binds a NULL SRV and samples zeros, and so does the preview; FrameRejectedTextures). An error like a missing
-        ''' texture: the data is wrong (user's criterion, 19-oct-2026).</summary>
+        ''' binder binds a NULL SRV and samples zeros, and so does the preview; FrameRejectedTextures).</summary>
         RejectedTexture
         ''' <summary>Item 3 (r19c-03): a texture file with which Fallout 4 reads an invalid address and crashes
         ''' (EngineTextureCreationLaw.CreationVerdict.Crashes: the effect's empty cube, A.5; a lighting cube the environment array
-        ''' accepts with no array yet, A.4; FrameCrashingTextures). An error: the data is wrong (user's criterion).</summary>
+        ''' accepts with no array yet, A.4; FrameCrashingTextures).</summary>
         CrashingTexture
     End Enum
 
-    ''' <summary>The two classes of the frame's notice (user decision 12-oct-2026), each with its checkbox: "Show errors"
-    ''' (Config_App.Setting_ShowErrors) and "Show warnings" (Config_App.Setting_ShowWarnings).</summary>
+    ''' <summary>The three classes of the frame's notice (ola 7e, user decision 20-oct-2026, closed), each with its checkbox: "Show
+    ''' errors" (Config_App.Setting_ShowErrors), "Show warnings" (Setting_ShowWarnings), "Show info" (Setting_ShowInfo).</summary>
     Friend Enum FrameNoticeSeverity
-        ''' <summary>The shape is not seen as in the game: data missing or the game cannot use, a gap of the preview, or a shape the
-        ''' game does not draw.</summary>
+        ''' <summary>What is wrong: no technique, no shaders or program, a missing texture (an empty slot aside), what the preview
+        ''' cannot draw.</summary>
         [Error]
-        ''' <summary>The shape is drawn as the game draws it, with a remark: a default, a controller at rest, an undefined value.</summary>
+        ''' <summary>The engine's defaults: an empty slot sampled with a default, default values, values the game leaves undefined.</summary>
         Warning
+        ''' <summary>Neither an error nor a warning: a controller or a transform at rest, a design of the editor it declares, and what
+        ''' the game does not draw because of the file's data (user decision 20-oct-2026: alpha 0, scale 0, radius 0).</summary>
+        Info
     End Enum
 
-    ''' <summary>The severity of <paramref name="kind"/> (user decision 12-oct-2026: what the game does not draw is an error, in the
-    ''' composite and in the piece view alike).</summary>
-    Friend Shared Function SeverityOf(kind As FrameNoticeKind) As FrameNoticeSeverity
+    ''' <summary>The description of each class's checkbox, one owner for its two places: the preview's context menu ("Show messages")
+    ''' and the rig dialog's Rendering tab (group Notices, LightRigForm).</summary>
+    Friend Const ShowErrorsTip As String = "Show the errors in the notice at the top-left of the preview: what is wrong - no technique, no shader or program, missing textures, invalid data (NaN), a shape the preview could not load, and what the preview cannot draw."
+    Friend Const ShowWarningsTip As String = "Show the warnings in the notice at the top-left of the preview: the engine's defaults - empty texture slots the game fills with a default, and values the game leaves undefined."
+    Friend Const ShowInfoTip As String = "Show the information in the notice at the top-left of the preview: values and transforms driven by a controller at rest, what the game does not draw because of the file's data (alpha 0, scale 0, a bound of radius 0, a visibility controller at rest), and what the editor draws its own way (the lowered near plane, face input files)."
+
+    ''' <summary>Ola 7e: EVERY notice of the frame, one member each - the closed list of the census (D:\WinTmp\rc\ola7e\prop\propuesta.md
+    ''' 2: its rows, an a/b pair of the culling laws being two members). The producer names its notice when it reports it
+    ''' (ReportUndrawn); NoticeClass, the one owner, gives its kind (map and line label) and its class. A new notice is a new member
+    ''' that NoticeClass must classify: its Case Else throws, and ParityGate walks this enum.</summary>
+    Friend Enum FrameNoticeId
+        ' ---- PreviewGap: the game draws it, the preview cannot
+        ''' <summary>A light of the rig whose technique has no program (Fo4DeferredTargets.ReportSkippedLights).</summary>
+        RigLightWithoutProgram
+        ''' <summary>A precombined shape: its geometry lives in the .csg (RenderableMesh.PrecombinedGap).</summary>
+        PrecombinedGeometry
+        ''' <summary>The deferred pass's gap (Fo4GBufferDraw.Gap / Fo4EffectDraw.Gap): a runtime resource of its stages, its program's
+        ''' build, a vertex layout the reader does not read, the engine material not built.</summary>
+        PassGap
+        ''' <summary>Fallout 4's shadow map: the utility program the preview could not build (the engine has it).</summary>
+        ShadowMapProgramGap
+        ''' <summary>Fallout 4's refraction normals: the utility program the preview could not build (the engine has it).</summary>
+        RefractionNormalsProgramGap
+        ''' <summary>7c-1: a particle system of a loaded NIF (NifRenderableShape.UntakenShapesOf): the loader takes no particles
+        ''' (Nifcontent_Class_Manolo.SupportedShape), so the preview does not draw them.</summary>
+        ParticleSystemNotDrawn
+        ''' <summary>User decision 20-oct-2026: a shape with the water shader (Nifcontent_Class_Manolo.IsWaterShader): the loader does not
+        ''' take it (TakesShape) and the preview does not draw it (PreviewModel.WaterShaderNotice).</summary>
+        WaterShaderNotSupported
+        ''' <summary>User decision 20-oct-2026: a Fallout 4 shape with the sky shader (Nifcontent_Class_Manolo.UnsupportedShaderOf): the
+        ''' loader does not take it and the preview does not draw it (PreviewModel.SkyShaderNotice). Skyrim SE keeps HEAD's behaviour.</summary>
+        SkyShaderNotSupported
+        ''' <summary>User decision 20-oct-2026: a pass whose record reads the Pip-Boy / menu screen render target [0x143E5DFC4]
+        ''' (PreviewModel.PipboyScreenTarget; 0 corpus shapes - a guard): not drawn, in the user's words (PipboyScreenNotice).</summary>
+        PipboyScreenNotDrawn
+        ''' <summary>Ola 7e round 2 (p7e-06): a shape the preview's loader (PreviewModel.LoadShapeSafe) could not build - the
+        ''' exception's message is the reason; before, it vanished with no line.</summary>
+        ShapeLoadFailed
+        ' ---- EngineUndrawn: the game does not draw it (composite view)
+        ''' <summary>Fallout 4's shadow map: the engine has no program for its technique either.</summary>
+        ShadowMapWithoutEngineProgram
+        ''' <summary>Fallout 4's refraction normals: the engine has no program for its technique either.</summary>
+        RefractionNormalsWithoutEngineProgram
+        ''' <summary>The game builds no pass for it (RenderableMesh.EngineUndrawnNotice: no programs, no pass of the pass law, an
+        ''' effect only an interface draw has, an SSE effect or decal without a shader).</summary>
+        EngineDrawsNoPass
+        ''' <summary>Material alpha 0 (at rest, or not animated): the game builds no pass (AlphaZeroNotice).</summary>
+        AlphaZeroNotDrawn
+        ''' <summary>Material alpha NaN: the game builds no pass (AlphaZeroNotice).</summary>
+        AlphaNaNNotDrawn
+        ''' <summary>C-NAN: a Skyrim SE bounding sphere with NaN, loaded as radius 0 (NifSceneVisibility.NoticeNaN).</summary>
+        BoundNaNNotDrawn
+        ''' <summary>C-NAN: a bounding sphere of radius 0 (NifSceneVisibility.NoticeRadius0).</summary>
+        BoundRadius0NotDrawn
+        ''' <summary>C-NAN: a world bound of radius 0 from the scales of its node chain (NifSceneVisibility.NoticeScale0).</summary>
+        ScaleZeroNotDrawn
+        ''' <summary>Pto 14: under a node whose world bound has radius 0 (NifSceneVisibility.NoticeNodeRadius0).</summary>
+        NodeRadius0NotDrawn
+        ''' <summary>Pto 3a: hidden by a visibility controller at rest (NifSceneVisibility.NoticeVisController).</summary>
+        VisControllerNotDrawn
+        ''' <summary>r19b-02: a NiGeometry class Fallout 4's culling never registers (NifSceneVisibility.NoticeFo4NotRegistered).</summary>
+        Fo4UnregisteredClassNotDrawn
+        ''' <summary>r19b-13: a geometry class whose registration is not traced (NifSceneVisibility.NoticeFo4Untraced).</summary>
+        Fo4UntracedClassNotDrawn
+        ''' <summary>Ola 7b: outside the biped's skinned attach (GameAttachLaw.OutsideAttachNotice).</summary>
+        OutsideSkinnedAttachNotDrawn
+        ' ---- DrawnForEditing: the game does not draw it, the piece view draws it to edit it (the same causes as above)
+        AlphaZeroShown
+        AlphaNaNShown
+        BoundNaNShown
+        BoundRadius0Shown
+        ScaleZeroShown
+        NodeRadius0Shown
+        VisControllerShown
+        Fo4UnregisteredClassShown
+        Fo4UntracedClassShown
+        OutsideSkinnedAttachShown
+        ''' <summary>Ola 7b: a *_faceBones.nif opened by hand: the game reads it only as face input (GameAttachLaw.FaceBonesNotice).</summary>
+        FaceBonesInput
+        ' ---- DrawnDifferently: the game draws it, the preview draws it differently
+        ''' <summary>A texture in the data the preview did not load ("Texture not loaded by the preview: path").</summary>
+        TextureNotLoaded
+        ''' <summary>A texture the game reads inconsistently that the preview could not load either.</summary>
+        TextureNotLoadedReadInconsistently
+        ''' <summary>A texture whose header the preview cannot read (r19d-H1).</summary>
+        TextureHeaderUnread
+        ''' <summary>An FO4 overlay on a tessellated host: the app's position, not its host's engine stage.</summary>
+        OverlayTessellatedHost
+        ''' <summary>An FO4 overlay whose host's engine stage could not be built for capture.</summary>
+        OverlayHostStageNotBuilt
+        ''' <summary>A draw without its depth bias: the depth format's polygon offset unit is not measured (Gl43.DepthBias).</summary>
+        DepthBiasNotMeasured
+        ''' <summary>Fallout 4's shadow map casters without their depth bias (the same cause).</summary>
+        ShadowMapDepthBiasNotMeasured
+        ''' <summary>SSE snow sparkles (their colour comes from the scene: not traced).</summary>
+        SnowSparklesNotDrawn
+        ''' <summary>A transform at rest not applied to a skinned shape mounted on the skeleton (the game NOT TRACED: NodeRestLayer).</summary>
+        MountedTransformNotTraced
+        ''' <summary>Ola 7b F2: a skin bone the game re-parents with its own controller; drawn as the file (GameAttachLaw.ReparentedNotice).</summary>
+        ReparentedBoneTransform
+        ''' <summary>A controller whose rest the app cannot determine (NodeRestLayer's hole).</summary>
+        TransformRestNotDeterminable
+        ''' <summary>7c-8 (C18): a Fallout 4 environment cube with more mips than the world's cube array: the engine's copy that shifts
+        ''' its faces (RE_FO4_WORLD_ENVMAP 1.4) is not reproduced.</summary>
+        EnvCubeMoreMipsThanArray
+        ''' <summary>7c-8 (A22): a shape whose world bound the preview cannot build (EngineWorldBound.WorldSphere: Nothing) placed by its
+        ''' vertex box centre in a pass of the frame that reads that centre - the alpha sort, the refraction fade
+        ''' (RenderableMesh.FrameWorldBoundCentre).</summary>
+        PlacedWithoutEngineBound
+        ' ---- UndefinedInGame
+        ''' <summary>A texture the game reads inconsistently, drawn as the preview loads it.</summary>
+        TextureReadInconsistently
+        ''' <summary>An effect recolor without a base texture (MaterialData.RecolorWithoutBase).</summary>
+        RecolorWithoutBase
+        ''' <summary>An SSE Parallax technique whose view vector the game leaves unset (RenderableMesh.ParallaxUndefinedView).</summary>
+        ParallaxUndefinedView
+        ''' <summary>An SSE eye without per-vertex eye data: the game has no reflection centre for it (RenderableMesh.SseEyeWithoutEyeData).</summary>
+        SseEyeWithoutEyeData
+        ' ---- the texture kinds
+        MissingTexture
+        RejectedTexture
+        CrashingTexture
+        EmptyTextureSlot
+        ' ---- the at-rest kinds and the editor's near
+        ValueDrivenAtRest
+        TransformDrivenAtRest
+        ''' <summary>A path controller at rest: its block drawn at the file's position (NodeRestLayer.ShapeLayer.Path).</summary>
+        PathControllerAtRest
+        CloserThanGameNear
+    End Enum
+
+    ''' <summary>THE classification of the frame's notices (ola 7e, the one owner): the kind (map and line label) and the class of
+    ''' <paramref name="id"/>, by the user's closed criterion (20-oct-2026): ERROR what is wrong - no technique, no shaders or program, a
+    ''' missing texture (an empty slot aside), what the preview cannot draw; WARNING the engine's defaults - an empty slot with a default,
+    ''' default values, what the game leaves undefined; INFO what is neither - a controller or a transform at rest, a design of the
+    ''' editor it declares. A culling notice has the class of its cause in both views: the piece view drawing it to edit it is the
+    ''' editor's rule, which its line already says ("Drawn by the preview, not by the game"). Each case's reason is in
+    ''' D:\WinTmp\rc\ola7e\prop\propuesta.md 3.</summary>
+    Friend Shared Function NoticeClass(id As FrameNoticeId) As (Kind As FrameNoticeKind, Severity As FrameNoticeSeverity)
+        Const E = FrameNoticeSeverity.Error, W = FrameNoticeSeverity.Warning, I = FrameNoticeSeverity.Info
 #If DEBUG Then
-        ' ParityGate fo4-texture-creation-law's directed mutant (Fo4GBufferConstants.GateMutantOn, the one switch).
-        If Fo4GBufferConstants.GateMutantOn("ntc-rejected-warning") AndAlso kind = FrameNoticeKind.RejectedTexture Then Return FrameNoticeSeverity.Warning
-        If Fo4GBufferConstants.GateMutantOn("ntc-crash-warning") AndAlso kind = FrameNoticeKind.CrashingTexture Then Return FrameNoticeSeverity.Warning
+        ' Ola 7e tester (ParityGate notice-kind-table): the SSE eye back under HEAD's kind (DrawnDifferently: D-7 undone).
+        If Fo4GBufferConstants.GateMutantOn("ntc-eye-old-kind") AndAlso id = FrameNoticeId.SseEyeWithoutEyeData Then Return (FrameNoticeKind.DrawnDifferently, E)
+        ' Ola 7e tester round 2 (ParityGate notice-lines-contract, ShadowGate --notice-classes c12): a bound and a node of radius 0 back to
+        ' ERROR (the class of round 1, before the user's decision of 20-oct-2026), their kinds unchanged.
+        If Fo4GBufferConstants.GateMutantOn("ntc-radius0-error") Then
+            Select Case id
+                Case FrameNoticeId.BoundRadius0NotDrawn, FrameNoticeId.NodeRadius0NotDrawn : Return (FrameNoticeKind.EngineUndrawn, E)
+                Case FrameNoticeId.BoundRadius0Shown, FrameNoticeId.NodeRadius0Shown : Return (FrameNoticeKind.DrawnForEditing, E)
+            End Select
+        End If
 #End If
-        Select Case kind
-            Case FrameNoticeKind.PreviewGap, FrameNoticeKind.EngineUndrawn, FrameNoticeKind.DrawnForEditing,
-                 FrameNoticeKind.DrawnDifferently, FrameNoticeKind.MissingTexture, FrameNoticeKind.RejectedTexture,
-                 FrameNoticeKind.CrashingTexture
-                Return FrameNoticeSeverity.Error
-            Case FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot,
-                 FrameNoticeKind.DrivenByControllerAtRest, FrameNoticeKind.TransformDrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
-                Return FrameNoticeSeverity.Warning
-            Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
+        Select Case id
+            Case FrameNoticeId.RigLightWithoutProgram, FrameNoticeId.PrecombinedGeometry, FrameNoticeId.PassGap,
+                 FrameNoticeId.ShadowMapProgramGap, FrameNoticeId.RefractionNormalsProgramGap,
+                 FrameNoticeId.ParticleSystemNotDrawn, FrameNoticeId.WaterShaderNotSupported, FrameNoticeId.SkyShaderNotSupported,
+                 FrameNoticeId.PipboyScreenNotDrawn, FrameNoticeId.ShapeLoadFailed
+                Return (FrameNoticeKind.PreviewGap, E)                              ' what the preview cannot draw
+            Case FrameNoticeId.ShadowMapWithoutEngineProgram, FrameNoticeId.RefractionNormalsWithoutEngineProgram, FrameNoticeId.EngineDrawsNoPass,
+                 FrameNoticeId.Fo4UnregisteredClassNotDrawn
+                Return (FrameNoticeKind.EngineUndrawn, E)                           ' no program, no pass, no technique for its class
+            Case FrameNoticeId.AlphaNaNNotDrawn, FrameNoticeId.BoundNaNNotDrawn, FrameNoticeId.OutsideSkinnedAttachNotDrawn
+                Return (FrameNoticeKind.EngineUndrawn, E)                           ' wrong data (NaN), a piece worn outside the attach
+            Case FrameNoticeId.Fo4UntracedClassNotDrawn
+                Return (FrameNoticeKind.EngineUndrawn, E)                           ' what the preview cannot draw (not traced)
+            Case FrameNoticeId.AlphaZeroNotDrawn, FrameNoticeId.ScaleZeroNotDrawn, FrameNoticeId.BoundRadius0NotDrawn, FrameNoticeId.NodeRadius0NotDrawn,
+                 FrameNoticeId.VisControllerNotDrawn
+                Return (FrameNoticeKind.EngineUndrawn, I)                           ' not drawn by the file's data (user decision 20-oct-2026:
+                                                                                    ' alpha 0, scale 0, radius 0), a controller at rest
+            Case FrameNoticeId.AlphaNaNShown, FrameNoticeId.BoundNaNShown,
+                 FrameNoticeId.Fo4UnregisteredClassShown, FrameNoticeId.Fo4UntracedClassShown, FrameNoticeId.OutsideSkinnedAttachShown
+                Return (FrameNoticeKind.DrawnForEditing, E)                         ' the class of its cause
+            Case FrameNoticeId.AlphaZeroShown, FrameNoticeId.ScaleZeroShown, FrameNoticeId.BoundRadius0Shown, FrameNoticeId.NodeRadius0Shown,
+                 FrameNoticeId.VisControllerShown, FrameNoticeId.FaceBonesInput
+                Return (FrameNoticeKind.DrawnForEditing, I)                         ' the class of its cause; a face input file: the editor's design
+            Case FrameNoticeId.TextureNotLoaded, FrameNoticeId.TextureNotLoadedReadInconsistently, FrameNoticeId.TextureHeaderUnread,
+                 FrameNoticeId.OverlayTessellatedHost, FrameNoticeId.OverlayHostStageNotBuilt, FrameNoticeId.DepthBiasNotMeasured,
+                 FrameNoticeId.ShadowMapDepthBiasNotMeasured, FrameNoticeId.SnowSparklesNotDrawn, FrameNoticeId.MountedTransformNotTraced,
+                 FrameNoticeId.ReparentedBoneTransform, FrameNoticeId.TransformRestNotDeterminable,
+                 FrameNoticeId.EnvCubeMoreMipsThanArray, FrameNoticeId.PlacedWithoutEngineBound
+                Return (FrameNoticeKind.DrawnDifferently, E)                        ' what the preview cannot draw as the game does
+            Case FrameNoticeId.TextureReadInconsistently, FrameNoticeId.RecolorWithoutBase, FrameNoticeId.ParallaxUndefinedView,
+                 FrameNoticeId.SseEyeWithoutEyeData
+                Return (FrameNoticeKind.UndefinedInGame, W)                         ' what the game leaves undefined
+            Case FrameNoticeId.MissingTexture : Return (FrameNoticeKind.MissingTexture, E)
+            Case FrameNoticeId.RejectedTexture : Return (FrameNoticeKind.RejectedTexture, E)
+            Case FrameNoticeId.CrashingTexture : Return (FrameNoticeKind.CrashingTexture, E)
+            Case FrameNoticeId.EmptyTextureSlot : Return (FrameNoticeKind.EmptyTextureSlot, W)
+            Case FrameNoticeId.ValueDrivenAtRest : Return (FrameNoticeKind.DrivenByControllerAtRest, I)
+            Case FrameNoticeId.TransformDrivenAtRest : Return (FrameNoticeKind.TransformDrivenByControllerAtRest, I)
+            Case FrameNoticeId.PathControllerAtRest : Return (FrameNoticeKind.PathControllerAtRest, I)   ' a controller at rest (the criterion names it)
+            Case FrameNoticeId.CloserThanGameNear : Return (FrameNoticeKind.CloserThanGameNear, I)   ' the editor's near: its declared design
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(id))
         End Select
+    End Function
+
+    ''' <summary>The class of <paramref name="id"/> (NoticeClass, the one owner).</summary>
+    Friend Shared Function SeverityOf(id As FrameNoticeId) As FrameNoticeSeverity
+#If DEBUG Then
+        ' ParityGate fo4-texture-creation-law's directed mutants (Fo4GBufferConstants.GateMutantOn, the one switch).
+        If Fo4GBufferConstants.GateMutantOn("ntc-rejected-warning") AndAlso id = FrameNoticeId.RejectedTexture Then Return FrameNoticeSeverity.Warning
+        If Fo4GBufferConstants.GateMutantOn("ntc-crash-warning") AndAlso id = FrameNoticeId.CrashingTexture Then Return FrameNoticeSeverity.Warning
+        ' Ola 7e tester (ParityGate notice-lines-contract, ShadowGate --notice-classes): the class by KIND, HEAD's table before the three
+        ' classes (the path controller, a kind of its own since 7e, was a DrawnDifferently line: an error).
+        If Fo4GBufferConstants.GateMutantOn("ntc-class-by-kind") Then
+            Select Case NoticeClass(id).Kind
+                Case FrameNoticeKind.UndefinedInGame, FrameNoticeKind.EmptyTextureSlot, FrameNoticeKind.DrivenByControllerAtRest,
+                     FrameNoticeKind.TransformDrivenByControllerAtRest, FrameNoticeKind.CloserThanGameNear
+                    Return FrameNoticeSeverity.Warning
+                Case Else
+                    Return FrameNoticeSeverity.Error
+            End Select
+        End If
+#End If
+        Return NoticeClass(id).Severity
     End Function
 
     ''' <summary>The frame's serial (RenderAll): per-frame caches key on it (MaterialData.Fo4EngineState, MaterialData.PreviewAlpha).</summary>
@@ -12002,25 +12340,52 @@ Public Class PreviewModel
     ''' <summary>Rev-13 (ola 0c pto 14): the node bounds of this frame, one map per NIF (NifSceneVisibility.SceneBoundMemo).</summary>
     Friend ReadOnly FrameSceneBounds As New NifSceneVisibility.SceneBoundMemo()
 
-    ''' <summary>The one sink of the frame's notice: <paramref name="kind"/> picks the map (FrameNoticeKind). A shape is listed once
-    ''' under each reason.</summary>
-    Friend Sub ReportUndrawn(shapeName As String, reason As String, kind As FrameNoticeKind)
-        Dim map As SortedDictionary(Of String, SortedSet(Of String))
+    ''' <summary>The map of <paramref name="kind"/> (FrameNoticeKind).</summary>
+    Private Function NoticeMap(kind As FrameNoticeKind) As SortedDictionary(Of String, SortedSet(Of String))
         Select Case kind
-            Case FrameNoticeKind.PreviewGap : map = FramePreviewGaps
-            Case FrameNoticeKind.EngineUndrawn : map = FrameEngineUndrawn
-            Case FrameNoticeKind.DrawnForEditing : map = FrameDrawnForEditing
-            Case FrameNoticeKind.DrawnDifferently : map = FrameDrawnDifferently
-            Case FrameNoticeKind.UndefinedInGame : map = FrameUndefinedInGame
-            Case FrameNoticeKind.MissingTexture : map = FrameMissingTextures
-            Case FrameNoticeKind.RejectedTexture : map = FrameRejectedTextures
-            Case FrameNoticeKind.CrashingTexture : map = FrameCrashingTextures
-            Case FrameNoticeKind.EmptyTextureSlot : map = FrameEmptyTextureSlots
-            Case FrameNoticeKind.DrivenByControllerAtRest : map = FrameDrivenAtRest
-            Case FrameNoticeKind.TransformDrivenByControllerAtRest : map = FrameTransformDrivenAtRest
-            Case FrameNoticeKind.CloserThanGameNear : map = FrameCloserThanGameNear
+            Case FrameNoticeKind.PreviewGap : Return FramePreviewGaps
+            Case FrameNoticeKind.EngineUndrawn : Return FrameEngineUndrawn
+            Case FrameNoticeKind.DrawnForEditing : Return FrameDrawnForEditing
+            Case FrameNoticeKind.DrawnDifferently : Return FrameDrawnDifferently
+            Case FrameNoticeKind.UndefinedInGame : Return FrameUndefinedInGame
+            Case FrameNoticeKind.MissingTexture : Return FrameMissingTextures
+            Case FrameNoticeKind.RejectedTexture : Return FrameRejectedTextures
+            Case FrameNoticeKind.CrashingTexture : Return FrameCrashingTextures
+            Case FrameNoticeKind.EmptyTextureSlot : Return FrameEmptyTextureSlots
+            Case FrameNoticeKind.DrivenByControllerAtRest : Return FrameDrivenAtRest
+            Case FrameNoticeKind.TransformDrivenByControllerAtRest : Return FrameTransformDrivenAtRest
+            Case FrameNoticeKind.PathControllerAtRest : Return FramePathControllerAtRest
+            Case FrameNoticeKind.CloserThanGameNear : Return FrameCloserThanGameNear
             Case Else : Throw New ArgumentOutOfRangeException(NameOf(kind))
         End Select
+    End Function
+
+    ''' <summary>Ola 7e: which notice (FrameNoticeId) each reason of each kind's map came from this frame, with its map's comparer:
+    ''' FrameNoticeLines reads its class from it. A reason text belongs to one notice (no two members produce the same text: ParityGate
+    ''' checks the producers). Emptied, not dropped, each frame (RenderAll): no allocation per frame once the kinds have been seen.</summary>
+    Private ReadOnly _frameNoticeIds As New Dictionary(Of FrameNoticeKind, Dictionary(Of String, FrameNoticeId))()
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (Debug, ola 7e tester): each reason of a kind that two different notices produced (ReportUndrawn keeps the
+    ''' first, so the line would take its class). ParityGate notice-lines-contract and ShadowGate --notice-classes read it empty.</summary>
+    Friend Shared ReadOnly GateNoticeIdConflicts As New List(Of String)
+#End If
+
+    ''' <summary>The one sink of the frame's notice: <paramref name="id"/> names the notice, whose kind picks the map (NoticeClass). A
+    ''' shape is listed once under each reason.</summary>
+    Friend Sub ReportUndrawn(shapeName As String, reason As String, id As FrameNoticeId)
+        Dim kind = NoticeClass(id).Kind
+        Dim map = NoticeMap(kind)
+        Dim ids As Dictionary(Of String, FrameNoticeId) = Nothing
+        If Not _frameNoticeIds.TryGetValue(kind, ids) Then
+            ids = New Dictionary(Of String, FrameNoticeId)(DirectCast(map.Comparer, StringComparer))
+            _frameNoticeIds(kind) = ids
+        End If
+#If DEBUG Then
+        Dim prior As FrameNoticeId
+        If ids.TryGetValue(reason, prior) AndAlso prior <> id Then GateNoticeIdConflicts.Add($"{kind}: '{reason}' from {prior} and {id}")
+#End If
+        ids.TryAdd(reason, id)
         Dim shapes As SortedSet(Of String) = Nothing
         If Not map.TryGetValue(reason, shapes) Then
             shapes = New SortedSet(Of String)(StringComparer.Ordinal)
@@ -12029,40 +12394,72 @@ Public Class PreviewModel
         shapes.Add(If(shapeName, ""))
     End Sub
 
-    ''' <summary>The lines of the frame's notice (PreviewControl draws them on the window when Config_App.Setting_ShowErrors): one per
-    ''' reason with its shape count - the preview's gaps ("Not drawn by the preview (n shapes): reason"), the game's own ("reason
-    ''' (n shapes)": each such reason already says that the game does not draw it), then what the game does not draw and the preview
-    ''' does ("Drawn by the preview, not by the game (n shapes): reason"), what it shows at its animated maximum, then C4's texture
-    ''' lines ("Drawn differently by the preview", "Missing texture", item 3's "Texture the game cannot create", "Empty texture
-    ''' slot"), then C10's ("Value driven by a controller
-    ''' at rest", rev-04) and ola 0c parte 2's ("Transform driven by a controller at rest"). The errors come first, then the warnings
-    ''' (SeverityOf); <paramref name="errors"/> /
-    ''' <paramref name="warnings"/> False leave that class out (the window's notice: "Show errors" / "Show warnings"). Empty when
-    ''' the frame draws every shape as the game does.</summary>
-    Friend Function FrameNoticeLines(Optional errors As Boolean = True, Optional warnings As Boolean = True) As List(Of String)
+    ''' <summary>The notice (FrameNoticeId) <paramref name="reason"/> of <paramref name="kind"/> came from this frame; Nothing when the
+    ''' frame has no such reason.</summary>
+    Friend Function FrameNoticeIdOf(kind As FrameNoticeKind, reason As String) As FrameNoticeId?
+        Dim ids As Dictionary(Of String, FrameNoticeId) = Nothing
+        Dim id As FrameNoticeId
+        If _frameNoticeIds.TryGetValue(kind, ids) AndAlso ids.TryGetValue(reason, id) Then Return id
+        Return Nothing
+    End Function
+
+    ''' <summary>The lines of the frame's notice (PreviewControl draws them on the window by the user's three checkboxes): one per
+    ''' reason with its shape count, by class - the errors first, then the warnings, then the info (SeverityOf of each line's notice,
+    ''' ola 7e) -, and within a class by kind: the preview's gaps ("Not drawn by the preview (n shapes): reason"), the game's own
+    ''' ("reason (n shapes)": each such reason already says that the game does not draw it), what the game does not draw and the preview
+    ''' does ("Drawn by the preview, not by the game (n shapes): reason"), what the preview draws differently ("Drawn differently by the
+    ''' preview"), what the game leaves undefined ("Undefined in the game", ola 7e: its own label), C4's texture lines ("Missing
+    ''' texture", item 3's "Texture the game cannot create", "Texture that crashes the game", "Empty texture slot"), C10's ("Value
+    ''' driven by a controller at rest", rev-04), ola 0c parte 2's ("Transform driven by a controller at rest"), ola 7e's path
+    ''' controller ("Path controller at rest") and the editor's near.
+    ''' <paramref name="errors"/> / <paramref name="warnings"/> / <paramref name="info"/> False leave that class out (the window's
+    ''' notice: "Show errors" / "Show warnings" / "Show info"). Empty when the frame draws every shape as the game does.</summary>
+    Friend Function FrameNoticeLines(Optional errors As Boolean = True, Optional warnings As Boolean = True, Optional info As Boolean = True) As List(Of String)
         Dim shapes = Function(n As Integer) $"{n} shape{If(n = 1, "", "s")}"
         ' Both games: the preview draws what the game samples for an absent file (SSE 0x1414EC1A8..1E7; FO4 the loader's ladder,
         ' 0x1421825AC..5D9, ola 4b) and the path is listed (rev-08).
         Const missingLabel As String = "Missing texture"
-        Dim sections As (Kind As FrameNoticeKind, Map As SortedDictionary(Of String, SortedSet(Of String)), Line As Func(Of String, Integer, String))() = {
-            (FrameNoticeKind.PreviewGap, FramePreviewGaps, Function(r, n) $"Not drawn by the preview ({shapes(n)}): {r}"),
-            (FrameNoticeKind.EngineUndrawn, FrameEngineUndrawn, Function(r, n) $"{r} ({shapes(n)})"),
-            (FrameNoticeKind.DrawnForEditing, FrameDrawnForEditing, Function(r, n) $"Drawn by the preview, not by the game ({shapes(n)}): {r}"),
-            (FrameNoticeKind.DrawnDifferently, FrameDrawnDifferently, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
-            (FrameNoticeKind.UndefinedInGame, FrameUndefinedInGame, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
-            (FrameNoticeKind.MissingTexture, FrameMissingTextures, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
-            (FrameNoticeKind.RejectedTexture, FrameRejectedTextures, Function(r, n) $"Texture the game cannot create, sampled as zero ({shapes(n)}): {r}"),
-            (FrameNoticeKind.CrashingTexture, FrameCrashingTextures, Function(r, n) $"Texture that crashes the game ({shapes(n)}): {r}"),
-            (FrameNoticeKind.EmptyTextureSlot, FrameEmptyTextureSlots, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
-            (FrameNoticeKind.DrivenByControllerAtRest, FrameDrivenAtRest, Function(r, n) $"Value driven by a controller at rest ({shapes(n)}): {r}"),
-            (FrameNoticeKind.TransformDrivenByControllerAtRest, FrameTransformDrivenAtRest, Function(r, n) $"Transform driven by a controller at rest ({shapes(n)}): {r}"),
-            (FrameNoticeKind.CloserThanGameNear, FrameCloserThanGameNear, Function(r, n) $"{r} ({shapes(n)})")}
+        Dim sections As (Kind As FrameNoticeKind, Line As Func(Of String, Integer, String))() = {
+            (FrameNoticeKind.PreviewGap, Function(r, n) $"Not drawn by the preview ({shapes(n)}): {r}"),
+            (FrameNoticeKind.EngineUndrawn, Function(r, n) $"{r} ({shapes(n)})"),
+            (FrameNoticeKind.DrawnForEditing, Function(r, n) $"Drawn by the preview, not by the game ({shapes(n)}): {r}"),
+            (FrameNoticeKind.DrawnDifferently, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
+            (FrameNoticeKind.UndefinedInGame, Function(r, n) $"Undefined in the game ({shapes(n)}): {r}"),
+            (FrameNoticeKind.MissingTexture, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
+            (FrameNoticeKind.RejectedTexture, Function(r, n) $"Texture the game cannot create, sampled as zero ({shapes(n)}): {r}"),
+            (FrameNoticeKind.CrashingTexture, Function(r, n) $"Texture that crashes the game ({shapes(n)}): {r}"),
+            (FrameNoticeKind.EmptyTextureSlot, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
+            (FrameNoticeKind.DrivenByControllerAtRest, Function(r, n) $"Value driven by a controller at rest ({shapes(n)}): {r}"),
+            (FrameNoticeKind.TransformDrivenByControllerAtRest, Function(r, n) $"Transform driven by a controller at rest ({shapes(n)}): {r}"),
+            (FrameNoticeKind.PathControllerAtRest, Function(r, n) $"Path controller at rest: drawn at the file's position ({shapes(n)}): {r}"),
+            (FrameNoticeKind.CloserThanGameNear, Function(r, n) $"{r} ({shapes(n)})")}
+#If DEBUG Then
+        ' Ola 7e tester (ParityGate notice-lines-contract): UndefinedInGame with DrawnDifferently's label (D-9 undone).
+        If Fo4GBufferConstants.GateMutantOn("ntc-undefined-label-old") Then
+            For k = 0 To sections.Length - 1
+                If sections(k).Kind = FrameNoticeKind.UndefinedInGame Then sections(k) = (FrameNoticeKind.UndefinedInGame, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}")
+            Next
+        End If
+#End If
         Dim lines As New List(Of String)
-        For Each severity In {FrameNoticeSeverity.Error, FrameNoticeSeverity.Warning}
-            If Not If(severity = FrameNoticeSeverity.Error, errors, warnings) Then Continue For
+        For Each severity In {FrameNoticeSeverity.Error, FrameNoticeSeverity.Warning, FrameNoticeSeverity.Info}
+            Dim shown As Boolean
+            Select Case severity
+                Case FrameNoticeSeverity.Error : shown = errors
+                Case FrameNoticeSeverity.Warning : shown = warnings
+                Case FrameNoticeSeverity.Info : shown = info
+                Case Else : Throw New ArgumentOutOfRangeException(NameOf(severity))
+            End Select
+#If DEBUG Then
+            ' Ola 7e tester (ParityGate notice-lines-contract, ShadowGate --notice-classes): the info checkbox ignored.
+            If severity = FrameNoticeSeverity.Info AndAlso Fo4GBufferConstants.GateMutantOn("ntc-info-ignored") Then shown = True
+#End If
+            If Not shown Then Continue For
             For Each s In sections
-                If SeverityOf(s.Kind) <> severity Then Continue For
-                For Each kv In s.Map
+                Dim ids As Dictionary(Of String, FrameNoticeId) = Nothing
+                If Not _frameNoticeIds.TryGetValue(s.Kind, ids) Then Continue For
+                For Each kv In NoticeMap(s.Kind)
+                    If SeverityOf(ids(kv.Key)) <> severity Then Continue For
                     lines.Add(s.Line(kv.Key, kv.Value.Count))
                 Next
             Next
@@ -12083,7 +12480,9 @@ Public Class PreviewModel
         FrameEmptyTextureSlots.Clear()
         FrameDrivenAtRest.Clear()
         FrameTransformDrivenAtRest.Clear()
+        FramePathControllerAtRest.Clear()
         FrameCloserThanGameNear.Clear()
+        For Each ids In _frameNoticeIds.Values : ids.Clear() : Next
         FrameSerial = If(FrameSerial = Integer.MaxValue, 0, FrameSerial + 1)
         For i = 0 To FrameSamplerFilter.Length - 1 : FrameSamplerFilter(i) = 3 : Next
         ' SOFT's scene depth: nothing copied yet this frame, and the depth buffer is "written" (cleared).
@@ -12286,10 +12685,10 @@ Public Class PreviewModel
         For Each mesh In BlendedMeshes
             ' O3.3: Frustum cull blended meshes too
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
-            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = EngineWorldBound.AlphaSortKey(alphaSortDir, mesh.WorldBoundCentre()), .Seq = seq}) : seq += 1
+            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = EngineWorldBound.AlphaSortKey(alphaSortDir, mesh.FrameWorldBoundCentre(Nothing)), .Seq = seq}) : seq += 1
         Next
         For Each it In _ovlBlended
-            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = it.Mesh, .Layer = it.Layer, .Depth = EngineWorldBound.AlphaSortKey(alphaSortDir, it.Mesh.WorldBoundCentre()), .Seq = seq}) : seq += 1
+            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = it.Mesh, .Layer = it.Layer, .Depth = EngineWorldBound.AlphaSortKey(alphaSortDir, it.Mesh.FrameWorldBoundCentre(it.Layer)), .Seq = seq}) : seq += 1
         Next
         Dim ordered = BlendedDepthBuffer.OrderByDescending(Function(d) d.Depth).ThenBy(Function(d) d.Seq).ToList()
         For Each item In ordered
@@ -12323,7 +12722,7 @@ Public Class PreviewModel
                 ' Pto 25: the fade node. Skyrim SE: the shape's own centre and the objects' entry (its fade node is not traced). Fallout 4:
                 ' the root BSFadeNode of the shape's 3D (Fo4FadeNodes) - its world bound's centre and its table entry; a fade node with no
                 ' geometry of radius > 0 (or without a placeable sphere this frame) keeps the shape's centre (WorldBoundCentre's gap).
-                Dim centre = mesh.WorldBoundCentre()
+                Dim centre As Vector3? = Nothing
                 Dim lodScale = RefractionLaw.LodScale(FrameIsSse, isActor:=False)
                 If Not FrameIsSse Then
                     If fadeNodes Is Nothing Then fadeNodes = Fo4FadeNodes()
@@ -12336,8 +12735,11 @@ Public Class PreviewModel
                         If Not f.InList Then lodScale = 0.0F
                     End If
                 End If
+                ' The shape's own centre where no fade node gave one; the fade reads it only with a scale (x = distance x lodScale / 7200,
+                ' RenderRefractionNormals): with lodScale 0 it is not read, so no notice (A22, FrameWorldBoundCentre).
+                If Not centre.HasValue Then centre = If(lodScale = 0.0F, mesh.WorldBoundCentre(), mesh.FrameWorldBoundCentre(Nothing))
                 If Not abierto Then ParentControl.BeginRefractionNormals(FrameIsSse) : abierto = True
-                If mesh.RenderRefractionNormals(ParentControl.RefractionNormalsProgram(FrameIsSse), projection, camera, FrameIsSse, lodScale, centre) Then FrameRefractionActive = True
+                If mesh.RenderRefractionNormals(ParentControl.RefractionNormalsProgram(FrameIsSse), projection, camera, FrameIsSse, lodScale, centre.Value) Then FrameRefractionActive = True
             Next
             If abierto Then ParentControl.EndRefractionNormals()
         End If
@@ -12841,13 +13243,19 @@ Public Class PreviewModel
         For Each it In AllOverlayItems()
             it.Mesh.ReportUndrawn(it.Layer)
         Next
+        ' Ola 7e: the shapes the loader leaves out of the loaded NIFs - particles, unsupported shaders - and the ones it could not load
+        ' (p7e-06): no geometry the preview holds, so no frustum test.
+        For Each u In _untakenNotices
+            ReportUndrawn(u.Shape, u.Reason, u.Id)
+        Next
         ' Ola 1, editor rule: exactly the shapes that lowered this frame's near (NearShapes, one owner).
         For Each mesh In FrameCloserThanNear
-            ReportUndrawn(mesh.NoticeName(Nothing), CloserThanGameNearReason, FrameNoticeKind.CloserThanGameNear)
+            ReportUndrawn(mesh.NoticeName(Nothing), CloserThanGameNearReason, FrameNoticeId.CloserThanGameNear)
         Next
     End Sub
 
-    ''' <summary>The reason line of FrameNoticeKind.CloserThanGameNear (the user's wording, 12-oct-2026).</summary>
+    ''' <summary>The reason line of FrameNoticeId.CloserThanGameNear (the user's wording, 12-oct-2026; info: the editor's declared
+    ''' near, ola 7e).</summary>
     Friend Shared ReadOnly CloserThanGameNearReason As String =
         $"Closer than the game's near plane ({EngineCameraLaw.NearDistance.ToString(Globalization.CultureInfo.InvariantCulture)}): depth precision differs from the game"
 

@@ -60,7 +60,7 @@ Public Class Nifcontent_Class_Manolo
     Private Sub Read_MaterialsDictionary()
         BaseMaterials.Clear()
         For Each shap In Me.GetShapes
-            If SupportedShape(shap.GetType) Then
+            If TakesShape(shap) Then
                 BaseMaterials(shap.Name.String) = GetRelatedMaterial(shap)
             End If
         Next
@@ -96,14 +96,56 @@ Public Class Nifcontent_Class_Manolo
         Return result
     End Function
 
+    ''' <summary>The shader classes the app has no material for and whose shapes the loader leaves out, each with its frame notice
+    ''' (user decisions 20-oct-2026): the water shader in both games, the sky shader in Fallout 4. Skyrim SE's sky is the SSE stage's:
+    ''' it is not classified here, so GetRelatedMaterial still throws for it (HEAD's behaviour).</summary>
+    Public Enum UnsupportedShader
+        None
+        Water
+        Sky
+    End Enum
+
+    ''' <summary>The unsupported shader of <paramref name="shap"/> (UnsupportedShader), None for one the app has a material for.
+    ''' BSWaterShaderProperty is the class both games' NIFs use for water; BSSkyShaderProperty only counts in a Fallout 4 NIF (the
+    ''' header's version).</summary>
+    Public Function UnsupportedShaderOf(shap As INiShape) As UnsupportedShader
+        Dim shad = GetShader(shap)
+#If DEBUG Then
+        ' Ola 7e tester (ParityGate notice-loader, ShadowGate --notice-classes): the water not classified; the sky not classified; the
+        ' sky classified in any game.
+        If Fo4GBufferConstants.GateMutantOn("ld-no-water") AndAlso TypeOf shad Is BSWaterShaderProperty Then Return UnsupportedShader.None
+        If Fo4GBufferConstants.GateMutantOn("ld-no-sky") AndAlso TypeOf shad Is BSSkyShaderProperty Then Return UnsupportedShader.None
+        If Fo4GBufferConstants.GateMutantOn("ld-sky-any-game") AndAlso TypeOf shad Is BSSkyShaderProperty Then Return UnsupportedShader.Sky
+#End If
+        If TypeOf shad Is BSWaterShaderProperty Then Return UnsupportedShader.Water
+        If TypeOf shad Is BSSkyShaderProperty AndAlso Header.Version.IsFO4() Then Return UnsupportedShader.Sky
+        Return UnsupportedShader.None
+    End Function
+
+    ''' <summary>THE law of which shapes the app takes, one owner for every reader: the material dictionary here,
+    ''' NifRenderableShape.FromNif / UntakenShapesOf, the preview's sink (PreviewModel.LoadShapeSafe, any host) and the hosts that build
+    ''' projects or shape lists (Wardrobe Manager's Create from NIF and its project shapes). A class SupportedShape takes (every class
+    ''' but the particles; one it does not know throws), whose geometry the reader reads (ShapeGeometryFactory.IsSupported), and a
+    ''' shader the app has a material for (UnsupportedShaderOf = None).</summary>
+    Public Function TakesShape(shap As INiShape) As Boolean
+        Return SupportedShape(shap.GetType) AndAlso ShapeGeometryFactory.IsSupported(shap) AndAlso UnsupportedShaderOf(shap) = UnsupportedShader.None
+    End Function
+
     Public Shared Function SupportedShape(shapetype As Type) As Boolean
+        ' Ola 7e (7c-1): every particle class - NiParticles and each subclass NiflySharp has (NiParticleSystem, NiMeshParticleSystem,
+        ' BSStripParticleSystem, NiAutoNormalParticles, NiRotatingParticles, NiParticleMeshes) - is not taken: the preview does not draw
+        ' particles (the frame notice lists them, NifRenderableShape.UntakenShapesOf). Before, three exact types answered False and a
+        ' NiMeshParticleSystem fell to Case Else: the whole NIF failed to load.
+#If DEBUG Then
+        ' Ola 7e tester (ParityGate notice-loader, ShadowGate --notice-classes s2): HEAD's three exact particle types; any other subclass
+        ' falls to HEAD's Case Else (throws).
+        If Fo4GBufferConstants.GateMutantOn("ld-supported-exact") AndAlso GetType(NiParticles).IsAssignableFrom(shapetype) AndAlso
+           shapetype IsNot GetType(NiParticles) AndAlso shapetype IsNot GetType(BSStripParticleSystem) AndAlso shapetype IsNot GetType(NiParticleSystem) Then
+            Throw New Exception
+        End If
+#End If
+        If GetType(NiParticles).IsAssignableFrom(shapetype) Then Return False
         Select Case shapetype
-            Case GetType(NiParticles)
-                Return False
-            Case GetType(BSStripParticleSystem)
-                Return False
-            Case GetType(NiParticleSystem)
-                Return False
             Case GetType(BSSubIndexTriShape)
                 Return True
             Case GetType(BSTriShape)

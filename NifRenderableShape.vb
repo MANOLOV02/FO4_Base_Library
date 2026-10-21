@@ -338,11 +338,49 @@ Public Class NifRenderableShape
         Dim result As New List(Of NifRenderableShape)
         Dim idx = 0
         For Each shape In nif.GetShapes()
-            If Nifcontent_Class_Manolo.SupportedShape(shape.GetType) AndAlso ShapeGeometryFactory.IsSupported(shape) Then
+            If nif.TakesShape(shape) Then
                 result.Add(New NifRenderableShape(nif, shape, idx) With {.SourcePath = sourcePath})
                 idx += 1
             End If
         Next
         Return result
+    End Function
+
+    ''' <summary>Ola 7e: the shapes of <paramref name="nif"/> the loader does not take (Nifcontent_Class_Manolo.TakesShape, the one law: a
+    ''' shape it leaves out is a particle system or one with an unsupported shader), each with its name, its NIF block and its frame
+    ''' notice - a particle system (7c-1: the preview does not draw particles), a shape with the water shader or, in Fallout 4, the sky
+    ''' shader (user decisions 20-oct-2026: "Water shader not supported", "Sky shader not supported"). The preview's notice (PreviewModel.LoadShapesParallel / ReportUndrawnShapes) and Nif Explorer's
+    ''' status for a NIF with no other shape read them.</summary>
+    Friend Shared Function UntakenShapesOf(nif As Nifcontent_Class_Manolo) As List(Of (Name As String, Block As Integer, Id As PreviewModel.FrameNoticeId, Reason As String))
+        Dim result As New List(Of (Name As String, Block As Integer, Id As PreviewModel.FrameNoticeId, Reason As String))
+        If nif Is Nothing Then Return result
+        For Each shape In nif.GetShapes()
+            If nif.TakesShape(shape) Then Continue For
+            Dim block = -1
+            nif.GetBlockIndex(shape, block)
+            If TypeOf shape Is NiParticles Then
+                result.Add((shape.Name?.String, block, PreviewModel.FrameNoticeId.ParticleSystemNotDrawn, $"particle system ({shape.GetType().Name})"))
+            ElseIf nif.UnsupportedShaderOf(shape) = Nifcontent_Class_Manolo.UnsupportedShader.Water Then
+                result.Add((shape.Name?.String, block, PreviewModel.FrameNoticeId.WaterShaderNotSupported, PreviewModel.WaterShaderNotice))
+            ElseIf nif.UnsupportedShaderOf(shape) = Nifcontent_Class_Manolo.UnsupportedShader.Sky Then
+                result.Add((shape.Name?.String, block, PreviewModel.FrameNoticeId.SkyShaderNotSupported, PreviewModel.SkyShaderNotice))
+            Else
+                Throw New InvalidOperationException($"{shape.GetType().Name} '{shape.Name?.String}': left out by the loader for no reason it lists")
+            End If
+        Next
+        Return result
+    End Function
+
+    ''' <summary>The reason of each shape of <paramref name="nif"/> the loader leaves out (UntakenShapesOf), for a host outside the
+    ''' library (Nif Explorer's status for a NIF with no other shape).</summary>
+    Public Shared Function UntakenShapeReasons(nif As Nifcontent_Class_Manolo) As List(Of String)
+        Return UntakenShapesOf(nif).Select(Function(u) u.Reason).ToList()
+    End Function
+
+    ''' <summary>Ola 7e round 4 (r19k-02): the untaken shapes of <paramref name="nif"/> as a host shows them - each reason once, in first-seen
+    ''' order, with its count ("Water shader not supported (1), particle system (NiParticleSystem) (3)"); empty when the loader takes
+    ''' every shape. One owner for Nif Explorer's status and Wardrobe Manager's Create from NIF.</summary>
+    Public Shared Function UntakenShapeSummary(nif As Nifcontent_Class_Manolo) As String
+        Return String.Join(", ", UntakenShapeReasons(nif).GroupBy(Function(r) r).Select(Function(g) $"{g.Key} ({g.Count()})"))
     End Function
 End Class

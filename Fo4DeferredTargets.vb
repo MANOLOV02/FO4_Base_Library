@@ -1181,7 +1181,7 @@ Friend NotInheritable Class Fo4DeferredTargets
     Friend Shared Sub ReportSkippedLights(model As PreviewModel, skipped As IEnumerable(Of (Technique As UInteger, Light As Integer)))
         If model Is Nothing Then Return
         For Each sk In skipped
-            model.ReportUndrawn(If(sk.Light < 0, "rig ambient", $"rig light {sk.Light + 1}"), $"Light technique 0x{sk.Technique:X8} has no program: the light is not drawn", PreviewModel.FrameNoticeKind.PreviewGap)
+            model.ReportUndrawn(If(sk.Light < 0, "rig ambient", $"rig light {sk.Light + 1}"), $"Light technique 0x{sk.Technique:X8} has no program: the light is not drawn", PreviewModel.FrameNoticeId.RigLightWithoutProgram)
         Next
     End Sub
 

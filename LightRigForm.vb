@@ -291,6 +291,7 @@ Partial Public Class LightRigForm
         chkShowHelperShapes.Checked = Config_App.ShowHelperShapesEfectivo()
         chkShowErrors.Checked = Config_App.Current.Setting_ShowErrors
         chkShowWarnings.Checked = Config_App.Current.Setting_ShowWarnings
+        chkShowInfo.Checked = Config_App.Current.Setting_ShowInfo
 
         chkResetAngles.Checked = Config_App.Current.Settings_Camara.ResetAngles
         chkResetZoom.Checked = Config_App.Current.Settings_Camara.ResetZoom
@@ -465,6 +466,7 @@ Partial Public Class LightRigForm
         Config_App.Current.Setting_ShowHelperShapes = Nothing
         Config_App.Current.Setting_ShowErrors = True
         Config_App.Current.Setting_ShowWarnings = True
+        Config_App.Current.Setting_ShowInfo = True
         Config_App.Current.Settings_Camara = Config_App.Default_CameraSettings
         Config_App.Current.Settings_RenderGrid = Config_App.Default_RenderGrid_Settings
         Config_App.Current.Setting_RenderGridColor = Color.FromKnownColor(KnownColor.LightGray).Name
@@ -655,8 +657,8 @@ Partial Public Class LightRigForm
         AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarUIenModelo()
         AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarUIenModelo()
 
-        ' "Show errors" / "Show warnings" (grupo Notices): sólo cambian el aviso del cuadro, así que REPINTAN (LightsChanged). No
-        ' van por VolcarRenderEnModelo: ese levanta RenderSettingsChanged, que en los hosts rearma la geometría.
+        ' "Show errors" / "Show warnings" / "Show info" (grupo Notices): sólo cambian el aviso del cuadro, así que REPINTAN
+        ' (LightsChanged). No van por VolcarRenderEnModelo: ese levanta RenderSettingsChanged, que en los hosts rearma la geometría.
         AddHandler chkShowErrors.CheckedChanged, Sub(sender, e)
                                                      If _preventchanges Then Return
                                                      Config_App.Current.Setting_ShowErrors = chkShowErrors.Checked
@@ -667,6 +669,11 @@ Partial Public Class LightRigForm
                                                        Config_App.Current.Setting_ShowWarnings = chkShowWarnings.Checked
                                                        RaiseEvent LightsChanged()
                                                    End Sub
+        AddHandler chkShowInfo.CheckedChanged, Sub(sender, e)
+                                                   If _preventchanges Then Return
+                                                   Config_App.Current.Setting_ShowInfo = chkShowInfo.Checked
+                                                   RaiseEvent LightsChanged()
+                                               End Sub
 
         ' Pestana Rendering: todo escribe en Config_App al vuelo, igual que las luces.
         For Each c In New CheckBox() {chkRecalcNormals, chkRepairNaN, chkNormalize, chkDeterministic,

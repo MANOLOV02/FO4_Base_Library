@@ -130,6 +130,7 @@ Partial Class LightRigForm
         grpNotices = New GroupBox()
         chkShowErrors = New CheckBox()
         chkShowWarnings = New CheckBox()
+        chkShowInfo = New CheckBox()
         chkFloorEnabled = New CheckBox()
         lblFloorSize = New Label()
         nudFloorSize = New NumericUpDownCultura()
@@ -1430,6 +1431,7 @@ Partial Class LightRigForm
         ' 
         grpNotices.Controls.Add(chkShowErrors)
         grpNotices.Controls.Add(chkShowWarnings)
+        grpNotices.Controls.Add(chkShowInfo)
         grpNotices.Location = New Point(12, 528)
         grpNotices.Name = "grpNotices"
         grpNotices.Size = New Size(418, 52)
@@ -1445,7 +1447,7 @@ Partial Class LightRigForm
         chkShowErrors.Size = New Size(87, 19)
         chkShowErrors.TabIndex = 0
         chkShowErrors.Text = "Show errors"
-        ToolTip1.SetToolTip(chkShowErrors, "Show the errors in the notice at the top-left of the preview: missing textures, textures the preview did not load, what the preview cannot draw, and what the game does not draw (hidden, or drawn here only so it can be edited). Off hides those lines; nothing else changes.")
+        ToolTip1.SetToolTip(chkShowErrors, PreviewModel.ShowErrorsTip & OffHidesTip)
         ' 
         ' chkShowWarnings
         ' 
@@ -1455,7 +1457,17 @@ Partial Class LightRigForm
         chkShowWarnings.Size = New Size(104, 19)
         chkShowWarnings.TabIndex = 1
         chkShowWarnings.Text = "Show warnings"
-        ToolTip1.SetToolTip(chkShowWarnings, "Show the warnings in the notice at the top-left of the preview: values driven by a controller at rest, empty texture slots the game fills with a default, shapes shown at their animated maximum, and values the game leaves undefined. Off hides those lines; nothing else changes.")
+        ToolTip1.SetToolTip(chkShowWarnings, PreviewModel.ShowWarningsTip & OffHidesTip)
+        '
+        ' chkShowInfo
+        '
+        chkShowInfo.AutoSize = True
+        chkShowInfo.Location = New Point(289, 22)
+        chkShowInfo.Name = "chkShowInfo"
+        chkShowInfo.Size = New Size(78, 19)
+        chkShowInfo.TabIndex = 2
+        chkShowInfo.Text = "Show info"
+        ToolTip1.SetToolTip(chkShowInfo, PreviewModel.ShowInfoTip & OffHidesTip)
         ' 
         ' grpFloor
         ' 
@@ -1823,6 +1835,9 @@ Partial Class LightRigForm
     Friend WithEvents grpNotices As GroupBox
     Friend WithEvents chkShowErrors As CheckBox
     Friend WithEvents chkShowWarnings As CheckBox
+    ''' <summary>The rig's tail of the three notice checkboxes' descriptions (the menu's have none).</summary>
+    Private Const OffHidesTip As String = " Off hides those lines; nothing else changes."
+    Friend WithEvents chkShowInfo As CheckBox
     Friend WithEvents btnResetRender As Button
     Friend WithEvents chkFloorEnabled As CheckBox
     Friend WithEvents lblFloorSize As Label

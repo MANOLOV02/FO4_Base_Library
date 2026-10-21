@@ -47,6 +47,11 @@ Public Module NifSceneVisibility
         Public ReadOnly BoundCullShown As String
         ''' <summary>Rev-18: when a node of radius 0 cuts it (pto 14), which branch of the law did (the sweep reads it); None otherwise.</summary>
         Friend ReadOnly NodeCause As NodeCullCause
+        ''' <summary>Ola 7e: the frame notice of BoundCullReason (PreviewModel.FrameNoticeId, classified by PreviewModel.NoticeClass). Read
+        ''' only when BoundCullReason is not Nothing.</summary>
+        Friend ReadOnly BoundCullReasonId As PreviewModel.FrameNoticeId
+        ''' <summary>Ola 7e: the frame notice of BoundCullShown. Read only when BoundCullShown is not Nothing.</summary>
+        Friend ReadOnly BoundCullShownId As PreviewModel.FrameNoticeId
         ''' <summary>Ola 7b: why the biped's skinned attach leaves it out of the actor (GameAttachLaw.OutsideSkinnedAttach), as a
         ''' COMPOSITE view's notice says it; Nothing = the attach keeps it.</summary>
         Public ReadOnly OutsideAttachReason As String
@@ -65,6 +70,8 @@ Public Module NifSceneVisibility
             Me.BoundCullReason = s.BoundCullReason
             Me.BoundCullShown = s.BoundCullShown
             Me.NodeCause = s.NodeCause
+            Me.BoundCullReasonId = s.BoundCullReasonId
+            Me.BoundCullShownId = s.BoundCullShownId
             Me.OutsideAttachReason = outsideAttachReason
             Me.OutsideAttachShown = outsideAttachShown
         End Sub
@@ -73,9 +80,12 @@ Public Module NifSceneVisibility
             Me.BoundCullReason = boundCullReason
             Me.BoundCullShown = boundCullShown
         End Sub
-        Friend Sub New(hiddenByAncestor As Boolean, boundCullReason As String, boundCullShown As String, nodeCause As NodeCullCause)
+        Friend Sub New(hiddenByAncestor As Boolean, boundCullReason As String, boundCullShown As String, nodeCause As NodeCullCause,
+                       boundCullReasonId As PreviewModel.FrameNoticeId, boundCullShownId As PreviewModel.FrameNoticeId)
             Me.New(hiddenByAncestor, boundCullReason, boundCullShown)
             Me.NodeCause = nodeCause
+            Me.BoundCullReasonId = boundCullReasonId
+            Me.BoundCullShownId = boundCullShownId
         End Sub
     End Structure
 
@@ -169,6 +179,16 @@ Public Module NifSceneVisibility
         Return If(isSse, "Skyrim SE", "Fallout 4")
     End Function
 
+    ''' <summary>Ola 7e: a culling notice (its two forms, Notice*) with the frame notice of each form (PreviewModel.FrameNoticeId).</summary>
+    Private Function WithIds(n As (Drawn As String, Undrawn As String), drawnId As PreviewModel.FrameNoticeId,
+                             undrawnId As PreviewModel.FrameNoticeId) As (Drawn As String, Undrawn As String, DrawnId As PreviewModel.FrameNoticeId, UndrawnId As PreviewModel.FrameNoticeId)
+#If DEBUG Then
+        ' Ola 7e tester (ParityGate scene-visibility, CullIdsFails): each form with the other form's notice.
+        If Fo4GBufferConstants.GateMutantOn("ntc-cull-ids-swapped") Then Return (n.Drawn, n.Undrawn, undrawnId, drawnId)
+#End If
+        Return (n.Drawn, n.Undrawn, drawnId, undrawnId)
+    End Function
+
     ''' <summary>Item 2b r19b-02: the exact class of a Fallout 4 geometry as the engine builds it from the NIF, for the laws that read it
     ''' (Tools/re-docs/RE_FO4_TECHNIQUE_BUCKET_ORDER_2026-10-19, Addendum r19b-02; RTTI and vtables in re2\rtti.py).</summary>
     Friend Enum Fo4GeometryClass
@@ -237,29 +257,31 @@ Public Module NifSceneVisibility
         Dim engine = If(GateLoadLawsOnly, CType(Nothing, Boolean?), TracedEngine(nif))
         ' C-ANC, with pto 3a: a node whose NiVisController writes at rest takes that value instead of its load bit.
         Dim hidden = False
-        Dim ancestorVis As (Drawn As String, Undrawn As String) = (Nothing, Nothing)
+        Dim ancestorVis As (Drawn As String, Undrawn As String, DrawnId As PreviewModel.FrameNoticeId, UndrawnId As PreviewModel.FrameNoticeId) = Nothing
         ' Rev-16: a converted Fallout 4 root keeps no hidden bit (its flags are bits 10 / 12 + 0xE, 0x14217CA10..A5F).
         Dim tracedGame = TracedEngine(nif)
         Dim rootConverted = tracedGame.HasValue AndAlso IsConvertedRoot(chain, tracedGame.Value)
         For Each a In chain
             Dim v = If(engine.HasValue, VisibleAtRest(nif, a, engine.Value), CType(Nothing, Boolean?))
             If v.HasValue Then
-                If Not v.Value AndAlso ancestorVis.Undrawn Is Nothing Then ancestorVis = NoticeVisController(engine.Value)
+                If Not v.Value AndAlso ancestorVis.Undrawn Is Nothing Then
+                    ancestorVis = WithIds(NoticeVisController(engine.Value), PreviewModel.FrameNoticeId.VisControllerShown, PreviewModel.FrameNoticeId.VisControllerNotDrawn)
+                End If
             ElseIf NodeHiddenAtLoad(a) AndAlso Not (rootConverted AndAlso a Is chain(chain.Count - 1)) Then
                 hidden = True
             End If
         Next
         Dim own = If(engine.HasValue, VisibleAtRest(nif, TryCast(shape, NiAVObject), engine.Value), CType(Nothing, Boolean?))
-        Dim cull As (Drawn As String, Undrawn As String)
+        Dim cull As (Drawn As String, Undrawn As String, DrawnId As PreviewModel.FrameNoticeId, UndrawnId As PreviewModel.FrameNoticeId)
         Dim causa = NodeCullCause.None
         If own.HasValue AndAlso Not own.Value Then
-            cull = NoticeVisController(engine.Value)
+            cull = WithIds(NoticeVisController(engine.Value), PreviewModel.FrameNoticeId.VisControllerShown, PreviewModel.FrameNoticeId.VisControllerNotDrawn)
         Else
             cull = BoundCull(nif, shape, chain)
             If cull.Undrawn Is Nothing Then cull = ancestorVis
             If cull.Undrawn Is Nothing Then
                 Dim nc = NodeCull(nif, chain, engine, bounds)
-                cull = (nc.Drawn, nc.Undrawn)
+                cull = WithIds((nc.Drawn, nc.Undrawn), PreviewModel.FrameNoticeId.NodeRadius0Shown, PreviewModel.FrameNoticeId.NodeRadius0NotDrawn)
                 causa = nc.Cause
             End If
         End If
@@ -277,11 +299,14 @@ Public Module NifSceneVisibility
                     ' since r19b-13 an Untraced class is not registered either, so a mutant returning Untraced no longer restores that law.
                     If Fo4GBufferConstants.GateMutantOn("geomclass-notreg-ignored") Then Exit Select
 #End If
-                    cull = NoticeFo4NotRegistered(shape.GetType().Name)
-                Case Fo4GeometryClass.Untraced : cull = NoticeFo4Untraced(shape.GetType().Name)
+                    cull = WithIds(NoticeFo4NotRegistered(shape.GetType().Name), PreviewModel.FrameNoticeId.Fo4UnregisteredClassShown,
+                                   PreviewModel.FrameNoticeId.Fo4UnregisteredClassNotDrawn)
+                Case Fo4GeometryClass.Untraced
+                    cull = WithIds(NoticeFo4Untraced(shape.GetType().Name), PreviewModel.FrameNoticeId.Fo4UntracedClassShown,
+                                   PreviewModel.FrameNoticeId.Fo4UntracedClassNotDrawn)
             End Select
         End If
-        Return New LoadState(hidden, cull.Undrawn, cull.Drawn, causa)
+        Return New LoadState(hidden, cull.Undrawn, cull.Drawn, causa, cull.UndrawnId, cull.DrawnId)
     End Function
 
     ''' <summary>El bit oculto de un nodo tras su LoadBinary: el del archivo, salvo un nodo de rango, cuyo SetCurrent lo pisa con
@@ -442,21 +467,23 @@ Public Module NifSceneVisibility
     End Function
 
     ''' <summary>C-NAN. <paramref name="chain"/> = padres de la forma, del padre directo a la raíz.</summary>
-    Private Function BoundCull(nif As NifFile, shape As INiShape, chain As List(Of NiNode)) As (Drawn As String, Undrawn As String)
-        If GateIgnoreBoundCull Then Return (Nothing, Nothing)
+    Private Function BoundCull(nif As NifFile, shape As INiShape, chain As List(Of NiNode)) As (Drawn As String, Undrawn As String, DrawnId As PreviewModel.FrameNoticeId, UndrawnId As PreviewModel.FrameNoticeId)
+        If GateIgnoreBoundCull Then Return Nothing
         Dim engine = TracedEngine(nif)
-        If Not engine.HasValue Then Return (Nothing, Nothing)                ' sólo los dos motores trazados
+        If Not engine.HasValue Then Return Nothing                           ' sólo los dos motores trazados
         Dim isSse = engine.Value
         Dim tri = TryCast(shape, BSTriShape)                                ' familia BSGeometry (0x140EFC150 / 0x1416D4EA0)
-        If tri Is Nothing Then Return (Nothing, Nothing)
+        If tri Is Nothing Then Return Nothing
         ' Con skin el bound de mundo sale de los huesos, no de la esfera del modelo (SSE 0x140EFC870, FO4 0x1416D5502).
-        If shape.SkinInstanceRef IsNot Nothing AndAlso Not shape.SkinInstanceRef.IsEmpty() Then Return (Nothing, Nothing)
-        If (tri.Flags_ui And &H800UI) <> 0UI Then Return (Nothing, Nothing)           ' SSE 0x140FEDA9A, FO4 0x1417E1C82
+        If shape.SkinInstanceRef IsNot Nothing AndAlso Not shape.SkinInstanceRef.IsEmpty() Then Return Nothing
+        If (tri.Flags_ui And &H800UI) <> 0UI Then Return Nothing                      ' SSE 0x140FEDA9A, FO4 0x1417E1C82
         Dim g = GeometryWorldRadius(nif, tri, WorldScale(nif, chain, 1.0F, IsConvertedRoot(chain, isSse)), isSse)
-        If BitConverter.SingleToInt32Bits(g.Radius) <> 0 Then Return (Nothing, Nothing)   ' cmp dword ..., 0
-        If g.NaNSphere Then Return NoticeNaN()
-        If BitConverter.SingleToInt32Bits(tri.Bounds.Radius) = 0 Then Return NoticeRadius0(isSse)
-        Return NoticeScale0(isSse)
+        If BitConverter.SingleToInt32Bits(g.Radius) <> 0 Then Return Nothing           ' cmp dword ..., 0
+        If g.NaNSphere Then Return WithIds(NoticeNaN(), PreviewModel.FrameNoticeId.BoundNaNShown, PreviewModel.FrameNoticeId.BoundNaNNotDrawn)
+        If BitConverter.SingleToInt32Bits(tri.Bounds.Radius) = 0 Then
+            Return WithIds(NoticeRadius0(isSse), PreviewModel.FrameNoticeId.BoundRadius0Shown, PreviewModel.FrameNoticeId.BoundRadius0NotDrawn)
+        End If
+        Return WithIds(NoticeScale0(isSse), PreviewModel.FrameNoticeId.ScaleZeroShown, PreviewModel.FrameNoticeId.ScaleZeroNotDrawn)
     End Function
 
     ''' <summary>C-NAN's world radius of a BSGeometry without skin (rev-10, the one owner for BoundCull and GeometryBound): model radius x

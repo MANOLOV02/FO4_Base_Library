@@ -258,8 +258,8 @@ Public Class Config_App
         Return Current.Setting_ShowHelperShapes.GetValueOrDefault(DefaultShowHelperShapes.GetValueOrDefault(True))
     End Function
 
-    ''' <summary>Casilla "Show errors" (pestaña Rendering del diálogo de luces, grupo Notices; decisiones del usuario 6-oct y
-    ''' 12-oct-2026): muestra u oculta las líneas de ERROR del aviso del cuadro (PreviewModel.SeverityOf; dibujo en
+    ''' <summary>Casilla "Show errors" (pestaña Rendering del diálogo de luces, grupo Notices; decisiones del usuario 6-oct,
+    ''' 12-oct y 20-oct-2026): muestra u oculta las líneas de ERROR del aviso del cuadro (PreviewModel.SeverityOf; dibujo en
     ''' PreviewControl.DrawPreviewGapNotice). Sólo el DIBUJO: el censo del cuadro (PreviewModel.FrameNoticeLines) corre igual.
     ''' Default True en todas las apps; una config sin la clave deserializa a este default (ParityGate preview-notice-laws).</summary>
     Public Property Setting_ShowErrors As Boolean = True
@@ -267,6 +267,12 @@ Public Class Config_App
     ''' <summary>Casilla "Show warnings" (mismo grupo; decisión del usuario 12-oct-2026): lo mismo que Setting_ShowErrors para las
     ''' líneas de ADVERTENCIA del aviso. Default True; una config sin la clave deserializa a este default.</summary>
     Public Property Setting_ShowWarnings As Boolean = True
+
+    ''' <summary>Casilla "Show info" (mismo grupo y menú "Show messages"; ola 7e, decisión del usuario 20-oct-2026): lo mismo para las
+    ''' líneas de INFORMACIÓN del aviso (PreviewModel.SeverityOf = Info). Default True, y una config sin la clave deserializa a este
+    ''' default: esas líneas (controlador y transformada en reposo, el near del editor, lo que el archivo oculta a propósito) se veían
+    ''' por default antes de la ola como avisos o errores, así que una config vieja las sigue viendo (ParityGate preview-notice-laws).</summary>
+    Public Property Setting_ShowInfo As Boolean = True
 
     Public Property Setting_RecalculateNormals As Boolean = True
 
