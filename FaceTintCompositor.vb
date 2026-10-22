@@ -323,6 +323,9 @@ Public NotInheritable Class FaceTintCompositorState
     Public Sub Dispose()
         If _program <> 0 Then
             Try : GL.DeleteProgram(_program) : Catch : End Try
+#If DEBUG Then
+            PreviewControl.GateProg("FaceTintCompositor", False)
+#End If
             _program = 0
         End If
         If _quadVao <> 0 Then
@@ -2225,6 +2228,9 @@ void main() {
         End If
 
         state._program = GL.CreateProgram()
+#If DEBUG Then
+        PreviewControl.GateProg("FaceTintCompositor", True)
+#End If
         GL.AttachShader(state._program, vs)
         GL.AttachShader(state._program, fs)
         GL.LinkProgram(state._program)
@@ -2239,6 +2245,9 @@ void main() {
             Dim linkErr = GL.GetProgramInfoLog(state._program)
             Logger.LogLazy(Function() $"[FACETINT-SHADER] PROGRAM link FAILED: {linkErr}")
             GL.DeleteProgram(state._program)
+#If DEBUG Then
+            PreviewControl.GateProg("FaceTintCompositor", False)
+#End If
             state._program = 0
             Return
         End If

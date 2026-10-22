@@ -16,6 +16,37 @@ Public Class DictionaryPicker_Control
     Public Event SelectionChanged(Key As String)
     Public Event Cloned(Key As String)
 
+    ' ----------------- OK: one decision, two halves (ola 7g, p7e-11) -----------------
+    ''' <summary>The control's half of OK: exactly one real file is selected. Written only where the selection changes.</summary>
+    Private _selectionReady As Boolean = False
+    Private _hostAllowsOk As Boolean = True
+
+    ''' <summary>The HOST's half of OK: its verdict on the selected file (Create from NIF: the NIF has a shape the app can use;
+    ''' HKX pose import: the animation loaded and there is a project to pose). True by default: a host that does not validate
+    ''' (DictionaryFilePicker_Form, NPC Manager's MeshPicker_Form) leaves OK to the selection. A host sets THIS, never
+    ''' btnOk.Enabled: OK = one real file selected AND this verdict, written only by ApplyOkEnabled - so the control's own
+    ''' selection steps (SelectFileByKey after SelectionChanged) can no longer overwrite the host's decision - and the double
+    ''' click accepts under the same rule.</summary>
+    Public Property HostAllowsOk As Boolean
+        Get
+            Return _hostAllowsOk
+        End Get
+        Set(value As Boolean)
+            _hostAllowsOk = value
+            ApplyOkEnabled()
+        End Set
+    End Property
+
+    Private Sub SetSelectionReady(ready As Boolean)
+        _selectionReady = ready
+        ApplyOkEnabled()
+    End Sub
+
+    ''' <summary>The one writer of btnOk.Enabled (ButtonClone follows it, BtnOk_EnabledChanged).</summary>
+    Private Sub ApplyOkEnabled()
+        btnOk.Enabled = _selectionReady AndAlso _hostAllowsOk
+    End Sub
+
     Sub New()
 
         InitializeComponent()
@@ -38,7 +69,7 @@ Public Class DictionaryPicker_Control
 
         BuildDirectoryIndex()
 
-        btnOk.Enabled = False
+        SetSelectionReady(False)
         lblRoot.Text = If(String.IsNullOrEmpty(_rootPrefix), "Filtered: (all)", "Filtered: " & _rootPrefix)
 
         AddHandler tvDirs.AfterSelect, AddressOf TvDirs_AfterSelect
@@ -117,7 +148,12 @@ Public Class DictionaryPicker_Control
                 txtPath.Text = match
                 it.EnsureVisible()
                 If setFocus Then lvFiles.Focus()
-                btnOk.Enabled = True
+                SetSelectionReady(True)
+#If DEBUG Then
+                ' Ola 7g tester (WmMismaEscenaGate --ola7g and --create-from-nif, case 23): HEAD's SelectFileByKey - it wrote the button,
+                ' over the host's verdict.
+                If Fo4GBufferConstants.GateMutantOn("g7-bykey-writes-ok") Then btnOk.Enabled = True
+#End If
                 Return True
             End If
         Next
@@ -268,7 +304,7 @@ Public Class DictionaryPicker_Control
         lvFiles.EndUpdate()
 
         txtPath.Text = If(String.IsNullOrEmpty(currentPath), RootStr, currentPath)
-        btnOk.Enabled = (lvFiles.SelectedItems.Count = 1)
+        SetSelectionReady(lvFiles.SelectedItems.Count = 1)
     End Sub
 
     Private Shared Function GetFullPathOfNode(node As TreeNode) As String
@@ -296,7 +332,7 @@ Public Class DictionaryPicker_Control
             lvFiles.SelectedItems(0).Selected = False
             Return
         End If
-        btnOk.Enabled = (lvFiles.SelectedItems.Count = 1)
+        SetSelectionReady(lvFiles.SelectedItems.Count = 1)
         If lvFiles.SelectedItems.Count = 1 Then
             Dim sel = TryCast(lvFiles.SelectedItems(0).Tag, String)
             If sel IsNot Nothing Then
@@ -311,7 +347,16 @@ Public Class DictionaryPicker_Control
     End Sub
 
     Private Sub LvFiles_DoubleClick(sender As Object, e As EventArgs)
-        If lvFiles.SelectedItems.Count = 1 Then
+#If DEBUG Then
+        ' Ola 7g tester (WmMismaEscenaGate --ola7g and --create-from-nif, cases 24 and 26): HEAD's double click - it accepts one
+        ' selected file whatever OK says.
+        If Fo4GBufferConstants.GateMutantOn("g7-dblclick-ignores-ok") Then
+            If lvFiles.SelectedItems.Count = 1 Then RaiseEvent OkClicked()
+            Return
+        End If
+#End If
+        ' The same decision as OK (ola 7g, p7e-11): a file the host refuses is not accepted by a double click either.
+        If lvFiles.SelectedItems.Count = 1 AndAlso btnOk.Enabled Then
             RaiseEvent OkClicked()
         End If
     End Sub

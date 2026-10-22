@@ -453,8 +453,8 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         Public ReadOnly OffsetErrors As New Dictionary(Of String, String)
         ''' <summary>The wall time of those measurements in InitContext, ms (with the GL finish of the last read).</summary>
         Public OffsetMeasureMs As Double
-        ''' <summary>The probe of the measurements (rev-E11: one per context, built on the first measurement; the context's
-        ''' destruction frees it).</summary>
+        ''' <summary>The probe of the measurements (rev-E11: one per context, built on the first measurement; ReleaseContext deletes
+        ''' it with the context's other objects - ola 7g round 2d).</summary>
         Public OffsetProbe As Fo4_Deferred_Shader_Class
         Public OffsetProbeVao As Integer
         ''' <summary>The default framebuffer's measurement attempts so far, and whether they are closed (rev-E11: attempts only up to
@@ -464,10 +464,58 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
     End Class
 
     Private Shared ReadOnly _clip As New ConcurrentDictionary(Of IntPtr, ClipState)()
+#If DEBUG Then
+
+    ''' <summary>The objects a context's clip state creates on it (ola 7g round 2f, r7g-01): the polygon-offset probe's program and its
+    ''' VAO (MeasureOffsetOn) and the clip buffer (InitContext).</summary>
+    Friend Enum GateClipKind
+        Probe = 0
+        ProbeVao = 1
+        Ubo = 2
+    End Enum
+
+    ''' <summary>The Debug ledger of those objects by context (ola 7g round 2f, r7g-01): six counts per context, [created, deleted] for
+    ''' each GateClipKind in its order, counted where each object is created (InitContext, MeasureOffsetOn) and deleted (ReleaseContext).
+    ''' Its law: GateClipLaw.</summary>
+    Friend Shared ReadOnly GateClipObjects As New Dictionary(Of IntPtr, Integer())
+
+    Private Shared Sub GateClipCount(ctx As IntPtr, kind As GateClipKind, created As Boolean)
+        SyncLock GateClipObjects
+            Dim c As Integer() = Nothing
+            If Not GateClipObjects.TryGetValue(ctx, c) Then c = New Integer(5) {} : GateClipObjects(ctx) = c
+            c(CInt(kind) * 2 + If(created, 0, 1)) += 1
+        End SyncLock
+    End Sub
+
+    ''' <summary>THE LAW of a context its control released while it was alive (ReleaseContext with contextAlive, the context current):
+    ''' every object its clip state created on it was deleted on it - created = deleted for the probe's program, its VAO and the clip
+    ''' buffer, each one. A context the ledger does not know breaks it too (InitContext creates the clip buffer of every context: a
+    ''' context with no count is not one this module set up). Nothing when the law holds; otherwise what does not.</summary>
+    Friend Shared Function GateClipLaw(ctx As IntPtr) As String
+        Dim c As Integer() = Nothing
+        SyncLock GateClipObjects
+            If Not GateClipObjects.TryGetValue(ctx, c) Then Return $"context 0x{ctx.ToInt64():X}: not in the clip ledger"
+            c = CType(c.Clone(), Integer())
+        End SyncLock
+        Dim malos As New List(Of String)
+        For Each k In {GateClipKind.Probe, GateClipKind.ProbeVao, GateClipKind.Ubo}
+            Dim creados = c(CInt(k) * 2), borrados = c(CInt(k) * 2 + 1)
+            If creados <> borrados Then malos.Add($"{k} created {creados}, deleted {borrados}")
+        Next
+        If c(CInt(GateClipKind.Ubo) * 2) = 0 Then malos.Add("no clip buffer created (InitContext did not run on it)")
+        Return If(malos.Count = 0, Nothing, $"context 0x{ctx.ToInt64():X}: " & String.Join("; ", malos))
+    End Function
+#End If
 
     <DllImport("opengl32.dll", ExactSpelling:=True)>
     Private Shared Function wglGetCurrentContext() As IntPtr
     End Function
+#If DEBUG Then
+    ''' <summary>Ola 7g round 2d tester (WmMismaEscenaGate --ola7g, R2-7): the current GL context, for the Debug ledger of programs by context.</summary>
+    Friend Shared Function GateCurrentContext() As IntPtr
+        Return wglGetCurrentContext()
+    End Function
+#End If
 
     Private Shared Function Current() As ClipState
         Dim st As ClipState = Nothing
@@ -489,6 +537,9 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         End If
         Dim st As New ClipState With {.Origin = ClipOrigin.LowerLeft, .RequestedFront = FrontFaceDirection.Ccw}
         st.Ubo = GL.GenBuffer()
+#If DEBUG Then
+        GateClipCount(ctx, GateClipKind.Ubo, True)
+#End If
         Dim prev = GL.GetInteger(GetPName.UniformBufferBinding)
         GL.BindBuffer(BufferTarget.UniformBuffer, st.Ubo)
         GL.BufferData(BufferTarget.UniformBuffer, 16, New Single() {1.0F, 0.0F, 0.0F, 0.0F}, BufferUsageHint.DynamicDraw)
@@ -512,11 +563,63 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         Return ctx
     End Function
 
-    ''' <summary>Forgets the clip state of context <paramref name="ctx"/> (its teardown: the context's destruction frees the
-    ''' buffer; no GL call, so it is safe whatever context is current).</summary>
-    Friend Shared Sub ReleaseContext(ctx As IntPtr)
+    ''' <summary>Releases the clip state of context <paramref name="ctx"/>, which must be the current one (PreviewControl.Clean, the
+    ''' control's teardown, where every other object of the control is deleted on it): the objects this state created on the
+    ''' context - the clip buffer (InitContext), the polygon-offset probe's program and VAO (MeasureOffsetOn) - are deleted by it,
+    ''' then the state is forgotten (ola 7g round 2d: the probe's program was left to the context's destruction, one program per
+    ''' control out of the count of programs deleted = created; measured, this call finds its context current on every release).
+    ''' A context that is not the current one is not touched (its names would be deleted on another context; the preview's contexts
+    ''' share no objects, so its own destruction frees them, as before): its state is forgotten and the case logged - a teardown
+    ''' must not throw (PreviewControl.Release). <paramref name="contextAlive"/> False (the control released after its context,
+    ''' PreviewControl.ReleasedWithoutContext - ola 7g round 2e): its objects went with it and the handle's value may already name
+    ''' another context, so nothing is deleted nor compared - the state is only forgotten.</summary>
+    Friend Shared Sub ReleaseContext(ctx As IntPtr, contextAlive As Boolean)
         Dim st As ClipState = Nothing
-        _clip.TryRemove(ctx, st)
+#If DEBUG Then
+        If Not contextAlive AndAlso Fo4GBufferConstants.GateMutantOn("g7-r2e-gl43-keeps") Then Return
+#End If
+        If Not _clip.TryRemove(ctx, st) Then Return
+        If Not contextAlive Then Return
+        If wglGetCurrentContext() <> ctx Then
+            Logger.LogLazy(Function() "[GL43] ReleaseContext: the released context is not the current one - its clip buffer and offset probe are left to its destruction")
+            Return
+        End If
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("g7-r2d-release-no-deletes") Then Return
+#End If
+        If st.OffsetProbe IsNot Nothing Then
+            st.OffsetProbe.Dispose() : st.OffsetProbe = Nothing
+#If DEBUG Then
+            GateClipCount(ctx, GateClipKind.Probe, False)
+#End If
+        End If
+#If DEBUG Then
+        ' r7g-01 tester: ReleaseContext without the VAO's and the clip buffer's deletes (the probe's program is deleted).
+        If Fo4GBufferConstants.GateMutantOn("g7-r7g01-no-vao-ubo") Then Return
+#End If
+        If st.OffsetProbeVao <> 0 Then
+#If DEBUG Then
+            ' r7g-01 tester: the ledger counts the delete but GL never gets it (a lying counter).
+            If Not Fo4GBufferConstants.GateMutantOn("g7-r7g01-lying-counter") Then GL.DeleteVertexArray(st.OffsetProbeVao)
+            st.OffsetProbeVao = 0
+#Else
+            GL.DeleteVertexArray(st.OffsetProbeVao) : st.OffsetProbeVao = 0
+#End If
+#If DEBUG Then
+            GateClipCount(ctx, GateClipKind.ProbeVao, False)
+#End If
+        End If
+        If st.Ubo <> 0 Then
+#If DEBUG Then
+            If Not Fo4GBufferConstants.GateMutantOn("g7-r7g01-lying-counter") Then GL.DeleteBuffer(st.Ubo)
+            st.Ubo = 0
+#Else
+            GL.DeleteBuffer(st.Ubo) : st.Ubo = 0
+#End If
+#If DEBUG Then
+            GateClipCount(ctx, GateClipKind.Ubo, False)
+#End If
+        End If
     End Sub
 
     ''' <summary>glClipControl(origin, ZERO_TO_ONE): the origin's sign into the clip buffer and the facing it implies (ARB_clip_control
@@ -968,7 +1071,13 @@ void main()
         Try
             If st.OffsetProbe Is Nothing Then
                 st.OffsetProbe = New Fo4_Deferred_Shader_Class(OffsetProbeVertex, OffsetProbeFragment)
+#If DEBUG Then
+                GateClipCount(wglGetCurrentContext(), GateClipKind.Probe, True)
+#End If
                 st.OffsetProbeVao = GL.GenVertexArray()
+#If DEBUG Then
+                GateClipCount(wglGetCurrentContext(), GateClipKind.ProbeVao, True)
+#End If
             End If
             Dim prog = st.OffsetProbe
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, fbo)

@@ -48,14 +48,39 @@ Friend Module CrashReport
                 _reported = True
             End SyncLock
 
-            Dim app = AppName()
-            Dim body = Compose(ex, origin, app)
-            Dim written = TryWrite(AppContext.BaseDirectory, app, body)
-            If written = "" Then written = TryWrite(IO.Path.GetTempPath(), app, body)
-            Notify(app, ex, written)
+            Escribir(ex, origin, fatal:=True)
         Catch
             ' Reportar una caída no puede provocar otra.
         End Try
+    End Sub
+
+    ''' <summary>UN ERROR NO PREVISTO DEL QUE LA APP SIGUE: el mismo reporte que una caída (el log al lado del exe o en %TEMP%, el
+    ''' aviso con dónde quedó; por stderr en los modos headless), dicho como error y no como caída, y SIN gastar el reporte único
+    ''' de la caída: si después la app se cae, ese reporte sale igual. Lo usa la librería por
+    ''' <c>PreviewControl.UnexpectedErrorChannel</c>, que cada app apunta acá al arrancar (ola 7g ronda 2f, decisión del usuario
+    ''' r7g-04: un preview que se libera con un paso que falló se libera igual, y después se avisa).</summary>
+#If DEBUG Then
+    ''' <summary>Ola 7g round 2f tester (r7g-04 mutant): ReportError spends the crash report's single shot, as Report does. Set by the gate (reflection).</summary>
+    Friend GateReportErrorSpends As Boolean
+#End If
+    Friend Sub ReportError(ex As Exception, origin As String)
+#If DEBUG Then
+        If GateReportErrorSpends Then SyncLock _gate : _reported = True : End SyncLock
+#End If
+        Try
+            Escribir(ex, origin, fatal:=False)
+        Catch
+            ' Reportar un error no puede provocar otro.
+        End Try
+    End Sub
+
+    ''' <summary>El reporte: el archivo y el aviso, de una caída (<paramref name="fatal"/>) o de un error del que la app sigue.</summary>
+    Private Sub Escribir(ex As Exception, origin As String, fatal As Boolean)
+        Dim app = AppName()
+        Dim body = Compose(ex, origin, app, fatal)
+        Dim written = TryWrite(AppContext.BaseDirectory, app, body)
+        If written = "" Then written = TryWrite(IO.Path.GetTempPath(), app, body)
+        Notify(app, ex, written, fatal)
     End Sub
 
     ''' <summary>Nombre del exe, que es lo que separa a las apps que comparten esta fuente y además nombra el
@@ -70,7 +95,7 @@ Friend Module CrashReport
         Return "Application"
     End Function
 
-    Private Function Compose(ex As Exception, origin As String, app As String) As String
+    Private Function Compose(ex As Exception, origin As String, app As String, fatal As Boolean) As String
         Dim sb As New StringBuilder()
         ' TEXTO PROPIO EN ASCII. Este archivo lo abre el usuario en cualquier editor y lo pega en un foro:
         ' un guion largo o un punto medio salen como mojibake apenas alguien lo lea en la codepage local, y un
@@ -82,7 +107,7 @@ Friend Module CrashReport
         ' escribe "1448-01-28" o "2569-08-12". La fecha es el primer dato que se cruza contra otra evidencia
         ' —el visor de eventos, el log de la app, lo que el usuario dice que estaba haciendo— y ahí no cruza
         ' con nada. La cultura del usuario va MÁS ABAJO como un campo del reporte, que es donde sirve.
-        sb.AppendLine($"{app} - fatal error   " &
+        sb.AppendLine($"{app} - {If(fatal, "fatal error", "error (the app went on)")}   " &
                       Date.Now.ToString("yyyy-MM-dd HH:mm:ss", Globalization.CultureInfo.InvariantCulture) & " local / " &
                       Date.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", Globalization.CultureInfo.InvariantCulture) & "Z")
         sb.AppendLine($"  origin  : {origin}")
@@ -148,23 +173,24 @@ Friend Module CrashReport
         End Try
     End Function
 
-    Private Sub Notify(app As String, ex As Exception, logPath As String)
-        Dim head = If(ex Is Nothing, "Unknown fatal error.", $"{ex.GetType().Name}: {ex.Message}")
+    Private Sub Notify(app As String, ex As Exception, logPath As String, fatal As Boolean)
+        Dim head = If(ex Is Nothing, If(fatal, "Unknown fatal error.", "Unknown error."), $"{ex.GetType().Name}: {ex.Message}")
+        Dim informe = If(fatal, "crash report", "error report")
         Dim where = If(logPath = "",
-                       "The crash report could NOT be written to disk (the app folder and %TEMP% both refused).",
-                       $"A crash report was written to:{vbCrLf}{logPath}")
+                       $"The {informe} could NOT be written to disk (the app folder and %TEMP% both refused).",
+                       $"A{If(fatal, "", "n")} {informe} was written to:{vbCrLf}{logPath}")
         If _console Then
             Try
-                Console.Error.WriteLine("FATAL: " & head)
+                Console.Error.WriteLine(If(fatal, "FATAL: ", "ERROR: ") & head)
                 Console.Error.WriteLine(where)
             Catch
             End Try
             Return
         End If
         Try
-            MessageBox.Show($"{app} could not continue.{vbCrLf}{vbCrLf}{head}{vbCrLf}{vbCrLf}{where}{vbCrLf}{vbCrLf}" &
+            MessageBox.Show($"{app} {If(fatal, "could not continue.", "hit an unexpected error and went on.")}{vbCrLf}{vbCrLf}{head}{vbCrLf}{vbCrLf}{where}{vbCrLf}{vbCrLf}" &
                             "Please attach that file when reporting this.",
-                            $"{app} - fatal error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                            $"{app} - {If(fatal, "fatal error", "error")}", MessageBoxButtons.OK, MessageBoxIcon.Error)
         Catch
         End Try
     End Sub

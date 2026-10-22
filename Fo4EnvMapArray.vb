@@ -243,12 +243,15 @@ Friend NotInheritable Class Fo4EnvMapArray
     End Sub
 
     ''' <summary>Model load (user decision rev-09 b): entries, queue and array are released. Texture deletions need no reset: a
-    ''' slice is matched by its entry and GL name (Same), never by the name alone.</summary>
-    Public Sub Reset()
+    ''' slice is matched by its entry and GL name (Same), never by the name alone. <paramref name="withContext"/> False (the
+    ''' control released after its context, PreviewControl.ReleasedWithoutContext - ola 7g round 2e): the array's texture went
+    ''' with the context and is not deleted (no GL call); the rest is released the same.</summary>
+    Public Sub Reset(withContext As Boolean)
         Array.Clear(_entries, 0, _entries.Length)
         Array.Clear(_locked, 0, _locked.Length)
         _queue.Clear()
-        If _array <> 0 Then GL.DeleteTexture(_array) : _array = 0
+        If _array <> 0 AndAlso withContext Then GL.DeleteTexture(_array)
+        _array = 0
         _arrayW = 0 : _arrayH = 0 : _arrayLevels = 0 : _arrayFormat = 0 : _arrayHeader = Nothing
         _arraySeed = Nothing
     End Sub

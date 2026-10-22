@@ -2980,6 +2980,9 @@ Public MustInherit Class Shader_Base_Class
             If program > 0 And disposing Then
                 UniformLocationCache.Clear()
                 GL.DeleteProgram(program)
+#If DEBUG Then
+                PreviewControl.GateProg(Me.GetType().Name, False)
+#End If
                 program = 0
             End If
         End If
@@ -3001,6 +3004,9 @@ Public MustInherit Class Shader_Base_Class
         If TessControlSource IsNot Nothing Then stages.Add(CompileShader(ShaderType.TessControlShader, TessControlSource))
         If TessEvaluationSource IsNot Nothing Then stages.Add(CompileShader(ShaderType.TessEvaluationShader, TessEvaluationSource))
         program = GL.CreateProgram()
+#If DEBUG Then
+        PreviewControl.GateProg(Me.GetType().Name, True)
+#End If
         For Each s In stages : GL.AttachShader(program, s) : Next
         If TransformFeedbackVaryings IsNot Nothing Then GL.TransformFeedbackVaryings(program, TransformFeedbackVaryings.Length, TransformFeedbackVaryings, TransformFeedbackMode.InterleavedAttribs)
         GL.LinkProgram(program)
@@ -3025,6 +3031,9 @@ Public MustInherit Class Shader_Base_Class
     Protected Sub New(computeShaderSource As String)
         Dim computeShader = CompileShader(ShaderType.ComputeShader, computeShaderSource)
         program = GL.CreateProgram()
+#If DEBUG Then
+        PreviewControl.GateProg(Me.GetType().Name, True)
+#End If
         GL.AttachShader(program, computeShader)
         GL.LinkProgram(program)
 

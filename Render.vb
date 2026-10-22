@@ -199,6 +199,9 @@ void main()
         Dim fLog = GL.GetShaderInfoLog(fragmentShader)
 
         shaderProgram = GL.CreateProgram()
+#If DEBUG Then
+        PreviewControl.GateProg("Render.vb background", True)
+#End If
         GL.AttachShader(shaderProgram, vertexShader)
         GL.AttachShader(shaderProgram, fragmentShader)
         GL.LinkProgram(shaderProgram)
@@ -290,7 +293,22 @@ void main()
         If vao > 0 Then GL.DeleteVertexArray(vao) : vao = 0
         If vbo > 0 Then GL.DeleteBuffer(vbo) : vbo = 0
         If textureID > 0 Then GL.DeleteTexture(textureID) : textureID = 0
-        If shaderProgram > 0 Then GL.DeleteProgram(shaderProgram) : shaderProgram = 0
+        If shaderProgram > 0 Then
+            GL.DeleteProgram(shaderProgram)
+#If DEBUG Then
+            PreviewControl.GateProg("Render.vb background", False)
+#End If
+            shaderProgram = 0
+        End If
+        ReleaseLabels()
+    End Sub
+
+    ''' <summary>The labels' bitmaps (CPU, GDI): released by Clean, and alone when the control is released without its GL context
+    ''' (PreviewControl.ReleasedWithoutContext, ola 7g round 2e).</summary>
+    Friend Sub ReleaseLabels()
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("g7-r2e-labels-kept") Then Return
+#End If
         For Each lab In Labels
             lab.Value.Dispose()
         Next
@@ -855,8 +873,42 @@ Public Class PreviewControl
     })
 
     End Sub
+#If DEBUG Then
+    ''' <summary>Ola 7g round 2 tester (WmMismaEscenaGate --ola7g, R2-7 / R2-9 / r2b): the Debug counters. Live controls (constructed and not yet
+    ''' disposed), the Fallout 4 program sets built in OnLoad, how many times THIS control's Dispose(True) ran, and a switch that makes Clean throw.</summary>
+    Friend Shared GateLive As Integer
+    Friend Shared GateProgramBuilds As Integer
+    Friend Shared GateCleanThrows As Boolean
+    ''' <summary>Every Fallout 4 program set an OnLoad built (each one's census is read by the gate after the close).</summary>
+    Friend Shared ReadOnly GateSets As New List(Of Object)
+    Friend Shared GateProgramsCreated As Integer
+    Friend Shared GateProgramsDeleted As Integer
+    ''' <summary>The GL programs created / deleted, by site (the diagnostic of an unbalanced count).</summary>
+    Friend Shared ReadOnly GateProgramSites As New Dictionary(Of String, Integer)
+    Friend Shared Sub GateProg(site As String, created As Boolean)
+        If created Then GateProgramsCreated += 1 Else GateProgramsDeleted += 1
+        Dim k = site & If(created, " +", " -")
+        Dim c As Integer
+        GateProgramSites.TryGetValue(k, c)
+        GateProgramSites(k) = c + 1
+        ' (r2d) by GL context: a program belongs to the context current when it is created / deleted
+        Dim ctx = Gl43.GateCurrentContext()
+        SyncLock GateProgByCtx
+            Dim cd As Integer() = Nothing
+            If Not GateProgByCtx.TryGetValue(ctx, cd) Then cd = New Integer(1) {} : GateProgByCtx(ctx) = cd
+            cd(If(created, 0, 1)) += 1
+        End SyncLock
+    End Sub
+    ''' <summary>Programs [created, deleted] by GL context (r2d), and the contexts whose release found them alive (PreviewControl.Clean).</summary>
+    Friend Shared ReadOnly GateProgByCtx As New Dictionary(Of IntPtr, Integer())
+    Friend Shared ReadOnly GateReleasedCtx As New List(Of IntPtr)
+    Friend GateDisposeCalls As Integer
+#End If
     Public Sub New(settings As GLControlSettings)
         MyBase.New(settings)
+#If DEBUG Then
+        GateLive += 1
+#End If
         RenderTimer = New System.Windows.Forms.Timer With {
             .Interval = 16    ' 16 ms ˜ 60 Hz
             }
@@ -1039,9 +1091,17 @@ Public Class PreviewControl
     ''' `IsCurrent`. Sobre un control ya dispuesto —el caso normal en un teardown— tiraba
     ''' `ObjectDisposedException('PreviewControl')` y escapaba. Ahora todo el cuerpo está protegido y el
     ''' control dispuesto se responde con False, que es la verdad: no hay contexto que hacer current.</remarks>
+    ''' <para>RELEASING (<see cref="ReleasedWithoutContext"/>, ola 7g round 2e): a control being released whose context is gone
+    ''' answers False and never calls MakeCurrent - GLControl.MakeCurrent -> EnsureCreated would CREATE the handle again, and with
+    ''' it a context and OnLoad's whole program set, inside the control's own Dispose (measured on Nif Explorer).</para>
     Public Function EnsureContextCurrent() As Boolean
         Try
             If IsDisposed OrElse Disposing Then Return False
+#If DEBUG Then
+            If ReleasedWithoutContext AndAlso Not Fo4GBufferConstants.GateMutantOn("g7-r2e-ensure-recreates") Then Return False
+#Else
+            If ReleasedWithoutContext Then Return False
+#End If
             If Context IsNot Nothing AndAlso Context.IsCurrent Then Return True
             MakeCurrent()
             Return True
@@ -1713,6 +1773,10 @@ Public Class PreviewControl
         TraceBoot("OnLoad: refraction and Skyrim SE programs", sw)
         Try
             SharedFo4Deferred = New Fo4DeferredPrograms()
+#If DEBUG Then
+            GateProgramBuilds += 1
+            GateSets.Add(SharedFo4Deferred)
+#End If
             SharedFo4PostApp = New Fo4ImageSpaceAppPrograms()
         Catch ex As Exception
             SharedFo4Deferred?.Dispose() : SharedFo4Deferred = Nothing
@@ -3233,8 +3297,24 @@ Public Class PreviewControl
     End Sub
 
     Protected Overrides Sub Dispose(disposing As Boolean)
-        If disposing Then Clean()
-        MyBase.Dispose(disposing)
+#If DEBUG Then
+        If disposing Then
+            GateDisposeCalls += 1
+            If GateDisposeCalls = 1 Then GateLive -= 1
+        End If
+        ' Ola 7g round 2b tester (r2b clean throws): Dispose as before the round 2b - no Finally, a Clean that throws leaves the window.
+        If Fo4GBufferConstants.GateMutantOn("g7-dispose-no-finally") Then
+            If disposing Then Clean()
+            MyBase.Dispose(disposing)
+            Return
+        End If
+#End If
+        ' The window and the base's resources go whatever Clean did (ola 7g round 2b: Release's last step).
+        Try
+            If disposing Then Clean()
+        Finally
+            MyBase.Dispose(disposing)
+        End Try
     End Sub
     ' Heartbeat for the safety repaint: tick count since the last presented frame.
     ' At 16ms/tick, 63 ticks ˜ 1s. When this overflows we force a present so the
@@ -3287,6 +3367,112 @@ Public Class PreviewControl
             Me.Invalidate()
         End If
     End Sub
+    ''' <summary>THE ONE RELEASE OF A PREVIEW CONTROL by the code that owns it (ola 7g round 2b: the sequence 12 forms wrote inline -
+    ''' 9 in NPC Manager, 3 in Wardrobe Manager - and the Editor's, unified; round 2f: every host of the apps that creates one, with no
+    ''' exception - BakeAllRunner and ShaderConvertVisual too; Fabric Studio, another session's code, is declared out -, ParityGate
+    ''' preview-release-route). (1) BeginTeardown: the
+    ''' render loop quiesced, so no paint the safety heartbeat queued drains while (2) <paramref name="dependents"/> - what the host owns
+    ''' that draws against this control's GL handles (an NpcRenderHost and its tint caches) - is released with the context still alive;
+    ''' (3) Dispose: Clean (the GL resources, the model, the shaders) and Control.Dispose (the window; it takes the control out of its
+    ''' parent). Each step runs whatever the previous one did - a closing form must not throw - and a failure is logged. A control that
+    ''' is Nothing or already disposed skips its steps; the dependents are released anyway.
+    ''' <para>RELEASE AND WARN (round 2f, user decision r7g-04): when a step failed, after the three steps - the release is done - the
+    ''' failures go, in one report (every failed step with its exception), to the app's channel for unexpected errors
+    ''' (<see cref="UnexpectedErrorChannel"/>). Nothing is thrown, so the closing goes on.</para></summary>
+    Public Shared Sub Release(control As PreviewControl, Optional dependents As Action = Nothing)
+#If DEBUG Then
+        ' Ola 7g round 2b tester (r2b order): the host's dependents BEFORE the control is quiesced.
+        If Fo4GBufferConstants.GateMutantOn("g7-release-dependents-first") AndAlso dependents IsNot Nothing Then
+            Try : dependents() : Catch : End Try
+            dependents = Nothing
+        End If
+        ' (r2b order) the host's dependents AFTER the control is disposed (its GL caches freed with no context).
+        Dim dependentsAlFinal As Action = Nothing
+        If Fo4GBufferConstants.GateMutantOn("g7-release-dependents-last") Then dependentsAlFinal = dependents : dependents = Nothing
+#End If
+        Dim fallas As New List(Of Exception)
+        Dim vivo = control IsNot Nothing AndAlso Not control.IsDisposed
+        If vivo Then
+            Try
+                control.BeginTeardown()
+            Catch ex As Exception
+                Dim m = ex.GetType().Name & ": " & ex.Message
+                Logger.LogLazy(Function() "[PREVIEW] Release: BeginTeardown threw " & m)
+                fallas.Add(PasoFallido("BeginTeardown", ex))
+            End Try
+        End If
+        If dependents IsNot Nothing Then
+            Try
+                dependents()
+            Catch ex As Exception
+                Dim m = ex.GetType().Name & ": " & ex.Message
+                Logger.LogLazy(Function() "[PREVIEW] Release: the host's dependents threw " & m)
+                fallas.Add(PasoFallido("the host's dependents", ex))
+            End Try
+        End If
+#If DEBUG Then
+        ' (r2b release) the last step dropped: the window stays.
+        If Fo4GBufferConstants.GateMutantOn("g7-release-no-dispose") Then vivo = False
+#End If
+        If vivo AndAlso Not control.IsDisposed Then
+            Try
+                control.Dispose()
+            Catch ex As Exception
+                Dim m = ex.GetType().Name & ": " & ex.Message
+                Logger.LogLazy(Function() "[PREVIEW] Release: Dispose threw " & m)
+                fallas.Add(PasoFallido("Dispose", ex))
+            End Try
+        End If
+#If DEBUG Then
+        If dependentsAlFinal IsNot Nothing Then
+            Try : dependentsAlFinal() : Catch : End Try
+        End If
+        ' (r7g-04 warn) Release without its warning: the failed steps are not reported.
+        If Fo4GBufferConstants.GateMutantOn("g7-release-no-warn") Then Return
+#End If
+        AvisarFallas(fallas)
+    End Sub
+
+    ''' <summary>THE APP'S CHANNEL FOR UNEXPECTED ERRORS, for what the library survives and reports (ola 7g round 2f, user decision
+    ''' r7g-04): (the exception, where it came from). Set once by the app at its start, to the channel it already uses in Release -
+    ''' CrashReport.ReportError in Wardrobe Manager, NPC Manager and SafeScrap (the same report as a crash, worded as an error, the app
+    ''' goes on; on the console in their headless modes); Application.OnThreadException - the WinForms unhandled-exception dialog,
+    ''' with the details and Continue - in Nif Explorer, which installs no handler; the console in ShaderConvertVisual.
+    ''' Nothing (a host that sets none: the gates) keeps a failure in the log only. Read by Release.</summary>
+    Public Shared Property UnexpectedErrorChannel As Action(Of Exception, String)
+
+    ''' <summary>One failed step of Release, named, with its exception inside (the report's detail).</summary>
+    Private Shared Function PasoFallido(paso As String, ex As Exception) As Exception
+        Return New InvalidOperationException($"{paso} threw {ex.GetType().Name}: {ex.Message}", ex)
+    End Function
+
+    ''' <summary>Release's warning (r7g-04): the failed steps, if any, in one report to UnexpectedErrorChannel - after the release is
+    ''' done. A channel that throws is logged and swallowed: a closing form must not throw.</summary>
+    Private Shared Sub AvisarFallas(fallas As List(Of Exception))
+        If fallas.Count = 0 Then Return
+        Dim canal = UnexpectedErrorChannel
+        If canal Is Nothing Then Return
+        Try
+            canal(New AggregateException($"A preview control was released, but {fallas.Count} of its release steps failed.", fallas),
+                  "preview release")
+        Catch ex As Exception
+            Dim m = ex.GetType().Name & ": " & ex.Message
+            Logger.LogLazy(Function() "[PREVIEW] Release: the app's error channel threw " & m)
+        End Try
+    End Sub
+
+    ''' <summary>RELEASING WITHOUT THE CONTEXT (ola 7g round 2e): the control is being released (BeginTeardown, the one state of a
+    ''' release) and its native window - which holds its GL context - no longer exists: its handle was destroyed first (its
+    ''' parent's disposal), the context with it and every GL object of the context (the preview's contexts share none:
+    ''' GLControlSettings without SharedContext). Read by EnsureContextCurrent (it never creates them again) and by the release
+    ''' (Clean and what it calls), which then issues no GL call - another control's context may be the current one - and
+    ''' releases only what lives outside the context.</summary>
+    Friend ReadOnly Property ReleasedWithoutContext As Boolean
+        Get
+            Return _isTearingDown AndAlso Context Is Nothing
+        End Get
+    End Property
+
     ''' <summary>
     ''' Quiesces the render loop without freeing GL resources. Call this BEFORE disposing
     ''' anything that owns GL handles (host caches, tint caches, etc.) so that paints
@@ -3306,6 +3492,9 @@ Public Class PreviewControl
     End Sub
 
     Public Sub Clean()
+#If DEBUG Then
+        If GateCleanThrows Then Throw New InvalidOperationException("gate: Clean throws")
+#End If
         ' Mark teardown in progress BEFORE touching anything. Every GL-touching
         ' path checks this flag so queued WM_PAINTs draining mid-Clean cannot fire
         ' draw calls against shaders/VAOs/textures we are about to delete.
@@ -3323,8 +3512,15 @@ Public Class PreviewControl
         ' ⛔ EL DEFECTO SIGUE ABIERTO y su sujeto NO está identificado: ver el encabezado de
         ' `ViewportAjenoGate` (V-3, declarado como medición sin veredicto).
 
+        ' The context's objects are deleted on it only while it exists; released without it (its handle went first), no GL call is
+        ' issued and only what lives outside the context is released (ReleasedWithoutContext, ola 7g round 2e).
+#If DEBUG Then
+        Dim conContexto = Not ReleasedWithoutContext OrElse Fo4GBufferConstants.GateMutantOn("g7-r2e-clean-always-context")
+#Else
+        Dim conContexto = Not ReleasedWithoutContext
+#End If
         If overlay IsNot Nothing Then
-            overlay.Clean()
+            If conContexto Then overlay.Clean() Else overlay.ReleaseLabels()
             overlay = Nothing
         End If
 
@@ -3332,128 +3528,137 @@ Public Class PreviewControl
             _Model.Clean(True)
             _Model.CleanTextures()
             If _Model.Floor IsNot Nothing Then
-                _Model.Floor.Dispose()
+                If conContexto Then _Model.Floor.Dispose()
                 _Model.Floor = Nothing
             End If
-            _Model.DisposeShadowResources()
+            If conContexto Then _Model.DisposeShadowResources()
             _Model = Nothing
         End If
 
-        If SharedFo4EditViewShader IsNot Nothing Then
-            SharedFo4EditViewShader.Dispose()
-            SharedFo4EditViewShader = Nothing
-        End If
+        ' The context's GL objects (programs, targets, samplers, default textures), deleted on it.
+        If conContexto Then
+            If SharedFo4EditViewShader IsNot Nothing Then
+                SharedFo4EditViewShader.Dispose()
+                SharedFo4EditViewShader = Nothing
+            End If
 
-        If SharedSSEShader IsNot Nothing Then
-            SharedSSEShader.Dispose()
-            SharedSSEShader = Nothing
-        End If
+            If SharedSSEShader IsNot Nothing Then
+                SharedSSEShader.Dispose()
+                SharedSSEShader = Nothing
+            End If
 
-        If SharedFloorShader IsNot Nothing Then
-            SharedFloorShader.Dispose()
-            SharedFloorShader = Nothing
-        End If
+            If SharedFloorShader IsNot Nothing Then
+                SharedFloorShader.Dispose()
+                SharedFloorShader = Nothing
+            End If
 
-        If SharedBackgroundShader IsNot Nothing Then
-            SharedBackgroundShader.Dispose()
-            SharedBackgroundShader = Nothing
-        End If
+            If SharedBackgroundShader IsNot Nothing Then
+                SharedBackgroundShader.Dispose()
+                SharedBackgroundShader = Nothing
+            End If
 
-        If SharedPostSseShader IsNot Nothing Then
-            SharedPostSseShader.Dispose()
-            SharedPostSseShader = Nothing
-        End If
+            If SharedPostSseShader IsNot Nothing Then
+                SharedPostSseShader.Dispose()
+                SharedPostSseShader = Nothing
+            End If
 
-        If SharedLumPartialsShader IsNot Nothing Then
-            SharedLumPartialsShader.Dispose()
-            SharedLumPartialsShader = Nothing
-        End If
-        For Each sh As Shader_Base_Class In {SharedRefractionNormalsSse, SharedRefractionImageSpace, SharedSseOpaqueComposite, SharedSseDecalBaseMark}
-            sh?.Dispose()
-        Next
-        SharedRefractionNormalsSse = Nothing : SharedRefractionImageSpace = Nothing
-        SharedSseOpaqueComposite = Nothing : SharedSseDecalBaseMark = Nothing
-        SharedSseSao?.Dispose()
-        SharedSseSao = Nothing
-        SharedFo4Deferred?.Dispose()
-        SharedFo4Deferred = Nothing
-        SharedFo4PostApp?.Dispose()
-        SharedFo4PostApp = Nothing
-        _fo4Post.FreeAll()
+            If SharedLumPartialsShader IsNot Nothing Then
+                SharedLumPartialsShader.Dispose()
+                SharedLumPartialsShader = Nothing
+            End If
+            For Each sh As Shader_Base_Class In {SharedRefractionNormalsSse, SharedRefractionImageSpace, SharedSseOpaqueComposite, SharedSseDecalBaseMark}
+                sh?.Dispose()
+            Next
+            SharedRefractionNormalsSse = Nothing : SharedRefractionImageSpace = Nothing
+            SharedSseOpaqueComposite = Nothing : SharedSseDecalBaseMark = Nothing
+            SharedSseSao?.Dispose()
+            SharedSseSao = Nothing
+            SharedFo4Deferred?.Dispose()
+            SharedFo4Deferred = Nothing
+            SharedFo4PostApp?.Dispose()
+            SharedFo4PostApp = Nothing
+            _fo4Post.FreeAll()
 
-        If SharedLumResolveShader IsNot Nothing Then
-            SharedLumResolveShader.Dispose()
-            SharedLumResolveShader = Nothing
-        End If
+            If SharedLumResolveShader IsNot Nothing Then
+                SharedLumResolveShader.Dispose()
+                SharedLumResolveShader = Nothing
+            End If
 
-        If _bgVao > 0 Then
-            GL.DeleteVertexArray(_bgVao)
-            _bgVao = 0
-        End If
+            If _bgVao > 0 Then
+                GL.DeleteVertexArray(_bgVao)
+                _bgVao = 0
+            End If
 
-        _targets.Free()
-        _sceneDepth.Free()
-        _refraction.Free()
-        _opaqueComposite.Free()
-        _saoDepth.Free()
-        _sao.Free()
-        _fo4.Free()
-        _sseDecalBase.Free()
-        Fo4EnvMap.Reset()
-        If _saoPointSampler <> 0 Then GL.DeleteSampler(_saoPointSampler) : _saoPointSampler = 0
-        If _gateWhite <> 0 Then GL.DeleteTexture(_gateWhite) : _gateWhite = 0
-        _samplers?.Dispose() : _samplers = Nothing
+            _targets.Free()
+            _sceneDepth.Free()
+            _refraction.Free()
+            _opaqueComposite.Free()
+            _saoDepth.Free()
+            _sao.Free()
+            _fo4.Free()
+            _sseDecalBase.Free()
+            If _saoPointSampler <> 0 Then GL.DeleteSampler(_saoPointSampler) : _saoPointSampler = 0
+            If _gateWhite <> 0 Then GL.DeleteTexture(_gateWhite) : _gateWhite = 0
+            _samplers?.Dispose() : _samplers = Nothing
 
-        If SharedShadowSSEShader IsNot Nothing Then
-            SharedShadowSSEShader.Dispose()
-            SharedShadowSSEShader = Nothing
-        End If
+            If SharedShadowSSEShader IsNot Nothing Then
+                SharedShadowSSEShader.Dispose()
+                SharedShadowSSEShader = Nothing
+            End If
 
-        If SharedGroundShadowShader IsNot Nothing Then
-            SharedGroundShadowShader.Dispose()
-            SharedGroundShadowShader = Nothing
-        End If
+            If SharedGroundShadowShader IsNot Nothing Then
+                SharedGroundShadowShader.Dispose()
+                SharedGroundShadowShader = Nothing
+            End If
 
-        If ShadowTarget IsNot Nothing Then
-            ShadowTarget.Dispose()
-            ShadowTarget = Nothing
-        End If
+            If ShadowTarget IsNot Nothing Then
+                ShadowTarget.Dispose()
+                ShadowTarget = Nothing
+            End If
 
-        If GroundShadowTarget IsNot Nothing Then
-            GroundShadowTarget.Dispose()
-            GroundShadowTarget = Nothing
+            If GroundShadowTarget IsNot Nothing Then
+                GroundShadowTarget.Dispose()
+                GroundShadowTarget = Nothing
+            End If
+            ' PONER EL CAMPO EN 0 DESPUES DE BORRAR. `Clean` puede correr DOS veces sobre el mismo control cuando un host
+            ' llama `Clean()` y despues `Dispose()` (hoy solo un arnes, `Tools\ViewportAjenoGate`: las apps ya no, liberan
+            ' por `PreviewControl.Release`, que corre `Clean` UNA vez, dentro de `Dispose` - ola 7g rondas 2b y 2f), y en la
+            ' segunda pasada `_Model` ya es Nothing, asi que nadie hace
+            ' current el contexto —el unico `EnsureContextCurrent` vive dentro de `Model.Clean`— y estos ocho
+            ' `DeleteTexture` irian con ids viejos contra el contexto de OTRO PreviewControl vivo, donde esos mismos
+            ' ids son texturas en uso (los nombres GL son por contexto).
+            ' [AUDIT-CLEAN] es el gate: en la SEGUNDA pasada de Clean() los ocho tienen que venir ya en 0.
+            ' Efecto lateral a tener presente: con el campo en 0, `BindTexture(..., defaultWhiteTex)` bindea 0, que
+            ' en GL es NEGRO. Hoy no se dispara porque `BeginTeardown` levanta `_isTearingDown` y `RenderScene`/
+            ' `OnPaint` salen antes de dibujar; si alguna vez se dibuja tras un Clean(), el sintoma es un modelo
+            ' negro y el causante es esta linea, no el shader.
+            If Logger.Enabled Then
+                Dim a1 = defaultWhiteTex, a2 = defaultNormalTex, a3 = defaultFacegenDetailTex, a4 = defaultFacegenTintTex
+                Dim a5 = defaultSseMsnSpecTex, a6 = defaultSseEngineGenericTex, a7 = defaultFacegenSubsurfaceTex, a8 = defaultCubeMap
+                Logger.LogLazy(Function() $"[AUDIT-CLEAN] ids de defaults al entrar: {a1},{a2},{a3},{a4},{a5},{a6},{a7},{a8}")
+            End If
+            If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex) : defaultWhiteTex = 0
+            If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex) : defaultNormalTex = 0
+            If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex) : defaultFacegenDetailTex = 0
+            If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex) : defaultFacegenTintTex = 0
+            If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex) : defaultSseMsnSpecTex = 0
+            If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex) : defaultSseEngineGenericTex = 0
+            If defaultHelperTex <> 0 Then GL.DeleteTexture(defaultHelperTex) : defaultHelperTex = 0
+            If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex) : defaultFacegenSubsurfaceTex = 0
+            If defaultDissolvePatternTex <> 0 Then GL.DeleteTexture(defaultDissolvePatternTex) : defaultDissolvePatternTex = 0
+            If defaultFo4DiffuseMapTex <> 0 Then GL.DeleteTexture(defaultFo4DiffuseMapTex) : defaultFo4DiffuseMapTex = 0
+            If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap) : defaultCubeMap = 0
+            If defaultSrvNullTex <> 0 Then GL.DeleteTexture(defaultSrvNullTex) : defaultSrvNullTex = 0
+            If defaultSrvNullCube <> 0 Then GL.DeleteTexture(defaultSrvNullCube) : defaultSrvNullCube = 0
         End If
-        ' PONER EL CAMPO EN 0 DESPUES DE BORRAR. `Clean` corre DOS veces en el cierre normal (`MainForm` llama
-        ' `Clean()` y enseguida `Dispose()`), y en la segunda pasada `_Model` ya es Nothing, asi que nadie hace
-        ' current el contexto —el unico `EnsureContextCurrent` vive dentro de `Model.Clean`— y estos ocho
-        ' `DeleteTexture` irian con ids viejos contra el contexto de OTRO PreviewControl vivo, donde esos mismos
-        ' ids son texturas en uso (los nombres GL son por contexto).
-        ' [AUDIT-CLEAN] es el gate: en la SEGUNDA pasada de Clean() los ocho tienen que venir ya en 0.
-        ' Efecto lateral a tener presente: con el campo en 0, `BindTexture(..., defaultWhiteTex)` bindea 0, que
-        ' en GL es NEGRO. Hoy no se dispara porque `BeginTeardown` levanta `_isTearingDown` y `RenderScene`/
-        ' `OnPaint` salen antes de dibujar; si alguna vez se dibuja tras un Clean(), el sintoma es un modelo
-        ' negro y el causante es esta linea, no el shader.
-        If Logger.Enabled Then
-            Dim a1 = defaultWhiteTex, a2 = defaultNormalTex, a3 = defaultFacegenDetailTex, a4 = defaultFacegenTintTex
-            Dim a5 = defaultSseMsnSpecTex, a6 = defaultSseEngineGenericTex, a7 = defaultFacegenSubsurfaceTex, a8 = defaultCubeMap
-            Logger.LogLazy(Function() $"[AUDIT-CLEAN] ids de defaults al entrar: {a1},{a2},{a3},{a4},{a5},{a6},{a7},{a8}")
-        End If
-        If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex) : defaultWhiteTex = 0
-        If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex) : defaultNormalTex = 0
-        If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex) : defaultFacegenDetailTex = 0
-        If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex) : defaultFacegenTintTex = 0
-        If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex) : defaultSseMsnSpecTex = 0
-        If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex) : defaultSseEngineGenericTex = 0
-        If defaultHelperTex <> 0 Then GL.DeleteTexture(defaultHelperTex) : defaultHelperTex = 0
-        If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex) : defaultFacegenSubsurfaceTex = 0
-        If defaultDissolvePatternTex <> 0 Then GL.DeleteTexture(defaultDissolvePatternTex) : defaultDissolvePatternTex = 0
-        If defaultFo4DiffuseMapTex <> 0 Then GL.DeleteTexture(defaultFo4DiffuseMapTex) : defaultFo4DiffuseMapTex = 0
-        If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap) : defaultCubeMap = 0
-        If defaultSrvNullTex <> 0 Then GL.DeleteTexture(defaultSrvNullTex) : defaultSrvNullTex = 0
-        If defaultSrvNullCube <> 0 Then GL.DeleteTexture(defaultSrvNullCube) : defaultSrvNullCube = 0
-        If _gl43Context <> IntPtr.Zero Then Gl43.ReleaseContext(_gl43Context) : _gl43Context = IntPtr.Zero
+        Fo4EnvMap.Reset(conContexto)
+        ' Gl43's state of the context: forgotten in both cases; its objects deleted only with the context (Gl43.ReleaseContext).
 #If DEBUG Then
-        GL.DebugMessageCallback(Nothing, IntPtr.Zero)
+        If conContexto AndAlso _gl43Context <> IntPtr.Zero Then GateReleasedCtx.Add(_gl43Context)
+#End If
+        If _gl43Context <> IntPtr.Zero Then Gl43.ReleaseContext(_gl43Context, conContexto) : _gl43Context = IntPtr.Zero
+#If DEBUG Then
+        If conContexto Then GL.DebugMessageCallback(Nothing, IntPtr.Zero)
 #End If
     End Sub
     Protected Overrides Sub Finalize()
@@ -6114,32 +6319,35 @@ Public Class PreviewModel
         Private ReadOnly ParentModel As PreviewModel
 
         Public Sub Clean()
-            ' — Eliminar VAO y buffers de atributos —
-            If vao > 0 Then GL.DeleteVertexArray(vao) : vao = 0
-            If ebo > 0 Then GL.DeleteBuffer(ebo) : ebo = 0
-            If vboPosition > 0 Then GL.DeleteBuffer(vboPosition) : vboPosition = 0
-            If vboNormal > 0 Then GL.DeleteBuffer(vboNormal) : vboNormal = 0
-            If vboPreSkinNormal > 0 Then GL.DeleteBuffer(vboPreSkinNormal) : vboPreSkinNormal = 0
-            If vboEyeCenter > 0 Then GL.DeleteBuffer(vboEyeCenter) : vboEyeCenter = 0
-            If vboTangent > 0 Then GL.DeleteBuffer(vboTangent) : vboTangent = 0
-            If vboBitangent > 0 Then GL.DeleteBuffer(vboBitangent) : vboBitangent = 0
-            If engineVbo > 0 Then GL.DeleteBuffer(engineVbo) : engineVbo = 0
-            If engineCpuVbo > 0 Then GL.DeleteBuffer(engineCpuVbo) : engineCpuVbo = 0
-            If engineVaoGbuf > 0 Then GL.DeleteVertexArray(engineVaoGbuf) : engineVaoGbuf = 0
-            If engineVaoPrepass > 0 Then GL.DeleteVertexArray(engineVaoPrepass) : engineVaoPrepass = 0
-            If engineVaoCpuTbn > 0 Then GL.DeleteVertexArray(engineVaoCpuTbn) : engineVaoCpuTbn = 0
-            If engineVaoCpuRows > 0 Then GL.DeleteVertexArray(engineVaoCpuRows) : engineVaoCpuRows = 0
-            If _paletteSsbo > 0 Then GL.DeleteBuffer(_paletteSsbo) : _paletteSsbo = 0
-            If vboColorAlpha > 0 Then GL.DeleteBuffer(vboColorAlpha) : vboColorAlpha = 0
-            If vboUVMaskWeight > 0 Then GL.DeleteBuffer(vboUVMaskWeight) : vboUVMaskWeight = 0
-            If vboMask > 0 Then GL.DeleteBuffer(vboMask) : vboMask = 0
+            ' The buffers are the context's: deleted on it only while it exists (PreviewControl.ReleasedWithoutContext, ola 7g round 2e).
+            If Not ParentModel.ParentControl.ReleasedWithoutContext Then
+                ' — Eliminar VAO y buffers de atributos —
+                If vao > 0 Then GL.DeleteVertexArray(vao) : vao = 0
+                If ebo > 0 Then GL.DeleteBuffer(ebo) : ebo = 0
+                If vboPosition > 0 Then GL.DeleteBuffer(vboPosition) : vboPosition = 0
+                If vboNormal > 0 Then GL.DeleteBuffer(vboNormal) : vboNormal = 0
+                If vboPreSkinNormal > 0 Then GL.DeleteBuffer(vboPreSkinNormal) : vboPreSkinNormal = 0
+                If vboEyeCenter > 0 Then GL.DeleteBuffer(vboEyeCenter) : vboEyeCenter = 0
+                If vboTangent > 0 Then GL.DeleteBuffer(vboTangent) : vboTangent = 0
+                If vboBitangent > 0 Then GL.DeleteBuffer(vboBitangent) : vboBitangent = 0
+                If engineVbo > 0 Then GL.DeleteBuffer(engineVbo) : engineVbo = 0
+                If engineCpuVbo > 0 Then GL.DeleteBuffer(engineCpuVbo) : engineCpuVbo = 0
+                If engineVaoGbuf > 0 Then GL.DeleteVertexArray(engineVaoGbuf) : engineVaoGbuf = 0
+                If engineVaoPrepass > 0 Then GL.DeleteVertexArray(engineVaoPrepass) : engineVaoPrepass = 0
+                If engineVaoCpuTbn > 0 Then GL.DeleteVertexArray(engineVaoCpuTbn) : engineVaoCpuTbn = 0
+                If engineVaoCpuRows > 0 Then GL.DeleteVertexArray(engineVaoCpuRows) : engineVaoCpuRows = 0
+                If _paletteSsbo > 0 Then GL.DeleteBuffer(_paletteSsbo) : _paletteSsbo = 0
+                If vboColorAlpha > 0 Then GL.DeleteBuffer(vboColorAlpha) : vboColorAlpha = 0
+                If vboUVMaskWeight > 0 Then GL.DeleteBuffer(vboUVMaskWeight) : vboUVMaskWeight = 0
+                If vboMask > 0 Then GL.DeleteBuffer(vboMask) : vboMask = 0
 
-            ' GPU Skinning: clean up SSBO and bone attribute VBOs
-            If ssbo_BoneMatrices > 0 Then GL.DeleteBuffer(ssbo_BoneMatrices) : ssbo_BoneMatrices = 0
-            If vboBoneIndices > 0 Then GL.DeleteBuffer(vboBoneIndices) : vboBoneIndices = 0
-            If vboBoneWeights > 0 Then GL.DeleteBuffer(vboBoneWeights) : vboBoneWeights = 0
+                ' GPU Skinning: clean up SSBO and bone attribute VBOs
+                If ssbo_BoneMatrices > 0 Then GL.DeleteBuffer(ssbo_BoneMatrices) : ssbo_BoneMatrices = 0
+                If vboBoneIndices > 0 Then GL.DeleteBuffer(vboBoneIndices) : vboBoneIndices = 0
+                If vboBoneWeights > 0 Then GL.DeleteBuffer(vboBoneWeights) : vboBoneWeights = 0
 
-            ' — Reducir flags de dirty-tracking a mínima expresión —
+                ' — Reducir flags de dirty-tracking a mínima expresión —
+            End If
             MeshData.Meshgeometry = Nothing
         End Sub
 
@@ -11102,16 +11310,19 @@ Public Class PreviewModel
         CancelPendingTextureUploads()
 
         ' — Eliminar texturas cargadas —
-        Dim seen As New HashSet(Of UInteger)
-        For Each t In Textures_Dictionary.Values
-            t?.ReleaseViews()
-        Next
-        For Each texID In Textures_Dictionary.Values.Select(Function(pf) pf.Texture_ID)
-            If texID > 0 AndAlso Not seen.Contains(texID) Then
-                GL.DeleteTexture(texID)
-                seen.Add(texID)
-            End If
-        Next
+        ' The textures and their views are the context's: deleted on it only while it exists (ola 7g round 2e).
+        If Not ParentControl.ReleasedWithoutContext Then
+            Dim seen As New HashSet(Of UInteger)
+            For Each t In Textures_Dictionary.Values
+                t?.ReleaseViews()
+            Next
+            For Each texID In Textures_Dictionary.Values.Select(Function(pf) pf.Texture_ID)
+                If texID > 0 AndAlso Not seen.Contains(texID) Then
+                    GL.DeleteTexture(texID)
+                    seen.Add(texID)
+                End If
+            Next
+        End If
         ' Limpia diccionario
         Textures_Dictionary.Clear()
         Last_Loaded_Textures.Clear()
@@ -11193,7 +11404,7 @@ Public Class PreviewModel
         ParentControl.UpdateRequired = True
         If ShowText Then Me.ParentControl.Processing_Status("Cleaned")
         ' The envmap array is reset per model load (user decision rev-09 b).
-        ParentControl.Fo4EnvMap.Reset()
+        ParentControl.Fo4EnvMap.Reset(Not ParentControl.ReleasedWithoutContext)
         ' Limpia meshes internamente
         For Each mesh In meshes
             mesh.Clean()
@@ -11221,6 +11432,7 @@ Public Class PreviewModel
         BlendedDepthBuffer.Clear()
         MarkRenderBucketsDirty()
 
+        If ParentControl.ReleasedWithoutContext Then Exit Sub   ' no context: no GL error to read (ola 7g round 2e)
         Dim i = 0
         While GL.GetError() <> ErrorCode.NoError
             i += 1
