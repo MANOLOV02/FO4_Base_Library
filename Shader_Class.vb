@@ -359,8 +359,10 @@ void main(void)
 	vColor = vec4(1.0, 1.0, 1.0, 1.0);
 	vUV = vertexUV;
 	// The z-prepass VS's TEXCOORD0 (rec3929 L47-48: mad o1.xy, v1.xyxx, cb2[4].zwzz, cb2[4].xyxx / mov o1.z, v2.w): the UV through the
-	// prepass's cb2[4] and its COLOR0.w, per vertex as the prepass computes them - COLOR0.w is the vertex alpha when the prepass
-	// VAO carries the stream, else GL's current generic attribute, (0, 0, 0, 1) (GL 4.6 10.2; nothing in the app sets it): 1.
+	// prepass's cb2[4] and its COLOR0.w, per vertex as the prepass computes them. The alpha-test layout always carries COLOR0 (the
+	// engine ORs its bit in, Fo4EngineVertexLayout.PrepassAlphaDesc): the vertex alpha with a colour stream; without one, the
+	// bytes at the desc's colour offset, which cb2[0].y = 10000 cancels - as any value in [0, 1] here. The 1.0 branch is for a
+	// layout without COLOR0 (GL's current generic attribute, (0, 0, 0, 1), GL 4.6 10.2), which the owner no longer builds.
 	vFo4PrepassTexcoord = vec3(vertexUV * uFo4PrepassTexcoord.zw + uFo4PrepassTexcoord.xy, bFo4PrepassVertexAlpha ? vertexAlpha : 1.0);
 
 	if (bShowVertexColor)

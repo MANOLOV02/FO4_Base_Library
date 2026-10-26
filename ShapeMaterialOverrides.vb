@@ -205,9 +205,16 @@ Public Module ShapeMaterialOverrides
 
                     ' Material swap: the engine applies the swapped-in material with ApplyMaterialData(..., True)
                     ' (Fallout4.exe 0x140256390 -> call at 0x140256672).
+                    ' A 0-byte target leaves the cache entry's BSShaderData null and the swap applies nothing (0x1402565D4..5D7, re28 2): the
+                    ' shape keeps what it had (vacioSinAplicar; the loaded wrapper then has no payload, ArchivoNombradoIlegible).
+                    Dim vacioSwap = True
+#If DEBUG Then
+                    ' Ola 7h tester round 4e (ShadowGate --ola7h-r4e S): the swap applies a 0-byte file as the NIF loader does.
+                    If Fo4GBufferConstants.GateMutantOn("p7h-r4e-swap-applies-empty") Then vacioSwap = False
+#End If
                     Dim newMaterial = MaterialResolver.TryLoadMaterialFromDictionary(targetPath, relatedMaterial.material, shape.NifShape, shape.NifContent,
-                                                                                     engineApplyArg3:=True)
-                    If newMaterial IsNot Nothing Then
+                                                                                     engineApplyArg3:=True, vacioSinAplicar:=vacioSwap)
+                    If newMaterial IsNot Nothing AndAlso Not newMaterial.ArchivoNombradoIlegible() Then
                         relatedMaterial.material = newMaterial
                         relatedMaterial.path = FO4UnifiedMaterial_Class.CorrectMaterialPath(targetPath)
                         If logEnabled Then

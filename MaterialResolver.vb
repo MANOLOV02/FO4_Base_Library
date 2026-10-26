@@ -22,8 +22,10 @@ Public Module MaterialResolver
 
     ''' <param name="engineApplyArg3">Third argument of the engine's ApplyMaterialData for this load: True for a
     ''' material swap (Fallout4.exe 0x140256672), False for a normal NIF load.</param>
+    ''' <param name="vacioSinAplicar">FO4UnifiedMaterial_Class.Deserialize's: True for a material swap (a 0-byte file applies nothing,
+    ''' 0x1402565D4..5D7; re28 2).</param>
     Public Function TryLoadMaterialFromDictionary(materialPath As String, fallbackMaterial As FO4UnifiedMaterial_Class, shap As NiflySharp.INiShape, nif As Nifcontent_Class_Manolo,
-                                                  Optional engineApplyArg3 As Boolean = False) As FO4UnifiedMaterial_Class
+                                                  Optional engineApplyArg3 As Boolean = False, Optional vacioSinAplicar As Boolean = False) As FO4UnifiedMaterial_Class
         Dim logEnabled = Logger.Enabled
         Dim rawPathLog = If(logEnabled, If(materialPath, ""), Nothing)
         Dim correctedPath = FO4UnifiedMaterial_Class.CorrectMaterialPath(materialPath)
@@ -58,7 +60,7 @@ Public Module MaterialResolver
 
         Try
             Dim material As New FO4UnifiedMaterial_Class()
-            material.Deserialize(loc.GetBytes(), correctedPath, materialType, shap, nif, engineApplyArg3)
+            material.Deserialize(loc.GetBytes(), correctedPath, materialType, shap, nif, engineApplyArg3, vacioSinAplicar)
             If logEnabled Then
                 Dim lookupKeyLog = correctedPath
                 Dim loadedAt = material.AlphaTest.ToString()

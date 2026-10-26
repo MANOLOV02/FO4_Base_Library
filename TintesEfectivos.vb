@@ -154,6 +154,21 @@ Public Module TintesEfectivos
         Return Nothing
     End Function
 
+    ''' <summary>Las capas de <paramref name="capas"/> cuya opción (BuscarOpcion, por su índice TETI) es del slot <paramref name="slot"/>,
+    ''' en su orden. LA búsqueda que comparten el derivador del QNAM (NpcRecordOverlay.DeriveSkinToneQnam, slot SkinTone) y el tono de
+    ''' piel del motor para el jugador (NpcMorphPoseResolver.ResolvePlayerEngineSkinTone, ola 7h r4e: el tint de tipo 0xC que busca
+    ''' 0x140655910). Cada llamador aplica después su propia regla (el QNAM: paleta con color; el motor: la primera).</summary>
+    <Extension>
+    Public Iterator Function CapasDelSlot(grupos As IEnumerable(Of GrupoDeTinteEfectivo), capas As IEnumerable(Of FaceTintInputBuilder.MergedTintLayer),
+                                          slot As TintSlot) As IEnumerable(Of FaceTintInputBuilder.MergedTintLayer)
+        If capas Is Nothing Then Return
+        For Each tl In capas
+            Dim opt = grupos.BuscarOpcion(tl.Index)
+            If opt Is Nothing OrElse opt.Slot <> CUShort(slot) Then Continue For
+            Yield tl
+        Next
+    End Function
+
     ''' <summary>Todas las opciones de ese slot TETI, en el catálogo YA fusionado.</summary>
     <Extension>
     Public Function BuscarOpcionesPorSlot(grupos As IEnumerable(Of GrupoDeTinteEfectivo),

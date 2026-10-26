@@ -1605,7 +1605,7 @@ void main() {}
     ''' <summary>The fragment text of a record, as the transcription's assembly table builds it, with the app entry (ola 2: the
     ''' record's FO4_GBUF_IN defines and the stage inputs before the class function, which takes Fo4GBufIn).
     ''' <paramref name="earlyTests"/> = False leaves out the record's forceEarlyDepthStencil (the translucent decals' base pass,
-    ''' Fo4DeferredPrograms.DecalBaseProgram: there the depth write has to follow the PS's kill).</summary>
+    ''' Fo4DeferredPrograms.RecordWithoutEarlyTests: there the depth write has to follow the PS's kill).</summary>
     Friend Function FragmentOf(psId As UInteger, Optional earlyTests As Boolean = True) As String
         Dim r = Records(psId)
         Return Header430 & If(r.EarlyZ AndAlso earlyTests, EarlyFragmentTests, "") & D3d11SemanticsSource.Glsl & Literals & Common & r.Resources &

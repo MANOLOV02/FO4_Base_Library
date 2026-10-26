@@ -579,7 +579,7 @@ Partial Public Class Nifcontent_Class_Manolo
             Return "This NIF belongs to a different game than the one configured in the app; saving would treat it with the other game's rules."
         End If
         If mat Is Nothing Then Return "The shape has no material loaded."
-        If mat.ArchivoNombradoIlegible() Then
+        If mat.ArchivoNombradoIlegible() OrElse mat.PayloadIlegibleParaElMotor() IsNot Nothing OrElse mat.ClaveQueCierraElJuego() IsNot Nothing Then
             Return "The material file this shape names could not be read (empty or text/JSON material); its values are not known."
         End If
 

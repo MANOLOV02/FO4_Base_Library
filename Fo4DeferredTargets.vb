@@ -205,7 +205,8 @@ Friend NotInheritable Class Fo4DeferredPrograms
     Friend ReadOnly PrepassRigid, PrepassAlpha As Fo4_Deferred_Shader_Class
     ''' <summary>The programs of one vertex route (ola 2 v5: the GPU route - the engine VS blends cb10 - and the CPU route of a skinned
     ''' VS - Fo4GBufferSource.StageOf cpuRoute -, user decision 12-oct-2026): tuple -&gt; the record programs built so far, the tuples
-    ''' whose build failed with the error text, the base-pass program of a record with forceEarlyDepthStencil (DecalBaseProgram)
+    ''' whose build failed with the error text, the program of a record with forceEarlyDepthStencil without its early tests
+    ''' (RecordWithoutEarlyTests)
     ''' and the decals' base SURFACE program (the tuple's engine stages + the app's surface fragment, revisor-25).</summary>
     Private NotInheritable Class RoutePrograms
         Friend ReadOnly Records As New Dictionary(Of (Vs As UInteger, Hs As UInteger, Ds As UInteger, Ps As UInteger), Fo4_Deferred_Shader_Class)
@@ -621,17 +622,22 @@ Friend NotInheritable Class Fo4DeferredPrograms
         Return If(cpuRoute, _cpuRoute, _gpuRoute).Surface
     End Function
 
-    ''' <summary>The program the translucent decals' base pass draws record <paramref name="psId"/> with (RenderableMesh.Render
-    ''' decalBase): the record's own program - its kill decides which fragments give a base, as it decides which ones paint -
-    ''' except for a record with forceEarlyDepthStencil (43 of the 143 records with technique bit 15), whose early depth write would
-    ''' keep the depth of the pixels its PS kills (GL 4.3 14.9: with early tests the depth buffer is updated before the shader, a
-    ''' later discard does not undo it): for those, the same record text without the early tests (Fo4GBufferSource.FragmentOf
-    ''' earlyTests:=False), built with the record (GBufferProgram). Nothing when the record's build failed (it is then a gap).</summary>
-    Friend Function DecalBaseProgram(t As Fo4Technique, Optional cpuRoute As Boolean = False) As Fo4_Deferred_Shader_Class
+    ''' <summary>THE RECORD'S PROGRAM WITHOUT ITS EARLY DEPTH TESTS, for a draw whose depth write has to follow the record's kill: the
+    ''' record's own program, except for a record with forceEarlyDepthStencil, whose early depth write would keep the depth of the
+    ''' pixels its PS kills (GL 4.3 14.9: with early tests the depth buffer is updated before the shader, a later discard does not
+    ''' undo it): for those, the same record text without the early tests (Fo4GBufferSource.FragmentOf earlyTests:=False), built
+    ''' with the record (GBufferProgram, route.Base). Nothing when the record's build failed (it is then a gap). Its readers
+    ''' (RenderableMesh.RecordWithoutEarlyTests, under RenderableMesh.DrawsWithoutEarlyTests): the translucent decals' base pass
+    ''' (decalBase: its kill decides which fragments give a base, as it decides which ones paint; 43 of the 143 records with technique
+    ''' bit 15 have the early tests) and the G-buffer draw of a prepass shape or overlay layer in a frame without its prepass
+    ''' (GateDisablePrepass, PreviewModel.FramePrepassRuns; the layers: ola 7h round 3, r2-01): in the game such
+    ''' a shape draws the G-buffer without writing depth (mode 1), its depth is the prepass's; drawn writing its own, the early
+    ''' write would keep its killed pixels (re23 3: e3's record PS 0x103 rec2802 is EarlyZ; ola 7h round 2, p7h-01).</summary>
+    Friend Function RecordWithoutEarlyTests(t As Fo4Technique, Optional cpuRoute As Boolean = False) As Fo4_Deferred_Shader_Class
         Dim errorText As String = Nothing
         Dim program = GBufferProgram(t, errorText, cpuRoute)
         If program Is Nothing OrElse Not Fo4GBufferSource.Records(t.Key().Ps).EarlyZ Then Return program
-        If _gbufferSource IsNot Nothing Then Return _gbufferSource.DecalBaseProgram(t, cpuRoute)
+        If _gbufferSource IsNot Nothing Then Return _gbufferSource.RecordWithoutEarlyTests(t, cpuRoute)
         Return RouteOf(t.Key().Vs, cpuRoute).Base(t.Key())
     End Function
 

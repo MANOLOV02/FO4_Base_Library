@@ -61,7 +61,8 @@ Friend Module Fo4RenderPassLaw
         ' ---- z-prepass / G-buffer technique bits (Tools/re-docs/RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 10) ----
         Public AlphaTest As Boolean      ' NiAlphaProperty bit 9 (the 0x1A prepass type, G-buffer technique bit 8)
         Public TestRef As Byte
-        ''' <summary>vertexDesc COLOR: the prepass test multiplies the vertex alpha (cb2[0].y = 0, else 10000).</summary>
+        ''' <summary>The geometry's full vertex desc has COLOR (Fo4EngineVertexLayout.PrepassColorStream: bit 49 or 59,
+        ''' 0x141828F69..F8D): the alpha-test prepass multiplies the vertex alpha (cb2[0].y = 0, else 10000).</summary>
         Public HasColorStream As Boolean
         ''' <summary>The geometry's exact class is BSTriShape, BSSubIndexTriShape or BSMeshLODTriShape (RTTI 0x143449778,
         ''' 0x1438DF4C0, 0x143E71B70) and it has triangles.</summary>

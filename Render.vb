@@ -4066,6 +4066,10 @@ Public Class PreviewModel
     ''' Nothing = off.</summary>
     Friend Shared GateDrawLog As List(Of (Mesh As RenderableMesh, DecalBase As DecalBaseStep, Prepass As Boolean, Layer As OverlayMaterialLayer)) = Nothing
 
+    ''' <summary>DEBUG ONLY (ola 7h tester round 4): when not Nothing, every Fallout 4 prepass draw (DrawFo4EnginePrepass) appends (the material it
+    ''' draws, whether its prepass class is alpha-test, whether the layout it binds is the alpha-test one). Nothing = off.</summary>
+    Friend Shared GatePrepassVaoLog As List(Of (Material As RenderableMesh.MaterialData, ClassAlpha As Boolean, BoundAlpha As Boolean)) = Nothing
+
 #If DEBUG Then
     ''' <summary>DEBUG ONLY (ola 7f tester): the colour draws (shapes and overlay layers) a frame without a debug view gave the edit
     ''' views' program without a wireframe - it has no output for them (Shader_Class_Fo4EditView); ShadowGate prints it after every
@@ -4657,6 +4661,15 @@ Public Class PreviewModel
                 Return tri.VertexDesc.Value
             End Function
 
+            ''' <summary>Does the engine's geometry carry a skin: the NIF block's skin instance as loaded (the applicator writes bit 1 from it,
+            ''' 0x14216B001..009 / B05E; GetRenderPasses' SKINNED reads that bit, 0x14217844B..456). Not IRenderableShape.IsSkinned, which also
+            ''' reports the app's synthetic anchor skin (IRuntimeSkinOverride.ApplySyntheticAnchorSkin) of a rigid piece mounted on a bone - the
+            ''' robot chunks' and the Pipboy's rigid shapes, rigid geometries in the engine (RE_FO4_SKINNED_ATTACH 9.2: a connect-point part's
+            ''' geometry without a skin stays in the clone hung from the point's node, 0x14186E240 / AttachChild 0x14186E32A).</summary>
+            Friend Shared Function EngineGeometryHasSkin(geo As NiflySharp.INiShape) As Boolean
+                Return geo IsNot Nothing AndAlso geo.SkinInstanceRef IsNot Nothing AndAlso Not geo.SkinInstanceRef.IsEmpty()
+            End Function
+
             ''' <summary>How Skyrim SE draws this material (SseRenderPassLaw.Classify).</summary>
             Friend Function SsePass() As SseRenderPassLaw.SsePass
                 Return SseRenderPassLaw.Classify(SseInputs())
@@ -4692,7 +4705,7 @@ Public Class PreviewModel
                     lightingTechnique = Fo4Technique(ff, g, lightingNoPass)
                     If lightingTechnique.HasValue Then lightingGroup = g
                 End If
-                Return New Fo4RenderPassLaw.Fo4ShapeInputs With {.LightingGroup = lightingGroup, .LightingTechnique = lightingTechnique,
+                Dim entradas = New Fo4RenderPassLaw.Fo4ShapeInputs With {.LightingGroup = lightingGroup, .LightingTechnique = lightingTechnique,
                     .LightingNoPass = lightingNoPass,
                     .IsEffect = mb.IsBGEM(), .Alpha = PreviewAlpha(), .Blend = ea.Blend,
                     .ZTest = mb.ZBufferTest, .ZWrite = mb.ZBufferWrite,
@@ -4701,8 +4714,14 @@ Public Class PreviewModel
                     .Billboard = bit(f2, 13), .PipboyScreen = bit(f2, 28),
                     .Soft = mb.IsBGEM() AndAlso bit(f1, 30) AndAlso Not PreviewModel.GateDisableSoft,
                     .AlphaTest = ea.Test, .TestRef = ea.Threshold,
-                    .HasColorStream = geo IsNot Nothing AndAlso geo.HasVertexColors,
+                    .HasColorStream = Fo4EngineVertexLayout.PrepassColorStream(VertexDescValue(geo)),
                     .PrepassGeometry = geo IsNot Nothing AndAlso Fo4PrepassGeometryClass(geo) AndAlso indicesPresentes}
+#If DEBUG Then
+                ' Ola 7h tester (ParityGate fo4-prepass-colour-layout case 2): HasColorStream from nifly's HasVertexColors (the slot-0 bit
+                ' alone, before the 7h) instead of the full desc's bits 49 / 59.
+                If Fo4GBufferConstants.GateMutantOn("p7h-colour-by-slot0") Then entradas.HasColorStream = geo IsNot Nothing AndAlso geo.HasVertexColors
+#End If
+                Return entradas
             End Function
 
             ''' <summary>F4SF1 | F4SF2 &lt;&lt; 32 as Fallout 4's GetRenderPasses reads them (rev-40: the one owner; Fo4Inputs and the
@@ -4727,24 +4746,47 @@ Public Class PreviewModel
             Private _ctlAlphaChain As List(Of NiflySharp.Blocks.NiTimeController)
             Private _rest As MaterialRest
 
-            ''' <summary>C10 rev-07: THE one walk of the base shape's controller chains per frame - the shader's (NifContent.CadenaDeShader,
+            ''' <summary>Re24 addendum 3: F4EE REPLACED the shader property of this overlay layer's clone - the template's family (an effect
+            ''' when its material path ends in ".bgem", OverlayInterface.cpp:1118-1120) is not the host property's, so LoadMaterialData
+            ''' creates a new property (:166-174), without the host's flags nor its controllers. False for the shape's own material and
+            ''' for a layer that keeps the property copy of its host (BSGeometry::CopyMembers 0x1416D4DB0, addendum 1).</summary>
+            Friend Function OverlayReplacesHostShaderProperty() As Boolean
+                If OverrideRelatedMaterial Is Nothing Then Return False
+                Dim efecto = OverlayMaterialLayer.IsEffectTemplate(OverrideRelatedMaterial.path)
+                Dim sh = ParentMeshData.Shape?.NifShader
+                Return If(efecto, Not TypeOf sh Is NiflySharp.Blocks.BSEffectShaderProperty, Not TypeOf sh Is NiflySharp.Blocks.BSLightingShaderProperty)
+            End Function
+
+            ''' <summary>C10 rev-07: THE one walk of the controller chains per frame - the shader property's (NifContent.CadenaDeShader,
             ''' the owner of CadenasDeShape's DeShader) and its NiAlphaProperty's (NifContent.CadenaDeAlpha, ola 0c pto 13);
             ''' PreviewModel.FrameSerial: edits are read on the next frame. Rest reads them, evaluated lazily and at most once per frame.
-            ''' Nothing for an overlay layer's material (no NIF property) or without a NIF shape.</summary>
+            ''' <para>A Fallout 4 OVERLAY LAYER's are its HOST's (re24 addendum 3): F4EE's clone copies both properties with their whole
+            ''' chains - NiObjectNET::CopyMembers 0x1416BCD80 clones [+0x18] (0x1416BCE81..EAD), NiTimeController::CopyMembers 0x1416CA8A0
+            ''' its flags (the active bit included), times, interpolator and next, the property's ProcessClone 0x1416CF440 retargets them
+            ''' to the clone's - and the applicator never writes [prop+0x18], so they animate the LAYER's material (its target's [+0x58],
+            ''' 0x14224A8D2). None for the shader property F4EE replaces (OverlayReplacesHostShaderProperty); the alpha property the
+            ''' applicator detaches (0x142171908..910) takes its chain with it, which TestRefReachesDraw reads from the layer's own engine
+            ''' alpha. Skyrim SE's layers: none (skee's not traced).</para> Nothing without a NIF shape.</summary>
             Private Function ShaderChain() As List(Of NiflySharp.Blocks.NiTimeController)
                 Dim shp = ParentMeshData.Shape
-                If OverrideRelatedMaterial IsNot Nothing OrElse shp?.NifContent Is Nothing OrElse shp.NifShape Is Nothing Then Return Nothing
+                If shp?.NifContent Is Nothing OrElse shp.NifShape Is Nothing Then Return Nothing
+                If OverrideRelatedMaterial IsNot Nothing AndAlso FrameSse() Then Return Nothing
+#If DEBUG Then
+                ' Ola 7h tester round 4 (ShadowGate --ola7h-r4t R): the layer's chain back to none.
+                If OverrideRelatedMaterial IsNot Nothing AndAlso Fo4GBufferConstants.GateMutantOn("p7h-layer-rest-none") Then Return Nothing
+#End If
                 Dim frame = If(ParentMeshData.ParentMesh?.ParentModel Is Nothing, -2, ParentMeshData.ParentMesh.ParentModel.FrameSerial)
                 If frame >= 0 AndAlso frame = _ctlFrame AndAlso _ctlChain IsNot Nothing Then Return _ctlChain
-                _ctlChain = shp.NifContent.CadenaDeShader(shp.NifShape)
+                _ctlChain = If(OverlayReplacesHostShaderProperty(), New List(Of NiflySharp.Blocks.NiTimeController), shp.NifContent.CadenaDeShader(shp.NifShape))
                 _ctlAlphaChain = shp.NifContent.CadenaDeAlpha(shp.NifShape)
                 _rest = Nothing
                 _ctlFrame = frame
                 Return _ctlChain
             End Function
 
-            ''' <summary>C10: the base shape's material at rest (NifContent.MaterialAtRest on ShaderChain and the NiAlphaProperty's chain),
-            ''' once per frame. An overlay layer's material: none.</summary>
+            ''' <summary>C10: the material at rest (NifContent.MaterialAtRest on ShaderChain and the NiAlphaProperty's chain), once per
+            ''' frame. An overlay layer's: its host's chains (ShaderChain, re24 addendum 3) - the same ControllerRest law, its values read by
+            ''' RestValue / RestWrites over the LAYER's material.</summary>
             Friend Function Rest() As MaterialRest
                 Dim chain = ShaderChain()
                 If chain Is Nothing Then Return MaterialRest.None
@@ -4898,8 +4940,7 @@ Public Class PreviewModel
                 Dim geo = ParentMeshData.Shape?.NifShape
                 Try
                     Dim raw As ULong = CULng(CUInt(lsh.ShaderFlags_F4SPF1)) Or (CULng(CUInt(lsh.ShaderFlags_F4SPF2)) << 32)
-                    Dim skinned = geo IsNot Nothing AndAlso geo.SkinInstanceRef IsNot Nothing AndAlso Not geo.SkinInstanceRef.IsEmpty()
-                    _fo4State = Fo4GBufferTechnique.EngineState(raw, mb, skinned, VertexDescValue(geo), lsh)
+                    _fo4State = Fo4GBufferTechnique.EngineState(raw, mb, EngineGeometryHasSkin(geo), VertexDescValue(geo), lsh)
                     _fo4StateError = Nothing
                 Catch ex As Exception
                     ' The engine material could not be built for this shape: a preview gap (reported, the shape leaves every pass).
@@ -5590,10 +5631,10 @@ Public Class PreviewModel
                 Dim frame = If(ParentMeshData.ParentMesh?.ParentModel Is Nothing, -2, ParentMeshData.ParentMesh.ParentModel.FrameSerial)
                 If frame >= 0 AndAlso frame = _fo4EffFrame Then Return _fo4Eff
                 Dim geo = ParentMeshData.Shape?.NifShape
-                Dim raw As ULong = If(overlay OrElse sh Is Nothing, 0UL, CULng(CUInt(sh.ShaderFlags_F4SPF1)) Or (CULng(CUInt(sh.ShaderFlags_F4SPF2)) << 32))
-                Dim skinned = geo IsNot Nothing AndAlso geo.SkinInstanceRef IsNot Nothing AndAlso Not geo.SkinInstanceRef.IsEmpty()
+                ' A layer starts from its clone's property: the host's copy, or the new one F4EE creates (OverlayReplacesHostShaderProperty).
+                Dim raw As ULong = If(sh Is Nothing OrElse OverlayReplacesHostShaderProperty(), 0UL, CULng(CUInt(sh.ShaderFlags_F4SPF1)) Or (CULng(CUInt(sh.ShaderFlags_F4SPF2)) << 32))
                 Dim liByte = FO4UnifiedMaterial_Class.EngineEffectConstants(OpenTK.Mathematics.Vector3.Zero, 1.0F, False, mb.LightingInfluence, False).InfluenceByte
-                _fo4Eff = Fo4EffectTechnique.EngineFlags(raw, mb, skinned, VertexDescValue(geo), overlay, liByte)
+                _fo4Eff = Fo4EffectTechnique.EngineFlags(raw, mb, EngineGeometryHasSkin(geo), VertexDescValue(geo), overlay, liByte)
                 _fo4EffFrame = frame
                 Return _fo4Eff
             End Function
@@ -5712,7 +5753,9 @@ Public Class PreviewModel
                 Dim esp = TryCast(sh, NiflySharp.Blocks.BSEffectShaderProperty)
                 If lsp IsNot Nothing Then clamp = CInt(lsp.TextureClampMode) And 3
                 If esp IsNot Nothing Then clamp = CInt(esp.TextureClampMode) And 3
-                If Not isSse AndAlso mb.ArchivoFo4Aplicado() Then clamp = If(mb.TileU, 2, 0) + If(mb.TileV, 1, 0)
+                ' A layer whose property F4EE replaced (OverlayReplacesHostShaderProperty) has no NIF block of its own: its material's clamp,
+                ' the applied file's tile flags or the default effect material's +0xB4 = 3 (0x142224415; Fo4EngineDefaultEffectMaterial).
+                If Not isSse AndAlso (mb.ArchivoFo4Aplicado() OrElse OverlayReplacesHostShaderProperty()) Then clamp = If(mb.TileU, 2, 0) + If(mb.TileV, 1, 0)
                 Return New SamplerLaw.SamplerInputs With {.IsSse = isSse, .IsEffect = esEfecto, .Clamp = clamp,
                                                          .Facegen = isSse AndAlso Not esEfecto AndAlso mb.Facegen,
                                                          .EnvMapMinLod = mb.EnvmapMinLOD,
@@ -5725,10 +5768,17 @@ Public Class PreviewModel
             End Function
 
             ''' <summary>cb2[0] of this shape's z-prepass alpha-test PS (rec3930): .x the threshold (Fo4Pass().PrepassThreshold,
-            ''' 0x141828F45..F65), .y 0 with a COLOR stream, else 10000 (0x141828F6A..F8D). Its one writer, read by the prepass draw
+            ''' 0x141828F45..F65), .y 0 with a COLOR stream in the full desc (HasColorStream = Fo4EngineVertexLayout.PrepassColorStream),
+            ''' else 10000 (0x141828F69..F8D). Its one writer, read by the prepass draw
             ''' (DrawFo4EnginePrepass) and by the edit views' prepass cut (ApplyFo4EditViewDepthCut).</summary>
             Friend Function Fo4PrepassPsConstants() As Vector4
                 Dim inp = Fo4Inputs()
+#If DEBUG Then
+                ' Ola 7h tester (ShadowGate --ola7h, cases 3 and 4): cb2[0].y always 10000 (the prepass never cuts by the vertex alpha)
+                ' or always 0 (it cuts by whatever COLOR0.w reads - the position bytes of a geometry without a colour stream).
+                If Fo4GBufferConstants.GateMutantOn("p7h-y-10000") Then Return New Vector4(Fo4RenderPassLaw.Classify(inp).PrepassThreshold, 10000.0F, 0.0F, 0.0F)
+                If Fo4GBufferConstants.GateMutantOn("p7h-y-0") Then Return New Vector4(Fo4RenderPassLaw.Classify(inp).PrepassThreshold, 0.0F, 0.0F, 0.0F)
+#End If
                 Return New Vector4(Fo4RenderPassLaw.Classify(inp).PrepassThreshold, If(inp.HasColorStream, 0.0F, 10000.0F), 0.0F, 0.0F)
             End Function
 
@@ -6333,7 +6383,7 @@ Public Class PreviewModel
                 If engineVbo > 0 Then GL.DeleteBuffer(engineVbo) : engineVbo = 0
                 If engineCpuVbo > 0 Then GL.DeleteBuffer(engineCpuVbo) : engineCpuVbo = 0
                 If engineVaoGbuf > 0 Then GL.DeleteVertexArray(engineVaoGbuf) : engineVaoGbuf = 0
-                If engineVaoPrepass > 0 Then GL.DeleteVertexArray(engineVaoPrepass) : engineVaoPrepass = 0
+                If engineVaoPrepassRigid > 0 OrElse engineVaoPrepassAlpha > 0 Then GL.DeleteVertexArrays(2, {engineVaoPrepassRigid, engineVaoPrepassAlpha}) : engineVaoPrepassRigid = 0 : engineVaoPrepassAlpha = 0
                 If engineVaoCpuTbn > 0 Then GL.DeleteVertexArray(engineVaoCpuTbn) : engineVaoCpuTbn = 0
                 If engineVaoCpuRows > 0 Then GL.DeleteVertexArray(engineVaoCpuRows) : engineVaoCpuRows = 0
                 If _paletteSsbo > 0 Then GL.DeleteBuffer(_paletteSsbo) : _paletteSsbo = 0
@@ -6447,7 +6497,7 @@ Public Class PreviewModel
         End Function
 
         ' ---- Ola 2: the engine's vertex buffers (propuesta-v4 3.6 d, 3.7, H4) ----
-        Friend engineVbo, engineCpuVbo, engineVaoGbuf, engineVaoPrepass, engineVaoCpuTbn, engineVaoCpuRows As Integer
+        Friend engineVbo, engineCpuVbo, engineVaoGbuf, engineVaoPrepassRigid, engineVaoPrepassAlpha, engineVaoCpuTbn, engineVaoCpuRows As Integer
         Private _engineDesc As ULong
         Private _engineStage As Byte(), _engineCpuStage As Single()
         ''' <summary>cb10 of this shape as the CPU route blends it (Fo4EngineSkin.PaletteRows: the same rows the GPU route binds).</summary>
@@ -6476,7 +6526,10 @@ Public Class PreviewModel
             GL.BindBuffer(BufferTarget.ArrayBuffer, engineCpuVbo)
             GL.BufferData(BufferTarget.ArrayBuffer, _engineCpuStage.Length * 4, IntPtr.Zero, BufferUsageHint.DynamicDraw)
             engineVaoGbuf = EngineVao(_engineDesc, Fo4CpuRouteLayout.None)
-            engineVaoPrepass = EngineVao(_engineDesc And If(PrepassAlphaTestOfThisShape(), Fo4EngineVertexLayout.PrepassAlphaMask, Fo4EngineVertexLayout.PrepassRigidMask), Fo4CpuRouteLayout.None)
+            ' Fallout 4's z-prepass layouts, one per class (rigid 0x141828B77, alpha test 0x141828E34..E5A): the class is the DRAWN
+            ' material's (DrawFo4EnginePrepass) - an overlay layer's can differ from its host's over the same vertices (ola 7h round 4).
+            engineVaoPrepassRigid = EngineVao(Fo4EngineVertexLayout.PrepassRigidDesc(_engineDesc), Fo4CpuRouteLayout.None)
+            engineVaoPrepassAlpha = EngineVao(Fo4EngineVertexLayout.PrepassAlphaDesc(_engineDesc), Fo4CpuRouteLayout.None)
             engineVaoCpuTbn = EngineVao(_engineDesc, Fo4CpuRouteLayout.Tbn)
             engineVaoCpuRows = EngineVao(_engineDesc, Fo4CpuRouteLayout.Rows)
             Dim cpu = EngineCpuRoute()
@@ -6646,17 +6699,13 @@ Public Class PreviewModel
             _engineMin = Integer.MaxValue : _engineMax = -1
         End Sub
 
-        ''' <summary>Does this shape's z-prepass alpha-test VAO carry the COLOR stream? Its layout is the engine's of the desc under
-        ''' PrepassAlphaMask (0x141828E34; the VAO EngineVao builds for the prepass), read by Fo4EngineVertexLayout.Elements: VS 3929
-        ''' reads COLOR0.w as its TEXCOORD0.z (rec3929 L48), and without the element the attribute is GL's current generic value
-        ''' (0, 0, 0, 1) - w = 1. The edit views' prepass cut feeds its TEXCOORD0.z the same way (ApplyFo4EditViewDepthCut; ola 7f round
-        ''' 2).</summary>
+        ''' <summary>Does this shape's z-prepass alpha-test VAO carry the COLOR stream? Its layout is the engine's
+        ''' (Fo4EngineVertexLayout.PrepassAlphaDesc, the VAO EngineVao builds for the prepass), read by Fo4EngineVertexLayout.Elements:
+        ''' VS 3929 reads COLOR0.w as its TEXCOORD0.z (rec3929 L48). Since ola 7h the engine's OR of the colour bit (0x141828E48..E5A)
+        ''' puts COLOR0 in every alpha-test layout - the vertex alpha with a colour stream, else the bytes at the desc's colour offset,
+        ''' which cb2[0].y = 10000 cancels. The edit views' prepass cut feeds its TEXCOORD0.z the same way (ApplyFo4EditViewDepthCut).</summary>
         Friend Function PrepassStreamHasColor() As Boolean
-            Return Fo4EngineVertexLayout.Elements(_engineDesc And Fo4EngineVertexLayout.PrepassAlphaMask).Any(Function(e) e.Semantic = Fo4EngineVertexLayout.Sem.Color0)
-        End Function
-
-        Friend Function PrepassAlphaTestOfThisShape() As Boolean
-            Return Fo4RenderPassLaw.Classify(MeshData.Material.Fo4Inputs()).PrepassAlphaTest     ' the call Render.vb:6179-6181 makes today
+            Return Fo4EngineVertexLayout.Elements(Fo4EngineVertexLayout.PrepassAlphaDesc(_engineDesc)).Any(Function(e) e.Semantic = Fo4EngineVertexLayout.Sem.Color0)
         End Function
 
         ''' <summary>GATE ONLY (N1): the engine stage bytes of this shape.</summary>
@@ -6881,21 +6930,26 @@ Public Class PreviewModel
 
         ''' <summary>THE CUT OF A SHAPE'S DEPTH IN FALLOUT 4'S FRAME, for the edit views (Shader_Class_Fo4EditView; ola 7f round 2, p7f-03,
         ''' user decision 21-oct-2026: the debug views cut by transparency with the game's prepass rule, the normal frame's, not with the
-        ''' colour pass's test). A shape the frame's z-prepass draws (PreviewModel.DrawnByPrepass, the membership DrawOpaqueStage draws
-        ''' by, and a frame with its prepass on: not GateDisablePrepass) takes its depth from the prepass - the views' frame runs the
-        ''' same DrawOpaqueStage, and the shape's own draw then tests without writing (ResolveColourDepthState) - so the views keep the
-        ''' prepass's fragments: its alpha test when the entry is the 0x1A one (PrepassAlphaTest), with the prepass's own constants
+        ''' colour pass's test). A shape the game's z-prepass draws (PreviewModel.DrawnByPrepass) takes its depth in the game's frame
+        ''' from the prepass, so the views keep the prepass's fragments. Since ola 7h round 2 (p7h-02) the views' frame does not draw
+        ''' the prepass (PreviewModel.FramePrepassRuns): the views write that depth themselves (ResolveColourDepthState), with this cut -
+        ''' their own VS against the prepass's depth z-fought. The cut: the prepass's alpha test when the entry is the 0x1A one
+        ''' (PrepassAlphaTest), with the prepass's own constants
         ''' (MaterialData.Fo4PrepassPsConstants, Fo4PrepassTexcoord), its own t0 (BindUtilityBaseTexture, at the views' unit) and its own
         ''' PS text (Fo4GBufferSource.PrepassAlphaKill, in the views' program). Any other shape keeps its colour pass's test
         ''' (ApplyMaterial, MaterialData.Fo4ColourPassAlphaTest). The t0 bind does not record the frame's sampler filter state: the
         ''' views are the app's drawing, not a draw of the engine's frame.</summary>
         Private Sub ApplyFo4EditViewDepthCut(shader As Shader_Base_Class, material As MaterialData)
-            Dim enPrepass = Not PreviewModel.GateDisablePrepass AndAlso Me.ParentModel.DrawnByPrepass(material)
+            Dim enPrepass = Me.ParentModel.DrawnByPrepass(material)
 #If DEBUG Then
             ' Ola 7f tester round 2 (ShadowGate --ola7f e10): the views without the prepass's cut (their colour pass's test, round 1).
             If Fo4GBufferConstants.GateMutantOn("editview-no-prepass-cut") Then enPrepass = False
 #End If
             Dim conTest = enPrepass AndAlso material.Fo4Pass().PrepassAlphaTest
+#If DEBUG Then
+            ' Ola 7h tester round 2 (ShadowGate --ola7f e3/e8 subject, --ola7h h5 / hz): the views draw a prepass shape with no cut at all.
+            If Fo4GBufferConstants.GateMutantOn("editview-no-cut") Then conTest = False
+#End If
             shader.SetBool("bFo4PrepassCut", enPrepass)
             shader.SetBool("bFo4PrepassAlphaTest", conTest)
             If Not conTest Then Exit Sub
@@ -6903,8 +6957,10 @@ Public Class PreviewModel
             shader.SetVector4("uFo4PrepassTexcoord", material.Fo4PrepassTexcoord())
             shader.SetBool("bFo4PrepassVertexAlpha", PrepassStreamHasColor())
 #If DEBUG Then
-            ' Ola 7f tester round 2 (ShadowGate --ola7f e10): the real vertex alpha instead of the prepass VAO's (no COLOR0: 1).
-            If Fo4GBufferConstants.GateMutantOn("editview-vertex-alpha") Then shader.SetBool("bFo4PrepassVertexAlpha", True)
+            ' Ola 7f tester round 2 (ShadowGate --ola7f e10): the views read the vertex alpha the OTHER way from the prepass VAO (the law's
+            ' value negated: before the 7h the real vertex alpha where the VAO had no COLOR0; since the 7h - COLOR0 always in the alpha-test
+            ' layout - none, the generic w = 1). "Always True" became the law with the 7h: an equivalent mutant (ola 7h tester).
+            If Fo4GBufferConstants.GateMutantOn("editview-vertex-alpha") Then shader.SetBool("bFo4PrepassVertexAlpha", Not PrepassStreamHasColor())
 #End If
 #If DEBUG Then
             ' Ola 7f tester round 2 (ShadowGate --ola7f e11): the probe of the frame's per-slot filter state around the views' t0 - every
@@ -6949,6 +7005,25 @@ Public Class PreviewModel
 
         ''' <summary>The frame's notice for an overlay whose host is drawn by an engine stage that EnginePositions cannot capture (UI
         ''' English).</summary>
+        ''' <summary>Ola 7h round 4c: does an overlay layer's own vertex stage place its vertices as its host's does, so that EnginePositions'
+        ''' capture is its position? A Fallout 4 G-buffer layer, and an effect layer whose technique is SKINNED: yes (the b05 SKINNED VS
+        ''' chain is the host's G-buffer VS's, EnginePositions). An effect layer WITHOUT SKINNED: no - the new BSEffectShaderProperty F4EE
+        ''' creates when its .bgem does not load keeps its ctor's flags, without bit 1 (0x1421774D0: 0, then bits 31 / 32, 0x142177504..51F);
+        ''' no file applies it (the applicator's 0x14216B05A..066 does not run), slot 42 0x142177570 does not write it, and the technique
+        ''' reads it from the flags (0x1421781C6..1D9, SKINNED at 0x14217844B..456). Its rigid VS draws the clone's own vertices with
+        ''' WorldViewProj (BindEffectVertexStage). Census of every SetFlag 0x142169460 of bit 1 (D:\WinTmp\rc\ola7h\r4\re\bit1_out.txt): the
+        ''' applicator, two properties of their own (0x14076E11B, 0x142276A71) and two that clear it (0x1406EBCEE, 0x1418A8212). Skyrim SE
+        ''' (skee): EnginePositions' own rule.</summary>
+        Private Function LayerTakesHostPosition(material As MaterialData) As Boolean
+            If Me.ParentModel.FrameIsSse Then Return True
+#If DEBUG Then
+            ' Ola 7h tester round 4 (ShadowGate --ola7h-r4t M): every layer takes its host's position again.
+            If Fo4GBufferConstants.GateMutantOn("p7h-r4c-hostpos") Then Return True
+#End If
+            Dim t = material.Fo4EffectTechniqueValue()
+            Return Not t.HasValue OrElse (t.Value And Fo4EffectTechnique.TechSkinned) <> 0UI
+        End Function
+
         Friend Const OverlayTessellatedHostNotice As String = "Overlay on a tessellated host: drawn with the app's position, not its host's engine stage"
         Friend Const OverlayNoPositionProgramNotice As String = "Overlay whose host's engine stage could not be built for capture: drawn with the app's position, not its host's engine stage"
 
@@ -8241,6 +8316,45 @@ Public Class PreviewModel
         ''' PreviewModel.ReportUndrawnShapes calls it once per visible shape and layer per frame. A shape the preview never draws for
         ''' the app's own reasons (hidden, a helper or under a hidden node with the checkbox off, without geometry other than a precombined
         ''' one, a wireframe) is not listed. Before all of them, C-NAN (chunk C3): the game's culling of a world bound of radius 0.</summary>
+        ''' <summary>THE producer of "Overlay material not found" (user decision 22-oct-2026): one WARNING per overlay layer of this shape
+        ''' whose template's material file did not load (OverlayMaterialLayer.MaterialNotFound: F4EE applied nothing,
+        ''' OverlayInterface.cpp:178), the path named; the layer is drawn as the game draws it (OverlayMaterialLayer.FromF4ee). Called by
+        ''' PreviewModel.ReportUndrawnShapes with the shape's own notice: the same frustum and visibility.</summary>
+        Friend Sub ReportMissingOverlayMaterials()
+            Dim shp = MeshData.Shape
+            Dim layers = shp?.OverlayLayers
+            If layers Is Nothing OrElse shp.Wireframe OrElse shp.NifShape Is Nothing Then Exit Sub
+            If Not HelperShapeGate.IsShapeShown(shp, SceneVisibility()) Then Exit Sub
+            For Each l In layers
+                If l Is Nothing Then Continue For
+                Dim name = NoticeName(l)
+                If l.MaterialNotFound IsNot Nothing Then ParentModel.ReportUndrawn(name, l.MaterialNotFound, FrameNoticeId.OverlayMaterialNotFound)
+                If l.MaterialUnreadable IsNot Nothing Then ParentModel.ReportUndrawn(name, l.MaterialUnreadable, FrameNoticeId.OverlayMaterialUnreadable)
+            Next
+        End Sub
+
+        ''' <summary>Ola 7h round 4e (re28 1): THE producer of "Material &lt;path&gt;: &lt;key&gt; has the wrong type; the game would crash"
+        ''' (coordinator decision 22-oct-2026, an ERROR): this shape's own material and each of its overlay layers' whose JSON has a value
+        ''' the engine's reader aborts on (FO4UnifiedMaterial_Class.ClaveQueCierraElJuego); the preview draws them with the BSShaderData
+        ''' ctor's values. Called by PreviewModel.ReportUndrawnShapes with the shape's own notice: the same frustum and visibility.</summary>
+        Friend Sub ReportMaterialFileCrash()
+#If DEBUG Then
+            ' Ola 7h tester round 4e (ShadowGate --ola7h-r4e L): the ERROR has no producer.
+            If Fo4GBufferConstants.GateMutantOn("p7h-r4e-no-crash-error") Then Exit Sub
+#End If
+            Dim shp = MeshData.Shape
+            If shp Is Nothing OrElse shp.Wireframe OrElse shp.NifShape Is Nothing Then Exit Sub
+            If Not HelperShapeGate.IsShapeShown(shp, SceneVisibility()) Then Exit Sub
+            Dim propio = shp.ShapeMaterial
+            Dim clave = propio?.material?.ClaveQueCierraElJuego()
+            If clave IsNot Nothing Then ParentModel.ReportUndrawn(NoticeName(Nothing), $"{propio.path}: {clave}", FrameNoticeId.MaterialFileWrongType)
+            If shp.OverlayLayers Is Nothing Then Exit Sub
+            For Each l In shp.OverlayLayers
+                Dim c = l?.Material?.material?.ClaveQueCierraElJuego()
+                If c IsNot Nothing Then ParentModel.ReportUndrawn(NoticeName(l), $"{l.Material.path}: {c}", FrameNoticeId.MaterialFileWrongType)
+            Next
+        End Sub
+
         Friend Sub ReportUndrawn(layer As OverlayMaterialLayer)
             Dim shp = MeshData.Shape
             If shp Is Nothing OrElse shp.Wireframe OrElse shp.NifShape Is Nothing Then Exit Sub
@@ -8319,12 +8433,14 @@ Public Class PreviewModel
                 pm.ReportUndrawn(name, why, FrameNoticeId.EngineDrawsNoPass)
                 Exit Sub
             End If
-            ' C10 rev-04 (user decision 7-oct-2026): a value this shape's draw takes from a shader controller at rest, not from the block
-            ' (MaterialData.RestDrivenNotice). Under the same exits as C4 below (a shape the frame draws as the game does); the base shape
-            ' only (an overlay layer has no NIF property), never a helper shape the user chose to see.
-            If layer Is Nothing AndAlso Not shp.IsHelperShape Then
+            ' C10 rev-04 (user decision 7-oct-2026): a value this draw takes from a shader controller at rest, not from the block
+            ' (MaterialData.RestDrivenNotice). Under the same exits as C4 below (a shape the frame draws as the game does); the shape and its
+            ' overlay layers (a layer animates with its host's chains, re24 addendum 3), never a helper shape the user chose to see.
+            If Not shp.IsHelperShape Then
                 Dim driven = md.RestDrivenNotice()
                 If driven IsNot Nothing Then pm.ReportUndrawn(name, driven, FrameNoticeId.ValueDrivenAtRest)
+            End If
+            If layer Is Nothing AndAlso Not shp.IsHelperShape Then
                 ' Ola 0c parte 2 (user decision 12-oct-2026, option 1): the blocks whose transform this shape is drawn with comes from a
                 ' NiTransformController at rest (NodeRestLayer, SkinnedGeometry.RestLayer); the ones it draws as the file (a skinned
                 ' shape mounted on the skeleton) and the controllers not determinable, as drawn differently. Ola 7b ronda 3: which mounted
@@ -8388,7 +8504,7 @@ Public Class PreviewModel
                 Select Case f
                     Case SseRenderPassLaw.SseDepthFunc.Off : Return (False, DepthFunction.Lequal, False)
                     Case SseRenderPassLaw.SseDepthFunc.Equal
-                        If PreviewModel.GateDisablePrepass Then Return (True, DepthFunction.Lequal, True)
+                        If Not Me.ParentModel.FramePrepassRuns Then Return (True, DepthFunction.Lequal, True)
                         Return (True, DepthFunction.Equal, False)
                     Case Else : Return (True, DepthFunction.Lequal, w)
                 End Select
@@ -8397,8 +8513,9 @@ Public Class PreviewModel
             If wire Then Return (True, DepthFunction.Lequal, False)
             If mb Is Nothing OrElse Me.ParentModel.FrameIsSse Then Return (True, DepthFunction.Lequal, True)
             Dim fo4 = material.Fo4Pass()
-            ' Gate only: without the prepass an eligible shape writes its own depth (the pre-prepass behaviour).
-            If PreviewModel.GateDisablePrepass AndAlso fo4.InPrepass Then Return (fo4.DepthTest, DepthFunction.Lequal, True)
+            ' A frame without its prepass (PreviewModel.FramePrepassRuns: the debug-view frame, ola 7h round 2 p7h-02; GateDisablePrepass):
+            ' an eligible shape writes its own depth - the edit views with the prepass's cut, a G-buffer record without its early tests.
+            If fo4.InPrepass AndAlso Not Me.ParentModel.FramePrepassRuns Then Return (fo4.DepthTest, DepthFunction.Lequal, True)
             ' Gate only (--fo4-decal-base b1): the translucent decals test EQUAL against their base.
             If PreviewModel.GateDecalColourEqual AndAlso fo4.Group = 3 Then Return (fo4.DepthTest, DepthFunction.Equal, fo4.DepthWrite)
             Return (fo4.DepthTest, DepthFunction.Lequal, fo4.DepthWrite)
@@ -8462,9 +8579,13 @@ Public Class PreviewModel
         End Sub
 
         ''' <summary>FO4 z-prepass (0x14181FAA0): engine VS 3928 without a PS (rigid, group 0x19) or VS 3929 + PS 3930 (alpha test, 0x1A),
-        ''' over the prepass VAO (desc masks 0x141828B77 / 0x141828E34); cb2[0..3] = World (0x141828AEC..B5F, the SAME EngineWorldRows),
-        ''' cb2[0].x = the threshold (0x141828F45..F65), cb2[0].y = 0 with a COLOR stream else 10000, cb2[4] = TexcoordOffset; colour off
-        ''' (write mode 0, 0x1421F3A3E). Skinned shapes never get here (mask 0x33480684, RE_FO4_PASS_GROUPS_DEPTH 10.4).
+        ''' over the prepass VAO (Fo4EngineVertexLayout.PrepassRigidDesc 0x141828B77 / PrepassAlphaDesc 0x141828E34..E5A, COLOR0 always in
+        ''' the alpha-test one); cb2[0..3] = World (0x141828AEC..B5F, the SAME EngineWorldRows),
+        ''' cb2[0].x = the threshold (0x141828F45..F65), cb2[0].y = 0 with a COLOR stream in the full desc (PrepassColorStream) else
+        ''' 10000, cb2[4] = TexcoordOffset; colour off
+        ''' (write mode 0, 0x1421F3A3E). Skinned shapes never get here (mask 0x33480684, RE_FO4_PASS_GROUPS_DEPTH 10.4). A shape's or an
+        ''' overlay layer's <paramref name="material"/> (DrawMaterial; the layer is F4EE's clone of its host, its flags - Skinned included -
+        ''' the host's copy: re24 1), over the prepass VAO of that material's class (rigid or alpha test, ola 7h round 4).
         ''' <para>THE DRAW'S OWN STATE, no colour program's (ola 7f): the alpha test's t0 is the entry's texture, +0x20 = [[mat + 0x48] +
         ''' 0x38] with mat = [prop + 0x58] (BSLightingShaderProperty vfunc 0x1C8 0x14217C740, read at 0x1421D4E12..E2B, registered
         ''' 0x1421D4E83 -&gt; 0x14181F983), bound to PS slot 0 (PSSetShaderResources 0x141828FA3..FBC); its sampler (PSSetSamplers
@@ -8504,7 +8625,15 @@ Public Class PreviewModel
             GL.DepthFunc(SsePrepassDepthFunc)
             GL.DepthMask(True)
             ApplyFaceMode(faceMode)
-            GL.BindVertexArray(engineVaoPrepass)
+            ' The layout of THIS material's class (a layer's can differ from its host's: both VAOs over the same engine buffer).
+            Dim vaoConTest = pass.PrepassAlphaTest
+#If DEBUG Then
+            ' Ola 7h tester round 4 (ShadowGate --ola7h-r4t C): the layout of the SHAPE's class, not the drawn material's (one VAO per shape again).
+            If Fo4GBufferConstants.GateMutantOn("p7h-r4-prepass-hostclass") Then vaoConTest = Fo4RenderPassLaw.Classify(Me.MeshData.Material.Fo4Inputs()).PrepassAlphaTest
+            ' Instrument: the class of the material this draw is for and the layout it binds (read back by the gate, never by the app).
+            If PreviewModel.GatePrepassVaoLog IsNot Nothing Then PreviewModel.GatePrepassVaoLog.Add((material, pass.PrepassAlphaTest, vaoConTest))
+#End If
+            GL.BindVertexArray(If(vaoConTest, engineVaoPrepassAlpha, engineVaoPrepassRigid))
             EnsureZapIndexBuffer()
             GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
             GL.BindVertexArray(0)
@@ -8750,13 +8879,30 @@ Public Class PreviewModel
             End If
         End Sub
 
-        ''' <summary>The program of a translucent decal's base draw: its colour program (<paramref name="colour"/>), or for a G-buffer
-        ''' record Fo4DeferredPrograms.DecalBaseProgram (the record without its early depth tests, when it has them), put in
-        ''' <paramref name="gbuf"/> so that ApplyMaterial sets that program's constants. Nothing when it does not exist.</summary>
-        Private Function DecalBaseProgram(colour As Shader_Base_Class, ByRef gbuf As Fo4GBufferDraw?) As Shader_Base_Class
+        ''' <summary>THE ONE CONDITION of a draw whose record goes WITHOUT its early depth tests (RecordWithoutEarlyTests) - read by
+        ''' the one draw of a shape and an overlay layer (DrawMaterial): its depth write has to follow the record's kill. A translucent decal's base draw
+        ''' (<paramref name="decalBase"/>), or a shape or overlay layer the frame's z-prepass draws (<paramref name="material"/>,
+        ''' PreviewModel.DrawnByPrepass: DrawOpaqueStage draws both) in a frame that does not run it (PreviewModel.FramePrepassRuns):
+        ''' such a draw writes its own depth (ResolveColourDepthState), and with the record's early tests that write would keep the
+        ''' pixels its kill drops (GL 4.3 14.9; re23 3; ola 7h round 2 p7h-01, round 3 r2-01 for the layers).</summary>
+        Private Function DrawsWithoutEarlyTests(material As MaterialData, decalBase As DecalBaseStep) As Boolean
+            Dim prepassSin = Not Me.ParentModel.FramePrepassRuns AndAlso Me.ParentModel.DrawnByPrepass(material)
+#If DEBUG Then
+            ' Ola 7h tester (ShadowGate --ola7h hg / hl): the record WITH its early tests there (round 1), for a shape and a layer alike.
+            If Fo4GBufferConstants.GateMutantOn("p7h-gbuf-early") Then prepassSin = False
+#End If
+            Return decalBase <> DecalBaseStep.None OrElse prepassSin
+        End Function
+
+        ''' <summary>The program of a draw whose depth write has to follow the record's kill (DrawsWithoutEarlyTests) - a translucent
+        ''' decal's base draw, or the G-buffer draw of a prepass shape or overlay layer in a frame without its prepass: its colour
+        ''' program (<paramref name="colour"/>), or for a
+        ''' G-buffer record Fo4DeferredPrograms.RecordWithoutEarlyTests (the record without its early depth tests, when it has them),
+        ''' put in <paramref name="gbuf"/> so that ApplyMaterial sets that program's constants. Nothing when it does not exist.</summary>
+        Private Function RecordWithoutEarlyTests(colour As Shader_Base_Class, ByRef gbuf As Fo4GBufferDraw?) As Shader_Base_Class
             If Not gbuf.HasValue Then Return colour
             Dim d = gbuf.Value
-            d.Program = Me.ParentModel.ParentControl.SharedFo4Deferred.DecalBaseProgram(New Fo4Technique(d.Technique), EngineCpuRoute())
+            d.Program = Me.ParentModel.ParentControl.SharedFo4Deferred.RecordWithoutEarlyTests(New Fo4Technique(d.Technique), EngineCpuRoute())
             gbuf = d
             Return d.Program
         End Function
@@ -8830,17 +8976,31 @@ Public Class PreviewModel
         ''' draw (DecalBaseStep.Depth, ApplyDecalBaseState) or its base surface draw (DecalBaseStep.Surface, DrawDecalBaseSurface) instead of its
         ''' colour draw.</param>
         Public Sub Render(projection As Matrix4, ByRef camera As OrbitCamera, Optional ssePrepass As Boolean = False, Optional decalBase As DecalBaseStep = DecalBaseStep.None)
+            DrawMaterial(projection, camera, MeshData.Material, Nothing, ssePrepass, decalBase)
+        End Sub
 
+        ''' <summary>THE ONE DRAW of this mesh's geometry with a material: the shape's own (Render, <paramref name="layer"/> Nothing) or an
+        ''' overlay layer's (RenderOverlayLayer, <paramref name="material"/> = its OverlayMaterialData). A LooksMenu / RaceMenu overlay is, in
+        ''' the engine, a geometry of its own: F4EE clones the host (OverlayInterface.cpp:131-155, BSTriShape::CreateClone 0x1416D9F00 with the
+        ''' host's skin instance; its shader and alpha properties are COPIES of the host's, BSGeometry::CopyMembers 0x1416D4DB0) and applies
+        ''' the layer's material to the clone (ApplyMaterialData(shape, true)), and GetRenderPasses 0x14217A050 routes and draws the clone like
+        ''' any other geometry (D:\WinTmp\rc\re24\re.md 1-3, addenda 1-2). So a layer's draw is this one, every pass included: Fallout 4's
+        ''' z-prepass (DrawFo4EnginePrepass, with the layer's material), the G-buffer record over the engine layout it reads (EngineVaoFor),
+        ''' the tessellated record's patches (DrawGbuf) and the two-sided blended pair (ola 7h round 4: the hand-copied layer draw had none
+        ''' of the four). The geometry and its buffers are the host's (the clone shares its vertices and skin). What a layer adds: its own
+        ''' MaterialData, and its position from the host's engine vertex stage (EnginePositions, ola 3).</summary>
+        Private Sub DrawMaterial(projection As Matrix4, ByRef camera As OrbitCamera, material As MaterialData, layer As OverlayMaterialLayer,
+                                 ssePrepass As Boolean, decalBase As DecalBaseStep)
             If Not IsDrawable() Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
-            If Not ssePrepass AndAlso EngineSkipsEffectDraw(MeshData.Material) Then Exit Sub
+            If Not ssePrepass AndAlso EngineSkipsEffectDraw(material) Then Exit Sub
 #If DEBUG Then
-            If PreviewModel.GateDrawLog IsNot Nothing Then PreviewModel.GateDrawLog.Add((Me, decalBase, ssePrepass, Nothing))
+            If PreviewModel.GateDrawLog IsNot Nothing Then PreviewModel.GateDrawLog.Add((Me, decalBase, ssePrepass, layer))
 #End If
             ' FALLOUT 4'S Z-PREPASS: the engine's own draw - its program, constants, t0 and state (DrawFo4EnginePrepass) - and no colour
-            ' program's.
+            ' program's; a shape's or a layer's alike (the membership is one law, PreviewModel.DrawnByPrepass).
             If ssePrepass AndAlso Not Me.ParentModel.FrameIsSse Then
-                DrawFo4EnginePrepass(MeshData.Material, ResolveDrawFaceMode(MeshData.Material))
+                DrawFo4EnginePrepass(material, ResolveDrawFaceMode(material))
                 Exit Sub
             End If
             '=============================== MATRICES ===============================
@@ -8858,15 +9018,28 @@ Public Class PreviewModel
             '=============================== SHADER ===============================
             Dim gbuf As Fo4GBufferDraw? = Nothing
             Dim fx As Fo4EffectDraw? = Nothing
-            Dim shader = ColourDrawProgram(MeshData.Material, ssePrepass, gbuf, fx)
+            ' A layer's position = its host's engine vertex stage's (EnginePositions), captured before the layer's program is in use, when its
+            ' own VS positions as its host's does (LayerTakesHostPosition); the rest of the game's effect VS (uv, colour, falloff, TBN) is its
+            ' technique's transcribed b05 VS (ola 3).
+            Dim enginePos = layer IsNot Nothing AndAlso Not ssePrepass AndAlso LayerTakesHostPosition(material) AndAlso EnginePositions()
+            Dim shader = ColourDrawProgram(material, ssePrepass, gbuf, fx)
 #If DEBUG Then
             ' Ola 7f tester (ShadowGate, every run: [editview-census]): a colour draw of a normal frame given the edit views' program.
             If shader IsNot Nothing AndAlso shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader AndAlso
                Shader_Base_Class.DebugView = ShaderDebugView.None AndAlso Not MeshData.Shape.Wireframe Then PreviewModel.GateEditViewWithoutReason += 1
 #End If
-            If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
+            ' The record without its early depth tests when this draw's depth write has to follow its kill (DrawsWithoutEarlyTests:
+            ' a translucent decal's base, or a prepass shape or layer in a frame without its prepass; ola 7h rounds 2-3, re23 3).
+            Dim sinTempranas = DrawsWithoutEarlyTests(material, decalBase)
+#If DEBUG Then
+            ' Ola 7h tester round 3 (ShadowGate --ola7h hl), rebased onto round 4's one draw: a layer back to round 2's condition - only
+            ' the decals' base.
+            If layer IsNot Nothing AndAlso Fo4GBufferConstants.GateMutantOn("p7h-layer-early") Then sinTempranas = decalBase <> DecalBaseStep.None
+#End If
+            If shader IsNot Nothing AndAlso sinTempranas Then shader = RecordWithoutEarlyTests(shader, gbuf)
             If shader Is Nothing Then Exit Sub
             shader.Use()
+            If layer IsNot Nothing Then shader.SetBool("bEnginePosition", enginePos)
             shader.SetMatrix4("matProjection", projection)
             shader.SetMatrix4("matView", view)
             shader.SetMatrix4("matModel", model)
@@ -8874,11 +9047,11 @@ Public Class PreviewModel
             shader.SetMatrix4("matModelViewInverse", modelViewInverse)
             shader.SetMatrix3("mv_normalMatrix", normalMatrix)
             ' bModelSpace needed in vertex shader for MSN CPU skinning path
-            Dim materialBase = MeshData.Material.MaterialBase
+            Dim materialBase = material.MaterialBase
             shader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
-            ApplyMaterial(MeshData.Material, gbuf, fx)
+            ApplyMaterial(material, gbuf, fx)
 
-            ' GPU Skinning: bind SSBO and set uniforms
+            ' GPU Skinning: bind SSBO and set uniforms (a layer: the SAME SSBO / bone uniforms as its host - the geometry is shared)
             shader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
             Dim boneCount As Integer = If(MeshData.Meshgeometry.GPUBoneMatrices IsNot Nothing, MeshData.Meshgeometry.GPUBoneMatrices.Length, 0)
             shader.SetInt("uBoneCount", boneCount)
@@ -8887,18 +9060,23 @@ Public Class PreviewModel
             End If
 
             '=============================== DRAW ===============================
+            ' The engine buffer for a G-buffer record or an effect (their VS read the engine layout, ola 2 / ola 3); the app's VAO otherwise.
             GL.BindVertexArray(If(gbuf.HasValue, EngineVaoFor(EngineCpuRoute(), gbuf.Value.Technique),
                                   If(fx.HasValue, EffectVaoFor(EngineCpuRoute(), fx.Value.Technique), vao)))
+#If DEBUG Then
+            ' Ola 7h tester round 4 (ShadowGate --ola7h-r4t L): the layer's G-buffer record over the app's VAO again (the hand-copied layer draw's).
+            If layer IsNot Nothing AndAlso gbuf.HasValue AndAlso Fo4GBufferConstants.GateMutantOn("p7h-r4-layer-appvao") Then GL.BindVertexArray(vao)
+#End If
             ' Clean CPU-side zap: filter the element buffer to drop zapped triangles before drawing,
             ' so indexCount is correct for the DrawElements calls below. Cheap (re-uploads only when
             ' the zapped vertex set changes); no-op when ApplyZaps is off or nothing is zapped.
             EnsureZapIndexBuffer()
-            Dim mat = MeshData.Material.MaterialBase
-            Dim faceMode = ResolveDrawFaceMode(MeshData.Material)
-            Dim writeDepth As Boolean = ResolveColourDepthState(MeshData.Material).Write
+            Dim mat = material.MaterialBase
+            Dim faceMode = ResolveDrawFaceMode(material)
+            Dim writeDepth As Boolean = ResolveColourDepthState(material).Write
 
             If ssePrepass Then
-                ApplySsePrepassState(shader, MeshData.Material)
+                ApplySsePrepassState(shader, material)
                 ApplyFaceMode(faceMode)
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
                 UnbindMaterialSamplers()
@@ -8913,18 +9091,18 @@ Public Class PreviewModel
             End If
 
             Dim isTwoPassBlended As Boolean = False
-            If MeshData.Material.HasAlphaBlend AndAlso Not MeshData.Shape.Wireframe AndAlso faceMode = EffectiveFaceMode.DrawBoth Then
+            If material.HasAlphaBlend AndAlso Not MeshData.Shape.Wireframe AndAlso faceMode = EffectiveFaceMode.DrawBoth Then
                 isTwoPassBlended = True
             End If
 
             If decalBase = DecalBaseStep.Depth Then
-                ApplyDecalBaseState(shader, MeshData.Material, gbuf)
+                ApplyDecalBaseState(shader, material, gbuf)
                 ApplyFaceMode(faceMode)
                 DrawGbuf(shader)
                 EndDecalBaseDraw(shader, gbuf)
             ElseIf decalBase = DecalBaseStep.Surface Then
                 ApplyFaceMode(faceMode)
-                DrawDecalBaseSurface(shader, MeshData.Material, gbuf, fx)
+                DrawDecalBaseSurface(shader, material, gbuf, fx)
                 EndDecalBaseDraw(shader, gbuf)
             ElseIf isTwoPassBlended Then
                 GL.Enable(EnableCap.CullFace)
@@ -8948,11 +9126,18 @@ Public Class PreviewModel
             End If
 
             ' SSE billboard list: every effect pass leaves mode 4 for the next (RestoreGeometry 0x141557FF1..8019).
-            If Me.ParentModel.FrameIsSse AndAlso mat IsNot Nothing AndAlso MeshData.Material.SsePass().List = SseRenderPassLaw.SseList.Billboard Then
+            If Me.ParentModel.FrameIsSse AndAlso mat IsNot Nothing AndAlso material.SsePass().List = SseRenderPassLaw.SseList.Billboard Then
                 Me.ParentModel.FrameBillboardEffectDrawn = True
             End If
 
             UnbindMaterialSamplers()
+
+            ' The program is shared with every other draw of the technique: a layer's position source is reset with its SSBO.
+            If enginePos Then
+                shader.Use()
+                shader.SetBool("bEnginePosition", False)
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 14, 0)
+            End If
 
             ' (Opcional) restaurar estado si luego renderizas más cosas:
             GL.DepthMask(True)
@@ -9142,6 +9327,36 @@ Public Class PreviewModel
         ' how ApplyMaterial reads MeshData.Shape directly (~2905-2925).
         Private _overlayMaterialCache As Dictionary(Of OverlayMaterialLayer, MaterialData)
 
+        ''' <summary>Ola 7h round 4d: THE pruning of the per-layer MaterialData cache to the shape's current layers. A host rebuilds its
+        ''' layers as new OverlayMaterialLayer instances (NPC Manager's RefreshOverlayLayersLive: the overlay sliders and the skin tone /
+        ''' face tint live edits), so an entry whose layer is no longer in MeshData.Shape.OverlayLayers is dropped - no layers, no
+        ''' entries. A MaterialData owns no GL object (its textures are the shared texture dictionary's, by path; its engine state is
+        ''' per frame), so dropping the reference releases it. Called once per frame for every mesh by PreviewModel.CollectOverlayItems,
+        ''' the frame's one walk of the layer lists; GetOverlayMaterialData stays the one creator.</summary>
+        Friend Sub PruneOverlayMaterialCache()
+#If DEBUG Then
+            ' Ola 7h tester round 4d (ShadowGate --ola7h-r4t P): the cache is never pruned again.
+            If Fo4GBufferConstants.GateMutantOn("p7h-r4d-no-prune") Then Exit Sub
+#End If
+            If _overlayMaterialCache Is Nothing OrElse _overlayMaterialCache.Count = 0 Then Exit Sub
+            Dim vigentes = MeshData?.Shape?.OverlayLayers
+            Dim fuera As List(Of OverlayMaterialLayer) = Nothing
+            For Each k In _overlayMaterialCache.Keys
+                If vigentes IsNot Nothing AndAlso vigentes.Contains(k) Then Continue For
+                If fuera Is Nothing Then fuera = New List(Of OverlayMaterialLayer)
+                fuera.Add(k)
+            Next
+            If fuera Is Nothing Then Exit Sub
+            For Each k In fuera : _overlayMaterialCache.Remove(k) : Next
+        End Sub
+
+#If DEBUG Then
+        ''' <summary>GATE ONLY (ShadowGate --ola7h-r4 [p], round 4d): the number of entries of the per-layer MaterialData cache.</summary>
+        Friend Function GateOverlayMaterialCacheCount() As Integer
+            Return If(_overlayMaterialCache Is Nothing, 0, _overlayMaterialCache.Count)
+        End Function
+#End If
+
         ''' <summary>Ola 7e: the overlay layer whose MaterialData is <paramref name="material"/> (GetOverlayMaterialData's cache), Nothing for
         ''' the shape's own material: a notice raised while ApplyMaterial draws a layer names the layer (NoticeName).</summary>
         Private Function OverlayLayerOf(material As MaterialData) As OverlayMaterialLayer
@@ -9197,120 +9412,13 @@ Public Class PreviewModel
             Return paths
         End Function
 
-        ''' <summary>Dibuja UNA capa de material de overlay sobre la geometria YA deformada (morph + skin) de
-        ''' esta malla, como decal coplanar: es el modelo de overlays/tatuajes de LooksMenu. REUSA el VAO/SSBO/
-        ''' EBO/indexCount existentes (sin re-skin ni re-morph): mismos vertices, mismo skinning, solo cambia el
-        ''' material bindeado.
-        ''' <para>Estado GL del decal coplanar: depth-test Lequal para que el fragmento coplanar pase contra la
-        ''' profundidad de la base, DepthMask(False) para que el overlay NUNCA escriba depth, y el blend que
-        ''' configure ApplyMaterial. El culling usa el mismo modo efectivo que el draw base. Todo se restaura al
-        ''' final igual que en <see cref="Render"/>.</para></summary>
+        ''' <summary>Draws ONE overlay layer (LooksMenu / RaceMenu) over this mesh's geometry - morphed and skinned already, the host's
+        ''' buffers - with the layer's material (OverlayMaterialData): DrawMaterial, the one draw of a shape and a layer (the engine's overlay
+        ''' is a geometry of its own, F4EE's clone of the host, routed and drawn like any other: re24).</summary>
         Public Sub RenderOverlayLayer(projection As Matrix4, ByRef camera As OrbitCamera, layer As OverlayMaterialLayer, Optional ssePrepass As Boolean = False,
                                       Optional decalBase As DecalBaseStep = DecalBaseStep.None)
             If layer Is Nothing OrElse layer.Material Is Nothing Then Exit Sub
-            If Not IsDrawable() Then Exit Sub
-            If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
-            If Not ssePrepass AndAlso EngineSkipsEffectDraw(OverlayMaterialData(layer)) Then Exit Sub
-#If DEBUG Then
-            If PreviewModel.GateDrawLog IsNot Nothing Then PreviewModel.GateDrawLog.Add((Me, decalBase, ssePrepass, layer))
-#End If
-
-            '=============================== MATRICES (identical to Render) ===============================
-            Dim model As Matrix4 = MeshData.Transform
-            Dim view As Matrix4 = camera.GetViewMatrix()
-            Dim modelView As Matrix4 = view * model
-
-            Dim normalMatrix As New OpenTK.Mathematics.Matrix3(modelView)
-            normalMatrix.Invert()
-            normalMatrix.Transpose()
-
-            Dim modelViewInverse As Matrix4 = modelView.Inverted()
-
-            '=============================== SHADER ===============================
-            ' Bind the LAYER's material (transient MaterialData with OverrideRelatedMaterial).
-            Dim overlayMat = GetOverlayMaterialData(layer)
-            Dim gbuf As Fo4GBufferDraw? = Nothing
-            Dim fx As Fo4EffectDraw? = Nothing
-            ' The position of the overlay = this shape's engine vertex stage's (EnginePositions), captured before the overlay's
-            ' program is in use; the rest of the game's effect VS (uv, colour, falloff, TBN) is its technique's transcribed b05 VS (ola 3).
-            Dim enginePos = Not ssePrepass AndAlso EnginePositions()
-            Dim shader = ColourDrawProgram(overlayMat, ssePrepass, gbuf, fx)
-#If DEBUG Then
-            ' Ola 7f tester (ShadowGate, every run: [editview-census]): an overlay layer's colour draw given the edit views' program.
-            If shader IsNot Nothing AndAlso shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader AndAlso
-               Shader_Base_Class.DebugView = ShaderDebugView.None AndAlso Not MeshData.Shape.Wireframe Then PreviewModel.GateEditViewWithoutReason += 1
-#End If
-            If shader IsNot Nothing AndAlso decalBase <> DecalBaseStep.None Then shader = DecalBaseProgram(shader, gbuf)
-            If shader Is Nothing Then Exit Sub
-            shader.Use()
-            shader.SetBool("bEnginePosition", enginePos)
-            shader.SetMatrix4("matProjection", projection)
-            shader.SetMatrix4("matView", view)
-            shader.SetMatrix4("matModel", model)
-            shader.SetMatrix4("matModelView", modelView)
-            shader.SetMatrix4("matModelViewInverse", modelViewInverse)
-            shader.SetMatrix3("mv_normalMatrix", normalMatrix)
-
-            Dim materialBase = overlayMat.MaterialBase
-            shader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
-            ApplyMaterial(overlayMat, gbuf, fx)
-
-            ' GPU Skinning: bind the SAME SSBO / bone uniforms as the base draw (geometry is shared).
-            shader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
-            Dim boneCount As Integer = If(MeshData.Meshgeometry.GPUBoneMatrices IsNot Nothing, MeshData.Meshgeometry.GPUBoneMatrices.Length, 0)
-            shader.SetInt("uBoneCount", boneCount)
-            If ssbo_BoneMatrices > 0 Then
-                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, ssbo_BoneMatrices)
-            End If
-
-            '=============================== DRAW ===============================
-            ' The host's engine buffer for an effect layer (its b05 VS reads the engine layout, ola 3); the app's VAO otherwise.
-            GL.BindVertexArray(If(fx.HasValue, EffectVaoFor(EngineCpuRoute(), fx.Value.Technique), vao))
-            EnsureZapIndexBuffer()
-            Dim faceMode = ResolveDrawFaceMode(overlayMat)
-
-            ' Depth/blend/offset come from ApplyMaterial exactly as for any shape: the overlay is a shape of its
-            ' own in the engine (an F4EE / skee clone), routed by its material (decal or alpha list). Its
-            ' geometry and vertex path are the base's, so the coplanar depth is identical and LESS_EQUAL passes.
-            If ssePrepass Then ApplySsePrepassState(shader, overlayMat)
-            If decalBase = DecalBaseStep.Depth Then ApplyDecalBaseState(shader, overlayMat, gbuf)
-            ApplyFaceMode(faceMode)
-            If decalBase = DecalBaseStep.Surface Then
-                DrawDecalBaseSurface(shader, overlayMat, gbuf, fx)
-            Else
-                GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
-            End If
-            UnbindMaterialSamplers()
-            If ssePrepass Then shader.SetBool("bSsePrepass", False)
-            If decalBase <> DecalBaseStep.None Then EndDecalBaseDraw(shader, gbuf)
-            If Not ssePrepass AndAlso Me.ParentModel.FrameIsSse AndAlso overlayMat.SsePass().List = SseRenderPassLaw.SseList.Billboard Then
-                Me.ParentModel.FrameBillboardEffectDrawn = True
-            End If
-
-            ' Unbind SSBO after draw — same hygiene as Render.
-            If ssbo_BoneMatrices > 0 Then
-                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
-            End If
-            ' The program is shared with every other draw of the technique: the overlay's position source is reset with its SSBO.
-            If enginePos Then
-                shader.Use()
-                shader.SetBool("bEnginePosition", False)
-                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 14, 0)
-            End If
-
-            ' Restore GL state exactly like Render (~2787-2792). DepthFunc is intentionally left at
-            ' Lequal: that is the prior value here (the one-time GL init sets Lequal @ line 911 and
-            ' ApplyMaterial re-sets Lequal every draw @ line 3344) — Render itself never restores
-            ' DepthFunc, so re-setting it would diverge from the inert base path. The Lequal we set
-            ' above (for the coplanar decal) already equals the frame-wide default, so later passes/
-            ' frames are unaffected. (The spec's "restore to Less" assumed a Less default this code
-            ' does not have.)
-            GL.DepthMask(True)
-            GL.DepthFunc(DepthFunction.Lequal)
-            GL.Disable(EnableCap.Blend)
-            GL.Disable(EnableCap.PolygonOffsetFill)
-            GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
-            GL.CullFace(TriangleFace.Back)
+            DrawMaterial(projection, camera, GetOverlayMaterialData(layer), layer, ssePrepass, decalBase)
         End Sub
 
         ''' <summary>What a blended draw adds to the coverage of the HDR target, from its SOURCE blend factor
@@ -10482,15 +10590,15 @@ Public Class PreviewModel
             Dim skinned = (technique And Fo4EffectTechnique.TechSkinned) <> 0UI
             Dim falloff = (technique And (Fo4EffectTechnique.TechFalloff Or Fo4EffectTechnique.TechRgbFalloff)) <> 0UI
             Dim env = (technique And Fo4EffectTechnique.TechEnvmap) <> 0UI
-            Dim worldCond = (falloff AndAlso Not skinned) OrElse env, nodeWorld = skinned
+            Dim worldCond = (falloff AndAlso Not skinned) OrElse env
 #If DEBUG Then
             ' ShadowGate --fo4-effect-constants' mutants of the writers' conditions (Fo4GBufferConstants.GateMutantOn, the one switch)
             If Fo4GBufferConstants.GateMutantOn("efx-world-cond") Then worldCond = Not worldCond
-            If Fo4GBufferConstants.GateMutantOn("efx-world-node") Then nodeWorld = Not nodeWorld
 #End If
-            If Not skinned Then p.SetVector4Array("WorldViewProj", Fo4EffectConstants.WorldViewProj(EngineGeometryModel(), fr))
-            If worldCond Then p.SetVector4Array("World", Fo4EffectConstants.World(If(nodeWorld, EngineNodeModel(), EngineGeometryModel()), fr.Eye))
-            If env Then p.SetVector4("EyePosition", Fo4EffectConstants.EyePosition(EngineGeometryModel(), fr.Eye, skinned))
+            Dim geomWorld = EffectGeometryWorld()
+            If Not skinned Then p.SetVector4Array("WorldViewProj", Fo4EffectConstants.WorldViewProj(geomWorld, fr))
+            If worldCond Then p.SetVector4Array("World", Fo4EffectConstants.World(geomWorld, fr.Eye))
+            If env Then p.SetVector4("EyePosition", Fo4EffectConstants.EyePosition(geomWorld, fr.Eye, skinned))
             If falloff Then
                 p.SetVector4("FalloffData", Fo4EffectConstants.FalloffData(material.RestValue(RestVariable.FalloffStartAngle), material.RestValue(RestVariable.FalloffStopAngle),
                                                                           material.RestValue(RestVariable.FalloffStartOpacity), material.RestValue(RestVariable.FalloffStopOpacity)))
@@ -10510,6 +10618,28 @@ Public Class PreviewModel
             p.SetVector4Array("cb12_fog", fr.Fog)
             BindEnginePalette(cpuRoute)
         End Sub
+
+        ''' <summary>The geometry's world [geom + 0x70] an effect's VS reads (SG 0x14222636A..390, 0x142226260..267; the SKINNED World,
+        ''' 0x142226DA3..E2F, reads the same): for a geometry the engine skins (MaterialData.EngineGeometryHasSkin: the NIF's skin instance)
+        ''' its node's world (EngineNodeModel), not its palette's first bone - a rigid VS over a skinned geometry is an F4EE effect layer whose
+        ''' .bgem did not load (LayerTakesHostPosition). An F4EE clone's world is its host's: F4EE hangs it from the biped's parent node
+        ''' (AttachSkinnedObject's 3rd argument, f4ee main.cpp:424-442 -> OverlayInterface.cpp:41-46, :114-117) under two new NiNodes (local
+        ''' identity: NiAVObject ctor 0x1416C91F0 -> 0x1416B6A50) with the host's local (CopyMembers), and the biped hangs the host from that
+        ''' same parent (AttachChild 0x14035EEA3, or a new NiNode under it 0x14035EC52..ECCA; RE_FO4_SKINNED_ATTACH 1.1). For a rigid geometry,
+        ''' EngineGeometryModel: the world it is drawn with - also a rigid piece the app mounts on a bone with a synthetic anchor skin (a robot
+        ''' chunk's rigid shape hangs, unskinned, in the clone under its connect point's node, RE_FO4_SKINNED_ATTACH 9.2, 0x14186E240 /
+        ''' 0x14186E4CD..4FB; the app draws that world as the anchor bone of its palette). Not the node's NIF rest (EngineNodeModel): that drops
+        ''' the mount (the Protectron's LightPlane at the foot, 24-oct-2026). Gate: ShadowGate --ola7h-r4t W.</summary>
+        Friend Function EffectGeometryWorld() As Matrix4
+            Dim engineSkin = MaterialData.EngineGeometryHasSkin(MeshData.Shape?.NifShape)
+#If DEBUG Then
+            ' efx-world-node: a skinned geometry's world from its palette's first bone instead of its node's; efx-world-appskin: the round-4c
+            ' predicate, the app's IsSkinned (synthetic anchor skin included) instead of the engine's skin.
+            If Fo4GBufferConstants.GateMutantOn("efx-world-node") Then Return EngineGeometryModel()
+            If Fo4GBufferConstants.GateMutantOn("efx-world-appskin") Then engineSkin = MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.IsSkinned
+#End If
+            Return If(engineSkin, EngineNodeModel(), EngineGeometryModel())
+        End Function
 
         ''' <summary>Ola 3: the world NiTransform of a skinned geometry's node ([geom + 0x70], the World of an ENVMAP + SKINNED effect,
         ''' SG 0x142226DA3..E2F): the shape's global transform in its NIF (SkinningHelper.ShapeGlobalTransform) times MeshData.Transform;
@@ -12321,6 +12451,18 @@ Public Class PreviewModel
     ''' <summary>C4: this frame's texture paths absent from the game's data: path -&gt; the shapes naming it.</summary>
     Friend ReadOnly FrameMissingTextures As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
 
+    ''' <summary>This frame's LooksMenu overlay material paths that did not load: path -&gt; the layers naming it (user decision
+    ''' 22-oct-2026, OverlayMaterialLayer.MaterialNotFound).</summary>
+    Friend ReadOnly FrameMissingOverlayMaterials As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Ola 7h round 4e: this frame's LooksMenu overlay material paths whose file exists but could not be read whole: path -&gt;
+    ''' the layers naming it (OverlayMaterialLayer.MaterialUnreadable).</summary>
+    Friend ReadOnly FrameUnreadableOverlayMaterials As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Ola 7h round 4e (re28 1): this frame's material files whose JSON makes the game abort: "path: key" -&gt; the shapes and
+    ''' layers naming them (FO4UnifiedMaterial_Class.ClaveQueCierraElJuego).</summary>
+    Friend ReadOnly FrameMaterialFileCrashes As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
     ''' <summary>C4: this frame's empty texture slots sampled with a non-neutral default: slot name -&gt; shapes.</summary>
     Friend ReadOnly FrameEmptyTextureSlots As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
@@ -12374,6 +12516,16 @@ Public Class PreviewModel
         UndefinedInGame
         ''' <summary>C4: a texture path absent from the game's data (FrameMissingTextures).</summary>
         MissingTexture
+        ''' <summary>A LooksMenu overlay template's material file that did not load (FrameMissingOverlayMaterials): the game applies
+        ''' nothing to the layer (F4EE OverlayInterface.cpp:178) and the preview draws it as the game does (OverlayMaterialLayer.FromF4ee).
+        ''' User decision 22-oct-2026: a warning.</summary>
+        MissingOverlayMaterial
+        ''' <summary>A LooksMenu overlay template's material file that exists but could not be read whole (FrameUnreadableOverlayMaterials):
+        ''' the game applies what its reader reached and the BSShaderData ctor's values beyond (re27 1), and so does the preview.</summary>
+        UnreadableOverlayMaterial
+        ''' <summary>A material file whose JSON value has a type the engine's reader aborts on (FrameMaterialFileCrashes): the game
+        ''' closes; the preview draws the BSShaderData ctor's values (re28 1). Coordinator decision 22-oct-2026: an error.</summary>
+        MaterialFileCrash
         ''' <summary>C4: an empty texture slot the game samples with a default that is not neutral (FrameEmptyTextureSlots).</summary>
         EmptyTextureSlot
         ''' <summary>C10 rev-04 (user decision 7-oct-2026): the game draws it with a value its shader controller writes at the clock's
@@ -12532,6 +12684,12 @@ Public Class PreviewModel
         SseEyeWithoutEyeData
         ' ---- the texture kinds
         MissingTexture
+        ''' <summary>A layer's overlay material that did not load (RenderableMesh.ReportMissingOverlayMaterials, the one producer).</summary>
+        OverlayMaterialNotFound
+        ''' <summary>A layer's overlay material that could not be read whole (RenderableMesh.ReportMissingOverlayMaterials, the one producer).</summary>
+        OverlayMaterialUnreadable
+        ''' <summary>A shape's or layer's material file whose JSON makes the game abort (RenderableMesh.ReportMaterialFileCrash, the one producer).</summary>
+        MaterialFileWrongType
         RejectedTexture
         CrashingTexture
         EmptyTextureSlot
@@ -12597,6 +12755,9 @@ Public Class PreviewModel
                  FrameNoticeId.SseEyeWithoutEyeData
                 Return (FrameNoticeKind.UndefinedInGame, W)                         ' what the game leaves undefined
             Case FrameNoticeId.MissingTexture : Return (FrameNoticeKind.MissingTexture, E)
+            Case FrameNoticeId.OverlayMaterialNotFound : Return (FrameNoticeKind.MissingOverlayMaterial, W)   ' user decision 22-oct-2026
+            Case FrameNoticeId.OverlayMaterialUnreadable : Return (FrameNoticeKind.UnreadableOverlayMaterial, W)   ' coordinator 22-oct-2026, re27 1
+            Case FrameNoticeId.MaterialFileWrongType : Return (FrameNoticeKind.MaterialFileCrash, E)   ' coordinator 22-oct-2026, re28 1
             Case FrameNoticeId.RejectedTexture : Return (FrameNoticeKind.RejectedTexture, E)
             Case FrameNoticeId.CrashingTexture : Return (FrameNoticeKind.CrashingTexture, E)
             Case FrameNoticeId.EmptyTextureSlot : Return (FrameNoticeKind.EmptyTextureSlot, W)
@@ -12644,6 +12805,9 @@ Public Class PreviewModel
             Case FrameNoticeKind.DrawnDifferently : Return FrameDrawnDifferently
             Case FrameNoticeKind.UndefinedInGame : Return FrameUndefinedInGame
             Case FrameNoticeKind.MissingTexture : Return FrameMissingTextures
+            Case FrameNoticeKind.MissingOverlayMaterial : Return FrameMissingOverlayMaterials
+            Case FrameNoticeKind.UnreadableOverlayMaterial : Return FrameUnreadableOverlayMaterials
+            Case FrameNoticeKind.MaterialFileCrash : Return FrameMaterialFileCrashes
             Case FrameNoticeKind.RejectedTexture : Return FrameRejectedTextures
             Case FrameNoticeKind.CrashingTexture : Return FrameCrashingTextures
             Case FrameNoticeKind.EmptyTextureSlot : Return FrameEmptyTextureSlots
@@ -12721,6 +12885,9 @@ Public Class PreviewModel
             (FrameNoticeKind.DrawnDifferently, Function(r, n) $"Drawn differently by the preview ({shapes(n)}): {r}"),
             (FrameNoticeKind.UndefinedInGame, Function(r, n) $"Undefined in the game ({shapes(n)}): {r}"),
             (FrameNoticeKind.MissingTexture, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
+            (FrameNoticeKind.MissingOverlayMaterial, Function(r, n) $"Overlay material not found ({shapes(n)}): {r}"),
+            (FrameNoticeKind.UnreadableOverlayMaterial, Function(r, n) $"Overlay material unreadable ({shapes(n)}): {r}"),
+            (FrameNoticeKind.MaterialFileCrash, Function(r, n) $"Material {r} has the wrong type; the game would crash ({shapes(n)})"),
             (FrameNoticeKind.RejectedTexture, Function(r, n) $"Texture the game cannot create, sampled as zero ({shapes(n)}): {r}"),
             (FrameNoticeKind.CrashingTexture, Function(r, n) $"Texture that crashes the game ({shapes(n)}): {r}"),
             (FrameNoticeKind.EmptyTextureSlot, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
@@ -12770,6 +12937,9 @@ Public Class PreviewModel
         FrameDrawnDifferently.Clear()
         FrameUndefinedInGame.Clear()
         FrameMissingTextures.Clear()
+        FrameMissingOverlayMaterials.Clear()
+        FrameUnreadableOverlayMaterials.Clear()
+        FrameMaterialFileCrashes.Clear()
         FrameRejectedTextures.Clear()
         FrameCrashingTextures.Clear()
         FrameEmptyTextureSlots.Clear()
@@ -13302,8 +13472,10 @@ Public Class PreviewModel
 
     ''' <summary>THE Z-PREPASS'S MEMBERSHIP: does this frame's z-prepass draw the material <paramref name="md"/> (a shape's or an
     ''' overlay layer's)? Skyrim SE: SseRenderPassLaw InPrepass; Fallout 4: Fo4RenderPassLaw InPrepass and drawable by the preview
-    ''' (no Fo4PreviewGap). Its readers: DrawOpaqueStage (which draws it, when the frame's prepass is on: not GateDisablePrepass) and
-    ''' Fallout 4's edit views, whose cut of such a shape is the prepass's (RenderableMesh ApplyFo4EditViewDepthCut; ola 7f round 2).</summary>
+    ''' (no Fo4PreviewGap). Its readers: DrawOpaqueStage (which draws it, when the frame runs its prepass: FramePrepassRuns), the
+    ''' G-buffer draw of a shape or overlay layer in a frame without it (RenderableMesh.DrawsWithoutEarlyTests, read by Render and
+    ''' RenderOverlayLayer: the record without early tests) and Fallout 4's edit views,
+    ''' whose cut of such a shape is the prepass's (RenderableMesh ApplyFo4EditViewDepthCut; ola 7f round 2).</summary>
     Friend Function DrawnByPrepass(md As RenderableMesh.MaterialData) As Boolean
         If md?.MaterialBase Is Nothing Then Return False
         Return If(FrameIsSse, md.SsePass().InPrepass,
@@ -13315,7 +13487,7 @@ Public Class PreviewModel
     Private Sub DrawOpaqueStage(projection As Matrix4, camera As OrbitCamera)
         FrameBillboardEffectDrawn = False
         Dim enPrepass = Function(md As RenderableMesh.MaterialData) DrawnByPrepass(md)
-        If Not GateDisablePrepass Then
+        If FramePrepassRuns Then
             GL.ColorMask(False, False, False, False)
             For Each mesh In meshes
                 If mesh Is Nothing OrElse mesh.MeshData?.Shape Is Nothing OrElse mesh.MeshData.Shape.Wireframe Then Continue For
@@ -13469,6 +13641,27 @@ Public Class PreviewModel
     ''' opaque shapes without alpha test (they must be identical).</summary>
     Friend Shared GateDisablePrepass As Boolean = False
 
+    ''' <summary>THIS FRAME RUNS ITS Z-PREPASS (DrawOpaqueStage) - the one owner its readers ask: DrawOpaqueStage, and
+    ''' RenderableMesh.ResolveColourDepthState / DrawsWithoutEarlyTests (a prepass shape or overlay layer of a frame without it writes
+    ''' its own depth, from its record without early tests: Render, RenderOverlayLayer). Skyrim SE: always (its opaque batch tests EQUAL against it), but for GateDisablePrepass. Fallout 4:
+    ''' its deferred frame (FrameUsesFo4Deferred), whose G-buffer draws a prepass shape without writing depth; NOT its debug-view
+    ''' frame (ola 7h round 2, p7h-02, user decision 21-oct-2026): there every shape is drawn by the edit views' program, whose VS
+    ''' (the app's VBO and matrices) is not the prepass's (the engine's VAO and cb2 rows) - testing LEQUAL without writing against
+    ''' the prepass's depth, a view lost the pixels where its depth came 1-3 D24 units farther (z-fight: NukaBottleMountain
+    ''' -109,923 px, DismembAngler -1,088). There the views write their own depth (ResolveColourDepthState) with the prepass's cut
+    ''' they run (ApplyFo4EditViewDepthCut, Fo4GPre_rec3930), so the prepass has no reader in that frame and is not drawn.</summary>
+    Friend ReadOnly Property FramePrepassRuns As Boolean
+        Get
+            Dim corre = Not GateDisablePrepass AndAlso (FrameIsSse OrElse FrameUsesFo4Deferred)
+#If DEBUG Then
+            ' Ola 7h tester round 2 (ShadowGate --ola7h h5 / hz): Fallout 4's debug-view frame runs the prepass again (round 1: the views
+            ' test their own VS against its depth without writing).
+            If Fo4GBufferConstants.GateMutantOn("p7h-debug-prepass") AndAlso Not GateDisablePrepass AndAlso Not FrameIsSse Then corre = True
+#End If
+            Return corre
+        End Get
+    End Property
+
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene. True throws once right after BeginFo4GBuffer (then resets
     ''' itself): the aborted G-buffer stage whose GL state EndFo4Stage must undo.</summary>
     Friend Shared GateFo4ThrowInStage As Boolean = False
@@ -13543,6 +13736,8 @@ Public Class PreviewModel
             If mesh?.MeshData?.Shape Is Nothing Then Continue For
             If Not mesh.IsPrecombinedWithoutGeometry() AndAlso Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
             mesh.ReportUndrawn(Nothing)
+            mesh.ReportMissingOverlayMaterials()
+            mesh.ReportMaterialFileCrash()
         Next
         For Each it In AllOverlayItems()
             it.Mesh.ReportUndrawn(it.Layer)
@@ -13602,6 +13797,8 @@ Public Class PreviewModel
         _ovlBillboard.Clear() : _ovlForwardEffect.Clear() : _ovlLodLandscape.Clear() : _ovlNoColourPass.Clear()
         For Each mesh In meshes
             If mesh Is Nothing OrElse mesh.MeshData Is Nothing Then Continue For
+            ' Ola 7h round 4d: the per-layer MaterialData cache follows the current layers (RenderableMesh.PruneOverlayMaterialCache).
+            mesh.PruneOverlayMaterialCache()
             Dim layers = mesh.MeshData.Shape?.OverlayLayers
             If layers Is Nothing OrElse layers.Count = 0 Then Continue For
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For

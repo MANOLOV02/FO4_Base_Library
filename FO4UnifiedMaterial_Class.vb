@@ -336,6 +336,8 @@ Public Class FO4UnifiedMaterial_Class
         copy._nifAlphaFlags = _nifAlphaFlags
         copy._nifAlphaThreshold = _nifAlphaThreshold
         copy._materialPayloadApplied = _materialPayloadApplied
+        copy._payloadIlegible = _payloadIlegible
+        copy._tipoIncorrecto = _tipoIncorrecto
         copy._fileBlendRaw = _fileBlendRaw
         copy._nifIsFo4 = _nifIsFo4
         copy._applyArg3 = _applyArg3
@@ -842,6 +844,11 @@ Public Class FO4UnifiedMaterial_Class
     Private _nifAlphaFlags As UShort = 0
     Private _nifAlphaThreshold As Byte = 0
     Private _materialPayloadApplied As Boolean = False
+    ''' <summary>Ola 7h round 4e (re27 1): why MaterialLib could not read the applied file, read then as the engine reads it
+    ''' (MaterialFileReader.LecturaMaterial.Ilegible); Nothing for a full read.</summary>
+    Private _payloadIlegible As String = Nothing
+    ''' <summary>Ola 7h round 4e (re28 1): the JSON key whose type makes the game abort (MaterialFileReader.LecturaMaterial.TipoIncorrecto).</summary>
+    Private _tipoIncorrecto As String = Nothing
     ''' <summary>The file's blend pair when MaterialLib cannot represent it (MaterialFileReader); applies while the mode
     ''' stays Unknown.</summary>
     Private _fileBlendRaw As MaterialFileReader.BlendCrudoArchivo
@@ -3755,6 +3762,39 @@ Public Class FO4UnifiedMaterial_Class
         Underlying_Material.AlphaTestRef = s.TestRef
     End Sub
 
+    ''' <summary>THE MATERIAL OF THE BSEffectShaderProperty F4EE CREATES for an effect overlay whose material file does not load
+    ''' (OverlayInterface.cpp:166-169 BSEffectShaderProperty::Create; LoadMaterialFile fails, so ApplyMaterialData is not called,
+    ''' :177-179): the property's ctor 0x1421774D0 sets the shared default effect material [0x143E716B0] (SetMaterial(prop, mat, 0),
+    ''' 0x1421774F8..4FF), built once by 0x142224CD0 with the ctor 0x1422242F0 over the base ctor 0x1421DE210 (D:\WinTmp\rc\re25\re.md 2;
+    ''' the field census of both ctors: D:\WinTmp\rc\ola7h\r4\re\ctor_out.txt; layout f4se NiMaterials.h, BSShaderMaterial and
+    ''' BSEffectShaderMaterial). Every member the two ctors write, as this class holds it:
+    ''' <list type="bullet">
+    ''' <item>UV offset 0 and scale 1 (+0x0C..0x28, 0x1421DE219..249);</item>
+    ''' <item>falloff start / stop angle and opacity +0x38..0x44: 0 (0x14222430A..30E);</item>
+    ''' <item>kBaseColor +0x48..0x54 = (1, 1, 1, 1) - its .a is the material alpha (0x142224312..319);</item>
+    ''' <item>the textures +0x58..0x78 = the globals DiffuseMap [0x143D872B0], NormalMap, EyeCube, White, NormalMap (0x14222431D..3B4)
+    ''' and their paths +0x88..0xA8 empty (0x1422243B8..403): empty paths here, which EngineDefaultTextureLaw.Fo4Effect resolves to the
+    ''' ctor's defaults - the base is the default DiffuseMap, so TEXTURE (bit 2) is off and t0 is not bound (0x14217818A..1BE,
+    ''' Fo4EffectTechnique.Technique);</item>
+    ''' <item>soft depth +0x80 = 100 and base colour scale +0x84 = 1 (0x1422243BF..3C9); environment mask scale +0xB0 = 1, clamp +0xB4 = 3
+    ''' (wrap S and T: TileU and TileV), lighting influence +0xB5 = 0xFF (1.0), env map min LOD +0xB6 = 0 (0x14222440B..41E).</item>
+    ''' </list>
+    ''' No file is applied (ArchivoFo4Aplicado False: the property keeps its ctor's flags, Fo4EffectTechnique.EngineFlags with overlay).
+    ''' The alpha state is the clone's NiAlphaProperty, a copy of the host's (BSGeometry::CopyMembers 0x1416D4DB0, re24 addendum 1):
+    ''' the NIF alpha of <paramref name="shap"/> in <paramref name="nif"/> (ApplyAlphaPropertyFromNif), which nothing else changes.</summary>
+    Public Shared Function Fo4EngineDefaultEffectMaterial(shap As INiShape, nif As Nifcontent_Class_Manolo) As FO4UnifiedMaterial_Class
+        Dim m As New FO4UnifiedMaterial_Class()
+        m.ApplyAlphaPropertyFromNif(shap, nif)
+        m.UOffset = 0.0F : m.VOffset = 0.0F : m.UScale = 1.0F : m.VScale = 1.0F
+        m.FalloffStartAngle = 0.0F : m.FalloffStopAngle = 0.0F : m.FalloffStartOpacity = 0.0F : m.FalloffStopOpacity = 0.0F
+        m.BaseColor = System.Drawing.Color.FromArgb(255, 255, 255, 255)
+        m.Diffuse_or_Base_Texture = "" : m.GreyscaleTexture = "" : m.EnvmapTexture = "" : m.NormalTexture = "" : m.EnvmapMaskTexture = ""
+        m.SoftDepth = 100.0F : m.BaseColorScale = 1.0F
+        m.EnvironmentMappingMaskScale = 1.0F : m.TileU = True : m.TileV = True : m.LightingInfluence = 1.0F : m.EnvmapMinLOD = 0
+        m.ClearDirty()
+        Return m
+    End Function
+
     ''' <summary>FO4 y el payload binario de un .bgsm/.bgem se aplico de verdad: es la condicion con la que el motor
     ''' deja que el archivo mande sobre el bloque inline (la misma que usa <see cref="ResolveEngineAlpha"/>). Function a
     ''' proposito: GetDifferences refleja propiedades.</summary>
@@ -3765,6 +3805,26 @@ Public Class FO4UnifiedMaterial_Class
     ''' <summary>La shape NOMBRA un archivo de material que el motor aplicaria, pero la app no pudo leer su payload
     ''' (archivo vacio): el wrapper quedo con los defaults del tipo, NO con los datos del archivo.
     ''' Function a proposito: GetDifferences refleja propiedades.</summary>
+    ''' <summary>Ola 7h round 4e (re27 1): the applied file could not be read whole as MaterialLib reads it and was read as the engine
+    ''' reads it (partial, the BSShaderData ctor's values beyond; or nothing, a 0-byte file the overlay loader applies): why, else
+    ''' Nothing. Function a proposito: GetDifferences refleja propiedades.</summary>
+    Public Function PayloadIlegibleParaElMotor() As String
+        Return _payloadIlegible
+    End Function
+
+    ''' <summary>Ola 7h round 4e (re28 1): the JSON key whose value's type makes the game abort; the material holds the BSShaderData
+    ''' ctor's values. Nothing otherwise. Function a proposito: GetDifferences refleja propiedades.</summary>
+    Public Function ClaveQueCierraElJuego() As String
+        Return _tipoIncorrecto
+    End Function
+
+    ''' <summary>Ola 7h round 4g (user decision for WM): the warning a save of this material gives - read partial, with the BSShaderData
+    ''' ctor's values or from a JSON the engine aborts on, it is written as it was read (MaterialFileReader.AvisoAlGuardar); Nothing for
+    ''' a full read. Function a proposito: GetDifferences refleja propiedades.</summary>
+    Public Function AvisoAlGuardar(ruta As String) As String
+        Return MaterialFileReader.AvisoAlGuardar(ruta, _payloadIlegible, _tipoIncorrecto)
+    End Function
+
     Public Function ArchivoNombradoIlegible() As Boolean
         Return _MaterialFileApplied AndAlso Not _materialPayloadApplied
     End Function
@@ -3798,14 +3858,26 @@ Public Class FO4UnifiedMaterial_Class
         ''' the file byte +0x8D (0x1421719CF..19EE): the BGSM reader stores bEnableEditorAlphaRef there (0x14216CE75, lighting
         ''' branch only); the file object's ctor leaves it 0 (0x14216A5D8), so a BGEM gives 0. Otherwise the NIF bit.</summary>
         Public EditorAlphaThreshold As Boolean
+        ''' <summary>Ola 7h round 4g (reviewer r7h-08): the bits 10-14 the file's blend WORDS put on the property when the engine
+        ''' rewrites it. ApplyMaterialData ORs the whole src word shifted by 1 (add cx, cx, 0x142171961) and the whole dst word shifted
+        ''' by 5 (shl dx, 5, 0x14217197D) into the flags, masking before each only the bits it rewrites (0xFFE1 1-4, 0xFE1F 5-8), and
+        ''' writes bits 0, 9 and 15 after (0x142171990..19EE): bits 10-14 end as the block's own OR src bits 9-13 OR dst bits 5-9. 0 in
+        ''' every other state and for MaterialLib's five tuples (src, dst &lt;= 9).</summary>
+        Public PairSpill As Integer
 
         ''' <summary>The property's flags word as the engine reads it (nif.xml AlphaFlags): bit 0 blend, bits 1-4 src, bits 5-8
-        ''' dst, bit 9 test, bit 15 editor alpha threshold. Bits 10-14 are not part of the state: the engine keeps the block's
-        ''' own (masks 0xFFE1/0xFE1F/0xFFFE/0xFDFF, 0x142171958..19A4), and a block it creates starts at 0x00EC (ctor
-        ''' 0x142176880), so they are 0 there.</summary>
+        ''' dst, bit 9 test, bit 15 editor alpha threshold, and in bits 10-14 the file words' spill (PairSpill). The block's own bits
+        ''' 10-14 are not part of the state: the engine keeps them (masks 0xFFE1/0xFE1F/0xFFFE/0xFDFF, 0x142171958..19A4) and a block
+        ''' it creates starts at 0x00EC (ctor 0x142176880), so they are 0 there; a writer ORs the block's own ones in.</summary>
         Public Function NiFlags() As Integer
+#If DEBUG Then
+            ' Ola 7h tester round 4g (ShadowGate --ola7h-r4e S): the file words' spill is not put on the flags.
+            If Fo4GBufferConstants.GateMutantOn("p7h-r4g-no-spill") Then
+                Return If(Blend, 1, 0) Or ((CInt(Src) And &HF) << 1) Or ((CInt(Dst) And &HF) << 5) Or If(Test, &H200, 0) Or If(EditorAlphaThreshold, &H8000, 0)
+            End If
+#End If
             Return If(Blend, 1, 0) Or ((CInt(Src) And &HF) << 1) Or ((CInt(Dst) And &HF) << 5) Or If(Test, &H200, 0) Or
-                   If(EditorAlphaThreshold, &H8000, 0)
+                   (PairSpill And &H7C00) Or If(EditorAlphaThreshold, &H8000, 0)
         End Function
     End Structure
 
@@ -3938,8 +4010,10 @@ Public Class FO4UnifiedMaterial_Class
         ' 0x142171954..19CC: rewritten from the file (taken, or created when the NIF had none: Tools/re-docs/
         ' FIX_DESIGN_OVERLAYS_COLOR_2026-09-30.md 3).
         ' 0x1421719CF..19EE: bit 15 from the file byte +0x8D (BGSM bEnableEditorAlphaRef; 0 for a BGEM).
+        ' 0x142171954..19EE: the whole src / dst words ORed in, bits 10-14 of them stay (EngineAlphaState.PairSpill).
         Return New EngineAlphaState With {.Blend = blend, .Src = f.Src, .Dst = f.Dst, .Test = fileTest, .Threshold = fileTestRef, .Present = True,
-                                          .EditorAlphaThreshold = fileEditorAlphaRef}
+                                          .EditorAlphaThreshold = fileEditorAlphaRef,
+                                          .PairSpill = ((CInt(f.Src) << 1) Or (CInt(f.Dst) << 5)) And &H7C00}
     End Function
 
     ' P4 — Flags shader SIEMPRE game-aware. HasFlagSF1/SF2 y SetFlagSF1/SF2 (NiflySharp, ShaderHelper)
@@ -5091,9 +5165,17 @@ Public Class FO4UnifiedMaterial_Class
         texset.Textures(textset_LightingTexture).Content = If(isSkyrim, mat.InnerLayerTexture, "")
 
     End Sub
+    ''' <param name="vacioSinAplicar">Ola 7h round 4e (re27 1, re28 2): a 0-byte file leaves the material cache entry's BSShaderData null
+    ''' (LoadMaterialFile returns 0 without copying). The NIF's per-geometry loader (0x1421769E0: stack BSShaderData 0x142176A55 ->
+    ''' LoadMaterialFile 0x142176A6E -> ApplyMaterialData(geom, false) 0x142176A82; its twin 0x142171420) and F4EE's overlay loader
+    ''' (OverlayInterface.cpp:177-179) apply that stack BSShaderData's ctor values - the default, the one owner for shapes and layers.
+    ''' True only for a MATERIAL SWAP: 0x140256390 calls 0x1417A9B50 directly and with a null entry (0x1402565D4..5D7) applies nothing,
+    ''' the shape keeps what it had.</param>
     Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
-                           Optional engineApplyArg3 As Boolean = False)
+                           Optional engineApplyArg3 As Boolean = False, Optional vacioSinAplicar As Boolean = False)
         _applyArg3 = engineApplyArg3
+        _payloadIlegible = Nothing
+        _tipoIncorrecto = Nothing
         _nifIsFo4 = Nif IsNot Nothing AndAlso Nif.Header IsNot Nothing AndAlso Nif.Header.Version.IsFO4
         _materialPayloadApplied = False
         ' LA SIEMBRA DEL BIT VA PRIMERO, ANTES DE TODO `Exit Sub`/`Return` DE ESTE METODO.
@@ -5125,7 +5207,7 @@ Public Class FO4UnifiedMaterial_Class
         ' geometria (0x1421769E0 / 0x142171420). Va antes de los early-returns por lo mismo: un .bgem guardado como JSON o un
         ' archivo vacio son igual de "material aplicado" para el motor.
         _MaterialFileApplied = True
-        If Memory.Length = 0 Then Exit Sub
+        If Memory.Length = 0 AndAlso vacioSinAplicar Then Exit Sub
         ' Step 1: seed the three independent alpha fields from the NIF's NiAlphaProperty.
         ' Required so the Unknown branch below can preserve the NIF state (BGSM Unknown can't
         ' carry the alpha state independently — the byte tuple is hardcoded to (0,6,7) by ME).
@@ -5141,6 +5223,8 @@ Public Class FO4UnifiedMaterial_Class
         Underlying_Material = lectura.Material
         _fileBlendRaw = lectura.BlendCrudo
         _materialPayloadApplied = True
+        _payloadIlegible = If(Memory.Length = 0, "a 0-byte file", lectura.Ilegible)
+        _tipoIncorrecto = lectura.TipoIncorrecto
         ' Step 3: apply the canonical-vs-Unknown rule to the EDITABLE/WRITER fields:
         '   - Canonical (None/Standard/Additive/Multiplicative): BGSM wins. Overwrite the three
         '     fields with the canonical tuple (discards what Step 1 read from the NIF).
@@ -5181,8 +5265,11 @@ Public Class FO4UnifiedMaterial_Class
     End Sub
 
     Public Sub Deserialize(Diccionario As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
-                           Optional engineApplyArg3 As Boolean = False)
-        Deserialize(FilesDictionary_class.GetBytes(Diccionario), type, shap, Nif, engineApplyArg3)
+                           Optional engineApplyArg3 As Boolean = False, Optional vacioSinAplicar As Boolean = False)
+        ' A file not in the data reads as no bytes here, but the engine does not apply it (LoadMaterialFile returns 1: the stream does not
+        ' open, 0x1416A6E50 -> 0x1416A7150; re27 1): only a file that exists takes the 0-byte rule.
+        Dim existe = MaterialResolver.IsMaterialFileResolvable(Diccionario)
+        Deserialize(FilesDictionary_class.GetBytes(Diccionario), type, shap, Nif, engineApplyArg3, vacioSinAplicar OrElse Not existe)
         ResolveSidecarJson(Diccionario, type)
         ' Fresh load (including sidecar) → clean state.
         ClearDirty()
@@ -5195,8 +5282,8 @@ Public Class FO4UnifiedMaterial_Class
     ''' (avoiding a redundant dictionary lookup) without dropping the sidecar. The extra String parameter
     ''' disambiguates this from the <c>(Byte(), Type, …)</c> overload.</summary>
     Public Sub Deserialize(memory As Byte(), diccionarioForSidecar As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo,
-                           Optional engineApplyArg3 As Boolean = False)
-        Deserialize(memory, type, shap, Nif, engineApplyArg3)
+                           Optional engineApplyArg3 As Boolean = False, Optional vacioSinAplicar As Boolean = False)
+        Deserialize(memory, type, shap, Nif, engineApplyArg3, vacioSinAplicar)
         ResolveSidecarJson(diccionarioForSidecar, type)
         ' Fresh load (including sidecar) → clean state.
         ClearDirty()
