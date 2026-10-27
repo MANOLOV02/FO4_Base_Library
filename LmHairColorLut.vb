@@ -1,5 +1,4 @@
 ﻿Imports System.IO
-Imports System.Text.Json
 
 ''' <summary>
 ''' Registro de LUTs de pelo de LooksMenu: <c>Data\F4SE\Plugins\F4EE\LUTs\&lt;pluginFileName&gt;\haircolors.json</c>.
@@ -449,7 +448,7 @@ Public Module LmHairColorLutLoader
     ''' (:1292) necesita; el valor del diccionario NO se usa. Case-insensitive, como su <c>F4EEFixedString</c>
     ''' (<c>_stricmp</c>). No parsea los records: alcanza con el EditorID del header, así que armarlo una vez
     ''' por escaneo no cuesta nada aunque haya cientos de razas.</summary>
-    Private Function BuildRaceEditorIdIndex(pluginManager As PluginManager) As Dictionary(Of String, Boolean())
+    Public Function BuildRaceEditorIdIndex(pluginManager As PluginManager) As Dictionary(Of String, Boolean())
         Dim idx As New Dictionary(Of String, Boolean())(StringComparer.OrdinalIgnoreCase)
         Try
             For Each rec In pluginManager.GetRecordsOfType("RACE")
@@ -499,145 +498,147 @@ Public Module LmHairColorLutLoader
         Return True
     End Function
 
-    Private ReadOnly _jsonOpts As New JsonDocumentOptions With {
-        .CommentHandling = JsonCommentHandling.Skip,
-        .AllowTrailingCommas = True}
-
     ''' <summary>Parsea un <c>haircolors.json</c>: <c>{ "Colors": [ { Form, LUT, Races, Gender } ] }</c>.
-    ''' Espeja <c>CharGenInterface::LoadHairColorData</c> (:1211-1356). Una entrada mal formada se saltea sin
-    ''' tirar el archivo entero (el C++ tiene el try/catch por item).</summary>
+    ''' Espeja <c>CharGenInterface::LoadHairColorData</c> (:1221-1356): los bytes del archivo (BSReadAll) con el
+    ''' <c>Json::Reader</c> de f4ee (<see cref="Jsoncpp.LeerF4ee"/>) - si no parsea (:1232-1234, una coma final, un BOM)
+    ''' el archivo entero no carga nada -, y cada valor con la conversion que llama f4ee sobre el arbol (Jsoncpp). Una
+    ''' entrada cuya conversion lanza se descarta entera (el try/catch por item, :1244/:1349).</summary>
     Private Sub LoadHairColorFile(filePath As String, pluginFileName As String, pluginManager As PluginManager,
                                   raceIdx As Dictionary(Of String, Boolean()),
                                   lutMap As Dictionary(Of UInteger, String),
                                   luts As HashSet(Of String),
                                   flagged As HashSet(Of UInteger),
                                   byRace As Dictionary(Of String, List(Of UInteger)()))
+        Dim raiz As Jsoncpp.JsonValor
         Try
-            Using doc = JsonDocument.Parse(File.ReadAllText(filePath), _jsonOpts)
-                Dim colors As JsonElement
-                If Not doc.RootElement.TryGetProperty("Colors", colors) OrElse colors.ValueKind <> JsonValueKind.Array Then Return
-
-                For Each item In colors.EnumerateArray()
-                    Try
-                        If item.ValueKind <> JsonValueKind.Object Then Continue For
-
-                        ' "Form": string o array de strings, FormID LOCAL en hex.
-                        Dim formEl As JsonElement
-                        If Not item.TryGetProperty("Form", formEl) Then Continue For
-                        Dim formIds As New List(Of UInteger)()
-                        If formEl.ValueKind = JsonValueKind.String Then
-                            AddResolvedForm(formEl.GetString(), pluginFileName, pluginManager, filePath, formIds)
-                        ElseIf formEl.ValueKind = JsonValueKind.Array Then
-                            For Each fe In formEl.EnumerateArray()
-                                If fe.ValueKind = JsonValueKind.String Then
-                                    AddResolvedForm(fe.GetString(), pluginFileName, pluginManager, filePath, formIds)
-                                End If
-                            Next
-                        End If
-                        If formIds.Count = 0 Then Continue For
-
-                        ' "LUT" ausente/no-string ⇒ path vacío, NO se saltea la entrada: jsoncpp devuelve ""
-                        ' para una clave que no está y f4ee igual marca el color (:1278 se lee ANTES del bucle
-                        ' de razas, y el flag se pone en :1284). Un color marcado sin LUT no vuelve a la
-                        ' gradient vanilla — que es justo la asimetría que el gate necesita ver.
-                        Dim lutPath As String = ""
-                        Dim lutEl As JsonElement
-                        If item.TryGetProperty("LUT", lutEl) AndAlso lutEl.ValueKind = JsonValueKind.String Then
-                            lutPath = If(lutEl.GetString(), "")
-                        End If
-
-                        ' `Gender` presente pero NO numerico: en jsoncpp `asUInt()` tira, y el try/catch por
-                        ' item (CharGenInterface.cpp:1348) descarta la entrada ENTERA — antes del
-                        ' `flags |= 0x8000` de :1284. O sea que el color NO queda marcado. Sin este Continue
-                        ' marcabamos un color que el juego no marca, y la rama de revert de
-                        ' ApplyCustomLutMesh se comportaba distinto que el motor.
-                        Dim gender As UInteger = 0UI
-                        Dim gEl As JsonElement
-                        If item.TryGetProperty("Gender", gEl) Then
-                            If gEl.ValueKind <> JsonValueKind.Number Then Continue For
-                            Dim gi As Integer
-                            If gEl.TryGetInt32(gi) AndAlso gi >= 0 Then gender = CUInt(gi)
-                        End If
-
-                        Dim raceNames As New List(Of String)()
-                        Dim rEl As JsonElement
-                        If item.TryGetProperty("Races", rEl) AndAlso rEl.ValueKind = JsonValueKind.Array Then
-                            For Each re_ In rEl.EnumerateArray()
-                                If re_.ValueKind = JsonValueKind.String Then raceNames.Add(re_.GetString())
-                            Next
-                        End If
-
-                        For Each fid In formIds
-                            ' Sólo CLFM: el C++ hace DYNAMIC_CAST a BGSColorForm y descarta el resto (:1253).
-                            Dim rec = pluginManager.GetRecord(fid)
-                            If rec Is Nothing Then
-                                Dim f1 = fid, fp1 = filePath
-                                Logger.LogLazy(Function() $"[LM-HAIRLUT] {fp1}: no existe el form 0x{f1:X8}")
-                                Continue For
-                            End If
-                            If rec.Header.Signature <> "CLFM" Then
-                                Dim f2 = fid, sg = rec.Header.Signature, fp2 = filePath
-                                Logger.LogLazy(Function() $"[LM-HAIRLUT] {fp2}: 0x{f2:X8} es {sg}, no CLFM")
-                                Continue For
-                            End If
-
-                            ' colorForm->flags |= 0x8000 (:1284) — FUERA del bucle de razas: la marca se pone
-                            ' aunque después no resuelva ninguna raza.
-                            flagged.Add(fid)
-
-                            ' El registro en el mapa vive DENTRO del bucle de razas × géneros (:1298-1313):
-                            ' sin una (raza, género) válida el color queda marcado pero SIN LUT, y el motor
-                            ' no le cambia la paleta. Replicado tal cual.
-                            ' El C++ tiene dos condiciones distintas (CharGenInterface.cpp:1303-1312):
-                            '     auto charGenData = race->chargenData[i];
-                            '     if(!charGenData) continue;                                 <- saltea AMBOS
-                            '     if(charGenData->colors) charGenData->colors->Push(color);   <- SOLO el catálogo
-                            '     m_LUTMap.emplace(...); m_LUTs.insert(...);                  <- va igual
-                            ' Ninguna de las dos es observable desde los records, así que en LAS DOS caemos
-                            ' del lado PERMISIVO. Tentación descartada: usar AHCM/AHCF como proxy de `colors`.
-                            ' No lo es — `colors` es un BGSListForm de RUNTIME que existe (aunque vacío) para
-                            ' cualquier raza con chargen data, mientras que AHCM/AHCF es lo que el AUTOR
-                            ' escribió. Con ese proxy, una raza custom que no autora colores (porque los trae
-                            ' el pack, que es justo el caso de uso) los recibía en el juego y NO en el combo.
-                            Dim registered As Boolean = False
-                            For Each raceName In raceNames
-                                If Not raceIdx.ContainsKey(raceName) Then
-                                    Dim rn = raceName, fp3 = filePath
-                                    Logger.LogLazy(Function() $"[LM-HAIRLUT] {fp3}: no se encontró la raza '{rn}'")
-                                    Continue For
-                                End If
-                                For genderIdx = 0 To 1
-                                    Dim bit As UInteger = If(genderIdx = 0, 1UI, 2UI)
-                                    If (gender And bit) = 0UI Then Continue For
-                                    registered = True
-                                    Dim slots As List(Of UInteger)() = Nothing
-                                    If Not byRace.TryGetValue(raceName, slots) Then
-                                        slots = New List(Of UInteger)() {New List(Of UInteger)(), New List(Of UInteger)()}
-                                        byRace(raceName) = slots
-                                    End If
-                                    If Not slots(genderIdx).Contains(fid) Then slots(genderIdx).Add(fid)
-                                Next
-                            Next
-                            If Not registered Then Continue For
-
-                            ' emplace: gana el PRIMERO que lo registre (:1311).
-                            If Not lutMap.ContainsKey(fid) Then lutMap(fid) = lutPath
-                            ' Guardamos la forma NORMALIZADA; f4ee mete el string crudo del JSON (:1312) y
-                            ' después lo compara contra un path ya normalizado (IsLUTUsed sobre el resultado
-                            ' de ProcessHairColor). Con un "LUT" que traiga el prefijo `textures\`, el suyo no
-                            ' matchea NUNCA y el nuestro sí. Es una divergencia a favor, y consistente: los
-                            ' dos lados de la comparación pasan por el mismo normalizador.
-                            If Not String.IsNullOrWhiteSpace(lutPath) Then luts.Add(NormalizeLutPath(lutPath))
-                        Next
-                    Catch
-                        ' item malformado: el C++ tiene su try/catch por entrada — seguir con la siguiente.
-                    End Try
-                Next
-            End Using
+            Dim transcodificado As Boolean, motivo As String = Nothing
+            raiz = Jsoncpp.LeerF4ee(Jsoncpp.BytesComoLosVeJsoncpp(File.ReadAllBytes(filePath), transcodificado), motivo)
+            If raiz Is Nothing Then
+                Dim m0 = motivo, fpA = filePath
+                Logger.LogLazy(Function() $"[LM-HAIRLUT] '{fpA}': Json::Reader lo rechaza ({m0}); f4ee no carga nada del archivo (CharGenInterface.cpp:1232-1234).")
+                Return
+            End If
         Catch ex As Exception
-            Dim msg = ex.Message, fp = filePath
-            Logger.LogLazy(Function() $"[LM-HAIRLUT] no se pudo leer '{fp}': {msg}")
+            Dim msg0 = ex.Message, fpB = filePath
+            Logger.LogLazy(Function() $"[LM-HAIRLUT] no se pudo leer '{fpB}': {msg0}")
+            Return
         End Try
+        Dim ok As Boolean
+        ' root["Colors"] (:1236): operator[] no-const sobre una raiz que no es objeto ni null lanza FUERA de todo try: la carga
+        ' del archivo termina ahi, sin nada registrado.
+        Dim colors = Jsoncpp.Miembro(raiz, "Colors", ok)
+        If Not ok Then
+            Dim fpC = filePath
+            Logger.LogLazy(Function() $"[LM-HAIRLUT] '{fpC}': la raiz no es un objeto; root[""Colors""] lanza en f4ee (:1236) y el archivo no carga.")
+            Return
+        End If
+        If colors Is Nothing OrElse colors.Tipo <> Jsoncpp.JsonTipo.Lista Then Return   ' !colors.isArray() (:1237-1238)
+
+        For Each item In Jsoncpp.Valores(colors)
+            Try
+                ' item["Form"] (:1248): sobre un item que no es objeto ni null lanza -> la entrada entera.
+                Dim formEl = Jsoncpp.Miembro(item, "Form", ok)
+                If Not ok Then Continue For
+                ' isString -> GetColorForm; isArray -> GetColorForm de cada elemento (:1276-1290). GetColorForm hace asCString
+                ' (:1252): un elemento que no es string lanza y descarta la entrada ENTERA (antes de marcar ningun color).
+                Dim formIds As New List(Of UInteger)()
+                Dim lanzo = False
+                If formEl IsNot Nothing AndAlso formEl.Tipo = Jsoncpp.JsonTipo.Texto Then
+                    AddResolvedForm(Jsoncpp.AsCString(formEl, ok), pluginFileName, pluginManager, filePath, formIds)
+                ElseIf formEl IsNot Nothing AndAlso formEl.Tipo = Jsoncpp.JsonTipo.Lista Then
+                    For Each fe In Jsoncpp.Valores(formEl)
+                        Dim s = Jsoncpp.AsCString(fe, ok)
+                        If Not ok Then lanzo = True : Exit For
+                        AddResolvedForm(s, pluginFileName, pluginManager, filePath, formIds)
+                    Next
+                End If
+                If lanzo Then Continue For
+
+                ' item["LUT"].asString() (:1292): ausente / null -> "" (el color se marca igual, :1300: un color marcado sin
+                ' LUT no vuelve a la gradient vanilla); un numero -> su texto; un array u objeto lanza -> la entrada entera.
+                Dim lutPath = Jsoncpp.AsString(Jsoncpp.Miembro(item, "LUT", ok), ok)
+                If Not ok Then Continue For
+
+                ' item["Gender"].asUInt() (:1293): ausente / null 0, bool 0/1, real truncado; un negativo o un string lanza y
+                ' descarta la entrada ENTERA, antes del `flags |= 0x8000` (:1300): el color NO queda marcado.
+                Dim gender = Jsoncpp.AsUInt(Jsoncpp.Miembro(item, "Gender", ok), ok)
+                If Not ok Then Continue For
+
+                ' for(auto raceItem : raceList) (:1304): un array da sus elementos, un objeto sus valores; cada raceItem.asString()
+                ' en su propio try (:1306/:1335): uno que lanza saltea esa raza.
+                Dim raceNames As New List(Of String)()
+                For Each re_ In Jsoncpp.Valores(Jsoncpp.Miembro(item, "Races", ok))
+                    Dim rn = Jsoncpp.AsString(re_, ok)
+                    If ok Then raceNames.Add(rn)
+                Next
+                If formIds.Count = 0 Then Continue For
+
+                For Each fid In formIds
+                    ' Sólo CLFM: el C++ hace DYNAMIC_CAST a BGSColorForm y descarta el resto (:1253).
+                    Dim rec = pluginManager.GetRecord(fid)
+                    If rec Is Nothing Then
+                        Dim f1 = fid, fp1 = filePath
+                        Logger.LogLazy(Function() $"[LM-HAIRLUT] {fp1}: no existe el form 0x{f1:X8}")
+                        Continue For
+                    End If
+                    If rec.Header.Signature <> "CLFM" Then
+                        Dim f2 = fid, sg = rec.Header.Signature, fp2 = filePath
+                        Logger.LogLazy(Function() $"[LM-HAIRLUT] {fp2}: 0x{f2:X8} es {sg}, no CLFM")
+                        Continue For
+                    End If
+
+                    ' colorForm->flags |= 0x8000 (:1284) — FUERA del bucle de razas: la marca se pone
+                    ' aunque después no resuelva ninguna raza.
+                    flagged.Add(fid)
+
+                    ' El registro en el mapa vive DENTRO del bucle de razas × géneros (:1298-1313):
+                    ' sin una (raza, género) válida el color queda marcado pero SIN LUT, y el motor
+                    ' no le cambia la paleta. Replicado tal cual.
+                    ' El C++ tiene dos condiciones distintas (CharGenInterface.cpp:1303-1312):
+                    '     auto charGenData = race->chargenData[i];
+                    '     if(!charGenData) continue;                                 <- saltea AMBOS
+                    '     if(charGenData->colors) charGenData->colors->Push(color);   <- SOLO el catálogo
+                    '     m_LUTMap.emplace(...); m_LUTs.insert(...);                  <- va igual
+                    ' Ninguna de las dos es observable desde los records, así que en LAS DOS caemos
+                    ' del lado PERMISIVO. Tentación descartada: usar AHCM/AHCF como proxy de `colors`.
+                    ' No lo es — `colors` es un BGSListForm de RUNTIME que existe (aunque vacío) para
+                    ' cualquier raza con chargen data, mientras que AHCM/AHCF es lo que el AUTOR
+                    ' escribió. Con ese proxy, una raza custom que no autora colores (porque los trae
+                    ' el pack, que es justo el caso de uso) los recibía en el juego y NO en el combo.
+                    Dim registered As Boolean = False
+                    For Each raceName In raceNames
+                        If Not raceIdx.ContainsKey(raceName) Then
+                            Dim rn = raceName, fp3 = filePath
+                            Logger.LogLazy(Function() $"[LM-HAIRLUT] {fp3}: no se encontró la raza '{rn}'")
+                            Continue For
+                        End If
+                        For genderIdx = 0 To 1
+                            Dim bit As UInteger = If(genderIdx = 0, 1UI, 2UI)
+                            If (gender And bit) = 0UI Then Continue For
+                            registered = True
+                            Dim slots As List(Of UInteger)() = Nothing
+                            If Not byRace.TryGetValue(raceName, slots) Then
+                                slots = New List(Of UInteger)() {New List(Of UInteger)(), New List(Of UInteger)()}
+                                byRace(raceName) = slots
+                            End If
+                            If Not slots(genderIdx).Contains(fid) Then slots(genderIdx).Add(fid)
+                        Next
+                    Next
+                    If Not registered Then Continue For
+
+                    ' emplace: gana el PRIMERO que lo registre (:1311).
+                    If Not lutMap.ContainsKey(fid) Then lutMap(fid) = lutPath
+                    ' Guardamos la forma NORMALIZADA; f4ee mete el string crudo del JSON (:1312) y
+                    ' después lo compara contra un path ya normalizado (IsLUTUsed sobre el resultado
+                    ' de ProcessHairColor). Con un "LUT" que traiga el prefijo `textures\`, el suyo no
+                    ' matchea NUNCA y el nuestro sí. Es una divergencia a favor, y consistente: los
+                    ' dos lados de la comparación pasan por el mismo normalizador.
+                    If Not String.IsNullOrWhiteSpace(lutPath) Then luts.Add(NormalizeLutPath(lutPath))
+                Next
+            Catch
+                ' item malformado: el C++ tiene su try/catch por entrada — seguir con la siguiente.
+            End Try
+        Next
     End Sub
 
     ''' <summary>FormID local en hex → FormID global del plugin dueño. f4ee hace

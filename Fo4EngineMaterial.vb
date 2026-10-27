@@ -112,11 +112,10 @@ Friend Module Fo4EngineMaterial
     ''' applied flags <paramref name="applied"/>; the root material completes the wetness (the reader's default root when the file names
     ''' none: "template\defaultTemplate_wet.bgsm", 0x14216D1C1..0x14216D1D9).</summary>
     Friend Function FromMaterialFile(mb As FO4UnifiedMaterial_Class, applied As ULong) As Fo4EngineLightingMaterial
-        Dim colourOf = Function(c As Drawing.Color) New Vector3(c.R / 255.0F, c.G / 255.0F, c.B / 255.0F)
         Dim m As New Fo4EngineLightingMaterial With {.Feature = AppliedFeature(applied)}
         m.Alpha = mb.Alpha                                                                    ' P->vf[0x190] 0x14216BA35..A40
         m.Smoothness = mb.Smoothness                                                          ' 0x14216B969..96C
-        m.SpecularColor = colourOf(mb.SpecularColor)                                          ' 0x14216BA14..A25
+        m.SpecularColor = mb.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.Specular)   ' 0x14216BA14..A25 (the file's floats)
         m.SpecularMult = mb.SpecularMult                                                      ' 0x14216BA28..A2F
         Dim light = MaterialLightTerms(mb)
         m.Rolloff = light.Rolloff
@@ -138,7 +137,7 @@ Friend Module Fo4EngineMaterial
             m.Ssr = mb.ScreenSpaceReflections                                                 ' 0x1421716CA..6E5
             m.WetSsr = mb.WetnessControlScreenSpaceReflections                                ' 0x1421716EB..6F5
         End If
-        m.EmissiveColor = If(mb.EmitEnabled, colourOf(mb.EmittanceColor), Vector3.Zero)       ' 0x14216B93E..95C (reader 0x14216D2C0..2D4)
+        m.EmissiveColor = If(mb.EmitEnabled, mb.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.Emittance), Vector3.Zero)   ' 0x14216B93E..95C (reader 0x14216D2C0..2D4)
         m.EmissiveMult = mb.EmittanceMult                                                     ' 0x14216B95C..963
         Return m
     End Function

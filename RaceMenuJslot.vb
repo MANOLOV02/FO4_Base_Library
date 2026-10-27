@@ -927,20 +927,18 @@ Public NotInheritable Class RaceMenuJslot
         Dim node As JsonNode
         Dim transcodificado As Boolean
         Try
-            ' `Json::Reader reader` = Features::all() (json_reader.cpp:29-32) = allowComments ⇒ los comentarios se
-            ' saltan; la coma final sigue siendo error (:413-425: el `}` llega con `name` no vacío ⇒ `break` ⇒
-            ' :453 addErrorAndRecover), igual que el default de System.Text.Json.
-            ' UN VALOR Y PARA — lo que sobra al final NO rechaza el archivo. `Reader::parse` (:104-141) llama
-            ' `readValue()`, saltea comentarios y devuelve: NUNCA comprueba `current_ == end_`, y `strictRoot_`
-            ' es false en `Features()` y en `Features::all()` (:27-32) ⇒ el motor CARGA `{…}basura`.
-            ' `JsonNode.Parse` exígía fin de archivo y devolvía Nothing: el preset desaparecía de la lista
-            ' mientras el juego lo cargaba. La perilla (`AllowMultipleValues`) sólo existe en `Utf8JsonReader`,
-            ' que VB no compila (BC30668) — por eso vive en FO4_Base_Library_CSharpHelpers.
+            ' EL LECTOR ES EL DE skee64: `Json::Reader reader` = Features::all() (json_reader.cpp:29-32), transcripto en
+            ' Jsoncpp.Parsear con su dialecto: comentarios permitidos, coma final error (:413-425 / :468-474), UN VALOR Y PARA
+            ' — lo que sobra al final no se mira (:104-141) —, números y strings como los leen readNumber / decodeNumber /
+            ' readString (:303-321, :497-595), sin límite de anidamiento. El JsonNode que edita y re-emite esta clase lo arma
+            ' ese árbol (Jsoncpp.NodoDe): no decide nada, y cada valor se convierte con la misma ley (Jsoncpp.ValorDe).
             ' UTF-8 INVÁLIDO: el motor pasa el byte crudo (readString :390-400 no valida nada) y acá
             ' System.Text.Json lo cambiaba por U+FFFD SIN error. `BytesComoLosVeJsoncpp` sólo actúa cuando el
             ' archivo NO es UTF-8 válido; con uno válido devuelve el mismo array. Load no tiene ruta al log
             ' (recibe bytes, no path): lo expone en <see cref="LeidoComoCp1252"/> del preset devuelto.
-            node = JsonPrimerValor.Nodo(Jsoncpp.BytesComoLosVeJsoncpp(bytes, transcodificado))
+            Dim arbol = Jsoncpp.LeerF4ee(Jsoncpp.BytesComoLosVeJsoncpp(bytes, transcodificado))
+            If arbol Is Nothing Then Return Nothing
+            node = Jsoncpp.NodoDe(arbol)
         Catch ex As JsonException
             Return Nothing
         End Try

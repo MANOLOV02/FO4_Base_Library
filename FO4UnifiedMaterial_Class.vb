@@ -338,6 +338,11 @@ Public Class FO4UnifiedMaterial_Class
         copy._materialPayloadApplied = _materialPayloadApplied
         copy._payloadIlegible = _payloadIlegible
         copy._tipoIncorrecto = _tipoIncorrecto
+        copy._tipoIncorrectoValor = _tipoIncorrectoValor
+        copy._texturasDesbordadas = _texturasDesbordadas
+        copy._coloresArchivo = _coloresArchivo?.Copia()
+        copy._rutasDelJson = _rutasDelJson
+        copy._flotantesDeColor = If(_flotantesDeColor Is Nothing, Nothing, New Dictionary(Of String, MaterialFileReader.RgbDelMotor)(_flotantesDeColor, StringComparer.Ordinal))
         copy._fileBlendRaw = _fileBlendRaw
         copy._nifIsFo4 = _nifIsFo4
         copy._applyArg3 = _applyArg3
@@ -852,6 +857,20 @@ Public Class FO4UnifiedMaterial_Class
     ''' <summary>The file's blend pair when MaterialLib cannot represent it (MaterialFileReader); applies while the mode
     ''' stays Unknown.</summary>
     Private _fileBlendRaw As MaterialFileReader.BlendCrudoArchivo
+    ''' <summary>Ola JSON (27-oct-2026): what the abort key held (MaterialFileReader.LecturaMaterial.TipoIncorrectoValor).</summary>
+    Private _tipoIncorrectoValor As String = Nothing
+    ''' <summary>Ola JSON: the JSON texture paths that overflow the engine's 271-byte buffer (LecturaMaterial.TexturasDesbordadas).</summary>
+    Private _texturasDesbordadas As IReadOnlyList(Of String) = Nothing
+    ''' <summary>Ola JSON: the applied file's colours as the engine holds them, three floats each (MaterialFileReader.ColoresDelMotor);
+    ''' assigning a colour drops its float (SoltarColorDelArchivo). Nothing = no material file applied.</summary>
+    Private _coloresArchivo As MaterialFileReader.ColoresDelMotor = Nothing
+    ''' <summary>Ola JSON: the applied file's floats of each of MaterialLib's colour fields, by property name
+    ''' (MaterialFileReader.LecturaMaterial.FlotantesDeColor): what a save writes back, whatever the version; assigning a colour drops
+    ''' its entry (SoltarColorDelArchivo / SoltarFlotanteDeColor). Nothing = no material file applied.</summary>
+    Private _flotantesDeColor As Dictionary(Of String, MaterialFileReader.RgbDelMotor) = Nothing
+    ''' <summary>Ola JSON (user decision 27-oct-2026): the applied file was a JSON (LecturaMaterial.EsJson): a save writes its texture paths
+    ''' with '\' (MaterialFileReader.Escribir).</summary>
+    Private _rutasDelJson As Boolean = False
     Private _nifIsFo4 As Boolean = False
     Private _applyArg3 As Boolean = False
 
@@ -1978,6 +1997,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).SpecularColor = ColorToMaterialRgb(value)
+                    SoltarColorDelArchivo(ColorDelArchivo.Specular)
                 Case GetType(BGEM)
                     ' No action: este campo es propio de BGSM y el material de efecto no lo tiene.
                     Exit Select
@@ -2003,8 +2023,10 @@ Public Class FO4UnifiedMaterial_Class
                     ' (BGSM.Serialize), and the grid disables this field when EmitEnabled=False, so the
                     ' setter must not silently force EmitEnabled on a color change.
                     CType(Underlying_Material, BGSM).EmittanceColor = ColorToMaterialRgb(value)
+                    SoltarColorDelArchivo(ColorDelArchivo.Emittance)
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).EmittanceColor = ColorToMaterialRgb(value)
+                    SoltarFlotanteDeColor("EmittanceColor")
             End Select
         End Set
     End Property
@@ -2259,6 +2281,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).HairTintColor = ColorToMaterialRgb(value)
+                    SoltarColorDelArchivo(ColorDelArchivo.HairTint)
                 Case GetType(BGEM)
                     ' No action
                     Exit Select
@@ -2305,6 +2328,7 @@ Public Class FO4UnifiedMaterial_Class
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     CType(Underlying_Material, BGSM).HairTintColor = ColorToMaterialRgb(value)
+                    SoltarColorDelArchivo(ColorDelArchivo.HairTint)
                 Case GetType(BGEM)
                     ' No action
                     Exit Select
@@ -2635,6 +2659,7 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGEM)
                     Dim bgem = CType(Underlying_Material, BGEM)
                     bgem.BaseColor = ColorToMaterialRgb(value)
+                    SoltarColorDelArchivo(ColorDelArchivo.Base)
                     bgem.Alpha = value.A / 255.0F
                 Case Else
                     Throw New Exception
@@ -3245,6 +3270,7 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As Color)
             Dim bgsm = TryCast(Underlying_Material, BGSM)
             If bgsm IsNot Nothing Then bgsm.TranslucencySubsurfaceColor = ColorToMaterialRgb(value)
+            SoltarFlotanteDeColor("TranslucencySubsurfaceColor")
         End Set
     End Property
 
@@ -3416,6 +3442,7 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As Color)
             Dim bgem = TryCast(Underlying_Material, BGEM)
             If bgem IsNot Nothing Then bgem.GlassFresnelColor = ColorToMaterialRgb(value)
+            SoltarFlotanteDeColor("GlassFresnelColor")
         End Set
     End Property
 
@@ -3817,6 +3844,84 @@ Public Class FO4UnifiedMaterial_Class
     Public Function ClaveQueCierraElJuego() As String
         Return _tipoIncorrecto
     End Function
+
+    ''' <summary>Ola JSON (user decision 27-oct-2026): "key: what it held" when the game closes loading this material (the frame's
+    ''' ERROR names it); Nothing otherwise. Function a proposito: GetDifferences refleja propiedades.</summary>
+    Public Function CierreDelJuego() As String
+        If _tipoIncorrecto Is Nothing Then Return Nothing
+        Return $"{_tipoIncorrecto}: {_tipoIncorrectoValor}"
+    End Function
+
+    ''' <summary>Ola JSON (user decision 27-oct-2026): the applied JSON's texture paths longer than the 271 bytes the engine's texture
+    ''' helper holds (0x142176C00, D:\WinTmp\rc\re30\re.md 4.1; the frame's WARNING). Empty otherwise.</summary>
+    Public Function TexturasQueDesbordanElBuffer() As IReadOnlyList(Of String)
+        Return If(_texturasDesbordadas, Array.Empty(Of String)())
+    End Function
+
+    ''' <summary>The colours of a material file as the engine holds them (MaterialFileReader.ColoresDelMotor).</summary>
+    Friend Enum ColorDelArchivo
+        Specular
+        Emittance
+        HairTint
+        ''' <summary>The same field as HairTint (+0x1C0, SkinTintColor shares HairTintColor's storage); without a file float, SkinTintColor.</summary>
+        SkinTint
+        Base
+    End Enum
+
+    ''' <summary>THE ONE READER of a material colour for the render (ola JSON, closes re30 H4): the applied file's three floats as the
+    ''' engine holds them (+0x0C / +0x1C / +0x1C0, outside [0, 1] too), else - no file, or an edit replaced it - the 8-bit channel / 255
+    ''' (Shader_Base_Class.Color_to_Vector, what every consumer computed before). Function a proposito: GetDifferences refleja
+    ''' propiedades.</summary>
+    Friend Function ColorDelMotor(cual As ColorDelArchivo) As OpenTK.Mathematics.Vector3
+        Dim f As MaterialFileReader.RgbDelMotor? = Nothing
+        If _coloresArchivo IsNot Nothing Then
+            Select Case cual
+                Case ColorDelArchivo.Specular : f = _coloresArchivo.Specular
+                Case ColorDelArchivo.Emittance : f = _coloresArchivo.Emittance
+                Case ColorDelArchivo.HairTint, ColorDelArchivo.SkinTint : f = _coloresArchivo.HairTint
+                Case ColorDelArchivo.Base : f = _coloresArchivo.Base
+            End Select
+        End If
+#If DEBUG Then
+        ' Ola JSON tester: the render reads the 8-bit channel (before this wave).
+        If Fo4GBufferConstants.GateMutantOn("oj-color-empaquetado") Then f = Nothing
+#End If
+        If f.HasValue Then Return New OpenTK.Mathematics.Vector3(f.Value.R, f.Value.G, f.Value.B)
+        Dim c As Color
+        Select Case cual
+            Case ColorDelArchivo.Specular : c = SpecularColor
+            Case ColorDelArchivo.Emittance : c = EmittanceColor
+            Case ColorDelArchivo.HairTint : c = HairTintColor
+            Case ColorDelArchivo.SkinTint : c = SkinTintColor
+            Case Else : c = BaseColor
+        End Select
+        Return Shader_Base_Class.Color_to_Vector(c)
+    End Function
+
+    ''' <summary>A colour assigned - an edit in the editor, or an override that replaces the material's (the F4EE overlay tint, an
+    ''' NPC's skin tone or hair colour): the file's float no longer is the value (ColorDelMotor). Any assignment, whatever its 8-bit
+    ''' value: no load path assigns a colour property (Deserialize takes MaterialLib's object whole).</summary>
+    Private Sub SoltarColorDelArchivo(cual As ColorDelArchivo)
+        Select Case cual
+            Case ColorDelArchivo.Specular : SoltarFlotanteDeColor("SpecularColor")
+            Case ColorDelArchivo.Emittance : SoltarFlotanteDeColor("EmittanceColor")
+            Case ColorDelArchivo.HairTint, ColorDelArchivo.SkinTint : SoltarFlotanteDeColor("HairTintColor")
+            Case ColorDelArchivo.Base : SoltarFlotanteDeColor("BaseColor")
+        End Select
+        If _coloresArchivo Is Nothing Then Return
+        Select Case cual
+            Case ColorDelArchivo.Specular : _coloresArchivo.Specular = Nothing
+            Case ColorDelArchivo.Emittance : _coloresArchivo.Emittance = Nothing
+            Case ColorDelArchivo.HairTint, ColorDelArchivo.SkinTint : _coloresArchivo.HairTint = Nothing
+            Case ColorDelArchivo.Base : _coloresArchivo.Base = Nothing
+        End Select
+    End Sub
+
+    ''' <summary>A MaterialLib colour field assigned (MaterialFileReader.CamposDeColor's name): a save writes its 8-bit channels, not the
+    ''' file's floats.</summary>
+    Private Sub SoltarFlotanteDeColor(nombre As String)
+        _flotantesDeColor?.Remove(nombre)
+    End Sub
 
     ''' <summary>Ola 7h round 4g (user decision for WM): the warning a save of this material gives - read partial, with the BSShaderData
     ''' ctor's values or from a JSON the engine aborts on, it is written as it was read (MaterialFileReader.AvisoAlGuardar); Nothing for
@@ -5176,6 +5281,11 @@ Public Class FO4UnifiedMaterial_Class
         _applyArg3 = engineApplyArg3
         _payloadIlegible = Nothing
         _tipoIncorrecto = Nothing
+        _tipoIncorrectoValor = Nothing
+        _texturasDesbordadas = Nothing
+        _coloresArchivo = Nothing
+        _flotantesDeColor = Nothing
+        _rutasDelJson = False
         _nifIsFo4 = Nif IsNot Nothing AndAlso Nif.Header IsNot Nothing AndAlso Nif.Header.Version.IsFO4
         _materialPayloadApplied = False
         ' LA SIEMBRA DEL BIT VA PRIMERO, ANTES DE TODO `Exit Sub`/`Return` DE ESTE METODO.
@@ -5225,6 +5335,11 @@ Public Class FO4UnifiedMaterial_Class
         _materialPayloadApplied = True
         _payloadIlegible = If(Memory.Length = 0, "a 0-byte file", lectura.Ilegible)
         _tipoIncorrecto = lectura.TipoIncorrecto
+        _tipoIncorrectoValor = lectura.TipoIncorrectoValor
+        _texturasDesbordadas = lectura.TexturasDesbordadas
+        _coloresArchivo = lectura.Colores
+        _flotantesDeColor = lectura.FlotantesDeColor
+        _rutasDelJson = lectura.EsJson
         ' Step 3: apply the canonical-vs-Unknown rule to the EDITABLE/WRITER fields:
         '   - Canonical (None/Standard/Additive/Multiplicative): BGSM wins. Overwrite the three
         '     fields with the canonical tuple (discards what Step 1 read from the NIF).
@@ -5354,6 +5469,10 @@ Public Class FO4UnifiedMaterial_Class
     ''' Llamando a <c>Serialize</c> derecho, la excepción sale y la ley de escritura hace lo suyo. Es la
     ''' misma razón por la que <c>NifContent_Class.Save_As_Manolo</c> mira el código de retorno ADENTRO
     ''' del cuerpo.</para></summary>
+    ''' <summary>The encoding of a material's write: the one `New BinaryWriter(stream)` builds (no BOM, throws on an invalid string).
+    ''' SerializarMaterial and MaterialFileReader's noting writer share it: the same bytes.</summary>
+    Friend Shared ReadOnly CodificacionDelEscritor As New System.Text.UTF8Encoding(False, True)
+
     Public Shared Sub SerializarMaterial(material As BaseMaterialFile, fs As Stream)
         If material Is Nothing Then Throw New ArgumentNullException(NameOf(material))
         If fs Is Nothing Then Throw New ArgumentNullException(NameOf(fs))
@@ -5361,7 +5480,7 @@ Public Class FO4UnifiedMaterial_Class
         ' parámetro — que es lo que usaba `Save` —, así que los bytes emitidos no se mueven. NO se pone
         ' `Encoding.UTF8`: ése lleva preámbulo BOM y fallback de reemplazo en vez de tirar, o sea otra
         ' política ante un string inválido.
-        Using w As New BinaryWriter(fs, New System.Text.UTF8Encoding(False, True), leaveOpen:=True)
+        Using w As New BinaryWriter(fs, CodificacionDelEscritor, leaveOpen:=True)
             material.Serialize(w)
             w.Flush()
         End Using
@@ -5399,7 +5518,7 @@ Public Class FO4UnifiedMaterial_Class
         ' Con el lote, si CUALQUIERA de las dos etapas falla se restauran las anteriores en orden
         ' inverso: el par queda CONSISTENTE-VIEJO y el estado mixto deja de existir.
         Using lote = BSA_BA2_Library_DLL.EscrituraEnElLugar.NuevoLote()
-            lote.Guardar(filePath, Sub(fs) MaterialFileReader.Escribir(bgsm, _fileBlendRaw, fs))
+            lote.Guardar(filePath, Sub(fs) MaterialFileReader.Escribir(bgsm, _fileBlendRaw, fs, _flotantesDeColor, _rutasDelJson))
             ' Sidecar carries fields the v2 binary cannot persist: the runtime envmap-mask path
             ' (NIF slot 5, FO4) plus the Skyrim-container (option (b)) flow (slot 5) / lighting
             ' (slot 6) textures. Each key is written only when non-empty.
@@ -5418,7 +5537,7 @@ Public Class FO4UnifiedMaterial_Class
         If bgem Is Nothing Then
             Throw New InvalidOperationException("Save_To_Bgem: Underlying_Material is not a BGEM (" & Underlying_Material?.GetType().Name & ")")
         End If
-        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) MaterialFileReader.Escribir(bgem, _fileBlendRaw, fs))
+        BSA_BA2_Library_DLL.EscrituraEnElLugar.GuardarConCopia(filePath, Sub(fs) MaterialFileReader.Escribir(bgem, _fileBlendRaw, fs, _flotantesDeColor, _rutasDelJson))
         ClearDirty()
     End Sub
 

@@ -4969,7 +4969,7 @@ Public Class PreviewModel
                 If mb Is Nothing OrElse SkinToneBaked OrElse mb.ResolveEffectiveType() <> FO4UnifiedMaterial_Class.EffectiveLightingType.SkinTint Then
                     Return (Vector3.Zero, 0.0F, False)
                 End If
-                Return (Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(mb.SkinTintColor, mb.TintColorScale)), mb.SkinTintAlpha, True)
+                Return (Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(mb.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.SkinTint), mb.TintColorScale)), mb.SkinTintAlpha, True)
             End Function
 
             ''' <summary>The geometry's extra data named "BTED" (0x142507510), Nothing without one.</summary>
@@ -8242,6 +8242,7 @@ Public Class PreviewModel
         Friend Function IsDrawable() As Boolean
             Dim shp = MeshData?.Shape
             If shp Is Nothing OrElse shp.RenderHide Then Return False
+            If MaterialCrashesTheGame(shp.ShapeMaterial) Then Return False
             Return HelperShapeGate.IsShapeDrawable(shp, SceneVisibility(), DrawEngineSkippedForEditing())
         End Function
 
@@ -8361,10 +8362,16 @@ Public Class PreviewModel
             Next
         End Sub
 
-        ''' <summary>Ola 7h round 4e (re28 1): THE producer of "Material &lt;path&gt;: &lt;key&gt; has the wrong type; the game would crash"
-        ''' (coordinator decision 22-oct-2026, an ERROR): this shape's own material and each of its overlay layers' whose JSON has a value
-        ''' the engine's reader aborts on (FO4UnifiedMaterial_Class.ClaveQueCierraElJuego); the preview draws them with the BSShaderData
-        ''' ctor's values. Called by PreviewModel.ReportUndrawnShapes with the shape's own notice: the same frustum and visibility.</summary>
+        ''' <summary>THE producer of the material file's two notices, for this shape's own material and each of its overlay layers'
+        ''' (called by PreviewModel.ReportUndrawnShapes with the shape's own notice: the same frustum and visibility):
+        ''' <list type="bullet">
+        ''' <item>"Fallout 4 crashes loading this material: &lt;path&gt; (&lt;key&gt;: &lt;what it held&gt;)" - an ERROR: the JSON has a value the
+        ''' engine's reader aborts on (FO4UnifiedMaterial_Class.CierreDelJuego; re30 5). User decision 27-oct-2026: the shape or the
+        ''' layer is not drawn (MaterialCrashesTheGame).</item>
+        ''' <item>"Texture path longer than 271 bytes overflows Fallout 4's buffer: &lt;texture path&gt;" - a WARNING, the game's result is
+        ''' undefined (0x142176C00's 0x110-byte stack buffer, re30 4.1; FO4UnifiedMaterial_Class.TexturasQueDesbordanElBuffer). User
+        ''' decision 27-oct-2026: the path is read as it is.</item>
+        ''' </list></summary>
         Friend Sub ReportMaterialFileCrash()
 #If DEBUG Then
             ' Ola 7h tester round 4e (ShadowGate --ola7h-r4e L): the ERROR has no producer.
@@ -8373,15 +8380,37 @@ Public Class PreviewModel
             Dim shp = MeshData.Shape
             If shp Is Nothing OrElse shp.Wireframe OrElse shp.NifShape Is Nothing Then Exit Sub
             If Not HelperShapeGate.IsShapeShown(shp, SceneVisibility()) Then Exit Sub
-            Dim propio = shp.ShapeMaterial
-            Dim clave = propio?.material?.ClaveQueCierraElJuego()
-            If clave IsNot Nothing Then ParentModel.ReportUndrawn(NoticeName(Nothing), $"{propio.path}: {clave}", FrameNoticeId.MaterialFileWrongType)
+            ReportMaterialFileNotices(NoticeName(Nothing), shp.ShapeMaterial)
             If shp.OverlayLayers Is Nothing Then Exit Sub
             For Each l In shp.OverlayLayers
-                Dim c = l?.Material?.material?.ClaveQueCierraElJuego()
-                If c IsNot Nothing Then ParentModel.ReportUndrawn(NoticeName(l), $"{l.Material.path}: {c}", FrameNoticeId.MaterialFileWrongType)
+                If l IsNot Nothing Then ReportMaterialFileNotices(NoticeName(l), l.Material)
             Next
         End Sub
+
+        ''' <summary>The two notices of one material file (ReportMaterialFileCrash).</summary>
+        Private Sub ReportMaterialFileNotices(name As String, rm As Nifcontent_Class_Manolo.RelatedMaterial_Class)
+            Dim mat = rm?.material
+            If mat Is Nothing Then Exit Sub
+            Dim cierre = mat.CierreDelJuego()
+            If cierre IsNot Nothing Then ParentModel.ReportUndrawn(name, $"{rm.path} ({cierre})", FrameNoticeId.MaterialFileWrongType)
+#If DEBUG Then
+            ' Ola JSON tester: the 271-byte WARNING has no producer.
+            If Fo4GBufferConstants.GateMutantOn("oj-271-sin-aviso") Then Exit Sub
+#End If
+            For Each t In mat.TexturasQueDesbordanElBuffer()
+                ParentModel.ReportUndrawn(name, $"Texture path longer than 271 bytes overflows Fallout 4's buffer: {t}", FrameNoticeId.TexturePathOverflowsBuffer)
+            Next
+        End Sub
+
+        ''' <summary>User decision 27-oct-2026: a material file Fallout 4 closes loading (FO4UnifiedMaterial_Class.CierreDelJuego) is not
+        ''' drawn - the shape's own (IsDrawable) and an overlay layer's (PreviewModel.CollectOverlayItems).</summary>
+        Friend Shared Function MaterialCrashesTheGame(rm As Nifcontent_Class_Manolo.RelatedMaterial_Class) As Boolean
+#If DEBUG Then
+            ' Ola JSON tester: the crashing material drawn (with the BSShaderData ctor's values, ola 7h round 4e).
+            If Fo4GBufferConstants.GateMutantOn("oj-aborto-se-dibuja") Then Return False
+#End If
+            Return rm?.material?.CierreDelJuego() IsNot Nothing
+        End Function
 
         Friend Sub ReportUndrawn(layer As OverlayMaterialLayer)
             Dim shp = MeshData.Shape
@@ -9662,17 +9691,17 @@ Public Class PreviewModel
         ''' <param name="gbuf">Fallout 4's G-buffer draw of a lighting shape (ColourDrawProgram): its record's program draws, and
         ''' ApplyFo4GBufferDraw sets its write mode, blend and constants after the shared material state.</param>
         ''' <summary>C10: a material colour as the shader gets it - the controller's rest colour (floats, as the engine stores it), else
-        ''' the material's (8-bit) - through the game's colour law (Shader_Base_Class.MaterialColor: FO4 powf 2.2, SSE raw).</summary>
-        Private Shared Function RestColour(rest As OpenTK.Mathematics.Vector3?, materialColour As Drawing.Color, isSse As Boolean) As OpenTK.Mathematics.Vector3
-            If Not rest.HasValue Then Return Shader_Base_Class.MaterialColor(materialColour, isSse)
-            Return If(isSse, rest.Value, Shader_Base_Class.Vector_to_Linear(rest.Value))
+        ''' the material's (FO4UnifiedMaterial_Class.ColorDelMotor: the file's floats, or the 8-bit channel / 255) - through the game's
+        ''' colour law (FO4 powf 2.2, SSE raw: Shader_Base_Class.MaterialColor's, on the floats).</summary>
+        Private Shared Function RestColour(rest As OpenTK.Mathematics.Vector3?, materialColour As OpenTK.Mathematics.Vector3, isSse As Boolean) As OpenTK.Mathematics.Vector3
+            Dim v = If(rest.HasValue, rest.Value, materialColour)
+            Return If(isSse, v, Shader_Base_Class.Vector_to_Linear(v))
         End Function
 
-        ''' <summary>C10: the effect's base colour as the engine stores it (+0x48..0x50, 0..1 floats): the colour controller's rest value,
-        ''' else the material's 8-bit colour / 255.</summary>
+        ''' <summary>C10: the effect's base colour as the engine stores it (+0x48..0x50, floats): the colour controller's rest value, else
+        ''' the material's (FO4UnifiedMaterial_Class.ColorDelMotor: the file's floats, or the 8-bit colour / 255).</summary>
         Private Shared Function RestBase(material As PreviewModel.RenderableMesh.MaterialData) As OpenTK.Mathematics.Vector3
-            Dim c = material.MaterialBase.BaseColor
-            Return If(material.RestColourAt(RestVariable.EffectEmissiveColor), New OpenTK.Mathematics.Vector3(c.R / 255.0F, c.G / 255.0F, c.B / 255.0F))
+            Return If(material.RestColourAt(RestVariable.EffectEmissiveColor), material.MaterialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.Base))
         End Function
 
         Friend Sub ApplyMaterial(material As PreviewModel.RenderableMesh.MaterialData, Optional gbuf As Fo4GBufferDraw? = Nothing, Optional fx As Fo4EffectDraw? = Nothing)
@@ -10084,9 +10113,9 @@ Public Class PreviewModel
             If isSSE Then shader.SetFloat("glossiness", material.RestValue(RestVariable.Glossiness))
             ' FO4 SetupMaterial powf(2.2)s the material colours (DAT_142475358); SSE's pipeline is raw (no gamma
             ' constant anywhere in its setup, raw cbuffer writes).
-            shader.SetVector3("specularColor", RestColour(material.RestColourAt(RestVariable.SpecularColor), materialBase.SpecularColor, isSSE))
+            shader.SetVector3("specularColor", RestColour(material.RestColourAt(RestVariable.SpecularColor), materialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.Specular), isSSE))
             shader.SetFloat("specularStrength", material.RestValue(RestVariable.SpecularStrength))
-            shader.SetVector3("emissiveColor", RestColour(material.RestColourAt(RestVariable.LightingEmissiveColor), materialBase.EmittanceColor, isSSE))
+            shader.SetVector3("emissiveColor", RestColour(material.RestColourAt(RestVariable.LightingEmissiveColor), materialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.Emittance), isSSE))
             shader.SetFloat("emissiveMultiple", material.RestValue(RestVariable.LightingEmissiveMultiple))
             shader.SetFloat("fresnelPower", materialBase.FresnelPower)
             shader.SetFloat("subsurfaceRolloff", materialBase.SubsurfaceLightingRolloff)
@@ -10131,13 +10160,13 @@ Public Class PreviewModel
             ' (mix(1, tint, vColor.g)), not as a flat albedo multiply. Route via bHairTint.
             shader.SetBool("bHairTint", isSSE AndAlso materialBase.Hair)
             If hasTint Then
-                Dim tint As Color
+                Dim tint As Vector3
                 Dim tintVec As Vector3
                 If materialBase.SkinTint Then
                     ' SkinTint tone = per-actor SkinToneColor (NPC, set by the manager) or the material
                     ' SkinTintColor (WM / fallback). No White special-case: the engine never bakes the
                     ' tone into the texture; it is soft-lit at render from this color.
-                    tint = materialBase.SkinTintColor
+                    tint = materialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.SkinTint)
                     ' SSE: el motor copia el skin tone resuelto (QNAM = lerp(0.5,TINC/255,TINV)) al
                     ' tintColor del material CRUDO (×1/255, SIN gamma) — verificado en SkyrimSE.exe
                     ' 0x3B8D80 (resolver, mulss 1/255) + 0x4365E0 (copy verbatim al material type-5).
@@ -10145,7 +10174,7 @@ Public Class PreviewModel
                     tintVec = If(isSSE, ScaledTintSrgb(tint, materialBase.TintColorScale),
                                         Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale)))
                 Else
-                    tint = materialBase.HairTintColor
+                    tint = materialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.HairTint)
                     ' SSE copies the hair colour into cb1[1] raw; FO4 powf(2.2)s it in SetupMaterial.
                     tintVec = If(isSSE, ScaledTintSrgb(tint, materialBase.TintColorScale),
                                         Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale)))
@@ -10720,8 +10749,8 @@ Public Class PreviewModel
         ''' El resultado puede exceder 1.0 a propósito; el shader lo tolera
         ''' (<c>color.rgb *= vec3(1.0) + vColor.y * (tintColor - vec3(1.0))</c>). Se escala ANTES de linearizar
         ''' porque pow(2c,2.2) ≠ 2·pow(c,2.2). Con scale=1.0F (default) es idéntico al comportamiento previo.</summary>
-        Private Shared Function ScaledTintSrgb(tint As Color, scale As Single) As Vector3
-            Dim v = Shader_Base_Class.Color_to_Vector(tint)
+        Private Shared Function ScaledTintSrgb(tint As Vector3, scale As Single) As Vector3
+            Dim v = tint
             If scale <> 1.0F Then v *= scale
             Return v
         End Function
@@ -12499,8 +12528,8 @@ Public Class PreviewModel
     ''' the layers naming it (OverlayMaterialLayer.MaterialUnreadable).</summary>
     Friend ReadOnly FrameUnreadableOverlayMaterials As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
 
-    ''' <summary>Ola 7h round 4e (re28 1): this frame's material files whose JSON makes the game abort: "path: key" -&gt; the shapes and
-    ''' layers naming them (FO4UnifiedMaterial_Class.ClaveQueCierraElJuego).</summary>
+    ''' <summary>Ola 7h round 4e (re28 1): this frame's material files whose JSON makes the game abort: "path (key: what it held)" -&gt;
+    ''' the shapes and layers naming them (FO4UnifiedMaterial_Class.CierreDelJuego).</summary>
     Friend ReadOnly FrameMaterialFileCrashes As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.OrdinalIgnoreCase)
 
     ''' <summary>C4: this frame's empty texture slots sampled with a non-neutral default: slot name -&gt; shapes.</summary>
@@ -12564,7 +12593,7 @@ Public Class PreviewModel
         ''' the game applies what its reader reached and the BSShaderData ctor's values beyond (re27 1), and so does the preview.</summary>
         UnreadableOverlayMaterial
         ''' <summary>A material file whose JSON value has a type the engine's reader aborts on (FrameMaterialFileCrashes): the game
-        ''' closes; the preview draws the BSShaderData ctor's values (re28 1). Coordinator decision 22-oct-2026: an error.</summary>
+        ''' closes (re30 5). Coordinator decision 22-oct-2026: an error; user decision 27-oct-2026: the shape or layer is not drawn.</summary>
         MaterialFileCrash
         ''' <summary>C4: an empty texture slot the game samples with a default that is not neutral (FrameEmptyTextureSlots).</summary>
         EmptyTextureSlot
@@ -12722,6 +12751,9 @@ Public Class PreviewModel
         ParallaxUndefinedView
         ''' <summary>An SSE eye without per-vertex eye data: the game has no reflection centre for it (RenderableMesh.SseEyeWithoutEyeData).</summary>
         SseEyeWithoutEyeData
+        ''' <summary>Ola JSON (user decision 27-oct-2026): a JSON material's texture path longer than the 271 bytes the engine's texture
+        ''' helper holds (RenderableMesh.ReportMaterialFileCrash, the one producer).</summary>
+        TexturePathOverflowsBuffer
         ' ---- the texture kinds
         MissingTexture
         ''' <summary>A layer's overlay material that did not load (RenderableMesh.ReportMissingOverlayMaterials, the one producer).</summary>
@@ -12792,12 +12824,12 @@ Public Class PreviewModel
                  FrameNoticeId.EnvCubeMoreMipsThanArray, FrameNoticeId.PlacedWithoutEngineBound
                 Return (FrameNoticeKind.DrawnDifferently, E)                        ' what the preview cannot draw as the game does
             Case FrameNoticeId.TextureReadInconsistently, FrameNoticeId.RecolorWithoutBase, FrameNoticeId.ParallaxUndefinedView,
-                 FrameNoticeId.SseEyeWithoutEyeData
-                Return (FrameNoticeKind.UndefinedInGame, W)                         ' what the game leaves undefined
+                 FrameNoticeId.SseEyeWithoutEyeData, FrameNoticeId.TexturePathOverflowsBuffer
+                Return (FrameNoticeKind.UndefinedInGame, W)                         ' what the game leaves undefined (a stack overrun: user decision 27-oct-2026)
             Case FrameNoticeId.MissingTexture : Return (FrameNoticeKind.MissingTexture, E)
             Case FrameNoticeId.OverlayMaterialNotFound : Return (FrameNoticeKind.MissingOverlayMaterial, W)   ' user decision 22-oct-2026
             Case FrameNoticeId.OverlayMaterialUnreadable : Return (FrameNoticeKind.UnreadableOverlayMaterial, W)   ' coordinator 22-oct-2026, re27 1
-            Case FrameNoticeId.MaterialFileWrongType : Return (FrameNoticeKind.MaterialFileCrash, E)   ' coordinator 22-oct-2026, re28 1
+            Case FrameNoticeId.MaterialFileWrongType : Return (FrameNoticeKind.MaterialFileCrash, E)   ' coordinator 22-oct-2026, re28 1; not drawn: user 27-oct-2026
             Case FrameNoticeId.RejectedTexture : Return (FrameNoticeKind.RejectedTexture, E)
             Case FrameNoticeId.CrashingTexture : Return (FrameNoticeKind.CrashingTexture, E)
             Case FrameNoticeId.EmptyTextureSlot : Return (FrameNoticeKind.EmptyTextureSlot, W)
@@ -12927,7 +12959,7 @@ Public Class PreviewModel
             (FrameNoticeKind.MissingTexture, Function(r, n) $"{missingLabel} ({shapes(n)}): {r}"),
             (FrameNoticeKind.MissingOverlayMaterial, Function(r, n) $"Overlay material not found ({shapes(n)}): {r}"),
             (FrameNoticeKind.UnreadableOverlayMaterial, Function(r, n) $"Overlay material unreadable ({shapes(n)}): {r}"),
-            (FrameNoticeKind.MaterialFileCrash, Function(r, n) $"Material {r} has the wrong type; the game would crash ({shapes(n)})"),
+            (FrameNoticeKind.MaterialFileCrash, Function(r, n) $"Fallout 4 crashes loading this material: {r} ({shapes(n)})"),
             (FrameNoticeKind.RejectedTexture, Function(r, n) $"Texture the game cannot create, sampled as zero ({shapes(n)}): {r}"),
             (FrameNoticeKind.CrashingTexture, Function(r, n) $"Texture that crashes the game ({shapes(n)}): {r}"),
             (FrameNoticeKind.EmptyTextureSlot, Function(r, n) $"Empty texture slot ({shapes(n)}): {r}"),
@@ -13846,6 +13878,7 @@ Public Class PreviewModel
             For posicion = 0 To layers.Count - 1
                 Dim layer = layers(posicion)
                 If layer Is Nothing OrElse layer.Material Is Nothing Then Continue For
+                If RenderableMesh.MaterialCrashesTheGame(layer.Material) Then Continue For
                 Dim md = mesh.OverlayMaterialData(layer)
                 Dim it As New OverlayItem With {.Mesh = mesh, .Layer = layer, .Attach = posicion}
                 If md.MaterialBase Is Nothing Then Continue For
