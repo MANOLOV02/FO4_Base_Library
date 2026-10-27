@@ -649,14 +649,24 @@ Public Class Config_App
             ' que no tira el rig del usuario: la blandura de la sombra (decision del usuario 21-oct-2026, «ya no se puede poner
             ' valor menor que dos y si estaba guardado lo lleva a 2»). La regla es PURA y vive en
             ' PreviewLightRig.WithShadowSoftnessInRange; aca se aplica a los dos rigs, se registra en el log y se graba UNA vez.
+            ' Lo mismo para el RANGO del Shadow Bias (decision del usuario 26-oct-2026; PreviewLightRig.WithShadowBiasInRange). Un rig
+            ' guardado sin la clave no necesita rama: se guarda el DESVIO respecto del juego (ShadowBiasDeviation), y el 0 que deja el
+            ' deserializador ES el sesgo del juego (revision sb-03).
             For Each esSse In {False, True}
                 Dim guardado = If(esSse, Current.Setting_LightRig_SSE, Current.Setting_LightRig_FO4)
+                Dim juego = If(esSse, "Skyrim SE", "Fallout 4")
                 Dim enRango = PreviewLightRig.WithShadowSoftnessInRange(guardado, esSse)
                 If enRango.ShadowSoftnessTexels <> guardado.ShadowSoftnessTexels Then
-                    Dim juego = If(esSse, "Skyrim SE", "Fallout 4")
                     Dim antes = guardado.ShadowSoftnessTexels, despues = enRango.ShadowSoftnessTexels
                     Logger.LogLazy(Function() $"[CFG] {juego} light rig: Softness {antes.ToString(Globalization.CultureInfo.InvariantCulture)} -> {despues.ToString(Globalization.CultureInfo.InvariantCulture)}, brought into its game's range (PreviewLightRig.WithShadowSoftnessInRange); the config is saved.")
-                    If esSse Then Current.Setting_LightRig_SSE = enRango Else Current.Setting_LightRig_FO4 = enRango
+                End If
+                Dim conBias = PreviewLightRig.WithShadowBiasInRange(enRango)
+                If conBias.ShadowBiasDeviation <> enRango.ShadowBiasDeviation Then
+                    Dim antes = enRango.ShadowBiasMultiplier(), despues = conBias.ShadowBiasMultiplier()
+                    Logger.LogLazy(Function() $"[CFG] {juego} light rig: Shadow Bias {antes.ToString(Globalization.CultureInfo.InvariantCulture)} -> {despues.ToString(Globalization.CultureInfo.InvariantCulture)}, brought into its range (PreviewLightRig.WithShadowBiasInRange); the config is saved.")
+                End If
+                If Not conBias.Equals(guardado) Then
+                    If esSse Then Current.Setting_LightRig_SSE = conBias Else Current.Setting_LightRig_FO4 = conBias
                     hayQueGrabar = True
                 End If
             Next

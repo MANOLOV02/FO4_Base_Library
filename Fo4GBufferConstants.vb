@@ -157,7 +157,9 @@ Friend Module Fo4GBufferConstants
     ''' --fo4-effect-constants: Fo4EffectConstants ("efx-world-eye", "efx-eyepos-skinned", "efx-falloff-order", "efx-softvs",
     ''' "efx-propcolor-w", "efx-alphatest-y", "efx-pspot", "efx-cameradata", "efx-li-soft", "efx-envscale", "efx-fog-on") and
     ''' BindEffectVertexStage ("efx-world-cond", "efx-texoff") and RenderableMesh.EffectGeometryWorld ("efx-world-node", "efx-world-appskin"). Ola 4: --fo4-shadow-law, Fo4UtilityTechnique
-    ''' ("utl-shadow-clamped", "utl-shadow-alpha", "utl-cull-none", "utl-bias-zero"); --fo4-light-law, Fo4DeferredLightLaw ("dfl-sun-ini",
+    ''' ("utl-shadow-clamped", "utl-shadow-alpha", "utl-cull-none", "utl-bias-zero"); the Shadow Bias (26-oct-2026): Render.vb
+    ''' RenderShadowPass and Fo4DeferredTargets.RunLights ("shadow-bias-off"), PreviewLightRig.WithShadowBiasInRange
+    ''' ("shadow-bias-no-range"); --fo4-light-law, Fo4DeferredLightLaw ("dfl-sun-ini",
     ''' "dfl-no-blendsplit", "dfl-smp-gl-rows") and Fo4DeferredTargets.Ensure ("dfl-cmp-lequal"); --fo4-camz, Fo4DeferredTargets.RunCameraZ
     ''' ("camz-clipinfos", "camz-dispatch-w"); --fo4-post-law, Fo4ImageSpaceChain ("post-bloom-row6", "post-offsets-no7", "post-drp-zw1",
     ''' "post-lut-noweight"); --fo4-refraction-normals, Render.vb RenderRefractionNormalsFo4 ("utl-refr-power0", "utl-eyepos-world").

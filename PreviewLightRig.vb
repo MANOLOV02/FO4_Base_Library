@@ -174,12 +174,14 @@ Public Structure PreviewLightRig
     ' compartian una unica configuracion global.
     '
     ' Y POR ESO MISMO **NO** SE MUDARON LAS OTRAS CINCO. `MapSize`, `Depth16`, los dos bias y `Enabled`
-    ' se quedan en PreviewShadowSettings porque son presupuesto de MAQUINA, no estetica. Si viajaran en el
+    ' se quedan en PreviewShadowSettings porque son presupuesto de MAQUINA, no estetica. (Los dos bias siguen
+    ' siendo las constantes de alla; lo que viaja con el rig es el MULTIPLICADOR de todo el sesgo de la
+    ' sombra, ShadowBiasDeviation (el desvio respecto del juego), por decision del usuario del 26-oct-2026: se guarda como Darkness y Softness.) Si viajaran en el
     ' preset, aplicar "Portrait" le reescribiria la calidad y la VRAM a alguien que puso 1024 porque su
     ' placa no da — un preset de ILUMINACION no tiene por que tocar el presupuesto de video, y el sintoma
     ' (se traba el preview despues de aplicar un preset) no apunta al preset.
     '
-    ' Consecuencia deliberada: tocar estas tres marca el combo de presets como "Custom", porque el rig
+    ' Consecuencia deliberada: tocar estas perillas (blandura, oscuridad, suelo y el Shadow Bias) marca el combo de presets como "Custom", porque el rig
     ' efectivamente dejo de coincidir con el preset. Ver Coincide.
 
     ''' <summary>Radio del kernel de PCF en TEXELES del mapa. Fraccionario: la parte entera son los taps y
@@ -220,6 +222,51 @@ Public Structure PreviewLightRig
     ''' subirlo. 1 = la luz ocluida se apaga del todo, que es lo que hace el motor. Menos de 1 NO es fiel;
     ''' existe porque en un previewer hace falta leer la textura del lado oscuro.</summary>
     Public Property ShadowDarkness As Single
+
+    ''' <summary>THE SHADOW BIAS, STORED AS ITS DEVIATION FROM THE GAME'S (user decision 26-oct-2026; revision sb-03): the rig keeps
+    ''' d = b - 1, where b is the one multiplier of every depth bias of the preview's shadow the dialog shows as "Bias"
+    ''' (<see cref="ShadowBiasMultiplier"/> = 1 + d). So the type's 0 IS the game - a rig built without it, a preset, a config saved
+    ''' before the knob all draw the game's bias - and no value of the knob is a sentinel. Saved with the rig like Darkness and
+    ''' Softness. What b multiplies - Fallout 4: the shadow-map pass's raster bias, SetupTechnique's index 8 (DepthBias 12 codes and
+    ''' SlopeScaledDepthBias 6.0, Fo4UtilityTechnique.ShadowMapBias) on both maps the pass draws (the light's and the ground
+    ''' catcher's), the sun receiver's 0.275 units (rec3227 L1086 / rec3232 L1101: its uniform AppShadowBiasGrowth IS d) and the ground
+    ''' catcher's depth bias; Skyrim SE: the app receiver's normal offset and depth bias (PreviewShadowSettings.NormalBiasTexels /
+    ''' DepthBiasTexels) and the ground catcher's - its map is drawn without a raster bias. d = 0 is the game's bias bit for bit (1 + 0
+    ''' and x 1.0 are exact); d = -1 draws no bias at all. Always in [-1, 1] (b in [0, <see cref="MaxShadowBias"/>],
+    ''' <see cref="WithShadowBiasInRange"/>): the writer keeps it, the readers take it as it is (PreviewModel.RenderShadowPass reads it
+    ''' once per frame).</summary>
+    Public Property ShadowBiasDeviation As Single
+
+    ''' <summary>The multiplier b the dialog shows and the receivers multiply by: 1 + <see cref="ShadowBiasDeviation"/> (the one
+    ''' conversion deviation -&gt; multiplier; <see cref="ShadowBiasDeviationOf"/> is the other way).</summary>
+    Public Function ShadowBiasMultiplier() As Single
+        Return EngineShadowBias + ShadowBiasDeviation
+    End Function
+
+    ''' <summary>The deviation a multiplier <paramref name="multiplier"/> is stored as: multiplier - 1 (the one conversion multiplier -&gt;
+    ''' deviation: the dialog's knob, the gates).</summary>
+    Public Shared Function ShadowBiasDeviationOf(multiplier As Single) As Single
+        Return multiplier - EngineShadowBias
+    End Function
+
+    ''' <summary>The multiplier that is the game's own bias (deviation 0).</summary>
+    Public Const EngineShadowBias As Single = 1.0F
+
+    ''' <summary>The top of the multiplier's range [0, 2] (user decision 26-oct-2026); the deviation's is [-1, 1].</summary>
+    Public Const MaxShadowBias As Single = 2.0F
+
+    ''' <summary>THE RIG WITH ITS SHADOW BIAS IN RANGE - the multiplier in [0, <see cref="MaxShadowBias"/>], the deviation in [-1, 1] -,
+    ''' the way Softness keeps its range (<see cref="WithShadowSoftnessInRange"/>): where a value ENTERS the rig - the knob (its Minimum /
+    ''' Maximum), the presets (deviation 0), the config's load (Config_App.LoadConfig, which logs a change and saves the file once; a
+    ''' config without the key needs nothing: the type's 0 is the game). Pure: a gate tests it without the user's config.</summary>
+    Public Shared Function WithShadowBiasInRange(rig As PreviewLightRig) As PreviewLightRig
+#If DEBUG Then
+        ' ParityGate shadow-bias, ShadowGate --shadow-bias: the rule without the range (a deviation saved out of it stays).
+        If Fo4GBufferConstants.GateMutantOn("shadow-bias-no-range") Then Return rig
+#End If
+        rig.ShadowBiasDeviation = Math.Clamp(rig.ShadowBiasDeviation, ShadowBiasDeviationOf(0.0F), ShadowBiasDeviationOf(MaxShadowBias))
+        Return rig
+    End Function
 
     ''' <summary>Dibuja la silueta sobre el plano del piso (el "shadow catcher").
     ''' <para>NO es gratis: reserva un SEGUNDO array de shadow maps del mismo lado y con las mismas
@@ -295,6 +342,7 @@ Public Structure PreviewLightRig
                ColorCoincide(a.AmbientGroundColor, b.AmbientGroundColor) AndAlso
                CasiIgual(a.ShadowSoftnessTexels, b.ShadowSoftnessTexels) AndAlso
                CasiIgual(a.ShadowDarkness, b.ShadowDarkness) AndAlso
+               CasiIgual(a.ShadowBiasDeviation, b.ShadowBiasDeviation) AndAlso
                a.ShadowOnGround = b.ShadowOnGround
     End Function
 
@@ -349,6 +397,7 @@ Public Structure PreviewLightRig
                     .AmbientGroundColor = RigColor.White,
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
+                    .ShadowBiasDeviation = 0.0F,
                     .ShadowOnGround = False}),
             New LightRigPreset("Sunny day", "Day",
                 "Sunny day: Hard high sun from the upper right blue sky as fill and a warm bounce off the ground.",
@@ -363,6 +412,7 @@ Public Structure PreviewLightRig
                     .AmbientGroundColor = New RigColor(1.0F, 0.9F, 0.76F),
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
+                    .ShadowBiasDeviation = 0.0F,
                     .ShadowOnGround = True}),
             New LightRigPreset("Full moon", "Night",
                 "Full moon: Dark night with a full moon over the sky.",
@@ -377,6 +427,7 @@ Public Structure PreviewLightRig
                     .AmbientGroundColor = New RigColor(0.0F, 0.0F, 0.0F),
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
+                    .ShadowBiasDeviation = 0.0F,
                     .ShadowOnGround = True}),
             New LightRigPreset("Portrait", "Day",
                 "Portrait: Key from the left, high enough to shape the cheekbone, fill opposite offset, off-axis hair kicker and a dark ground so the body falls into shadow.",
@@ -391,6 +442,7 @@ Public Structure PreviewLightRig
                     .AmbientGroundColor = New RigColor(0.7F, 0.66F, 0.62F),
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
+                    .ShadowBiasDeviation = 0.0F,
                     .ShadowOnGround = False}),
             New LightRigPreset("Sunset", "Sunset",
                 "Sunset: Almost dark with a warm glow from the setting sun.",
@@ -405,6 +457,7 @@ Public Structure PreviewLightRig
                     .AmbientGroundColor = New RigColor(0.0F, 0.0F, 0.0F),
                     .ShadowSoftnessTexels = 2.0F,
                     .ShadowDarkness = 1.0F,
+                    .ShadowBiasDeviation = 0.0F,
                     .ShadowOnGround = True})}
     End Function
 

@@ -256,12 +256,19 @@ Friend Module SseRenderPassLaw
     ''' shape: LightingSlot2BPasses, except a decal (a declared hole, below). Cast_Shadows: where Skyrim SE reads it is not
     ''' traced; the caster filter reads the material's CastShadows (as before). Gate: `sse-pass-law`.</summary>
     Friend Function ShadowMapCasts(s As SseShapeInputs) As Boolean
-        If s.IsEffect Then Return False
+        Return ShadowMapCastsCut(s) Is Nothing
+    End Function
+
+    ''' <summary>THE SAME LAW WITH ITS REASON (the one owner: ShadowMapCasts reads it): Nothing when the shape casts, else why slot
+    ''' 0x2B leaves it out - the diagnostics (ShadowGate --casters) report it.</summary>
+    Friend Function ShadowMapCastsCut(s As SseShapeInputs) As String
+        If s.IsEffect Then Return "an effect (slot 0x2B null outside mode 0xC, 0x14152A0C2)"
         ' HOLE, declared: a decal (bits 26 | 27). Slot 0x2B lets some through and alpha-tests every decal (0x20080,
         ' 0x14151B5ED..5F6 / 0x14151B6C8..6D2), but whether the shadow-map accumulators register a decal (0x14151EC10,
         ' +0x12C / +0x12D) and the cb11 of a decal without a NiAlphaProperty test are not traced: kept out, as before group B.
-        If s.Decal OrElse s.DynamicDecal Then Return False
-        Return LightingSlot2BPasses(s)
+        If s.Decal OrElse s.DynamicDecal Then Return "a decal (declared hole: kept out)"
+        If Not LightingSlot2BPasses(s) Then Return "the lighting slot 0x2B builds no pass (LightingSlot2BPasses: blend, alpha, refraction)"
+        Return Nothing
     End Function
 
     ''' <summary>The lists of the opaque finish 0x14151EF40 in the order it draws them (RE_SSE_PASS_GROUPS_DEPTH 3.2): the batch

@@ -67,12 +67,16 @@ Friend Module Fo4UtilityTechnique
 
     ''' <summary>The shadow map's raster bias: SetupTechnique's index 8 (0x142240C37..C4D) -&gt; DepthBias 12, SlopeScaledDepthBias 6.0
     ''' (Fo4RenderPassLaw.BiasOf, the table 0x141856170), clamp -100. On the D16_UNORM map (0x141822330: re.md 7 H-1) a unit of
-    ''' DepthBias is one code, 1 / (2^16 - 1) (D3D11.3 15.10); the draw applies it through Gl43.DepthBias.</summary>
-    Friend Function ShadowMapBias() As (DepthBias As Single, Slope As Single, Clamp As Single)
+    ''' DepthBias is one code, 1 / (2^16 - 1) (D3D11.3 15.10); the draw applies it through Gl43.DepthBias.
+    ''' <para>APP (user decision 26-oct-2026): DepthBias and SlopeScaledDepthBias times the rig's Shadow Bias
+    ''' <paramref name="shadowBias"/> (PreviewLightRig.ShadowBiasMultiplier): 1 = the engine's index 8 bit for bit (x 1.0 is exact), 0 = no bias
+    ''' (Gl43.DepthBias turns the offset off). The clamp is not a bias: it stays.</para></summary>
+    Friend Function ShadowMapBias(shadowBias As Single) As (DepthBias As Single, Slope As Single, Clamp As Single)
 #If DEBUG Then
         If Fo4GBufferConstants.GateMutantOn("utl-bias-zero") Then Return (0.0F, 0.0F, -100.0F)
 #End If
-        Return Fo4RenderPassLaw.BiasOf(8)
+        Dim b = Fo4RenderPassLaw.BiasOf(8)
+        Return (b.DepthBias * shadowBias, b.Slope * shadowBias, b.Clamp)
     End Function
 
     ''' <summary>TexcoordOffset of a utility draw: SetupTechnique writes (0, 0, 1, 1) (0x142240E99..EA3); SetupMaterial writes the

@@ -274,10 +274,13 @@ Friend NotInheritable Class Fo4DeferredPrograms
             PreviewControl.TraceBoot($"Fo4DeferredPrograms: the start programs ({_built.Count}: lights, composites, app passes)", sw)
 #If DEBUG Then
             ' rev-E08: the rig's Darkness reaches the shadowed sun techniques the rig draws only through the line the generator
-            ' rewrote in their PS (Fo4DFLightSource.AppShadowDarknessLines): a law technique outside that list would lose it.
+            ' rewrote in their PS (Fo4DFLightSource.AppShadowDarknessLines): a law technique outside that list would lose it. The
+            ' Shadow Bias (26-oct-2026) the same, through its line (AppShadowBiasLines) in the same PS.
             For Each ambient In {True, False}
                 Dim ps = Fo4DFLightSource.PixelShaderId(Fo4DeferredLightLaw.SunTechnique(True, ambient))
                 If Not Fo4DFLightSource.AppShadowDarknessPs.Contains(ps) Then Throw New Exception($"light PS 0x{ps:X8} of the rig's shadowed sun is not in Fo4DFLightSource.AppShadowDarknessPs (the rig's Darkness would not reach it)")
+                Dim fn = Fo4DFLightSource.PixelShaders(ps).Fn
+                If Not Fo4DFLightSource.AppShadowBiasLines.Any(Function(l) fn.Contains("void " & l.Fn & "(")) Then Throw New Exception($"light PS 0x{ps:X8} of the rig's shadowed sun has no line of Fo4DFLightSource.AppShadowBiasLines (the rig's Shadow Bias would not reach it)")
             Next
             ' Debug (user decision 5-oct-2026): every record of the closed list built at start; the first failure throws.
             For Each tv In Fo4GBufferSource.LawTechniques
@@ -785,6 +788,11 @@ Friend Structure Fo4DeferredFrame
     ''' (Fo4DeferredLightLaw.RigShadowRadiusScale - 1; 0 = the game). Both are 0 for the game, so a frame built without them (a gate's
     ''' oracle frame) draws the game's receiver.</summary>
     Public ShadowLift As Single, ShadowRadiusGrowth As Single
+    ''' <summary>APP, the rig's Shadow Bias on the engine receiver (user decision 26-oct-2026): AppShadowBiasGrowth of the sun's PS = the
+    ''' rig's deviation (PreviewLightRig.ShadowBiasDeviation, multiplier - 1; 0 = the game, as the other two). The receiver's line
+    ''' rec3227 L1086 / rec3232 L1101 (ref = z - 0.275 / (far - near)) takes 0.275 (1 + growth) (Fo4DFLightSource.AppShadowBiasLines):
+    ''' growth 0 is the game's line bit for bit, and so is a program whose uniform was never set (GL's 0).</summary>
+    Public ShadowBiasGrowth As Single
 End Structure
 
 ''' <summary>THE TARGETS AND THE NON-G-BUFFER PASSES OF THE FO4 DEFERRED FRAME (Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md 1, 2,
@@ -1179,7 +1187,7 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' receiver's constants of Fo4DeferredLightLaw (ShadowMapProj, ShadowWorldScale, ShadowSampleParam, FadeDistances,
     ''' ShadowFadeParam); the rows of cascade 1 (3..5 of ShadowMapProj, 1 of ShadowWorldScale) are never selected
     ''' (FadeDistances.x = d(far) = 1) and stay unwritten. APP (rev-E08): the rig's Darkness (AppShadowLift) and Softness (the radius
-    ''' scale in ShadowSampleParam.z), the game's values for the default rig.</summary>
+    ''' scale in ShadowSampleParam.z), the game's values for the default rig; the Shadow Bias (AppShadowBiasGrowth, 26-oct-2026).</summary>
     ''' <summary>gates-v6 (rev-E16): the light techniques the last RunLights could not draw (no built program,
     ''' Fo4DeferredPrograms.LightProgram): the frame's notice reports them (PreviewControl.FinishFo4Deferred).</summary>
     Friend ReadOnly SkippedLightTechniques As New List(Of (Technique As UInteger, Light As Integer))
@@ -1220,13 +1228,16 @@ Friend NotInheritable Class Fo4DeferredTargets
                 Dim proj = Fo4DeferredLightLaw.ShadowMapProjRows(light.ShadowFit.ViewProj, f.View, f.Eye)
                 p.SetVector4Array("ShadowMapProj", proj)
                 p.SetVector4Array("ShadowWorldScale", {Fo4DeferredLightLaw.ShadowWorldScale(light.ShadowFit)})
-                Dim lift = f.ShadowLift, scale = 1.0F + f.ShadowRadiusGrowth
+                Dim lift = f.ShadowLift, scale = 1.0F + f.ShadowRadiusGrowth, biasGrowth = f.ShadowBiasGrowth
 #If DEBUG Then
                 ' ShadowGate --fo4-rig-knobs's mutant: the rig's knobs do not reach the engine receiver.
-                If Fo4GBufferConstants.GateMutantOn("rig-knobs-off") Then lift = 0.0F : scale = 1.0F
+                If Fo4GBufferConstants.GateMutantOn("rig-knobs-off") Then lift = 0.0F : scale = 1.0F : biasGrowth = 0.0F
+                ' ShadowGate --fo4-light-law / --fo4-rig-knobs: the Shadow Bias does not reach the shaders (Render's read has the same switch).
+                If Fo4GBufferConstants.GateMutantOn("shadow-bias-off") Then biasGrowth = 0.0F
 #End If
                 p.SetVector4("ShadowSampleParam", Fo4DeferredLightLaw.ShadowSampleParam(f.ShadowMap.Size, scale))
                 p.SetFloat("AppShadowLift", lift)
+                p.SetFloat("AppShadowBiasGrowth", biasGrowth)
                 p.SetVector4("FadeDistances", Fo4DeferredLightLaw.FadeDistances(f.Near, f.Far))
                 p.SetVector4("ShadowFadeParam", Fo4DeferredLightLaw.ShadowFadeParam())
                 Gl43.BindTextureUnit(5, TextureTarget.Texture2DArray, f.ShadowMap.LayerView(light.ShadowLayer))

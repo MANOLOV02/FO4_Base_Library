@@ -52,6 +52,10 @@ Friend Module Fo4RenderPassLaw
         Public Decal As Boolean
         Public Refraction As Boolean     ' F4SF1 15
         Public TempRefraction As Boolean ' F4SF1 2
+        ''' <summary>F4SF1 9 Cast_Shadows (a .bgsm's bCastShadows sets it, 0x14216B29E) and F4SF2 2 = bit 34 LOD_Objects (the NIF's only:
+        ''' the applicator does not write it). Read by ShadowMapCasts.</summary>
+        Public CastShadows As Boolean    ' F4SF1 9
+        Public LodObjects As Boolean     ' F4SF2 2 (bit 34)
         ''' <summary>Effect: FALLOFF or RGB_FALLOFF technique (bFalloffEnabled / bFalloffColorEnabled).</summary>
         Public Falloff As Boolean
         Public Billboard As Boolean      ' F4SF2 13 ("flag 45")
@@ -257,17 +261,25 @@ Friend Module Fo4RenderPassLaw
     ''' material alpha (+0x80) x fade (+0x1A0) is below [0x142929458] = 1.0 or unordered (comiss / jb, 0x14217B95C..973; the
     ''' preview has no fade: s.Alpha is the alpha it draws), when its flags carry 0xC008004 (F4SF1 2 Temp_Refraction, 15
     ''' Refraction, 26 / 27 decal; 0x14217B975..97F) or when its NiAlphaProperty blends (+0x28 bit 0, 0x14217B981..98A).
-    ''' After those it needs Cast_Shadows (flags bit 9, 0x14217B996..99B): the caster filter reads it as
-    ''' FO4UnifiedMaterial_Class.CastShadows (its one owner), not here. Hole, declared (traced, OPEN: inventory C6): without
-    ''' Cast_Shadows the pass is still built when the flags carry bit 34 (LOD_Objects) and the mode is 0x10 (0x14217B98C..9A5: bt 9,
-    ''' test 0x400000000, cmp ebp 0x10) - the mode of the directional shadow map the preview draws since ola 4
-    ''' (Fo4UtilityTechnique.ShadowMapTechnique); the caster filter (PreviewModel.RenderShadowPass) requires CastShadows, so a
-    ''' LOD_Objects shape without Cast_Shadows casts in the game and not in the preview. Gate: `fo4-pass-law`.</summary>
+    ''' Those three cuts come before any mode comparison, so they hold in every shadow mode (0xF spot, 0x10 sun and focus shadows,
+    ''' 0x11 omni; D:\WinTmp\rc\re29\re.md 1), and both registrars (0x1421D51A0 / 0x1421D54C0) already drop a bit-26 shape before slot
+    ''' 44 (0x1421D51BC / 0x1421D54DC); no other path adds a caster (re29 2). After the cuts the pass is built with Cast_Shadows (bit
+    ''' 9), or with bit 34 LOD_Objects in mode 0x10 (0x14217B98C..9A5: bt 9, test 0x400000000, cmp ebp 0x10). The preview's shadow map
+    ''' is the directional one, mode 0x10 (Fo4UtilityTechnique.ShadowMapTechnique, ola 4), so its law is Cast_Shadows OR
+    ''' LOD_Objects. Gate: `fo4-pass-law`.</summary>
     Friend Function ShadowMapCasts(s As Fo4ShapeInputs) As Boolean
-        If s.IsEffect Then Return False
-        If Not (s.Alpha >= 1.0F) Then Return False
-        If s.TempRefraction OrElse s.Refraction OrElse s.Decal Then Return False
-        Return Not s.Blend
+        Return ShadowMapCastsCut(s) Is Nothing
+    End Function
+
+    ''' <summary>THE SAME LAW WITH ITS REASON (the one owner: ShadowMapCasts reads it): Nothing when the shape casts, else the cut of
+    ''' slot 44 that leaves it out, in the exe's order - the diagnostics (ShadowGate --casters) report it instead of a loose bit.</summary>
+    Friend Function ShadowMapCastsCut(s As Fo4ShapeInputs) As String
+        If s.IsEffect Then Return "an effect (BSEffectShaderProperty slot 44 0x142168DA0: no shadow pass)"
+        If Not (s.Alpha >= 1.0F) Then Return "material alpha below 1 (0x14217B95C..973)"
+        If s.TempRefraction OrElse s.Refraction OrElse s.Decal Then Return "flags 0xC008004: Temp_Refraction / Refraction / decal (0x14217B975..97F)"
+        If s.Blend Then Return "its NiAlphaProperty blends (0x14217B981..98A)"
+        If Not (s.CastShadows OrElse s.LodObjects) Then Return "neither Cast_Shadows (F4SF1 9) nor LOD_Objects (F4SF2 2) (0x14217B98C..9A5)"
+        Return Nothing
     End Function
 
     ''' <summary>BSLightingShaderProperty::GetRenderPasses 0x14217A050, world modes 0x18 / 0x12: the material alpha (vfunc 0x198,

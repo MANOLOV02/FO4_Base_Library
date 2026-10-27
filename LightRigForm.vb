@@ -229,6 +229,7 @@ Partial Public Class LightRigForm
         ' PreviewModel.MapaEn16Bits): the box shows it and cannot change it; the stored Fallout 4 setting is left as it is.
         chkDepth16.Checked = sh.Depth16 OrElse Not EsSkyrim()
         PonerAyudasDeSombraPorJuego()
+        AlinearFilaDeSombras()
         ' ESTOS TRES SALEN DEL RIG, no de ActiveShadows(): blandura, oscuridad y receptor de suelo son
         ' parte del LOOK del set de luces y viajan con el preset. Ver el bloque de PreviewLightRig.
         chkGroundShadow.Checked = rig.ShadowOnGround
@@ -240,6 +241,7 @@ Partial Public Class LightRigForm
         CargarCalidadSombra(sh.MapSize)
         tShadowSoft.Value = rig.ShadowSoftnessTexels
         tShadowStrength.Value = rig.ShadowDarkness
+        tShadowBias.Value = rig.ShadowBiasMultiplier()
         ActualizarHabilitadoSombras()
         ActualizarAvisoDeSuelo()
 
@@ -551,17 +553,14 @@ Partial Public Class LightRigForm
         ' Lo que el tooltip TIENE que explicar: con `Setting_LightsFollowCamera` prendido la casilla del
         ' suelo queda habilitada aunque la elevacion AUTORADA del rig sea baja, porque la direccion efectiva
         ' la decide el arrastre y el corte no se puede evaluar de antemano.
+        ' EL ROTULO ES FIJO, "Ground shadow" (decision del usuario 26-oct-2026: la casilla sube a la primera fila del grupo, al lado de
+        ' "Cast shadows" y "Lights follow the camera"): su unico dueño es el designer. Lo que antes decia el rotulo largo -por que
+        ' esta deshabilitada- lo dice el TOOLTIP, que conserva la explicacion entera.
         If sigueALaCamara Then
-            chkGroundShadow.Text = "Shadow on the ground"
             ToolTip1.SetToolTip(chkGroundShadow,
                 "The rig follows the camera, so each light's effective elevation depends on where you drag: " &
                 "the ground catcher stays available and simply does not draw for a light that ends up too low.")
         Else
-            ' CORTO: el gate `ui-layout` del ShadowGate mide el ancho real del control contra el interior
-            ' del grupo, y un texto de una linea mas largo que el original lo saca del recuadro. Ya me paso
-            ' con "(follows the camera: shows when the light is high enough)" — 458 px contra 418.
-            chkGroundShadow.Text = If(puede, "Shadow on the ground",
-                                      $"Shadow on the ground (needs a casting light above {ElevacionMinima:0.00} deg)")
             ToolTip1.SetToolTip(chkGroundShadow,
                 $"Draws the character's silhouette on the floor plane. Needs at least one casting light above " &
                 $"{ElevacionMinima:0.00} deg: below that the projected shadow has no finite framing.")
@@ -656,6 +655,7 @@ Partial Public Class LightRigForm
                                                           End Sub
         AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarUIenModelo()
         AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarUIenModelo()
+        AddHandler tShadowBias.ValueChanged, Sub(sender, e) VolcarUIenModelo()
 
         ' "Show errors" / "Show warnings" / "Show info" (grupo Notices): sólo cambian el aviso del cuadro, así que REPINTAN
         ' (LightsChanged). No van por VolcarRenderEnModelo: ese levanta RenderSettingsChanged, que en los hosts rearma la geometría.
@@ -833,6 +833,7 @@ Partial Public Class LightRigForm
             .AmbientGroundColor = RigColor.FromColor(btnAmbGround.BackColor),
             .ShadowSoftnessTexels = CSng(tShadowSoft.Value),
             .ShadowDarkness = CSng(tShadowStrength.Value),
+            .ShadowBiasDeviation = PreviewLightRig.ShadowBiasDeviationOf(CSng(tShadowBias.Value)),
             .ShadowOnGround = chkGroundShadow.Checked}
 
         Config_App.Current.SetActiveLights(rig)
@@ -887,13 +888,20 @@ Partial Public Class LightRigForm
     ''' value (PreviewLightRig.ShadowSoftnessFloor, user decision 21-oct-2026) and the 16-bit box is fixed; on Skyrim SE they drive the
     ''' preview's PCF receiver. The ground catcher takes them as texels and darkness on both games. The knob's range is its game's
     ''' (PreviewLightRig.WithShadowSoftnessInRange: [ShadowSoftnessFloor, PreviewShadowSettings.MaxPcfRadius]); the rig it shows is
-    ''' already in it (the config's load migrates a saved one).</summary>
+    ''' already in it (the config's load migrates a saved one). The Shadow Bias (user decision 26-oct-2026) multiplies the whole depth
+    ''' bias of the shadow on both games - what that bias is depends on the game, so its tooltip does; its range is
+    ''' [0, PreviewLightRig.MaxShadowBias] on both (PreviewLightRig.WithShadowBiasInRange); the knob shows the multiplier, 1 + the rig's
+    ''' stored deviation (PreviewLightRig.ShadowBiasMultiplier / ShadowBiasDeviationOf).</summary>
     Private Sub PonerAyudasDeSombraPorJuego()
         tShadowSoft.Minimum = PreviewLightRig.ShadowSoftnessFloor(EsSkyrim())
         tShadowSoft.Maximum = PreviewShadowSettings.MaxPcfRadius
+        tShadowBias.Minimum = 0.0
+        tShadowBias.Maximum = PreviewLightRig.MaxShadowBias
         If EsSkyrim() Then
             ToolTip1.SetToolTip(tShadowSoft, "Shadow softness: the radius of the shadow filter, in shadow-map texels (also on the ground catcher).")
             ToolTip1.SetToolTip(tShadowStrength, "Shadow darkness: 1.0 is a full shadow; lower values let light through (shadow factor = 1 - Darkness x (1 - lit)).")
+            ToolTip1.SetToolTip(tShadowBias, "Shadow bias: scales the whole depth bias of the shadow - the receiver's normal offset and depth bias, also on the ground catcher. " &
+                                "1.00, every preset's value, is the preview's own bias; 0 removes it (self-shadowing acne); higher values push the shadow away from its caster.")
         Else
             ToolTip1.SetToolTip(tShadowSoft, "Shadow softness: scales the radius of Fallout 4's own shadow filter (16 Poisson samples within 3 texels). " &
                                 "2.0, every preset's value and the minimum, is the game's filter: the preview's shadow is never harder than the game's. " &
@@ -901,8 +909,21 @@ Partial Public Class LightRigForm
                                 "On the ground catcher it is the filter radius in texels.")
             ToolTip1.SetToolTip(tShadowStrength, "Shadow darkness: 1.0 is the game's shadow; lower values let light through " &
                                 "(shadow = mix(1, game shadow, Darkness)). Also used by the ground catcher.")
+            ToolTip1.SetToolTip(tShadowBias, "Shadow bias: scales the whole depth bias of Fallout 4's shadow - the shadow map's raster bias (DepthBias 12, slope 6.0) " &
+                                "and the receiver's 0.275 units - and the ground catcher's. 1.00, every preset's value, is the game's bias; 0 removes it; 2.00 doubles it.")
             ToolTip1.SetToolTip(chkDepth16, "Fallout 4 always draws its shadow maps in 16-bit depth (D16_UNORM), like the game: fixed.")
         End If
+    End Sub
+
+    ''' <summary>THE FIRST ROW OF THE SHADOWS GROUP (user decision 26-oct-2026): its three boxes justified on the dialog's grid, from
+    ''' chkShadows' left (x = 11) to the sliders' right edge (tShadowSoft.Right, x = 407) - the first at the left, the last ending at
+    ''' the right, the middle one centred in the space between them (equal gaps; an odd remainder puts its one pixel on the right).
+    ''' From each box's preferred (AutoSize) width, so the row holds at any DPI and font.</summary>
+    Private Sub AlinearFilaDeSombras()
+        Dim w1 = chkShadows.PreferredSize.Width, w2 = chkLightsFollowCamera.PreferredSize.Width, w3 = chkGroundShadow.PreferredSize.Width
+        Dim izq = chkShadows.Left, der = tShadowSoft.Right
+        chkGroundShadow.Left = der - w3
+        chkLightsFollowCamera.Left = izq + w1 + (der - w3 - (izq + w1) - w2) \ 2
     End Sub
 
     ''' <summary>Con las sombras apagadas, sus perillas no hacen nada: deshabilitarlas evita que alguien
@@ -921,6 +942,8 @@ Partial Public Class LightRigForm
         tShadowSoft.Enabled = on_
         lblShadowStrength.Enabled = on_
         tShadowStrength.Enabled = on_
+        lblShadowBias.Enabled = on_
+        tShadowBias.Enabled = on_
         ' El receptor de suelo tiene ADEMAS su propia condicion (elevacion de la key). Una sola fuente.
         ActualizarAvisoDeSuelo()
     End Sub

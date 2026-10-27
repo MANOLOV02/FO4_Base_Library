@@ -33596,7 +33596,7 @@ void Fo4DflPs_rec3227(out vec4 o0, out vec4 o1, out bool kill)
         r5.w = ShadowSampleParam.z * 3.0;                                                 // 1083  mul r5.w, cb2[20].z, l(3.000000)
         r6.z = -(ShadowWorldScale[0].z) + ShadowWorldScale[0].w;                          // 1084  add r6.z, -cb2[21].z, cb2[21].w
         r6.z = d3d_div(1.0, r6.z);                                                        // 1085  div r6.z, l(1.000000, 1.000000, 1.000000, 1.000000), r6.z
-        r2.y = -r6.z * FO4_L_0_275 + r2.y;                                                // 1086  mad r2.y, -r6.z, l(0.275000), r2.y
+        r2.y = -r6.z * (FO4_L_0_275 * (1.0 + AppShadowBiasGrowth)) + r2.y;   // APP shadow bias: 0.275 x b, AppShadowBiasGrowth = b - 1 |1086  mad r2.y, -r6.z, l(0.275000), r2.y
         i7.z = 0;                                                                         // 1087  mov r7.z, l(0)
         i8.z = 0;                                                                         // 1088  mov r8.z, l(0)
         i6.zw = ivec2(0, 0);                                                              // 1089  mov r6.zw, l(0,0,0,0)
@@ -36205,7 +36205,7 @@ void Fo4DflPs_rec3232(out vec4 o0, out vec4 o1, out bool kill)
         r7.x = ShadowSampleParam.z * 3.0;                                                 // 1098  mul r7.x, cb2[20].z, l(3.000000)
         r7.z = -(ShadowWorldScale[0].z) + ShadowWorldScale[0].w;                          // 1099  add r7.z, -cb2[21].z, cb2[21].w
         r7.z = d3d_div(1.0, r7.z);                                                        // 1100  div r7.z, l(1.000000, 1.000000, 1.000000, 1.000000), r7.z
-        r6.w = -r7.z * FO4_L_0_275 + r6.w;                                                // 1101  mad r6.w, -r7.z, l(0.275000), r6.w
+        r6.w = -r7.z * (FO4_L_0_275 * (1.0 + AppShadowBiasGrowth)) + r6.w;   // APP shadow bias: 0.275 x b, AppShadowBiasGrowth = b - 1 |1101  mad r6.w, -r7.z, l(0.275000), r6.w
         i9.z = 0;                                                                         // 1102  mov r9.z, l(0)
         i10.z = 0;                                                                        // 1103  mov r10.z, l(0)
         i7.zw = ivec2(0, 0);                                                              // 1104  mov r7.zw, l(0,0,0,0)

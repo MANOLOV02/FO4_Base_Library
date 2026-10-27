@@ -44,6 +44,8 @@ void main()
 vec2 dflSvPosition;
 // APP (rev-E08): 1 - the rig's Darkness on the sun's shadow (0 = the game; Fo4DeferredLightLaw.RigShadowLift).
 uniform float AppShadowLift;
+// APP (26-oct-2026): the rig's Shadow Bias - 1 on the receiver's 0.275 (0 = the game; PreviewLightRig.ShadowBiasDeviation).
+uniform float AppShadowBiasGrowth;
 "
     Friend Const AppMain2 As String = "// APP ENTRY of the engine PS (ola 4): SV_POSITION.xy = gl_FragCoord.xy (the frame is in D3D rows); the record's outputs to
 // the locations of their registers, its kill discards.
@@ -418,6 +420,13 @@ void main()
     Friend ReadOnly AppShadowDarknessLines As (Fn As String, Engine As String, App As String)() = {
         ("Fo4DflPs_rec3227", "    r1.w = r2.y * r1.w + 1.0;                                                             // 1165  mad r1.w, r2.y, r1.w, l(1.000000)", "    r1.w = (r2.y * (1.0 - AppShadowLift)) * r1.w + 1.0;   // APP rev-E08 mix(1, s, D), D = 1 - AppShadowLift |1165  mad r1.w, r2.y, r1.w, l(1.000000)"),
         ("Fo4DflPs_rec3232", "    r1.w = r2.z * r1.w + 1.0;                                                             // 1181  mad r1.w, r2.z, r1.w, l(1.000000)", "    r1.w = (r2.z * (1.0 - AppShadowLift)) * r1.w + 1.0;   // APP rev-E08 mix(1, s, D), D = 1 - AppShadowLift |1181  mad r1.w, r2.z, r1.w, l(1.000000)")}
+
+    ''' <summary>APP (26-oct-2026): the one line of each PS of AppShadowDarknessPs the generator rewrote for the rig's Shadow Bias -
+    ''' the receiver's 0.275 times (1 + AppShadowBiasGrowth) - as (function, the engine's line, the app's line), so a gate rebuilds the
+    ''' engine's text exactly (AnchoredReplace app -&gt; engine).</summary>
+    Friend ReadOnly AppShadowBiasLines As (Fn As String, Engine As String, App As String)() = {
+        ("Fo4DflPs_rec3227", "        r2.y = -r6.z * FO4_L_0_275 + r2.y;                                                // 1086  mad r2.y, -r6.z, l(0.275000), r2.y", "        r2.y = -r6.z * (FO4_L_0_275 * (1.0 + AppShadowBiasGrowth)) + r2.y;   // APP shadow bias: 0.275 x b, AppShadowBiasGrowth = b - 1 |1086  mad r2.y, -r6.z, l(0.275000), r2.y"),
+        ("Fo4DflPs_rec3232", "        r6.w = -r7.z * FO4_L_0_275 + r6.w;                                                // 1101  mad r6.w, -r7.z, l(0.275000), r6.w", "        r6.w = -r7.z * (FO4_L_0_275 * (1.0 + AppShadowBiasGrowth)) + r6.w;   // APP shadow bias: 0.275 x b, AppShadowBiasGrowth = b - 1 |1101  mad r6.w, -r7.z, l(0.275000), r6.w")}
 
     ''' <summary>The engine's VS of a light technique (SetupTechnique 0x142246B40 -&gt; 0x142271B30): 0, the one VS (rec3071).</summary>
     Friend Function VertexShaderId(technique As UInteger) As UInteger

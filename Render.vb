@@ -4710,6 +4710,7 @@ Public Class PreviewModel
                     .IsEffect = mb.IsBGEM(), .Alpha = PreviewAlpha(), .Blend = ea.Blend,
                     .ZTest = mb.ZBufferTest, .ZWrite = mb.ZBufferWrite,
                     .Decal = EngineDecal(False), .Refraction = mb.Refraction, .TempRefraction = bit(f1, 2),
+                    .CastShadows = bit(f1, 9), .LodObjects = bit(f2, 2),
                     .Falloff = mb.IsBGEM() AndAlso (bit(f1, 6) OrElse bit(f1, 8)),
                     .Billboard = bit(f2, 13), .PipboyScreen = bit(f2, 28),
                     .Soft = mb.IsBGEM() AndAlso bit(f1, 30) AndAlso Not PreviewModel.GateDisableSoft,
@@ -5067,9 +5068,15 @@ Public Class PreviewModel
             ''' refraction; a decal never (Fallout 4 by law; Skyrim SE a declared hole, kept out). Read by the caster filter
             ''' (PreviewModel.RenderShadowPass), next to CastShadows.</summary>
             Friend Function EngineShadowMapCasts(isSse As Boolean) As Boolean
-                If MaterialBase Is Nothing Then Return False
-                If isSse Then Return SseRenderPassLaw.ShadowMapCasts(SseInputs())
-                Return Fo4RenderPassLaw.ShadowMapCasts(Fo4Inputs())
+                Return EngineShadowMapCastsCut(isSse) Is Nothing
+            End Function
+
+            ''' <summary>EngineShadowMapCasts with its reason: Nothing when the game builds the shadow-map pass, else why not (the pass
+            ''' law's cut: Fo4RenderPassLaw / SseRenderPassLaw.ShadowMapCastsCut; a material that did not resolve). The diagnostics read it.</summary>
+            Friend Function EngineShadowMapCastsCut(isSse As Boolean) As String
+                If MaterialBase Is Nothing Then Return "the material did not resolve (MaterialBase = Nothing)"
+                If isSse Then Return SseRenderPassLaw.ShadowMapCastsCut(SseInputs())
+                Return Fo4RenderPassLaw.ShadowMapCastsCut(Fo4Inputs())
             End Function
 
             ''' <summary>THE FO4 COLOUR-PASS ALPHA TEST OF THIS MATERIAL: Fo4RenderPassLaw.ColourPassAlphaTest on the engine's NiAlphaProperty at
@@ -8208,6 +8215,27 @@ Public Class PreviewModel
         Friend Function DrawEngineSkippedForEditing() As Boolean
             Dim pc = ParentModel?.ParentControl
             Return pc IsNot Nothing AndAlso pc.Intent.DrawEngineSkippedForEditing
+        End Function
+
+        ''' <summary>THE SHADOW PASS'S CASTER FILTER (its one owner; PreviewModel.RenderShadowPass adds the mesh when this is Nothing, and
+        ''' the diagnostics report the reason): why this mesh does not cast in a frame of the game <paramref name="isSse"/>, or Nothing
+        ''' when it casts. In order: a shape, drawable (IsDrawable) and not wireframe; a resolved material; Skyrim SE: the material's
+        ''' CastShadows (where Skyrim SE reads Cast_Shadows is not traced, so the filter reads the material's bit, as before); the game's
+        ''' pass law with its reason (MaterialData.EngineShadowMapCastsCut: effects, blend, alpha &lt; 1 and refraction cast in neither
+        ''' game; a decal never in Fallout 4 - flags 0xC000000, 0x14217B979, every shadow mode: re29 - and a declared hole in Skyrim SE;
+        ''' Fallout 4 casts with Cast_Shadows OR LOD_Objects); Fallout 4: no declared preview gap (MaterialData.Fo4PreviewGap of
+        ''' <paramref name="programs"/>, the frame's deferred programs).</summary>
+        Friend Function ShadowCasterCut(isSse As Boolean, programs As Fo4DeferredPrograms) As String
+            If MeshData Is Nothing OrElse MeshData.Shape Is Nothing Then Return "the mesh has no shape"
+            If Not IsDrawable() Then Return "not drawable (RenderableMesh.IsDrawable)"
+            If MeshData.Shape.Wireframe Then Return "Wireframe"
+            Dim mb = MeshData.Material?.MaterialBase
+            If mb Is Nothing Then Return "the material did not resolve (MaterialBase = Nothing)"
+            If isSse AndAlso Not mb.CastShadows Then Return "CastShadows = False (Skyrim SE: the material's bit 9 of SF1)"
+            Dim cut = MeshData.Material.EngineShadowMapCastsCut(isSse)
+            If cut IsNot Nothing Then Return cut
+            If Not isSse AndAlso MeshData.Material.Fo4PreviewGap(programs) Then Return "a declared Fallout 4 preview gap (Fo4PreviewGap)"
+            Return Nothing
         End Function
 
         ''' <summary>The draw gate of every pass of this mesh: HelperShapeGate.IsShapeDrawable with this frame's SceneVisibility and view.</summary>
@@ -11763,6 +11791,14 @@ Public Class PreviewModel
     ''' de maquina.</summary>
     Private _shadowSoftness As Single
     Private _shadowDarkness As Single
+    ''' <summary>The rig's Shadow Bias multiplier (PreviewLightRig.ShadowBiasMultiplier, user decision 26-oct-2026), read ONCE per frame with the rest of the
+    ''' shadow's look (RenderShadowPass) for its three consumers - Fallout 4's emitter (RenderDepthIntoFo4: SetupTechnique's index 8 x
+    ''' it), the app receivers (UploadShadowUniforms: the normal offset and the depth bias x it) and Fallout 4's sun receiver
+    ''' (BuildFo4DeferredFrame: Fo4DeferredFrame.ShadowBiasGrowth, which is the deviation, _shadowBiasDeviation). All of them run after it
+    ''' in the same frame, and only with a map.</summary>
+    Private _shadowBias As Single
+    ''' <summary>The same read's deviation (PreviewLightRig.ShadowBiasDeviation = multiplier - 1): the sun receiver's AppShadowBiasGrowth.</summary>
+    Private _shadowBiasDeviation As Single
     Private _shadowActive As Boolean
     ' Buffers REUTILIZADOS para subir los uniforms de array. Campos y no locales por la misma razon que
     ' _shadowCasters y _shadowPlanes: esto corre en cada frame que se repinta.
@@ -12013,16 +12049,10 @@ Public Class PreviewModel
         ' un bug es justo lo que la regla "nunca un modo legacy" prohibe.
         Dim casters = _shadowCasters
         casters.Clear()
+        ' THE CASTER FILTER HAS ONE OWNER, RenderableMesh.ShadowCasterCut (the reason a mesh stays out, or Nothing): this pass and every
+        ' diagnostic (ShadowGate --casters, [castshadows], [castshadows-gate]) call it - nobody re-writes it.
         For Each mesh In meshes
-            If mesh Is Nothing OrElse mesh.MeshData Is Nothing OrElse mesh.MeshData.Shape Is Nothing Then Continue For
-            If Not mesh.IsDrawable() OrElse mesh.MeshData.Shape.Wireframe Then Continue For
-            Dim mb = mesh.MeshData.Material?.MaterialBase
-            If mb Is Nothing OrElse Not mb.CastShadows Then Continue For
-            ' THE ENGINE'S LAW (MaterialData.EngineShadowMapCasts): effects, blend, alpha < 1 and refraction cast in neither
-            ' game; a decal never in FO4 (flags 0xC000000, 0x14217B979). SSE: a decal is a declared hole (whether the
-            ' shadow-map accumulators register one, 0x14151EC10 +0x12C / +0x12D, is not traced) and stays out, as before group B.
-            If Not mesh.MeshData.Material.EngineShadowMapCasts(FrameIsSse) Then Continue For
-            If Not FrameIsSse AndAlso mesh.MeshData.Material.Fo4PreviewGap(ParentControl.SharedFo4Deferred) Then Continue For
+            If mesh Is Nothing OrElse mesh.ShadowCasterCut(FrameIsSse, ParentControl.SharedFo4Deferred) IsNot Nothing Then Continue For
             casters.Add(mesh)
         Next
         If casters.Count = 0 Then SoltarMapasDeSombra() : Exit Sub
@@ -12068,6 +12098,13 @@ Public Class PreviewModel
         ' In its game's range at the source (PreviewLightRig.WithShadowSoftnessInRange: the knob, the presets, the config's load).
         _shadowSoftness = rigVivo.ShadowSoftnessTexels
         _shadowDarkness = rigVivo.ShadowDarkness
+        ' In its range at the source (PreviewLightRig.WithShadowBiasInRange: the knob, the presets, the config's load).
+        _shadowBiasDeviation = rigVivo.ShadowBiasDeviation
+        _shadowBias = rigVivo.ShadowBiasMultiplier()
+#If DEBUG Then
+        ' ShadowGate --fo4-rig-knobs / --shadow-bias / --fo4-shadow-law: the Shadow Bias does not reach the shaders (the game's bias).
+        If Fo4GBufferConstants.GateMutantOn("shadow-bias-off") Then _shadowBiasDeviation = 0.0F : _shadowBias = PreviewLightRig.EngineShadowBias
+#End If
         _shadowCount = ShadowMapMath.SlotsDeSombra(rigVivo, _shadowSlots)
         If _shadowCount <= 0 Then SoltarMapasDeSombra() : Exit Sub
 
@@ -12159,7 +12196,7 @@ Public Class PreviewModel
                 ' dibujo cada vez que el usuario cruza esa elevacion, ida y vuelta, con la sombra de piso
                 ' apareciendo y desapareciendo.
                 ' La VRAM queda reservada mientras la OPCION siga prendida, que es exactamente el criterio:
-                ' apagar "Shadow on the ground" (config) si suelta, y eso lo hace la rama de arriba.
+                ' apagar "Ground shadow" (config) si suelta, y eso lo hace la rama de arriba.
                 OlvidarEncuadresDeSuelo()
             Else
                 If ParentControl.GroundShadowTarget Is Nothing Then ParentControl.GroundShadowTarget = New ShadowMapTarget()
@@ -12282,7 +12319,8 @@ Public Class PreviewModel
     ''' its target, 0x14224F578..596): the casters with their b07 technique (RenderableMesh.RenderShadowMapFo4), the frame rows of the
     ''' light's camera (0x14182BC80 from 0x14224F59B..5B2: Fo4GBufferConstants.EngineFrameRows of the fit's view and orthographic
     ''' projection, eye at the origin the view is anchored at, ShadowMapMath.Fit), depth LESS_EQUAL with writes (mode 3), no colour
-    ''' (the target has none), no blend, the bias of SetupTechnique's index 8 (Fo4UtilityTechnique.ShadowMapBias, D3D11.3 15.10
+    ''' (the target has none), no blend, the bias of SetupTechnique's index 8 times the rig's Shadow Bias (Fo4UtilityTechnique.ShadowMapBias
+    ''' of _shadowBias, D3D11.3 15.10
     ''' on the 16-bit map through Gl43.DepthBias), the cull of each draw (its own). The map of
     ''' a light the receiver reads (<paramref name="filasD3D"/>) is drawn in D3D rows (UPPER_LEFT: row 0 = clip y +1, the convention of
     ''' its ShadowMapProj, Fo4DeferredLightLaw.ShadowMapProjRows); the ground catcher's wide map, an app receiver, in GL rows (the
@@ -12293,7 +12331,7 @@ Public Class PreviewModel
         GL.DepthMask(True)
         GL.Disable(EnableCap.Blend)
         GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
-        Dim bias = Fo4UtilityTechnique.ShadowMapBias()
+        Dim bias = Fo4UtilityTechnique.ShadowMapBias(_shadowBias)
         Dim biasMissing = Gl43.DepthBias(bias.DepthBias, bias.Slope, bias.Clamp)
         If biasMissing IsNot Nothing Then
             For Each mesh In casters : ReportUndrawn(mesh.NoticeName(Nothing), "Shadow map " & biasMissing, FrameNoticeId.ShadowMapDepthBiasNotMeasured) : Next
@@ -12366,7 +12404,8 @@ Public Class PreviewModel
             ' PROPIA CAPA. En el mapa del personaje las N capas tienen el mismo rango (esfera envolvente);
             ' en el ANCHO no, porque su extent es la huella proyectada y depende de la elevacion de cada
             ' luz. Un solo valor para todas dejaba la sombra de la luz mas rasante despegada del pie.
-            _bufDepthBias(capa) = If(fits(capa).DepthRange > 0.0F, depthBiasWorld / fits(capa).DepthRange, 0.0F)
+            ' x the rig's Shadow Bias (_shadowBias: 1 = this bias as it is, x 1.0 exact; 0 = none).
+            _bufDepthBias(capa) = If(fits(capa).DepthRange > 0.0F, (depthBiasWorld * _shadowBias) / fits(capa).DepthRange, 0.0F)
         Next
         ' El nombre va con el `[0]` puesto: es un literal internado y asi el setter no aloca una String por
         ' llamada en el camino de dibujo. Ver el doc de SetMatrix4Array.
@@ -12385,7 +12424,8 @@ Public Class PreviewModel
         ' y eso se traduce en sombra DESPEGADA del pie (peter-panning).
         ' | ES UN ESCALAR PARA TODAS LAS CAPAS porque el texel del mapa del personaje es el mismo en
         ' todas (esfera envolvente). Ver el comentario del bloque de uniforms en el GLSL.
-        shader.SetFloat("uShadowNormalBias", normalBiasTexels * fits(0).TexelWorld)
+        ' | x THE RIG'S SHADOW BIAS (_shadowBias), like the depth bias above: one multiplier of the whole bias of the shadow.
+        shader.SetFloat("uShadowNormalBias", normalBiasTexels * fits(0).TexelWorld * _shadowBias)
 
         ' | LA SUAVIDAD ES CONTINUA: el radio entero es el techo y el SOBRANTE viaja en el espaciado de
         ' los taps, que es lo que hace continuo el desenfoque sin cambiar la cantidad de muestras.
@@ -13467,7 +13507,8 @@ Public Class PreviewModel
             .SunDir = lights(0).Dir, .SunColor = lights(0).Color,
             .PostOn = FrameIsHdr,
             .ShadowLift = Fo4DeferredLightLaw.RigShadowLift(rig.ShadowDarkness),
-            .ShadowRadiusGrowth = Fo4DeferredLightLaw.RigShadowRadiusScale(rig.ShadowSoftnessTexels) - 1.0F}
+            .ShadowRadiusGrowth = Fo4DeferredLightLaw.RigShadowRadiusScale(rig.ShadowSoftnessTexels) - 1.0F,
+            .ShadowBiasGrowth = _shadowBiasDeviation}
     End Function
 
     ''' <summary>THE Z-PREPASS'S MEMBERSHIP: does this frame's z-prepass draw the material <paramref name="md"/> (a shape's or an

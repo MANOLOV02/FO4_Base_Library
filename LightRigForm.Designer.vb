@@ -95,6 +95,8 @@ Partial Class LightRigForm
         tShadowSoft = New TinySliderTextBox()
         lblShadowStrength = New Label()
         tShadowStrength = New TinySliderTextBox()
+        lblShadowBias = New Label()
+        tShadowBias = New TinySliderTextBox()
         TabsMain = New TabControl()
         TabLights = New TabPage()
         TabRender = New TabPage()
@@ -754,10 +756,10 @@ Partial Class LightRigForm
         ' chkLightsFollowCamera
         ' 
         chkLightsFollowCamera.AutoSize = True
-        chkLightsFollowCamera.Location = New Point(121, 26)
+        chkLightsFollowCamera.Location = New Point(124, 26)
         chkLightsFollowCamera.Name = "chkLightsFollowCamera"
         chkLightsFollowCamera.Size = New Size(156, 19)
-        chkLightsFollowCamera.TabIndex = 3
+        chkLightsFollowCamera.TabIndex = 1
         chkLightsFollowCamera.Text = "Lights follow the camera"
         ToolTip1.SetToolTip(chkLightsFollowCamera, resources.GetString("chkLightsFollowCamera.ToolTip"))
         ' 
@@ -954,6 +956,8 @@ Partial Class LightRigForm
         grpShadows.Controls.Add(tShadowSoft)
         grpShadows.Controls.Add(lblShadowStrength)
         grpShadows.Controls.Add(tShadowStrength)
+        grpShadows.Controls.Add(lblShadowBias)
+        grpShadows.Controls.Add(tShadowBias)
         grpShadows.Location = New Point(444, 224)
         grpShadows.Name = "grpShadows"
         grpShadows.Size = New Size(418, 174)
@@ -973,46 +977,46 @@ Partial Class LightRigForm
         ' chkDepth16
         ' 
         chkDepth16.AutoSize = True
-        chkDepth16.Location = New Point(317, 60)
+        chkDepth16.Location = New Point(317, 56)
         chkDepth16.Name = "chkDepth16"
         chkDepth16.Size = New Size(57, 19)
-        chkDepth16.TabIndex = 9
+        chkDepth16.TabIndex = 5
         chkDepth16.Text = "16-bit"
         ToolTip1.SetToolTip(chkDepth16, resources.GetString("chkDepth16.ToolTip"))
         ' 
         ' chkGroundShadow
         ' 
         chkGroundShadow.AutoSize = True
-        chkGroundShadow.Location = New Point(11, 146)
+        chkGroundShadow.Location = New Point(296, 26)
         chkGroundShadow.Name = "chkGroundShadow"
-        chkGroundShadow.Size = New Size(147, 19)
-        chkGroundShadow.TabIndex = 4
-        chkGroundShadow.Text = "Shadow on the ground"
+        chkGroundShadow.Size = New Size(111, 19)
+        chkGroundShadow.TabIndex = 2
+        chkGroundShadow.Text = "Ground shadow"
         ' 
         ' lblShadowQuality
         ' 
         lblShadowQuality.AutoSize = True
-        lblShadowQuality.Location = New Point(11, 60)
+        lblShadowQuality.Location = New Point(11, 56)
         lblShadowQuality.Name = "lblShadowQuality"
         lblShadowQuality.Size = New Size(45, 15)
-        lblShadowQuality.TabIndex = 9
+        lblShadowQuality.TabIndex = 3
         lblShadowQuality.Text = "Quality"
         ' 
         ' cmbShadowQuality
         ' 
         cmbShadowQuality.DropDownStyle = ComboBoxStyle.DropDownList
-        cmbShadowQuality.Location = New Point(87, 56)
+        cmbShadowQuality.Location = New Point(87, 52)
         cmbShadowQuality.Name = "cmbShadowQuality"
         cmbShadowQuality.Size = New Size(223, 23)
-        cmbShadowQuality.TabIndex = 1
+        cmbShadowQuality.TabIndex = 4
         ' 
         ' lblShadowSoft
         ' 
         lblShadowSoft.AutoSize = True
-        lblShadowSoft.Location = New Point(11, 90)
+        lblShadowSoft.Location = New Point(11, 86)
         lblShadowSoft.Name = "lblShadowSoft"
         lblShadowSoft.Size = New Size(51, 15)
-        lblShadowSoft.TabIndex = 10
+        lblShadowSoft.TabIndex = 6
         lblShadowSoft.Text = "Softness"
         ' 
         ' tShadowSoft
@@ -1021,14 +1025,14 @@ Partial Class LightRigForm
         tShadowSoft.BackColor = SystemColors.Control
         tShadowSoft.DisplayFormat = "0.0"
         tShadowSoft.LargeChange = 1R
-        tShadowSoft.Location = New Point(87, 84)
+        tShadowSoft.Location = New Point(87, 80)
         tShadowSoft.Maximum = 4R
         tShadowSoft.MinimumSize = New Size(100, 24)
         tShadowSoft.Name = "tShadowSoft"
         tShadowSoft.ShowTicks = True
         tShadowSoft.Size = New Size(320, 28)
         tShadowSoft.SmallChange = 0.5R
-        tShadowSoft.TabIndex = 2
+        tShadowSoft.TabIndex = 7
         tShadowSoft.TextBoxTextAlign = HorizontalAlignment.Right
         tShadowSoft.ThumbColor = SystemColors.HotTrack
         tShadowSoft.ThumbRadius = 4F
@@ -1038,10 +1042,10 @@ Partial Class LightRigForm
         ' lblShadowStrength
         ' 
         lblShadowStrength.AutoSize = True
-        lblShadowStrength.Location = New Point(11, 120)
+        lblShadowStrength.Location = New Point(11, 116)
         lblShadowStrength.Name = "lblShadowStrength"
         lblShadowStrength.Size = New Size(54, 15)
-        lblShadowStrength.TabIndex = 11
+        lblShadowStrength.TabIndex = 8
         lblShadowStrength.Text = "Darkness"
         ' 
         ' tShadowStrength
@@ -1051,19 +1055,55 @@ Partial Class LightRigForm
         tShadowStrength.DisplayFormat = "0.00%"
         tShadowStrength.InputScale = 0.01R
         tShadowStrength.LargeChange = 0.1R
-        tShadowStrength.Location = New Point(87, 114)
+        tShadowStrength.Location = New Point(87, 110)
         tShadowStrength.Maximum = 1R
         tShadowStrength.MinimumSize = New Size(100, 24)
         tShadowStrength.Name = "tShadowStrength"
         tShadowStrength.ShowTicks = True
         tShadowStrength.Size = New Size(320, 28)
         tShadowStrength.SmallChange = 0.05R
-        tShadowStrength.TabIndex = 3
+        tShadowStrength.TabIndex = 9
         tShadowStrength.TextBoxTextAlign = HorizontalAlignment.Right
         tShadowStrength.ThumbColor = SystemColors.HotTrack
         tShadowStrength.ThumbRadius = 4F
         tShadowStrength.TickFrequency = 0.25R
         tShadowStrength.TrackColor = SystemColors.ControlDark
+        '
+        ' lblShadowBias
+        '
+        ' THE ROW OF 'Softness' AND 'Darkness', ONE PITCH (30) BELOW: label at x=11 (y = the slider's + 6), slider at x=87, 320 wide
+        ' (87..407, nothing to its right), the same look. Its tooltip depends on the game: LightRigForm.PonerAyudasDeSombraPorJuego.
+        ' THE GROUP KEEPS ITS 174 (user decision 26-oct-2026): 'Ground shadow' went up to the first row (its three boxes justified by
+        ' LightRigForm.AlinearFilaDeSombras, x = 11..407), and the rows below it moved up 4 - combo 52, sliders 80 / 110 / 140 at the
+        ' pitch of 30, the last ending at 168 (the groups' bottom margin: Key Light 7, here 6).
+        ' THE TAB ORDER IS THE READING ORDER (revision sb-02): row by row, left to right, no ties - Cast shadows 0, Lights follow the
+        ' camera 1, Ground shadow 2, Quality 3 / 4, 16-bit 5, Softness 6 / 7, Darkness 8 / 9, Bias 10 / 11 (ShadowGate --uidump checks it).
+        lblShadowBias.AutoSize = True
+        lblShadowBias.Location = New Point(11, 146)
+        lblShadowBias.Name = "lblShadowBias"
+        lblShadowBias.Size = New Size(28, 15)
+        lblShadowBias.TabIndex = 10
+        lblShadowBias.Text = "Bias"
+        '
+        ' tShadowBias
+        '
+        tShadowBias.AccentColor = SystemColors.HotTrack
+        tShadowBias.BackColor = SystemColors.Control
+        tShadowBias.DisplayFormat = "0.00"
+        tShadowBias.LargeChange = 0.25R
+        tShadowBias.Location = New Point(87, 140)
+        tShadowBias.Maximum = 2R
+        tShadowBias.MinimumSize = New Size(100, 24)
+        tShadowBias.Name = "tShadowBias"
+        tShadowBias.ShowTicks = True
+        tShadowBias.Size = New Size(320, 28)
+        tShadowBias.SmallChange = 0.05R
+        tShadowBias.TabIndex = 11
+        tShadowBias.TextBoxTextAlign = HorizontalAlignment.Right
+        tShadowBias.ThumbColor = SystemColors.HotTrack
+        tShadowBias.ThumbRadius = 4F
+        tShadowBias.TickFrequency = 0.5R
+        tShadowBias.TrackColor = SystemColors.ControlDark
         ' 
         ' TabsMain
         ' 
@@ -1874,6 +1914,8 @@ Partial Class LightRigForm
     Friend WithEvents tShadowSoft As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblShadowStrength As Label
     Friend WithEvents tShadowStrength As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents lblShadowBias As Label
+    Friend WithEvents tShadowBias As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents btnAmbSky As Button
     Friend WithEvents btnAmbGround As Button
     Friend WithEvents btnKeyColor As Button
