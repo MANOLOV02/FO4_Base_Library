@@ -59,11 +59,6 @@ Public Structure PreviewShadowSettings
     ''' <para>Y lo que compra no es "menos memoria" sino poder gastarla en RESOLUCION, que es lo unico
     ''' que se ve en el borde: 16 bits a 4096 (texel 0,0374 u) contra 24 a 2048 (texel 0,0748 u) cuesta el
     ''' doble y se ve el doble de fino; 16 a 4096 se ve igual que 24 a 4096 por la MITAD.</para>
-    ''' <para>⛔ EL DEFAULT DECIDE QUE PUEDE EXIGIR `ab-default`. Con 24 bits el check puede pedir 0 px
-    ''' contra el baseline; con 16 no, porque el render deja de ser bit a bit identico (los 244 px de
-    ''' arriba). Por eso el check acepta esto como divergencia DECLARADA y afirma algo mas fuerte que un
-    ''' conteo: delta maximo &lt;= 1 Y conteo acotado. Un umbral que solo mirara el conteo dejaria pasar
-    ''' 244 px con delta 200.</para>
     ''' <para>⚠️ Structure SIN CENTINELA: un config guardado antes de que existiera este campo lo
     ''' deserializa en False, o sea en el valor CONTRARIO al default. No hay forma de distinguir "el
     ''' usuario eligio 24 bits" de "la clave no estaba" (ver Config_App.Setting_ShadowMaps_*).</para></summary>

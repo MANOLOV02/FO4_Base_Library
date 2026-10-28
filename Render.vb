@@ -8231,7 +8231,12 @@ Public Class PreviewModel
             If MeshData.Shape.Wireframe Then Return "Wireframe"
             Dim mb = MeshData.Material?.MaterialBase
             If mb Is Nothing Then Return "the material did not resolve (MaterialBase = Nothing)"
-            If isSse AndAlso Not mb.CastShadows Then Return "CastShadows = False (Skyrim SE: the material's bit 9 of SF1)"
+            Dim leeElBit = True
+#If DEBUG Then
+            ' ShadowGate full ([castshadows-shape], ola 8): the filter stops reading Cast_Shadows.
+            If Fo4GBufferConstants.GateMutantOn("cast-flag-ignored") Then leeElBit = False
+#End If
+            If leeElBit AndAlso isSse AndAlso Not mb.CastShadows Then Return "CastShadows = False (Skyrim SE: the material's bit 9 of SF1)"
             Dim cut = MeshData.Material.EngineShadowMapCastsCut(isSse)
             If cut IsNot Nothing Then Return cut
             If Not isSse AndAlso MeshData.Material.Fo4PreviewGap(programs) Then Return "a declared Fallout 4 preview gap (Fo4PreviewGap)"

@@ -5303,6 +5303,10 @@ Public Class FO4UnifiedMaterial_Class
         Dim shadCast = Nif?.GetShader(shap)
         If shadCast IsNot Nothing Then
             _castShadowsDelNif = ShaderHelper.HasFlagSF1(shadCast, CastShadowsFlagValue(shadCast))
+#If DEBUG Then
+            ' ShadowGate full ([castshadows-rt] on the BGEM subject, ola 8): the old defect - the bit left at its default False.
+            If Fo4GBufferConstants.GateMutantOn("bgem-castshadows-unread") Then _castShadowsDelNif = False
+#End If
             ' MISMA REGLA QUE EL BIT DE ARRIBA, Y POR LA MISMA RAZON: este dato sale del SHADER DEL NIF,
             ' no del payload, asi que va ANTES de todo early-return. El motor nunca lo pisa desde el
             ' material (ver el doc de _NifEyeEnvironmentMapping), o sea que el NIF es su unica sede.

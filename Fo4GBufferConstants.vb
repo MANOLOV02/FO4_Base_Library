@@ -193,6 +193,8 @@ Friend Module Fo4GBufferConstants
     ''' ("tcl-envarray-queue-mips-gt"), and the library ones above it reuses. Round r19c (19-oct): EngineTextureCreationLaw
     ''' ("tcl-crash-unflagged", "tcl-lightcube-seed-ignored", "tcl-negcache-off"), PreviewModel.SeverityOf ("ntc-crash-warning"),
     ''' Fo4EnvMapArray.SeededBefore ("tcl-seed-self-counts").
+    ''' Ola 8 (ShadowGate full, subjects of the corpus): RenderableMesh.ShadowCasterCut and Fo4RenderPassLaw.ShadowMapCastsCut
+    ''' ("cast-flag-ignored"), FO4UnifiedMaterial_Class.Deserialize ("bgem-castshadows-unread").
     ''' Nothing = the laws. Read only under #If DEBUG: a
     ''' Release build has no mutant branch.</summary>
     Friend GateVertexConstantsMutant As String = Nothing

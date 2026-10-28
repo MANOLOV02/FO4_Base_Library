@@ -278,6 +278,10 @@ Friend Module Fo4RenderPassLaw
         If Not (s.Alpha >= 1.0F) Then Return "material alpha below 1 (0x14217B95C..973)"
         If s.TempRefraction OrElse s.Refraction OrElse s.Decal Then Return "flags 0xC008004: Temp_Refraction / Refraction / decal (0x14217B975..97F)"
         If s.Blend Then Return "its NiAlphaProperty blends (0x14217B981..98A)"
+#If DEBUG Then
+        ' ShadowGate full ([castshadows-shape], ola 8): the filter stops reading Cast_Shadows.
+        If Fo4GBufferConstants.GateMutantOn("cast-flag-ignored") Then Return Nothing
+#End If
         If Not (s.CastShadows OrElse s.LodObjects) Then Return "neither Cast_Shadows (F4SF1 9) nor LOD_Objects (F4SF2 2) (0x14217B98C..9A5)"
         Return Nothing
     End Function
