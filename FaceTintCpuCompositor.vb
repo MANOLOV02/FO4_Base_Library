@@ -1445,6 +1445,86 @@ Public Module FaceTintCpuCompositor
         Return res
     End Function
 
+    ''' <summary>EL LIENZO del compose de la cara de Fallout 4: los RT 0x10/0x11/0x12 donde el motor compone D/N/S se crean de 1024x1024
+    ''' R8G8B8A8 (formato 0x1C) — juego 0x142234A3A..0x142234AA8 (CreateRenderTarget 0x141839130, administrador 0x142F4D750, el mismo que
+    ''' usa el ejecutor 0x1406ED320), CK 0x142CB175A..0x142CB1771. Con base, la app compone al tamaño de la base (Inherit) como hasta hoy;
+    ''' sin base no hay textura de la que heredarlo y el lienzo es este.</summary>
+    Public Const LadoDelLienzoDeCaraFo4 As Integer = 1024
+
+    ''' <summary>El lado del acumulador de un canal sin base: el explícito de CharGen Options, o el lienzo del motor con Inherit.</summary>
+    Public Function LadoDelCanalSinBase(resolution As FaceTintResolutionSettings, channel As FaceTintChannel) As Integer
+        Dim res = If(resolution IsNot Nothing, resolution.ForChannel(channel), FaceTintChannelResolution.Inherit)
+        Return ResolveResolutionSize(res, LadoDelLienzoDeCaraFo4)
+    End Function
+
+    ''' <summary>LA BASE NULA del compose de la cara de Fallout 4, cuando el NPC no tiene FTST ni RACE.DFT[sexo] y el motor no arma capa 0
+    ''' (juego 0x1406EC23D -&gt; 0x1406EC3F1; CK 0x140ED69ED/69FA -&gt; 0x140ED6C3C): el PS del compose (Shaders011.fxp registro 3582, DXBC
+    ''' 0x00B9B410) arranca de <c>r32 = (0,0,0,1)</c> (diffuse), <c>r2.xy = 0</c> (normal) y <c>r33.xy = 0</c> (spec) y escribe
+    ''' <c>o0 = pow(r32,1/2.2)</c>, <c>o1/o2 = (xy,0,1)</c>. Lo que el RT tenía antes NO queda debajo:
+    ''' <list type="bullet">
+    ''' <item>El ejecutor (juego 0x1406ED320, CK 0x140ED8080) fija los tres RT con SetCurrentRenderTarget MODO 0 (0x1406ED413/428/43F;
+    ''' CK 0x140ED81F0/8205/821C), y el flush 0x141823CF0 los LIMPIA (ClearRenderTargetView, 0x141823D9A / 0x141823DEC) con el color
+    ''' de clear del estado <c>[estado+0x8E0]</c>. Ese color es estado mutable del renderer (SetClearColor 0x141818650 lo apila en
+    ''' +0x8F0 y lo cambia, 40 llamadores; 0x1418186E0 lo restaura): no es una constante de esta pasada.</item>
+    ''' <item>La pasada es UN triángulo de pantalla completa (vértices (-1,1) (-1,-3) (3,1), UV hasta 2: 0x142223608..0x1422236DA,
+    ''' creado por 0x1418305B0 en el constructor de BSFaceCustomizationShader) sobre el viewport del RT (0x141839E60 -&gt; 0x141817EF0):
+    ''' el PS escribe TODOS los píxeles.</item>
+    ''' <item>Blend: el ejecutor no lo fija y la técnica tampoco (SetupTechnique 0x1422237A0 sólo texturas y samplers; SetupGeometry
+    ''' 0x142223CC0 sólo el write mode <c>[estado+0xD0] = 2</c>, 0x1422240EA). Rige el AlphaBlendMode del estado <c>[estado+0xC8]</c>,
+    ''' que la propia técnica deja en 0 al terminar (RestoreTechnique 0x142223B40, 0x142223B8B). Modo 0 = BlendEnable FALSE,
+    ''' ONE / ZERO (tabla de estados 0x141855180, caso 0x1418551ED; índice <c>(C8*2+CC)*13+D0</c>, OMSetBlendState 0x141824497);
+    ''' write mode 2 = RGBA (0x1418554AF). Con alfa de salida 1 hasta un blend SrcAlpha / InvSrcAlpha (modo 1, 0x141855217) da lo
+    ''' mismo.</item>
+    ''' </list>
+    ''' Por eso el píxel que ninguna capa cubre es la salida del PS sobre la base nula, (0,0,0) con alfa 1, y no el color de clear. En el
+    ''' OutputSpace de cada canal el cero es el mismo cero. (SetupTechnique real = vtable 0x1429167A0 [+0x10] = 0x1422237A0. 0x141818270 /
+    ''' 0x141818290, alrededor del ejecutor, son Enter/LeaveCriticalSection sobre el renderer, no estado de render.)
+    ''' <para>HUECO DOCUMENTADO (decisión del usuario 28-oct: se aplica la ley aprobada, sin base = PS nulo + tintes): el modo de blend
+    ''' con que ENTRA el compose no se puede cerrar estáticamente. <c>[estado+0xC8]</c> tiene 105 escritores con literales de 0 a 6
+    ''' (p.ej. 0x1421C489B, 0x14220789C); lo mismo <c>[estado+0xCC]</c> y el color de clear <c>[estado+0x8E0]</c>. La única escritura
+    ''' de este camino es la de la técnica al salir (0x142223B8B). Captura en vivo para cerrarlo: hook en 0x1406ED4CE (antes de la
+    ''' llamada a 0x14221FB60), leyendo +0xC8, +0xCC y +0x8E0 del bloque de estado (TLS +0xB20 -&gt; +0x1B70), con un NPC sin FTST ni DFT.
+    ''' El caso tiene 0 NPC en el corpus; la prueba en el juego queda para el final del plan.</para></summary>
+    Public Function SemillaSinBase() As FaceTintSeedSpec
+        Return FaceTintSeedSpec.FromConstant(0.0F, 0.0F, 0.0F)
+    End Function
+
+    ''' <summary>La base nula como textura plana BGRA (para los compositores GPU, que siembran desde una textura): negro opaco, B = G = R = 0 y
+    ''' A = 255 en cada píxel (la misma <see cref="SemillaSinBase"/>; el gate [face-compose-sin-base] mira estos bytes).</summary>
+    Public Function BgraSemillaSinBase(lado As Integer) As Byte()
+        Dim b(lado * lado * 4 - 1) As Byte
+        For i = 3 To b.Length - 1 Step 4
+            b(i) = 255
+        Next
+        Return b
+    End Function
+
+    ''' <summary>El compose de la cara SIN BASE (ver <see cref="SemillaSinBase"/>): los tres canales desde la base nula, al lado de
+    ''' <see cref="LadoDelCanalSinBase"/>, con las mismas capas y swaps que el compose con base. Hermano de <see cref="ComposeCpuPipeline"/>.</summary>
+    Public Function ComposeCpuPipelineSinBase(layers As IList(Of FaceTintLayerInput),
+                                              swaps As IList(Of FaceRegionSwapInput),
+                                              Optional resolution As FaceTintResolutionSettings = Nothing,
+                                              Optional decodeCache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex) = Nothing) As CpuPipelineResult
+        Dim res As New CpuPipelineResult()
+        Dim cache = ResolveDecodeCache(decodeCache)
+        res.Diffuse = ComposeChannelSinBase(FaceTintChannel.Diffuse, layers, swaps, cache, resolution)
+        res.Normal = ComposeChannelSinBase(FaceTintChannel.Normal, layers, swaps, cache, resolution)
+        res.Specular = ComposeChannelSinBase(FaceTintChannel.Specular, layers, swaps, cache, resolution)
+        Return res
+    End Function
+
+    Private Function ComposeChannelSinBase(channel As FaceTintChannel,
+                                           layers As IList(Of FaceTintLayerInput),
+                                           swaps As IList(Of FaceRegionSwapInput),
+                                           cache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex),
+                                           resolution As FaceTintResolutionSettings) As CpuChannelResult
+        Dim lado = LadoDelCanalSinBase(resolution, channel)
+        If SkipPixelCompose Then Return New CpuChannelResult With {.Width = lado, .Height = lado, .Bgra = New Byte(lado * lado * 4 - 1) {}}
+        Dim acc = ComposeChannelAccum(SemillaSinBase(), lado, lado, channel, layers, swaps, cache, FaceTintAlphaPolicy.Opaque)
+        If acc Is Nothing Then Return Nothing
+        Return New CpuChannelResult With {.Width = lado, .Height = lado, .Bgra = PackAccumToBgra(acc)}
+    End Function
+
     ''' <summary>Decode cacheado contra un cache PROPIEDAD DEL CALLER (mismo contrato que el parametro
     ''' <c>decodeCache</c> de <see cref="ComposeCpuPipeline"/>). <paramref name="cache"/> Nothing o
     ''' <paramref name="key"/> vacio ⇒ decode directo, sin retener nada. Existe para que los caminos que

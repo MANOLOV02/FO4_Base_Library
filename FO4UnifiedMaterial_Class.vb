@@ -356,6 +356,8 @@ Public Class FO4UnifiedMaterial_Class
         ' lo alcanza. Sin esto un clon perdería el escritor de alfa de la cara (ResolveEngineAlpha) y el bit F4SPF2
         ' Alpha_Test. Ver NpcDiffuseAlphaTest.
         copy.NpcDiffuseAlphaTest = NpcDiffuseAlphaTest
+        ' Hecho de la ley de la cara (compose sin base): mismo caso que NpcDiffuseAlphaTest, vive en el wrapper.
+        copy.ComposeDeCaraSinBase = ComposeDeCaraSinBase
         Return copy
     End Function
 
@@ -1486,6 +1488,13 @@ Public Class FO4UnifiedMaterial_Class
     ''' Manager) y el bit del bloque queda como vino. NpcMaterialResolver lo informa SIEMPRE.</para>
     <Browsable(False)>
     Public Property NpcDiffuseAlphaTest As Boolean?
+
+    ''' <summary>HECHO de la ley de la cara de Fallout 4 para esta forma: es la cara (clase Face) de un NPC sin FTST ni RACE.DFT[sexo], así
+    ''' que el compose de FaceCustomization no tiene capa 0 y parte de la base nula (<see cref="FaceTintCpuCompositor.ComposeCpuPipelineSinBase"/>;
+    ''' juego 0x1406EC23D -&gt; 0x1406EC3F1, CK 0x140ED69ED/69FA -&gt; 0x140ED6C3C). Lo decide NpcMaterialResolver.ApplyShapeMaterialOverrides
+    ''' (una sede); lo leen el bake y el vivo. Vive en el wrapper (no en el BGSM) y viaja en <see cref="Clone"/>.</summary>
+    <Browsable(False)>
+    Public Property ComposeDeCaraSinBase As Boolean
 
     <Category("Opacity")>
     <DefaultValue(CType(128, Byte))>
