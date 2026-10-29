@@ -1068,6 +1068,7 @@ Public Class PluginManager
         Next
     End Sub
 
+#If DEBUG Then
     ''' <summary>Esta app OVERRIDE-ó en memoria el record de <paramref name="fid"/> y todavía
     ''' guarda el que ganaba antes. Es de SOLO LECTURA: existe para que un testigo pueda comprobar la
     ''' PRECONDICIÓN de <see cref="RevertAppOverride"/> sin consumirla — sin esto, un aserto de
@@ -1081,6 +1082,7 @@ Public Class PluginManager
             _rwLock.ExitReadLock()
         End Try
     End Function
+#End If
 
     ''' <summary>Revert an app-authored override IN MEMORY: make <paramref name="fid"/> resolve again to the record
     ''' that was WINNING before the app override — the last non-app override captured in
@@ -1213,7 +1215,7 @@ Public Class PluginManager
     ''' slot leaks into the FaceGen mesh/texture name and the game can't find it. Stateless.
     ''' <para>NO confundir con <see cref="PartialIndexOfFormID"/>, justo arriba: aquélla devuelve el
     ''' ÍNDICE del plugin y ésta el OBJECT ID del record — las dos mitades complementarias del mismo
-    ''' FormID (<c>ModInfo::GetPartialIndex</c> y el inverso de <c>ModInfo::GetFormID</c>).</para></summary>
+    ''' FormID (<c>ModInfo::GetPartialIndex</c> y el inverso de <c>ModInfo::GetFormID</c>).</para>
     ''' <para>⛔⛔ AHORA CON LA CITA DEL MOTOR, que hasta aca era una observacion del editor. El
     ''' juego arma la ruta con `Meshes\Actors\Character\FaceGenData\FaceGeom\%s\%08X.NIF` y enmascara el
     ''' FormID justo antes de formatearlo: `mov ecx, 0xFFFFFF` / `mov edx, 0xFFF` / `cmovne ecx, edx` /
@@ -1323,13 +1325,13 @@ Public Class PluginManager
     ''' de los dos existe en VR.
     ''' <para>Es UN SOLO booleano del que cuelgan las DOS capacidades. Por eso vive en una función sola y
     ''' <see cref="LightIsSupported"/> y <see cref="UpdateIsSupported"/> la llaman: si algún día cambia la
-    ''' detección, cambia para las dos.</para></summary>
+    ''' detección, cambia para las dos.</para>
     ''' <para>⛔ NO MEMOIZAR, aunque tiente: esto cuelga de <see cref="AllowsHardcodedRange"/>, al que
     ''' <see cref="ResolveFormIDNoLock"/> llama por CADA referencia con object id &lt; 0x800, o sea decenas
     ''' de miles de <c>File.Exists</c> en un build de VR. Pero un memo por (exe, dataPath, juego) <b>no
     ''' puede ver que el archivo apareció o desapareció</b>, que es justamente el dato: instalar VRESL sin
     ''' reiniciar la aplicación dejaría de tener efecto. Rompe <c>SlotResolutionProbe</c> (114/1: el caso
-    ''' "SkyrimVR CON VRESL" responde que no, con la respuesta memoizada del caso anterior).
+    ''' "SkyrimVR CON VRESL" responde que no, con la respuesta memoizada del caso anterior).</para>
     ''' <para>Para el usuario que NO está en VR el costo ya es cero: la primera línea corta antes de
     ''' tocar el disco, y <see cref="IsVrBuild"/> sí está memoizado. Si algún día hay que arreglarlo
     ''' para VR, el camino es sacar la llamada del bucle por referencia, no cachear el resultado.</para></summary>
@@ -1450,6 +1452,13 @@ Public Class PluginManager
     ''' barrido por activación. Lineal en la cantidad de <c>.esp</c>: ~23 ms con 250.</para></summary>
     Private Shared ReadOnly _masterGroupMemo As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
 
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (LoadOrderActivatorProbe, caso 19; ola 9 ronda 4): cuantas veces <see cref="IsMasterGroup"/> fue al DISCO
+    ''' (un fallo del cache del llamador que arma el FileInfo). La ley del arreglo (a) del planner es una lectura por plugin por
+    ''' Resolve: un solo cache de grupo para todo el Resolve.</summary>
+    Public Shared GateLecturasDeGrupo As Integer
+#End If
+
     ''' <summary>Si un archivo puede usar el RANGO HARDCODED, o sea object ids por debajo de <c>0x800</c>.
     ''' La ley: el archivo necesita al menos un master; SSE (o SSE en VR con VRESL) lo permite desde la
     ''' versión 1.709 del HEDR, FO4 (no VR) desde la versión 1.0, y FO4VR nunca lo permite.
@@ -1513,6 +1522,9 @@ Public Class PluginManager
 
         Dim value As Boolean? = Nothing
         Dim full = Path.Combine(dataPath, name)
+#If DEBUG Then
+        Threading.Interlocked.Increment(GateLecturasDeGrupo)
+#End If
         Dim fi As New FileInfo(full)
         If fi.Exists Then
             ' Clave por IDENTIDAD del archivo: si lo reescribimos, la memo caduca sola.

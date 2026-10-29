@@ -161,7 +161,10 @@ Friend Module EngineTextureCreationLaw
         Return d
     End Function
 
-    ''' <summary>DEBUG ONLY: ParityGate's mutant "tcl-short-off" (no test of the data length). Always False in Release.</summary>
+    ''' <summary>DEBUG ONLY: ParityGate's mutant "tcl-short-off" (no test of the data length). Always False in Release.
+    ''' <para>Ola 9 (ronda 3), declared: it stays in Release as a constant False - the pattern of GateSoftApagado /
+    ''' GateMascaraDeCalcaAbierta - because its two callers are the LAST branch of the engine law's ElseIf chain (the DDS header and the
+    ''' BA2 record): splitting a branch of that chain with #If would write the law twice.</para></summary>
     Private Function ShortDataMutant() As Boolean
 #If DEBUG Then
         Return Fo4GBufferConstants.GateMutantOn("tcl-short-off")

@@ -1556,14 +1556,12 @@ Public Class BSTriShapeGeometry
         If dyn IsNot Nothing Then dyn.CalcDynamicData()
     End Sub
 
-    ''' <summary>
-    ''' Copies up to <paramref name="wpv"/> bone influence slots from a single BSVertexData
-    ''' vertex into the flat output arrays at vertex offset <paramref name="vIdx"/>.  Pads
-    ''' missing slots with index=0, weight=0 — same convention as ShapeSkinningData.Empty.
-    ''' </summary>
     ' CopyVertexInfluences helper removed: the two callers (GetSkinning) now iterate
     ' directly over BoneIndices4/BoneWeights4 InlineArray structs without going through
     ' temporary Byte()/SysHalf() arrays.
+    ' Copies up to wpv bone influence slots from a single BSVertexData
+    ' vertex into the flat output arrays at vertex offset vIdx.  Pads
+    ' missing slots with index=0, weight=0 — same convention as ShapeSkinningData.Empty.
 
     ''' <summary>
     ''' Reads the bone-palette block indices from the shape's skin instance Bones reference list.

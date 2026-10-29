@@ -128,17 +128,24 @@ Public Module NifSceneVisibility
 
     ''' <summary>Rev-16: the chain's top is a Fallout 4 root the loader converts (RootKindOf = Converted).</summary>
     Private Function IsConvertedRoot(chain As List(Of NiNode), isSse As Boolean) As Boolean
-        Return Not GateLoadLawsOnly AndAlso Not isSse AndAlso chain.Count > 0 AndAlso RootKindOf(chain(chain.Count - 1)) = RootKind.Converted
+#If DEBUG Then
+        If GateLoadLawsOnly Then Return False
+#End If
+        Return Not isSse AndAlso chain.Count > 0 AndAlso RootKindOf(chain(chain.Count - 1)) = RootKind.Converted
     End Function
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (sin UI): ShadowGate --scene-visibility, control negativo del pixel. True apaga las leyes de bound: C-NAN y el
     ''' corte de nodo de radio 0 (pto 14).</summary>
     Friend GateIgnoreBoundCull As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (sin UI): ShadowGate --scene-visibility-sweep (rev-09). True evaluates only the load laws as they were before
     ''' the ola 0c (C-ANC, C-NAN): no NiVisController at rest (pto 3a), no node of radius 0 (pto 14), no root conversion (rev-16) - the
     ''' "before" of the sweep.</summary>
     Friend GateLoadLawsOnly As Boolean = False
+#End If
 
     ''' <summary>Los motivos del aviso (inglés: UI), uno por rama de la ley, cada uno en sus dos formas (C2: compuesta = no se
     ''' dibuja, el motivo dice que el juego no la dibuja; pieza = se dibuja, el aviso antepone "Drawn by the preview, not by the
@@ -254,7 +261,11 @@ Public Module NifSceneVisibility
                              Optional cullingEngineIsSse As Boolean? = Nothing) As LoadState
         If nif Is Nothing OrElse shape Is Nothing Then Return Nothing
         Dim chain = ParentChain(nif, shape)
+#If DEBUG Then
         Dim engine = If(GateLoadLawsOnly, CType(Nothing, Boolean?), TracedEngine(nif))
+#Else
+        Dim engine As Boolean? = TracedEngine(nif)
+#End If
         ' C-ANC, with pto 3a: a node whose NiVisController writes at rest takes that value instead of its load bit.
         Dim hidden = False
         Dim ancestorVis As (Drawn As String, Undrawn As String, DrawnId As PreviewModel.FrameNoticeId, UndrawnId As PreviewModel.FrameNoticeId) = Nothing
@@ -289,7 +300,11 @@ Public Module NifSceneVisibility
         ' reaches the object and calls its OnVisible (slot 57), which for the NiGeometry family is `ret` (Fo4GeometryClass.NotRegistered):
         ' the last cut of the walk, after the node and bound laws above. A class this law does not trace (Untraced; none the app loads,
         ' Nifcontent_Class_Manolo.SupportedShape): HUECO, declared in the notice, and not registered - no G-buffer pass is built for it.
+#If DEBUG Then
         Dim culler = If(GateLoadLawsOnly, CType(Nothing, Boolean?), If(cullingEngineIsSse, engine))
+#Else
+        Dim culler = If(cullingEngineIsSse, engine)
+#End If
         If cull.Undrawn Is Nothing AndAlso culler.HasValue AndAlso Not culler.Value Then
             Select Case Fo4GeometryClassOf(shape)
                 Case Fo4GeometryClass.NotRegistered
@@ -468,7 +483,9 @@ Public Module NifSceneVisibility
 
     ''' <summary>C-NAN. <paramref name="chain"/> = padres de la forma, del padre directo a la raíz.</summary>
     Private Function BoundCull(nif As NifFile, shape As INiShape, chain As List(Of NiNode)) As (Drawn As String, Undrawn As String, DrawnId As PreviewModel.FrameNoticeId, UndrawnId As PreviewModel.FrameNoticeId)
+#If DEBUG Then
         If GateIgnoreBoundCull Then Return Nothing
+#End If
         Dim engine = TracedEngine(nif)
         If Not engine.HasValue Then Return Nothing                           ' sólo los dos motores trazados
         Dim isSse = engine.Value
@@ -542,7 +559,10 @@ Public Module NifSceneVisibility
     ''' 0x800 (its flags are bits 10 / 12 + 0xE) and its scale enters as |s|.</summary>
     Private Function NodeCull(nif As Nifcontent_Class_Manolo, chain As List(Of NiNode), engine As Boolean?,
                               bounds As Dictionary(Of NiAVObject, NodeBound)) As (Drawn As String, Undrawn As String, Cause As NodeCullCause)
-        If GateIgnoreBoundCull OrElse Not engine.HasValue OrElse chain.Count = 0 Then Return (Nothing, Nothing, NodeCullCause.None)
+#If DEBUG Then
+        If GateIgnoreBoundCull Then Return (Nothing, Nothing, NodeCullCause.None)
+#End If
+        If Not engine.HasValue OrElse chain.Count = 0 Then Return (Nothing, Nothing, NodeCullCause.None)
         Dim memo = If(bounds, New Dictionary(Of NiAVObject, NodeBound)(ReferenceEqualityComparer.Instance))
         Dim root = chain(chain.Count - 1)
         Dim converted = IsConvertedRoot(chain, engine.Value)

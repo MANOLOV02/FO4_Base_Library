@@ -1110,13 +1110,6 @@ Public Class PreviewControl
         End Try
     End Function
 
-    ''' <summary>
-    ''' The single hot path. Reads Intent.DirtyFlags and executes the minimum work needed.
-    ''' Three execution modes emerge from flag combinations:
-    '''   Shapes|Force ? full reload (clean, skeleton, geometry, morphs, GPU upload)
-    '''   Pose         ? incremental (skeleton, bone matrices, optional morphs)
-    '''   Morphs       ? lightweight (reapply morphs, update skin buffers)
-    ''' </summary>
     ''' <summary>The standing pipeline failure's card ("Render failed: reason"), Nothing when the last run completed: THE failure
     ''' state (<see cref="RecordRenderFailure"/>). Read by RenderScene (the card), RenderTimer_Tick (no run of its own while it
     ''' stands) and hosts or gates (<see cref="RenderFailure"/>).</summary>
@@ -1191,6 +1184,13 @@ Public Class PreviewControl
 #End If
     End Function
 
+    ''' <summary>
+    ''' The single hot path. Reads Intent.DirtyFlags and executes the minimum work needed.
+    ''' Three execution modes emerge from flag combinations:
+    '''   Shapes|Force ? full reload (clean, skeleton, geometry, morphs, GPU upload)
+    '''   Pose         ? incremental (skeleton, bone matrices, optional morphs)
+    '''   Morphs       ? lightweight (reapply morphs, update skin buffers)
+    ''' </summary>
     Private Sub ExecuteRenderPipeline()
         If _isTearingDown Then Return
         Dim intent = _renderIntent
@@ -1928,24 +1928,6 @@ Public Class PreviewControl
         End Get
     End Property
 
-    ''' <summary>Pinta el FONDO del frame con el fade radial, encima del color plano que dejo el
-    ''' <c>GL.Clear</c>.
-    '''
-    ''' <para>⛔ CON FADE = 0 NO DIBUJA NADA Y SALE. No es una optimizacion: es lo que garantiza que la
-    ''' opcion apagada sea el camino de codigo de SIEMPRE, bit por bit, sin depender de que un
-    ''' <c>mix(bg, target, 0.0)</c> devuelva exactamente el mismo byte que el clear. Un A/B contra el
-    ''' commit anterior con el fade en 0 tiene que dar 0 pixeles de diferencia, y asi lo da por
-    ''' construccion.</para>
-    '''
-    ''' <para>Se dibuja con el depth test APAGADO y sin escribir profundidad: el fondo no participa de la
-    ''' oclusion, solo repinta el plano de color. El estado se devuelve como estaba —depth test,
-    ''' depth mask y cull face— porque el resto del frame lo asume prendido (misma disciplina que
-    ''' <c>FinishRenderFrame</c>).</para></summary>
-    ''' <summary>Las tres perillas del fondo DIRECCIONAL, para los DOS programas que evaluan
-    ''' <c>backgroundAt()</c> — el quad de fondo y el piso. Una sola funcion porque si los dos no reciben
-    ''' exactamente lo mismo vuelve la costura del horizonte que el Const compartido existe para evitar.
-    ''' <para>Con la casilla apagada sube <c>dirStrength = 0</c> y el shader ni entra a la rama: el
-    ''' resultado es la viñeta centrada de siempre.</para></summary>
     ''' <summary>EL FONDO COMPLETO que evalua <c>backgroundAt()</c>: color, fade, viewport y las perillas
     ''' direccionales. Lo reciben los TRES programas que lo evaluan (el quad de fondo, el piso y la pasada de
     ''' post de FO4) desde esta unica funcion: si no reciben exactamente lo mismo vuelve la costura.</summary>
@@ -1957,6 +1939,11 @@ Public Class PreviewControl
         AplicarUniformsDireccionales(shader)
     End Sub
 
+    ''' <summary>Las tres perillas del fondo DIRECCIONAL, para los DOS programas que evaluan
+    ''' <c>backgroundAt()</c> — el quad de fondo y el piso. Una sola funcion porque si los dos no reciben
+    ''' exactamente lo mismo vuelve la costura del horizonte que el Const compartido existe para evitar.
+    ''' <para>Con la casilla apagada sube <c>dirStrength = 0</c> y el shader ni entra a la rama: el
+    ''' resultado es la viñeta centrada de siempre.</para></summary>
     Private Sub AplicarUniformsDireccionales(shader As Shader_Base_Class)
         Dim direccionalidad As Single = 0.0F
         Dim neto As Vector3 = Vector3.UnitZ
@@ -1971,6 +1958,19 @@ Public Class PreviewControl
         shader.SetFloat("rigDirectionality", direccionalidad)
     End Sub
 
+    ''' <summary>Pinta el FONDO del frame con el fade radial, encima del color plano que dejo el
+    ''' <c>GL.Clear</c>.
+    '''
+    ''' <para>⛔ CON FADE = 0 NO DIBUJA NADA Y SALE. No es una optimizacion: es lo que garantiza que la
+    ''' opcion apagada sea el camino de codigo de SIEMPRE, bit por bit, sin depender de que un
+    ''' <c>mix(bg, target, 0.0)</c> devuelva exactamente el mismo byte que el clear. Un A/B contra el
+    ''' commit anterior con el fade en 0 tiene que dar 0 pixeles de diferencia, y asi lo da por
+    ''' construccion.</para>
+    '''
+    ''' <para>Se dibuja con el depth test APAGADO y sin escribir profundidad: el fondo no participa de la
+    ''' oclusion, solo repinta el plano de color. El estado se devuelve como estaba —depth test,
+    ''' depth mask y cull face— porque el resto del frame lo asume prendido (misma disciplina que
+    ''' <c>FinishRenderFrame</c>).</para></summary>
     Private Sub PaintBackground()
         Dim fade As Single = BackgroundFadeUnit
         If fade = 0.0F Then Exit Sub
@@ -2013,6 +2013,7 @@ Public Class PreviewControl
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the HDR target's radiance and coverage attachments as the last frame left them (0 before the first
     ''' HDR frame).</summary>
     Friend ReadOnly Property HdrSceneTexture As Integer
@@ -2020,19 +2021,24 @@ Public Class PreviewControl
             Return _targets.SceneTexture
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     Friend ReadOnly Property HdrCoverageTexture As Integer
         Get
             Return _targets.CoverageTexture
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the refraction-normals target of the last frame (0 before the first refraction pass).</summary>
     Friend ReadOnly Property RefractionNormalsTexture As Integer
         Get
             Return _refraction.NormalsTexture
         End Get
     End Property
+#End If
 
     ''' <summary>The refraction-normals program of the game drawing the frame: Skyrim SE's (RefractionSource); Fallout 4's draws are its
     ''' b07 techniques (RenderableMesh.RenderRefractionNormalsFo4): Nothing.</summary>
@@ -2074,9 +2080,14 @@ Public Class PreviewControl
     ''' <summary>kSAO is read by the composite with POINT sampling at texel centres (RE_SAO_BOTH 1.7).</summary>
     Private _saoPointSampler As Integer
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ShadowGate --sse-sao-scene / --sse-composite): the SAO passes are skipped and the composite reads AO = 1.</summary>
     Friend Shared GateSseSaoOff As Boolean
+#End If
+#If DEBUG Then
     Private _gateWhite As Integer
+#End If
+#If DEBUG Then
     Private Function GateWhiteTexture() As Integer
         If _gateWhite = 0 Then
             _gateWhite = Gl43.CreateTexture(TextureTarget.Texture2D)
@@ -2085,41 +2096,54 @@ Public Class PreviewControl
         End If
         Return _gateWhite
     End Function
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: Fallout 4's deferred targets of this control.</summary>
     Friend ReadOnly Property GateFo4Targets As Fo4DeferredTargets
         Get
             Return _fo4
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the scene targets (HDR / display) of this control.</summary>
     Friend ReadOnly Property GateSceneTargets As SceneTargets
         Get
             Return _targets
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the SAO targets of the last frame.</summary>
     Friend ReadOnly Property SseSao As SseSaoTargets
         Get
             Return _sao
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the SAO normals target (attachment 3 of the HDR target).</summary>
     Friend ReadOnly Property HdrAoNormalTexture As Integer
         Get
             Return _targets.AoNormalTexture
         End Get
     End Property
+#End If
 
     ''' <summary>The SSE SAO and its composite over the opaque scene (0x141541F40: the compute block, then ISSAOCompositeSAOFog), on the
     ''' HDR target: RenderAll calls it after the opaque groups and the decals, before the alpha list (the world render's order).
     ''' Only the post's frame: a direct frame carries the 2.3.8 display law in its fragments, not the engine's scene.</summary>
     Friend Sub ApplySseOpaqueComposite()
         If _frameFbo = 0 OrElse _frameFbo <> _targets.HdrFramebuffer Then Return
-        If Not GateSseSaoOff Then
+        Dim saoCorre = True
+#If DEBUG Then
+        If GateSseSaoOff Then saoCorre = False
+#End If
+        If saoCorre Then
             _saoDepth.CopyFrom(_frameFbo, Me.Width, Me.Height)
             ' NiCamera viewFrustum of the preview's projection (symmetric perspective): right = 1/P00, top = 1/P11.
             Dim r As Single = 1.0F / projection.M11, t As Single = 1.0F / projection.M22
@@ -2133,13 +2157,17 @@ Public Class PreviewControl
             GL.SamplerParameter(_saoPointSampler, SamplerParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
             GL.SamplerParameter(_saoPointSampler, SamplerParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
         End If
+        Dim texSao = If(saoCorre, _sao.KSaoTexture, 0)
+#If DEBUG Then
+        If GateSseSaoOff Then texSao = GateWhiteTexture()
         If GateCompositeSnapshot Then GatePreComposite = GateReadScene()
+#End If
         _opaqueComposite.Apply(SharedSseOpaqueComposite, _frameFbo, SizedInternalFormat.R11fG11fB10f, Me.Width, Me.Height, _bgVao,
                                Sub(prog)
                                    prog.SetFloat("sseInvFramebufferRange", PreviewModel.RenderableMesh.SseInvFrameBufferRangeWorld)
                                    Gl43.BindTextureUnit(1, TextureTarget.Texture2D, _targets.CoverageTexture)
                                    prog.SetInt("texCoverage", 1)
-                                   Gl43.BindTextureUnit(2, TextureTarget.Texture2D, If(GateSseSaoOff, GateWhiteTexture(), _sao.KSaoTexture))
+                                   Gl43.BindTextureUnit(2, TextureTarget.Texture2D, texSao)
                                    GL.BindSampler(2, _saoPointSampler)
                                    prog.SetInt("texSao", 2)
                                    ' S-N: kSNOW_SPECALPHA at unit 3 (SceneColorPass.Apply binds only unit 0, texScene).
@@ -2150,7 +2178,9 @@ Public Class PreviewControl
                                End Sub)
         GL.BindSampler(2, 0)
         Gl43.UnbindTextureUnit(3)   ' RT 0x70 is attachment 4 of the target the next draws write: not left bound to a sampler unit
+#If DEBUG Then
         If GateCompositeSnapshot Then GatePostComposite = GateReadScene()
+#End If
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _frameFbo)
         _targets.SetGroundCatcherOutputs(False)
     End Sub
@@ -2202,7 +2232,7 @@ Public Class PreviewControl
                          {(_targets.DisplayRenderbuffer, True)})
         SharedSSEShader.Use()
         SubirUniformsDeFondo(SharedSSEShader)
-        Return _sseDecalBase.Begin(SharedSseDecalBaseMark, _targets.DepthRenderbuffer, ImageTarget.Renderbuffer, 0, colours, False)
+        Return _sseDecalBase.Begin(SharedSseDecalBaseMark, _targets.DepthRenderbuffer, ImageTarget.Renderbuffer, 0, colours)
     End Function
 
     ''' <summary>Skyrim SE's frame: the base pass closes (DecalBaseTarget.Close; the frame depth was never written) and the frame's
@@ -2221,12 +2251,14 @@ Public Class PreviewControl
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: Skyrim SE's base target (its auxiliary depth texture).</summary>
     Friend ReadOnly Property GateSseDecalBase As DecalBaseTarget
         Get
             Return _sseDecalBase
         End Get
     End Property
+#End If
 
     ''' <summary>Fallout 4's G-buffer stage: the base pass of the translucent decals closes into the G-buffer depth (EndDecalBase).</summary>
     Friend Sub EndFo4DecalBase()
@@ -2264,10 +2296,17 @@ Public Class PreviewControl
     ''' reader copies again (FrameDepthDirty). Then GL row order and linear writes back, so nothing after it inherits the D3D-order
     ''' state (propuesta A.2).</summary>
     Friend Sub EndFo4Stage()
+#If DEBUG Then
         If GateFo4SkipEndStage Then Return
+#End If
         If _fo4RowsD3D Then
             _fo4RowsD3D = False
-            If Not GateFo4NoStageMirror Then
+            Dim espejar = True, espejarNormales = True
+#If DEBUG Then
+            If GateFo4NoStageMirror Then espejar = False
+            If GateFo4NoNormalsMirror Then espejarNormales = False
+#End If
+            If espejar Then
                 _fo4.MirrorRows(_targets.SceneTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
                 _fo4.MirrorRows(_targets.CoverageTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
                 If _frameFbo = _targets.HdrFramebuffer Then
@@ -2277,7 +2316,7 @@ Public Class PreviewControl
                 End If
                 _fo4.MirrorRows(_targets.DepthRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Depth24Stencil8)
                 ' rev-01: the refraction normals drawn in the stage (FO4's target is R11G11B10F, RefractionTargets.BeginNormals).
-                If _Model IsNot Nothing AndAlso _Model.FrameRefractionActive AndAlso Not GateFo4NoNormalsMirror Then
+                If _Model IsNot Nothing AndAlso _Model.FrameRefractionActive AndAlso espejarNormales Then
                     _fo4.MirrorRows(_refraction.NormalsTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
                 End If
             End If
@@ -2291,25 +2330,37 @@ Public Class PreviewControl
     ''' background is evaluated in them (SubirUniformsDeFondo, backgroundRowsD3D) - the one owner of that fact.</summary>
     Private _fo4RowsD3D As Boolean
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True makes EndFo4Stage do nothing.</summary>
     Friend Shared GateFo4SkipEndStage As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant (rev-03). True skips only the output mirror of EndFo4Stage
     ''' (the clip state and sRGB writes are still restored): the frame after the stage stays in D3D rows.</summary>
     Friend Shared GateFo4NoStageMirror As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --refraction-scene mutant (revisor-13). True leaves the refraction normals target in
     ''' D3D rows at EndFo4Stage (every other target is still mirrored).</summary>
     Friend Shared GateFo4NoNormalsMirror As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ShadowGate --sse-sao-scene): the HDR radiance right before and right after the composite of the frame.</summary>
     Friend Shared GateCompositeSnapshot As Boolean
+#End If
+#If DEBUG Then
     Friend GatePreComposite As Single(), GatePostComposite As Single()
+#End If
+#If DEBUG Then
     Private Function GateReadScene() As Single()
         Dim px(Me.Width * Me.Height * 4 - 1) As Single
         Gl43.GetTexImage(_targets.SceneTexture, TextureTarget.Texture2D, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.Float, px.Length * 4, px)
         Return px
     End Function
+#End If
 
     ''' <summary>ISRefraction over the frame's colour (attachment 0 of <paramref name="fbo"/>): Skyrim SE's program (RefractionSource), Fallout
     ''' 4's i3658 on the ImageSpaceManager's triangle (RefractionTargets.ApplyImageSpaceFo4). A frame with the post runs Fallout 4's inside
@@ -2329,13 +2380,17 @@ Public Class PreviewControl
     ''' <summary>Copies the depth of the framebuffer being drawn for the effects' SOFT fade (see SceneDepthCopy).</summary>
     Friend Sub CopySceneDepth()
         ' Fallout 4's G-buffer stage draws into the deferred targets (D3D rows, as gl_FragCoord under UPPER_LEFT): their depth.
+#If DEBUG Then
         If _Model IsNot Nothing AndAlso _Model.FrameGBufferStage Then GateSoftCopiesInGBufferStage += 1
+#End If
         _sceneDepth.CopyFrom(If(_Model IsNot Nothing AndAlso _Model.FrameGBufferStage, _fo4.GBufferFramebuffer, _frameFbo), Me.Width, Me.Height)
     End Sub
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ShadowGate --soft-scene, rev-04 / revisor-14): SOFT depth copies taken inside Fallout 4's G-buffer stage since
     ''' the gate reset it - the only copies the deleted re-copy after the blit could have replaced.</summary>
     Friend Shared GateSoftCopiesInGBufferStage As Integer
+#End If
 
     ''' <summary>The copied scene depth (0 before the first copy).</summary>
     Friend ReadOnly Property SceneDepthTexture As Integer
@@ -2384,12 +2439,12 @@ Public Class PreviewControl
         Return False
     End Function
 
-    ''' <summary>Binds the framebuffer reads come from (the scene target, or the window's default one when the
-    ''' scene target could not be allocated) and returns the previous read binding and read buffer to restore.</summary>
     ''' <summary>The last frame drawn left its radiance in the HDR target whole: it was drawn into it and composited by the
     ''' post (no status card in its place: textures still loading) - what CaptureSceneLinear reads.</summary>
     Private _lastFrameHdrScene As Boolean
 
+    ''' <summary>Binds the framebuffer reads come from (the scene target, or the window's default one when the
+    ''' scene target could not be allocated) and returns the previous read binding and read buffer to restore.</summary>
     Private Function BindSceneForRead(fallback As ReadBufferMode) As (PrevFbo As Integer, PrevBuffer As Integer)
         Dim prevFbo As Integer = 0, prevBuf As Integer = CInt(ReadBufferMode.Back)
         Try
@@ -3598,7 +3653,9 @@ Public Class PreviewControl
             _fo4.Free()
             _sseDecalBase.Free()
             If _saoPointSampler <> 0 Then GL.DeleteSampler(_saoPointSampler) : _saoPointSampler = 0
+#If DEBUG Then
             If _gateWhite <> 0 Then GL.DeleteTexture(_gateWhite) : _gateWhite = 0
+#End If
             _samplers?.Dispose() : _samplers = Nothing
 
             If SharedShadowSSEShader IsNot Nothing Then
@@ -4044,12 +4101,14 @@ Public Class PreviewModel
         Next
     End Sub
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the opaque list in draw order (ShadowGate --draw-order).</summary>
     Friend ReadOnly Property GateOpaqueDrawOrder As IReadOnlyList(Of RenderableMesh)
         Get
             Return OpaqueMeshes
         End Get
     End Property
+#End If
 
 #If DEBUG Then
     ''' <summary>DEBUG ONLY (item 2b oracles, ShadowGate --draw-order / --technique-order-census): the colour-pass lists of the frame by
@@ -4360,16 +4419,20 @@ Public Class PreviewModel
         ''' the GPU-skinning uploads skip them while this holds.</summary>
         Private _eyeCentersAreBind As Boolean
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True leaves RT1..4 writable for an effect decal drawn
         ''' in the FO4 G-buffer stage.</summary>
         Friend Shared GateFo4EffectDecalMaskOpen As Boolean = False
+#End If
 
+#If DEBUG Then
         ''' <summary>GATE ONLY: the location-11 buffer.</summary>
         Friend ReadOnly Property GatePreSkinNormalVbo As Integer
             Get
                 Return vboPreSkinNormal
             End Get
         End Property
+#End If
         Private vboTangent As Integer
         Private vboBitangent As Integer
 
@@ -4468,9 +4531,11 @@ Public Class PreviewModel
                 ParentMeshData = Parent
             End Sub
 
+#If DEBUG Then
             ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-technique-law (rev-40 invariant). True makes Fo4Flags return the NIF's raw
             ''' F4SPF1 | F4SPF2 &lt;&lt; 32, without the BGSM applicator and the slot-42 fixer.</summary>
             Friend Shared GateFo4RawFlags As Boolean = False
+#End If
             Public Property ParentMeshData As MeshData_Class
 
             ''' <summary>Optional render-only material override (LooksMenu overlay layer). When set,
@@ -4705,6 +4770,10 @@ Public Class PreviewModel
                     lightingTechnique = Fo4Technique(ff, g, lightingNoPass)
                     If lightingTechnique.HasValue Then lightingGroup = g
                 End If
+                Dim softPermitido = True
+#If DEBUG Then
+                If PreviewModel.GateDisableSoft Then softPermitido = False
+#End If
                 Dim entradas = New Fo4RenderPassLaw.Fo4ShapeInputs With {.LightingGroup = lightingGroup, .LightingTechnique = lightingTechnique,
                     .LightingNoPass = lightingNoPass,
                     .IsEffect = mb.IsBGEM(), .Alpha = PreviewAlpha(), .Blend = ea.Blend,
@@ -4713,7 +4782,7 @@ Public Class PreviewModel
                     .CastShadows = bit(f1, 9), .LodObjects = bit(f2, 2),
                     .Falloff = mb.IsBGEM() AndAlso (bit(f1, 6) OrElse bit(f1, 8)),
                     .Billboard = bit(f2, 13), .PipboyScreen = bit(f2, 28),
-                    .Soft = mb.IsBGEM() AndAlso bit(f1, 30) AndAlso Not PreviewModel.GateDisableSoft,
+                    .Soft = mb.IsBGEM() AndAlso bit(f1, 30) AndAlso softPermitido,
                     .AlphaTest = ea.Test, .TestRef = ea.Threshold,
                     .HasColorStream = Fo4EngineVertexLayout.PrepassColorStream(VertexDescValue(geo)),
                     .PrepassGeometry = geo IsNot Nothing AndAlso Fo4PrepassGeometryClass(geo) AndAlso indicesPresentes}
@@ -4732,7 +4801,9 @@ Public Class PreviewModel
             Friend Function Fo4Flags() As ULong
                 Dim sh = ParentMeshData.Shape?.NifShader
                 Dim raw As ULong = If(sh Is Nothing, 0UL, CULng(CUInt(sh.ShaderFlags_F4SPF1)) Or (CULng(CUInt(sh.ShaderFlags_F4SPF2)) << 32))
+#If DEBUG Then
                 If GateFo4RawFlags Then Return raw
+#End If
                 If MaterialBase Is Nothing Then Return raw
                 If MaterialBase.IsBGEM() Then
                     Dim e = Fo4EffectFlags()
@@ -4907,7 +4978,10 @@ Public Class PreviewModel
             ''' draws it, L1c). A material outside any control (no ParentControl: a census, a tool) gets the composite rule - RenderIntent's
             ''' default (C2 v7, D-G1). Overlay layers (rev-03) and PreviewModel.GateRawPreviewAlpha: the raw alpha.</summary>
             Friend Function PreviewAlpha() As Single
-                If OverrideRelatedMaterial IsNot Nothing OrElse PreviewModel.GateRawPreviewAlpha Then Return MaterialBase.Alpha
+                If OverrideRelatedMaterial IsNot Nothing Then Return MaterialBase.Alpha
+#If DEBUG Then
+                If PreviewModel.GateRawPreviewAlpha Then Return MaterialBase.Alpha
+#End If
                 If Not EngineAlphaSkipsPasses() Then Return RestAlpha()
                 Dim pc = ParentMeshData.ParentMesh?.ParentModel?.ParentControl
                 If pc Is Nothing OrElse Not pc.Intent.DrawEngineSkippedForEditing Then Return RestAlpha()
@@ -5657,7 +5731,9 @@ Public Class PreviewModel
                 Dim t = Fo4EffectTechnique.Technique(New Fo4EffectTechnique.EffectInputs With {
                     .Flags = f.Value, .BasePath = Not String.IsNullOrEmpty(mb.Diffuse_or_Base_Texture), .PalettePath = Not String.IsNullOrEmpty(mb.GreyscaleTexture),
                     .AlphaFlags = If(ea.Present, ea.NiFlags(), CType(Nothing, Integer?))})
+#If DEBUG Then
                 If PreviewModel.GateDisableSoft Then t = t And Not Fo4EffectTechnique.TechSoft
+#End If
                 Return t
             End Function
 
@@ -6466,17 +6542,6 @@ Public Class PreviewModel
             ReDim _upPos(n - 1) : ReDim _upNrm(n - 1) : ReDim _upTan(n - 1) : ReDim _upBitan(n - 1)
         End Sub
 
-        ''' <summary>Sube al GL los buffers del shape ya skineados en CPU (lee <c>PerVertexSkinMatrix</c> y
-        ''' transforma local a world antes del upload). Es el camino que corre con GPU-skinning APAGADO.
-        ''' <para>⛔ SYNC: CPU/GPU skinning - es el gemelo del bloque de skinning del vertex shader. Con el
-        ''' toggle en GPU este codigo no corre, asi que una formula cambiada de un solo lado no falla: solo se ve
-        ''' mal en el otro modo. Lista completa de sitios gemelos en <c>SkinningHelper.BlendBoneMatrices</c> y en
-        ''' 00-reglas-ui-y-vb.</para></summary>
-        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el upload completo (full-reload
-        ''' y morph, que no tienen ComputeBounds aparte). El camino de pose pasa False porque sus bounds los
-        ''' maneja la linea gateada del pass 1; hacerlo incondicional aca saltea ese gate (8,9 ms/frame medidos).
-        ''' El nombre difiere de ComputeBounds a proposito: VB es case-insensitive y un parametro homonimo
-        ''' sombrearia al metodo.</param>
         ''' <summary>S-W: the raw UNORM8 normals of a Skyrim SE TREE_ANIM shape (IShapeGeometry.GetNormals: b / 255 * 2 - 1, the VS's own
         ''' decode, NOT the normalized Meshgeometry.Normals) when the frame's game is SSE and the technique is TREE_ANIM
         ''' (SseRenderPassLaw.TreeAnimTechnique); Nothing otherwise. Read once per geometry: the NIF's normals do not change with the
@@ -6715,26 +6780,34 @@ Public Class PreviewModel
             Return Fo4EngineVertexLayout.Elements(Fo4EngineVertexLayout.PrepassAlphaDesc(_engineDesc)).Any(Function(e) e.Semantic = Fo4EngineVertexLayout.Sem.Color0)
         End Function
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (N1): the engine stage bytes of this shape.</summary>
         Friend Function EngineStageBytes() As Byte()
             Return _engineStage
         End Function
+#End If
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (G5b): the engine stage's attributes the CPU route reads.</summary>
         Friend Function EngineCpuInputs() As Fo4EngineVertexPacker.CpuRouteInputs
             Return _engineCpuInputs
         End Function
+#End If
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (ola 2b, --fo4-vertex-constants' oracle): the vertex desc of the engine stage (Fo4EngineVertexLayout).</summary>
         Friend Function EngineDescValue() As ULong
             Return _engineDesc
         End Function
+#End If
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (N1): DrawPosition(i, Nothing) as a System.Numerics.Vector3.</summary>
         Friend Function EngineDrawPositionF(i As Integer) As System.Numerics.Vector3
             Dim v = DrawPosition(i, Nothing)
             Return New System.Numerics.Vector3(CSng(v.X), CSng(v.Y), CSng(v.Z))
         End Function
+#End If
 
         Private _paletteSsbo As Integer, _paletteCap As Integer, _paletteRows As Vector4()
         ''' <summary>The bones of cb10: GPUBoneMatrices, or one identity bone for a shape without them (its VS reads no palette).</summary>
@@ -6771,11 +6844,16 @@ Public Class PreviewModel
         ''' forced route or VistaSkinCpu. Setup, the CPU stream's three uploads (EngineVbo_Setup, the dense and the sparse branch of
         ''' UpdateSkinBuffers_GL), the constants and the VAO read only this.</summary>
         Friend Function EngineCpuRoute() As Boolean
-            Return GateForceEngineCpuRoute OrElse VistaSkinCpu()
+#If DEBUG Then
+            If GateForceEngineCpuRoute Then Return True
+#End If
+            Return VistaSkinCpu()
         End Function
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant (revisor-29). True forces the CPU route on every shape.</summary>
         Friend Shared GateForceEngineCpuRoute As Boolean = False
+#End If
 
         ''' <summary>The colour pass's draw of this shape (H6): a program with the engine's HS / DS draws 3-control-point patches
         ''' (0x14181D60E: D3D11_PRIMITIVE_TOPOLOGY 0x23); every other program draws triangles, as before.</summary>
@@ -6999,19 +7077,21 @@ Public Class PreviewModel
         ''' <summary>The geometry's world NiTransform as the app's row-vector model: the matrix of EngineGeometryWorld and of WorldView's
         ''' W (ola 2b: 0x1422094B0 reads the same geom + 0x70 as SetupGeometry's World, 0x1422059AE).</summary>
         Friend Function EngineGeometryModel() As Matrix4
+#If DEBUG Then
             If GateWorldIdentity Then Return Matrix4.Identity
+#End If
             Dim g = MeshData.Meshgeometry.GPUBoneMatrices
             Return If(g IsNot Nothing AndAlso g.Length > 0, g(0), Matrix4.Identity) * MeshData.Transform
         End Function
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (no UI): ShadowGate --overlay-z-probe. True draws an FO4 overlay with its effect VS's own position (ola 3:
         ''' the transcribed b05 VS) instead of its host's engine vertex stage (EnginePositions).</summary>
         Friend Shared GateOverlayOwnPosition As Boolean = False
+#End If
 
         Private _enginePosBuffer As Integer, _enginePosCap As Integer, _enginePosFrame As Integer = -1
 
-        ''' <summary>The frame's notice for an overlay whose host is drawn by an engine stage that EnginePositions cannot capture (UI
-        ''' English).</summary>
         ''' <summary>Ola 7h round 4c: does an overlay layer's own vertex stage place its vertices as its host's does, so that EnginePositions'
         ''' capture is its position? A Fallout 4 G-buffer layer, and an effect layer whose technique is SKINNED: yes (the b05 SKINNED VS
         ''' chain is the host's G-buffer VS's, EnginePositions). An effect layer WITHOUT SKINNED: no - the new BSEffectShaderProperty F4EE
@@ -7031,6 +7111,8 @@ Public Class PreviewModel
             Return Not t.HasValue OrElse (t.Value And Fo4EffectTechnique.TechSkinned) <> 0UI
         End Function
 
+        ''' <summary>The frame's notice for an overlay whose host is drawn by an engine stage that EnginePositions cannot capture (UI
+        ''' English).</summary>
         Friend Const OverlayTessellatedHostNotice As String = "Overlay on a tessellated host: drawn with the app's position, not its host's engine stage"
         Friend Const OverlayNoPositionProgramNotice As String = "Overlay whose host's engine stage could not be built for capture: drawn with the app's position, not its host's engine stage"
 
@@ -7045,7 +7127,10 @@ Public Class PreviewModel
         ''' then its own draw is not an engine stage's either.</summary>
         Friend Function EnginePositions() As Boolean
             Dim pm = Me.ParentModel
-            If GateOverlayOwnPosition OrElse pm Is Nothing OrElse Not pm.FrameUsesFo4Deferred OrElse engineVbo = 0 Then Return False
+#If DEBUG Then
+            If GateOverlayOwnPosition Then Return False
+#End If
+            If pm Is Nothing OrElse Not pm.FrameUsesFo4Deferred OrElse engineVbo = 0 Then Return False
             Dim programs = pm.ParentControl.SharedFo4Deferred
             Dim d = MeshData.Material.Fo4GBufferPass(programs)
             If Not d.HasValue OrElse d.Value.Gap <> "" OrElse d.Value.Program Is Nothing Then Return False
@@ -7087,9 +7172,11 @@ Public Class PreviewModel
             Return True
         End Function
 
+#If DEBUG Then
         ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-gbuffer-scenes (12) mutant. True binds World = the identity (the law before the
         ''' fix of 12-oct-2026: MeshData.Transform alone).</summary>
         Friend Shared GateWorldIdentity As Boolean = False
+#End If
 
 #If DEBUG Then
         ''' <summary>DEBUG ONLY (ola 7f tester, ShadowGate --ola7f e3): a GL texture DrawFo4EnginePrepass binds to unit 0 (sampler
@@ -7185,6 +7272,17 @@ Public Class PreviewModel
             UpdateSkinBuffers_GL(recomputeBounds:=False)
         End Sub
 
+        ''' <summary>Sube al GL los buffers del shape ya skineados en CPU (lee <c>PerVertexSkinMatrix</c> y
+        ''' transforma local a world antes del upload). Es el camino que corre con GPU-skinning APAGADO.
+        ''' <para>⛔ SYNC: CPU/GPU skinning - es el gemelo del bloque de skinning del vertex shader. Con el
+        ''' toggle en GPU este codigo no corre, asi que una formula cambiada de un solo lado no falla: solo se ve
+        ''' mal en el otro modo. Lista completa de sitios gemelos en <c>SkinningHelper.BlendBoneMatrices</c> y en
+        ''' 00-reglas-ui-y-vb.</para></summary>
+        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el upload completo (full-reload
+        ''' y morph, que no tienen ComputeBounds aparte). El camino de pose pasa False porque sus bounds los
+        ''' maneja la linea gateada del pass 1; hacerlo incondicional aca saltea ese gate (8,9 ms/frame medidos).
+        ''' El nombre difiere de ComputeBounds a proposito: VB es case-insensitive y un parametro homonimo
+        ''' sombrearia al metodo.</param>
         Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
             UpdateUvBuffer_GL()
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
@@ -8342,14 +8440,6 @@ Public Class PreviewModel
                     If(isNaN, FrameNoticeId.AlphaNaNShown, FrameNoticeId.AlphaZeroShown), If(isNaN, FrameNoticeId.AlphaNaNNotDrawn, FrameNoticeId.AlphaZeroNotDrawn))
         End Function
 
-        ''' <summary>Lists this shape - or its overlay layer <paramref name="layer"/>, a shape of its own in the engine - in the frame's
-        ''' notice, in the engine's order (rev-11): (1) the material alpha 0 - GetRenderPasses tests it before anything else it cuts on
-        ''' (FO4 0x14217A147 before blend 0x14217A16A and refraction 0x14217A566; SSE 0x14151A554 before refraction 0x14151A6BB) -
-        ''' listed as drawn for editing when the preview shows it, else as not drawn; (2) a precombined shape (preview gap); (3) the
-        ''' preview's own gap (Fo4GBufferDraw.Gap); (4) the game's own law the preview follows (EngineUndrawnNotice).
-        ''' PreviewModel.ReportUndrawnShapes calls it once per visible shape and layer per frame. A shape the preview never draws for
-        ''' the app's own reasons (hidden, a helper or under a hidden node with the checkbox off, without geometry other than a precombined
-        ''' one, a wireframe) is not listed. Before all of them, C-NAN (chunk C3): the game's culling of a world bound of radius 0.</summary>
         ''' <summary>THE producer of "Overlay material not found" (user decision 22-oct-2026): one WARNING per overlay layer of this shape
         ''' whose template's material file did not load (OverlayMaterialLayer.MaterialNotFound: F4EE applied nothing,
         ''' OverlayInterface.cpp:178), the path named; the layer is drawn as the game draws it (OverlayMaterialLayer.FromF4ee). Called by
@@ -8417,6 +8507,14 @@ Public Class PreviewModel
             Return rm?.material?.CierreDelJuego() IsNot Nothing
         End Function
 
+        ''' <summary>Lists this shape - or its overlay layer <paramref name="layer"/>, a shape of its own in the engine - in the frame's
+        ''' notice, in the engine's order (rev-11): (1) the material alpha 0 - GetRenderPasses tests it before anything else it cuts on
+        ''' (FO4 0x14217A147 before blend 0x14217A16A and refraction 0x14217A566; SSE 0x14151A554 before refraction 0x14151A6BB) -
+        ''' listed as drawn for editing when the preview shows it, else as not drawn; (2) a precombined shape (preview gap); (3) the
+        ''' preview's own gap (Fo4GBufferDraw.Gap); (4) the game's own law the preview follows (EngineUndrawnNotice).
+        ''' PreviewModel.ReportUndrawnShapes calls it once per visible shape and layer per frame. A shape the preview never draws for
+        ''' the app's own reasons (hidden, a helper or under a hidden node with the checkbox off, without geometry other than a precombined
+        ''' one, a wireframe) is not listed. Before all of them, C-NAN (chunk C3): the game's culling of a world bound of radius 0.</summary>
         Friend Sub ReportUndrawn(layer As OverlayMaterialLayer)
             Dim shp = MeshData.Shape
             If shp Is Nothing OrElse shp.Wireframe OrElse shp.NifShape Is Nothing Then Exit Sub
@@ -8526,7 +8624,10 @@ Public Class PreviewModel
             ' C4: missing textures, empty slots sampled with a non-neutral default, what the preview draws differently
             ' (MaterialData.TextureNotices) - only for a shape the frame draws as the game does (the earlier exits: alpha 0,
             ' precombined, the preview's gap, the game's own law). A helper shape the user chose to see is not listed.
-            If PreviewModel.GateNoTextureNoticeCensus OrElse (layer Is Nothing AndAlso shp.IsHelperShape) Then Exit Sub
+#If DEBUG Then
+            If PreviewModel.GateNoTextureNoticeCensus Then Exit Sub
+#End If
+            If layer Is Nothing AndAlso shp.IsHelperShape Then Exit Sub
             For Each n In md.TextureNotices()
                 pm.ReportUndrawn(name, n.Reason, n.Id)
             Next
@@ -8579,7 +8680,9 @@ Public Class PreviewModel
             ' an eligible shape writes its own depth - the edit views with the prepass's cut, a G-buffer record without its early tests.
             If fo4.InPrepass AndAlso Not Me.ParentModel.FramePrepassRuns Then Return (fo4.DepthTest, DepthFunction.Lequal, True)
             ' Gate only (--fo4-decal-base b1): the translucent decals test EQUAL against their base.
+#If DEBUG Then
             If PreviewModel.GateDecalColourEqual AndAlso fo4.Group = 3 Then Return (fo4.DepthTest, DepthFunction.Equal, fo4.DepthWrite)
+#End If
             Return (fo4.DepthTest, DepthFunction.Lequal, fo4.DepthWrite)
         End Function
 
@@ -8715,16 +8818,23 @@ Public Class PreviewModel
         Private Sub ApplyDecalBaseState(shader As Shader_Base_Class, material As MaterialData, gbuf As Fo4GBufferDraw?)
             If gbuf.HasValue Then
                 ' AlphaScale (1, 0): A = 1 and x 1, the record's kill never fires.
+#If DEBUG Then
                 If PreviewModel.GateDecalBaseNoDiscard Then shader.SetVector4("AlphaScale", New Vector4(1.0F, 0.0F, 0.0F, 0.0F))
+#End If
             Else
                 shader.SetInt("uDecalBaseMode", DecalBaseMode(material, Me.ParentModel.FrameIsSse))
             End If
             GL.ColorMask(False, False, False, False)
             GL.Disable(EnableCap.Blend)
             GL.Enable(EnableCap.DepthTest)
-            GL.DepthFunc(If(Fo4DeferredTargets.GateDecalBaseNearest, DepthFunction.Less, DepthFunction.Greater))
+            GL.DepthFunc(DepthFunction.Greater)
+#If DEBUG Then
+            If Fo4DeferredTargets.GateDecalBaseNearest Then GL.DepthFunc(DepthFunction.Less)
+#End If
             GL.DepthMask(True)
+#If DEBUG Then
             If PreviewModel.GateDecalBaseNoBias Then GL.Disable(EnableCap.PolygonOffsetFill)
+#End If
             DecalBaseTarget.DepthDrawStencil()
             Me.ParentModel.ParentControl.FrameDecalBase.DepthDrawAlpha()
         End Sub
@@ -8792,8 +8902,12 @@ Public Class PreviewModel
                 Dim d1 = If(b.Dst = BlendingFactor.One, 3, If(b.Dst = BlendingFactor.OneMinusSrcAlpha, 1, If(b.Dst = BlendingFactor.SrcAlpha, 4, 0)))
                 mode = If(s0 = 0 OrElse d1 = 0, 2, If(s0 = 3, d1, If(d1 = 3 OrElse d1 = s0, s0, 2)))
             End If
+#If DEBUG Then
             If PreviewModel.GateDecalBaseNoDiscard Then mode = 0
+#End If
+#If DEBUG Then
             If PreviewModel.GateDecalBaseModeOneForAll Then mode = 1
+#End If
             Return mode
         End Function
 
@@ -8805,7 +8919,9 @@ Public Class PreviewModel
         ''' exactly "decal over a surface B" ((D + 1 - a) B, D B), the decal adding no coverage of its own (DecalCoverageMode 2). Gate
         ''' mutant: PreviewModel.GateDecalBaseOpaque (0 for every decal: the opaque base of propuesta v1).</summary>
         Friend Shared Function DecalBaseOpacity(material As MaterialData, gbuf As Fo4GBufferDraw?, isSse As Boolean) As Integer
+#If DEBUG Then
             If PreviewModel.GateDecalBaseOpaque Then Return 0
+#End If
             Return If(DecalColourBlend(material, gbuf, isSse).Enabled, 1, 0)
         End Function
 
@@ -8849,10 +8965,14 @@ Public Class PreviewModel
             Dim pm = Me.ParentModel
             Dim target = pm.ParentControl.FrameDecalBase
             Dim opacity = DecalBaseOpacity(material, gbuf, pm.FrameIsSse)
+#If DEBUG Then
             If PreviewModel.GateDecalBaseNoBias Then GL.Disable(EnableCap.PolygonOffsetFill)
+#End If
             GL.Enable(EnableCap.DepthTest)
             If pm.FrameIsSse Then
+#If DEBUG Then
                 If PreviewModel.GateDecalBaseNoSurface Then Exit Sub
+#End If
                 target.SurfaceDrawStencil()
                 shader.SetInt("uDecalBaseMode", DecalBaseMode(material, True))
                 shader.SetBool("uSseDecalBaseSurface", True)
@@ -8871,9 +8991,13 @@ Public Class PreviewModel
                 shader.SetBool("uSseDecalBaseSurface", False)
                 GL.Disable(EnableCap.Blend)
             Else
+                Dim superficie = True
+#If DEBUG Then
+                If PreviewModel.GateDecalBaseNoSurface Then superficie = False
+#End If
                 ' A translucent EFFECT decal (ola 3, D16 / Q2): its surface on its own engine VS (the same gl_Position as its depth and colour
                 ' draws) with the surface foot and Fragment_DecalBaseSurfaceEffect (Fo4DeferredPrograms.EffectSurfaceProgram).
-                If fx.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
+                If fx.HasValue AndAlso superficie Then
                     target.SurfaceDrawStencil()
                     GL.Disable(EnableCap.Blend)
                     Dim cb = Fo4DeferredTargets.SurfaceCoverageBuffer
@@ -8896,7 +9020,7 @@ Public Class PreviewModel
                                              End Sub)
                     GL.Disable(EnableCap.Blend)
                 End If
-                If gbuf.HasValue AndAlso Not PreviewModel.GateDecalBaseNoSurface Then
+                If gbuf.HasValue AndAlso superficie Then
                     target.SurfaceDrawStencil()
                     ' The five G-buffer RTs unblended (the premultiplied surface); the coverage target (the buffer after them) accumulates a.
                     GL.Disable(EnableCap.Blend)
@@ -8921,7 +9045,11 @@ Public Class PreviewModel
                 End If
                 shader.Use()
                 Dim coverage = DecalCoverageMode(material, gbuf, False)
-                If coverage <> 2 AndAlso Not PreviewModel.GateDecalBaseNoCoverage Then
+                Dim conCobertura = coverage <> 2
+#If DEBUG Then
+                If PreviewModel.GateDecalBaseNoCoverage Then conCobertura = False
+#End If
+                If conCobertura Then
                     target.CoverageDrawStencil()
                     If coverage = 1 Then
                         GL.Enable(EnableCap.Blend)
@@ -9483,27 +9611,7 @@ Public Class PreviewModel
             DrawMaterial(projection, camera, GetOverlayMaterialData(layer), layer, ssePrepass, decalBase)
         End Sub
 
-        ''' <summary>What a blended draw adds to the coverage of the HDR target, from its SOURCE blend factor
-        ''' evaluated over an EMPTY destination (colour 0; alpha 1, the R11G11B10 target has no alpha): a
-        ''' factor that is 0 there (ZERO, DST_COLOR, ONE_MINUS_DST_ALPHA, SRC_ALPHA_SATURATE) means the draw
-        ''' adds no light of its own - it only scales what is behind - so it leaves the coverage (2); any
-        ''' other factor lets its own colour in, weighted by its alpha (1).</summary>
 
-        ''' <summary>THE FO4 EFFECT SHADER'S BLEND, from the alpha property's src/dst (the .bgem's copied into it,
-        ''' 0x142171954..19CC; a NIF-inline shape keeps its own). Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md.
-        ''' <list type="bullet">
-        ''' <item>Pass mode (0x1422301E0), only these pairs (src, dst) with the blend bit set; any other pair draws with
-        ''' blending OFF: (6,7) -&gt; 1; (6,0) (0,0) (6,9) -&gt; 2; (1,2) (4,1) -&gt; 3; (0,7) -&gt; 4. Without the blend bit:
-        ''' mode 1 when the property alpha is below 1, else off (the app's hasAlphaBlend already says which).</item>
-        ''' <item>Modes (table 0x141855180, op ADD): 1 SRC_ALPHA/INV_SRC_ALPHA; 2 SRC_ALPHA/ONE; 3 colour DEST_COLOR/ZERO,
-        ''' alpha ONE/ZERO; 4 ONE/INV_SRC_ALPHA.</item>
-        ''' <item>Technique (0x142178150): MULTBLEND_DECAL = (4,7), MULTBLEND = dst 2 or src 4 otherwise, ADDBLEND = dst 0.
-        ''' No PS exists for MULTBLEND_DECAL nor for ADD+MULT (4,0): the lookup returns 0 (0x142231AE0) and the draw is
-        ''' skipped (0x14221FB9F).</item>
-        ''' </list>
-        ''' PREMULTIPLY (mode 4 forced) is never set in world rendering (0x143E5E345, Interface3D only): not applied.
-        ''' World effects write RGB only (0x1421D5C22): the colour mask in ApplyMaterial. ENVCUBE (mode 2) does not reach a
-        ''' NIF effect (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md).</summary>
         ''' <summary>SSE invFrameBufferRange in world rendering: BSShaderManager::State+0x9C, initial .data value at
         ''' 0x1420D694C = 1/1.2; its only writers are the UI render 0x14116AC80 (1.0 while it draws, then restored) and the
         ''' console command SetFramebufferRange (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md Q3).</summary>
@@ -9561,14 +9669,34 @@ Public Class PreviewModel
         Friend Const SsePrepassDepthFunc As DepthFunction = DepthFunction.Lequal
 
 
-        ''' <summary>An effect's blend (SetupAlphaBlend with the property's real alpha, Fo4SetupAlphaBlendMode / Fo4BlendModeFactors - the
-        ''' table the G-buffer shares). Its technique (MULTBLEND, the skip) is Fo4EffectTechnique's (ola 3).</summary>
+        ''' <summary>THE FO4 EFFECT SHADER'S BLEND, from the alpha property's src/dst (the .bgem's copied into it,
+        ''' 0x142171954..19CC; a NIF-inline shape keeps its own). Tools/re-docs/RE_BGEM_BLENDMODES_FO4_2026-10-03.md.
+        ''' <list type="bullet">
+        ''' <item>Pass mode (0x1422301E0), only these pairs (src, dst) with the blend bit set; any other pair draws with
+        ''' blending OFF: (6,7) -&gt; 1; (6,0) (0,0) (6,9) -&gt; 2; (1,2) (4,1) -&gt; 3; (0,7) -&gt; 4. Without the blend bit:
+        ''' mode 1 when the property alpha is below 1, else off (the app's hasAlphaBlend already says which).</item>
+        ''' <item>Modes (table 0x141855180, op ADD): 1 SRC_ALPHA/INV_SRC_ALPHA; 2 SRC_ALPHA/ONE; 3 colour DEST_COLOR/ZERO,
+        ''' alpha ONE/ZERO; 4 ONE/INV_SRC_ALPHA.</item>
+        ''' <item>Technique (0x142178150): MULTBLEND_DECAL = (4,7), MULTBLEND = dst 2 or src 4 otherwise, ADDBLEND = dst 0.
+        ''' No PS exists for MULTBLEND_DECAL nor for ADD+MULT (4,0): the lookup returns 0 (0x142231AE0) and the draw is
+        ''' skipped (0x14221FB9F).</item>
+        ''' </list>
+        ''' PREMULTIPLY (mode 4 forced) is never set in world rendering (0x143E5E345, Interface3D only): not applied.
+        ''' World effects write RGB only (0x1421D5C22): the colour mask in ApplyMaterial. ENVCUBE (mode 2) does not reach a
+        ''' NIF effect (Tools/re-docs/RE_EFFECT_PARTICLE_ENVCUBE_2026-10-03.md).
+        ''' <para>An effect's blend (SetupAlphaBlend with the property's real alpha, Fo4SetupAlphaBlendMode / Fo4BlendModeFactors - the
+        ''' table the G-buffer shares). Its technique (MULTBLEND, the skip) is Fo4EffectTechnique's (ola 3).</para></summary>
         Friend Shared Function Fo4EffectBlend(present As Boolean, blendBit As Boolean, src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction,
                                               passAlpha As Single) As (Enabled As Boolean, ColorSrc As BlendingFactor, ColorDst As BlendingFactor, AlphaSrc As BlendingFactor, AlphaDst As BlendingFactor)
             Dim m = Fo4BlendModeFactors(Fo4SetupAlphaBlendMode(present, blendBit, src, dst, passAlpha))
             Return (m.Enabled, m.ColorSrc, m.ColorDst, m.AlphaSrc, m.AlphaDst)
         End Function
 
+        ''' <summary>What a blended draw adds to the coverage of the HDR target, from its SOURCE blend factor
+        ''' evaluated over an EMPTY destination (colour 0; alpha 1, the R11G11B10 target has no alpha): a
+        ''' factor that is 0 there (ZERO, DST_COLOR, ONE_MINUS_DST_ALPHA, SRC_ALPHA_SATURATE) means the draw
+        ''' adds no light of its own - it only scales what is behind - so it leaves the coverage (2); any
+        ''' other factor lets its own colour in, weighted by its alpha (1).</summary>
         Private Shared Function CoverageModeForSourceFactor(src As BlendingFactor) As Integer
             Select Case src
                 Case BlendingFactor.Zero, BlendingFactor.DstColor, BlendingFactor.OneMinusDstAlpha, BlendingFactor.SrcAlphaSaturate
@@ -10116,7 +10244,7 @@ Public Class PreviewModel
             shader.SetFloat("shininess", If(isSSE, materialBase.Smoothness, material.RestValue(RestVariable.Glossiness)))
             ' SSE: exponente de glossiness CRUDO (shad.Glossiness), no reconstruido por el shader.
             If isSSE Then shader.SetFloat("glossiness", material.RestValue(RestVariable.Glossiness))
-            ' FO4 SetupMaterial powf(2.2)s the material colours (DAT_142475358); SSE's pipeline is raw (no gamma
+            ' FO4 SetupMaterial powf(2.2f)s the material colours (0x14247D3B8, Shader_Base_Class.EngineGamma); SSE's pipeline is raw (no gamma
             ' constant anywhere in its setup, raw cbuffer writes).
             shader.SetVector3("specularColor", RestColour(material.RestColourAt(RestVariable.SpecularColor), materialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.Specular), isSSE))
             shader.SetFloat("specularStrength", material.RestValue(RestVariable.SpecularStrength))
@@ -10272,8 +10400,8 @@ Public Class PreviewModel
             ' SOFT (FO4 technique bit 12 / SSE bit 18 = SLSF1 bit 30, the BGEM's SoftEnabled; no setting can turn it
             ' off, and the preview is not first person): the fade reads the scene depth copied this frame.
             ' Fallout 4 (ola 3): its effect's technique says SOFT (bit 12, MaterialData.Fo4EffectTechniqueValue: flag 30).
-            Dim softOn = If(fx.HasValue, (fx.Value.Technique And Fo4EffectTechnique.TechSoft) <> 0UI,
-                            isBGEM AndAlso materialBase.SoftEnabled AndAlso Not PreviewModel.GateDisableSoft)
+            Dim softOn = If(fx.HasValue, (fx.Value.Technique And Fo4EffectTechnique.TechSoft) <> 0UI, isBGEM AndAlso materialBase.SoftEnabled)
+            If Not fx.HasValue AndAlso GateSoftApagado() Then softOn = False
             If softOn AndAlso Not isSSE Then
                 ' FO4 reads the LIVE depth (logical depth 1, bound read-only while it is an SRV, 0x14183C863): all that was
                 ' drawn before this effect. Copy it when something wrote depth since the last copy.
@@ -10488,7 +10616,7 @@ Public Class PreviewModel
                 ApplyFo4GBufferDraw(shader, material, gbuf.Value)
             ElseIf Me.ParentModel.FrameGBufferStage Then
                 For rt = 1 To 4 : GL.ColorMask(rt, False, False, False, False) : Next
-                If GateFo4EffectDecalMaskOpen Then GL.ColorMask(1, True, True, True, True) : GL.ColorMask(2, True, True, True, True) : GL.ColorMask(3, True, True, True, True) : GL.ColorMask(4, True, True, True, True)
+                If GateMascaraDeCalcaAbierta() Then GL.ColorMask(1, True, True, True, True) : GL.ColorMask(2, True, True, True, True) : GL.ColorMask(3, True, True, True, True) : GL.ColorMask(4, True, True, True, True)
             End If
             If fx.HasValue Then ApplyFo4EffectDraw(shader, material, fx.Value)
 
@@ -10522,6 +10650,27 @@ Public Class PreviewModel
                 Logger.LogLazy(Function() $"[DRAW-STATE] shape='{shpD}' idx={MeshData.Idx} blend={hasAlphaBlend}({blendPair(0)},{blendPair(1)}) test={testSubido} thr=0x{BitConverter.SingleToInt32Bits(umbralSubido):X8} ({umbralSubido * 255.0F:F3}/255) matAlpha={materialBase.Alpha:F3} depthWrite={writeDepth} | tex D={dId} N={material.NormalTexture_ID} inner={material.InnerLayerTexture_ID} | vColor: show={vcShow} data={vcData} tree={vcTree} ⇒ bShowVertexColor={vcShow AndAlso vcData} bShowVertexAlpha={vcShow AndAlso vcData AndAlso Not vcTree} | sampler D: minFilter={dMin} maxLevel={dMax} | hair={materialBase.Hair} spec={materialBase.SpecularEnabled}x{materialBase.SpecularMult:F2} gloss={materialBase.NifGlossiness:F2} foldedKey='{material.SseFoldedDiffuseKey}'")
             End If
         End Sub
+
+        ''' <summary>Ola 9 (5b): ShadowGate's switch PreviewModel.GateDisableSoft as ApplyMaterial reads it - the switch in Debug, False in
+        ''' Release. A function and not an #If inside ApplyMaterial: ParityGate fo4-alpha-wiring reads that Sub line by line and refuses a
+        ''' preprocessor line in it (rule n).</summary>
+        Private Shared Function GateSoftApagado() As Boolean
+#If DEBUG Then
+            Return PreviewModel.GateDisableSoft
+#Else
+            Return False
+#End If
+        End Function
+
+        ''' <summary>Ola 9 (5b): ShadowGate's switch GateFo4EffectDecalMaskOpen as ApplyMaterial reads it - the switch in Debug, False in
+        ''' Release (same reason as GateSoftApagado).</summary>
+        Private Shared Function GateMascaraDeCalcaAbierta() As Boolean
+#If DEBUG Then
+            Return GateFo4EffectDecalMaskOpen
+#Else
+            Return False
+#End If
+        End Function
 
         ''' <summary>A lighting shape's G-buffer draw (propuesta v3 E2/E4; Tools/re-docs/RE_FO4_DEFERRED_FRAME_2026-10-03.md 2.3):
         ''' <list type="bullet">
@@ -11913,6 +12062,11 @@ Public Class PreviewModel
     ''' <summary>Encuadre del mapa ANCHO por CAPA, a que luz corresponde cada capa, su escala de UV
     ''' (region logica / textura reservada) y si este frame se dibujo de verdad.</summary>
     Private ReadOnly _groundFits(PreviewShadowSettings.MaxShadowLights - 1) As ShadowMapMath.LightFit
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate, el bloque del suelo): las ENTRADAS con que este frame encuadro el mapa del suelo de cada capa
+    ''' (la luz, la caja de los casters, el plano del suelo y el tamano de la config), para que el arnes rehaga el encuadre por su ley.</summary>
+    Private ReadOnly _groundFitInputs(PreviewShadowSettings.MaxShadowLights - 1) As (Dir As Vector3, CastersMin As Vector3, CastersMax As Vector3, GroundZ As Single, MapSize As Integer)?
+#End If
     Private ReadOnly _groundLuzDeCapa(PreviewShadowSettings.MaxShadowLights - 1) As Integer
     Private ReadOnly _groundUvScale(PreviewShadowSettings.MaxShadowLights - 1) As Single
     Private ReadOnly _groundValida(PreviewShadowSettings.MaxShadowLights - 1) As Boolean
@@ -11987,6 +12141,7 @@ Public Class PreviewModel
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>Encuadre de una capa concreta. Para el arnes: verificar que cada luz encuadra desde SU
     ''' direccion y no desde la de la key.</summary>
     Friend ReadOnly Property ShadowFitDeCapa(capa As Integer) As ShadowMapMath.LightFit
@@ -11995,6 +12150,7 @@ Public Class PreviewModel
             Return _shadowFits(capa)
         End Get
     End Property
+#End If
 
     ''' <summary>Cuantas luces castean este frame, y a que capa fue cada una.</summary>
     Friend ReadOnly Property ShadowCount As Integer
@@ -12010,6 +12166,7 @@ Public Class PreviewModel
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>Encuadre del mapa ANCHO del suelo, y si este frame lo dibujo. Los consume el arnes
     ''' Tools/ShadowGate para verificar que prender el suelo NO le cambia el encuadre al personaje.</summary>
     Friend ReadOnly Property GroundFit As ShadowMapMath.LightFit
@@ -12017,6 +12174,15 @@ Public Class PreviewModel
             Return _groundFits(0)
         End Get
     End Property
+
+    ''' <summary>Las entradas con que se encuadro <see cref="GroundFit"/> este frame (Nothing si la capa 0 no dibujo suelo). Las consume
+    ''' el arnes para rehacer el encuadre por su ley (ola 9 ronda 3).</summary>
+    Friend ReadOnly Property GroundFitInputs As (Dir As Vector3, CastersMin As Vector3, CastersMax As Vector3, GroundZ As Single, MapSize As Integer)?
+        Get
+            Return _groundFitInputs(0)
+        End Get
+    End Property
+#End If
 
     Friend ReadOnly Property GroundActive As Boolean
         Get
@@ -12253,6 +12419,9 @@ Public Class PreviewModel
                         ' calificaba — un dato rancio que el arnes leeria como si fuera de este frame. Un
                         ' LightFit en cero se nota (Valid = False, Radius = 0); uno viejo se cree.
                         _groundFits(capa) = Nothing
+#If DEBUG Then
+                        _groundFitInputs(capa) = Nothing
+#End If
                         If Not califica(capa) Then Continue For
                         ' El tamano LOGICO de esta capa sale de su propio radio: una key alta y un fill rasante
                         ' conservan cada uno su resolucion optima, que un unico tamano de textura para todas
@@ -12264,6 +12433,9 @@ Public Class PreviewModel
                         Dim gfit = ShadowMapMath.Fit(dirLuz, minPorCapa(capa), maxPorCapa(capa), gLog)
                         If Not gfit.Valid Then Continue For
                         _groundFits(capa) = gfit
+#If DEBUG Then
+                        _groundFitInputs(capa) = (dirLuz, bmin, bmax, _groundZ, cfg.MapSize)
+#End If
                         _groundUvScale(capa) = ShadowMapMath.UvScaleDeCapa(gLog, cfg.MapSize)
                         _groundValida(capa) = True
                         RenderDepthInto(ParentControl.GroundShadowTarget, capa, gLog, gfit, depthShader, casters, filasD3D:=False)
@@ -12564,8 +12736,10 @@ Public Class PreviewModel
     ''' drawn with the lowered near (FrameNoticeKind.CloserThanGameNear): the reason -&gt; shapes.</summary>
     Friend ReadOnly FrameCloserThanGameNear As New SortedDictionary(Of String, SortedSet(Of String))(StringComparer.Ordinal)
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --default-textures mutant. True skips the frame's texture census.</summary>
     Friend Shared GateNoTextureNoticeCensus As Boolean = False
+#End If
 
     ''' <summary>C4 extension: this frame's shapes the game draws in a way it leaves undefined (the previous draw's texture, an unset
     ''' view vector), which the preview draws its own way (FrameNoticeKind.UndefinedInGame).</summary>
@@ -13143,7 +13317,11 @@ Public Class PreviewModel
         ' Item 2b r19b-07: Fallout 4's technique buckets with their overlay layers, in the engine's order.
         If Not FrameIsSse Then BuildFo4TechniqueSequences()
         ' The frame's notice: every visible shape and layer this frame does not draw, with its reason.
-        If Not GateNoUndrawnCensus Then ReportUndrawnShapes()
+        Dim censoDeNoDibujadas = True
+#If DEBUG Then
+        If GateNoUndrawnCensus Then censoDeNoDibujadas = False
+#End If
+        If censoDeNoDibujadas Then ReportUndrawnShapes()
 
         ' SKYRIM SE Z-PREPASS (0x141538FA0): kMAIN gets the depth of every shape SseRenderPassLaw puts in it (lighting and
         ' effect slot 0x2B, with the prepass alpha test), no colour; then CopyResource(ds[7], kMAIN) - the scene depth SOFT
@@ -13155,7 +13333,9 @@ Public Class PreviewModel
         If FrameUsesFo4Deferred Then
             Try
                 ParentControl.BeginFo4GBuffer()
+#If DEBUG Then
                 If GateFo4ThrowInStage Then GateFo4ThrowInStage = False : Throw New InvalidOperationException("GATE: aborted FO4 G-buffer stage")
+#End If
                 FrameGBufferStage = True
                 DrawOpaqueStage(projection, camera)
                 FrameGBufferStage = False
@@ -13176,7 +13356,11 @@ Public Class PreviewModel
         Else
             DrawOpaqueStage(projection, camera)
             ' SSE: the SAO composite over the opaque scene, between the opaque finish and the alpha finish (0x14153A1CA).
-            If FrameIsSse AndAlso FrameIsHdr AndAlso Not GateDisableSseComposite Then ParentControl.ApplySseOpaqueComposite()
+            Dim compuestoSse = True
+#If DEBUG Then
+            If GateDisableSseComposite Then compuestoSse = False
+#End If
+            If FrameIsSse AndAlso FrameIsHdr AndAlso compuestoSse Then ParentControl.ApplySseOpaqueComposite()
             DrawForwardStage(projection, camera, viewMatrix, vp)
             DrawRefractionNormals(projection, camera)
         End If
@@ -13254,7 +13438,11 @@ Public Class PreviewModel
         ' stage incl. the alpha finish): the refracting shapes have no colour pass (they sit in NoColourPassMeshes); the
         ' target is cleared and bound only when at least one of them draws. ISRefraction then runs from RenderScene.
         FrameRefractionActive = False
-        If Not GateDisableRefraction Then
+        Dim refraccion = True
+#If DEBUG Then
+        If GateDisableRefraction Then refraccion = False
+#End If
+        If refraccion Then
             Dim fadeNodes As Dictionary(Of RenderableMesh, (Centre As Vector3?, IsActor As Boolean, InList As Boolean)) = Nothing
             Dim abierto = False
             For Each mesh In NoColourPassMeshes
@@ -13353,11 +13541,15 @@ Public Class PreviewModel
     ''' IsActive = the list-5 flag, SSE [0x143698B31], FO4 [0x143E71D99]).</summary>
     Friend Property FrameRefractionActive As Boolean
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): True skips the refraction passes (the refracting shapes then show nothing).</summary>
     Friend Shared GateDisableRefraction As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): True skips the SSE SAO composite over the opaque scene.</summary>
     Friend Shared GateDisableSseComposite As Boolean = False
+#End If
 
     ''' <summary>An overlay layer of <see cref="Mesh"/> or, in a Fallout 4 technique sequence (BuildFo4TechniqueSequences), with
     ''' <see cref="Layer"/> Nothing, the shape itself.</summary>
@@ -13521,7 +13713,8 @@ Public Class PreviewModel
                            End Function
         Dim rig = Config_App.Current.ActiveLights()
         Dim sky = rig.AmbientSkyDiffuse()
-        Dim ground = rig.AmbientGroundDiffuse() * CSng(Math.Pow(rig.AmbientGroundLevel, 1.0 / 2.2))
+        ' The light PS raises the ambient to the engine's 2.2f after the dot: the level goes in through its exact inverse.
+        Dim ground = rig.AmbientGroundDiffuse() * CSng(Math.Pow(rig.AmbientGroundLevel, 1.0 / Shader_Base_Class.EngineGamma))
         Dim amb(2) As Vector4
         For c = 0 To 2
             Dim dz = 0.5 * (sky(c) - ground(c))
@@ -13578,7 +13771,11 @@ Public Class PreviewModel
             Next
             GL.ColorMask(True, True, True, True)
             FrameDepthDirty = True
-            If FrameIsSse AndAlso Not GateDisableSoft Then
+            Dim softSse = True
+#If DEBUG Then
+            If GateDisableSoft Then softSse = False
+#End If
+            If FrameIsSse AndAlso softSse Then
                 ParentControl.CopySceneDepth()
                 FrameSceneDepthValid = True
             End If
@@ -13637,8 +13834,13 @@ Public Class PreviewModel
         ' depth draw first, then every surface draw (DecalBaseTarget.BeginSurfaces: a blended surface cannot be overwritten by a
         ' farther one). The base draws go through ApplyMaterial as the colour draws do: the per-slot filter state they leave
         ' (SamplerLaw, an inherited slot reads it) is put back, so the colour draws read the state they read without the base pass.
+        Dim baseFo4 = True, baseSse = True
+#If DEBUG Then
+        If GateFo4SkipDecalBase Then baseFo4 = False
+        If GateSseSkipDecalBase Then baseSse = False
+#End If
         If (DecalBlendedMeshes.Count > 0 OrElse _ovlDecalBlended.Count > 0) AndAlso
-           (FrameGBufferStage AndAlso Not GateFo4SkipDecalBase OrElse FrameIsSse AndAlso Not GateSseSkipDecalBase) Then
+           (FrameGBufferStage AndAlso baseFo4 OrElse FrameIsSse AndAlso baseSse) Then
             Dim filters = CType(FrameSamplerFilter.Clone(), Integer())
             Dim baseDraws = Sub()
                                 DrawDecalTranslucent(projection, camera, DecalBaseStep.Depth)
@@ -13658,7 +13860,11 @@ Public Class PreviewModel
             End If
             Array.Copy(filters, FrameSamplerFilter, filters.Length)
         End If
-        If Not GateDecalColourSkip Then DrawDecalTranslucent(projection, camera)
+        Dim colorDeCalcas = True
+#If DEBUG Then
+        If GateDecalColourSkip Then colorDeCalcas = False
+#End If
+        If colorDeCalcas Then DrawDecalTranslucent(projection, camera)
 #If DEBUG Then
         If Not FrameIsSse AndAlso lod0StageOld Then DrawFo4Sequence(_fo4SeqLodLandscape, projection, camera)
 #End If
@@ -13710,14 +13916,18 @@ Public Class PreviewModel
     ''' every draw that writes depth, ApplyMaterial): FO4's SOFT reads the live depth, so it copies again only then.</summary>
     Friend Property FrameDepthDirty As Boolean
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): True turns the scene-depth copy off, so every effect draws without SOFT. ShadowGate
     ''' --soft-scene compares a frame with and without it.</summary>
     Friend Shared GateDisableSoft As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): True draws without the z-prepass of either game: SSE's opaque batch with LESS_EQUAL +
     ''' write instead of EQUAL, FO4's eligible lighting writing its own depth. ShadowGate --sse-prepass compares the two on
     ''' opaque shapes without alpha test (they must be identical).</summary>
     Friend Shared GateDisablePrepass As Boolean = False
+#End If
 
     ''' <summary>THIS FRAME RUNS ITS Z-PREPASS (DrawOpaqueStage) - the one owner its readers ask: DrawOpaqueStage, and
     ''' RenderableMesh.ResolveColourDepthState / DrawsWithoutEarlyTests (a prepass shape or overlay layer of a frame without it writes
@@ -13730,7 +13940,10 @@ Public Class PreviewModel
     ''' they run (ApplyFo4EditViewDepthCut, Fo4GPre_rec3930), so the prepass has no reader in that frame and is not drawn.</summary>
     Friend ReadOnly Property FramePrepassRuns As Boolean
         Get
-            Dim corre = Not GateDisablePrepass AndAlso (FrameIsSse OrElse FrameUsesFo4Deferred)
+            Dim corre = FrameIsSse OrElse FrameUsesFo4Deferred
+#If DEBUG Then
+            If GateDisablePrepass Then corre = False
+#End If
 #If DEBUG Then
             ' Ola 7h tester round 2 (ShadowGate --ola7h h5 / hz): Fallout 4's debug-view frame runs the prepass again (round 1: the views
             ' test their own VS against its depth without writing).
@@ -13740,46 +13953,68 @@ Public Class PreviewModel
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene. True throws once right after BeginFo4GBuffer (then resets
     ''' itself): the aborted G-buffer stage whose GL state EndFo4Stage must undo.</summary>
     Friend Shared GateFo4ThrowInStage As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-decal-base mutant. True skips the base pass of the translucent decals.</summary>
     Friend Shared GateFo4SkipDecalBase As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface. True skips Skyrim SE's base pass of the translucent decals (the
     ''' frame before the base).</summary>
     Friend Shared GateSseSkipDecalBase As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface mutant. True skips the base SURFACE draws (FO4: the depth base
     ''' of proposal B alone).</summary>
     Friend Shared GateDecalBaseNoSurface As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface mutant "opaque base": every decal's base with opacity 1
     ''' (RenderableMesh.DecalBaseOpacity 0), whatever its alpha - the base of propuesta v1.</summary>
     Friend Shared GateDecalBaseOpaque As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface mutant. True skips Fallout 4's coverage draws of the base.</summary>
     Friend Shared GateDecalBaseNoCoverage As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface. True skips the colour draws of the translucent decals (the
     ''' frame shows the base surface alone).</summary>
     Friend Shared GateDecalColourSkip As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-decal-base mutant. True draws the base without the decals' discards (a G-buffer
     ''' record with AlphaScale (1, 0), whose kill then never fires; a game-shader decal with uDecalBaseMode 0).</summary>
     Friend Shared GateDecalBaseNoDiscard As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-decal-base mutant. True draws every game-shader decal's base with uDecalBaseMode 1
     ''' (the SRC_ALPHA discard), whatever its blend.</summary>
     Friend Shared GateDecalBaseModeOneForAll As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-decal-base. True draws the colour pass of group 3 with EQUAL (gate b1: against the
     ''' base, it covers what LESS_EQUAL covers only if the base is the decal's own depth).</summary>
     Friend Shared GateDecalColourEqual As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-decal-base mutant. True draws the base without the decal's depth bias.</summary>
     Friend Shared GateDecalBaseNoBias As Boolean = False
+#End If
 
     Private ReadOnly _ovlOpaque As New List(Of OverlayItem)
     Private ReadOnly _ovlDecal As New List(Of OverlayItem)
@@ -13795,13 +14030,17 @@ Public Class PreviewModel
         Return _ovlOpaque.Concat(_ovlDecal).Concat(_ovlDecalBlended).Concat(_ovlLodLandscape).Concat(_ovlBlended).Concat(_ovlBillboard).Concat(_ovlForwardEffect).Concat(_ovlNoColourPass)
     End Function
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-undrawn-notice mutant. True skips the frame's notice census.</summary>
     Friend Shared GateNoUndrawnCensus As Boolean = False
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): True makes MaterialData.PreviewAlpha return the raw alpha (the frame as the game's law alone would
     ''' draw it, L1c). ShadowGate --sse-undrawn-notice (A/B), --fo4-undrawn-notice (6a), --fo4-gbuffer-scenes (10 z0) and
     ''' [sombra-alpha] (the caster choice and the opacity sweep measure the shadow on the raw alpha; C2 v3 D4).</summary>
     Friend Shared GateRawPreviewAlpha As Boolean = False
+#End If
 
     ''' <summary>The frame's notice census (user decision 5-oct-2026): every shape in the view and every overlay layer of the frame
     ''' (CollectOverlayItems: their shape in the view) asks RenderableMesh.ReportUndrawn once - the preview's gaps, the shapes the

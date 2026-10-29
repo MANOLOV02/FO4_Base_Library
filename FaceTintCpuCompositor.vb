@@ -2691,8 +2691,6 @@ Public Module FaceTintCpuCompositor
         Return True
     End Function
 
-    ''' <summary>Espejo de <c>BlendDispatch1</c> para los dos bop que <see cref="VecComposeSupported"/>
-    ''' habilita. El GIMP replica la rama <c>s &lt;= 0.5</c> con un select, calculando las dos.</summary>
     ' MinV/MaxV replican la semantica de MathF.Min/MathF.Max en sus DOS casos raros, y los dos costaron:
     '   1. NaN: las dos devuelven NaN si CUALQUIERA de los operandos lo es. `Vector.Min/Max` no lo
     '      garantiza igual en toda plataforma, y esto corre sobre datos de textura donde un NaN es posible.
@@ -2815,6 +2813,7 @@ Public Module FaceTintCpuCompositor
         Return Vector.ConditionalSelect(Vector.LessThan(Vector.Abs(k), eps), y, inv)
     End Function
 
+    ''' <summary>El GIMP replica la rama <c>s &lt;= 0.5</c> con un select, calculando las dos.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function SoftLightInvGimpV(y As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
         Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F), half = VBroadcast(0.5F)

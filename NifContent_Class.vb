@@ -605,12 +605,12 @@ Public Class Nifcontent_Class_Manolo
     End Sub
 
     ''' <summary>Igual, pero con copia previa y restauración automática: el guardado de un proyecto desde
-    ''' el editor, o una exportación a una ruta que eligió el usuario. NO se usa en horneado ni en build.</summary>
-    ''' <summary><paramref name="lote"/> OPCIONAL: cuando este NIF es una ETAPA del guardado de un proyecto
+    ''' el editor, o una exportación a una ruta que eligió el usuario. NO se usa en horneado ni en build.
+    ''' <para><paramref name="lote"/> OPCIONAL: cuando este NIF es una ETAPA del guardado de un proyecto
     ''' de Wardrobe Manager (`.osd` + `.nif` + `.hht` + `.xml` de SMP + `.osp`), la copia de seguridad no se
     ''' borra al terminar ESTE archivo sino al confirmarse el conjunto — asi un fallo en una etapa posterior
     ''' puede devolver tambien a esta. Con <c>Nothing</c> (el default) la conducta es EXACTAMENTE la de
-    ''' antes: <c>GuardarConCopia</c> a secas. Ver <c>EscrituraEnElLugar.NuevoLote</c>.</summary>
+    ''' antes: <c>GuardarConCopia</c> a secas. Ver <c>EscrituraEnElLugar.NuevoLote</c>.</para></summary>
     Public Sub Save_As_Manolo_ConCopia(Filename As String, Overwrite As Boolean,
                                        Optional lote As BSA_BA2_Library_DLL.EscrituraEnElLugar.LoteConCopias = Nothing)
         If IO.File.Exists(Filename) AndAlso Overwrite = False Then

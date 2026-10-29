@@ -657,7 +657,8 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
     Friend Shared GateUseLog As List(Of Integer) = Nothing
 #End If
 
-    ''' <summary>GATE ONLY (ShadowGate --fo4-deferred-scene, law gl43-unbound-clip): <paramref name="attached"/> False detaches the
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate --fo4-deferred-scene, law gl43-unbound-clip): <paramref name="attached"/> False detaches the
     ''' clip buffer from ClipBinding, True puts it back.</summary>
     Friend Shared Sub GateClipBufferAttached(attached As Boolean)
         Dim st = Current()
@@ -666,12 +667,14 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         GL.BindBuffer(BufferTarget.UniformBuffer, prev)
     End Sub
 
-    ''' <summary>GATE / CHECK: the current context's clip uniform buffer (the one at ClipBinding): what every vertex stage reads.</summary>
+    ''' <summary>DEBUG ONLY (the gates' check): the current context's clip uniform buffer (the one at ClipBinding): what every vertex
+    ''' stage reads.</summary>
     Friend Shared ReadOnly Property ClipBuffer As Integer
         Get
             Return Current().Ubo
         End Get
     End Property
+#End If
 
     ''' <summary>The current clip origin (ClipControl's last value; LOWER_LEFT after InitContext).</summary>
     Friend Shared ReadOnly Property Origin As ClipOrigin
@@ -786,12 +789,15 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         Current().DefaultAttemptsClosed = True
     End Sub
 
-    ''' <summary>GATE: how many times this context measured the default framebuffer (rev-E11, the bound of the retries).</summary>
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (the gates): how many times this context measured the default framebuffer (rev-E11, the bound of the
+    ''' retries).</summary>
     Friend Shared ReadOnly Property DefaultFramebufferAttempts As Integer
         Get
             Return Current().DefaultAttempts
         End Get
     End Property
+#End If
 
     ''' <summary>The keys of the depth formats (DepthFormat.Key): the two the start measures - DepthComponent16 and Depth24Stencil8, the
     ''' textures and renderbuffers of the frame - and the window's default framebuffer. Any other format is measured on its first bias.
@@ -1144,8 +1150,10 @@ void main()
         End Try
     End Function
 
+#If DEBUG Then
     ' =================================================================================================================================
-    ' GLSL (closed list of what GLSL 4.40 / 4.50 / 4.60 add to 4.30)
+    ' GLSL (closed list of what GLSL 4.40 / 4.50 / 4.60 add to 4.30) - DEBUG ONLY (ola 9, 5b): a validation of the app's own closed
+    ' texts, run by ShaderSource in Debug and by the gates (ParityGate gl43-glsl), never by a Release runtime.
     ' =================================================================================================================================
 
     ''' <summary>The built-in functions and variables GLSL 4.60.8 has and 4.30.8 does not (measured on the two Khronos
@@ -1265,6 +1273,8 @@ void main()
         Next
         Return v
     End Function
+
+#End If
 
     ''' <summary>glShaderSource with the GL 4.3 check in Debug: a source with GlslViolations is not compiled (InvalidOperationException).
     ''' <para>DEBUG ONLY (user decision 13-oct-2026, ola 2b): in Release the shader texts are closed - the library's own constants and

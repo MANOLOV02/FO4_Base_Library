@@ -23,6 +23,11 @@ Partial Public Class LightRigForm
     ''' recalcular normales o cambiar el welding invalida la geometria ya subida a la GPU.</summary>
     Public Event RenderSettingsChanged()
 
+    ' Hereda la politica declarada por el host (Config_App.AllowDrawHiddenSegments) en vez de hardcodear
+    ' True. El inicializador explicito `New LightRigForm With {.AllowHiddenSegments = False}` sigue
+    ' mandando: el setter corre despues del constructor.
+    Private _allowHiddenSegments As Boolean = Config_App.AllowDrawHiddenSegments
+
     ''' <summary>EL UNICO AJUSTE APP-AWARE DEL DIALOGO. <c>Setting_DrawHiddenSegments</c> es una
     ''' preferencia de INSPECCION de Wardrobe Manager (dibujar tambien lo que la oclusion por segmento
     ''' esconde). FO4_NPC_Manager NO puede exponerla: su render DEPENDE de esa oclusion (el swap de
@@ -31,11 +36,6 @@ Partial Public Class LightRigForm
     ''' render de NPC desde una casilla. Con False la casilla se VE pero queda DESHABILITADA (con tooltip
     ''' que explica por que) y el setting no se toca — decision del usuario: ocultarla hacia que el ajuste
     ''' desapareciera sin explicacion.</summary>
-    ' Hereda la politica declarada por el host (Config_App.AllowDrawHiddenSegments) en vez de hardcodear
-    ' True. El inicializador explicito `New LightRigForm With {.AllowHiddenSegments = False}` sigue
-    ' mandando: el setter corre despues del constructor.
-    Private _allowHiddenSegments As Boolean = Config_App.AllowDrawHiddenSegments
-
     Public Property AllowHiddenSegments As Boolean
         Get
             Return _allowHiddenSegments
@@ -1065,7 +1065,7 @@ Partial Public Class LightRigForm
 
     ''' <summary>Carga un angulo en su NUD y DEJA ANOTADO lo que quedo mostrando, en el Tag. Ver
     ''' <see cref="AnguloDesdeNud"/>: esa anotacion es la que distingue "el control redondeo" de "el
-    ''' usuario escribio".</summary>
+    ''' usuario escribio".
     ''' <para>Migrado de <c>NumericUpDown</c> a <see cref="TinySliderTextBox"/>: el control nuevo expone
     ''' <c>Value</c> como Double, no como Decimal, asi que la anotacion del Tag pasa a ser Double. La
     ''' comparacion sigue siendo por IGUALDAD EXACTA y eso sigue siendo correcto — se compara contra el

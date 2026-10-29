@@ -468,12 +468,14 @@ Friend NotInheritable Class Fo4ImageSpaceChain
         Return t
     End Function
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the chain's targets of the last frame (ShadowGate --fo4-post-law).</summary>
     Friend ReadOnly Property GateTextures As (Rt1 As Integer, Rt46 As Integer, Avg As Integer, Bloom As Integer, Tone As Integer, Present As Integer)
         Get
             Return (_rt1, _rt46, _avg, _rt45, _tone, _present)
         End Get
     End Property
+#End If
 
     Public Sub Free()
         For Each t In {_rt1, _actor, _weight, _tone, _refracted, _present, _rt46, _avg, _rt44, _rt45, _glossT3, _glossCleared}

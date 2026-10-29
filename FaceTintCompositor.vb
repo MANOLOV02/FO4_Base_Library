@@ -32,14 +32,14 @@ Public Enum FaceTintChannel
     Specular = 2
 End Enum
 
+' Enum LEGACY y SIN USO: lo reemplaza FaceTintConvention, y la única referencia en todo el árbol es esta
+' declaración. `Friend` para que no salga en la superficie pública de la librería.
 ''' <summary>Single coverage convention applied to EVERY path (diffuse and N/S, all blend ops
 ''' and occlusion classes): the spatial mask is shaped by this transfer, then multiplied by
 ''' opacity (opacity stays OUTSIDE the transfer). Both options are named standard transfers, no
 ''' magic constants. SrgbOpacity (default) uses the IEC 61966-2-1 transfer; it is the verified
 ''' convention -- the same TTET[0] mask drives diffuse and N/S, and N/S matches CK at slope 1.000
 ''' only under sRGB. Linear is kept for A/B comparison. Applied identically by render and bake.</summary>
-' Enum LEGACY y SIN USO: lo reemplaza FaceTintConvention, y la única referencia en todo el árbol es esta
-' declaración. `Friend` para que no salga en la superficie pública de la librería.
 Friend Enum FaceTintBlendConvention
     Linear = 0       ' coverage = mask * opacity (blend in stored/gamma space)
     SrgbOpacity = 1  ' coverage = sRGB(mask) * opacity (mask shaped by the sRGB transfer)
@@ -454,6 +454,7 @@ Public Module FaceTintCompositor
     End Sub
 
 
+#If DEBUG Then
     ''' <summary>Todos los shaders GLSL que el gate <c>glsl-ascii</c> tiene que revisar. NO sólo los dos de
     ''' este compositor: el fallo es igual de mudo en los del RENDER, y cubrir dos de ocho es falsa sensación
     ''' de gate.
@@ -549,6 +550,7 @@ Public Module FaceTintCompositor
             Concat(Fo4UtilitySource.AllSources()).Concat(Fo4DFLightSource.AllSources()).Concat(Fo4DFCompositeSource.AllSources()).
             Concat(Fo4ImageSpaceSource.AllSources()).ToArray()
     End Function
+#End If
 
     Private Const VertexShaderSource As String = "#version 430
 " & Gl43.ClipGlsl & "layout(location = 0) in vec2 aPos;
@@ -2341,6 +2343,10 @@ void main() {
 
 
     ''' <summary>Convierte una textura GL de <paramref name="fromSpace"/> a <paramref name="toSpace"/>
+    ''' (0=linear 1=srgb 2=g22) hacia una textura Rgba32f FRESCA (el caller la posee y debe borrarla).
+    ''' Pasada pura de espacio (shader uMode=2, sin blend ni mask): es el SEED del path unico —
+    ''' source sRGB -> acumulador G22 en el canal D — y queda reservada para el inverso g22 -> sRGB
+    ''' (flag <c>BakeMode</c>). Devuelve 0 si falla. MUST run on the GL thread.</summary>
     Public Function ConvertTextureSpace(state As FaceTintCompositorState, srcTexId As Integer,
                                         width As Integer, height As Integer,
                                         fromSpace As Integer, toSpace As Integer) As Integer

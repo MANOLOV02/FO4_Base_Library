@@ -187,7 +187,7 @@ Friend Module Fo4EffectConstants
         r(0) = New Vector4(1.0F / dn, ia, near / dn, ia * am)
         For i = 0 To 3
             Dim c = g.Colours(i)
-            r(1 + i) = New Vector4(CSng(Math.Pow(c.X, 2.2F)), CSng(Math.Pow(c.Y, 2.2F)), CSng(Math.Pow(c.Z, 2.2F)), c.W)
+            r(1 + i) = New Vector4(Shader_Base_Class.EnginePowGamma(c.X), Shader_Base_Class.EnginePowGamma(c.Y), Shader_Base_Class.EnginePowGamma(c.Z), c.W)
         Next
         r(5) = New Vector4(ia, 1.0F / db, ia * am, bm / db)
         Return r

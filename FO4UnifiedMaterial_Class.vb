@@ -1468,7 +1468,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' <see cref="ResolveEngineAlpha"/> (preview y transcripcion) y en el bit SF2 de Save_To_Shader.
     ''' <para>Lo que sigue es la historia de la decision de escritura del bit; vale para el bit SF2.</para>
     ''' <para>La libreria
-    ''' es agnostica: no sabe que es un NPC, un head part ni un texture set, solo recibe una decision.
+    ''' es agnostica: no sabe que es un NPC, un head part ni un texture set, solo recibe una decision.</para>
     ''' <para>Existe porque esta MEDIDO que la decision NO es funcion del material: sobre los 1489 NIFs
     ''' horneados por el CK (16.883 shapes) el bit Alpha_Test esta puesto en EXACTAMENTE 1 shape, mientras que
     ''' 10.995 shapes tienen NiAlphaProperty y NO tienen el bit. Un material con <see cref="AlphaTest"/>=True no
@@ -1480,12 +1480,12 @@ Public Class FO4UnifiedMaterial_Class
     ''' <para>⚠ï¸ NO implementado a proposito: forzar la fabricacion cuando el material NO tiene alpha. El CK si
     ''' lo haria, pero no existe ni un caso (el unico consumidor que pone True es el bake FO4 y su unico NPC con
     ''' el flag tiene material CON alpha).</para>
-    ''' <para>Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.</para></summary>
+    ''' <para>Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.</para>
     ''' <para>⛔ NO hacerlo viajar por el camino de TEXTURAS: asignado dentro de la rama del MNAM de
     ''' ApplyTextureSetOverrides se EVAPORA cuando el TXST no trae MNAM (medido: 1.757 NPC en FO4, y SIEMPRE
     ''' en SSE, cuyo TXST no tiene MNAM).</para>
     ''' <para>Nothing (el default) = sin informar: no hay record (Wardrobe Manager, todo guardado que no sea de NPC
-    ''' Manager) y el bit del bloque queda como vino. NpcMaterialResolver lo informa SIEMPRE.</para>
+    ''' Manager) y el bit del bloque queda como vino. NpcMaterialResolver lo informa SIEMPRE.</para></summary>
     <Browsable(False)>
     Public Property NpcDiffuseAlphaTest As Boolean?
 
@@ -3838,9 +3838,6 @@ Public Class FO4UnifiedMaterial_Class
         Return _materialPayloadApplied AndAlso _nifIsFo4
     End Function
 
-    ''' <summary>La shape NOMBRA un archivo de material que el motor aplicaria, pero la app no pudo leer su payload
-    ''' (archivo vacio): el wrapper quedo con los defaults del tipo, NO con los datos del archivo.
-    ''' Function a proposito: GetDifferences refleja propiedades.</summary>
     ''' <summary>Ola 7h round 4e (re27 1): the applied file could not be read whole as MaterialLib reads it and was read as the engine
     ''' reads it (partial, the BSShaderData ctor's values beyond; or nothing, a 0-byte file the overlay loader applies): why, else
     ''' Nothing. Function a proposito: GetDifferences refleja propiedades.</summary>
@@ -3939,6 +3936,9 @@ Public Class FO4UnifiedMaterial_Class
         Return MaterialFileReader.AvisoAlGuardar(ruta, _payloadIlegible, _tipoIncorrecto)
     End Function
 
+    ''' <summary>La shape NOMBRA un archivo de material que el motor aplicaria, pero la app no pudo leer su payload
+    ''' (archivo vacio): el wrapper quedo con los defaults del tipo, NO con los datos del archivo.
+    ''' Function a proposito: GetDifferences refleja propiedades.</summary>
     Public Function ArchivoNombradoIlegible() As Boolean
         Return _MaterialFileApplied AndAlso Not _materialPayloadApplied
     End Function
@@ -4061,7 +4061,8 @@ Public Class FO4UnifiedMaterial_Class
                                                  lightingInfluence As Single, effectLighting As Boolean) As (BaseColorLinear As OpenTK.Mathematics.Vector3, InfluenceByte As Integer, LightingTechnique As Boolean)
         Dim rgb = baseColor
         If Not paletteColor Then rgb *= baseColorScale
-        Dim lin As New OpenTK.Mathematics.Vector3(CSng(Math.Pow(rgb.X, 2.2)), CSng(Math.Pow(rgb.Y, 2.2)), CSng(Math.Pow(rgb.Z, 2.2)))
+        Dim lin As New OpenTK.Mathematics.Vector3(Shader_Base_Class.EnginePowGamma(rgb.X), Shader_Base_Class.EnginePowGamma(rgb.Y),
+                                                  Shader_Base_Class.EnginePowGamma(rgb.Z))
         Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
         Return (lin, liByte, effectLighting AndAlso liByte > 0)
     End Function
@@ -4172,6 +4173,7 @@ Public Class FO4UnifiedMaterial_Class
         End If
     End Sub
 
+#If DEBUG Then
     ''' <summary>Lee el bit Cast_Shadows de SF1 de un shader, con el vocabulario del juego que
     ''' corresponda. Existe como punto de entrada para que el gate `castshadows-bgem` pruebe la FUNCION
     ''' REAL en vez de una maqueta: es la misma que usan Create_From_Shader y Deserialize.</summary>
@@ -4179,6 +4181,7 @@ Public Class FO4UnifiedMaterial_Class
         If shad Is Nothing Then Return False
         Return ShaderHelper.HasFlagSF1(shad, CastShadowsFlagValue(shad))
     End Function
+#End If
 
     ''' <summary>Escribe ese mismo bit. El parametro `fo4` elige el vocabulario cuando el shader recien
     ''' creado todavia no lo declara.</summary>
@@ -5460,6 +5463,10 @@ Public Class FO4UnifiedMaterial_Class
         End Try
     End Sub
 
+    ''' <summary>The encoding of a material's write: the one `New BinaryWriter(stream)` builds (no BOM, throws on an invalid string).
+    ''' SerializarMaterial and MaterialFileReader's noting writer share it: the same bytes.</summary>
+    Friend Shared ReadOnly CodificacionDelEscritor As New System.Text.UTF8Encoding(False, True)
+
     ''' <summary>Serializa un material .bgsm/.bgem al stream que abrió <c>EscrituraEnElLugar</c>, SIN
     ''' cerrarlo. ⛔ ESTA ES LA UNICA CASA DE ESTA LEY: vive acá, en la librería base, porque la usan los
     ''' DOS caminos que escriben materiales — el guardado del editor (<see cref="Save_To_Bgsm"/> /
@@ -5482,10 +5489,6 @@ Public Class FO4UnifiedMaterial_Class
     ''' Llamando a <c>Serialize</c> derecho, la excepción sale y la ley de escritura hace lo suyo. Es la
     ''' misma razón por la que <c>NifContent_Class.Save_As_Manolo</c> mira el código de retorno ADENTRO
     ''' del cuerpo.</para></summary>
-    ''' <summary>The encoding of a material's write: the one `New BinaryWriter(stream)` builds (no BOM, throws on an invalid string).
-    ''' SerializarMaterial and MaterialFileReader's noting writer share it: the same bytes.</summary>
-    Friend Shared ReadOnly CodificacionDelEscritor As New System.Text.UTF8Encoding(False, True)
-
     Public Shared Sub SerializarMaterial(material As BaseMaterialFile, fs As Stream)
         If material Is Nothing Then Throw New ArgumentNullException(NameOf(material))
         If fs Is Nothing Then Throw New ArgumentNullException(NameOf(fs))

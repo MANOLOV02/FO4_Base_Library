@@ -9,7 +9,7 @@ Imports System.Runtime.CompilerServices
 ''' <para>LA LEY SE ESCRIBE UNA SOLA VEZ… PERO ESTA TRANSCRIPTA CUATRO VECES, y el
 ''' <see cref="SelfTest"/> compara las cuatro entre si: <see cref="TransformarDirecto"/> (produccion, AoS
 ''' sin staging), <see cref="UnVertice"/> (produccion, camino sparse del upload, un vertice por vez),
-''' <see cref="BloqueEscalar"/> (referencia) y <see cref="BloqueVectorial"/>. Si tocas una, tocas las cuatro.
+''' <see cref="BloqueEscalar"/> (referencia) y <see cref="BloqueVectorial"/>. Si tocas una, tocas las cuatro.</para>
 ''' <para>⛔ PERO ESO ES UN GATE DE CONSISTENCIA, NO DE CORRECCION: comparar las cuatro entre si prueba que
 ''' nadie edito una sola, y NADA MAS. Negar la matriz de normales en las cuatro a la vez —el modelo
 ''' iluminado del lado equivocado— lo deja VERDE. Por eso existe <see cref="OraculoDeLaLey"/>, que no conoce
@@ -678,6 +678,7 @@ Friend Module FastSkin
         rz = SN.Vector.ConditionalSelect(nulo, vz, vz * inv)
     End Sub
 
+#If DEBUG Then
     ''' <summary>Corre LA FUNCION REAL por los dos caminos —vectorial y escalar— sobre los mismos datos
     ''' y compara BIT A BIT. Devuelve Nothing si pasa.
     ''' <para>Prueba la produccion, no una maqueta: un test que reimplementa el kernel al lado puede dar
@@ -938,6 +939,7 @@ Friend Module FastSkin
         If oraculo IsNot Nothing Then Return oraculo
         Return Nothing
     End Function
+#End If
 
     ''' <summary>EL UMBRAL DE SANIDAD DEL ORACULO, y es a proposito que NO sea <see cref="EpsDetRel"/>. Es el
     ''' contrato que el oraculo afirma: toda matriz con determinante de este orden o mayor tiene que salir

@@ -99,14 +99,14 @@ Friend Module Fo4EngineVertexPacker
     ''' <summary>The CPU-route stream's attributes of a layout (asm2glsl.CPU_LOC: cpu_ps 6, cpu_r0 7, cpu_r1 12, cpu_r2 13): byte
     ''' offsets in the vertex's 7 vec4 - [0] (P_world, s), [1..3] N', Cy', Cx' (Tbn), [4..6] the rows 0..2 of the blended M (Rows).</summary>
     Friend Function CpuRouteAttributes(layout As Fo4CpuRouteLayout) As (Location As Integer, Offset As Integer)()
-        If layout = Fo4CpuRouteLayout.Tbn AndAlso GateMutantSwapCyCx Then Return {(6, 0), (7, 16), (12, 48), (13, 32)}
+#If DEBUG Then
+        ' ShadowGate --gate-mutant swap-cycx (review rev-04; Fo4GBufferConstants.GateMutantOn, the one switch): Cy' and Cx' swapped.
+        If layout = Fo4CpuRouteLayout.Tbn AndAlso Fo4GBufferConstants.GateMutantOn("swap-cycx") Then Return {(6, 0), (7, 16), (12, 48), (13, 32)}
+#End If
         If layout = Fo4CpuRouteLayout.Tbn Then Return {(6, 0), (7, 16), (12, 32), (13, 48)}
         If layout = Fo4CpuRouteLayout.Rows Then Return {(6, 0), (7, 64), (12, 80), (13, 96)}
         Throw New ArgumentOutOfRangeException(NameOf(layout))
     End Function
-
-    ''' <summary>GATE ONLY (no UI): ShadowGate mutant of review rev-04. True swaps Cy' and Cx' (locations 12 / 13) in the Tbn layout.</summary>
-    Friend GateMutantSwapCyCx As Boolean = False
 
     ''' <summary>The input-assembler view of the five attributes the CPU route reads (POSITION0, NORMAL0, BINORMAL0, BLENDWEIGHT0,
     ''' BLENDINDICES0, in that order) in a vertex desc: Fo4EngineVertexLayout.Elements, taken once per shape (CpuRouteInputsOf).</summary>
@@ -172,6 +172,7 @@ Friend Module Fo4EngineVertexPacker
         Return New Vector4(Component(stage, e, o, 0), Component(stage, e, o, 1), Component(stage, e, o, 2), Component(stage, e, o, 3))
     End Function
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ola 2b, --fo4-vertex-constants' oracle): attribute <paramref name="sem"/> of vertex <paramref name="i"/> of an
     ''' engine stage of layout <paramref name="desc"/>, as the input assembler hands it (ElementAt); Nothing when the layout has no such
     ''' element (the VS then reads the GL current attribute value, OpenGL 4.6 10.2).</summary>
@@ -181,6 +182,7 @@ Friend Module Fo4EngineVertexPacker
         Next
         Return Nothing
     End Function
+#End If
 
     ''' <summary>The five attributes of vertex <paramref name="i"/> the CPU route reads, as the VS receives them (ReadElement): the one
     ''' read of the CPU route's inputs (PackCpuRoute and ShadowGate G5b's oracle).</summary>
@@ -224,9 +226,6 @@ Friend Module Fo4EngineVertexPacker
         PackCpuRouteTail(stage, i, v.Position, v.Normal, v.Binormal, m, e, Fo4EngineSkin.WeightSum(w), r0, r1, r2)
     End Sub
 
-    ''' <summary>GATE ONLY (no UI): ShadowGate mutant of review rev-04. True skips NormalizeLikeVs on the CPU route's vectors.</summary>
-    Friend GateMutantNoVsNormalize As Boolean = False
-
     ''' <summary>The common tail of PackCpuRoute and PackCpuRouteBlended: the vectors the VS decodes and normalises (NORMAL0.xyz,
     ''' BINORMAL0.xyz, (POSITION0.w, NORMAL0.w, BINORMAL0.w)), the app's skin law on one vertex (FastSkin.UnVerticeCon) and the
     ''' stream's 7 vec4.</summary>
@@ -235,9 +234,14 @@ Friend Module Fo4EngineVertexPacker
         Dim n = New Vector3(Decode(nrm.X), Decode(nrm.Y), Decode(nrm.Z))
         Dim cy = New Vector3(Decode(bin.X), Decode(bin.Y), Decode(bin.Z))
         Dim cx = New Vector3(pos.W, Decode(nrm.W), Decode(bin.W))
-        If Not GateMutantNoVsNormalize Then
-            n = Fo4EngineSkin.NormalizeLikeVs(n) : cy = Fo4EngineSkin.NormalizeLikeVs(cy) : cx = Fo4EngineSkin.NormalizeLikeVs(cx)
-        End If
+#If DEBUG Then
+        Dim crudos = (n, cy, cx)
+#End If
+        n = Fo4EngineSkin.NormalizeLikeVs(n) : cy = Fo4EngineSkin.NormalizeLikeVs(cy) : cx = Fo4EngineSkin.NormalizeLikeVs(cx)
+#If DEBUG Then
+        ' ShadowGate --gate-mutant no-vs-normalize (review rev-04; the one switch): the VS's normalisation skipped.
+        If Fo4GBufferConstants.GateMutantOn("no-vs-normalize") Then n = crudos.n : cy = crudos.cy : cx = crudos.cx
+#End If
         Dim pW As Vector3, nS As Vector3, cxS As Vector3, cyS As Vector3
         FastSkin.UnVerticeCon(m, e, New Vector3d(pos.X, pos.Y, pos.Z), n, cx, cy, False, pW, nS, cxS, cyS)
         Dim o = i * CpuRouteFloats

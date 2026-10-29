@@ -294,7 +294,6 @@ Public Module NpcVmadBuilder
         End If
     End Sub
 
-    ''' <summary>Los nombres de los scripts del record, en orden. Lista vacia si no trae VMAD.</summary>
     ''' <summary>⭐ LA REGLA: <b>un solo apply-script de esta app por record; todo lo demás queda</b>.
     ''' Saca del VMAD cada script con el prefijo reservado cuyo nombre NO sea
     ''' <paramref name="elQueSobrevive"/>, y devuelve los que sacó.
@@ -346,6 +345,7 @@ Public Module NpcVmadBuilder
         Return sacados
     End Function
 
+    ''' <summary>Los nombres de los scripts del record, en orden. Lista vacia si no trae VMAD.</summary>
     Private Function NombresDeScripts(npc As Canon.INpc) As List(Of String)
         Dim salida As New List(Of String)
         If npc Is Nothing Then Return salida
@@ -429,6 +429,8 @@ Public Module NpcVmadBuilder
                                 Optional reservedPrefix As String = ReservedScriptPrefix)
         UpsertScript(npc, Nothing, game, reservedPrefix)
     End Sub
+
+    ''' <summary>A stable, order-sensitive hash of every property in <paramref name="script"/> EXCEPT the one
     ''' named <paramref name="excludeProperty"/>. Deterministic across runs and machines (plain FNV-1a over the
     ''' canonical text of each name/type/value — no GetHashCode, whose string seed is randomized per process).
     '''

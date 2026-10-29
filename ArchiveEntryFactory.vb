@@ -1,6 +1,8 @@
 ﻿Imports System.IO
 Imports BSA_BA2_Library_DLL.BethesdaArchive.Core
 
+Namespace Archives
+
 ''' <summary>CÓMO SE ARMA UNA ENTRADA DE ARCHIVE, ESCRITO UNA VEZ. Única copia: la consumen
 ''' <c>Wardrobe_Manager.WM_PackUnpack</c> y <c>FO4_NPC_Manager.NpcFaceGenPacker</c>.
 ''' <para>NO volver a copiarlas en cada app: el día que una toque el preset de compresión, el orden de los
@@ -8,13 +10,11 @@ Imports BSA_BA2_Library_DLL.BethesdaArchive.Core
 ''' nada avise.</para>
 ''' <para>Vive acá y no en <c>Ba2_Bsa_Library</c> porque esa librería NO conoce <c>Config_App</c> (sólo
 ''' referencia el wrapper de DirectXTex): el mapeo juego↔<c>GameKind</c> necesita las dos mitades, y ésta
-''' es la única que las tiene.</para></summary>
+''' es la única que las tiene.</para>
 ''' <para>Va DENTRO de un Namespace a proposito. Un `Public Module` en el namespace RAIZ mete sus
 ''' miembros —`MapGame`, `MapGameBack`— en el scope global SIN CALIFICAR de los 64 proyectos que
 ''' referencian esta libreria. `MapGame` es un nombre generico: el dia que un Tool declare el suyo,
-''' sale un BC30562 por ambiguedad. Calificarlo lo evita de entrada.</para>
-Namespace Archives
-
+''' sale un BC30562 por ambiguedad. Calificarlo lo evita de entrada.</para></summary>
 Public Module ArchiveEntryFactory
 
     ''' <summary>Lee la textura de disco y devuelve la <see cref="VirtualEntry"/> lista para el writer,

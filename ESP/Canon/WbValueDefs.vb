@@ -143,49 +143,43 @@ Namespace Canon
     ' Hojas
     '======================================================================================
 
-    ''' <summary>Entero, con el ancho y el signo que declare su tipo.
-    ''' <para>Un entero que codifica un índice de enum mide los mismos 4 bytes que una referencia y
-    ''' NO es una referencia. Por eso el enum vive acá y jamás en <see cref="WbFormIdDef"/>: el
-    ''' remapper de índices de master sólo recorre ese otro tipo. Es el caso de
-    ''' <c>MGEF.ResistValue</c> — referencia en Fallout 4, entero con enum en Skyrim — y el de
-    ''' <c>WEAP.Skill</c>.</para></summary>
-    ''' <summary>⛔ ¿LOS BYTES QUE HAY SIGUEN SIGNIFICANDO LO MISMO CON LA OTRA <c>Def</c>?
-    ''' Es la pregunta que decide si un cambio de rama de unión OBLIGA a resetear el campo, o si el dato
-    ''' sigue siendo válido y resetearlo lo destruiría de gusto.
-    '''
-    ''' <para>⛔ NO ES «CAMBIÓ EL ÍNDICE DE RAMA». De las once ramas de <c>Parameter #3</c> del
-    ''' <c>CTDA</c> de Fallout 4, <b>NUEVE son <c>Int("Parameter #3", s32)</c> idénticas</b>; el índice 5
-    ''' es <c>Int("Quest Alias", s32, "wbConditionAliasToStr")</c> —mismo tipo, sólo cambia el formateador
-    ''' de display— y el 7 es <c>Enumerated("Event Data", s32)</c>. Así que un <c>Run On</c> de 0 a 1
-    ''' cambia el índice y NO cambia nada: resetear ahí destruye un dato que seguía significando lo mismo.
-    ''' El único par de esa unión que reinterpreta de verdad es 5 ↔ 7.</para>
-    '''
-    ''' <para>⛔ TAMPOCO ES «LA CLASE Y EL ANCHO». <see cref="WbIntegerDef"/> cubre también los
-    ''' enumerados: <c>Wb.Enumerated</c> devuelve <c>New WbIntegerDef(name, t, "wbEnum", Nothing, values)</c>
-    ''' y NO existe un <c>WbEnumeratedDef</c>. Comparando clase + <c>IntType</c>, <c>Int s32</c> y
-    ''' <c>Enumerated s32</c> darían iguales — que es exactamente el par que SÍ hay que resetear. El
-    ''' término portante es el DICCIONARIO de valores, y tiene que ser conciente de <c>Nothing</c>: el
-    ''' <c>Int</c> lo trae en <c>Nothing</c> y el <c>Enumerated</c> con diccionario, así que «los dos
-    ''' vacíos ⇒ iguales» vuelve a fallar el mismo par. Se compara por REFERENCIA porque las tablas del
-    ''' esquema son instancias compartidas a propósito (la misma <c>FmtFO4.Fnnn</c> en dos ramas).</para>
-    '''
-    ''' <para>⛔ Y EL NOMBRE DEL FORMATEADOR NO ENTRA. Es display: <c>wbConditionAliasToStr</c> y
-    ''' <c>wbConditionStringToStr</c> son callbacks de <c>ctToEditValue</c>/<c>ctToSummary</c>/
-    ''' <c>ctToSortKey</c>. Si entrara, el par <c>Quest Alias</c> → <c>Parameter #3</c> (mismo
-    ''' <c>Int s32</c>, formateador distinto) resetearía y destruiría el índice de alias. Se parece a parte
-    ''' del tipo y no lo es.</para>
-    '''
-    ''' <para>⛔ Y LA PSEUDO-FIRMA <c>NULL</c> SE EXCLUYE DEL CONJUNTO DE UN <c>Fid</c>. Dos ramas reales
-    ''' de la misma unión son <c>Wb.Fid("Faction","FACT")</c> y <c>Wb.Fid("Faction","FACT","NULL")</c>:
-    ''' mismo nombre, misma clase, mismo ancho, y los conjuntos difieren SÓLO en <c>NULL</c>, que no es un
-    ''' tipo de record sino el permiso de dejarlo en cero. Comparando los conjuntos crudos, pasar de una a
-    ''' otra resetearía y tiraría una referencia <c>FACT</c> perfectamente válida.</para>
-    '''
-    ''' <para>Dos <c>Def</c> que son el MISMO objeto son trivialmente el mismo dominio. Una clase que esta
-    ''' función no conoce devuelve False —dominio distinto—: ante la duda se resetea, que pierde un dato,
-    ''' y no se conserva, que escribiría bytes falsos.</para></summary>
     Public Module WbDominio
 
+        ''' <summary>⛔ ¿LOS BYTES QUE HAY SIGUEN SIGNIFICANDO LO MISMO CON LA OTRA <c>Def</c>?
+        ''' Es la pregunta que decide si un cambio de rama de unión OBLIGA a resetear el campo, o si el dato
+        ''' sigue siendo válido y resetearlo lo destruiría de gusto.
+        '''
+        ''' <para>⛔ NO ES «CAMBIÓ EL ÍNDICE DE RAMA». De las once ramas de <c>Parameter #3</c> del
+        ''' <c>CTDA</c> de Fallout 4, <b>NUEVE son <c>Int("Parameter #3", s32)</c> idénticas</b>; el índice 5
+        ''' es <c>Int("Quest Alias", s32, "wbConditionAliasToStr")</c> —mismo tipo, sólo cambia el formateador
+        ''' de display— y el 7 es <c>Enumerated("Event Data", s32)</c>. Así que un <c>Run On</c> de 0 a 1
+        ''' cambia el índice y NO cambia nada: resetear ahí destruye un dato que seguía significando lo mismo.
+        ''' El único par de esa unión que reinterpreta de verdad es 5 ↔ 7.</para>
+        '''
+        ''' <para>⛔ TAMPOCO ES «LA CLASE Y EL ANCHO». <see cref="WbIntegerDef"/> cubre también los
+        ''' enumerados: <c>Wb.Enumerated</c> devuelve <c>New WbIntegerDef(name, t, "wbEnum", Nothing, values)</c>
+        ''' y NO existe un <c>WbEnumeratedDef</c>. Comparando clase + <c>IntType</c>, <c>Int s32</c> y
+        ''' <c>Enumerated s32</c> darían iguales — que es exactamente el par que SÍ hay que resetear. El
+        ''' término portante es el DICCIONARIO de valores, y tiene que ser conciente de <c>Nothing</c>: el
+        ''' <c>Int</c> lo trae en <c>Nothing</c> y el <c>Enumerated</c> con diccionario, así que «los dos
+        ''' vacíos ⇒ iguales» vuelve a fallar el mismo par. Se compara por REFERENCIA porque las tablas del
+        ''' esquema son instancias compartidas a propósito (la misma <c>FmtFO4.Fnnn</c> en dos ramas).</para>
+        '''
+        ''' <para>⛔ Y EL NOMBRE DEL FORMATEADOR NO ENTRA. Es display: <c>wbConditionAliasToStr</c> y
+        ''' <c>wbConditionStringToStr</c> son callbacks de <c>ctToEditValue</c>/<c>ctToSummary</c>/
+        ''' <c>ctToSortKey</c>. Si entrara, el par <c>Quest Alias</c> → <c>Parameter #3</c> (mismo
+        ''' <c>Int s32</c>, formateador distinto) resetearía y destruiría el índice de alias. Se parece a parte
+        ''' del tipo y no lo es.</para>
+        '''
+        ''' <para>⛔ Y LA PSEUDO-FIRMA <c>NULL</c> SE EXCLUYE DEL CONJUNTO DE UN <c>Fid</c>. Dos ramas reales
+        ''' de la misma unión son <c>Wb.Fid("Faction","FACT")</c> y <c>Wb.Fid("Faction","FACT","NULL")</c>:
+        ''' mismo nombre, misma clase, mismo ancho, y los conjuntos difieren SÓLO en <c>NULL</c>, que no es un
+        ''' tipo de record sino el permiso de dejarlo en cero. Comparando los conjuntos crudos, pasar de una a
+        ''' otra resetearía y tiraría una referencia <c>FACT</c> perfectamente válida.</para>
+        '''
+        ''' <para>Dos <c>Def</c> que son el MISMO objeto son trivialmente el mismo dominio. Una clase que esta
+        ''' función no conoce devuelve False —dominio distinto—: ante la duda se resetea, que pierde un dato,
+        ''' y no se conserva, que escribiría bytes falsos.</para></summary>
         Public Function MismoDominio(a As WbDef, b As WbDef) As Boolean
             If a Is b Then Return True
             If a Is Nothing OrElse b Is Nothing Then Return False
@@ -257,6 +251,12 @@ Namespace Canon
 
     End Module
 
+    ''' <summary>Entero, con el ancho y el signo que declare su tipo.
+    ''' <para>Un entero que codifica un índice de enum mide los mismos 4 bytes que una referencia y
+    ''' NO es una referencia. Por eso el enum vive acá y jamás en <see cref="WbFormIdDef"/>: el
+    ''' remapper de índices de master sólo recorre ese otro tipo. Es el caso de
+    ''' <c>MGEF.ResistValue</c> — referencia en Fallout 4, entero con enum en Skyrim — y el de
+    ''' <c>WEAP.Skill</c>.</para></summary>
     Public NotInheritable Class WbIntegerDef
         Inherits WbValueDef
 

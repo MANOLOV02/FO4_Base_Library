@@ -2241,10 +2241,12 @@ if (bHide)
         MyBase.New(Vertex_SSE, Fragment_SSE)
     End Sub
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ShadowGate --decal-base-surface mutants): the game shader with another fragment text.</summary>
     Friend Sub New(gateFragment As String)
         MyBase.New(Vertex_SSE, gateFragment)
     End Sub
+#End If
 End Class
 ''' <summary>THE ALPHA TEST OF SKYRIM SE'S Z-PREPASS (BSUtilityShader depth techniques, slot 0x2B), in one place: Fragment_SSE
 ''' runs it in its prepass branch and ShadowGate --sse-prepass-law runs this same text. Tools/re-docs/
@@ -2448,9 +2450,6 @@ void main(void)
 "
 End Module
 
-''' <summary>THE SOFT FADE OF THE EFFECT SHADERS (FO4 technique bit 12, SSE bit 18; SLSF1 bit 30 = BGEM SoftEnabled), the
-''' part both engines share: the scene depth behind the pixel and the base factor. Each fragment adds its own game's
-''' terms. Tools/re-docs/RE_BGEM_SOFT_FO4_2026-10-03.md, RE_BGEM_SOFT_SSE_2026-10-03.md. ASCII only (GLSL).</summary>
 ''' <summary>SSE invFrameBufferRange and THE OUTPUT TAIL OF THE SSE LIGHTING PS, in one place (Fragment_SSE calls it; the
 ''' gate ShadowGate --lit-tail runs this same text). Tools/re-docs/RE_SSE_LIGHTING_PREPASS_FOGTAIL_2026-10-03.md 2.
 ''' ASCII only (GLSL).</summary>
@@ -2506,6 +2505,9 @@ vec3 sseLitOutput(vec3 lit, vec3 spec, float Y, float Z)
 "
 End Module
 
+''' <summary>THE SOFT FADE OF THE EFFECT SHADERS (FO4 technique bit 12, SSE bit 18; SLSF1 bit 30 = BGEM SoftEnabled), the
+''' part both engines share: the scene depth behind the pixel and the base factor. Each fragment adds its own game's
+''' terms. Tools/re-docs/RE_BGEM_SOFT_FO4_2026-10-03.md, RE_BGEM_SOFT_SSE_2026-10-03.md. ASCII only (GLSL).</summary>
 Friend Module SoftEffectSource
     Friend Const Soft_Glsl As String = "
 // SOFT. uNearFar = (n, f) of the frame's projection (FO4 CameraData.y = n / .z = f - n, 0x1422253CD; SSE cb0[0].y/.z,
@@ -2813,7 +2815,9 @@ void main(void)
 }
 "
 
-    Friend Const Fragment_Ground As String = "
+    ''' <summary>The ground catcher's fragment. ReadOnly, not Const: it carries GROUND_FADE_START from
+    ''' <see cref="ShadowMapMath.GroundFadeStart"/> (<see cref="GroundFadeStartGlsl"/>), the one owner of that number.</summary>
+    Friend ReadOnly Fragment_Ground As String = "
 #version 430
 
 " & ShadowDepthShaderSource.SharedUniformsGlsl & "
@@ -2852,8 +2856,8 @@ void main(void)
 	// rectangle, and a circular fade over a rectangle cuts the corners of what it must cover. With
 	// uGroundHalf = footprint * GROUND_MARGIN, the whole footprint sits inside |gLocal| <= 1/MARGIN,
 	// so the fade band only ever covers ground that has no shadow on it.
-	// GROUND_FADE_START must stay equal to 1 / ShadowMapMath.GroundQuadMargin -- gate `ground-catcher`.
-	#define GROUND_FADE_START 0.952380952
+	// GROUND_FADE_START = ShadowMapMath.GroundFadeStart (1 / GroundQuadMargin), emitted from that constant -- gate `ground-catcher`.
+	#define GROUND_FADE_START " & GroundFadeStartGlsl() & "
 	float edge = 1.0 - smoothstep(GROUND_FADE_START, 1.0, max(abs(gLocal.x), abs(gLocal.y)));
 	if (edge <= 0.0)
 		discard;
@@ -2911,6 +2915,13 @@ void main(void)
 	fragColor = vec4(mix(vec3(1.0), fac, edge), 1.0);
 }
 "
+
+    ''' <summary>ShadowMapMath.GroundFadeStart as a GLSL literal: its G9 decimal (9 significant digits round-trip a binary32, IEEE
+    ''' 754-2019 5.12.2; the GLSL conversion is correctly rounded, GLSL 4.60 4.1.4), so the shader's float IS the constant's. ASCII.
+    ''' A function, not a field: module fields initialise in textual order and Fragment_Ground reads it above.</summary>
+    Friend Function GroundFadeStartGlsl() As String
+        Return ShadowMapMath.GroundFadeStart.ToString("G9", Globalization.CultureInfo.InvariantCulture)
+    End Function
 End Module
 
 ''' <summary>Programa del receptor de suelo.</summary>
@@ -2919,6 +2930,13 @@ Public Class Ground_Shadow_Shader_Class
     Sub New()
         MyBase.New(GroundShadowShaderSource.Vertex_Ground, GroundShadowShaderSource.Fragment_Ground)
     End Sub
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate [suelo-capa-muerta] mutants, ola 9): the ground catcher with another fragment text (the gate
+    ''' declares it, Gl43.GateHarnessText).</summary>
+    Friend Sub New(gateFragment As String)
+        MyBase.New(GroundShadowShaderSource.Vertex_Ground, gateFragment)
+    End Sub
+#End If
 End Class
 
 ''' <summary>Programa de profundidad de Skyrim SE: Vertex_SSE + el fragment de sombra (Fallout 4 dibuja sus mapas con la
@@ -2961,6 +2979,7 @@ Public MustInherit Class Shader_Base_Class
 
     Private program As Integer
 
+#If DEBUG Then
     ''' <summary>El id del programa GL. Friend y de SOLO LECTURA: lo consume el arnes Tools/ShadowGate
     ''' para verificar que el GLSL LINKEO de verdad — un shader que no compila deja esto en 0 y el render
     ''' se degrada en silencio (el error va por Logger, apagado en Release). No cambia la API distribuida.</summary>
@@ -2969,6 +2988,7 @@ Public MustInherit Class Shader_Base_Class
             Return program
         End Get
     End Property
+#End If
 
     ' Método público para liberar recursos.
     Private ReadOnly UniformLocationCache As New Dictionary(Of String, Integer)
@@ -3111,21 +3131,27 @@ Public MustInherit Class Shader_Base_Class
         Return New Vector3(color.R / 255.0F, color.G / 255.0F, color.B / 255.0F)
     End Function
 
-    ''' <summary>Color sRGB-&gt;lineal (powf 2.2), como sube el engine los colores de material al CB
-    ''' (Fallout4.exe SetupMaterial, DAT_142475358=2.2). Usar SOLO cuando LinearPipeline esta ON;
-    ''' gateado en los call-sites de Render.vb (MaterialColor, la rama de Fallout 4).</summary>
-    Public Shared Function Color_to_Vector_Linear(color As Color) As Vector3
-        Return New Vector3(CSng(Math.Pow(color.R / 255.0F, 2.2)),
-                           CSng(Math.Pow(color.G / 255.0F, 2.2)),
-                           CSng(Math.Pow(color.B / 255.0F, 2.2)))
+    ''' <summary>THE ENGINE'S COLOUR GAMMA: the FLOAT 2.2f at 0x14247D3B8 (0x400CCCCD = 2.2000000476837158203125). Every
+    ''' powf(colour, 2.2) of Fallout 4's material and geometry setup loads it and calls powf 0x1422C47F8: the effect base colour
+    ''' (0x142225AA8..AD8), the skin tint (0x142206AA2), the emissive (0x142207459, the same register of that function) and the sun
+    ''' (0x142226589). Ola 9 (decision del usuario 29-oct): the ONE owner of that exponent; Math.Pow widens it to CDbl(2.2F), not to
+    ''' the decimal 2.2 (up to 2 ulp apart, ParityGate effect-engine-law / effect-vs-key-law).</summary>
+    Public Const EngineGamma As Single = 2.2F
+
+    ''' <summary>powf(x, <see cref="EngineGamma"/>) as the engine computes it, rounded to binary32.</summary>
+    Public Shared Function EnginePowGamma(x As Single) As Single
+        Return CSng(Math.Pow(x, EngineGamma))
     End Function
 
-    ''' <summary>Vector3 sRGB-&gt;lineal (powf 2.2) por componente. Para el light-rig (Ambient/diffuse,
-    ''' autorizado en espacio perceptual) al subirlo cuando LinearPipeline esta ON: deja el termino
-    ''' difuso identico al render legacy (luz_lin*albedo_lin, luego encode C3) y evita el sobre-brillo
-    ''' de ambient/specular. Gateado en los call-sites de Render.vb.</summary>
-    ''' <summary>A material/rig colour as the GAME's pipeline consumes it: FO4 powf(2.2) (SetupMaterial,
-    ''' DAT_142475358 = 2.2), SSE raw (its setup has no gamma constant).</summary>
+    ''' <summary>Color sRGB-&gt;lineal (powf 2.2f, <see cref="EngineGamma"/>), como sube el engine los colores de material al CB
+    ''' (Fallout4.exe SetupMaterial). Usar SOLO cuando LinearPipeline esta ON;
+    ''' gateado en los call-sites de Render.vb (MaterialColor, la rama de Fallout 4).</summary>
+    Public Shared Function Color_to_Vector_Linear(color As Color) As Vector3
+        Return New Vector3(EnginePowGamma(color.R / 255.0F), EnginePowGamma(color.G / 255.0F), EnginePowGamma(color.B / 255.0F))
+    End Function
+
+    ''' <summary>A material/rig colour as the GAME's pipeline consumes it: FO4 powf(2.2f) (SetupMaterial,
+    ''' <see cref="EngineGamma"/>), SSE raw (its setup has no gamma constant).</summary>
     Public Shared Function MaterialColor(color As Color, isSSE As Boolean) As Vector3
         Return If(isSSE, Color_to_Vector(color), Color_to_Vector_Linear(color))
     End Function
@@ -3145,10 +3171,12 @@ Public MustInherit Class Shader_Base_Class
         Return If(isSSE, 2.2F, 1.0F)
     End Function
 
+    ''' <summary>Vector3 sRGB-&gt;lineal (powf 2.2f, <see cref="EngineGamma"/>) por componente. Para el light-rig (Ambient/diffuse,
+    ''' autorizado en espacio perceptual) al subirlo cuando LinearPipeline esta ON: deja el termino
+    ''' difuso identico al render legacy (luz_lin*albedo_lin, luego encode C3) y evita el sobre-brillo
+    ''' de ambient/specular. Gateado en los call-sites de Render.vb.</summary>
     Public Shared Function Vector_to_Linear(v As Vector3) As Vector3
-        Return New Vector3(CSng(Math.Pow(v.X, 2.2)),
-                           CSng(Math.Pow(v.Y, 2.2)),
-                           CSng(Math.Pow(v.Z, 2.2)))
+        Return New Vector3(EnginePowGamma(v.X), EnginePowGamma(v.Y), EnginePowGamma(v.Z))
     End Function
     Public Sub SetFloat(name As String, value As Single)
         Dim loc As Integer = GetUniformLocationCached(name)

@@ -54,15 +54,15 @@ Friend Module CrashReport
         End Try
     End Sub
 
+#If DEBUG Then
+    ''' <summary>Ola 7g round 2f tester (r7g-04 mutant): ReportError spends the crash report's single shot, as Report does. Set by the gate (reflection).</summary>
+    Friend GateReportErrorSpends As Boolean
+#End If
     ''' <summary>UN ERROR NO PREVISTO DEL QUE LA APP SIGUE: el mismo reporte que una caída (el log al lado del exe o en %TEMP%, el
     ''' aviso con dónde quedó; por stderr en los modos headless), dicho como error y no como caída, y SIN gastar el reporte único
     ''' de la caída: si después la app se cae, ese reporte sale igual. Lo usa la librería por
     ''' <c>PreviewControl.UnexpectedErrorChannel</c>, que cada app apunta acá al arrancar (ola 7g ronda 2f, decisión del usuario
     ''' r7g-04: un preview que se libera con un paso que falló se libera igual, y después se avisa).</summary>
-#If DEBUG Then
-    ''' <summary>Ola 7g round 2f tester (r7g-04 mutant): ReportError spends the crash report's single shot, as Report does. Set by the gate (reflection).</summary>
-    Friend GateReportErrorSpends As Boolean
-#End If
     Friend Sub ReportError(ex As Exception, origin As String)
 #If DEBUG Then
         If GateReportErrorSpends Then SyncLock _gate : _reported = True : End SyncLock

@@ -282,17 +282,6 @@ Public Module FastPow
         Return New Vector(Of Integer)(v)
     End Function
 
-    ''' <summary>Difunde el canal <paramref name="ch"/> de CADA píxel a los 4 lanes de ese píxel. Era
-    ''' <c>Shuffle(v, Create(ch,ch,ch,ch, 4+ch,…))</c>.
-    ''' <para><paramref name="scratch"/> es un scratch DEL HILO de largo <b>2×<see cref="LaneCount"/></b>:
-    ''' la mitad baja es la copia de la entrada y la alta es el destino. Hacen falta las DOS mitades: leer y
-    ''' escribir sobre el mismo rango corrompe el resultado (el lane j lee una posición que otro lane ya pisó).
-    ''' No puede compartirse entre hilos.</para>
-    ''' <para>NO asignar acá adentro. La primera versión hacía <c>Dim outv(n-1)</c> por llamada: son 7
-    ''' asignaciones Gen0 POR BLOQUE sólo en ColorMode, y otra por bloque en el compose de tint de SSE, dentro
-    ''' de los loops calientes y encima ANTES del early-out. En net8.0 no hay stack-allocation de arrays, así
-    ''' que era basura garantizada. Reemplazar UNA instrucción <c>Shuffle</c> por eso hacía más lenta justo a
-    ''' la máquina con AVX2 — la trampa nº 1 del proyecto (optimizar un ancho rompiendo el otro).</para></summary>
     ' ============================ INDICES DE SHUFFLE, PRECALCULADOS ============================
     ' `Vector.Shuffle` NO existe en la API de ancho variable, pero `Vector256.Shuffle` y
     ' `Vector128.Shuffle` SI. Y usarlos NO rompe el contrato de "una sola ley": un shuffle es MOVIMIENTO DE
@@ -352,6 +341,17 @@ Public Module FastPow
         Return r
     End Function
 
+    ''' <summary>Difunde el canal <paramref name="ch"/> de CADA píxel a los 4 lanes de ese píxel. Era
+    ''' <c>Shuffle(v, Create(ch,ch,ch,ch, 4+ch,…))</c>.
+    ''' <para><paramref name="scratch"/> es un scratch DEL HILO de largo <b>2×<see cref="LaneCount"/></b>:
+    ''' la mitad baja es la copia de la entrada y la alta es el destino. Hacen falta las DOS mitades: leer y
+    ''' escribir sobre el mismo rango corrompe el resultado (el lane j lee una posición que otro lane ya pisó).
+    ''' No puede compartirse entre hilos.</para>
+    ''' <para>NO asignar acá adentro. La primera versión hacía <c>Dim outv(n-1)</c> por llamada: son 7
+    ''' asignaciones Gen0 POR BLOQUE sólo en ColorMode, y otra por bloque en el compose de tint de SSE, dentro
+    ''' de los loops calientes y encima ANTES del early-out. En net8.0 no hay stack-allocation de arrays, así
+    ''' que era basura garantizada. Reemplazar UNA instrucción <c>Shuffle</c> por eso hacía más lenta justo a
+    ''' la máquina con AVX2 — la trampa nº 1 del proyecto (optimizar un ancho rompiendo el otro).</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function VBroadcastChannelV(v As Vector(Of Single), ch As Integer, scratch As Single()) As Vector(Of Single)
         Dim n = Vector(Of Single).Count

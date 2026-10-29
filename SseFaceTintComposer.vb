@@ -359,7 +359,7 @@ Public Module SseFaceTintComposer
     ''' <para>The (TINC, TINV) resolution MIRRORS <see cref="ComposeLinearRgba"/> EXACTLY so the body QNAM and the
     ''' baked/rendered face use the identical skin-tone input: authored NPC tint for that layer INDEX if present
     ''' (TINC bytes /255, TINV u32 /100), else the RACE default (TIND→CLFM colour, DefaultValue). Measured
-    ''' byte-exact (Afflicted TINC=(0.263,0.016,0.004)@0.52 → QNAM (96,63,61)). SSE-only; FO4 never calls this.
+    ''' byte-exact (Afflicted TINC=(0.263,0.016,0.004)@0.52 → QNAM (96,63,61)). SSE-only; FO4 never calls this.</para>
     ''' <para><paramref name="offset"/> = ajuste manual del tono del CUERPO (editor de cuerpo). Se suma a
     ''' (TINC, TINV) ANTES del pliegue, que es el ÚNICO punto donde la intensidad tiene su significado SSE: acá
     ''' la lleva el interp de la capa (el QNAM de SSE no tiene alpha donde guardarla), y el pliegue corre con el

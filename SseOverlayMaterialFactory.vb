@@ -143,9 +143,6 @@ Public Module SseOverlayMaterialFactory
         Return CInt(Math.Round(Math.Max(0.0F, Math.Min(1.0F, v)) * 255.0F))
     End Function
 
-    ''' <summary>Builds the layer skee64 would install for <paramref name="ov"/> over the skin
-    ''' <paramref name="skinShape"/> (its resolved material and its NIF shader). Nothing when the node is not a body overlay or the template is not installed
-    ''' (skee64 then installs nothing either).</summary>
     ''' <summary>What skee64.ini decides about EVERY layer at install ([Overlays/Data], main.cpp:130-133 defaults,
     ''' 783-786 reads, 830 threshold clamp to 0xFF).</summary>
     Public Structure InstallOptions
@@ -161,6 +158,9 @@ Public Module SseOverlayMaterialFactory
         End Property
     End Structure
 
+    ''' <summary>Builds the layer skee64 would install for <paramref name="ov"/> over the skin
+    ''' <paramref name="skinShape"/> (its resolved material and its NIF shader). Nothing when the node is not a body overlay or the template is not installed
+    ''' (skee64 then installs nothing either).</summary>
     Public Function Build(skinShape As IRenderableShape, ov As RaceMenuJslot.JslotOverlayNode, options As InstallOptions) As OverlayMaterialLayer
         If skinShape Is Nothing OrElse ov Is Nothing Then Return Nothing
         Dim skinMaterial = skinShape.ShapeMaterial?.material

@@ -32,13 +32,14 @@ Friend Module Fo4GBufferConstants
         Return New Vector4(0.0F, If((flags And (1UL << 58)) <> 0UL, -1.0F, 1.0F), materialAlpha, 0.0F)
     End Function
 
-    ''' <summary>EmissiveColor.xyz (constant 2), 0x142207432..0x1422074D6: pow(colour * mult, 2.2) per channel (DF 14; the reader puts
+    ''' <summary>EmissiveColor.xyz (constant 2), 0x142207432..0x1422074D6: powf(colour * mult, 2.2f) per channel (the 2.2f of
+    ''' 0x14247D3B8 the function loads at 0x142206AA2, Shader_Base_Class.EngineGamma; DF 14; the reader puts
     ''' black when bEmitEnabled = 0, DF 18.1). .w: the alpha-test / blend-discard reference, written when the technique has ALPHA_TEST
     ''' (bit 8) or the NiAlphaProperty blends (0x142207340..0x14220737D): Fo4RenderPassLaw.MainPassAlphaThreshold(ref) (the one owner
     ''' of ref * 0x3B808081 + 0x3B80802C, + 0x3C008056 for ref 4, 0x142207354..0x142207371); otherwise 0.</summary>
     Friend Function EmissiveColor(emitColor As Vector3, emitMult As Single, technique As UInteger, alphaBlend As Boolean, alphaRef As Byte) As Vector4
         Dim c = emitColor * emitMult
-        Dim p = New Vector3(CSng(Math.Pow(c.X, 2.2)), CSng(Math.Pow(c.Y, 2.2)), CSng(Math.Pow(c.Z, 2.2)))
+        Dim p = New Vector3(Shader_Base_Class.EnginePowGamma(c.X), Shader_Base_Class.EnginePowGamma(c.Y), Shader_Base_Class.EnginePowGamma(c.Z))
         Dim w = 0.0F
         If (technique And (1UI << 8)) <> 0UI OrElse alphaBlend Then
             w = Fo4RenderPassLaw.MainPassAlphaThreshold(alphaRef)
@@ -195,6 +196,9 @@ Friend Module Fo4GBufferConstants
     ''' Fo4EnvMapArray.SeededBefore ("tcl-seed-self-counts").
     ''' Ola 8 (ShadowGate full, subjects of the corpus): RenderableMesh.ShadowCasterCut and Fo4RenderPassLaw.ShadowMapCastsCut
     ''' ("cast-flag-ignored"), FO4UnifiedMaterial_Class.Deserialize ("bgem-castshadows-unread").
+    ''' Ola 9 (5b): the CPU route's frame mutants of review rev-04, Fo4EngineVertexPacker.CpuRouteAttributes ("swap-cycx": Cy' and Cx'
+    ''' swapped in the Tbn layout) and PackCpuRouteTail ("no-vs-normalize": the VS's normalisation skipped) - before, two Boolean
+    ''' switches of their own that a Release build carried.
     ''' Nothing = the laws. Read only under #If DEBUG: a
     ''' Release build has no mutant branch.</summary>
     Friend GateVertexConstantsMutant As String = Nothing

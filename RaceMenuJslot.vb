@@ -903,13 +903,6 @@ Public NotInheritable Class RaceMenuJslot
     ''' inject it into a preset that lacked it.</summary>
     Private _hadOverrides As Boolean
 
-    ''' <summary>Lee un .jslot con la ley de <c>LoadJsonPreset</c> (skee64 PresetInterface.cpp:898-1249) sobre
-    ''' jsoncpp. Primero se decide si el motor ACEPTA el archivo (<see cref="RechazaComoElMotor"/>: un chequeo de
-    ''' cabecera fallido o cualquier conversión que en jsoncpp lanzaría ⇒ el archivo ENTERO se rechaza, no hay
-    ''' try/catch en :898-1249) y recién después se decodifica, con las mismas conversiones (<see cref="Jsoncpp"/>),
-    ''' lo que el motor deja en <c>PresetData</c>. Devuelve <c>Nothing</c> cuando el motor devolvería
-    ''' <c>loadError</c>. transforms/overrides/skinOverrides se decodifican más abajo con el modelo propio; su
-    ''' aceptación la decide igual el predicado.</summary>
     ''' <summary>True cuando este preset hubo que leerlo con la encoding General (cp1252 por defecto pero
     ''' CONFIGURABLE, PluginEncodingSettings.vb:197/:327) porque no era UTF-8 válido (ver
     ''' <see cref="Jsoncpp.BytesComoLosVeJsoncpp"/>). El motor no se entera de nada — compara bytes —,
@@ -919,6 +912,13 @@ Public NotInheritable Class RaceMenuJslot
     ''' Tools/ParseoParaleloGate) y un flag estático se pisaría entre hilos.</para></summary>
     Public Property LeidoComoCp1252 As Boolean
 
+    ''' <summary>Lee un .jslot con la ley de <c>LoadJsonPreset</c> (skee64 PresetInterface.cpp:898-1249) sobre
+    ''' jsoncpp. Primero se decide si el motor ACEPTA el archivo (<see cref="RechazaComoElMotor"/>: un chequeo de
+    ''' cabecera fallido o cualquier conversión que en jsoncpp lanzaría ⇒ el archivo ENTERO se rechaza, no hay
+    ''' try/catch en :898-1249) y recién después se decodifica, con las mismas conversiones (<see cref="Jsoncpp"/>),
+    ''' lo que el motor deja en <c>PresetData</c>. Devuelve <c>Nothing</c> cuando el motor devolvería
+    ''' <c>loadError</c>. transforms/overrides/skinOverrides se decodifican más abajo con el modelo propio; su
+    ''' aceptación la decide igual el predicado.</summary>
     Public Shared Function Load(bytes As Byte()) As RaceMenuJslot
         If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
         ' BOM UTF-8: jsoncpp no lo salta (json_reader.cpp no lo contempla en ningún lado) ⇒ el primer token no es

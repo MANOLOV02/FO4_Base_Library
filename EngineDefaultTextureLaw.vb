@@ -91,7 +91,10 @@ Friend Module EngineDefaultTextureLaw
         Friend EyeClass As Boolean      ' shader type 16 (vt 0x141B3FED8)
     End Structure
 
-    ''' <summary>GATE ONLY (ParityGate engine-default-textures): a directed mutant of the law. Never set by the app.</summary>
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ParityGate engine-default-textures, ShadowGate --default-textures): a directed mutant of the law. Never set
+    ''' by the app; a Release build has neither the switch nor a mutant branch (ola 9, 5b: each comparison is its own DEBUG statement
+    ''' next to the law it mutates).</summary>
     Friend Enum DefaultTextureMutant
         None
         Fo4DiffuseWhite                 ' FO4 lighting diffuse -> White (the app before C4)
@@ -110,6 +113,7 @@ Friend Module EngineDefaultTextureLaw
         MlpEnvMaskNotNeutral            ' the SseMlpEnvMaskPolicy exception dropped (an empty MLP mask gives an empty-slot notice)
     End Enum
     Friend GateMutant As DefaultTextureMutant = DefaultTextureMutant.None
+#End If
 
     ''' <summary>The sRGB flag Fallout 4's loader passes for <paramref name="slot"/> (the 5th argument of 0x142182420, the dl of
     ''' MakeSRGB 0x14183E680, RE_FO4_TEXTURE_CREATION_2026-10-19 1.3), the same in both families for the slots they share. Lighting
@@ -162,12 +166,15 @@ Friend Module EngineDefaultTextureLaw
         Dim sampled As Boolean
         Select Case slot
             Case MaterialSlot.Diffuse, MaterialSlot.Normal, MaterialSlot.Slot7 : sampled = c.Textured
-            Case MaterialSlot.Glow : sampled = c.GlowMap OrElse GateMutant = DefaultTextureMutant.Fo4GlowWithoutGlowMapBit
+            Case MaterialSlot.Glow : sampled = c.GlowMap
             Case MaterialSlot.Greyscale : sampled = c.Textured AndAlso c.GradientRemap
             Case MaterialSlot.FaceSlot5 : sampled = c.Face
             Case MaterialSlot.Cube : sampled = c.EnvironmentFlag
             Case Else : sampled = False      ' EnvMask: +0xC8 nulled by 0x1421CF8F5..91A, no G-buffer record reads it; Lightmask: no FO4 member
         End Select
+#If DEBUG Then
+        If slot = MaterialSlot.Glow AndAlso GateMutant = DefaultTextureMutant.Fo4GlowWithoutGlowMapBit Then sampled = True
+#End If
         If Not sampled Then Return EngineTexture.NoTexture
         ' A file the engine cannot create: its NiTexture, so no ladder and no White swap; the NULL SRV is bound (SlotState doc). The
         ' cube is not bound by SetupMaterial: the register 0x142239930 takes its texture, whose header 0x14183E680 filled before D3D
@@ -179,16 +186,27 @@ Friend Module EngineDefaultTextureLaw
         If Fo4GBufferConstants.GateMutantOn("dtl-rejected-white") AndAlso st = SlotState.RejectedByEngine AndAlso slot = MaterialSlot.Slot7 Then Return EngineTexture.Fo4White
 #End If
         If st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
+#If DEBUG Then
         If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
+#End If
         Select Case slot
             Case MaterialSlot.Diffuse            ' +0x48 <- slot 0, sRGB (0x1421D3C72..C84)
-                Return If(GateMutant = DefaultTextureMutant.Fo4DiffuseWhite, EngineTexture.Fo4White, EngineTexture.Fo4DiffuseMap)
+#If DEBUG Then
+                If GateMutant = DefaultTextureMutant.Fo4DiffuseWhite Then Return EngineTexture.Fo4White
+#End If
+                Return EngineTexture.Fo4DiffuseMap
             Case MaterialSlot.Slot7              ' +0x60 <- slot 7 raw (0x1421D3CBB..CC9), NormalMap swapped for White (0x1421D3CE7..D09)
-                Return If(GateMutant = DefaultTextureMutant.Fo4SmoothSpecNoWhiteSwap, EngineTexture.Fo4NormalMap, EngineTexture.Fo4White)
+#If DEBUG Then
+                If GateMutant = DefaultTextureMutant.Fo4SmoothSpecNoWhiteSwap Then Return EngineTexture.Fo4NormalMap
+#End If
+                Return EngineTexture.Fo4White
             Case MaterialSlot.Greyscale : Return EngineTexture.Fo4DiffuseMap     ' +0x68 <- slot 3, sRGB (0x1421D3CD2..CE1)
             Case MaterialSlot.Cube : Return EngineTexture.Fo4EyeCubeMap          ' slot 4 (0x14216A25A..25F)
             Case MaterialSlot.FaceSlot5                                           ' face 0x1421D168A..697, raw ladder
-                Return If(st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4FaceMissingWhite, EngineTexture.Fo4White, EngineTexture.Fo4NormalMap)
+#If DEBUG Then
+                If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4FaceMissingWhite Then Return EngineTexture.Fo4White
+#End If
+                Return EngineTexture.Fo4NormalMap
             Case Else : Return EngineTexture.Fo4NormalMap                        ' normal 0x1421D3C8D..C9B, glow 0x1421D0468..475
         End Select
     End Function
@@ -210,12 +228,24 @@ Friend Module EngineDefaultTextureLaw
                 If Fo4GBufferConstants.GateMutantOn("dtl-effect-rejected-ladder") AndAlso st = SlotState.RejectedByEngine Then Return EngineTexture.Fo4DiffuseMap
 #End If
                 If st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
-                If st = SlotState.Missing Then Return If(GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback, EngineTexture.Own, EngineTexture.Fo4DiffuseMap)
+                If st = SlotState.Missing Then
+#If DEBUG Then
+                    If GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
+#End If
+                    Return EngineTexture.Fo4DiffuseMap
+                End If
                 ' TEXTURE (bit 2) off (0x142178150): no t0 bind (0x142225800..803); a recolor PS samples it (rec1003 L60, rec1430 L53).
-                If c.Recolor OrElse GateMutant = DefaultTextureMutant.EffectBaseEmptyAlwaysPrevious Then Return EngineTexture.PreviousDraw
+                If c.Recolor Then Return EngineTexture.PreviousDraw
+#If DEBUG Then
+                If GateMutant = DefaultTextureMutant.EffectBaseEmptyAlwaysPrevious Then Return EngineTexture.PreviousDraw
+#End If
                 Return EngineTexture.NoTexture
             Case MaterialSlot.Greyscale
-                If st = SlotState.Empty AndAlso GateMutant <> DefaultTextureMutant.Fo4EffectGreyscaleEmptyBound Then Return EngineTexture.NoTexture  ' bits 13/14 need the path
+#If DEBUG Then
+                ' the mutant: an empty path bound as if bits 13 / 14 did not need it - the ladder's DiffuseMap the code below gives
+                If st = SlotState.Empty AndAlso GateMutant = DefaultTextureMutant.Fo4EffectGreyscaleEmptyBound Then Return EngineTexture.Fo4DiffuseMap
+#End If
+                If st = SlotState.Empty Then Return EngineTexture.NoTexture  ' bits 13/14 need the path
                 ' t4 is bound under bits 13 / 14 only (test ecx, 0x6000, 0x142225919; A.5), and they need flag 4 / 5 AND the palette path
                 ' (0x142178282..2C3, Fo4EffectTechnique; c.Recolor): bound, a failed creation binds its NULL SRV (0x142225937 / 0x14222593F).
 #If DEBUG Then
@@ -226,17 +256,24 @@ Friend Module EngineDefaultTextureLaw
                 ' An absent file: the same bind - the path is named, so the flag 4 / 5 decides (0x142178282..2C3; A.5, 0x142225919);
                 ' without it t4 is not bound whatever the loader put in +0x60.
                 If st = SlotState.Missing AndAlso Not c.Recolor Then Return EngineTexture.NoTexture
+#If DEBUG Then
                 If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
-                Return EngineTexture.Fo4DiffuseMap                                    ' sRGB ladder (Missing); Empty only under the mutant above
+#End If
+                Return EngineTexture.Fo4DiffuseMap                                    ' sRGB ladder (Missing)
             Case MaterialSlot.Cube, MaterialSlot.EnvMask, MaterialSlot.Normal
                 If Not c.Envmap Then Return EngineTexture.NoTexture                   ' t5 / t7 / t1 under bit 19 only
                 ' A.5: mask t7 / normal t1 bind NULL through 0x1421DAF40 (0x1421DAF45 / 0x1421DAF4A); the cube t5 binds the NULL SRV of a
                 ' failed creation (0x142225C1E) - its empty file is NotLaw (EngineTextureCreationLaw.EffectCubeVerdict), never this state.
                 If st = SlotState.RejectedByEngine Then Return EngineTexture.SrvNull
+#If DEBUG Then
                 If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.Fo4MissingOwnFallback Then Return EngineTexture.Own
+#End If
                 If slot = MaterialSlot.Cube Then Return EngineTexture.Fo4EyeCubeMap   ' ctor 0x14222435B / cube ladder
                 If slot = MaterialSlot.EnvMask Then                                   ' ctor 0x14222437A (Empty) / raw ladder (Missing)
-                    Return If(st = SlotState.Empty OrElse GateMutant = DefaultTextureMutant.Fo4EffectMaskMissingWhite, EngineTexture.Fo4White, EngineTexture.Fo4NormalMap)
+#If DEBUG Then
+                    If GateMutant = DefaultTextureMutant.Fo4EffectMaskMissingWhite Then Return EngineTexture.Fo4White
+#End If
+                    Return If(st = SlotState.Empty, EngineTexture.Fo4White, EngineTexture.Fo4NormalMap)
                 End If
                 Return EngineTexture.Fo4NormalMap                                     ' ctor 0x142224399
             Case Else
@@ -251,7 +288,10 @@ Friend Module EngineDefaultTextureLaw
         If st = SlotState.RejectedByEngine Then Throw New ArgumentException("RejectedByEngine is Fallout 4's (EngineTextureCreationLaw transcribes Fallout4.exe)", NameOf(st))
         If st = SlotState.Loaded OrElse st = SlotState.NotLoadedByPreview Then Return EngineTexture.Own
         If Not SseLightingSamples(slot, c) Then Return EngineTexture.NoTexture
-        If st = SlotState.Missing AndAlso GateMutant <> DefaultTextureMutant.SseMissingAsEmpty Then
+#If DEBUG Then
+        If st = SlotState.Missing AndAlso GateMutant = DefaultTextureMutant.SseMissingAsEmpty Then st = SlotState.Empty
+#End If
+        If st = SlotState.Missing Then
             Return If(slot = MaterialSlot.Cube, EngineTexture.SseDefCubeMap, EngineTexture.SseDefNormalMap)
         End If
         Select Case slot
@@ -267,7 +307,11 @@ Friend Module EngineDefaultTextureLaw
             Case MaterialSlot.Height : Return EngineTexture.SseDefHeightMap                          ' Parallax vf10 0x1415260BA..D4: [0x143336428] = state+0x88 (0x14101DAF8)
             Case MaterialSlot.InnerLayer : Return EngineTexture.SseDefNormalMap                      ' MultiLayerParallax vf10 0x1415287AA..C4
             Case MaterialSlot.Slot7
-                If GateMutant <> DefaultTextureMutant.SseSlot7SpecularFirst AndAlso c.BackLighting Then Return EngineTexture.SseDefNormalMap  ' ..F94
+#If DEBUG Then
+                ' the mutant: SPECULAR && MSN tested before the back light (the fill order inverted)
+                If GateMutant = DefaultTextureMutant.SseSlot7SpecularFirst AndAlso c.SpecularMsn Then Return EngineTexture.SseDefHeightMap
+#End If
+                If c.BackLighting Then Return EngineTexture.SseDefNormalMap                                                                 ' ..F94
                 If c.SpecularMsn Then Return EngineTexture.SseDefHeightMap                                                                  ' ..FBA
                 Return EngineTexture.SseDefNormalMap
             Case Else : Return EngineTexture.NoTexture
@@ -278,10 +322,13 @@ Friend Module EngineDefaultTextureLaw
     ''' class (vf10) / with rim or soft (0x141523F36..F72, any class); cube and mask in the Envmap classes; slot 7 with back light or
     ''' SPECULAR &amp;&amp; MSN (0x141523F76..FBA). (Facegen is not described: C4 leaves its slots out.)</summary>
     Private Function SseLightingSamples(slot As MaterialSlot, c As SseLightingContext) As Boolean
+#If DEBUG Then
+        If slot = MaterialSlot.Lightmask AndAlso GateMutant = DefaultTextureMutant.SseLightmaskGlowExcluded AndAlso c.GlowClass Then Return False
+#End If
         Select Case slot
             Case MaterialSlot.Diffuse, MaterialSlot.Normal : Return True
             Case MaterialSlot.Glow : Return c.GlowClass
-            Case MaterialSlot.Lightmask : Return c.RimOrSoft AndAlso Not (GateMutant = DefaultTextureMutant.SseLightmaskGlowExcluded AndAlso c.GlowClass)
+            Case MaterialSlot.Lightmask : Return c.RimOrSoft
             Case MaterialSlot.Cube, MaterialSlot.EnvMask : Return c.EnvmapClass OrElse c.MultiLayerParallaxClass   ' MLP t4 / t5 0x141548F4B..F68
             Case MaterialSlot.Height : Return c.ParallaxClass                                    ' t3 0x141548A07..A16
             Case MaterialSlot.InnerLayer : Return c.MultiLayerParallaxClass                       ' t8 0x141548EF5..F04
@@ -298,7 +345,10 @@ Friend Module EngineDefaultTextureLaw
             Case MaterialSlot.Diffuse
                 If st = SlotState.Missing Then Return EngineTexture.SseDefNormalMap
                 ' TEXTURE (bit 6 = path non-empty, 0x140EB12C0) off: t0 is not bound (0x141556DB5..DB7).
-                If c.Recolor OrElse GateMutant = DefaultTextureMutant.EffectBaseEmptyAlwaysPrevious Then Return EngineTexture.PreviousDraw
+                If c.Recolor Then Return EngineTexture.PreviousDraw
+#If DEBUG Then
+                If GateMutant = DefaultTextureMutant.EffectBaseEmptyAlwaysPrevious Then Return EngineTexture.PreviousDraw
+#End If
                 Return EngineTexture.NoTexture
             Case MaterialSlot.Greyscale
                 If st = SlotState.Empty Then Return EngineTexture.NoTexture  ' bits 19 / 20 need the path (0x141556E4F..E59)
@@ -315,7 +365,9 @@ Friend Module EngineDefaultTextureLaw
     Friend Function Rgba(t As EngineTexture) As Byte()
         Select Case t
             Case EngineTexture.Fo4DiffuseMap
+#If DEBUG Then
                 If GateMutant = DefaultTextureMutant.Fo4DiffuseMapMagenta Then Return {255, 0, 255, 255}
+#End If
                 Return {128, 0, 255, 255}                                   ' 0xFFFF0080 (0x14182CBD1)
             Case EngineTexture.Fo4NormalMap : Return {128, 128, 255, 255}   ' 0xFFFF8080 (0x14182CB07)
             Case EngineTexture.Fo4White : Return {255, 255, 255, 255}       ' 0xFFFFFFFF (0x14182CD65)
@@ -350,8 +402,12 @@ Friend Module EngineDefaultTextureLaw
     ''' is not traced (never neutral). Derived from Rgba, except EyeCubeMap (<see cref="Fo4EyeCubeMapPolicy"/>) and an empty
     ''' MultiLayerParallax or Eye mask (<see cref="SseMlpEnvMaskPolicy"/>; the name stays, it covers both classes since 12-oct-2026).</summary>
     Friend Function IsNeutral(slot As MaterialSlot, t As EngineTexture) As Boolean
-        If slot = MaterialSlot.EnvMask AndAlso t = EngineTexture.SseDefNormalMap Then Return SseMlpEnvMaskPolicy AndAlso GateMutant <> DefaultTextureMutant.MlpEnvMaskNotNeutral
-        If t = EngineTexture.Fo4EyeCubeMap Then Return Fo4EyeCubeMapPolicy AndAlso GateMutant <> DefaultTextureMutant.EyeCubeNotNeutral
+#If DEBUG Then
+        If slot = MaterialSlot.EnvMask AndAlso t = EngineTexture.SseDefNormalMap AndAlso GateMutant = DefaultTextureMutant.MlpEnvMaskNotNeutral Then Return False
+        If t = EngineTexture.Fo4EyeCubeMap AndAlso GateMutant = DefaultTextureMutant.EyeCubeNotNeutral Then Return False
+#End If
+        If slot = MaterialSlot.EnvMask AndAlso t = EngineTexture.SseDefNormalMap Then Return SseMlpEnvMaskPolicy
+        If t = EngineTexture.Fo4EyeCubeMap Then Return Fo4EyeCubeMapPolicy
         Dim got = Rgba(t)
         If got Is Nothing Then Return False
         Dim identity As Byte()

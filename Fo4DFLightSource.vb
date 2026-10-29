@@ -415,11 +415,13 @@ void main()
     ''' Fo4DeferredLightLaw.SunTechnique(True, ambient)).</summary>
     Friend ReadOnly AppShadowDarknessPs As UInteger() = {&H01200202UI, &H01220202UI}
 
+#If DEBUG Then
     ''' <summary>APP (rev-E08): the one line of each of those PS the generator rewrote for the rig's Darkness - (function, the
     ''' engine's line, the app's line) - so a gate rebuilds the engine's text exactly (AnchoredReplace app -&gt; engine).</summary>
     Friend ReadOnly AppShadowDarknessLines As (Fn As String, Engine As String, App As String)() = {
         ("Fo4DflPs_rec3227", "    r1.w = r2.y * r1.w + 1.0;                                                             // 1165  mad r1.w, r2.y, r1.w, l(1.000000)", "    r1.w = (r2.y * (1.0 - AppShadowLift)) * r1.w + 1.0;   // APP rev-E08 mix(1, s, D), D = 1 - AppShadowLift |1165  mad r1.w, r2.y, r1.w, l(1.000000)"),
         ("Fo4DflPs_rec3232", "    r1.w = r2.z * r1.w + 1.0;                                                             // 1181  mad r1.w, r2.z, r1.w, l(1.000000)", "    r1.w = (r2.z * (1.0 - AppShadowLift)) * r1.w + 1.0;   // APP rev-E08 mix(1, s, D), D = 1 - AppShadowLift |1181  mad r1.w, r2.z, r1.w, l(1.000000)")}
+#End If
 
     ''' <summary>APP (26-oct-2026): the one line of each PS of AppShadowDarknessPs the generator rewrote for the rig's Shadow Bias -
     ''' the receiver's 0.275 times (1 + AppShadowBiasGrowth) - as (function, the engine's line, the app's line), so a gate rebuilds the

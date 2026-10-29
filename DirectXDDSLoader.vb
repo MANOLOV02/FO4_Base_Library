@@ -202,8 +202,6 @@ Public Module DirectXDDSLoader
         Return view
     End Function
 
-    ''' <summary>The sRGB/UNORM twin of a GL internal format, for the formats the upload promotes (the same
-    ''' table as the promotion in CreateOpenGL_FromTextureLoaded_PBO, both directions).</summary>
     ''' <summary>The sRGB internal format of a GL storage format: its twin when the storage is UNORM, itself when it is already sRGB
     ''' or has no twin (BC4/BC5/float: MakeSRGB has none either). The same table as the upload promotion (one owner).</summary>
     Friend Function SrgbTwinOf(fmt As Integer) As Integer
@@ -228,6 +226,8 @@ Public Module DirectXDDSLoader
         End Select
     End Function
 
+    ''' <summary>The sRGB/UNORM twin of a GL internal format, for the formats the upload promotes (the same
+    ''' table as the promotion in CreateOpenGL_FromTextureLoaded_PBO, both directions).</summary>
     Private Function TwinColorSpaceFormat(fmt As Integer, ByRef isSrgb As Boolean, ByRef twin As Integer) As Boolean
         Select Case fmt
             Case &H8058 : isSrgb = False : twin = &H8C43                                  ' RGBA8 -> SRGB8_ALPHA8

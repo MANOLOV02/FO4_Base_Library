@@ -12,26 +12,6 @@
 ' ============================================================================================
 Imports System.Text
 
-''' <summary>
-''' Motor de layout: declara cómo está armado por dentro un record de un plugin, y esa MISMA
-''' declaración se usa para leerlo y para volver a escribirlo.
-'''
-''' <para>El formato de un record es un ÁRBOL de DOS capas:</para>
-''' <list type="bullet">
-''' <item><b>Capa A — árbol de MIEMBROS</b> (nivel subrecord): un record es una lista ORDENADA de
-''' miembros, de cuatro clases posibles: subrecord suelto, struct de subrecords (una corrida de
-''' firmas agrupada bajo un nombre), array de subrecords (un miembro que se repite) y unión de
-''' miembros (una de varias formas alternativas para el mismo lugar).</item>
-''' <item><b>Capa B — árbol de VALORES</b> (dentro de los bytes de UN subrecord): structs,
-''' arrays, uniones, enteros, floats, cadenas de ancho fijo o terminadas en cero, cadenas
-''' localizables, referencias a otros records, bloques de bytes y campos de cero bytes.</item>
-''' </list>
-'''
-''' <para>El lector recorre esa declaración (ver <see cref="WbReader"/>) y el escritor emite el
-''' MISMO árbol (ver <see cref="WbWriter"/>): UNA declaración, dos recorridos. No hay copia
-''' verbatim de bytes en ningún punto del motor — si un subrecord no está declarado se REPORTA
-''' como pendiente, nunca se copia en silencio.</para>
-''' </summary>
 Namespace Canon
 
     ''' <summary>Juego cuya definición de formato manda. El layout de un mismo record NO se comparte
@@ -362,6 +342,26 @@ Namespace Canon
     ''' <para>Un índice de enum NUNCA puede vivir en un nodo cuyo def sea <see cref="WbFormIdDef"/>:
     ''' el remapper recorre EXCLUSIVAMENTE ese tipo (ver <c>WbFormIdWalker</c>), así que un entero
     ''' con un enum asociado no puede entrar aunque mida los mismos 4 bytes.</para></summary>
+    ''' <remarks>
+    ''' Motor de layout: declara cómo está armado por dentro un record de un plugin, y esa MISMA
+    ''' declaración se usa para leerlo y para volver a escribirlo.
+    '''
+    ''' <para>El formato de un record es un ÁRBOL de DOS capas:</para>
+    ''' <list type="bullet">
+    ''' <item><b>Capa A — árbol de MIEMBROS</b> (nivel subrecord): un record es una lista ORDENADA de
+    ''' miembros, de cuatro clases posibles: subrecord suelto, struct de subrecords (una corrida de
+    ''' firmas agrupada bajo un nombre), array de subrecords (un miembro que se repite) y unión de
+    ''' miembros (una de varias formas alternativas para el mismo lugar).</item>
+    ''' <item><b>Capa B — árbol de VALORES</b> (dentro de los bytes de UN subrecord): structs,
+    ''' arrays, uniones, enteros, floats, cadenas de ancho fijo o terminadas en cero, cadenas
+    ''' localizables, referencias a otros records, bloques de bytes y campos de cero bytes.</item>
+    ''' </list>
+    '''
+    ''' <para>El lector recorre esa declaración (ver <see cref="WbReader"/>) y el escritor emite el
+    ''' MISMO árbol (ver <see cref="WbWriter"/>): UNA declaración, dos recorridos. No hay copia
+    ''' verbatim de bytes en ningún punto del motor — si un subrecord no está declarado se REPORTA
+    ''' como pendiente, nunca se copia en silencio.</para>
+    ''' </remarks>
     Public MustInherit Class WbDef
         Public Property Name As String = ""
         ''' <summary>Def que CONTIENE a esta. Es la cadena por la que se sube para resolver una
@@ -799,9 +799,6 @@ Namespace Canon
             Return Nothing
         End Function
 
-        ''' <summary>Resuelve una ruta relativa: <c>Counters\[0]</c>, <c>Flags</c>,
-        ''' <c>..\Data\Value</c>. Admite nombres de campo, índices entre corchetes y <c>..</c> para
-        ''' subir al padre — lo que necesitan las rutas de contador declaradas en el esquema.</summary>
 
         ''' <summary>Copia profunda del nodo y de todo lo que cuelga de él.
         '''
@@ -836,6 +833,9 @@ Namespace Canon
             Return c
         End Function
 
+        ''' <summary>Resuelve una ruta relativa: <c>Counters\[0]</c>, <c>Flags</c>,
+        ''' <c>..\Data\Value</c>. Admite nombres de campo, índices entre corchetes y <c>..</c> para
+        ''' subir al padre — lo que necesitan las rutas de contador declaradas en el esquema.</summary>
         Public Function ByPath(path As String) As WbNode
             If String.IsNullOrEmpty(path) Then Return Nothing
             Dim cur = Me

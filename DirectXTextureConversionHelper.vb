@@ -281,10 +281,6 @@ Public Module DirectXTextureConversionHelper
         SaveDdsBytesAsDds(File.ReadAllBytes(inputFilePath), outputFilePath, outputDxgiFormat, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
     End Sub
 
-    ''' <summary>
-    ''' Convierte un TextureLoaded devuelto por Loader.LoadTextures a un DDS completo en el DXGI pedido.
-    ''' Usa DxgiCodeFinal como formato de entrada, porque es el formato real de los bytes guardados en Levels.
-    ''' </summary>
     ' Ejemplo BC3 (preserva alpha):
     ' Dim tex = Loader.LoadTextures({File.ReadAllBytes("C:\Texturas\entrada.dds")}, useCompress:=True, forceOpenGL:=False)(0)
     ' File.WriteAllBytes("C:\Texturas\salida_bc3.dds", ConvertLoadedTextureToDdsBytes(tex, DxgiFormatBc3Unorm, generateMipMaps:=True, generatedMipLevels:=0))
@@ -292,6 +288,10 @@ Public Module DirectXTextureConversionHelper
     ' Ejemplo BC1 (mas chico, alpha recortado/limitado):
     ' Dim tex = Loader.LoadTextures({File.ReadAllBytes("C:\Texturas\entrada.dds")}, useCompress:=True, forceOpenGL:=False)(0)
     ' File.WriteAllBytes("C:\Texturas\salida_bc1.dds", ConvertLoadedTextureToDdsBytes(tex, DxgiFormatBc1Unorm, generateMipMaps:=True, generatedMipLevels:=0))
+    ''' <summary>
+    ''' Convierte un TextureLoaded devuelto por Loader.LoadTextures a un DDS completo en el DXGI pedido.
+    ''' Usa DxgiCodeFinal como formato de entrada, porque es el formato real de los bytes guardados en Levels.
+    ''' </summary>
     Public Function ConvertLoadedTextureToDdsBytes(
         loadedTexture As TextureLoaded,
         outputDxgiFormat As Integer,

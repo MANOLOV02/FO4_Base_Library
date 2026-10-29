@@ -155,10 +155,9 @@ Friend Module ShadowMapMath
     ''' <para>ES EXACTAMENTE <c>1 / GroundQuadMargin</c>, y esa igualdad ES el invariante: la huella
     ''' ocupa <c>1/margen</c> del quad, asi que empezar a desvanecer justo ahi garantiza que TODA la
     ''' sombra se dibuja a intensidad plena y el degrade cae en el margen, donde nunca hay sombra.</para>
-    ''' <para>El valor esta ADEMAS escrito a mano en el GLSL (<c>#define GROUND_FADE_START</c>): un
-    ''' Const de VB no se puede concatenar dentro de un Const String. El gate `ground-catcher` compara
-    ''' los dos, porque si se separan el sintoma es una sombra recortada y nadie lo relaciona con esto.
-    ''' </para></summary>
+    ''' <para>El GLSL lo recibe DE ACA (<c>#define GROUND_FADE_START</c>, emitido por
+    ''' GroundShadowShaderSource.GroundFadeStartGlsl como su literal G9; ola 9, decision del usuario 29-oct: antes estaba escrito a
+    ''' mano como 0.952380952, un ulp por debajo). El gate `ground-catcher` sigue comparando los dos por bits.</para></summary>
     Friend Const GroundFadeStart As Single = 1.0F / GroundQuadMargin
 
     ''' <summary>Reparte las capas del shadow map entre las luces del rig que castean.

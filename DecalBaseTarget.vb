@@ -52,13 +52,16 @@ Friend NotInheritable Class DecalBaseTarget
         _deferred = deferred
     End Sub
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the auxiliary depth/stencil texture (depth sampled).</summary>
     Friend ReadOnly Property AuxTexture As Integer
         Get
             Return _aux
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: Skyrim SE's raw copy of the frame's depth taken when the base pass began (depth sampled; 0 for Fallout 4,
     ''' whose mark reads the G-buffer's copy).</summary>
     Friend ReadOnly Property GateCopyTexture As Integer
@@ -66,6 +69,7 @@ Friend NotInheritable Class DecalBaseTarget
             Return _copy
         End Get
     End Property
+#End If
 
     ''' <summary>Fallout 4: the farthest painting decal's colour-output alpha per pixel (RGBA16 UNORM, .a; D3D rows; 0 before Ensure).</summary>
     Friend ReadOnly Property AlphaTexture As Integer
@@ -82,9 +86,11 @@ Friend NotInheritable Class DecalBaseTarget
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --decal-base-surface measurement of the alpha target's format (review rev-04). True: the
     ''' next Ensure that allocates gives the alpha target RGBA32F (the shader's alpha unrounded) instead of RGBA16 UNORM.</summary>
     Friend Shared GateAlphaFloat As Boolean = False
+#End If
 
     Private Shared Function DepthTexture(w As Integer, h As Integer) As Integer
         Dim t As Integer
@@ -134,7 +140,11 @@ Friend NotInheritable Class DecalBaseTarget
         Gl43.ReadBuffer(_fbo, ReadBufferMode.None)
         Dim ok = Gl43.CheckFramebufferStatus(_fbo, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
         If _deferred Then
-            _alpha = ColourTexture(If(GateAlphaFloat, SizedInternalFormat.Rgba32f, SizedInternalFormat.Rgba16), w, h)
+            Dim formatoAlfa = SizedInternalFormat.Rgba16
+#If DEBUG Then
+            If GateAlphaFloat Then formatoAlfa = SizedInternalFormat.Rgba32f
+#End If
+            _alpha = ColourTexture(formatoAlfa, w, h)
             _coverage = ColourTexture(SizedInternalFormat.Rgba8, w, h)
             _fboDepth = AuxFramebuffer(_alpha)
             _fboCoverage = AuxFramebuffer(_coverage)
@@ -159,10 +169,11 @@ Friend NotInheritable Class DecalBaseTarget
     ''' the mark - the G-buffer's own copy (Fo4DeferredTargets._depthCopy, which EndGBuffer takes again for the lights): one copy per
     ''' frame, not two (review rev-03); Skyrim SE passes 0 and this target's copy is used. <paramref name="colours"/>: the targets the
     ''' surface draws write, in draw-buffer order (renderbuffer when
-    ''' IsRenderbuffer; Fallout 4 adds the coverage target after them). <paramref name="nearestMutant"/>: GATE ONLY (Fo4DeferredTargets.GateDecalBaseNearest), the mark writes 1.0.
+    ''' IsRenderbuffer; Fallout 4 adds the coverage target after them). The mark writes 0 (DEBUG: Fallout 4 under
+    ''' Fo4DeferredTargets.GateDecalBaseNearest writes 1.0).
     ''' False when the target with those colours is incomplete (nothing is bound or drawn then).</summary>
     Public Function Begin(mark As Shader_Base_Class, srcName As Integer, srcTarget As ImageTarget, depthCopy As Integer,
-                          colours As (Name As Integer, IsRenderbuffer As Boolean)(), nearestMutant As Boolean) As Boolean
+                          colours As (Name As Integer, IsRenderbuffer As Boolean)()) As Boolean
         Dim copy = If(_deferred, depthCopy, _copy)
         GL.CopyImageSubData(srcName, srcTarget, 0, 0, 0, 0, copy, ImageTarget.Texture2D, 0, 0, 0, 0, _w, _h, 1)
         GL.CopyImageSubData(srcName, srcTarget, 0, 0, 0, 0, _aux, ImageTarget.Texture2D, 0, 0, 0, 0, _w, _h, 1)
@@ -209,7 +220,11 @@ Friend NotInheritable Class DecalBaseTarget
         GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Replace)
         mark.Use()
         mark.SetBool("uOnlyEmpty", True)
-        mark.SetFloat("uDepth", If(nearestMutant, 1.0F, 0.0F))
+        Dim depthMark = 0.0F
+#If DEBUG Then
+        If _deferred AndAlso Fo4DeferredTargets.GateDecalBaseNearest Then depthMark = 1.0F
+#End If
+        mark.SetFloat("uDepth", depthMark)
         Gl43.BindTextureUnit(0, TextureTarget.Texture2D, copy) : GL.BindSampler(0, _point)
         FullscreenPass.Draw(mark, _emptyVao, 1, writesDepth:=True)
         GL.BindSampler(0, 0)

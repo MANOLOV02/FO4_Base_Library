@@ -616,7 +616,6 @@ Partial Public Class LoadOrderPreflight_Form
     ''' insensitive substring on filename). Restores check state from _checkedPlugins so a
     ''' filter pass doesn't wipe what the user has ticked. Suspends ItemChecked event handling
     ''' during the bulk set so the user-driven handler doesn't fire on every programmatic check.</summary>
-
     Private Sub ApplyFilter()
         Dim filter As String = If(TextBoxFilter.Text, "").Trim()
         _suspendItemChecked = True

@@ -375,8 +375,10 @@ Public Structure PreviewLightRig
         ' ExpandForGroundShadow rechaza el encuadre, el receptor de suelo queda PERMANENTEMENTE
         ' deshabilitado en ese preset y la UI se lo tiene que decir al usuario en un cartel. Un preset que
         ' apaga una feature no es una eleccion de escenario. Ley 5 de `studio-rig`.
-        ' LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO: multiplos de 15 grados y 0,05 de fuerza, autorados a
-        ' mano. Angulos derivados de una conversion llevaban 5 decimales, y redondearlos a 2 volteaba pixeles
+        ' LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO: multiplos de 5 grados y 0,05 de fuerza, autorados a
+        ' mano (decision del usuario 29-oct-2026: 5, no 15; Portrait esta en 35 / 35 y es de diseño). La regla es sobre
+        ' TODOS los angulos de las cuatro luces, y el gate `studio-rig` la verifica exacta. Angulos derivados de una
+        ' conversion llevaban 5 decimales, y redondearlos a 2 volteaba pixeles
         ' sueltos en bordes con alpha-test (340 px de 648.000 medidos). El golden `rig-presets` los congela
         ' con tolerancia 0,00005 grados — no por precision, sino porque un golden flojo no congela nada.
         ' CUANTAS LUCES CASTEAN POR SET, y no es gratis: cada luz casteante extra es un shadow map completo

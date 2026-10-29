@@ -910,11 +910,6 @@ Namespace Canon
             Public Tipo As Integer
         End Structure
 
-        ''' <summary>Este slot admite VARIOS head parts a la vez? Medido contra los 3158 FaceGeom que
-        ''' hornea el CK: tipo 5 (Scar) si - 2 de 2 y 7 de 7 en los casos con cicatrices distintas; tipo 3
-        ''' (Hair) NO - 1 shape en 3044 archivos, 0 en 114, NUNCA 2. Para los tipos 1,2,4,6,7,8,9 el corpus
-        ''' no tiene un solo NPC con dos FormID distintos del mismo tipo, asi que la ley se generaliza sobre
-        ''' conjunto vacio: si algun dia aparece uno, ESTA es la linea que hay que revisar contra el CK.</summary>
         ''' <summary>Los nombres del enum <c>HDPT.PNAM</c> del juego pedido, SACADOS de los
         ''' formateadores generados (<c>FmtFO4.F070</c> / <c>FmtTES5.F065</c>) y no de una lista a mano:
         ''' Fallout 4 declara 0–9 y Skyrim 0–6, y una copia local se queda vieja el día que el esquema
@@ -1250,10 +1245,6 @@ Namespace Canon
             Return r
         End Function
 
-        ''' <summary>indice de funcion de condicion -> los DOS ordinales de tipo de parametro que
-        ''' declara (`ParamType1`, `ParamType2`), tal cual los emitio el generador.
-        ''' <para>Existe para que un instrumento pueda preguntar «que funcion declara esta clase de
-        ''' parametro» en vez de llevar una lista a mano de 50 entradas.</para></summary>
         ''' <summary>Los indices de funcion que el `.pas` nombra `GetIsCurrentPackage`, emitidos por el
         ''' generador (`gicp_indices`). Solo Fallout 4 los tiene: su decisor del parametro 1 trae una
         ''' excepcion para esa funcion con `Run On = 5`, y el de Skyrim no.
@@ -1265,6 +1256,10 @@ Namespace Canon
             Return WbConditionsFO4.IsCurrentPackage.ToList()
         End Function
 
+        ''' <summary>indice de funcion de condicion -> los DOS ordinales de tipo de parametro que
+        ''' declara (`ParamType1`, `ParamType2`), tal cual los emitio el generador.
+        ''' <para>Existe para que un instrumento pueda preguntar «que funcion declara esta clase de
+        ''' parametro» en vez de llevar una lista a mano de 50 entradas.</para></summary>
         Public Function ParametrosDeFuncionesDeCondicion(game As WbGame) _
                                                         As IReadOnlyDictionary(Of Integer, Integer())
             If game = WbGame.Skyrim Then Return WbConditionsTES5.Params
@@ -1334,6 +1329,11 @@ Namespace Canon
             Return FmtFO4.F017
         End Function
 
+        ''' <summary>Este slot admite VARIOS head parts a la vez? Medido contra los 3158 FaceGeom que
+        ''' hornea el CK: tipo 5 (Scar) si - 2 de 2 y 7 de 7 en los casos con cicatrices distintas; tipo 3
+        ''' (Hair) NO - 1 shape en 3044 archivos, 0 en 114, NUNCA 2. Para los tipos 1,2,4,6,7,8,9 el corpus
+        ''' no tiene un solo NPC con dos FormID distintos del mismo tipo, asi que la ley se generaliza sobre
+        ''' conjunto vacio: si algun dia aparece uno, ESTA es la linea que hay que revisar contra el CK.</summary>
         Public Function SlotAcumulaVarios(tipo As Integer) As Boolean
             Return tipo = 5
         End Function
@@ -1575,12 +1575,6 @@ Namespace Canon
         ' Copiar y comparar records
         '======================================================================================
 
-        ''' <summary>⛔ MUDADO desde `ArmoEditor_Form`: el RENDER, el BAKE y la resolucion de la PIEL
-        ''' leian los armatures desde un formulario de WinForms —`NpcMeshCollector`, `FaceGenBuilder`,
-        ''' `NpcMaterialResolver`—, y la libreria no puede llamar al proyecto de UI. Por eso la ley no
-        ''' podia vivir en un solo lugar: su primitiva estaba del lado equivocado.
-        ''' <para>Medido antes de mudar: en `FO4_Base_Library` NO existia ningun escritor de armatures
-        ''' (grep de `Agregar/QuitarArmature|Models`, sin `Generated/`: cero).</para></summary>
         ''' <summary>El modelo de addons (INDX + referencia a la ARMA) es distinto por juego: FO4 =
         ''' índice y
         ''' referencia separados (Models); Skyrim = un array de referencias sin índice explícito
@@ -1608,6 +1602,12 @@ Namespace Canon
             Return result
         End Function
 
+        ''' <summary>⛔ MUDADO desde `ArmoEditor_Form`: el RENDER, el BAKE y la resolucion de la PIEL
+        ''' leian los armatures desde un formulario de WinForms —`NpcMeshCollector`, `FaceGenBuilder`,
+        ''' `NpcMaterialResolver`—, y la libreria no puede llamar al proyecto de UI. Por eso la ley no
+        ''' podia vivir en un solo lugar: su primitiva estaba del lado equivocado.
+        ''' <para>Medido antes de mudar: en `FO4_Base_Library` NO existia ningun escritor de armatures
+        ''' (grep de `Agregar/QuitarArmature|Models`, sin `Generated/`: cero).</para></summary>
         Public Sub EscribirComplementos(rec As IArmo, addons As IEnumerable(Of ARMO_AddonEntry))
             Dim fo4 = TryCast(rec, ArmoFO4)
             If fo4 IsNot Nothing Then
@@ -1741,12 +1741,6 @@ Namespace Canon
             Return True
         End Function
 
-        ''' <summary>El VALOR de la hoja de esa ruta, tal cual esta en el arbol, o Nothing si la ruta
-        ''' no resuelve o no termina en una hoja. No convierte: devuelve el objeto que la hoja tiene, que
-        ''' es del tipo que el esquema declaro (un UInteger para un FormID, un Single para un float, un
-        ''' Byte() para una rama cruda).
-        ''' <para>Existe para que un editor pueda mostrar una rama de la que no sabe el tipo de antemano
-        ''' —las 50 clases de parametro de una condicion— sin una escalera de casos por clase.</para></summary>
         ''' <summary>El NOMBRE de la rama que el arbol tiene puesta en esa ruta, o "" si no resuelve.
         ''' <para>⛔ EXISTE PORQUE LOS BYTES NO ALCANZAN. Las cuatro uniones del <c>CTDA</c> tienen TODAS
         ''' sus ramas de 4 bytes, asi que medir el volcado no distingue «escribi el FormID en la rama
@@ -1776,6 +1770,12 @@ Namespace Canon
             Return If(hoja.Def.Name, "")
         End Function
 
+        ''' <summary>El VALOR de la hoja de esa ruta, tal cual esta en el arbol, o Nothing si la ruta
+        ''' no resuelve o no termina en una hoja. No convierte: devuelve el objeto que la hoja tiene, que
+        ''' es del tipo que el esquema declaro (un UInteger para un FormID, un Single para un float, un
+        ''' Byte() para una rama cruda).
+        ''' <para>Existe para que un editor pueda mostrar una rama de la que no sabe el tipo de antemano
+        ''' —las 50 clases de parametro de una condicion— sin una escalera de casos por clase.</para></summary>
         <Extension>
         Public Function ValorDeCampo(Of T As Class)(rec As T, ruta As String) As Object
             Dim v = TryCast(rec, CanonView)

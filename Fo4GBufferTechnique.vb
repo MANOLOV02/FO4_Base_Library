@@ -165,10 +165,12 @@ Friend Module Fo4GBufferTechnique
         Return (f, m)
     End Function
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-gbuffer-scenes (10 z0). True leaves the alpha branch (0x14217A147) out of Technique,
     ''' so a lighting shape of drawn alpha 0 reaches the G-buffer with AdditionalAlphaMaskRef.z = 0 - a state the engine reaches only
     ''' for a decal through t130 (group 0/7) - to trace the record's dither at z = 0 (hallazgos v2-N2).</summary>
     Friend GateIgnoreAlphaBranch As Boolean = False
+#End If
 
     ''' <summary>GetRenderPasses 0x14217A050, deferred constructor. <paramref name="alphaFlags"/> = the NiAlphaProperty flags after
     ''' the BGSM alpha law (0x1421718BD..9EE; the app's ResolveEngineAlpha), Nothing without the property. <paramref name="bted"/> =
@@ -184,7 +186,11 @@ Friend Module Fo4GBufferTechnique
         ' 0xC000000 / jne: alpha 0 or NaN without decal bits clears the list (0x14217A237), BEFORE the blend and refraction branches
         ' below. matAlpha is the alpha the preview draws (MaterialData.PreviewAlpha): the raw one - no technique, as in the game - or,
         ' in a view that draws for editing, the shown one (C2 v3 L1c / L5).
-        If Not GateIgnoreAlphaBranch AndAlso Fo4RenderPassLaw.LightingAlphaSkipsPasses(False, matAlpha, decal) Then
+        Dim ramaDeAlfa = True
+#If DEBUG Then
+        If GateIgnoreAlphaBranch Then ramaDeAlfa = False
+#End If
+        If ramaDeAlfa AndAlso Fo4RenderPassLaw.LightingAlphaSkipsPasses(False, matAlpha, decal) Then
             noPass = Fo4RenderPassLaw.Fo4NoPass.LightingAlphaZero
             Return Nothing
         End If

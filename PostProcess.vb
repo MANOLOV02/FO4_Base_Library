@@ -554,12 +554,20 @@ Friend NotInheritable Class SseSaoPrograms
     Friend ReadOnly BlurV As Sse_Sao_Pass_Shader_Class
 
     Friend Sub New()
-        Me.New(Nothing)
+        Me.New(Function(s As String) s)
     End Sub
 
-    ''' <summary>GATE ONLY with <paramref name="gateMutation"/> (ShadowGate --sse-sao-law mutants): each fragment text goes through it.</summary>
-    Friend Sub New(gateMutation As Func(Of String, String))
-        Dim m = If(gateMutation, Function(s As String) s)
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate --sse-sao-law and its probe): the six passes with each fragment text through
+    ''' <paramref name="gateMutation"/> (Nothing = the identity). A named factory, not a second constructor (ola 9 ronda 4: the overload
+    ''' needed a dead Boolean on the private constructor to keep the signatures apart).</summary>
+    Friend Shared Function ConMutacionDeGate(gateMutation As Func(Of String, String)) As SseSaoPrograms
+        Return New SseSaoPrograms(If(gateMutation, Function(s As String) s))
+    End Function
+#End If
+
+    ''' <summary>The six passes, each fragment text through <paramref name="m"/> (the identity but for a Debug gate's mutation).</summary>
+    Private Sub New(m As Func(Of String, String))
         ' A pass that does not compile or link throws out of here after releasing the ones already built (v4 B-rev-05).
         Try
             CameraZ = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_CameraZ))
@@ -595,8 +603,10 @@ Friend NotInheritable Class SseSaoTargets
     Private _fbo As Integer
     Private _sFilt0 As Integer, _sFilt1 As Integer, _sFilt2 As Integer
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ShadowGate --sse-sao-law mutant): run the passes without glClipControl(UPPER_LEFT).</summary>
     Friend Shared GateNoClipControl As Boolean
+#End If
 
     ''' <summary>kSAO, in D3D row order (0 before the first Run).</summary>
     Public ReadOnly Property KSaoTexture As Integer
@@ -605,22 +615,28 @@ Friend NotInheritable Class SseSaoTargets
         End Get
     End Property
 
+#If DEBUG Then
     ''' <summary>GATE ONLY: the CameraZ / Minify pyramid, the raw AO and the BlurH output of the last Run.</summary>
     Friend ReadOnly Property PyramidTexture As Integer
         Get
             Return _pyramid
         End Get
     End Property
+#End If
+#If DEBUG Then
     Friend ReadOnly Property RawAoTexture As Integer
         Get
             Return _ao
         End Get
     End Property
+#End If
+#If DEBUG Then
     Friend ReadOnly Property BlurHTexture As Integer
         Get
             Return _blurH
         End Get
     End Property
+#End If
     Friend ReadOnly Property Levels As Integer
         Get
             Return _levels
@@ -687,7 +703,11 @@ Friend NotInheritable Class SseSaoTargets
         If w <= 0 OrElse h <= 0 Then Return
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        If Not GateNoClipControl Then Gl43.ClipControl(ClipOrigin.UpperLeft)
+        Dim filasD3d = True
+#If DEBUG Then
+        If GateNoClipControl Then filasD3d = False
+#End If
+        If filasD3d Then Gl43.ClipControl(ClipOrigin.UpperLeft)
         Try
             ' 1. CameraZ (15997) -> pyramid level 0.
             Target(_pyramid, 0, w, h)
@@ -760,6 +780,7 @@ Friend NotInheritable Class SseSaoTargets
         FullscreenPass.Draw(progs.BlurV, emptyVao, 1)
     End Sub
 
+#If DEBUG Then
     ''' <summary>GATE ONLY (ShadowGate --sse-sao-law): the two blur passes over a given RGBA8 AO texture (w x h, D3D row order).</summary>
     Friend Sub GateRunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
         Ensure(w, h)
@@ -772,6 +793,7 @@ Friend NotInheritable Class SseSaoTargets
             Gl43.ClipControl(ClipOrigin.LowerLeft)
         End Try
     End Sub
+#End If
 
     Public Sub Free()
         If _fbo <> 0 Then GL.DeleteFramebuffer(_fbo) : _fbo = 0

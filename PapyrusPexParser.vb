@@ -401,6 +401,7 @@ Public NotInheritable Class PapyrusPexParser
         Return t.EndsWith("]") AndAlso t.IndexOf("["c) > 0
     End Function
 
+#If DEBUG Then
     ''' <summary>DIAGNOSTIC: distinct method names this <c>.pex</c> calls, for probe/debug use only.</summary>
     Public Shared Function DebugCallMethodNames(bytes As Byte()) As List(Of String)
         Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -413,6 +414,7 @@ Public NotInheritable Class PapyrusPexParser
         outp.Sort(StringComparer.OrdinalIgnoreCase)
         Return outp
     End Function
+#End If
 
     ''' <summary>Category for a paint-registration method name, or Nothing if it is not one.</summary>
     Private Shared Function CategoryOf(method As String) As String

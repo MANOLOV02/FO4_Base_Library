@@ -1081,15 +1081,19 @@ Public Class SkinningHelper
     End Function
 
 
+#If DEBUG Then
     ''' <summary>SOLO PARA MEDIR: apaga el camino vectorial del kernel. Ver FastSkin.ForzarEscalar.</summary>
     Friend Shared Sub FastSkinForzarEscalar(v As Boolean)
         FastSkin.ForzarEscalar = v
     End Sub
+#End If
 
+#If DEBUG Then
     ''' <summary>SOLO PARA MEDIR: elige el camino con staging+SIMD o el directo.</summary>
     Friend Shared Sub FastSkinUsarStaging(v As Boolean)
         FastSkin.UsarStaging = v
     End Sub
+#End If
 
     ''' <summary>Puente para el camino SPARSE del upload. Ver FastSkin.UnVertice.</summary>
     Friend Shared Sub FastSkinUnVertice(m As Matrix4, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
@@ -1309,6 +1313,7 @@ Public Class SkinningHelper
         b = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(PorMatriz3x3(RecalcTBN.ADbl(b), total)))
     End Sub
 
+#If DEBUG Then
     ''' <summary>El eps RELATIVO del kernel, para que el camino vectorial del arnes pueda armar su
     ''' mascara. Un llamador que use esto tiene que transcribir el predicado COMPLETO —cuadrados
     ''' contra la cota de Hadamard—, no comparar el determinante pelado contra este numero.</summary>
@@ -1317,7 +1322,9 @@ Public Class SkinningHelper
             Return FastSkin.EpsDetRel
         End Get
     End Property
+#End If
 
+#If DEBUG Then
     ''' <summary>El PREDICADO de degeneracion del kernel, expuesto para que el arnes no lo transcriba.
     ''' <para>Se exporta el PREDICADO y no el umbral: la decision depende tambien de la ESCALA de la matriz,
     ''' asi que dejar que el llamador arme la comparacion la parte en dos. Ver FastSkin.EsDegenerada.</para></summary>
@@ -1327,6 +1334,7 @@ Public Class SkinningHelper
                                                  m31 As Single, m32 As Single, m33 As Single) As Boolean
         Return FastSkin.EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33)
     End Function
+#End If
 
     ''' <summary>Direccion x la parte 3x3 de la matriz, TAL CUAL. No invierte, no transpone, no normaliza:
     ''' aplica lo que se le da. Public y no Friend: el exportador de NIF vive en FO4_NPC_Manager, otro assembly.
@@ -1898,6 +1906,7 @@ Public Class SkinningHelper
         geo.PerVertexMatrixValid = True
     End Sub
 
+#If DEBUG Then
     ''' <summary>SOLO PARA MEDIR: el mismo cuerpo que FillPerVertexSkinMatrix pero recibiendo los
     ''' atributos sueltos, para que el arnes pueda cronometrarlo sin montar una ShapeSkinningData.</summary>
     Friend Shared Sub FillParaMedir(mats As SkinMatricesSoA, idx As Byte(), wgt As System.Half(),
@@ -1906,6 +1915,7 @@ Public Class SkinningHelper
                                               .WeightsPerVertex = wpv, .VertexCount = mats.Length}
         FillPerVertexSkinMatrix(mats, sk, palette)
     End Sub
+#End If
 
     ''' <summary>
     ''' Llena <paramref name="mats"/> con la matriz de skin de cada vértice, mezclando
@@ -3072,6 +3082,23 @@ Public Class RecalcTBN
     ' API PÚBLICA: Recalcular N/T/B SOLO para la clausura afectada (dirty + sus triángulos)
     ' - Usa el cache (adjacencia + UV-derivs). Welding opcional (NO cacheado).
     ' ===========================================================================================
+    ''' <summary>EL EPSILON DEL AGRUPADO DE COSTURAS, la ley del canonico que arma sus weld sets: nifly <c>SortingMatcher</c>
+    ''' (KDMatcher.hpp:86-92) — <c>float scale</c> = la mayor componente absoluta del conjunto de puntos, y
+    ''' <c>float epsilon = EPSILON * 0.01f * scale</c> con <c>constexpr float EPSILON = 0.0001f</c> (Object3d.hpp:16). Relativo a
+    ''' la escala de la malla, o sea independiente de las unidades. TODO EN FLOAT, como alla (ola 9 ronda 2: estaba en Double, que
+    ''' es otro numero; los vertices se toman como el float que guarda el NIF).</summary>
+    Public Shared Function EpsilonDeCostura(verts() As Vector3d, nVerts As Integer) As Single
+        Dim escala As Single = 0.0F
+        For i = 0 To nVerts - 1
+            Dim v = verts(i)
+            escala = Math.Max(escala, Math.Max(Math.Abs(CSng(v.X)), Math.Max(Math.Abs(CSng(v.Y)), Math.Abs(CSng(v.Z)))))
+        Next
+        Return EpsilonNifly * 0.01F * escala
+    End Function
+
+    ''' <summary><c>constexpr float EPSILON = 0.0001f</c> de nifly (Object3d.hpp:16).</summary>
+    Private Const EpsilonNifly As Single = 0.0001F
+
     ''' <summary>
     ''' Grupos de vértices COINCIDENTES en posición — las costuras. Réplica de <c>SortingMatcher</c>
     ''' (nifly KDMatcher.hpp:79-126): epsilon relativo a la escala del modelo, orden por X, y barrido
@@ -3131,17 +3158,8 @@ Public Class RecalcTBN
         Next
         If nVerts <= 1 Then Return grupos
 
-        Dim escala As Double = 0.0
-        For i = 0 To nVerts - 1
-            Dim v = verts(i)
-            escala = Math.Max(escala, Math.Max(Math.Abs(v.X), Math.Max(Math.Abs(v.Y), Math.Abs(v.Z))))
-        Next
-        ' NO es un numero elegido: es el epsilon del `SortingMatcher` del canonico, que es quien
-        ' arma sus weld sets (nifly KDMatcher.hpp:89-92): `scale` = la mayor componente absoluta del
-        ' conjunto de puntos, y `epsilon = EPSILON * 0.01f * scale` con `EPSILON = 0.0001f`
-        ' (Object3d.hpp:16). Relativo a la escala de la malla, o sea independiente de las unidades.
-        Dim eps As Double = 0.0001 * 0.01 * escala
-        If eps <= 0.0 Then Return grupos
+        Dim eps As Single = EpsilonDeCostura(verts, nVerts)
+        If eps <= 0.0F Then Return grupos
 
         Dim orden() As Integer = Nothing
         Dim clave() As Double = Nothing
@@ -3153,11 +3171,12 @@ Public Class RecalcTBN
             Dim vi = orden(si)
             Dim actual As List(Of Integer) = Nothing
             For mi = si + 1 To nVerts - 1
-                If clave(mi) - clave(si) >= eps Then Exit For
+                ' EN FLOAT, como el canonico (KDMatcher.hpp:103-111): la resta de dos float redondea a float.
+                If CSng(clave(mi)) - CSng(clave(si)) >= eps Then Exit For
                 If usado(mi) Then Continue For
                 Dim vj = orden(mi)
-                If Math.Abs(verts(vi).Y - verts(vj).Y) >= eps Then Continue For
-                If Math.Abs(verts(vi).Z - verts(vj).Z) >= eps Then Continue For
+                If Math.Abs(CSng(verts(vi).Y) - CSng(verts(vj).Y)) >= eps Then Continue For
+                If Math.Abs(CSng(verts(vi).Z) - CSng(verts(vj).Z)) >= eps Then Continue For
                 If actual Is Nothing Then
                     actual = New List(Of Integer)(4) From {vi}
                 End If

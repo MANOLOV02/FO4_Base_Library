@@ -396,7 +396,10 @@ Namespace Havok.Canon
         End Function
 
         ''' <summary>La alineacion que la tabla del MOTOR le da a un tipo, para que un gate pueda
-        ''' preguntarle por uno NOMBRADO. Sin esto, vaciar la `TypeTable` no ponia nada en rojo.</summary>
+        ''' preguntarle por uno NOMBRADO. Sin esto, vaciar la `TypeTable` no ponia nada en rojo.
+        ''' <para>⛔ EXCEPCION NOMBRADA (ola 9, ronda 3): es API de gate (solo la llama HavokLayoutGate) y por la regla de la ola iria en
+        ''' #If DEBUG; queda publica en Release porque FO4_Base_Library\Havok no se toca en esta ola (decision D1: el capitulo de
+        ''' fisica esta en pausa). Se muda a Debug con el capitulo.</para></summary>
         Public Function AlineacionDeTipoParaGate(tipo As String) As Integer
             Return AlineacionDelTipo(tipo, "")
         End Function

@@ -307,6 +307,25 @@
             Return Nothing
         End Function
 
+        ''' <summary>La <c>Def</c> de la rama que el DECISOR elige para esa union con el estado ACTUAL del
+        ''' record, SIN materializar nada. <c>Nothing</c> si el nodo no es una union, si no tiene padre o si
+        ''' el decisor sale de rango.
+        ''' <para>⛔ ES DISTINTA DE MIRAR EL HIJO PUESTO. El arbol se materializa al parsear o al crear, no
+        ''' de forma perezosa: un elemento recien agregado tiene la rama que correspondia cuando su
+        ''' discriminador valia cero, y sigue teniendola despues de que alguien escriba el discriminador.
+        ''' Leer el hijo devuelve esa rama RANCIA; esta funcion devuelve la que corresponde AHORA.</para>
+        ''' <para>Existe para poder MEDIR sin tocar: un instrumento que llamara a
+        ''' <see cref="AsegurarRamaVigente"/> para averiguarlo estaria cambiando el arbol que mide.</para></summary>
+        Public Function RamaQueElDecisorElige(nodo As WbNode, ctx As WbContext) As WbDef
+            If nodo Is Nothing Then Return Nothing
+            Dim un = TryCast(nodo.Def, WbUnionDef)
+            If un Is Nothing OrElse un.Decider Is Nothing Then Return Nothing
+            If nodo.Parent Is Nothing Then Return Nothing
+            Dim idx = un.Decider(ctx, Nothing, 0, 0, nodo.Parent)
+            If idx < 0 OrElse idx >= un.Members.Length Then Return Nothing
+            Return un.Members(idx)
+        End Function
+
         ''' <summary>⛔ LA RAMA VIGENTE DE UNA UNIÓN, SIN NOMBRE DE RAMA DE POR MEDIO: le vuelve a
         ''' preguntar al decisor qué rama corresponde AHORA y la materializa si el árbol tiene otra.
         ''' Devuelve la hoja de la rama vigente, o <c>Nothing</c> si no se pudo asegurar.
@@ -344,25 +363,6 @@
         ''' <c>Asegurar</c> —que arreglaría las 161 uniones de una vez— es alcance de las DOS
         ''' aplicaciones y de todos los records, y quedó como ola aparte con su propio A/B por decisión
         ''' del usuario.</para></summary>
-        ''' <summary>La <c>Def</c> de la rama que el DECISOR elige para esa union con el estado ACTUAL del
-        ''' record, SIN materializar nada. <c>Nothing</c> si el nodo no es una union, si no tiene padre o si
-        ''' el decisor sale de rango.
-        ''' <para>⛔ ES DISTINTA DE MIRAR EL HIJO PUESTO. El arbol se materializa al parsear o al crear, no
-        ''' de forma perezosa: un elemento recien agregado tiene la rama que correspondia cuando su
-        ''' discriminador valia cero, y sigue teniendola despues de que alguien escriba el discriminador.
-        ''' Leer el hijo devuelve esa rama RANCIA; esta funcion devuelve la que corresponde AHORA.</para>
-        ''' <para>Existe para poder MEDIR sin tocar: un instrumento que llamara a
-        ''' <see cref="AsegurarRamaVigente"/> para averiguarlo estaria cambiando el arbol que mide.</para></summary>
-        Public Function RamaQueElDecisorElige(nodo As WbNode, ctx As WbContext) As WbDef
-            If nodo Is Nothing Then Return Nothing
-            Dim un = TryCast(nodo.Def, WbUnionDef)
-            If un Is Nothing OrElse un.Decider Is Nothing Then Return Nothing
-            If nodo.Parent Is Nothing Then Return Nothing
-            Dim idx = un.Decider(ctx, Nothing, 0, 0, nodo.Parent)
-            If idx < 0 OrElse idx >= un.Members.Length Then Return Nothing
-            Return un.Members(idx)
-        End Function
-
         Public Function AsegurarRamaVigente(nodo As WbNode, ctx As WbContext) As WbNode
             If nodo Is Nothing Then Return Nothing
             Dim un = TryCast(nodo.Def, WbUnionDef)

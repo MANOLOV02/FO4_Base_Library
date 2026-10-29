@@ -18,7 +18,7 @@ Public Class Config_App
 
     Public Property FO4ExePath As String = ""
 
-    ' Estado del memo. Va ANTES del doc para que el <summary> quede pegado a la PROPIEDAD: dos
+    ' Estado del memo. Va ANTES del doc para que el resumen quede pegado a la PROPIEDAD: dos
     ' bloques de doc seguidos hacen que el primero se lo lleve el campo y la propiedad quede sin
     ' documentar, que es justo la explicacion que evita que alguien "limpie" el memo.
     Private _dataPathMemoExePropio As String = Nothing

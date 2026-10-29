@@ -96,8 +96,8 @@ Public Module SaveNpcEspWriter
     '''   NO tienen equivalente.</item>
     ''' <item>Los bytes de MODS (generic model de una LVLN) llevan un FormID de MSWP que hay que
     '''   remapear al emitir.</item>
-    ''' </list></summary>
-    ''' <summary>One OTFT (outfit) record to write into the same plugin as the NPC override(s).
+    ''' </list>
+    ''' <para>One OTFT (outfit) record to write into the same plugin as the NPC override(s).
     ''' Authored in the Edit Outfit "Create" tab. Two flavours:
     '''   • NEW (IsOverride=False): a brand-new outfit owned by this plugin. <see cref="FormID"/> is
     '''     the caller's PROVISIONAL sentinel (high byte 0xFF); the writer assigns the real plugin
@@ -106,7 +106,7 @@ Public Module SaveNpcEspWriter
     '''     every reference to it (notably the NPC.DOFT that points at the provisional).
     '''   • OVERRIDE (IsOverride=True): edit of an existing OTFT keeping its EditorID. <see cref="FormID"/>
     '''     is that record's real global FormID; emitted as an override (master index remapped).
-    ''' Body = EDID + INAM (array of ARMO/LVLI FormIDs, remapped against the new MAST list).</summary>
+    ''' Body = EDID + INAM (array of ARMO/LVLI FormIDs, remapped against the new MAST list).</para></summary>
     Public Class OtftRecordEntry
         ''' <summary>El record a grabar. De acá sale todo el cuerpo.</summary>
         Public Record As Canon.CanonView
@@ -1034,6 +1034,7 @@ Public Module SaveNpcEspWriter
                                 entry.OriginalHeader.VCS1, entry.OriginalHeader.VCS2, selfIdxDestino, avisos)
     End Function
 
+#If DEBUG Then
     ''' <summary>Cuerpo de un NPC_ sobrescrito, sin la cabecera. Es EXACTAMENTE lo que emite el
     ''' guardado: publico para que los arneses midan ese camino y no una replica.</summary>
     ''' <param name="selfIdxDestino">Igual que en <see cref="SerializarRecord"/>: el indice de master
@@ -1061,6 +1062,7 @@ Public Module SaveNpcEspWriter
         VolcarAvisos(hallazgos, If(vista.Context Is Nothing, 0UI, vista.Context.FormID), avisos)
         Return cuerpo
     End Function
+#End If
 
     ''' <summary>Serialize a NEW NPC_ record (clone with self-index FormID). Mirrors
     ''' <see cref="SerializeNpcRecord"/> except header uses defaults (no source OriginalHeader): Flags=0
@@ -1284,7 +1286,7 @@ Public Module SaveNpcEspWriter
     ''' persona— y reemplazar esta DLL sin recompilar la app los dejaba divergentes sin un solo error.
     ''' Con el campo, el valor se LEE en tiempo de ejecución y la declaración de acá es la única que hay.
     ''' <c>Borradores.FormIdAltoDeBorrador</c>, que deriva de ésta, es <c>ReadOnly</c> por lo mismo: si
-    ''' cualquiera de las dos vuelve a ser <c>Const</c>, la cadena entera se re-hornea y el drift vuelve.
+    ''' cualquiera de las dos vuelve a ser <c>Const</c>, la cadena entera se re-hornea y el drift vuelve.</para>
     ''' <para>⛔ <b>ACÁ SE PISÓ UNA DECISIÓN ANTERIOR, y el criterio queda escrito para que no se
     ''' re-litigue de memoria.</b> La versión previa de esta nota declaraba el límite y lo dejaba ABIERTO a
     ''' propósito, con este motivo: «cerrarlo del todo pediría un <c>Shared ReadOnly</c>, que cuesta un

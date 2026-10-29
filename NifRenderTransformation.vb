@@ -87,7 +87,7 @@ Public Class Transform_Class
     ''' no tipeada tres veces.
     ''' <para>⚠️ UMBRAL — recibe <c>Double</c> Y COMPARA EN <c>Double</c>, A PROPÓSITO: ensanchar un
     ''' <c>Single</c> a <c>Double</c> es exacto, así que los llamadores <c>Single</c> conservan sus
-    ''' operandos intactos.
+    ''' operandos intactos.</para>
     ''' <para>⛔ NO pasar la firma a <c>Single</c>: estrechar redondea los OPERANDOS del llamador
     ''' <c>Double</c>, y 1 ULP de <c>Single</c> vale 1,2e-7 con |c|≈1 pero 7,6e-6 con |c|≈100, o sea
     ''' 7,6 VECES el umbral. Medido: 5 clasificaciones cambian sobre 1.537.956 matrices reales, una

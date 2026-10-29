@@ -115,6 +115,7 @@ Namespace Canon
             Return New HashSet(Of String)(comunes.Concat(New String() {"Data"}), StringComparer.Ordinal)
         End Function
 
+#If DEBUG Then
         ''' <summary>⛔ La tabla contra la DEF, en las DOS direcciones. Devuelve los problemas; vacío si
         ''' está sana. Muere por partida doble: un nombre que no existe deja el campo del lado del hijo
         ''' sin que nada falle, y un miembro sin clasificar miente para siempre el día que una
@@ -173,6 +174,7 @@ Namespace Canon
             Next
             Return problemas
         End Function
+#End If
 
         ''' <summary>La vista EFECTIVA de un ARMO: lo que el motor va a usar, no lo que dice el archivo.
         ''' <para><paramref name="resolver"/> es el resolvedor de vistas CRUDAS por FormID. La app le pasa

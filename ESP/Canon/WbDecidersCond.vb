@@ -33,11 +33,6 @@ Namespace Canon
             Return Nothing
         End Function
 
-        ''' <summary>Corrige el tipo de parámetro según las banderas de la condición: si el tipo
-        ''' es Reference, Actor o Package, el bit 0x02 de <c>Type</c> ("usar alias") lo convierte en
-        ''' Alias, y el bit 0x08 ("usar packdata") en Packdata.
-        ''' <para>Fallout 4 tiene UNA excepción que Skyrim no: con <c>Run On = 5</c> (alias de
-        ''' quest) y la función <c>GetIsCurrentPackage</c>, el tipo NO se fuerza a Alias.</para></summary>
         ''' <summary>⛔ LA SEDE UNICA DE «DE QUE TIPO ES ESTE PARAMETRO DE CONDICION».
         ''' Ajusta el ordinal que la tabla declara segun los DISCRIMINADORES del propio `CTDA`.
         '''
@@ -90,6 +85,11 @@ Namespace Canon
             Return pt
         End Function
 
+        ''' <summary>Corrige el tipo de parámetro según las banderas de la condición: si el tipo
+        ''' es Reference, Actor o Package, el bit 0x02 de <c>Type</c> ("usar alias") lo convierte en
+        ''' Alias, y el bit 0x08 ("usar packdata") en Packdata.
+        ''' <para>Fallout 4 tiene UNA excepción que Skyrim no: con <c>Run On = 5</c> (alias de
+        ''' quest) y la función <c>GetIsCurrentPackage</c>, el tipo NO se fuerza a Alias.</para></summary>
         Private Function ConditionParamN(which As Integer) As WbDecider
             Return Function(ctx, data, offset, avail, parent)
                        Dim fi = Sibling(parent, "Function")
