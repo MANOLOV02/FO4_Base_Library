@@ -23,7 +23,7 @@ void main()
 
     Friend Const Prelude As String = "// ---------------------------------------------------------------------------------------------------------------------
 // CONVENTION (SSE SAO transcription) -- all six passes run under UPPER_LEFT (Gl43.ClipControl, OpenGL 4.3)
-//  * The app sets Gl43.ClipControl(UPPER_LEFT) before CameraZ and restores LOWER_LEFT after BlurV. The VS writes
+//  * The app sets Gl43.ClipControl(UPPER_LEFT) before CameraZ and restores the caller's origin after BlurV. The VS writes
 //    gl43ClipToGl (Gl43.ClipGlsl), which negates, as ARB_clip_control's UPPER_LEFT does, only
 //    the NDC y: y_d = f * y_c / w_c with f = -1; window coordinates keep their definition (glViewport/glReadPixels origin
 //    'independent of the clip control origin state'). So a vertex at clip y = +1 lands in window row 0 = memory row 0,
@@ -39,18 +39,13 @@ void main()
 //  * v1 = the D3D TEXCOORD0 (uv_d3d, (0,0) at the top-left of the render target), interpolated from VS_SAO_FULLSCREEN.
 //    All pixel-derived quantities are computed from v1 exactly as the asm does (hash phi(x,y), parities, ProjInfos
 //    reconstruction, 5x5 Contrast grid, |uv*2-1|^2): at pixel centres ftoi(v1 * (W,H)) == floor(gl_FragCoord.xy).
-//  * The ONLY flips are on the two inputs produced by the app's normal scene render (LOWER_LEFT, memory row 0 = bottom):
-//        CameraZ    asm 33  t0 = scene depth   -> texture(t0, sse_sceneInputTc(uv))
-//        RawAO16012 asm 52  t1 = normals       -> textureGrad(t1, sse_sceneInputTc(uv), 0, 0)
-//    sse_sceneInputTc(s, t) = (s, 1 - t). The scene targets have the same size as the SAO targets (W x H, no
-//    downscale) and with cb12[43] = (1,1,1,1) both reads happen at texel centres: t = (y + 0.5)/H maps to
-//    1 - t = (H - 1 - y + 0.5)/H, the centre of the mirrored row. CameraZ is point-sampled (FILT 0): the texel choice is
-//    exact (the float rounding of 1 - t is ~1e-7 of a texel, far from a border). The normals are bilinear (FILT 1) at a
-//    texel centre: the fractional weight is 0 up to that ~1e-7*H residue, below the hardware's subtexel resolution
-//    (D3D11 requires >= 8 bits), so the read returns the texel itself. Not exact any more if dynamic resolution
-//    (cb12[43].xy < 1) moves the reads off texel centres.
-//  * Consumer of kSAO: the composite runs under LOWER_LEFT and must read kSAO with (u, 1 - v) (it is stored in D3D row
-//    order); RE SAO 1.7: point sampling at texel centres, so that flip is exact too. Not part of these six shaders.
+//  * No flip anywhere: the two inputs produced by the app's scene render
+//        CameraZ    asm 33  t0 = scene depth   -> texture(t0, uv)
+//        RawAO16012 asm 52  t1 = normals       -> textureGrad(t1, uv, 0, 0)
+//    are drawn inside the frame's D3D-order stage (PreviewControl.BeginD3dRowsStage, UPPER_LEFT; Ola SSE S0-C): memory
+//    row 0 = the D3D top row, as in every SAO target, so they are read with the D3D uv exactly as the asm reads them.
+//  * Consumer of kSAO: the composite (FO4_Base_Library SseCompositeSource) runs in the same stage on this VS and reads kSAO
+//    at v1, no flip; RE SAO 1.7: point sampling at texel centres. Not part of these six shaders.
 //  * Screen-space derivatives: deriv_rtx_coarse -> dFdx, deriv_rty_coarse -> dFdy (GLSL 4.30 has no coarse form: fine or
 //    coarse is the driver's, 8.13.1) with NO sign change: dFdy is the derivative along the window y coordinate; under
 //    UPPER_LEFT the window y grows downwards over the image like D3D's screen y (see above).
@@ -65,10 +60,6 @@ void main()
 // ---------------------------------------------------------------------------------------------------------------------
 
 layout(location = 0) in vec2 v1;    // TEXCOORD0 v1.xy (D3D uv) from VS_SAO_FULLSCREEN (asm: dcl_input_ps linear v1.xy)
-
-// D3D uv -> GL texture coordinate of an input rendered by the app's scene pass under LOWER_LEFT (see CONVENTION).
-// Used only at CameraZ asm 33 (scene depth) and RawAO asm 52 (normals).
-vec2 sse_sceneInputTc(vec2 uv) { return vec2(uv.x, 1.0 - uv.y); }
 "
 
     Friend Const MinifyCommon As String = "// Shared body of PS 16006 (lines 29..73) and PS 16008 (lines 54..98): identical instruction streams, offset 25.
@@ -266,7 +257,7 @@ void main()
     vec2 r1xy;
     r1xy.x = d3d_min(r0xy.x, uCB12_44.z);                       // asm 31  min r1.x, r0.x, cb12[44].z
     r1xy.y = d3d_min(r0xy.y, uCB12_43.y);                       // asm 32  min r1.y, r0.y, cb12[43].y
-    float r0x = texture(t0, sse_sceneInputTc(r1xy)).x;          // asm 33  sample r0.x, r1.xyxx, t0.xyzw, s0 (scene depth: LOWER_LEFT input, flipped)
+    float r0x = texture(t0, r1xy).x;                            // asm 33  sample r0.x, r1.xyxx, t0.xyzw, s0 (scene depth)
     float sseSceneDepth = r0x;
     r0x = g_ClipInfos.y * r0x + g_ClipInfos.z;                  // asm 34  mad r0.x, cb2[0].y, r0.x, cb2[0].z
     r0x = g_ClipInfos.x / r0x;                                  // asm 35  div r0.x, cb2[0].x, r0.x
@@ -361,7 +352,7 @@ void main()
     int h  = hA ^ hB;                                                       // asm 49  xor
     r0y = float(h);                                                         // asm 50  itof
     r0y = r0y * 10.0;                                                       // asm 51  mul l(10)   (phi)
-    vec2 r2xy = textureGrad(t1, sse_sceneInputTc(r2yzw.yz), vec2(0.0), vec2(0.0)).xy; // asm 52  sample_d r2.xy, r2.zwzz, t1.xyzw, s1, l(0), l(0) (normals: LOWER_LEFT input, flipped)
+    vec2 r2xy = textureGrad(t1, r2yzw.yz, vec2(0.0), vec2(0.0)).xy;        // asm 52  sample_d r2.xy, r2.zwzz, t1.xyzw, s1, l(0), l(0) (normals)
     r2xy = r2xy * 4.0 + (-2.0);                                             // asm 53  mad l(4), l(-2)    (e)
     float r1w = dot(r2xy, r2xy);                                            // asm 54  dp2                (f)
     vec2 r3zw = -vec2(r1w) * vec2(0.25, 0.5) + vec2(1.0);                   // asm 55  mad r3.zw, -r1.wwww, l(0.25, 0.5), l(1, 1)

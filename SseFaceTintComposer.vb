@@ -71,7 +71,7 @@ Public Module SseFaceTintComposer
     ' dentro de Insert() al re-hashear. Con ConcurrentDictionary el patrón de uso (TryGetValue + indexer set) es
     ' idéntico, así que no cambia ni la lógica ni el resultado — sólo deja de ser una bomba de tiempo.
     ' Per-race+gender ORDERED tint-layer list cache (identical across NPCs of the same race). The engine
-    ' composes cb2[0..15] in this RACE order (builder @0x18C9F40). Keyed "<raceFid><F|M>".
+    ' composes cb2[0..15] in this RACE order (builder @0x1915DD0). Keyed "<raceFid><F|M>".
     Private ReadOnly _layersCache As New ConcurrentDictionary(Of String, List(Of SseTintMask))
     ' La cache de decode+resample NO vive aca: es el NIVEL 2 de FaceTintCpuCompositor (CachedUnitDecode), cuya
     ' clave lleva el tamaño destino y que consulta el techo `BatchDecodeCacheBudgetBytes` mientras hay lote
@@ -126,7 +126,7 @@ Public Module SseFaceTintComposer
         Dim npix = w * h
 
         ' ENGINE-EXACT — decoded 100% from (a) the facegen-tint pixel shader (ps_5_0, DXBC @0x40033A8) and
-        ' (b) the cb2-source builder @0x18C9F40. Shader: base = 0.5; per layer acc = lerp(acc, colour,
+        ' (b) the cb2-source builder @0x1915DD0. Shader: base = 0.5; per layer acc = lerp(acc, colour,
         ' mask.r × interp); out.w = 1; UNIFORM, no per-type branch. Builder: iterate the RACE's tint layers
         ' IN RACE ORDER — for each, colour+interp come from the NPC's authored tint for that layer INDEX if
         ' present, else the RACE default (TIND→CLFM colour). interp = value_byte × 0.01 (both confirmed in the
@@ -586,7 +586,7 @@ Public Module SseFaceTintComposer
             Dim flush = Sub()
                             If female = inFemale AndAlso ci >= 0 AndAlso cp <> "" Then
                                 ' default preset = the one whose CLFM == TIND; its TINV = default coverage (engine-
-                                ' verified: 0xFCB3F2/0xFE52CA find the TIND-matching preset; ColorAverage@0 = off).
+                                ' verified: CK SSE 0x10190AF/0x102039B find the TIND-matching preset; ColorAverage@0 = off).
                                 Dim dval As Double = 0
                                 For Each pr In presets
                                     If pr.Clfm = cd Then dval = pr.Val : Exit For

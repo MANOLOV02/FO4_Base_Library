@@ -15,14 +15,14 @@ Public Class MorphChannel
     ''' — no clampea</b>. Fijado al CONSTRUIR el canal, por ORIGEN: no es por juego ni global.
     ''' <para>VERIFICADO POR DESENSAMBLADO en los tres binarios:</para>
     ''' <list type="bullet">
-    ''' <item>SSE — el check vive DENTRO del applier único <c>SkyrimSE.exe 0x140430190</c>
-    ''' (<c>0x1404301DF comiss/jb</c> vs -1.0 @RVA 0x1769578, <c>0x1404301EC comiss/ja</c> vs +1.0
-    ''' @RVA 0x1ad2870; ambos saltan a la salida 0x1404305CF). El applier se alcanza por UN solo thunk
-    ''' (0x14042FCA7) ⇒ en Skyrim NO existe camino sin validar: NAM9, NAMA, race base, VampireMorph y
+    ''' <item>SSE — el check vive DENTRO del applier único <c>SkyrimSE.exe 0x140437520</c>
+    ''' (<c>0x14043756F comiss/jb</c> vs -1.0 @RVA 0x17E2820, <c>0x14043757C comiss/ja</c> vs +1.0
+    ''' @RVA 0x1b5be28; ambos saltan a la salida 0x14043795F). El applier se alcanza por UN solo thunk
+    ''' (0x140437037) ⇒ en Skyrim NO existe camino sin validar: NAM9, NAMA, race base, VampireMorph y
     ''' SkinnyMorph pasan todos por ahí.</item>
-    ''' <item>FO4 / CK — el check está en el loop per-canal (<c>Fallout4.exe 0x1406E54E6</c> /
-    ''' <c>CreationKit.exe 0x140EC8670</c>): <c>0x1406E551F comiss/jb</c> (-1.0 @0x14291FF90) y
-    ''' <c>0x1406E5524 comiss/ja</c> (+1.0 @0x14291FC98) antes de llamar al applier 0x1406E5590.</item>
+    ''' <item>FO4 / CK — el check está en el loop per-canal (<c>Fallout4.exe 0x1406E57F6</c> /
+    ''' <c>CreationKit.exe 0x140ECE050</c>): Fallout4.exe <c>0x1406E582F comiss/jb</c> (-1.0 @0x142929750) y
+    ''' <c>0x1406E5834 comiss/ja</c> (+1.0 @0x142929458) antes de llamar al applier 0x1406E58A0.</item>
     ''' </list>
     ''' <para><b>Inclusive en ±1</b>: <c>jb</c>/<c>ja</c> saltan sólo ESTRICTAMENTE fuera. NaN aborta también
     ''' (comiss deja CF=1 en unordered ⇒ el <c>jb</c> se toma).</para>

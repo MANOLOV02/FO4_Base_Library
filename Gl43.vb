@@ -510,6 +510,11 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
     <DllImport("opengl32.dll", ExactSpelling:=True)>
     Private Shared Function wglGetCurrentContext() As IntPtr
     End Function
+    ''' <summary>The current GL context's handle (the key of every per-context state: this module's clip state, ProgramCompiler's
+    ''' stage objects and driver identity).</summary>
+    Friend Shared Function CurrentContext() As IntPtr
+        Return wglGetCurrentContext()
+    End Function
 #If DEBUG Then
     ''' <summary>Ola 7g round 2d tester (WmMismaEscenaGate --ola7g, R2-7): the current GL context, for the Debug ledger of programs by context.</summary>
     Friend Shared Function GateCurrentContext() As IntPtr
@@ -546,6 +551,9 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         GL.BindBufferBase(BufferRangeTarget.UniformBuffer, ClipBinding, st.Ubo)
         GL.BindBuffer(BufferTarget.UniformBuffer, prev)
         _clip(ctx) = st
+        ' The context's program compiler state (its driver identity, binary formats and stage objects) before the first program: the
+        ' polygon-offset probe below is built through it.
+        ProgramCompiler.InitContext(ctx)
         GL.FrontFace(FrontFaceDirection.Ccw)
         ' The context's polygon offset (DepthBias's law), measured at the start on the frame's two depth formats and the default
         ' framebuffer; any other format on its first bias. A measurement that fails does not stop anything (rev-E05, v5): it is kept with
@@ -579,6 +587,9 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         If Not contextAlive AndAlso Fo4GBufferConstants.GateMutantOn("g7-r2e-gl43-keeps") Then Return
 #End If
         If Not _clip.TryRemove(ctx, st) Then Return
+        ' ProgramCompiler's state of the context goes with it: its stage objects deleted on it when it is alive and current, only
+        ' forgotten otherwise (the same rule as the clip state's objects below).
+        ProgramCompiler.ReleaseContext(ctx, contextAlive AndAlso wglGetCurrentContext() = ctx)
         If Not contextAlive Then Return
         If wglGetCurrentContext() <> ctx Then
             Logger.LogLazy(Function() "[GL43] ReleaseContext: the released context is not the current one - its clip buffer and offset probe are left to its destruction")
@@ -1276,21 +1287,28 @@ void main()
 
 #End If
 
-    ''' <summary>glShaderSource with the GL 4.3 check in Debug: a source with GlslViolations is not compiled (InvalidOperationException).
+    ''' <summary>The Debug check of a shader text every program is built from (ProgramCompiler: compiled, or loaded from the program
+    ''' binary cache): a text with GlslViolations is refused (InvalidOperationException) and every text is recorded (GateCompiledTexts,
+    ''' rev-B11 / B13: ShadowGate checks at the end of each run that every text it built and no harness declared (GateHarnessText) is
+    ''' one the gate evaluates).
     ''' <para>DEBUG ONLY (user decision 13-oct-2026, ola 2b): in Release the shader texts are closed - the library's own constants and
-    ''' the generated FO4 G-buffer stages, nothing the user writes - and the ParityGate gate gl43-glsl runs GlslViolations over every
-    ''' one of them before a delivery (Tools\ParityGate\Gl43GlslTexts.vb), so checking them again at every start adds nothing.
-    ''' GlslViolations stays for the gates. In Debug every text is also recorded (GateCompiledTexts, rev-B11 / B13): ShadowGate checks
-    ''' at the end of each run that every text it compiled and no harness declared (GateHarnessText) is one the gate evaluates. The
+    ''' the generated FO4 stages, nothing the user writes - and the ParityGate gate gl43-glsl runs GlslViolations over every one of
+    ''' them before a delivery (Tools\ParityGate\Gl43GlslTexts.vb), so checking them again at every start adds nothing. The
     ''' clip-state check of UseProgram (law gl43-unbound-clip) stays in every build: it guards runtime state, not a text (measured in
     ''' Release: 1.7 us per bind over 24863 binds of --fo4-deferred-scene, 58.7 us over the 2028 of --fo4-gbuffer-scenes, where the
     ''' binding query waits on the GPU).</para></summary>
-    Friend Shared Sub ShaderSource(shader As Integer, source As String)
+    <Diagnostics.Conditional("DEBUG")>
+    Friend Shared Sub CheckShaderText(source As String)
 #If DEBUG Then
         Dim v = GlslViolations(source)
         If v.Count > 0 Then Throw New InvalidOperationException("GLSL above 4.30 or off the GL43 clip contract: " & String.Join("; ", v))
         GateCompiledTexts.TryAdd(GateSha256(source), source.Length)
 #End If
+    End Sub
+
+    ''' <summary>glShaderSource. Its one caller is ProgramCompiler, which checks every text a program is built from (CheckShaderText)
+    ''' before the cache or the compile see it (ParityGate program-compiler-single: no other caller).</summary>
+    Friend Shared Sub ShaderSource(shader As Integer, source As String)
         GL.ShaderSource(shader, source)
     End Sub
 
@@ -1306,8 +1324,8 @@ void main()
     End Function
 
 #If DEBUG Then
-    ''' <summary>DEBUG ONLY (rev-B11 / B13): the SHA-256 (UTF-8, uppercase hex) of every text glShaderSource received in this process,
-    ''' with its length.</summary>
+    ''' <summary>DEBUG ONLY (rev-B11 / B13): the SHA-256 (UTF-8, uppercase hex) of every text a program was built from in this process
+    ''' (CheckShaderText: compiled, or loaded from the program binary cache), with its length.</summary>
     Friend Shared ReadOnly GateCompiledTexts As New ConcurrentDictionary(Of String, Integer)(StringComparer.Ordinal)
 
     ''' <summary>DEBUG ONLY (rev-B13): the SHA-256 of every text a harness declared (GateHarnessText), with its site.</summary>

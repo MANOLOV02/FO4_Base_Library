@@ -182,34 +182,20 @@ void main()
     FragColor = texture(uTexture, TexCoord);
 }"
 
+    ''' <summary>The labels' program (ProgramCompiler). A build that fails leaves it 0 and RenderAt draws nothing: the labels are the
+    ''' channel a failure would be told in, so the failure goes to the log.</summary>
     Private Sub CompileShaders()
-        Dim vertexShaderSrc As String = VertexOverlaySrc
-        Dim fragmentShaderSrc As String = FragmentOverlaySrc
-
-        Dim vertexShader = GL.CreateShader(ShaderType.VertexShader)
-        Dim fragmentShader = GL.CreateShader(ShaderType.FragmentShader)
-
-        Gl43.ShaderSource(vertexShader, vertexShaderSrc)
-        Gl43.ShaderSource(fragmentShader, fragmentShaderSrc)
-
-        GL.CompileShader(vertexShader)
-        Dim vLog = GL.GetShaderInfoLog(vertexShader)
-
-        GL.CompileShader(fragmentShader)
-        Dim fLog = GL.GetShaderInfoLog(fragmentShader)
-
-        shaderProgram = GL.CreateProgram()
+        Try
+            shaderProgram = ProgramCompiler.Build(VertexOverlaySrc, FragmentOverlaySrc)
+        Catch ex As ProgramBuildException
+            Dim err = ex.Message
+            Logger.LogLazy(Function() $"[TEXT-OVERLAY] the labels' program did not build: {err}")
+            shaderProgram = 0
+            Return
+        End Try
 #If DEBUG Then
         PreviewControl.GateProg("Render.vb background", True)
 #End If
-        GL.AttachShader(shaderProgram, vertexShader)
-        GL.AttachShader(shaderProgram, fragmentShader)
-        GL.LinkProgram(shaderProgram)
-
-        Dim linkLog = GL.GetProgramInfoLog(shaderProgram)
-
-        GL.DeleteShader(vertexShader)
-        GL.DeleteShader(fragmentShader)
     End Sub
 
     ''' <summary>The size of a label as GenerateTextBitmap lays it out: the same font, the same rendering hint, the same layout width
@@ -318,40 +304,148 @@ End Class
 Public Class PreviewControl
     Inherits OpenTK.GLControl.GLControl
     Private overlay As TextOverlayRenderer
-    ''' <summary>Fallout 4's edit views (Shader_Class_Fo4EditView, ola 7f): the wireframe and the shader debug views - the game's shapes
-    ''' are drawn by its transcribed programs (SharedFo4Deferred).</summary>
-    Public SharedFo4EditViewShader As Shader_Class_Fo4EditView
-    Public SharedSSEShader As Shader_Class_SSE
-    Public SharedFloorShader As Floor_Shader_Class
+    ''' <summary>THE CONTROL'S PROGRAMS, EACH BUILT ON ITS FIRST USE (S0-A, user decision P2 of 29-oct-2026: on demand in both games and
+    ''' both builds). A slot per program (LazyProgram), made in OnLoad without building anything (CreateProgramSlots); the property builds
+    ''' it the first time the frame asks for it, in this control's context. A build that fails aborts the frame (RenderScene, AbortFrame):
+    ''' nothing of it is presented, its game gets its status card with the error (rev-38 / rev-50), and the failure is remembered. Nothing
+    ''' before OnLoad and after Clean. A gate may put its own program in a slot (the setter); the slot's own is still released by it.</summary>
+    Private _fo4EditView As LazyProgram(Of Shader_Class_Fo4EditView)
+    Private _sseShader As LazyProgram(Of Shader_Class_SSE)
+    Private _floor As LazyProgram(Of Floor_Shader_Class)
+    Private _background As LazyProgram(Of Background_Shader_Class)
+    Private _postSse As LazyProgram(Of PostProcess_Sse_Shader_Class)
+    Private _lumPartials As LazyProgram(Of Luminance_Partials_Shader_Class)
+    Private _lumResolve As LazyProgram(Of Luminance_Resolve_Shader_Class)
+    Private _refractionNormalsSse As LazyProgram(Of Refraction_Normals_Sse_Shader_Class)
+    Private _refractionImageSpace As LazyProgram(Of Refraction_ImageSpace_Shader_Class)
+    Private _sseOpaqueComposite As LazyProgram(Of Sse_Opaque_Composite_Shader_Class)
+    Private _sseDecalBaseMark As LazyProgram(Of Shader_Base_Class)
+    Private _shadowSse As LazyProgram(Of Shadow_Depth_Shader_SSE)
+    Private _groundShadow As LazyProgram(Of Ground_Shadow_Shader_Class)
+    ''' <summary>Fallout 4's edit views (Shader_Class_Fo4EditView, ola 7f): the wireframe and the shader debug views - the game's shapes are drawn by its transcribed programs (SharedFo4Deferred).</summary>
+    Public Property SharedFo4EditViewShader As Shader_Class_Fo4EditView
+        Get
+            Return _fo4EditView?.GetProgram()
+        End Get
+        Set(value As Shader_Class_Fo4EditView)
+            _fo4EditView?.SetProgram(value)
+        End Set
+    End Property
+    Public Property SharedSSEShader As Shader_Class_SSE
+        Get
+            Return _sseShader?.GetProgram()
+        End Get
+        Set(value As Shader_Class_SSE)
+            _sseShader?.SetProgram(value)
+        End Set
+    End Property
+    Public Property SharedFloorShader As Floor_Shader_Class
+        Get
+            Return _floor?.GetProgram()
+        End Get
+        Set(value As Floor_Shader_Class)
+            _floor?.SetProgram(value)
+        End Set
+    End Property
     ''' <summary>Programa del quad de fondo (fade radial). Ver <see cref="PaintBackground"/>.</summary>
-    Public SharedBackgroundShader As Background_Shader_Class
-    ''' <summary>Skyrim SE's post pass (ImageSpace HDR 12545) and the two compute passes of the mean luminance (PostProcess.vb);
-    ''' Fallout 4's post is its image-space chain (Fo4ImageSpaceChain, ola 4) with the app passes of SharedFo4PostApp.</summary>
-    Friend SharedPostSseShader As PostProcess_Sse_Shader_Class
-    Friend SharedFo4PostApp As Fo4ImageSpaceAppPrograms
-    Friend SharedLumPartialsShader As Luminance_Partials_Shader_Class
-    Friend SharedLumResolveShader As Luminance_Resolve_Shader_Class
-    Friend SharedRefractionNormalsSse As Refraction_Normals_Sse_Shader_Class
-    Friend SharedRefractionImageSpace As Refraction_ImageSpace_Shader_Class
-    Friend SharedSseOpaqueComposite As Sse_Opaque_Composite_Shader_Class
-    ''' <summary>The six programs of the Skyrim SE SAO (SseSaoSource).</summary>
-    Friend SharedSseSao As SseSaoPrograms
+    Public Property SharedBackgroundShader As Background_Shader_Class
+        Get
+            Return _background?.GetProgram()
+        End Get
+        Set(value As Background_Shader_Class)
+            _background?.SetProgram(value)
+        End Set
+    End Property
+    ''' <summary>Skyrim SE's post pass (ImageSpace HDR record 15846) and the two compute passes of the mean luminance (PostProcess.vb); Fallout 4's post is its image-space chain (Fo4ImageSpaceChain, ola 4) with the app passes of SharedFo4PostApp.</summary>
+    Friend Property SharedPostSseShader As PostProcess_Sse_Shader_Class
+        Get
+            Return _postSse?.GetProgram()
+        End Get
+        Set(value As PostProcess_Sse_Shader_Class)
+            _postSse?.SetProgram(value)
+        End Set
+    End Property
+    Friend Property SharedLumPartialsShader As Luminance_Partials_Shader_Class
+        Get
+            Return _lumPartials?.GetProgram()
+        End Get
+        Set(value As Luminance_Partials_Shader_Class)
+            _lumPartials?.SetProgram(value)
+        End Set
+    End Property
+    Friend Property SharedLumResolveShader As Luminance_Resolve_Shader_Class
+        Get
+            Return _lumResolve?.GetProgram()
+        End Get
+        Set(value As Luminance_Resolve_Shader_Class)
+            _lumResolve?.SetProgram(value)
+        End Set
+    End Property
+    Friend Property SharedRefractionNormalsSse As Refraction_Normals_Sse_Shader_Class
+        Get
+            Return _refractionNormalsSse?.GetProgram()
+        End Get
+        Set(value As Refraction_Normals_Sse_Shader_Class)
+            _refractionNormalsSse?.SetProgram(value)
+        End Set
+    End Property
+    Friend Property SharedRefractionImageSpace As Refraction_ImageSpace_Shader_Class
+        Get
+            Return _refractionImageSpace?.GetProgram()
+        End Get
+        Set(value As Refraction_ImageSpace_Shader_Class)
+            _refractionImageSpace?.SetProgram(value)
+        End Set
+    End Property
+    Friend Property SharedSseOpaqueComposite As Sse_Opaque_Composite_Shader_Class
+        Get
+            Return _sseOpaqueComposite?.GetProgram()
+        End Get
+        Set(value As Sse_Opaque_Composite_Shader_Class)
+            _sseOpaqueComposite?.SetProgram(value)
+        End Set
+    End Property
     ''' <summary>Skyrim SE's mark / fill program of the translucent decals' base (DecalBaseTarget).</summary>
-    Friend SharedSseDecalBaseMark As Shader_Base_Class
-    ''' <summary>The Fallout 4 deferred frame's programs (Fo4DeferredPrograms: lights, composite, every G-buffer record).</summary>
+    Friend Property SharedSseDecalBaseMark As Shader_Base_Class
+        Get
+            Return _sseDecalBaseMark?.GetProgram()
+        End Get
+        Set(value As Shader_Base_Class)
+            _sseDecalBaseMark?.SetProgram(value)
+        End Set
+    End Property
+    ''' <summary>El programa del pase de profundidad del shadow map de Skyrim SE: Vertex_SSE (el MISMO que usa el pase iluminado, sin copia del skinning) + el fragment de alpha-test de <see cref="ShadowDepthShaderSource"/>. Fallout 4 dibuja sus mapas con la tecnica utilitaria del motor (RenderableMesh.RenderShadowMapFo4, ola 4).</summary>
+    Public Property SharedShadowSSEShader As Shadow_Depth_Shader_SSE
+        Get
+            Return _shadowSse?.GetProgram()
+        End Get
+        Set(value As Shadow_Depth_Shader_SSE)
+            _shadowSse?.SetProgram(value)
+        End Set
+    End Property
+    ''' <summary>Programa del receptor de sombra del suelo. Ver GroundShadowShaderSource.</summary>
+    Public Property SharedGroundShadowShader As Ground_Shadow_Shader_Class
+        Get
+            Return _groundShadow?.GetProgram()
+        End Get
+        Set(value As Ground_Shadow_Shader_Class)
+            _groundShadow?.SetProgram(value)
+        End Set
+    End Property
+    ''' <summary>Fallout 4's post app passes (Fo4ImageSpaceAppPrograms), each built on its first use.</summary>
+    Friend SharedFo4PostApp As Fo4ImageSpaceAppPrograms
+    ''' <summary>The six programs of the Skyrim SE SAO (SseSaoSource), each built on its first use.</summary>
+    Friend SharedSseSao As SseSaoPrograms
+    ''' <summary>The Fallout 4 deferred frame's programs (Fo4DeferredPrograms: lights, composite, every G-buffer record), each built on
+    ''' its first use.</summary>
     Friend SharedFo4Deferred As Fo4DeferredPrograms
-    ''' <summary>The compile or link error that left Skyrim SE / Fallout 4 without their programs (v4 B-rev-05), for the status card.</summary>
+    ''' <summary>The compile or link error that left Skyrim SE / Fallout 4 without their programs (v4 B-rev-05), for the status card
+    ''' (ProgramErrorCardText); forgotten only by a gesture (RetryPrograms / ForgetProgramFailures, S0 fase 7 rev-08).</summary>
     Friend SseProgramError As String, Fo4ProgramError As String
     ''' <summary>VAO VACIO del triangulo de pantalla completa del fondo. El perfil core exige un VAO
     ''' bindeado aunque el shader no lea ningun atributo (los vertices salen de <c>gl_VertexID</c>), asi
     ''' que existe solo para satisfacer esa regla: no tiene VBO ni buffers colgando.</summary>
     Private _bgVao As Integer = 0
-    ''' <summary>El programa del pase de profundidad del shadow map de Skyrim SE: Vertex_SSE (el MISMO que usa el pase iluminado,
-    ''' sin copia del skinning) + el fragment de alpha-test de <see cref="ShadowDepthShaderSource"/>. Fallout 4 dibuja sus mapas
-    ''' con la tecnica utilitaria del motor (RenderableMesh.RenderShadowMapFo4, ola 4).</summary>
-    Public SharedShadowSSEShader As Shadow_Depth_Shader_SSE
-    ''' <summary>Programa del receptor de sombra del suelo. Ver GroundShadowShaderSource.</summary>
-    Public SharedGroundShadowShader As Ground_Shadow_Shader_Class
     ''' <summary>El FBO + textura de profundidad. Se crea perezosamente en el primer frame con sombras
     ''' encendidas y se libera en Clean; con la opcion apagada nunca se asigna un byte de GPU.</summary>
     Friend ShadowTarget As ShadowMapTarget
@@ -407,15 +501,296 @@ Public Class PreviewControl
     End Class
 
     Public Event ColorPicked As EventHandler(Of ColorPickedEventArgs)
-    ''' <summary>The frame's own program, chosen by the active game: Skyrim SE's game shader (Shader_Class_SSE), or Fallout 4's edit
-    ''' views (Shader_Class_Fo4EditView: the wireframe and the debug views; the game's shapes draw with SharedFo4Deferred). The
-    ''' chosen program IS the source of truth of which game is drawn (PreviewModel.FrameIsSse).</summary>
+    ''' <summary>The frame's own program, chosen by the active game (FrameGameIsSse): Skyrim SE's game shader (Shader_Class_SSE), or
+    ''' Fallout 4's edit views (Shader_Class_Fo4EditView: the wireframe and the debug views; the game's shapes draw with
+    ''' SharedFo4Deferred), built on its first use (ProgramUnavailableException when it does not build: the frame aborts) - never the
+    ''' other game's program. Nothing before OnLoad and after Clean.</summary>
     Public ReadOnly Property CurrentShader As Shader_Base_Class
         Get
-            If Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso SharedSSEShader IsNot Nothing Then Return SharedSSEShader
+            If FrameGameIsSse Then Return SharedSSEShader
             Return SharedFo4EditViewShader
         End Get
     End Property
+
+    ''' <summary>The game the frame draws: Skyrim SE when the active game is (Config_App.Game), else Fallout 4. The source of truth of
+    ''' which game is drawn (PreviewModel.FrameIsSse, CurrentShader, the program error a failed build records: AbortFrame).</summary>
+    Friend ReadOnly Property FrameGameIsSse As Boolean
+        Get
+            Return Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+        End Get
+    End Property
+
+    ''' <summary>Makes the control's program slots and holders (OnLoad; ReleasePrograms): nothing is built - every program is built by
+    ''' its first use (see the slots' summary).</summary>
+    Private Sub CreateProgramSlots()
+        _fo4EditView = ProgramSlot("SharedFo4EditViewShader", Function() New Shader_Class_Fo4EditView)
+        _sseShader = ProgramSlot("SharedSSEShader", Function() New Shader_Class_SSE)
+        _floor = ProgramSlot("SharedFloorShader", Function() New Floor_Shader_Class)
+        _background = ProgramSlot("SharedBackgroundShader", Function() New Background_Shader_Class)
+        _postSse = ProgramSlot("SharedPostSseShader", Function() New PostProcess_Sse_Shader_Class)
+        _lumPartials = ProgramSlot("SharedLumPartialsShader", Function() New Luminance_Partials_Shader_Class)
+        _lumResolve = ProgramSlot("SharedLumResolveShader", Function() New Luminance_Resolve_Shader_Class)
+        _refractionNormalsSse = ProgramSlot("SharedRefractionNormalsSse", Function() New Refraction_Normals_Sse_Shader_Class)
+        _refractionImageSpace = ProgramSlot("SharedRefractionImageSpace", Function() New Refraction_ImageSpace_Shader_Class)
+        _sseOpaqueComposite = ProgramSlot("SharedSseOpaqueComposite", Function() New Sse_Opaque_Composite_Shader_Class)
+        _sseDecalBaseMark = ProgramSlot(Of Shader_Base_Class)("SharedSseDecalBaseMark", Function() New DecalBase_Mark_Shader_Class)
+        _shadowSse = ProgramSlot("SharedShadowSSEShader", Function() New Shadow_Depth_Shader_SSE)
+        _groundShadow = ProgramSlot("SharedGroundShadowShader", Function() New Ground_Shadow_Shader_Class)
+        SharedSseSao = New SseSaoPrograms()
+        SharedFo4PostApp = New Fo4ImageSpaceAppPrograms()
+        CreateFo4Deferred()
+    End Sub
+
+    ''' <summary>Fallout 4's deferred programs' holder (CreateProgramSlots; ForgetProgramFailures when it could not be made): its Debug
+    ''' data checks (rev-E08) failing leave Fallout 4 without its frame, said on its card.</summary>
+    Private Sub CreateFo4Deferred()
+        Try
+            SharedFo4Deferred = New Fo4DeferredPrograms()
+#If DEBUG Then
+            GateProgramBuilds += 1
+            GateSets.Add(SharedFo4Deferred)
+#End If
+        Catch ex As Exception
+            SharedFo4Deferred = Nothing
+            Fo4ProgramError = ex.Message
+        End Try
+    End Sub
+
+    ''' <summary>A slot of this control: its program built in this control's context.</summary>
+    Private Function ProgramSlot(Of T As Shader_Base_Class)(name As String, make As Func(Of T)) As LazyProgram(Of T)
+        Return New LazyProgram(Of T)(name, Function()
+                                              Me.EnsureContextCurrent()
+                                              Return make()
+                                          End Function)
+    End Function
+
+    ''' <summary>Every slot of the control's own programs and of its holders (SAO, Fallout 4's post app passes); Fallout 4's deferred
+    ''' programs are their holder's (Fo4DeferredPrograms).</summary>
+    Private Iterator Function ProgramSlots() As IEnumerable(Of IProgramSlot)
+        For Each s As IProgramSlot In {_fo4EditView, _sseShader, _floor, _background, _postSse, _lumPartials, _lumResolve, _refractionNormalsSse, _refractionImageSpace, _sseOpaqueComposite, _sseDecalBaseMark, _shadowSse, _groundShadow}
+            If s IsNot Nothing Then Yield s
+        Next
+        If SharedSseSao IsNot Nothing Then
+            For Each s In SharedSseSao.Slots : Yield s : Next
+        End If
+        If SharedFo4PostApp IsNot Nothing Then
+            For Each s In SharedFo4PostApp.Slots : Yield s : Next
+        End If
+    End Function
+
+    ''' <summary>Deletes every program the control built (the context current) and drops its slots: Clean's release.</summary>
+    Private Sub DisposePrograms()
+#If DEBUG Then
+        ' Ola 7g tester (WmMismaEscenaGate --ola7g, [r2-7 programs]): the release keeps the programs. Since S0-A a control that never drew
+        ' built none, so the orphan of g7-shown-replacement no longer leaves programs: this is the rule's mutant.
+        If Fo4GBufferConstants.GateMutantOn("g7-release-keeps-programs") Then Return
+#End If
+        For Each s In ProgramSlots().ToList()
+            s.Release()
+        Next
+        SharedFo4Deferred?.Dispose()
+        _fo4EditView = Nothing
+        _sseShader = Nothing
+        _floor = Nothing
+        _background = Nothing
+        _postSse = Nothing
+        _lumPartials = Nothing
+        _lumResolve = Nothing
+        _refractionNormalsSse = Nothing
+        _refractionImageSpace = Nothing
+        _sseOpaqueComposite = Nothing
+        _sseDecalBaseMark = Nothing
+        _shadowSse = Nothing
+        _groundShadow = Nothing
+        SharedSseSao = Nothing : SharedFo4PostApp = Nothing : SharedFo4Deferred = Nothing
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (ShadowGate --program-cache's warm phase, --program-census, --program-abort, --program-first-frame): deletes
+    ''' every program the control built and forgets them and the games' program errors: the next frames build what they use again.
+    ''' Debug only (S0 fase 7 rev-07: no Release caller; the app's way back from a failed build is RetryPrograms).</summary>
+    Friend Sub ReleasePrograms()
+        DisposePrograms()
+        SseProgramError = Nothing : Fo4ProgramError = Nothing
+        If _gl43Context <> IntPtr.Zero AndAlso Not _isTearingDown Then CreateProgramSlots()
+    End Sub
+#End If
+
+    ''' <summary>THE RETRY OF A GAME'S PROGRAMS (S0 fase 7 rev-08, user decision "retry with a gesture"): the game's program error
+    ''' (SseProgramError / Fo4ProgramError) and every remembered build failure of the program slots - the control's, its holders' and
+    ''' Fallout 4's deferred programs' (Fo4DeferredPrograms.ForgetFailures: its slots and its per-technique failures; the holder itself
+    ''' made again when its own checks had failed) - and the context's stages that did not compile (ProgramCompiler.ForgetFailedStages,
+    ''' S0 fase 7c rev-10) are forgotten, so the game's next frame builds and compiles what it uses again. Only on a gesture: the card's Retry button
+    ''' (RetryPrograms), a change of game (RenderScene), a reload (RunRenderPipeline with RenderDirtyFlags.Force) - never by itself
+    ''' nor in a loop: a build that fails again aborts that frame again and the card stays until the next gesture.</summary>
+    Private Sub ForgetProgramFailures(isSse As Boolean)
+        If isSse Then SseProgramError = Nothing Else Fo4ProgramError = Nothing
+#If DEBUG Then
+        ' GATE (ShadowGate --program-abort, subject mutant): the retry forgets the game's error but not the slots' failures.
+        If Fo4GBufferConstants.GateMutantOn("program-retry-keeps-slots") Then Return
+#End If
+        For Each s In ProgramSlots()
+            If s.Failed Then s.Release()
+        Next
+        ' S0 fase 7c rev-10: the stages whose compile failed, deleted on this control's context (ProgramCompiler.ForgetFailedStages):
+        ' without this the slot's rebuild meets its known failed stage and throws without compiling it again.
+        If _gl43Context <> IntPtr.Zero AndAlso Not _isTearingDown AndAlso Me.EnsureContextCurrent() Then ProgramCompiler.ForgetFailedStages()
+        If SharedFo4Deferred IsNot Nothing Then
+            SharedFo4Deferred.ForgetFailures()
+        ElseIf Not isSse AndAlso _gl43Context <> IntPtr.Zero AndAlso Not _isTearingDown Then
+            CreateFo4Deferred()
+        End If
+    End Sub
+
+    ''' <summary>The card's Retry button (S0 fase 7 rev-08): the frame's game's programs retried (ForgetProgramFailures) and one frame
+    ''' asked for.</summary>
+    Friend Sub RetryPrograms()
+        If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
+        ForgetProgramFailures(FrameGameIsSse)
+        ShowRetry(False)
+        UpdateRequired = True
+        Me.Invalidate()
+    End Sub
+
+    ''' <summary>The Retry button of the program error card (UI in English): made on its first use (EnsureRetryButton), centred below
+    ''' the card's text (the card reserves its height, StatusCardLayout), shown only while the frame shown is the game's program error
+    ''' card. S0 fase 7: it is a SIBLING of the control on the control's parent, above it in z-order - not a child of the control:
+    ''' OpenTK.GLControl 4 draws into a native GLFW window it parents inside the control, outside its Controls collection, so a child
+    ''' button has no guaranteed place over it; a sibling is, because every WinForms control is created WS_CLIPSIBLINGS (the control and
+    ''' its GL window are clipped under the button).</summary>
+    Private _retryButton As Button
+
+    Private Function EnsureRetryButton() As Button
+        If _retryButton Is Nothing Then
+            _retryButton = New Button With {.Text = "Retry", .AutoSize = True, .UseVisualStyleBackColor = True, .Visible = False}
+            AddHandler _retryButton.Click, Sub(sender, e) RetryPrograms()
+            AddHandler Me.LocationChanged, Sub(sender, e) PlaceRetry()
+            AddHandler Me.SizeChanged, Sub(sender, e) PlaceRetry()
+            AddHandler Me.ParentChanged, Sub(sender, e) PlaceRetry()
+            AddHandler Me.VisibleChanged, Sub(sender, e) If Not Me.Visible Then ShowRetry(False)
+        End If
+        Return _retryButton
+    End Function
+
+    ''' <summary>The button on the control's parent at the card's place (its text's centre column, _cardButtonTop below the text),
+    ''' brought over the control. Nothing while it is hidden or the control has no parent.</summary>
+    Private Sub PlaceRetry()
+        If _retryButton Is Nothing OrElse Not _retryButton.Visible Then Exit Sub
+        Dim host = Me.Parent
+        If host Is Nothing Then Exit Sub
+        If _retryButton.Parent IsNot host Then host.Controls.Add(_retryButton)
+        Dim top = Math.Max(0, Math.Min(_cardButtonTop, Me.Height - _retryButton.Height))
+        Dim inControl As New Point(Math.Max(0, (Me.Width - _retryButton.Width) \ 2), top)
+        _retryButton.Location = host.PointToClient(Me.PointToScreen(inControl))
+        _retryButton.BringToFront()
+    End Sub
+
+    Private Sub ShowRetry(visible As Boolean)
+        If visible Then EnsureRetryButton()
+        If _retryButton Is Nothing Then Exit Sub
+        If visible AndAlso Me.Parent Is Nothing Then visible = False
+        If _retryButton.Visible <> visible Then _retryButton.Visible = visible
+        PlaceRetry()
+    End Sub
+
+    ''' <summary>The button goes with the control (Clean).</summary>
+    Private Sub DisposeRetry()
+        If _retryButton Is Nothing Then Exit Sub
+        _retryButton.Parent?.Controls.Remove(_retryButton)
+        _retryButton.Dispose()
+        _retryButton = Nothing
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (ShadowGate --program-abort): whether the card's Retry button is shown.</summary>
+    Friend ReadOnly Property GateRetryShown As Boolean
+        Get
+            Return _retryButton IsNot Nothing AndAlso _retryButton.Visible
+        End Get
+    End Property
+    ''' <summary>GATE ONLY: the Retry button (Nothing before its first card), for the gate's hit test and its click.</summary>
+    Friend ReadOnly Property GateRetryButton As Button
+        Get
+            Return _retryButton
+        End Get
+    End Property
+    ''' <summary>GATE ONLY: where the last status card put its text, in the control's client pixels (StatusCardLayout).</summary>
+    Friend ReadOnly Property GateCardTextRect As Rectangle
+        Get
+            Return _cardTextRect
+        End Get
+    End Property
+    ''' <summary>GATE ONLY (ShadowGate --program-census): every program slot the control and its holders hold - the control's, the SAO's,
+    ''' Fallout 4's post app passes and its deferred start programs (Fo4DeferredPrograms.GateStartSlots) - to build each one.</summary>
+    Friend Function GateProgramSlots() As List(Of IProgramSlot)
+        Dim r = ProgramSlots().ToList()
+        If SharedFo4Deferred IsNot Nothing Then r.AddRange(SharedFo4Deferred.GateStartSlots())
+        Return r
+    End Function
+    ''' <summary>GATE ONLY (ShadowGate --program-abort): the frames a program's failure aborted (AbortFrame).</summary>
+    Friend Shared GateFramesAborted As Integer
+#End If
+
+    ''' <summary>THE CONTEXT'S STATE BETWEEN FRAMES: set by OnLoad, returned to by every pass, and put back by AbortFrame when a frame is
+    ''' cut at a program's first use - wherever it was (the frame's D3D-order stage's UPPER_LEFT clip origin and D3D rows, the shadow map's
+    ''' framebuffer, the SAO's targets, a pass's blend / mask / stencil): clip origin LOWER_LEFT and front face CCW (Gl43.ClipControl),
+    ''' depth [0, 1] tested LEQUAL and written, back faces culled, no blend, every colour channel written, no stencil, no polygon offset,
+    ''' no scissor, no rasterizer discard, the window's framebuffer and viewport, no program, no vertex array.</summary>
+    Private Sub ApplyContextBaseState()
+        Gl43.ClipControl(ClipOrigin.LowerLeft)
+        Gl43.FrontFace(FrontFaceDirection.Ccw)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+        GL.Viewport(0, 0, Me.Width, Me.Height)
+        GL.Enable(EnableCap.DepthTest)
+        GL.DepthFunc(DepthFunction.Lequal)
+        GL.DepthMask(True)
+        GL.Enable(EnableCap.CullFace)
+        GL.CullFace(TriangleFace.Back)
+        GL.Disable(EnableCap.Blend)
+        GL.ColorMask(True, True, True, True)
+        GL.Disable(EnableCap.StencilTest)
+        GL.Disable(EnableCap.PolygonOffsetFill)
+        GL.Disable(EnableCap.ScissorTest)
+        GL.Disable(EnableCap.RasterizerDiscard)
+        GL.UseProgram(0)
+        GL.BindVertexArray(0)
+    End Sub
+
+    ''' <summary>A program the frame asked for did not build (ProgramUnavailableException, LazyProgram): rev-38 / rev-50 - the frame is
+    ''' cut there and never presented; the error is recorded for the frame's game (ProgramErrorCardText: its later frames draw only the
+    ''' card until a gesture retries it, RetryPrograms), the context goes back to its state between frames (ApplyContextBaseState) and
+    ''' the frame becomes the game's status card (DrawProgramErrorCard).</summary>
+    Private Sub AbortFrame(ex As ProgramUnavailableException)
+        If FrameGameIsSse Then SseProgramError = If(SseProgramError, ex.Message) Else Fo4ProgramError = If(Fo4ProgramError, ex.Message)
+        Dim msg = ex.ToString()
+        Logger.LogLazy(Function() $"[PROGRAMS] frame aborted: {msg}")
+        _frameRowsD3D = False
+        _fo4GBufferThisFrame = False
+        If _Model IsNot Nothing Then _Model.FrameIsHdr = False
+#If DEBUG Then
+        GateFramesAborted += 1
+        ' GATE (ShadowGate --program-abort, subject mutants): the state not put back; the frame left as it was cut.
+        If Not Fo4GBufferConstants.GateMutantOn("program-abort-no-state-reset") Then ApplyContextBaseState()
+        If Fo4GBufferConstants.GateMutantOn("program-abort-no-card") Then Return
+#Else
+        ApplyContextBaseState()
+#End If
+        DrawProgramErrorCard()
+    End Sub
+
+    ''' <summary>THE GAME'S PROGRAM ERROR CARD, its one sede (S0 fase 7 rev-03): drawn inside the frame (RenderScene's frame of a game
+    ''' with a program error, or the frame AbortFrame cut) like any status card, and presented by the frame's own tail - the offscreen
+    ''' targets' Present, the close of the window's depth-unit retries (Gl43.DefaultFramebufferAttemptsClose) and PresentFrame's one
+    ''' swap -, with its Retry button (rev-08).</summary>
+    Private Sub DrawProgramErrorCard()
+        ' The card keeps the button's height (and a margin) free under its text.
+        DrawStatusCard(ProgramErrorCardText(FrameGameIsSse), EnsureRetryButton().PreferredSize.Height + NoticeMargin)
+        _programCardInFrame = True
+    End Sub
+
+    ''' <summary>The frame being drawn is the game's program error card (DrawProgramErrorCard): the Retry button shows after it.</summary>
+    Private _programCardInFrame As Boolean
+
     ''' <summary>Playback mode for fast pose ticks: suppresses camera/cursor-style UI churn
     ''' and skips non-essential bounds bookkeeping while animation frames are advancing.</summary>
     Private _playingAnimation As Boolean = False
@@ -498,9 +873,9 @@ Public Class PreviewControl
     Public defaultCubeMap As Integer
     ''' <summary>Emulación de <c>BSShader_DefFacegenDetail</c>: el default que el motor bindea al slot DETAIL
     ''' (texture-set slot 3 → material+0xA8 → PS <b>t4</b>) de una cabeza FaceGen cuyo slot 3 está VACÍO. RE
-    ''' byte-level de SkyrimSE.exe: la init de defaults 0x140E57E30 crea <c>BSShader_DefFacegenDetail</c> con
-    ''' fill <c>0x40404040</c> = 64/255 = 0.251 y la guarda en manager+0x88 (singleton 0x328CC20 ⇒ 0x328CCA8,
-    ''' que es justo el default que <c>BSLightingShaderMaterialFacegen</c> slot#10 (0x1414BA8B0) mete en +0xA8).
+    ''' byte-level de SkyrimSE.exe: la init de defaults 0x14101D750 crea <c>BSShader_DefFacegenDetail</c> con
+    ''' fill <c>0x40404040</c> = 64/255 = 0.251 y la guarda en manager+0x98 (singleton 0x33363A0 ⇒ 0x3336438,
+    ''' que es justo el default que <c>BSLightingShaderMaterialFacegen</c> slot#10 (0x141526CD0) mete en +0xA8).
     ''' El detail NO es el término del soft-light: es el multiplicador AMPLIFICADO
     ''' <c>(detail + (1/255,0,1/255)) × 255/64</c>. Por eso el neutro del engine es 64 (→ ×1.0 exacto en G) y
     ''' por eso 0.251 NO oscurece: da (1.015625, 1.0, 1.015625). Se emula acá para que render == lo que el NIF
@@ -510,21 +885,21 @@ Public Class PreviewControl
     ' la rama `SseFoldDetailNeutralized` del render, que era código muerto: con la ley actual el fold deja los
     ' slots 3/6 REALES y pre-compensa la cadena, así que el amplify del engine SIEMPRE debe aplicarse.
     ''' <summary>Emulación de <c>DefaultGreyMap</c>: el default que el motor bindea al slot TINT (texture-set
-    ''' slot 6 → material+0xA0 → PS <b>t3</b>) cuando no hay facetint. RE byte-level: init 0x140E57E30 crea
-    ''' <c>DefaultGreyMap</c> con fill <c>0x80808080</c> = 0.5 y la guarda en manager+0x70 (= 0x328CC90, el
-    ''' default que slot#10 0x1414BA8B0 mete en +0xA0). 0.5 es la IDENTIDAD del soft-light
+    ''' slot 6 → material+0xA0 → PS <b>t3</b>) cuando no hay facetint. RE byte-level: init SSE 0x14101D750 crea
+    ''' <c>DefaultGreyMap</c> con fill <c>0x80808080</c> = 0.5 y la guarda en manager+0x80 (= 0x3336420, el
+    ''' default que slot#10 SSE 0x141526CD0 mete en +0xA0). 0.5 es la IDENTIDAD del soft-light
     ''' (<c>a² + 2·a·0.5·(1−a) = a</c>) ⇒ sin facetint la cara queda con su diffuse crudo, que es exactamente lo
     ''' que hace el motor. Sirve para los DOS casos: slot 6 ausente (unfolded) y slot 6 neutralizado (folded).</summary>
     Public defaultFacegenTintTex As Integer
     ''' <summary>SSE: default del slot 7 (specular mask) cuando la malla es MODELSPACENORMALS y el slot esta
     ''' VACIO = <b>NEGRO</b> (specular 0). El motor nunca cae al alpha del normal en MSN; rellena material+0x68
     ''' con <c>BSShader_DefHeightMap</c> (fill 0xff000000) por la rama <c>skinned &amp;&amp; MSN</c> del
-    ''' default-fill 0x1414B7B00. Ver la cadena de evidencia en el bind de texSpecular. FO4 no lo usa (alli el
+    ''' default-fill 0x141523F00. Ver la cadena de evidencia en el bind de texSpecular. FO4 no lo usa (alli el
     ''' `_s` es universal y el gate es su presencia).</summary>
     Public defaultSseMsnSpecTex As Integer
     ''' <summary>SSE: default del slot 7 cuando hay BACK_LIGHTING y el slot esta VACIO = el default GENERICO del
-    ''' motor, <c>BSShader_DefNormalMap</c> (init 0x140E57E30, fill <c>0xffff8080</c> = RGBA 128,128,255,255).
-    ''' Es la PRIMERA rama del default-fill 0x1414B7B00 y por eso gana sobre la negra. Antes este caso caia en
+    ''' motor, <c>BSShader_DefNormalMap</c> (init 0x14101D750, fill <c>0xffff8080</c> = RGBA 128,128,255,255).
+    ''' Es la PRIMERA rama del default-fill 0x141523F00 y por eso gana sobre la negra. Antes este caso caia en
     ''' blanco (1,1,1) y sumaba translucidez blanca a full por luz. FO4 no lo usa.</summary>
     Public defaultSseEngineGenericTex As Integer
     ''' <summary>NEGRO 4x4 para el diffuse de las HELPER SHAPES sin textura (ver
@@ -536,8 +911,8 @@ Public Class PreviewControl
     ''' (ResourceLoader.h:30-31, no le da ni el placeholder NoImg.png).</para></summary>
     Public defaultHelperTex As Integer
     ''' <summary>Default del SUBSURFACE (_sk, texture-set slot 2) de una cabeza FaceGen cuando falta: NEGRO.
-    ''' RE byte-level: BSLightingShaderMaterialFacegen slot#10 (0x1414BA8B0) rellena subsurface(+0xB0) con
-    ''' DefHeightMap (fill 0xFF000000 = negro); mapeo miembro↔slot verificado en slot#8 (0x1414BA6E0):
+    ''' RE byte-level: BSLightingShaderMaterialFacegen slot#10 (SSE 0x141526CD0) rellena subsurface(+0xB0) con
+    ''' DefHeightMap (fill 0xFF000000 = negro); mapeo miembro↔slot verificado en slot#8 (SSE 0x141526B00):
     ''' +0xB0↔índice 2 (_sk), +0xA8↔3 (detail), +0xA0↔6 (tint). Negro ⇒ SSS = 0 (sin subsurface glow) —
     ''' distinto del fallback no-facegen del shader (softMask=albedo), que queda intacto.</summary>
     Public defaultFacegenSubsurfaceTex As Integer
@@ -826,6 +1201,40 @@ Public Class PreviewControl
     End Property
 
     Public Sub Processing_Status(Texto As String)
+        DrawStatusCard(Texto, 0)
+    End Sub
+
+    ''' <summary>The status card's label size before it is fitted (StatusCardLayout steps it down from here), and its font.</summary>
+    Friend Const StatusCardFontSize As Integer = 32
+
+    ''' <summary>THE STATUS CARD'S LAYOUT (S0 fase 7: the card's text was one unwrapped line at 32 pt, centred, cut at both sides of the
+    ''' window by any message longer than it): the frame notice's layout (TextOverlayRenderer.MeasureLabel / GenerateTextBitmap, GDI+ word
+    ''' wrap) at the window's width less NoticeMargin on each side; the font is the largest from StatusCardFontSize down to the notice's
+    ''' NoticeFontSize at which every word fits a line whole (GDI+ breaks a word longer than the line inside it: "Unpremultip / ly")
+    ''' and the wrapped text fits the window's height less the margins and <paramref name="reserveBelow"/> (the Retry button's room),
+    ''' else NoticeFontSize - the notice's size, the one already read at every window size.</summary>
+    Friend Shared Function StatusCardLayout(text As String, width As Integer, height As Integer, reserveBelow As Integer) As (FontSize As Integer, MaxWidth As Integer)
+        Dim maxW = Math.Max(1, width - 2 * NoticeMargin)
+        Dim maxH = Math.Max(1, height - 2 * NoticeMargin - reserveBelow)
+        Dim words = text.Split({" "c, ChrW(9), ChrW(10), ChrW(13)}, StringSplitOptions.RemoveEmptyEntries)
+        For points = StatusCardFontSize To NoticeFontSize + 1 Step -1
+            Dim pt = points
+            If words.All(Function(wd) TextOverlayRenderer.MeasureLabel(wd, pt, NoticeFontName).Width <= maxW) AndAlso
+               Math.Ceiling(TextOverlayRenderer.MeasureLabel(text, pt, NoticeFontName, maxW).Height) <= maxH Then Return (pt, maxW)
+        Next
+        Return (NoticeFontSize, maxW)
+    End Function
+
+    ''' <summary>The last StatusCardLayout (the card repeats every frame while it stands: measured once per text, size and reserve).</summary>
+    Private _cardLayoutKey As String
+    Private _cardLayout As (FontSize As Integer, MaxWidth As Integer)
+    ''' <summary>Where the last card put its text (control pixels, top-left origin) and where the Retry button goes under it.</summary>
+    Private _cardTextRect As Rectangle
+    Private _cardButtonTop As Integer
+
+    ''' <summary>A status card (Processing_Status; the program error card, DrawProgramErrorCard, with the Retry button's room under its
+    ''' text): the clear colour and the background, and the text laid out by StatusCardLayout, its block (text + reserve) centred.</summary>
+    Private Sub DrawStatusCard(Texto As String, reserveBelow As Integer)
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         Me.EnsureContextCurrent()
         ' The card is display-space UI: it goes to the DISPLAY target (also when called in the middle of a
@@ -839,14 +1248,46 @@ Public Class PreviewControl
         End If
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
-        PaintBackground()
+        ' The card is the channel a program failure is told in: when the background's own program is the one that did not build, the
+        ' card goes on the clear colour.
+        Try
+            PaintBackground()
+        Catch ex As ProgramUnavailableException
+            ApplyContextBaseState()
+            If offscreen Then _targets.BindDisplay()
+        End Try
         If Not IsNothing(overlay) Then
-            overlay.SetText(Texto)
-            overlay.RenderCentered(Me.Width, Me.Height)
+            Dim key = String.Join(ChrW(0), Texto, Me.Width.ToString(Globalization.CultureInfo.InvariantCulture),
+                                  Me.Height.ToString(Globalization.CultureInfo.InvariantCulture), reserveBelow.ToString(Globalization.CultureInfo.InvariantCulture))
+            If key <> _cardLayoutKey Then
+                _cardLayout = StatusCardLayout(If(Texto, ""), Me.Width, Me.Height, reserveBelow)
+                _cardLayoutKey = key
+            End If
+            Dim lay = _cardLayout
+#If DEBUG Then
+            ' GATE (ShadowGate --program-abort, subject mutant): the card's text unwrapped at its first size (the card before S0 fase 7).
+            If Fo4GBufferConstants.GateMutantOn("status-card-no-wrap") Then lay = (StatusCardFontSize, 0)
+#End If
+            overlay.SetText(Texto, lay.FontSize, NoticeFontName, lay.MaxWidth)
+            Dim x = (Me.Width - overlay.LabelWidth) \ 2
+            Dim y = Math.Max(0, (Me.Height - overlay.LabelHeight - reserveBelow) \ 2)
+            overlay.RenderAt(x, y, overlay.LabelWidth, overlay.LabelHeight, Me.Width, Me.Height)
+            _cardTextRect = New Rectangle(x, y, overlay.LabelWidth, overlay.LabelHeight)
+            _cardButtonTop = y + overlay.LabelHeight + NoticeMargin
         End If
-        If offscreen Then _targets.Present()
         _statusDrawnInFrame = True
-        SwapBuffers()
+        ' S0 fase 7 rev-03: a card drawn INSIDE a frame (RenderScene: the program error card, the standing render failure, "Texturing...")
+        ' is that frame's image: the frame's tail presents it (Present, the retries' close, PresentFrame's one swap). Only a card drawn
+        ' outside a frame ("Loading...", "Empty", "Render error") is a frame of its own and presents itself.
+        Dim ownPresent = Not _frameOpen
+#If DEBUG Then
+        ' GATE (ShadowGate --program-abort, subject mutant): every card presents itself, inside a frame too (a second swap of the frame).
+        If Fo4GBufferConstants.GateMutantOn("program-card-own-present") Then ownPresent = True
+#End If
+        If ownPresent Then
+            If offscreen Then _targets.Present()
+            SwapWindow()
+        End If
         ' Keep the status frame on screen until some later step explicitly requests
         ' another render; pumping the message loop here can re-enter selection/render.
         UpdateRequired = False
@@ -875,11 +1316,11 @@ Public Class PreviewControl
     End Sub
 #If DEBUG Then
     ''' <summary>Ola 7g round 2 tester (WmMismaEscenaGate --ola7g, R2-7 / R2-9 / r2b): the Debug counters. Live controls (constructed and not yet
-    ''' disposed), the Fallout 4 program sets built in OnLoad, how many times THIS control's Dispose(True) ran, and a switch that makes Clean throw.</summary>
+    ''' disposed), the Fallout 4 program holders made (CreateProgramSlots, in OnLoad; their programs are built by their first use), how many times THIS control's Dispose(True) ran, and a switch that makes Clean throw.</summary>
     Friend Shared GateLive As Integer
     Friend Shared GateProgramBuilds As Integer
     Friend Shared GateCleanThrows As Boolean
-    ''' <summary>Every Fallout 4 program set an OnLoad built (each one's census is read by the gate after the close).</summary>
+    ''' <summary>Every Fallout 4 program holder CreateProgramSlots made (each one's census - the programs it built - is read by the gate after the close).</summary>
     Friend Shared ReadOnly GateSets As New List(Of Object)
     Friend Shared GateProgramsCreated As Integer
     Friend Shared GateProgramsDeleted As Integer
@@ -1286,6 +1727,9 @@ Public Class PreviewControl
         End If
 
         Dim flags = intent.DirtyFlags
+        ' S0 fase 7 rev-08: a reload (RenderDirtyFlags.Force: the user's reload, a geometry setting) is a gesture: the frame's game's
+        ' programs are retried.
+        If (flags And RenderDirtyFlags.Force) <> 0 Then ForgetProgramFailures(FrameGameIsSse)
         Dim needsFullReload = (flags And (RenderDirtyFlags.Shapes Or RenderDirtyFlags.Force)) <> 0
         ' Sellar ANTES de recargar: lo que la recarga esta por usar es, desde ya, lo que va a estar en
         ' pantalla. Ver AjustesDeGeometria.
@@ -1742,56 +2186,9 @@ Public Class PreviewControl
         TraceBoot("OnLoad: ApplyResize", sw)
         GenerateDefaultTextures()
         TraceBoot("OnLoad: GenerateDefaultTextures", sw)
-        SharedFo4EditViewShader = New Shader_Class_Fo4EditView
-        SharedSSEShader = New Shader_Class_SSE
-        SharedFloorShader = New Floor_Shader_Class
-        SharedBackgroundShader = New Background_Shader_Class
-        SharedPostSseShader = New PostProcess_Sse_Shader_Class
-        SharedLumPartialsShader = New Luminance_Partials_Shader_Class
-        SharedLumResolveShader = New Luminance_Resolve_Shader_Class
-        TraceBoot("OnLoad: FO4 edit views / SSE / floor / background / SSE post programs", sw)
-        ' rev-50 / v4 B-rev-05: a program set that does not compile or link leaves ITS game without a frame (the status card names
-        ' the error, FrameUnavailable), never the control - and the other game - dead. The refraction image-space pass runs in both.
-        Try
-            SharedRefractionImageSpace = New Refraction_ImageSpace_Shader_Class
-        Catch ex As Exception
-            SharedRefractionImageSpace = Nothing
-            SseProgramError = ex.Message : Fo4ProgramError = ex.Message
-        End Try
-        Try
-            SharedRefractionNormalsSse = New Refraction_Normals_Sse_Shader_Class
-            SharedSseOpaqueComposite = New Sse_Opaque_Composite_Shader_Class
-            SharedSseSao = New SseSaoPrograms()
-            SharedSseDecalBaseMark = New DecalBase_Mark_Shader_Class
-        Catch ex As Exception
-            SharedRefractionNormalsSse?.Dispose() : SharedRefractionNormalsSse = Nothing
-            SharedSseOpaqueComposite?.Dispose() : SharedSseOpaqueComposite = Nothing
-            SharedSseSao?.Dispose() : SharedSseSao = Nothing
-            SharedSseDecalBaseMark?.Dispose() : SharedSseDecalBaseMark = Nothing
-            SseProgramError = If(SseProgramError, ex.Message)
-        End Try
-        TraceBoot("OnLoad: refraction and Skyrim SE programs", sw)
-        Try
-            SharedFo4Deferred = New Fo4DeferredPrograms()
-#If DEBUG Then
-            GateProgramBuilds += 1
-            GateSets.Add(SharedFo4Deferred)
-#End If
-            SharedFo4PostApp = New Fo4ImageSpaceAppPrograms()
-        Catch ex As Exception
-            SharedFo4Deferred?.Dispose() : SharedFo4Deferred = Nothing
-            SharedFo4PostApp = Nothing
-            Fo4ProgramError = If(Fo4ProgramError, ex.Message)
-        End Try
-        TraceBoot($"OnLoad: Fallout 4 programs (Fo4DeferredPrograms; error: {If(Fo4ProgramError, "none")})", sw)
+        ' No program of either game is built here (S0-A): every one is built by its first use (CreateProgramSlots).
+        CreateProgramSlots()
         _bgVao = GL.GenVertexArray()
-        ' El programa de profundidad de Skyrim SE se compila SIEMPRE, aunque las sombras esten apagadas: el
-        ' costo es un link al abrir el control, y tenerlo condicionado al setting significaria compilar GLSL
-        ' en medio de un frame la primera vez que alguien prende la opcion. Fallout 4 dibuja sus mapas con la
-        ' tecnica utilitaria del motor (Fo4DeferredPrograms.UtilityProgram), que no necesita uno de la app.
-        SharedShadowSSEShader = New Shadow_Depth_Shader_SSE
-        SharedGroundShadowShader = New Ground_Shadow_Shader_Class
-        TraceBoot("OnLoad: shadow depth programs", sw)
         ' Cube filtering ACROSS faces, like every D3D10+ cube sample of both engines (GL defaults to per-face).
         GL.Enable(EnableCap.TextureCubeMapSeamless)
 
@@ -1811,14 +2208,10 @@ Public Class PreviewControl
 #End If
 
         ' 3) Estado GL estándar. Profundidad [0, 1] de D3D en todo el contexto (EngineCameraLaw, ola 1) con OpenGL 4.3 (ola GL43: cada
-        ' etapa de vértices escribe gl43ClipToGl, Gl43.ClipGlsl); el origen GL, que la etapa FO4 cambia a UPPER_LEFT y EndFo4Stage
-        ' repone, vive en el estado de clip del contexto (Gl43.InitContext al principio de OnLoad: LOWER_LEFT, frente CCW).
-        GL.Enable(EnableCap.DepthTest)
-        GL.DepthFunc(DepthFunction.Lequal)
-
-        GL.Enable(EnableCap.CullFace)
-        GL.CullFace(TriangleFace.Back)
-        Gl43.FrontFace(FrontFaceDirection.Ccw)
+        ' etapa de vértices escribe gl43ClipToGl, Gl43.ClipGlsl); el origen GL, que la etapa D3D del cuadro de motor (FO4 y SSE,
+        ' BeginD3dRowsStage) cambia a UPPER_LEFT y EndD3dRowsStage repone, vive en el estado de clip del contexto (Gl43.InitContext al
+        ' principio de OnLoad: LOWER_LEFT, frente CCW).
+        ApplyContextBaseState()
 
         overlay = New TextOverlayRenderer()
         TraceBoot("OnLoad: done (debug output, GL state, text overlay)", sw)
@@ -1935,7 +2328,7 @@ Public Class PreviewControl
         shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(Config_App.Current.Setting_BackColor()))
         shader.SetFloat("backFade", BackgroundFadeUnit)
         shader.SetVector2("viewportSize", ViewportSizeGl)
-        shader.SetBool("backgroundRowsD3D", _fo4RowsD3D)
+        shader.SetBool("backgroundRowsD3D", _frameRowsD3D)
         AplicarUniformsDireccionales(shader)
     End Sub
 
@@ -2070,6 +2463,8 @@ Public Class PreviewControl
     Private ReadOnly _saoDepth As New SceneDepthCopy()
     Private ReadOnly _sao As New SseSaoTargets()
     Private ReadOnly _fo4 As New Fo4DeferredTargets()
+    ''' <summary>The row mirror of the frame's D3D-order stage (BeginD3dRowsStage / EndD3dRowsStage), both games.</summary>
+    Private ReadOnly _rows As New FrameRowMirror()
     ''' <summary>Fallout 4's post (ola 4): the image-space chain of the world (Fo4ImageSpaceChain).</summary>
     Private ReadOnly _fo4Post As New Fo4ImageSpaceChain()
     ''' <summary>Skyrim SE's translucent decals' base (BeginSseDecalBase / EndSseDecalBase).</summary>
@@ -2135,7 +2530,8 @@ Public Class PreviewControl
 #End If
 
     ''' <summary>The SSE SAO and its composite over the opaque scene (0x141541F40: the compute block, then ISSAOCompositeSAOFog), on the
-    ''' HDR target: RenderAll calls it after the opaque groups and the decals, before the alpha list (the world render's order).
+    ''' HDR target: RenderAll calls it after the opaque groups and the decals, before the alpha list (the world render's order),
+    ''' inside the frame's D3D-order stage: the depth copy, the SAO normals, kSAO and the scene are all in D3D rows (no flip).
     ''' Only the post's frame: a direct frame carries the 2.3.8 display law in its fragments, not the engine's scene.</summary>
     Friend Sub ApplySseOpaqueComposite()
         If _frameFbo = 0 OrElse _frameFbo <> _targets.HdrFramebuffer Then Return
@@ -2185,30 +2581,75 @@ Public Class PreviewControl
         _targets.SetGroundCatcherOutputs(False)
     End Sub
 
-    ''' <summary>Why this frame cannot be drawn (user decision rev-38 a, rev-50, v4 B-rev-05: no frame, RenderAll shows this on the
-    ''' status card; never a fallback), or Nothing when it can: the game's programs exist, and for Fallout 4's deferred frame the
-    ''' frame draws into the scene targets and Fo4DeferredTargets allocated.</summary>
-    Friend Function FrameUnavailable(isSse As Boolean, fo4Deferred As Boolean) As String
+    ''' <summary>The text of the game's program error card (user decision rev-38 a, rev-50, v4 B-rev-05: no frame, never a fallback;
+    ''' DrawProgramErrorCard), or Nothing when the game has no program error.</summary>
+    Friend Function ProgramErrorCardText(isSse As Boolean) As String
         Dim errorText = If(isSse, SseProgramError, Fo4ProgramError)
-        If errorText IsNot Nothing Then Return "Shaders unavailable: " & errorText
-        If Not isSse AndAlso fo4Deferred AndAlso
-           (_frameFbo = 0 OrElse _targets.HdrFramebuffer = 0 OrElse Not _fo4.Ensure(Me.Width, Me.Height)) Then Return "Deferred targets unavailable"
+        Return If(errorText Is Nothing, Nothing, "Shaders unavailable: " & errorText)
+    End Function
+
+    ''' <summary>Why Fallout 4's deferred frame cannot be drawn (no frame, RenderAll shows this on the status card; never a fallback),
+    ''' or Nothing when it can: the frame draws into the scene targets and Fo4DeferredTargets allocated. (A game's program error never
+    ''' reaches RenderAll: RenderScene draws its card instead of the frame, S0 fase 7 rev-03.)</summary>
+    Friend Function Fo4DeferredTargetsUnavailable() As String
+        If _frameFbo = 0 OrElse _targets.HdrFramebuffer = 0 OrElse Not _fo4.Ensure(Me.Width, Me.Height) Then Return "Deferred targets unavailable"
         Return Nothing
     End Function
 
-    ''' <summary>Opens Fallout 4's G-buffer stage (Fo4DeferredTargets.BeginGBuffer: D3D row order, every RT cleared) and the envmap
-    ''' array's period (the frame, Fo4EnvMapArray).</summary>
+    ''' <summary>Opens Fallout 4's G-buffer stage inside the frame's D3D-order stage (BeginD3dRowsStage first): Fo4DeferredTargets.BeginGBuffer
+    ''' (every RT cleared) and the envmap array's period (the frame, Fo4EnvMapArray).</summary>
     Friend Sub BeginFo4GBuffer()
         _fo4Period += 1
         Fo4EnvMap.BeginPeriod(_fo4Period)
         _fo4.BeginGBuffer()
-        ' The D3D-order stage opens: from here to EndFo4Stage the frame's rows are D3D (one owner, _fo4RowsD3D). Post off: the
-        ' display target holds the background RenderScene painted in GL rows (PaintBackground): into D3D rows; EndFo4Stage turns
-        ' it back. Post on: the scene targets were cleared uniformly (BeginHdr), so their turn at the stage's end is exact either way.
-        If _frameFbo <> _targets.HdrFramebuffer Then _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
-        _fo4RowsD3D = True
         _fo4GBufferThisFrame = True
     End Sub
+
+    ''' <summary>OPENS THE FRAME'S D3D-ORDER STAGE, the one owner of the frame's row order in both games (Fallout 4's G-buffer, lights,
+    ''' composites and forward stage - ola 1 and the zfight-overlay fix of 8-oct-2026 -; Skyrim SE's opaque stage, SAO and composite,
+    ''' and forward stage - the SSE wave's S0-C): the engines' programs write and read their targets in D3D row order (SV_Position.y and
+    ''' the uv's v grow downwards over the image, render-target row 0 = the top row), so from here to EndD3dRowsStage the frame's
+    ''' targets hold D3D rows: glClipControl(UPPER_LEFT) through Gl43.ClipControl (the clip y negated, ARB_clip_control 14.6.1; the
+    ''' depth stays [0, 1], EngineCameraLaw), and _frameRowsD3D (the background's rows, SubirUniformsDeFondo). Post off: the display
+    ''' target holds the background RenderScene painted in GL rows (PaintBackground): turned into D3D rows here (FrameRowMirror), and
+    ''' back at the end. Post on: the scene targets were cleared uniformly (BeginHdr), so their turn at the stage's end is exact either
+    ''' way. The frame draws into the offscreen targets (PreviewModel.FrameUsesD3dRows).</summary>
+    Friend Sub BeginD3dRowsStage()
+#If DEBUG Then
+        If GateStageGlRows Then Return
+#End If
+        _rows.Ensure(Me.Width, Me.Height)
+        Dim origen = ClipOrigin.UpperLeft
+#If DEBUG Then
+        If GateStageNoUpperLeft Then origen = ClipOrigin.LowerLeft
+#End If
+        Gl43.ClipControl(origen)
+        If _frameFbo <> _targets.HdrFramebuffer Then _rows.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
+        _frameRowsD3D = True
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene / --sse-frame-rows / --overlay-z-probe mutant. True leaves the
+    ''' frame's D3D-order stage in LOWER_LEFT (the rows are still turned at its end).</summary>
+    Friend Shared GateStageNoUpperLeft As Boolean = False
+#End If
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (no UI): ShadowGate --stage-gl-rows, an A/B INSTRUMENT, not a mutant: the stage is not opened (no UPPER_LEFT,
+    ''' no turn of the display target, _frameRowsD3D False, so EndD3dRowsStage turns nothing) - the frame drawn in GL rows, the
+    ''' convention before the SSE wave's S0-C. Valid for a frame without the SAO and its composite (a direct frame, or Skyrim SE's
+    ''' frame with the post off): those passes read the stage's targets in D3D rows since S0-C.</summary>
+    Friend Shared GateStageGlRows As Boolean = False
+#End If
+
+    ''' <summary>The frame draws into the offscreen targets (SceneTargets: the HDR target or the display target), the condition of the
+    ''' D3D-order stage: its rows are turned in those images at the stage's end (FrameRowMirror); the window's default framebuffer, the
+    ''' frame's target only when the offscreen targets could not be allocated, has no image to turn.</summary>
+    Friend ReadOnly Property FrameDrawsOffscreen As Boolean
+        Get
+            Return _frameFbo <> 0
+        End Get
+    End Property
 
     ''' <summary>This frame's G-buffer stage ran (BeginFo4GBuffer): the post's tonemap reads its RT 0x1E (Fo4ImageSpaceChain.Run);
     ''' reset when the frame ends.</summary>
@@ -2226,7 +2667,7 @@ Public Class PreviewControl
     ''' shader gets the frame's background (SubirUniformsDeFondo). False (no base, the decals draw as before) when the frame draws into
     ''' the window (no scene targets: _targets.Ensure failed), the mark program does not exist, or the target is incomplete.</summary>
     Friend Function BeginSseDecalBase() As Boolean
-        If SharedSseDecalBaseMark Is Nothing OrElse _frameFbo = 0 OrElse Not _sseDecalBase.Ensure(Me.Width, Me.Height) Then Return False
+        If _frameFbo = 0 OrElse Not _sseDecalBase.Ensure(Me.Width, Me.Height) OrElse SharedSseDecalBaseMark Is Nothing Then Return False
         Dim colours = If(_frameFbo = _targets.HdrFramebuffer,
                          {(_targets.SceneTexture, False), (_targets.CoverageTexture, False)},
                          {(_targets.DisplayRenderbuffer, True)})
@@ -2269,7 +2710,7 @@ Public Class PreviewControl
     ''' (the composite's first call, 0x1421F82C4), composite 1, the depth blit, composite 2 into the scene target; post off: the
     ''' direct resolve onto the display target. Everything stays in D3D row order (UPPER_LEFT) for the forward stage that follows
     ''' (the zfight-overlay fix, 8-oct-2026: one orientation for every draw that tests against the G-buffer depth, as the game has
-    ''' one); EndFo4Stage turns the frame's targets to GL rows. Leaves the frame's framebuffer bound.</summary>
+    ''' one); EndD3dRowsStage turns the frame's targets to GL rows. Leaves the frame's framebuffer bound.</summary>
     Friend Sub FinishFo4Deferred(frame As Fo4DeferredFrame)
         _fo4.EndGBuffer(SharedFo4Deferred, lastNear, lastFar)
         _fo4.RunLights(SharedFo4Deferred, frame)
@@ -2287,37 +2728,39 @@ Public Class PreviewControl
         If _frameFbo = _targets.HdrFramebuffer Then _targets.SetGroundCatcherOutputs(False)
     End Sub
 
-    ''' <summary>The end of Fallout 4's D3D-order stage (G-buffer, lights, composites and the forward stage), however it ended: when
-    ''' the frame reached composite 2 (FinishFo4Deferred), the frame's targets turned to GL rows - the scene target's radiance and
-    ''' coverage, the background-shadow target (post on) or the display target (post off), and the depth/stencil
-    ''' (Fo4DeferredTargets.MirrorRows), and the refraction normals drawn in the stage (rev-01: against the unmirrored depth) - so
-    ''' everything after the stage (ISRefraction, the post, the display overlays, the capture) finds them in GL rows; the SOFT depth
-    ''' copy taken in the stage holds D3D rows, so the next SOFT
-    ''' reader copies again (FrameDepthDirty). Then GL row order and linear writes back, so nothing after it inherits the D3D-order
-    ''' state (propuesta A.2).</summary>
-    Friend Sub EndFo4Stage()
+    ''' <summary>THE END OF THE FRAME'S D3D-ORDER STAGE (BeginD3dRowsStage), both games, however it ended: the frame's targets turned
+    ''' to GL rows by FrameRowMirror - the scene target's radiance and coverage, the background-shadow target (post on) or the display
+    ''' target (post off), and the depth/stencil - and the refraction normals drawn in the stage (rev-01: against the unmirrored depth;
+    ''' Skyrim SE's RGBA8, Fallout 4's R11F_G11F_B10F, RefractionTargets.NormalsFormat), so everything after the stage (ISRefraction,
+    ''' the post, the display overlays, the capture) finds them in GL rows: the one mirror of the frame. The targets only the stage
+    ''' reads stay in D3D rows, as the engine's: Fallout 4's G-buffer RTs (RT 0x1E reaches the post through CopyGlossGlRows), Skyrim SE's
+    ''' SAO normals and kSNOW_SPECALPHA (attachments 3 and 4 of the HDR target, read by the SAO and its composite inside the stage), the
+    ''' SAO's targets and depth copy, the decals' base target and the SOFT depth copy - so the next SOFT reader copies again
+    ''' (FrameDepthDirty). Then GL row order and linear writes back, so nothing after it inherits the D3D-order state (propuesta
+    ''' A.2).</summary>
+    Friend Sub EndD3dRowsStage()
 #If DEBUG Then
-        If GateFo4SkipEndStage Then Return
+        If GateSkipEndRowsStage Then Return
 #End If
-        If _fo4RowsD3D Then
-            _fo4RowsD3D = False
+        If _frameRowsD3D Then
+            _frameRowsD3D = False
             Dim espejar = True, espejarNormales = True
 #If DEBUG Then
-            If GateFo4NoStageMirror Then espejar = False
-            If GateFo4NoNormalsMirror Then espejarNormales = False
+            If GateNoStageMirror Then espejar = False
+            If GateNoNormalsMirror Then espejarNormales = False
 #End If
             If espejar Then
-                _fo4.MirrorRows(_targets.SceneTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
-                _fo4.MirrorRows(_targets.CoverageTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
+                _rows.MirrorRows(_targets.SceneTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
+                _rows.MirrorRows(_targets.CoverageTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
                 If _frameFbo = _targets.HdrFramebuffer Then
-                    _fo4.MirrorRows(_targets.BgShadowTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
+                    _rows.MirrorRows(_targets.BgShadowTexture, ImageTarget.Texture2D, SizedInternalFormat.Rgba8)
                 Else
-                    _fo4.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
+                    _rows.MirrorRows(_targets.DisplayRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Rgba8)
                 End If
-                _fo4.MirrorRows(_targets.DepthRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Depth24Stencil8)
-                ' rev-01: the refraction normals drawn in the stage (FO4's target is R11G11B10F, RefractionTargets.BeginNormals).
+                _rows.MirrorRows(_targets.DepthRenderbuffer, ImageTarget.Renderbuffer, SizedInternalFormat.Depth24Stencil8)
+                ' rev-01: the refraction normals drawn in the stage, in their game's format.
                 If _Model IsNot Nothing AndAlso _Model.FrameRefractionActive AndAlso espejarNormales Then
-                    _fo4.MirrorRows(_refraction.NormalsTexture, ImageTarget.Texture2D, SizedInternalFormat.R11fG11fB10f)
+                    _rows.MirrorRows(_refraction.NormalsTexture, ImageTarget.Texture2D, _refraction.NormalsFormat)
                 End If
             End If
             If _Model IsNot Nothing Then _Model.FrameDepthDirty = True
@@ -2326,29 +2769,30 @@ Public Class PreviewControl
         GL.Disable(EnableCap.FramebufferSrgb)
     End Sub
 
-    ''' <summary>The frame is in Fallout 4's D3D-order stage (BeginFo4GBuffer .. EndFo4Stage): its targets hold D3D rows, and the
-    ''' background is evaluated in them (SubirUniformsDeFondo, backgroundRowsD3D) - the one owner of that fact.</summary>
-    Private _fo4RowsD3D As Boolean
+    ''' <summary>The frame is in its D3D-order stage (BeginD3dRowsStage .. EndD3dRowsStage, both games): its targets hold D3D rows, and
+    ''' the background is evaluated in them (SubirUniformsDeFondo, backgroundRowsD3D) - the one owner of that fact.</summary>
+    Private _frameRowsD3D As Boolean
 
 #If DEBUG Then
-    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant. True makes EndFo4Stage do nothing.</summary>
-    Friend Shared GateFo4SkipEndStage As Boolean = False
+    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene / --sse-frame-rows mutant. True makes EndD3dRowsStage do nothing.</summary>
+    Friend Shared GateSkipEndRowsStage As Boolean = False
 #End If
 
 #If DEBUG Then
-    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene mutant (rev-03). True skips only the output mirror of EndFo4Stage
-    ''' (the clip state and sRGB writes are still restored): the frame after the stage stays in D3D rows.</summary>
-    Friend Shared GateFo4NoStageMirror As Boolean = False
+    ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene / --sse-frame-rows mutant (rev-03). True skips only the output
+    ''' mirror of EndD3dRowsStage (the clip state and sRGB writes are still restored): the frame after the stage stays in D3D rows.</summary>
+    Friend Shared GateNoStageMirror As Boolean = False
 #End If
 
 #If DEBUG Then
-    ''' <summary>GATE ONLY (no UI): ShadowGate --refraction-scene mutant (revisor-13). True leaves the refraction normals target in
-    ''' D3D rows at EndFo4Stage (every other target is still mirrored).</summary>
-    Friend Shared GateFo4NoNormalsMirror As Boolean = False
+    ''' <summary>GATE ONLY (no UI): ShadowGate --refraction-scene mutant (revisor-13), both games. True leaves the refraction normals
+    ''' target in D3D rows at EndD3dRowsStage (every other target is still mirrored).</summary>
+    Friend Shared GateNoNormalsMirror As Boolean = False
 #End If
 
 #If DEBUG Then
-    ''' <summary>GATE ONLY (ShadowGate --sse-sao-scene): the HDR radiance right before and right after the composite of the frame.</summary>
+    ''' <summary>GATE ONLY (ShadowGate --sse-sao-scene): the HDR radiance right before and right after the composite of the frame (taken
+    ''' inside the frame's D3D-order stage: D3D rows).</summary>
     Friend Shared GateCompositeSnapshot As Boolean
 #End If
 #If DEBUG Then
@@ -2414,6 +2858,12 @@ Public Class PreviewControl
         End Get
     End Property
     Private _statusDrawnInFrame As Boolean
+    ''' <summary>True from the start of RenderScene's frame to its tail: a status card drawn meanwhile is the frame's image, presented
+    ''' by the frame's tail (Processing_Status, S0 fase 7 rev-03).</summary>
+    Private _frameOpen As Boolean
+    ''' <summary>The game of the last frame drawn (RenderScene): a change of game is a gesture that retries the new game's programs
+    ''' (ForgetProgramFailures, S0 fase 7 rev-08). Nothing before the first frame.</summary>
+    Private _lastFrameGameIsSse As Boolean?
 
     ''' <summary>The framebuffer RenderScene is drawing into right now (HDR target, display target, or 0).
     ''' Passes that bind their own framebuffer (the shadow maps) return to THIS one, without a glGet per frame.</summary>
@@ -2428,15 +2878,14 @@ Public Class PreviewControl
         _targets.SetGroundCatcherOutputs(enabled)
     End Sub
 
-    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: its image-space chain, Fo4ImageSpaceChain; SSE: 12545) unless the user
+    ''' <summary>THE FRAME GOES THROUGH THE GAME'S POST LAW (FO4: its image-space chain, Fo4ImageSpaceChain; SSE: 15846) unless the user
     ''' turned the post off (Rendering tab) or a shader debug view is on (a debug view shows raw values: it is drawn straight to the
     ''' display target, 8-bit exact). True when the frame of the game drawing it has the post.</summary>
     Private Function FramePostOn() As Boolean
-        If _bgVao = 0 OrElse CurrentShader Is Nothing OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None OrElse
+        ' Its programs are built by their first use in the post (a failure aborts the frame: AbortFrame), so they do not decide it.
+        If _bgVao = 0 OrElse Shader_Base_Class.DebugView <> ShaderDebugView.None OrElse
            Not _Model.FrameImaging.Settings.ApplyPostProcess Then Return False
-        If CurrentShader Is SharedFo4EditViewShader Then Return SharedFo4Deferred IsNot Nothing AndAlso SharedFo4PostApp IsNot Nothing
-        If CurrentShader Is SharedSSEShader Then Return SharedPostSseShader IsNot Nothing AndAlso SharedLumPartialsShader IsNot Nothing AndAlso SharedLumResolveShader IsNot Nothing
-        Return False
+        Return FrameGameIsSse OrElse SharedFo4Deferred IsNot Nothing
     End Function
 
     ''' <summary>The last frame drawn left its radiance in the HDR target whole: it was drawn into it and composited by the
@@ -2470,7 +2919,9 @@ Public Class PreviewControl
     Private Sub RenderScene()
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         If _Model Is Nothing Then Exit Sub
-        If SharedFo4EditViewShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
+        ' The context is up (OnLoad). Every program is built by its first use in the frame (CreateProgramSlots); one that does not build
+        ' aborts the frame (AbortFrame): its game's card, never a partial frame nor the other game's programs.
+        If _gl43Context = IntPtr.Zero Then Exit Sub
         ApplyResize(False)
         Me.EnsureContextCurrent()
         ' rev-E05 / E11: the window's depth unit when the start could not measure it (the window was not drawable yet at OnLoad), at
@@ -2478,30 +2929,67 @@ Public Class PreviewControl
         ' offscreen frame never reads -, only up to the first presented frame (DefaultFramebufferAttemptsClose below).
         Gl43.MeasureDefaultFramebufferIfNeeded()
         Dim offscreen = _targets.Ensure(Me.Width, Me.Height)
+        ' S0 fase 7 rev-08: a change of game since the last frame is a gesture: the new game's programs are retried.
+        Dim frameIsSse = FrameGameIsSse
+        If _lastFrameGameIsSse.HasValue AndAlso _lastFrameGameIsSse.Value <> frameIsSse Then ForgetProgramFailures(frameIsSse)
+        _lastFrameGameIsSse = frameIsSse
+        _programCardInFrame = False
+        _frameOpen = True
+        Try
+            If ProgramErrorCardText(frameIsSse) IsNot Nothing Then
+                ' A game one of whose programs did not build (AbortFrame) draws only its card: nothing of its frame is asked for again
+                ' until a gesture retries it (RetryPrograms). The card is this frame's image: presented by the tail below (rev-03).
+                DrawProgramErrorCard()
+#If DEBUG Then
+                ' GATE (ShadowGate --program-abort, subject mutant): the card's frame leaves before the frame's tail (no Present, no close
+                ' of the retries) - the second sede of the card before S0 fase 7.
+                If Fo4GBufferConstants.GateMutantOn("program-card-skip-tail") Then
+                    _frameOpen = False
+                    _frameFbo = 0
+                    Exit Sub
+                End If
+#End If
+            Else
+                DrawSceneFrame(offscreen)
+            End If
+        Finally
+            _frameOpen = False
+        End Try
+        If offscreen Then _targets.Present()
+        If Not _statusDrawnInFrame Then DrawPreviewGapNotice()
+        _frameFbo = 0
+        Gl43.DefaultFramebufferAttemptsClose()                        ' rev-E11: the first presented frame closes the retries
+        ShowRetry(_programCardInFrame)
+    End Sub
+
+    ''' <summary>The scene's frame (RenderScene, a game whose programs have not failed): the HDR or direct target, the model, the
+    ''' refraction and the post; a program that does not build at its first use aborts it (AbortFrame: the card). Presented by
+    ''' RenderScene's tail.</summary>
+    Private Sub DrawSceneFrame(offscreen As Boolean)
         ' The weather/moment and the two options of THIS frame, for the game of the shader that draws it.
-        _Model.ResolveFrameImaging(CurrentShader Is SharedSSEShader)
+        _Model.ResolveFrameImaging(FrameGameIsSse)
         Dim hdr = offscreen AndAlso FramePostOn()
         _statusDrawnInFrame = False
         _lastFrameHdrScene = False
-        If hdr Then
-            ' Linear radiance + coverage; the background is composited by the post (it is UI).
-            _targets.BeginHdr(CurrentShader Is SharedSSEShader)
-            _frameFbo = _targets.HdrFramebuffer
-        Else
-            If offscreen Then
-                _targets.BindDisplay()
-                _frameFbo = _targets.DisplayFramebuffer
-            Else
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
-                GL.Viewport(0, 0, Me.Width, Me.Height)
-                _frameFbo = 0
-            End If
-            GL.ClearColor(Config_App.Current.Setting_BackColor)
-            GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
-            PaintBackground()
-        End If
-        Model.FrameIsHdr = hdr
         Try
+            If hdr Then
+                ' Linear radiance + coverage; the background is composited by the post (it is UI).
+                _targets.BeginHdr(FrameGameIsSse)
+                _frameFbo = _targets.HdrFramebuffer
+            Else
+                If offscreen Then
+                    _targets.BindDisplay()
+                    _frameFbo = _targets.DisplayFramebuffer
+                Else
+                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+                    GL.Viewport(0, 0, Me.Width, Me.Height)
+                    _frameFbo = 0
+                End If
+                GL.ClearColor(Config_App.Current.Setting_BackColor)
+                GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
+                PaintBackground()
+            End If
+            Model.FrameIsHdr = hdr
             If _renderFailure IsNot Nothing AndAlso Not GateHidesFailureCard() Then
                 ' The standing failure's card (RecordRenderFailure), on every repaint while it stands: the status card channel
                 Processing_Status(_renderFailure)
@@ -2512,7 +3000,7 @@ Public Class PreviewControl
                 UpdateProjection(False)
                 Model.RenderAll(projection, camera)
             End If
-            Dim isSse = CurrentShader Is SharedSSEShader
+            Dim isSse = FrameGameIsSse
             ' ISRefraction: SSE effect index 1, BEFORE the HDR (0x1414EDBF0 runs effects 0..7, then the HDR effect 0x1E),
             ' over the HDR scene; FO4 effect index 5, AFTER ImageSpaceEffectHDR (3) / HDRCS (4) (0x142185420), over the
             ' tonemapped image. A direct frame (post off) has no HDR step: it applies to the frame as drawn.
@@ -2530,8 +3018,8 @@ Public Class PreviewControl
                 Else
                     ' Fallout 4 (ola 4): the ImageSpaceManager's chain, ISRefraction inside it (effect 5, between the HDR and the LUT).
                     _fo4Post.Ensure(Me.Width, Me.Height)
-                    ' The tonemap's t3: RT 0x1E of this frame's G-buffer, in GL rows like the scene (EndFo4Stage turned the scene).
-                    If _fo4GBufferThisFrame Then _fo4.CopyGlossGlRows(_fo4Post.GlossTarget)
+                    ' The tonemap's t3: RT 0x1E of this frame's G-buffer, in GL rows like the scene (EndD3dRowsStage turned the scene).
+                    If _fo4GBufferThisFrame Then _fo4.CopyGlossGlRows(_rows, _fo4Post.GlossTarget)
                     _fo4Post.Run(SharedFo4Deferred, SharedFo4PostApp.Unpremultiply, SharedFo4PostApp.ActorMean, SharedFo4PostApp.Present,
                                  row.Fo4ImageSpace, _targets.SceneTexture, _targets.CoverageTexture, _targets.BgShadowTexture,
                                  If(_Model.FrameRefractionActive, _refraction.NormalsTexture, 0), RefractionLaw.ImageSpaceConstants(False).Tint,
@@ -2543,14 +3031,12 @@ Public Class PreviewControl
                 ' against the scene's depth (shared by both targets).
                 Model.RenderDisplayOverlays(projection, camera)
             End If
+        Catch ex As ProgramUnavailableException
+            AbortFrame(ex)
         Finally
             Model.FrameIsHdr = False
             _fo4GBufferThisFrame = False
         End Try
-        If offscreen Then _targets.Present()
-        If Not _statusDrawnInFrame Then DrawPreviewGapNotice()
-        _frameFbo = 0
-        Gl43.DefaultFramebufferAttemptsClose()                        ' rev-E11: the first presented frame closes the retries
     End Sub
 
     ''' <summary>The frame's notice (PreviewModel.ReportUndrawn): one line per reason with its shape count - the preview's gaps
@@ -2579,7 +3065,8 @@ Public Class PreviewControl
     End Sub
 
     ''' <summary>The notice's font size and its margin from the window's top-left corner (the label wraps at the window's width less
-    ''' this margin on each side). Friend: ShadowGate's notice gate measures the label with them.</summary>
+    ''' this margin on each side). The status card uses the same layout, margin and font, and this size as its smallest
+    ''' (StatusCardLayout). Friend: ShadowGate's notice gate and --program-abort measure the labels with them.</summary>
     Friend Const NoticeFontSize As Integer = 9
     Friend Const NoticeMargin As Integer = 8
     Friend Const NoticeFontName As String = "Arial"
@@ -2633,9 +3120,7 @@ Public Class PreviewControl
                 ' Mismo consumo up-front que CaptureBitmap: cualquier pedido nuevo que levante RenderScene
                 ' sobrevive a este frame y agenda el siguiente.
                 UpdateRequired = False
-                RenderScene()
-                SwapBuffers()
-                FinishRenderFrame()
+                Me.PresentFrame()                                  ' the method (the parameter presentFrame hides its name)
             End If
             readTarget = ReadBufferMode.Front
         Else
@@ -2742,15 +3227,13 @@ Public Class PreviewControl
             ' Consume the current render request up front so any new request raised
             ' during RenderScene survives this frame and schedules the next one.
             UpdateRequired = False
-            RenderScene()
-            SwapBuffers()
-            FinishRenderFrame()
+            PresentFrame()
         End If
     End Sub
 
     ''' <summary>The last frame's scene radiance before the image space: the HDR target's attachment 0 (R11G11B10F; linear
     ''' for Fallout 4 - Shader_Base_Class.SceneToLinearExponent), the background not in it (the post composites it), as
-    ''' Width x Height RGB floats in GL row order (bottom row first: EndFo4Stage leaves the target in GL rows). Nothing when
+    ''' Width x Height RGB floats in GL row order (bottom row first: EndD3dRowsStage leaves the target in GL rows). Nothing when
     ''' the frame did not leave it there whole (_lastFrameHdrScene: no post program, or a status card drawn in its place).
     ''' Draws a pending frame first, like CaptureBitmap; reads only.</summary>
     Public Function CaptureSceneLinear() As Single()
@@ -2842,13 +3325,72 @@ Public Class PreviewControl
     End Sub
 
     ''' <summary>Dibuja y presenta un frame: RenderScene + SwapBuffers + FinishRenderFrame. Lo
-    ''' llaman OnPaint (camino diferido normal, vía WM_PAINT) y RefreshRender durante el play
-    ''' (camino sincrónico). Centralizado para tener un único punto de present.</summary>
+    ''' llaman OnPaint (camino diferido normal, vía WM_PAINT), RefreshRender durante el play
+    ''' (camino sincrónico) y las capturas que presentan (DrawPendingFrame, ReadPixelPatch). Centralizado
+    ''' para tener un único punto de present: UN swap por frame, el de acá (S0 fase 7 rev-03: una
+    ''' tarjeta dibujada dentro del frame ya no hace el suyo, Processing_Status).</summary>
     Private Sub PresentFrame()
+#If DEBUG Then
+        GateSwapsInPresent = 0
+#End If
         RenderScene()
-        SwapBuffers()
+#If DEBUG Then
+        If GateCaptureWindow Then
+            GateWindowFrame?.Dispose()
+            GateWindowFrame = ReadWindowBackBuffer()
+        End If
+#End If
+        SwapWindow()
         FinishRenderFrame()
     End Sub
+
+    ''' <summary>The window's swap (every one of the control's: PresentFrame's, and a card drawn outside a frame, Processing_Status).</summary>
+    Private Sub SwapWindow()
+#If DEBUG Then
+        GateSwapsInPresent += 1
+#End If
+        SwapBuffers()
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (ShadowGate --program-abort, S0 fase 7 rev-03): PresentFrame keeps what goes to the window - the window's back
+    ''' buffer right before its swap - in GateWindowFrame.</summary>
+    Friend GateCaptureWindow As Boolean
+    ''' <summary>GATE ONLY: the window's back buffer of the last PresentFrame (GateCaptureWindow), top row first.</summary>
+    Friend GateWindowFrame As Bitmap
+    ''' <summary>GATE ONLY: the window swaps made by the last PresentFrame, its own included (one, by rev-03).</summary>
+    Friend GateSwapsInPresent As Integer
+
+    ''' <summary>The window's back buffer (framebuffer 0, GL_BACK) as a bitmap, top row first.</summary>
+    Private Function ReadWindowBackBuffer() As Bitmap
+        Dim w = Me.Width, h = Me.Height
+        If w <= 0 OrElse h <= 0 Then Return Nothing
+        Dim prevFbo = GL.GetInteger(GetPName.ReadFramebufferBinding)
+        Dim prevBuffer = GL.GetInteger(GetPName.ReadBuffer)
+        Dim prevPack = GL.GetInteger(GetPName.PackAlignment)
+        Dim buf(w * h * 4 - 1) As Byte
+        Try
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0)
+            GL.ReadBuffer(ReadBufferMode.Back)
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
+            GL.ReadPixels(0, 0, w, h, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, buf)
+        Finally
+            GL.PixelStore(PixelStoreParameter.PackAlignment, prevPack)
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, prevFbo)
+            GL.ReadBuffer(CType(prevBuffer, ReadBufferMode))
+        End Try
+        Dim bmp As New Bitmap(w, h, Imaging.PixelFormat.Format32bppArgb)
+        Dim bd = bmp.LockBits(New Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, Imaging.PixelFormat.Format32bppArgb)
+        Try
+            For row = 0 To h - 1
+                Marshal.Copy(buf, (h - 1 - row) * w * 4, IntPtr.Add(bd.Scan0, row * bd.Stride), w * 4)
+            Next
+        Finally
+            bmp.UnlockBits(bd)
+        End Try
+        Return bmp
+    End Function
+#End If
     Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
         MyBase.OnMouseDown(e)
         ' Modo picker: el click izquierdo MUESTREA y no orbita.
@@ -3496,6 +4038,20 @@ Public Class PreviewControl
     ''' Nothing (a host that sets none: the gates) keeps a failure in the log only. Read by Release.</summary>
     Public Shared Property UnexpectedErrorChannel As Action(Of Exception, String)
 
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY - THE APPS' WAY TO SEE THE PROGRAM ERROR CARD (S0 fase 7c / 7d): the environment variable
+    ''' FO4_DEBUG_FAIL_STAGE_ONCE (a program slot's name, or "*" for the first slot that compiles a fragment) makes that fragment fail
+    ''' to compile once, for real (ProgramCompiler.GateFailStageSlot): the first frame is the card with the driver's log and its Retry
+    ''' button, and Retry draws the frame. Called by Wardrobe Manager and NPC Manager at their start; no harness calls it, so the
+    ''' variable left in a shell never turns on a gate.</summary>
+    Public Shared Sub DebugFailStageOnceFromEnvironment()
+        Dim slot = Environment.GetEnvironmentVariable("FO4_DEBUG_FAIL_STAGE_ONCE")
+        If String.IsNullOrWhiteSpace(slot) Then Return
+        ProgramCompiler.GateFailStageSlot = slot.Trim()
+        ProgramCompiler.GateFailStageFired = False
+    End Sub
+#End If
+
     ''' <summary>One failed step of Release, named, with its exception inside (the report's detail).</summary>
     Private Shared Function PasoFallido(paso As String, ex As Exception) As Exception
         Return New InvalidOperationException($"{paso} threw {ex.GetType().Name}: {ex.Message}", ex)
@@ -3578,6 +4134,7 @@ Public Class PreviewControl
             If conContexto Then overlay.Clean() Else overlay.ReleaseLabels()
             overlay = Nothing
         End If
+        DisposeRetry()
 
         If _Model IsNot Nothing Then
             _Model.Clean(True)
@@ -3592,52 +4149,8 @@ Public Class PreviewControl
 
         ' The context's GL objects (programs, targets, samplers, default textures), deleted on it.
         If conContexto Then
-            If SharedFo4EditViewShader IsNot Nothing Then
-                SharedFo4EditViewShader.Dispose()
-                SharedFo4EditViewShader = Nothing
-            End If
-
-            If SharedSSEShader IsNot Nothing Then
-                SharedSSEShader.Dispose()
-                SharedSSEShader = Nothing
-            End If
-
-            If SharedFloorShader IsNot Nothing Then
-                SharedFloorShader.Dispose()
-                SharedFloorShader = Nothing
-            End If
-
-            If SharedBackgroundShader IsNot Nothing Then
-                SharedBackgroundShader.Dispose()
-                SharedBackgroundShader = Nothing
-            End If
-
-            If SharedPostSseShader IsNot Nothing Then
-                SharedPostSseShader.Dispose()
-                SharedPostSseShader = Nothing
-            End If
-
-            If SharedLumPartialsShader IsNot Nothing Then
-                SharedLumPartialsShader.Dispose()
-                SharedLumPartialsShader = Nothing
-            End If
-            For Each sh As Shader_Base_Class In {SharedRefractionNormalsSse, SharedRefractionImageSpace, SharedSseOpaqueComposite, SharedSseDecalBaseMark}
-                sh?.Dispose()
-            Next
-            SharedRefractionNormalsSse = Nothing : SharedRefractionImageSpace = Nothing
-            SharedSseOpaqueComposite = Nothing : SharedSseDecalBaseMark = Nothing
-            SharedSseSao?.Dispose()
-            SharedSseSao = Nothing
-            SharedFo4Deferred?.Dispose()
-            SharedFo4Deferred = Nothing
-            SharedFo4PostApp?.Dispose()
-            SharedFo4PostApp = Nothing
+            DisposePrograms()
             _fo4Post.FreeAll()
-
-            If SharedLumResolveShader IsNot Nothing Then
-                SharedLumResolveShader.Dispose()
-                SharedLumResolveShader = Nothing
-            End If
 
             If _bgVao > 0 Then
                 GL.DeleteVertexArray(_bgVao)
@@ -3651,22 +4164,13 @@ Public Class PreviewControl
             _saoDepth.Free()
             _sao.Free()
             _fo4.Free()
+            _rows.Free()
             _sseDecalBase.Free()
             If _saoPointSampler <> 0 Then GL.DeleteSampler(_saoPointSampler) : _saoPointSampler = 0
 #If DEBUG Then
             If _gateWhite <> 0 Then GL.DeleteTexture(_gateWhite) : _gateWhite = 0
 #End If
             _samplers?.Dispose() : _samplers = Nothing
-
-            If SharedShadowSSEShader IsNot Nothing Then
-                SharedShadowSSEShader.Dispose()
-                SharedShadowSSEShader = Nothing
-            End If
-
-            If SharedGroundShadowShader IsNot Nothing Then
-                SharedGroundShadowShader.Dispose()
-                SharedGroundShadowShader = Nothing
-            End If
 
             If ShadowTarget IsNot Nothing Then
                 ShadowTarget.Dispose()
@@ -4190,10 +4694,11 @@ Public Class PreviewModel
 
     Friend FrameEngineRows As Fo4FrameRows
 
-    ''' <summary>The frame is drawn with the Skyrim SE shader (and so with its pass law).</summary>
+    ''' <summary>The frame is Skyrim SE's (and so drawn with its pass law): the control's game (PreviewControl.FrameGameIsSse), also when
+    ''' its program set did not build (the frame is then its status card, PreviewControl.DrawProgramErrorCard).</summary>
     Friend ReadOnly Property FrameIsSse As Boolean
         Get
-            Return TypeOf ParentControl.CurrentShader Is Shader_Class_SSE
+            Return ParentControl.FrameGameIsSse
         End Get
     End Property
 
@@ -7137,7 +7642,7 @@ Public Class PreviewModel
             Dim t = d.Value.Technique
             Dim key = New Fo4Technique(t).Key()
             ' The host IS drawn by an engine stage but its position cannot be captured: the overlay keeps the app's position, said so.
-            If key.Hs <> 0UI Then                                        ' a tessellated host: its last stage's vertices are not the mesh's
+            If Fo4GBufferSource.Tessellates(key.Hs) Then                ' a tessellated host: its last stage's vertices are not the mesh's
                 pm.ReportUndrawn(NoticeName(Nothing), OverlayTessellatedHostNotice, FrameNoticeId.OverlayTessellatedHost)
                 Return False
             End If
@@ -8941,6 +9446,24 @@ Public Class PreviewModel
             GL.ColorMask(True, True, True, True)
         End Sub
 
+        ''' <summary>A decal's base surface program that did not build (S0 fase 7 rev-04: before S0-A it failed its record, a PassGap; since
+        ''' it is built on its first use it must not vanish in silence): the surface is not drawn - the decal's coverage draws still are -
+        ''' and the frame's notice says why (FrameNoticeId.PassGap, the build's message). A tuple that tessellates has no surface by the
+        ''' declared divergence and no message: nothing to report.</summary>
+        Private Sub ReportDecalBaseSurfaceNotBuilt(errorText As String)
+#If DEBUG Then
+            ' GATE (ShadowGate --program-census decal surfaces, subject mutant): the surface that did not build dropped in silence (the
+            ' sede before S0 fase 7).
+            If Fo4GBufferConstants.GateMutantOn("decal-surface-silent") Then Exit Sub
+#End If
+            If errorText Is Nothing Then Exit Sub
+            Me.ParentModel.ReportUndrawn(NoticeName(Nothing), DecalBaseSurfaceNotBuiltNotice & errorText, FrameNoticeId.PassGap)
+        End Sub
+
+        ''' <summary>The start of the notice of a decal base surface that did not build (ReportDecalBaseSurfaceNotBuilt; the build's
+        ''' message follows).</summary>
+        Friend Const DecalBaseSurfaceNotBuiltNotice As String = "Decal base surface program build failed: "
+
         ''' <summary>THE BASE SURFACE of a translucent decal (user decisions 7-oct-2026, both games), drawn after every depth draw of
         ''' the base pass (PreviewModel.DrawOpaqueStage, DecalBaseStep.Surface) with the same geometry, vertex inputs, culling and depth
         ''' bias as its depth draw, under DecalBaseTarget.SurfaceDrawStencil (depth EQUAL: only the farthest painting decal's fragments;
@@ -8997,16 +9520,21 @@ Public Class PreviewModel
 #End If
                 ' A translucent EFFECT decal (ola 3, D16 / Q2): its surface on its own engine VS (the same gl_Position as its depth and colour
                 ' draws) with the surface foot and Fragment_DecalBaseSurfaceEffect (Fo4DeferredPrograms.EffectSurfaceProgram).
+                Dim tq = If(fx.HasValue, fx.Value.Technique, 0UI)
+                Dim pfx As Fo4_Deferred_Shader_Class = Nothing
                 If fx.HasValue AndAlso superficie Then
+                    Dim errorText As String = Nothing
+                    pfx = pm.ParentControl.SharedFo4Deferred.EffectSurfaceProgram(New Fo4EffectTech(tq), EngineCpuRoute(), errorText)
+                    If pfx Is Nothing Then ReportDecalBaseSurfaceNotBuilt(errorText)
+                End If
+                If pfx IsNot Nothing Then
                     target.SurfaceDrawStencil()
                     GL.Disable(EnableCap.Blend)
                     Dim cb = Fo4DeferredTargets.SurfaceCoverageBuffer
                     GL.Enable(IndexedEnableCap.Blend, cb)
                     GL.BlendFunc(cb, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
                     GL.ColorMask(cb, False, False, False, True)
-                    Dim tq = fx.Value.Technique
-                    Dim p = pm.ParentControl.SharedFo4Deferred.EffectSurfaceProgram(New Fo4EffectTech(tq), EngineCpuRoute())
-                    If p Is Nothing Then Exit Sub
+                    Dim p = pfx
                     Dim fr = pm.FrameEngineRows
                     p.Use()
                     pm.ParentControl.SubirUniformsDeFondo(p)
@@ -9020,7 +9548,13 @@ Public Class PreviewModel
                                              End Sub)
                     GL.Disable(EnableCap.Blend)
                 End If
+                Dim pgb As Fo4_Deferred_Shader_Class = Nothing
                 If gbuf.HasValue AndAlso superficie Then
+                    Dim errorText As String = Nothing
+                    pgb = pm.ParentControl.SharedFo4Deferred.DecalBaseSurfaceProgram(New Fo4Technique(gbuf.Value.Technique), EngineCpuRoute(), errorText)
+                    If pgb Is Nothing Then ReportDecalBaseSurfaceNotBuilt(errorText)
+                End If
+                If pgb IsNot Nothing Then
                     target.SurfaceDrawStencil()
                     ' The five G-buffer RTs unblended (the premultiplied surface); the coverage target (the buffer after them) accumulates a.
                     GL.Disable(EnableCap.Blend)
@@ -9028,8 +9562,7 @@ Public Class PreviewModel
                     GL.Enable(IndexedEnableCap.Blend, cb)
                     GL.BlendFunc(cb, BlendingFactorSrc.One, BlendingFactorDest.OneMinusSrcAlpha)
                     GL.ColorMask(cb, False, False, False, True)
-                    Dim p = pm.ParentControl.SharedFo4Deferred.DecalBaseSurfaceProgram(New Fo4Technique(gbuf.Value.Technique), EngineCpuRoute())
-                    If p Is Nothing Then Exit Sub
+                    Dim p = pgb
                     Dim mb = material.MaterialBase
                     p.Use()
                     pm.ParentControl.SubirUniformsDeFondo(p)                       ' was BeginFo4DecalBase's (one program per tuple now)
@@ -9215,7 +9748,7 @@ Public Class PreviewModel
             Dim shader = ColourDrawProgram(material, ssePrepass, gbuf, fx)
 #If DEBUG Then
             ' Ola 7f tester (ShadowGate, every run: [editview-census]): a colour draw of a normal frame given the edit views' program.
-            If shader IsNot Nothing AndAlso shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader AndAlso
+            If TypeOf shader Is Shader_Class_Fo4EditView AndAlso
                Shader_Base_Class.DebugView = ShaderDebugView.None AndAlso Not MeshData.Shape.Wireframe Then PreviewModel.GateEditViewWithoutReason += 1
 #End If
             ' The record without its early depth tests when this draw's depth write has to follow its kill (DrawsWithoutEarlyTests:
@@ -10123,9 +10656,9 @@ Public Class PreviewModel
 
             ' texLightmask is SSE-only (rim/soft-light masking); FO4 does not use it. For FaceTint
             ' (technique 4) the LightingTexture (texture-set slot 2, the _sk map) is the SUBSURFACE map.
-            ' VERIFIED in SkyrimSE.exe BSLightingShader::SetupMaterial @0x1414DC310 (jump table 0x14DCFD4,
-            ' facegen branch 0x1414DC542): SetPSTexture(3, mat+0xA0) / (4, mat+0xA8) / (12, mat+0xB0), y
-            ' OnLoadTextureSet 0x1414BA6E0 llena +0xA0<-slot6, +0xA8<-slot3, +0xB0<-slot2. Es decir el mapeo
+            ' VERIFIED in SkyrimSE.exe BSLightingShader::SetupMaterial @0x141548820 (jump table 0x15494E4,
+            ' facegen branch 0x141548A52): SetPSTexture(3, mat+0xA0) / (4, mat+0xA8) / (12, mat+0xB0), y
+            ' OnLoadTextureSet 0x141526B00 llena +0xA0<-slot6, +0xA8<-slot3, +0xB0<-slot2. Es decir el mapeo
             ' real es slots {6,3,2} -> PS t3(TINT) / t4(DETAIL) / t12(subsurface). El slot 5 NO participa.
             ' (Corrige la nota previa "{3,5,6} -> t3/t4/t12", que tenia el tint y el detail intercambiados.)
             If isSSE Then
@@ -10133,7 +10666,7 @@ Public Class PreviewModel
                     shader.BindTexture("texLightmask", lightingTextureId, TextureUnit.Texture7)
                 ElseIf materialBase.Facegen Then
                     ' ENGINE-FAITHFUL: BSLightingShaderMaterialFacegen defaultea el subsurface faltante a NEGRO
-                    ' (fill slot#10 0x1414BA8B0: +0xB0←DefHeightMap; miembro↔slot verificado en 0x1414BA6E0:
+                    ' (fill slot#10 SSE 0x141526CD0: +0xB0←DefHeightMap; miembro↔slot verificado en SSE 0x141526B00:
                     ' +0xB0↔índice 2 = _sk) ⇒ SSS=0. El fallback softMask=albedo del shader es para NO-facegen;
                     ' acá se bindea el negro y bLightmask=True (abajo) para que el shader lo samplee.
                     shader.BindTexture("texLightmask", Me.ParentModel.ParentControl.defaultFacegenSubsurfaceTex, TextureUnit.Texture7)
@@ -10302,7 +10835,7 @@ Public Class PreviewModel
                     tint = materialBase.ColorDelMotor(FO4UnifiedMaterial_Class.ColorDelArchivo.SkinTint)
                     ' SSE: el motor copia el skin tone resuelto (QNAM = lerp(0.5,TINC/255,TINV)) al
                     ' tintColor del material CRUDO (×1/255, SIN gamma) — verificado en SkyrimSE.exe
-                    ' 0x3B8D80 (resolver, mulss 1/255) + 0x4365E0 (copy verbatim al material type-5).
+                    ' 0x3BFE40 (resolver, mulss 1/255) + 0x43DA10 (copy verbatim al material type-5).
                     ' FO4: el engine gamma-corrige (pow 2.2) el skin tone en SetupMaterial → mantener Linear.
                     tintVec = If(isSSE, ScaledTintSrgb(tint, materialBase.TintColorScale),
                                         Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale)))
@@ -10608,7 +11141,7 @@ Public Class PreviewModel
             ' Texture sampling: the engine's sampler of each slot (SamplerLaw, game-aware).
             BindMaterialSamplers(material, SamplerLaw.Slots(material.SamplerInputs(isSSE)))
             ' Fallout 4's edit views: the cut of each shape's depth in the frame - the z-prepass's for a prepass shape (ola 7f round 2).
-            If shader Is Me.ParentModel.ParentControl.SharedFo4EditViewShader Then ApplyFo4EditViewDepthCut(shader, material)
+            If TypeOf shader Is Shader_Class_Fo4EditView Then ApplyFo4EditViewDepthCut(shader, material)
 
             ' FALLOUT 4'S G-BUFFER STAGE: a lighting shape's record state replaces the forward blend / mask above; an effect decal of
             ' the G-buffer lists writes RT 0x1A only (notas G-buffer 6.3: its PS has one output; NT6, the others masked).
@@ -11920,8 +12453,7 @@ Public Class PreviewModel
         '  `With {}` corta la continuacion implicita y el parser tira BC30370.)
         ' The rig is authored in perceptual (display) values; FO4's pipeline is linear (decode them), SSE's is raw
         ' (use them as authored, like every SSE light colour the engine uploads).
-        Dim rawRig = ParentControl IsNot Nothing AndAlso ParentControl.CurrentShader IsNot Nothing AndAlso
-                     ParentControl.CurrentShader Is ParentControl.SharedSSEShader
+        Dim rawRig = ParentControl IsNot Nothing AndAlso ParentControl.FrameGameIsSse
         Dim lc = Function(v As Vector3) If(rawRig, v, Shader_Base_Class.Vector_to_Linear(v))
         _frameLights = New LightRigUniforms With {
             .AmbientSky = lc(rig.AmbientSkyDiffuse()),
@@ -12231,10 +12763,6 @@ Public Class PreviewModel
         ' del dialogo, que hace exactamente esta cuenta.
         If Not cfg.Enabled Then SoltarMapasDeSombra() : Exit Sub
 
-        ' Skyrim SE draws its maps with the app's depth program (RenderDepthOnly); Fallout 4 with the engine's emitter
-        ' (RenderDepthIntoFo4, its b07 technique), which takes no program of the app.
-        Dim depthShader As Shader_Base_Class = If(FrameIsSse, ParentControl.SharedShadowSSEShader, Nothing)
-        If FrameIsSse AndAlso depthShader Is Nothing Then SoltarMapasDeSombra() : Exit Sub
 
         ' CASTERS. El gate es CastShadows del material resuelto, que ya es game-aware (bit 9 de SF1 en
         ' FO4 y en SK; y en FO4 el BGSM PISA al NIF, ver 30-fo4-material-vs-nif). Sobre el corpus vanilla
@@ -12307,6 +12835,11 @@ Public Class PreviewModel
 #End If
         _shadowCount = ShadowMapMath.SlotsDeSombra(rigVivo, _shadowSlots)
         If _shadowCount <= 0 Then SoltarMapasDeSombra() : Exit Sub
+        ' Skyrim SE draws its maps with the app's depth program (RenderDepthOnly); Fallout 4 with the engine's emitter
+        ' (RenderDepthIntoFo4, its b07 technique), which takes no program of the app. Asked for here, when a map is drawn: its first use
+        ' builds it (S0-A).
+        Dim depthShader As Shader_Base_Class = If(FrameIsSse, ParentControl.SharedShadowSSEShader, Nothing)
+        If FrameIsSse AndAlso depthShader Is Nothing Then SoltarMapasDeSombra() : Exit Sub
 
         ' EL ENCUADRE ES POR LUZ PERO EL TAMANO DE TEXEL ES COMUN: Fit toma el extent de la esfera
         ' envolvente, invariante a la rotacion, asi que Radius/TexelWorld/DepthRange salen iguales para
@@ -13231,9 +13764,9 @@ Public Class PreviewModel
             Exit Sub
         End If
 
-        ' A GAME WITHOUT ITS PROGRAMS, OR FALLOUT 4 WITHOUT ITS DEFERRED TARGETS: no frame, the status card (user decision rev-38 a,
-        ' rev-50, v4 B-rev-05; never a fallback).
-        Dim unavailable = ParentControl.FrameUnavailable(FrameIsSse, FrameUsesFo4Deferred)
+        ' FALLOUT 4 WITHOUT ITS DEFERRED TARGETS: no frame, the status card (user decision rev-38 a, rev-50, v4 B-rev-05; never a
+        ' fallback). A game without its programs never gets here: RenderScene draws its card instead (DrawProgramErrorCard, rev-03).
+        Dim unavailable = If(Not FrameIsSse AndAlso FrameUsesFo4Deferred, ParentControl.Fo4DeferredTargetsUnavailable(), Nothing)
         If unavailable IsNot Nothing Then
             ParentControl.Processing_Status(unavailable)
             Exit Sub
@@ -13329,45 +13862,71 @@ Public Class PreviewModel
         ' FALLOUT 4 Z-PREPASS (0x14181FAA0, first in the G-buffer stage): the eligible lighting shapes (Fo4RenderPassLaw),
         ' depth only; their G-buffer draw then tests without writing. FO4's SOFT reads the live depth (ApplyMaterial).
         ' FALLOUT 4 (propuesta v3 G): the same lists, drawn into the deferred targets in D3D row order (prepass -> _gbDepth, then the
-        ' G-buffer), then the lights and the composite into the scene target. The stage's GL state is undone whatever happens.
-        If FrameUsesFo4Deferred Then
+        ' G-buffer), then the lights and the composite into the scene target.
+        ' THE ROW ORDER (one owner, PreviewControl.BeginD3dRowsStage / EndD3dRowsStage): the engine frame of BOTH games is drawn in
+        ' D3D row order, as the engines' programs write and read their targets (FO4 ola 1 and the zfight-overlay fix of 8-oct-2026;
+        ' SSE wave S0-C), from the opaque stage to the refraction normals, and turned to GL rows once at the stage's end. The
+        ' stage's GL state is undone whatever happens.
+        If FrameUsesD3dRows Then
             Try
-                ParentControl.BeginFo4GBuffer()
+                ParentControl.BeginD3dRowsStage()
+                If FrameUsesFo4Deferred Then
+                    ParentControl.BeginFo4GBuffer()
 #If DEBUG Then
-                If GateFo4ThrowInStage Then GateFo4ThrowInStage = False : Throw New InvalidOperationException("GATE: aborted FO4 G-buffer stage")
+                    If GateFo4ThrowInStage Then GateFo4ThrowInStage = False : Throw New InvalidOperationException("GATE: aborted FO4 G-buffer stage")
 #End If
-                FrameGBufferStage = True
-                DrawOpaqueStage(projection, camera)
-                FrameGBufferStage = False
-                ParentControl.FinishFo4Deferred(BuildFo4DeferredFrame(projection, viewMatrix))
-                ' No new SOFT copy for the blit (rev-04): FO4's SOFT reads the live depth (0x14183C863); a copy taken in the G-buffer
-                ' stage comes from the G-buffer depth (CopySceneDepth), the blit is straight D24S8 -&gt; D24S8 NEAREST, and the lights and
-                ' composites do not write depth, so a clean copy already equals the live depth; any later write marks FrameDepthDirty.
-                ' The forward stage in the D3D row order the G-buffer depth was written in (one orientation, as the game: an overlay
-                ' on its body's geometry gets the body's depth bit for bit); EndFo4Stage turns the targets to GL rows after it.
+                    FrameGBufferStage = True
+                    DrawOpaqueStage(projection, camera)
+                    FrameGBufferStage = False
+                    ParentControl.FinishFo4Deferred(BuildFo4DeferredFrame(projection, viewMatrix))
+                    ' No new SOFT copy for the blit (rev-04): FO4's SOFT reads the live depth (0x14183C863); a copy taken in the G-buffer
+                    ' stage comes from the G-buffer depth (CopySceneDepth), the blit is straight D24S8 -&gt; D24S8 NEAREST, and the lights and
+                    ' composites do not write depth, so a clean copy already equals the live depth; any later write marks FrameDepthDirty.
+                    ' The forward stage in the D3D row order the G-buffer depth was written in (one orientation, as the game: an overlay
+                    ' on its body's geometry gets the body's depth bit for bit).
+                Else
+                    DrawOpaqueStage(projection, camera)
+                    ' SSE: the SAO composite over the opaque scene, between the opaque finish and the alpha finish (0x14153A1CA): its
+                    ' passes read the stage's targets in their D3D rows (SseSaoTargets, SseCompositeSource).
+                    Dim compuestoSse = True
+#If DEBUG Then
+                    If GateDisableSseComposite Then compuestoSse = False
+#End If
+                    If FrameIsHdr AndAlso compuestoSse Then ParentControl.ApplySseOpaqueComposite()
+#If DEBUG Then
+                    If GateSseThrowInStage Then GateSseThrowInStage = False : Throw New InvalidOperationException("GATE: aborted SSE D3D-order stage")
+#End If
+                End If
                 DrawForwardStage(projection, camera, viewMatrix, vp)
                 ' rev-01: the refraction normals in the stage's D3D rows, against the depth the stage drew (FO4 0x1421D6540, after the
-                ' forward stage); EndFo4Stage turns their target to GL rows with the others.
+                ' forward stage); EndD3dRowsStage turns their target to GL rows with the others.
                 DrawRefractionNormals(projection, camera)
             Finally
                 FrameGBufferStage = False
-                ParentControl.EndFo4Stage()
+                ParentControl.EndD3dRowsStage()
             End Try
         Else
+            ' The app's edit views (a shader debug view, either game: raw values, no post, no SAO) and a frame into the window (the
+            ' offscreen targets could not be allocated): GL rows, as before the engine's convention applied.
             DrawOpaqueStage(projection, camera)
-            ' SSE: the SAO composite over the opaque scene, between the opaque finish and the alpha finish (0x14153A1CA).
-            Dim compuestoSse = True
-#If DEBUG Then
-            If GateDisableSseComposite Then compuestoSse = False
-#End If
-            If FrameIsSse AndAlso FrameIsHdr AndAlso compuestoSse Then ParentControl.ApplySseOpaqueComposite()
             DrawForwardStage(projection, camera, viewMatrix, vp)
             DrawRefractionNormals(projection, camera)
         End If
     End Sub
 
+    ''' <summary>The frame is drawn in its D3D-order stage (PreviewControl.BeginD3dRowsStage / EndD3dRowsStage): the engine frame of
+    ''' either game - Fallout 4's deferred frame (FrameUsesFo4Deferred), Skyrim SE's frame without a shader debug view - into the
+    ''' offscreen targets (PreviewControl.FrameDrawsOffscreen). A debug view is the app's edit view (raw values, no post): GL rows in
+    ''' both games, as Fallout 4's since ola 1.</summary>
+    Friend ReadOnly Property FrameUsesD3dRows As Boolean
+        Get
+            Return (FrameUsesFo4Deferred OrElse (FrameIsSse AndAlso Shader_Base_Class.DebugView = ShaderDebugView.None)) AndAlso
+                   ParentControl.FrameDrawsOffscreen
+        End Get
+    End Property
+
     ''' <summary>The frame after the opaque finish (and SSE's composite): the floor, Fallout 4's forward stage (bucket 0, list 0xE),
-    ''' the ground catcher and the blended list. In Fallout 4's deferred frame it runs inside the D3D-order stage (RenderAll).</summary>
+    ''' the ground catcher and the blended list. In the engine frame of either game it runs inside the D3D-order stage (RenderAll).</summary>
     Private Sub DrawForwardStage(projection As Matrix4, camera As OrbitCamera, viewMatrix As Matrix4, vp As Matrix4)
         If Floor IsNot Nothing AndAlso Floor.Enabled = True Then Floor.Render(projection, camera, FloorOffset)
 
@@ -13397,7 +13956,7 @@ Public Class PreviewModel
             ParentControl.SharedGroundShadowShader.SetBool("bHdrTarget", FrameIsHdr)
             ' The ratio goes to the display background through the game's display encode: FO4 pow(1/2.2), SSE raw.
             ParentControl.SharedGroundShadowShader.SetFloat("uDisplayExponent",
-                Shader_Base_Class.DisplayExponent(ParentControl.CurrentShader Is ParentControl.SharedSSEShader))
+                Shader_Base_Class.DisplayExponent(ParentControl.FrameGameIsSse))
             If FrameIsHdr Then ParentControl.SetGroundCatcherOutputs(True)
             _groundQuad.Render(ParentControl.SharedGroundShadowShader, vp, _groundQuadCenter, _groundQuadHalf)
             If FrameIsHdr Then ParentControl.SetGroundCatcherOutputs(False)
@@ -13431,8 +13990,8 @@ Public Class PreviewModel
         Next
     End Sub
 
-    ''' <summary>The refraction normals of the frame (after the D3D-order stage of Fallout 4's frame: GL rows, as ISRefraction reads
-    ''' them).</summary>
+    ''' <summary>The refraction normals of the frame, drawn inside the frame's D3D-order stage (either game) and turned to GL rows at its
+    ''' end with the frame's targets (EndD3dRowsStage), as ISRefraction reads them.</summary>
     Private Sub DrawRefractionNormals(projection As Matrix4, camera As OrbitCamera)
         ' REFRACTION NORMALS (SSE 0x141520A10 after the world's opaque + alpha render; FO4 0x1421D6540 after the forward
         ' stage incl. the alpha finish): the refracting shapes have no colour pass (they sit in NoColourPassMeshes); the
@@ -13955,8 +14514,14 @@ Public Class PreviewModel
 
 #If DEBUG Then
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-deferred-scene. True throws once right after BeginFo4GBuffer (then resets
-    ''' itself): the aborted G-buffer stage whose GL state EndFo4Stage must undo.</summary>
+    ''' itself): the aborted G-buffer stage whose GL state EndD3dRowsStage must undo.</summary>
     Friend Shared GateFo4ThrowInStage As Boolean = False
+#End If
+
+#If DEBUG Then
+    ''' <summary>GATE ONLY (no UI): ShadowGate --sse-frame-rows. True throws once in Skyrim SE's D3D-order stage right after the opaque
+    ''' stage and the SAO composite (then resets itself): the aborted stage whose GL state EndD3dRowsStage must undo.</summary>
+    Friend Shared GateSseThrowInStage As Boolean = False
 #End If
 
 #If DEBUG Then
@@ -14262,9 +14827,9 @@ Public Class FloorRenderer
         Dim hdr = ParentControl.Model.FrameIsHdr
         shader.SetBool("bHdrTarget", hdr)
         ' The 2.3.8 curve of a direct frame wants linear: FO4 scene linear, SSE raw (Shader_Base_Class.SceneToLinearExponent).
-        shader.SetFloat("uSceneToLinear", Shader_Base_Class.SceneToLinearExponent(ParentControl.CurrentShader Is ParentControl.SharedSSEShader))
+        shader.SetFloat("uSceneToLinear", Shader_Base_Class.SceneToLinearExponent(ParentControl.FrameGameIsSse))
         ' The floor's colours live in the space of the game's scene (FO4 linear, SSE raw).
-        Dim sseFrame = ParentControl.CurrentShader Is ParentControl.SharedSSEShader
+        Dim sseFrame = ParentControl.FrameGameIsSse
         shader.SetVector3("backgroundLinear", Shader_Base_Class.MaterialColor(background, sseFrame))
         shader.SetVector3("groutColorLinear", Shader_Base_Class.MaterialColor(Color, sseFrame))
         shader.SetVector3("cameraPosition", camera.GetEyePosition())

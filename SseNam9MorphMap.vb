@@ -1,6 +1,6 @@
 ﻿''' <summary>
 ''' SSE (Skyrim) head-morph slider map — the engine's NAM9/NAMA -> chargen-morph mapping, byte-verified
-''' against SkyrimSE.exe (slider table @0x1ff92a0). Single source of truth shared by the render/bake morph
+''' against SkyrimSE.exe (slider table @0x209c690). Single source of truth shared by the render/bake morph
 ''' resolver AND the face editor (so the UI sliders, the live render and the bake all agree).
 '''
 ''' NAM9 = 18 signed floats (+ a 19th trailing float, unused here). Each slider i drives the chargen TRI

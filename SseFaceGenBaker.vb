@@ -9,7 +9,7 @@ Imports System.Numerics
 '''  (1) the FaceTint <c>_d.dds</c> (512² BC3, tint-only) — <see cref="BakeFaceTintDds"/>, and
 '''  (2) the FaceGeom <c>.nif</c> head texture set (complexion FTST slots + facetint slot) — see the NIF bake.
 '''
-''' ENGINE-VERIFIED (re_sseck disasm of the CK bake builder @0x18C9F40 + DXBC of the tint pixel shader):
+''' ENGINE-VERIFIED (re_sseck disasm of the CK SSE bake builder @0x1915DD0 + DXBC of the tint pixel shader):
 '''  - The facetint _d is TINT-ONLY: base 0.5 + per-layer uniform lerp(acc, TINC, maskR×TINV/100), RACE order.
 '''    It does NOT include the complexion — proven: FaceGeom NIF slot[6]=facetint, while the complexion (FTST
 '''    TX00/01/03/04/07) is written to head slots [0,1,2,3,7] and combined at RENDER, not in the _d.
@@ -144,7 +144,7 @@ Public Module SseFaceGenBaker
     ' NO invertir los operandos: el x255/64 normaliza el DETAIL (neutro 64 -> 1.0 exacto), NO el facetint.
     ' Con el tint pasando por el amplify, un skin tone saturado aplasta R/B y el cuello sale mucho más
     ' saturado que el pecho (in-game matchean).
-    ' Ver SetupMaterial 0x1414DC310 / rama facegen 0x1414DC542 / OnLoadTextureSet 0x1414BA6E0.
+    ' Ver SetupMaterial 0x141548820 / rama facegen 0x141548A52 / OnLoadTextureSet 0x141526B00.
     ' ÚNICA fuente de la op para render Y bake (WYSIWYG): ambos pliegan igual por construcción.
     Public Const FgTintAmp As Single = 255.0F / 64.0F            ' = 3.984375
     Public Const FgTintOffR As Single = 1.0F / 255.0F
@@ -153,15 +153,15 @@ Public Module SseFaceGenBaker
 
     ''' <summary>Default del engine para el slot 3 (DETAIL) cuando está VACÍO: <c>BSShader_DefFacegenDetail</c>,
     ''' textura UNIFORME <c>0x40</c> = 64/255 = 0.251. RE byte-level SkyrimSE.exe: la init de defaults
-    ''' @0x140E57E30 la crea con fill <c>0x40404040</c> y la guarda en manager+0x88 (singleton 0x328CC20 ⇒
-    ''' 0x328CCA8 = el default que el material facegen mete en +0xA8 @0x1414BA8B0). = vanilla blankdetailmap.dds.
+    ''' @0x14101D750 la crea con fill <c>0x40404040</c> y la guarda en manager+0x98 (singleton 0x33363A0 ⇒
+    ''' 0x3336438 = el default que el material facegen mete en +0xA8 @0x141526CD0). = vanilla blankdetailmap.dds.
     ''' NO es la Bayer 8×8 media 0.1235: esa es <c>BSShader_DitheringNoise</c>, creada en la MISMA función
     ''' unas instrucciones antes — citar sólo la dirección de la función es ambiguo entre las dos.</summary>
     Public Const EngineDefaultDetail As Single = 64.0F / 255.0F
 
     ''' <summary>Default del engine para el slot 6 (TINT) cuando no hay facetint: <c>DefaultGreyMap</c>, uniforme
-    ''' <c>0x80</c> = 128/255 = 0.50196. RE: misma init @0x140E57E30 (fill <c>0x80808080</c>), manager+0x70 =
-    ''' 0x328CC90 = el default que el material facegen mete en +0xA0. Es (casi) la IDENTIDAD del soft-light:
+    ''' <c>0x80</c> = 128/255 = 0.50196. RE: misma init @0x14101D750 (fill <c>0x80808080</c>), manager+0x80 =
+    ''' 0x3336420 = el default que el material facegen mete en +0xA0. Es (casi) la IDENTIDAD del soft-light:
     ''' con b = 0.5 EXACTO <c>a² + 2·a·0.5·(1−a) = a</c>, pero a 8 bits el valor representable es 128/255, y el
     ''' residuo queda acotado por <c>|softlight(a,128/255) − a| = 2·a·(1−a)·(1/510) ≤ 0.00098</c> (&lt; 1/4 de byte).
     ''' Se usa el valor BYTE-EXACTO, no 0.5: es lo que hace el motor, y es también lo único que sobrevive a un
@@ -439,7 +439,7 @@ Public Module SseFaceGenBaker
     '''
     ''' <para><b>Por qué hace falta.</b> El fold deja en el slot 0 la base ya amplificada CON los overlays encima
     ''' (orden RaceMenu: el overlay NO lleva tint ni detail). NEUTRALIZAR el slot 3 del NIF NO alcanza: la nota de
-    ''' RE del repo (<c>50-facetint-leyes-y-compositor</c>) registra que <c>RegenerateHead 0x14042BD90</c> empuja
+    ''' RE del repo (<c>50-facetint-leyes-y-compositor</c>) registra que <c>RegenerateHead 0x140433120</c> empuja
     ''' <c>_sk</c>/detail al material (<c>+0xB0</c>/<c>+0xA8</c>) desde el TXST RESUELTO al attachear la cabeza ⇒ el
     ''' neutro del NIF se descarta y el amplify se aplica DOS VECES. Con el detail medido de un NPC real
     ''' (0,256/0,241/0,245) el amplify es (1,036, 0,960, 0,992); al cuadrado (1,073, 0,922, 0,984) ⇒ ~2% más oscuro

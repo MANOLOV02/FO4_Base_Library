@@ -15,11 +15,11 @@
 ''' gone): the view (G-buffer, the edit views' VS (Shader_Class_Fo4EditView), picking, bounds, the legacy VBOs) and the bake use this
 ''' law, always
 ''' (UsesEngineLaw). The bake keeps its own accumulation (SkinningHelper.BlendBoneMatrices) with these weights - the CPU SkinBlend
-''' of the engine and the CK, CreationKit.exe 0x142B73230 = Fallout4.exe 0x141837390, instruction for instruction: w3 computed, not
+''' of the engine and the CK, CreationKit.exe 0x142B822E0 = Fallout4.exe 0x141837850, instruction for instruction: w3 computed, not
 ''' read, no renormalisation. Skyrim SE keeps its normalised law (not verified by RE there).</para></summary>
 Public Module Fo4EngineSkin
 
-    ''' <summary>Weight slots of the law: SkinBlend reads three and computes the fourth (0x141837390; rec2304 L47-49).</summary>
+    ''' <summary>Weight slots of the law: SkinBlend reads three and computes the fourth (0x141837850; rec2304 L47-49).</summary>
     Public Const Slots As Integer = 4
 
     ''' <summary>cb10 of a draw: 3 rows per bone, row r of bone k = column r of OpenTK's (bones(k) * transform) (the engine's 3x4 bone
@@ -66,7 +66,7 @@ Public Module Fo4EngineSkin
 
     ''' <summary>The homogeneous anchor (M44 = 1) of a matrix that came out of a weighted blend: call it before inverting a skinning
     ''' Mtot. The blend scales the 16 elements, M44 included (M44 = sum of the weights); the engine blends a 3x4 whose row 3 stays
-    ''' [0, 0, 0, 1] (SkinBlend 0x142B73230), so Matrix4d.Invert would otherwise bring in a 1/s that cancels the law.</summary>
+    ''' [0, 0, 0, 1] (SkinBlend 0x142B822E0), so Matrix4d.Invert would otherwise bring in a 1/s that cancels the law.</summary>
     Public Function ReanchorAffine(m As Matrix4d) As Matrix4d
         m.M44 = 1.0
         Return m

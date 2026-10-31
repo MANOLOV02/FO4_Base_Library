@@ -342,7 +342,7 @@ Public NotInheritable Class HkxPoseImportSession
             End If
 
 
-            ' [NO-ANIM-SYNC — REGLA UNIVERSAL, = pose-writer del motor 0x1413995D0] Se aplica SIEMPRE, por-componente,
+            ' [NO-ANIM-SYNC — REGLA UNIVERSAL, = pose-writer del motor 0x1413998F0] Se aplica SIEMPRE, por-componente,
             ' según el mask del NIF (bits 16-19). Con mask=0 (hueso sin flag) BuildNoAnimSyncLocal es passthrough
             ' (honored ≡ frameLocal) ⇒ Δ = inv(S)∘frameLocal = EXACTO el base. Con mask≠0, mantiene la traslación/escala
             ' ESTRUCTURAL (S = OriginalLocaL∘Mount = socket ensamblado) y solo aplica la ROTACIÓN del clip por eje
@@ -549,7 +549,7 @@ Public NotInheritable Class HkxPoseImportSession
     ''' <summary>
     ''' ⛔⛔ LOS SIETE BITS DE LA MASCARA DE TRACK, EN UN SOLO LUGAR.
     ''' <para>Salen del bloque de mascaras del blob de spline (4 bytes por track — `lea rdi, [rdi+4]`
-    ''' SIN condicion en `SkyrimSE.exe` 0x140C4C9ED). El bit dice si ESE componente viene en el frame;
+    ''' SIN condicion en `SkyrimSE.exe` 0x140C4CC4D). El bit dice si ESE componente viene en el frame;
     ''' si no viene, lo pone el llamador.</para>
     ''' <para>Estaban escritos como literales <c>1/2/4/8/16/32/64</c> en TRES funciones distintas de
     ''' este archivo, veintiuna veces.</para>
@@ -685,7 +685,7 @@ Public NotInheritable Class HkxPoseImportSession
 
     ''' <summary>[NO-ANIM-SYNC] Local que produce el motor para un hueso con flag No Anim Sync: ROTACIÓN del clip
     ''' (siempre) + traslación/escala de <paramref name="structural"/> (S) para las componentes flagueadas
-    ''' (mask bit0=X, 1=Y, 2=Z, 3=S), o del clip para las no flagueadas. = pose-writer 0x1413995D0 (mantiene
+    ''' (mask bit0=X, 1=Y, 2=Z, 3=S), o del clip para las no flagueadas. = pose-writer 0x1413998F0 (mantiene
     ''' [out+0x30/34/38] existente por eje flagueado; escala en [out+0x3c]).</summary>
     Public Shared Function BuildNoAnimSyncLocal(clipLocal As Transform_Class, structural As Transform_Class, mask As Byte) As Transform_Class
         Dim ct = clipLocal.Translation, st = structural.Translation

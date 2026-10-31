@@ -331,7 +331,7 @@ void main()
     {
         vec3 e = clamp(color, 0.0, 1.0);
         if (!bWireframe) e *= subColor;
-        vec3 eLin = vec3(d3d_exp2(2.2 * d3d_log2(e.r)), d3d_exp2(2.2 * d3d_log2(e.g)), d3d_exp2(2.2 * d3d_log2(e.b)));
+        vec3 eLin = vec3(d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.r)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.g)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.b)));
         o0.rgb = (bShowVertexColor ? vin.col0.rgb : vec3(1.0)) * eLin;
     }
     if (bShowMask) o0.rgb *= maskFactor;
@@ -1518,6 +1518,14 @@ void main() {}
         End Get
     End Property
 
+    ''' <summary>THE ONE DEFINITION OF "THE TUPLE TESSELLATES" (S0 fase 7 rev-04): a hull shader bound (0x14181D60E binds the HS / DS
+    ''' of the tuple; HS 0 = none). StageOf returns the control and evaluation stages exactly then; the decal base surface
+    ''' (Fo4DeferredPrograms.DecalBaseSurfaceProgram), the overlay's position capture (RenderableMesh) and ShadowGate's program census
+    ''' all ask this.</summary>
+    Friend Function Tessellates(hs As UInteger) As Boolean
+        Return hs <> 0UI
+    End Function
+
     ''' <summary>The engine stages of a tuple (SetShaders 0x14181D4A0): the VS with the app foot, and the HS / DS when the technique
     ''' tessellates (topology 0x23, 0x14181D60E). Throws when a stage is not transcribed (its reason) or the HS is not in the cache
     ''' (A1, StaleHullTechniques). Provides = the varyings the last stage writes (for the decal base surface).
@@ -1534,7 +1542,7 @@ void main() {}
         Dim vertex = If(EffectiveCpuLayout(vs, cpuRoute) <> Fo4CpuRouteLayout.None,
                         Header430 & clip & D3d11SemanticsSource.Glsl & StageLiterals & If(v.CpuSkinLaw, AppSkinLaw.Glsl, "") & v.CpuResources & v.CpuFn & AppVertexFoot,
                         Header430 & clip & D3d11SemanticsSource.Glsl & StageLiterals & If(v.SkinLaw, AppSkinLaw.Glsl, "") & v.Resources & v.Fn & AppVertexFoot)
-        If hs = 0UI Then Return (vertex, Nothing, Nothing)
+        If Not Tessellates(hs) Then Return (vertex, Nothing, Nothing)
         Dim h As (Record As Integer, Fn As String, NotTranscribed As String) = Nothing
         If Not HullStages.TryGetValue(hs, h) Then Throw New InvalidOperationException($"HS 0x{hs:X8} is not in the cache: the engine keeps the HS / DS a previous draw left bound (A1, 0x142231CAB / CC4)")
         Dim d = DomainStages(ds)

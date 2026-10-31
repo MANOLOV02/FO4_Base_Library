@@ -164,7 +164,7 @@ End Class
 ''' image space of WTHR SkyrimClearSN_A (<see cref="SsePreviewWeather"/>). Values read from the WINNING record
 ''' (Update.esm, see <see cref="SsePreviewWeather"/>): HNAM ReceiveBloomThreshold 0.8, White 1.075; CNAM Saturation
 ''' 2.0, Brightness 1.2, Contrast 1.35; TNAM amount 0.72, rgb (0.8862745, 0.9137255, 0.9137255).
-''' <para>Mapped to the HDR PS 12545 by ImageSpaceEffectHDR (0x14153D860, SetVector 0x14152B170 index k -&gt; cb2[k+1]):
+''' <para>Mapped to the HDR PS record 15846 by ImageSpaceEffectHDR (0x14153D860, SetVector 0x14152B170 index k -&gt; cb2[k+1]):
 ''' cb2[2] = (ReceiveBloomThreshold ISM+0xD8, Reinhard 1 / (1.1 White)^2 (White ISM+0xDC), bUseFilmicCurve);
 ''' cb2[3] = (Saturation ISM+0xEC + [0x1420D7CF0], 0, Contrast ISM+0xF4 (-0.3 if byte 0x14343635E), Brightness
 ''' ISM+0xF0 (+0.25 if that byte)); cb2[4] = (tint rgb ISM+0xFC..0x104, amount ISM+0xF8). The filmic flag
@@ -191,12 +191,12 @@ Friend NotInheritable Class SseImageSpace
         receiveBloomThreshold:=0.8F, white:=1.075F, saturation:=2.0F, brightness:=1.2F, contrast:=1.35F,
         tintColor:=New Vector3(0.8862745F, 0.9137255F, 0.9137255F), tintAmount:=0.72F)
 
-    ''' <summary>The constants of PS 12545 (cb2[2..4]) and the display exponent.</summary>
+    ''' <summary>The constants of PS record 15846 (cb2[2..4]) and the display exponent.</summary>
     Public Sub Upload(post As Shader_Base_Class)
         Dim w = 1.1F * White
         post.SetVector4("sseHdr", New Vector4(ReceiveBloomThreshold, 1.0F / (w * w), 0.0F, 0.0F))
         post.SetVector4("sseCinematic", New Vector4(Saturation, 0.0F, Contrast, Brightness))
-        ' cb2[4] of PS 12545 = (TintColor * TintAmount, TintAmount): premultiplied on the copy into the ISM
+        ' cb2[4] of PS record 15846 = (TintColor * TintAmount, TintAmount): premultiplied on the copy into the ISM
         ' (0x141536f80, ISM+0xFC..0x104) and uploaded by SetVector(3) at 0x14153dae6. SkyrimSE.exe 1.7.104.0.
         post.SetVector4("sseTint", New Vector4(TintColor * TintAmount, TintAmount))
         post.SetFloat("sseDisplayExponent", Shader_Base_Class.DisplayExponent(True))
@@ -296,7 +296,7 @@ void main()
     ''' H(z) = (z (0.15 z + 0.05) + 0.2 E) / (z (0.15 z + 0.5) + 0.06) - E / 0.3; c = H(2x) / H(11.2) (the PS
     ''' carries W = 11.2 folded into the literals 19.376 and 0.040856); cinematic: l = dot(c, LUM_W);
     ''' c = lerp(l, c, Saturation); c = lerp(c, l * Tint, TintAmount); c = lerp(avgLum, Brightness * c, Contrast).</para>
-    ''' <para>i3648: g = pow(c, 0.454545); out = sum of LUT_i(g * 0.9375 + 0.03125) * w_i over 16^3 LUTs, written
+    ''' <para>i3648: g = pow(c, the token 0x3EE8BA2F of rec3648 L38 = Shader_Base_Class.EngineGammaEncode); out = sum of LUT_i(g * 0.9375 + 0.03125) * w_i over 16^3 LUTs, written
     ''' to the UNORM swapchain (saturate). One LUT, weight 1 (weights NOT PROVEN); without a LUT, out = g.</para>
     ''' <para>Holes: bloom = 0; the t3.w bypass of i3700 (pixels flagged 4) has no analog here.</para>
     ''' <para>PREVIEW COMPOSITE (declared, not engine): the background is UI. The scene target carries the
@@ -354,22 +354,23 @@ void main()
 
     // ---- i3648: GammaCorrectLUT ----
     // pow of a negative is NaN in the engine (HLSL) and undefined here; with the image space in use
-    // (Contrast 1) c is never negative.
-    vec3 g = pow(c, vec3(0.454545));
+    // (Contrast 1) c is never negative. The exponent is rec3648 L38's TOKEN (Shader_Base_Class.EngineGammaEncodeGlsl, S0-E),
+    // not the decimal its disassembly prints (that one is 16 ulp below).
+    vec3 g = pow(c, vec3(" & Shader_Base_Class.EngineGammaEncodeGlsl & "));
     vec3 o = (lutWeight > 0.0) ? texture(texLut, g * 0.9375 + 0.03125).rgb * lutWeight : g;
     o = clamp(o, 0.0, 1.0);
 
     FragColor = vec4(mix(bg, o, cov.r), 1.0);
 }"
 
-    ''' <summary>THE SKYRIM SE POST LAW: ImageSpace HDR PS 12545 (Fade twin 12546), transcribed, then the UI composite
+    ''' <summary>THE SKYRIM SE POST LAW: ImageSpace HDR PS record 15846 (Fade twin 15848), transcribed, then the UI composite
     ''' over the background like the FO4 pass.
     ''' <para>lum = max(dot(scene, LUM_W), 1e-5); L = lum * t2.y / t2.x; Reinhard Lt = L (1 + L cb2[2].y) / (1 + L);
     ''' c = scene * Lt / lum + bloom * sat(cb2[2].x - Lt); l = dot(c, LUM_W); c = l + cb2[3].x (c - l);
     ''' c = lerp(c, l * cb2[4].rgb, cb2[4].w); c = t2.x + cb2[3].z (cb2[3].w c - t2.x); out = pow(sat(c), cb12[42].x).</para>
-    ''' <para>t2 is the eye-adaptation texture: its x and y are the SAME mean luminance (PS 12550 writes
-    ''' dot(scene, LUM_W) into x, y and z of the first level and 12549 / 12552 average it down), adapted toward the
-    ''' frame's value at two different speeds (PS 12551 / 12553). In the steady state the preview shows, both equal
+    ''' <para>t2 is the eye-adaptation texture: its x and y are the SAME mean luminance (PS record 15856 writes
+    ''' dot(scene, LUM_W) into x, y and z of the first level and 15854 / 15860 average it down), adapted toward the
+    ''' frame's value at two different speeds (PS record 15858 / 15862). In the steady state the preview shows, both equal
     ''' the mean: t2.y / t2.x = 1 and t2.x = the mean (the same actor-weighted mean as the FO4 pass). Hole: bloom = 0.</para></summary>
     Friend Const Fragment_PostSse As String =
 "#version 430
@@ -528,11 +529,14 @@ End Class
 ''' (scene + ssr)), no fog and no invFBR. The preview: no fog (user decision), no SSR and no snow terms, and no AO pass (not
 ''' computed by the preview). The engine's geometry is the meshes; the preview's background and its floor are app elements the
 ''' engine does not have (the floor is matched to the background at the horizon): a pixel no mesh drew (coverage g = 0, which
-''' only mesh draws write) is left as it is.</summary>
+''' only mesh draws write) is left as it is.
+''' <para>The program: the SSE SAO composite (PS 16004 as the preview runs it, SseCompositeSource) on the SAO's full-screen triangle: it
+''' runs inside the frame's D3D-order stage, where the D3D uv addresses the pixel's own texel of every target
+''' (PreviewControl.ApplySseOpaqueComposite).</para></summary>
 Public Class Sse_Opaque_Composite_Shader_Class
     Inherits Shader_Base_Class
     Sub New()
-        MyBase.New(RefractionSource.ImageSpace_Vertex, SseCompositeSource.Fragment)
+        MyBase.New(SseSaoSource.Vs_Fullscreen, SseCompositeSource.Fragment)
     End Sub
 End Class
 
@@ -544,14 +548,46 @@ Public Class Sse_Sao_Pass_Shader_Class
     End Sub
 End Class
 
-''' <summary>The six SAO programs (CameraZ 15997, Minify 16006, MinifyContrast 16008, RawAO 16012, BlurH 15991, BlurV 15993).</summary>
+''' <summary>The six SAO programs (CameraZ 15997, Minify 16006, MinifyContrast 16008, RawAO 16012, BlurH 15991, BlurV 15993), each
+''' built on its first use (S0-A, LazyProgram: a failure aborts the frame). Creating the object builds nothing.</summary>
 Friend NotInheritable Class SseSaoPrograms
-    Friend ReadOnly CameraZ As Sse_Sao_Pass_Shader_Class
-    Friend ReadOnly Minify As Sse_Sao_Pass_Shader_Class
-    Friend ReadOnly MinifyContrast As Sse_Sao_Pass_Shader_Class
-    Friend ReadOnly RawAO As Sse_Sao_Pass_Shader_Class
-    Friend ReadOnly BlurH As Sse_Sao_Pass_Shader_Class
-    Friend ReadOnly BlurV As Sse_Sao_Pass_Shader_Class
+    Private ReadOnly _slots As LazyProgram(Of Sse_Sao_Pass_Shader_Class)()
+    Friend ReadOnly Property CameraZ As Sse_Sao_Pass_Shader_Class
+        Get
+            Return _slots(0).GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property Minify As Sse_Sao_Pass_Shader_Class
+        Get
+            Return _slots(1).GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property MinifyContrast As Sse_Sao_Pass_Shader_Class
+        Get
+            Return _slots(2).GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property RawAO As Sse_Sao_Pass_Shader_Class
+        Get
+            Return _slots(3).GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property BlurH As Sse_Sao_Pass_Shader_Class
+        Get
+            Return _slots(4).GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property BlurV As Sse_Sao_Pass_Shader_Class
+        Get
+            Return _slots(5).GetProgram()
+        End Get
+    End Property
+    ''' <summary>The six slots (the control's program census and its release).</summary>
+    Friend ReadOnly Property Slots As IReadOnlyList(Of IProgramSlot)
+        Get
+            Return _slots
+        End Get
+    End Property
 
     Friend Sub New()
         Me.New(Function(s As String) s)
@@ -566,25 +602,19 @@ Friend NotInheritable Class SseSaoPrograms
     End Function
 #End If
 
-    ''' <summary>The six passes, each fragment text through <paramref name="m"/> (the identity but for a Debug gate's mutation).</summary>
+    ''' <summary>The six passes, each fragment text through <paramref name="m"/> (the identity but for a Debug gate's mutation), each
+    ''' built on its first use.</summary>
     Private Sub New(m As Func(Of String, String))
-        ' A pass that does not compile or link throws out of here after releasing the ones already built (v4 B-rev-05).
-        Try
-            CameraZ = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_CameraZ))
-            Minify = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_Minify))
-            MinifyContrast = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_MinifyContrast))
-            RawAO = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_RawAO))
-            BlurH = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_BlurH))
-            BlurV = New Sse_Sao_Pass_Shader_Class(m(SseSaoSource.Fragment_BlurV))
-        Catch
-            Dispose()
-            Throw
-        End Try
+        Dim pase = Function(nombre As String, fragment As String) New LazyProgram(Of Sse_Sao_Pass_Shader_Class)("SSE SAO " & nombre, Function() New Sse_Sao_Pass_Shader_Class(m(fragment)))
+        _slots = {pase("CameraZ", SseSaoSource.Fragment_CameraZ), pase("Minify", SseSaoSource.Fragment_Minify),
+                  pase("MinifyContrast", SseSaoSource.Fragment_MinifyContrast), pase("RawAO", SseSaoSource.Fragment_RawAO),
+                  pase("BlurH", SseSaoSource.Fragment_BlurH), pase("BlurV", SseSaoSource.Fragment_BlurV)}
     End Sub
 
+    ''' <summary>Deletes the passes built so far; the next use builds them again.</summary>
     Friend Sub Dispose()
-        For Each p As Shader_Base_Class In {CameraZ, Minify, MinifyContrast, RawAO, BlurH, BlurV}
-            p?.Dispose()
+        For Each s In _slots
+            s.Release()
         Next
     End Sub
 End Class
@@ -592,9 +622,10 @@ End Class
 ''' <summary>THE TARGETS AND THE RUN OF THE SKYRIM SE SAO (Tools/re-docs/RE_SAO_BOTH_2026-10-03.md 1.5): CameraZ into level 0 of an
 ''' R32F pyramid (RT 0x31/0x32), Minify / MinifyContrast into levels 1..min(4, n-1) (RawAO reads mips &lt;= 4), RawAO 16012 into an
 ''' RGBA8 target (RT 0x3E), BlurH into RT 0x42 and BlurV into kSAO (RT 0x2E). Every pass runs under
-''' glClipControl(UPPER_LEFT): the SAO targets are in D3D row order and only the two scene inputs (depth, normals) are flipped on
-''' read (SseSaoSource.Prelude). The samplers are the engine's table (RE 1.5): FILT 0 point, FILT 1 bilinear mip-point, FILT 2
-''' trilinear, all CLAMP; the blurs inherit the RawAO slot-0 sampler (FILT 2).</summary>
+''' glClipControl(UPPER_LEFT): the SAO targets are in D3D row order, and so are its two scene inputs (depth, normals): the SAO runs
+''' inside the frame's D3D-order stage (PreviewControl.BeginD3dRowsStage), so every texture is read with the D3D uv as the engine reads
+''' it, no flip (SseSaoSource.Prelude). The samplers are the engine's table (RE 1.5): FILT 0 point, FILT 1 bilinear mip-point, FILT 2
+''' trilinear, all CLAMP; the blurs inherit the RawAO slot-0 sampler (FILT 2). The caller's clip origin is restored after the passes.</summary>
 Friend NotInheritable Class SseSaoTargets
     Private _w As Integer, _h As Integer, _levels As Integer
     Private _pyramid As Integer
@@ -604,7 +635,7 @@ Friend NotInheritable Class SseSaoTargets
     Private _sFilt0 As Integer, _sFilt1 As Integer, _sFilt2 As Integer
 
 #If DEBUG Then
-    ''' <summary>GATE ONLY (ShadowGate --sse-sao-law mutant): run the passes without glClipControl(UPPER_LEFT).</summary>
+    ''' <summary>GATE ONLY (ShadowGate --sse-sao-law mutant): run the passes under LOWER_LEFT instead of glClipControl(UPPER_LEFT).</summary>
     Friend Shared GateNoClipControl As Boolean
 #End If
 
@@ -695,19 +726,17 @@ Friend NotInheritable Class SseSaoTargets
         If with44 Then p.SetVector4("uCB12_44", SseSaoConstants.Cb12_44)
     End Sub
 
-    ''' <summary>The five passes of 0x141541F40 over <paramref name="depthTex"/> (the scene depth copy, LOWER_LEFT) and
-    ''' <paramref name="normalsTex"/> (the SAO normals target, LOWER_LEFT), W x H; leaves kSAO. The caller rebinds its framebuffer
-    ''' and viewport. <paramref name="frustum"/> = NiCamera viewFrustum (left, right, top, bottom) of the frame's projection.</summary>
+    ''' <summary>The five passes of 0x141541F40 over <paramref name="depthTex"/> (the scene depth copy) and <paramref name="normalsTex"/>
+    ''' (the SAO normals target), both in D3D rows (the frame's D3D-order stage), W x H; leaves kSAO. The caller rebinds its framebuffer
+    ''' and viewport; its clip origin is restored. <paramref name="frustum"/> = NiCamera viewFrustum (left, right, top, bottom) of the
+    ''' frame's projection.</summary>
     Public Sub Run(progs As SseSaoPrograms, depthTex As Integer, normalsTex As Integer, w As Integer, h As Integer,
                    near As Single, far As Single, frustum As Vector4, emptyVao As Integer)
         If w <= 0 OrElse h <= 0 Then Return
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        Dim filasD3d = True
-#If DEBUG Then
-        If GateNoClipControl Then filasD3d = False
-#End If
-        If filasD3d Then Gl43.ClipControl(ClipOrigin.UpperLeft)
+        Dim origenDelLlamador = Gl43.Origin
+        Gl43.ClipControl(OrigenDeLasPasadas())
         Try
             ' 1. CameraZ (15997) -> pyramid level 0.
             Target(_pyramid, 0, w, h)
@@ -757,9 +786,18 @@ Friend NotInheritable Class SseSaoTargets
         Finally
             GL.BindSampler(0, 0)
             GL.BindSampler(1, 0)
-            Gl43.ClipControl(ClipOrigin.LowerLeft)
+            Gl43.ClipControl(origenDelLlamador)
         End Try
     End Sub
+
+    ''' <summary>The clip origin of the six passes: UPPER_LEFT (D3D rows); LOWER_LEFT only under the gate's mutant GateNoClipControl
+    ''' (set explicitly: the frame's stage is already UPPER_LEFT, so leaving the origin alone would not be the mutant).</summary>
+    Private Shared Function OrigenDeLasPasadas() As ClipOrigin
+#If DEBUG Then
+        If GateNoClipControl Then Return ClipOrigin.LowerLeft
+#End If
+        Return ClipOrigin.UpperLeft
+    End Function
 
     ''' <summary>BlurH from <paramref name="aoTex"/> into _blurH, BlurV into kSAO; slot 0 with the inherited FILT 2 sampler.</summary>
     Private Sub RunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
@@ -785,12 +823,13 @@ Friend NotInheritable Class SseSaoTargets
     Friend Sub GateRunBlurs(progs As SseSaoPrograms, aoTex As Integer, w As Integer, h As Integer, emptyVao As Integer)
         Ensure(w, h)
         GL.ColorMask(True, True, True, True)
-        If Not GateNoClipControl Then Gl43.ClipControl(ClipOrigin.UpperLeft)
+        Dim origenDelLlamador = Gl43.Origin
+        Gl43.ClipControl(OrigenDeLasPasadas())
         Try
             RunBlurs(progs, aoTex, w, h, emptyVao)
         Finally
             GL.BindSampler(0, 0)
-            Gl43.ClipControl(ClipOrigin.LowerLeft)
+            Gl43.ClipControl(origenDelLlamador)
         End Try
     End Sub
 #End If
@@ -829,6 +868,14 @@ Friend NotInheritable Class RefractionTargets
     Public ReadOnly Property NormalsTexture As Integer
         Get
             Return _normalsTex
+        End Get
+    End Property
+
+    ''' <summary>The normals target's format (BeginNormals: Skyrim SE RGBA8, Fallout 4 R11F_G11F_B10F): the row mirror of the frame's
+    ''' D3D-order stage turns it in it (PreviewControl.EndD3dRowsStage).</summary>
+    Public ReadOnly Property NormalsFormat As SizedInternalFormat
+        Get
+            Return _normalsFmt
         End Get
     End Property
 

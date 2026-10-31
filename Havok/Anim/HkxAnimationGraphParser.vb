@@ -304,12 +304,12 @@ Partial Public Class HkxObjectGraph_Class
                                 $"maxFPB={maxFramesPerBlock} blkOff=[{String.Join(",", blockOffsets.Select(Function(x) "0x" & x.ToString("X")))}]"
             Try
                 ' ⛔⛔ CUATRO BYTES POR TRACK, Y AHORA CON LA CITA LITERAL.
-                ' `SkyrimSE.exe` recorre el bloque de mascaras en 0x140C4C950..0x140C4C9F5 leyendo `[rdi]`,
-                ' `[rdi+1]`, `[rdi+2]` y `[rdi+3]`, y avanza `lea rdi, [rdi + 4]` en 0x140C4C9ED SIN
+                ' `SkyrimSE.exe` recorre el bloque de mascaras en 0x140C4CBB0..0x140C4CC55 leyendo `[rdi]`,
+                ' `[rdi+1]`, `[rdi+2]` y `[rdi+3]`, y avanza `lea rdi, [rdi + 4]` en 0x140C4CC4D SIN
                 ' NINGUNA CONDICION. Los campos son los mismos que se decodifican abajo:
-                '     `and ecx, 3`       (pos)    0x140C53963
-                '     `shr ecx, 2 / and ecx, 0xF` (rot) 0x140C4C996 / 0x140C4C9A1
-                '     `shr ebx, 6`       (escala) 0x140C4C9DA
+                '     `and ecx, 3`       (pos)    0x140C4CBC3
+                '     `shr ecx, 2 / and ecx, 0xF` (rot) 0x140C4CBF6 / 0x140C4CC01
+                '     `shr ebx, 6`       (escala) 0x140C4CC3A
                 ' Y el archivo dice lo mismo: `maskAndQuantizationSize` vale EXACTAMENTE `numTracks * 4`
                 ' (medido: 332 con 83 tracks), y el hexdump del blob muestra grupos de cuatro:
                 '     45 00 00 00 | 45 70 F0 00 | 45 00 04 00 | 45 07 F0 00 | ...
@@ -691,8 +691,8 @@ Partial Public Class HkxObjectGraph_Class
 
     ''' <summary>
     ''' ⛔⛔ CUANTOS BYTES CONSUME CADA FORMATO. ES OTRA TABLA DEL MOTOR, NO UNA DERIVACION DEL NOMBRE.
-    ''' <para>`SkyrimSE.exe` la guarda en <c>0x141A15D78</c>: <c>{ 4, 5, 6, 3, 2, 16 }</c>, leida en
-    ''' <c>0x140C4DCE1</c> (<c>movsxd rax,[rsi+rbx*4+0x1a15d78] / add [rdi],rax</c>).</para>
+    ''' <para>`SkyrimSE.exe` la guarda en <c>0x141A15D98</c>: <c>{ 4, 5, 6, 3, 2, 16 }</c>, leida en
+    ''' <c>0x140C4DF4D</c> (<c>movsxd rax,[rsi+rbx*4+0x1a15d98] / add [rdi],rax</c>).</para>
     ''' <para>`Fallout4.exe` los tiene literales DOCE veces — seis en la rama estatica
     ''' (<c>add qword ptr [rdi], N</c> en 0x1419B429A, 0x1419B3B2F, 0x1419B3CA9, 0x1419B3E1F,
     ''' 0x1419B3F99, 0x1419B411A) y seis en la de puntos de control (<c>add rdi, N</c> en
@@ -813,7 +813,7 @@ Partial Public Class HkxObjectGraph_Class
         v(faltante) = w
 
         Dim result As New Quaternion With {.X = v(0), .Y = v(1), .Z = v(2), .W = v(3)}
-        ' ⛔ THREECOMP24 NO normaliza: FO4 0x141A474D0 tiene UNA sola raiz — la de reponer la componente ausente — y va derecho al store 0x141A475D4 / `ret` 0x141A475DC. SSE 0x140C53230 idem (`sqrtss` 0x140C53381, store 0x140C53398, `ret` 0x140C533A8).
+        ' ⛔ THREECOMP24 NO normaliza: FO4 0x141A474D0 tiene UNA sola raiz — la de reponer la componente ausente — y va derecho al store 0x141A475D4 / `ret` 0x141A475DC. SSE 0x140C53490 idem (`sqrtss` 0x140C535E1, store 0x140C535F8, `ret` 0x140C53608).
         Return result
     End Function
 
@@ -863,11 +863,11 @@ Partial Public Class HkxObjectGraph_Class
         ' `PI/4` y `PI/2/511` NO EXISTEN como literal en ninguno de los dos .exe: eran una fusion
         ' algebraica mia, correcta en Double y con OTRO redondeo en Single. El motor multiplica paso
         ' a paso, en Single, por constantes que si estan en el pool del codec:
-        '     1/1023 = 0x3A802008 @0x141A162AC   `mulss xmm0, ...`   0x140C5340D
-        '     1/511  = 0x3B004020 @0x141A162B0   `mulss xmm11, ...`  0x140C53450
-        '     0.5    = 0x3F000000 @0x141B5BDF4                       0x140C5345D
-        '     PI     = 0x40490FDB @0x141B5BE44   (3.14159274)        0x140C53462
-        ' Y divide por `2*phi` (`mulss xmm2, 2` @0x140C53448, `divss xmm8, xmm2` @0x140C53477).
+        '     1/1023 = 0x3A802008 SSE @0x141A162CC   `mulss xmm0, ...`   SSE 0x140C5366D
+        '     1/511  = 0x3B004020 SSE @0x141A162D0   `mulss xmm11, ...`  SSE 0x140C536B0
+        '     0.5    = 0x3F000000 SSE @0x141B5BE14                       SSE 0x140C536BD
+        '     PI     = 0x40490FDB SSE @0x141B5BE64   (3.14159274)        SSE 0x140C536C2
+        ' Y divide por `2*phi` (`mulss xmm2, 2` SSE @0x140C536A8, `divss xmm8, xmm2` SSE @0x140C536D7).
         Const InvMil23 As Single = 0.0009775171F   ' 0x3A802008
         Const Inv511 As Single = 0.00195694715F      ' 0x3B004020
         Const PiMotor As Single = 3.14159274F        ' 0x40490FDB
@@ -899,7 +899,7 @@ Partial Public Class HkxObjectGraph_Class
         If (compressed And signMasks(2)) <> 0UI Then result.Z = -result.Z
         If (compressed And signMasks(3)) <> 0UI Then result.W = -result.W
 
-        ' ⛔ POLAR32 NO normaliza: SSE 0x140C53544 retorna sin tocar el resultado.
+        ' ⛔ POLAR32 NO normaliza: SSE 0x140C537A4 retorna sin tocar el resultado.
         Return result
     End Function
 
@@ -907,8 +907,8 @@ Partial Public Class HkxObjectGraph_Class
         EnsureBlobReadable(data, offset, 5, "40-bit quaternion")
 
         ' ⛔ LA CONSTANTE DEL MOTOR, BIT A BIT. Vive en el pool del codec: `0x14271B618` (FO4) y
-        ' `0x141A162A8` (SSE), bits `0x39B51B97`. Lo que habia escrito compilaba a `0x39B51BA3` — 12
-        ' ULP de diferencia. El reciproco tambien esta, en `0x14271B62C` / `0x141A162CC` (2894.89526).
+        ' SSE `0x141A162C8` (SSE), bits `0x39B51B97`. Lo que habia escrito compilaba a `0x39B51BA3` — 12
+        ' ULP de diferencia. El reciproco tambien esta, en `0x14271B62C` / `0x141A162EC` (2894.89526).
         Const Fractal As Single = 0.000345435663F
         Dim raw As ULong = 0UL
         For byteIndex = 0 To 4
@@ -919,7 +919,7 @@ Partial Public Class HkxObjectGraph_Class
         Dim b = CUInt((raw >> 12) And &HFFFUL)
         Dim c = CUInt((raw >> 24) And &HFFFUL)
         ' ⛔ EL SESGO 2047 SALE DE LOS DOS .exe, NO DE UNA LIBRERIA DE TERCEROS. SkyrimSE lo tiene
-        ' como literal entero: `sub eax, 0x7ff` en 0x140C5365C, 0x140C53684 y 0x140C536A2. Fallout4
+        ' como literal entero: `sub eax, 0x7ff` en 0x140C538BC, 0x140C538E4 y 0x140C53902. Fallout4
         ' lo hace vectorizado: `movss xmm4,[0x14262DD20]` (=2047) y `subps xmm6,xmm4` en 0x141A47A26,
         ' con la version entera del pool en 0x14271B660. La cita a HavokLib sobraba.
         Dim x = (CSng(a) - 2047.0F) * Fractal
@@ -941,14 +941,14 @@ Partial Public Class HkxObjectGraph_Class
                 result = New Quaternion With {.X = x, .Y = y, .Z = z, .W = w}
         End Select
 
-        ' ⛔ THREECOMP40 NO normaliza: FO4 0x141A47910, unica raiz en 0x141A47A6D (reponer la componente ausente); las cuatro salidas son `movups [rdx], xmm6` + `ret` (0x141A47AD4/AF5/B10/B2B). SSE 0x140C53580 idem (`sqrtss` 0x140C536FC, `ret` 0x140C53721).
+        ' ⛔ THREECOMP40 NO normaliza: FO4 0x141A47910, unica raiz en 0x141A47A6D (reponer la componente ausente); las cuatro salidas son `movups [rdx], xmm6` + `ret` (0x141A47AD4/AF5/B10/B2B). SSE 0x140C537E0 idem (`sqrtss` 0x140C5395C, `ret` 0x140C53981).
         Return result
     End Function
 
     Private Shared Function Read48BitQuaternion(data As Byte(), offset As Integer) As Quaternion
         EnsureBlobReadable(data, offset, 6, "48-bit quaternion")
 
-        ' ⛔ LA CONSTANTE DEL MOTOR, BIT A BIT: `0x14271B610` (FO4) / `0x141A162A0` (SSE), bits
+        ' ⛔ LA CONSTANTE DEL MOTOR, BIT A BIT: `0x14271B610` (FO4) / SSE `0x141A162C0` (SSE), bits
         ' `0x383507C7`. Lo que habia escrito compilaba a `0x383507C5` — 2 ULP. El reciproco esta en
         ' `0x14271B634` (23169.0605).
         Const Fractal As Single = 0.000043161006F
@@ -978,7 +978,7 @@ Partial Public Class HkxObjectGraph_Class
                 result = New Quaternion With {.X = x, .Y = y, .Z = z, .W = w}
         End Select
 
-        ' ⛔ THREECOMP48 NO normaliza: FO4 0x141A47B40, unica raiz en 0x141A47C14; store 0x141A47C4D, `ret` 0x141A47C55. SSE 0x140C53730 idem (`sqrtss` 0x140C53889, `ret` 0x140C538B5).
+        ' ⛔ THREECOMP48 NO normaliza: FO4 0x141A47B40, unica raiz en 0x141A47C14; store 0x141A47C4D, `ret` 0x141A47C55. SSE 0x140C53990 idem (`sqrtss` 0x140C53AE9, `ret` 0x140C53B15).
         Return result
     End Function
 
@@ -992,7 +992,7 @@ Partial Public Class HkxObjectGraph_Class
             .W = BitConverter.ToSingle(data, offset + 12)
         }
 
-        ' ⛔ UNCOMPRESSED NO normaliza: es una copia cruda de 16 bytes. FO4 0x141A47C60 (`movups xmm0,[rcx]` / `movups [rdx],xmm0` / `ret`), SSE 0x140C538C0 (cuatro `mov dword`).
+        ' ⛔ UNCOMPRESSED NO normaliza: es una copia cruda de 16 bytes. FO4 0x141A47C60 (`movups xmm0,[rcx]` / `movups [rdx],xmm0` / `ret`), SSE 0x140C53B20 (cuatro `mov dword`).
         Return result
     End Function
 
@@ -1036,8 +1036,8 @@ Partial Public Class HkxObjectGraph_Class
     ''' de Newton-Raphson (constantes <c>3</c> @<c>0x142629510</c> y <c>0.5</c> @<c>0x142629520</c>) y
     ''' <b>sin una sola comparacion</b>: con lengthSquared 0 el motor de Fallout devuelve NaN.</para>
     ''' <para>⚠️ HUECO DECLARADO — LOS DOS JUEGOS NO COINCIDEN. SkyrimSE si guarda, y con otro neutro:
-    ''' <c>cmpeqss lengthSq, 0.0</c> exacto en <c>0x140C531E1</c> y el resultado es el cuaternion
-    ''' <b>CERO</b> (<c>andnps</c>/<c>mulps</c> en 0x140C53210/17), no la identidad. Aca se toma la
+    ''' <c>cmpeqss lengthSq, 0.0</c> exacto en <c>0x140C53441</c> y el resultado es el cuaternion
+    ''' <b>CERO</b> (<c>andnps</c>/<c>mulps</c> en 0x140C53470/17), no la identidad. Aca se toma la
     ''' guarda de Skyrim porque un NaN envenena la pose entera, y se ANOTA cada vez que dispara: si
     ''' el corpus nunca la ejerce, la divergencia entre los dos motores no se puede observar.</para>
     ''' </summary>
@@ -1081,8 +1081,8 @@ Partial Public Class HkxObjectGraph_Class
 
     ''' <summary>
     ''' ⛔⛔ LA ALINEACION DEL PUNTERO ANTES DE LEER UNA ROTACION. ES UNA TABLA DEL MOTOR.
-    ''' <para>`SkyrimSE.exe` la guarda COMO DATO en <c>0x141A15D60</c>, indexada por el valor del
-    ''' enum: <c>{ 4, 1, 2, 1, 2, 4 }</c>. El lector la usa en <c>0x140C4DCB6</c>:
+    ''' <para>`SkyrimSE.exe` la guarda COMO DATO en <c>0x141A15D80</c>, indexada por el valor del
+    ''' enum: <c>{ 4, 1, 2, 1, 2, 4 }</c>. El lector la usa en <c>0x140C4DF2D</c>:
     ''' <c>mov eax,[rsi+rbx*4+0x1a15d60] / dec eax / not eax / add rcx,[rdi] / and rcx,rax</c>.</para>
     ''' <para>`Fallout4.exe` no tiene tabla: le hizo unroll a las seis ramas, y ahi estan los mismos
     ''' seis valores como literales — POLAR32 <c>add rcx,3 / and rcx,~3</c> (0x1419B4282/86),
@@ -1090,7 +1090,7 @@ Partial Public Class HkxObjectGraph_Class
     ''' <c>inc rcx / and rcx,~1</c> (0x1419B3C92/95, 0x1419B3F82/85), UNCOMPRESSED como POLAR32
     ''' (0x1419B4102/06). Y otra vez, identico, en los seis lectores de puntos de control.</para>
     ''' <para>El nombre sale del enum declarado, no de un entero pelado: los valores estan en la
-    ''' reflexion de los dos .exe (FO4 items @0x1426CCE40, SSE @0x141A0A550).</para>
+    ''' reflexion de los dos .exe (FO4 items @0x1426CCE40, SSE @0x141A0A570).</para>
     ''' </summary>
     Private Shared Function GetQuaternionAlignment(format As Integer) As Integer
         If format = RotQ("POLAR32") OrElse format = RotQ("UNCOMPRESSED") Then Return 4

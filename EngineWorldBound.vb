@@ -59,7 +59,7 @@ Friend Module EngineWorldBound
 
     ''' <summary>Ola 0c ptos 25 / 14: the root BSFadeNode's world bound at the top-level update (BSFadeNode::UpdateDownwardPass, vt
     ''' 0x142903BA8 slot 48 0x14217DFC0, [upd+0x18] = 1, replaces NiNode's with 0x14217EE50): radius 0 (0x14217EE60), then each geometry
-    ''' of its list whose world radius is &gt; 0 (comiss, 0x14217EECD..EF1: not 0, not negative, not NaN) - the first copied, the rest
+    ''' of its list whose world radius is &gt; 0 (comiss, 0x14217EED0..EF1: not 0, not negative, not NaN) - the first copied, the rest
     ''' merged (MergeBound, 0x1416E8350). Nothing when none qualifies (the radius stays 0). The list (members and order) is the
     ''' caller's: NifSceneVisibility.FadeListGeometries (0x14217ED30, resultado5 item 2).</summary>
     Friend Function FadeNodeBound(spheres As IEnumerable(Of Sphere)) As Sphere?

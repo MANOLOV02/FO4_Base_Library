@@ -57,7 +57,7 @@ Friend Module Fo4EngineMaterial
     End Function
 
     ''' <summary>THE FACTORY'S CASCADE, the only copy in the library: 0x14216B610 (Fallout4.exe 1.11.240; the CK's twin 0x142BC6F00) tests the
-    ''' applied flags in this order and builds the first class that matches (0x14216B650 0x20000, 0x14216B68E 0x80, 0x14216B6CC bit 38,
+    ''' applied flags in this order and builds the first class that matches (Fallout4.exe 0x14216B650 0x20000, 0x14216B68E 0x80, 0x14216B6CC bit 38,
     ''' 0x14216B704 0x400, 0x14216B735 0x200000, 0x14216B794 0x40000, 0x14216B7D3 bit 56; none: the base class 0x14216B820). Feature = the
     ''' class's GetType (vfunc +0x28: Eye 0x1421CFF50 = 0x10, Envmap 0x1421CF710 = 1, Glowmap 0x1421D0440 = 2, Face 0x1421D1580 = 4,
     ''' SkinTint 0x1421D1930 = 5, HairTint 0x1421D1B30 = 6), which is also the Shader Type value SaveBinary writes (0x142178F9C; CK

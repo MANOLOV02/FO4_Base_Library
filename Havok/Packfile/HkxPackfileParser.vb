@@ -365,9 +365,9 @@ Public NotInheritable Class HkxPackfileParser_Class
     ''' `int32`, de donde sale que el destino este en `+4`) y avanzan el cursor:</para>
     ''' <para><code>
     ''' tabla     rango             Fallout4.exe                    SkyrimSE.exe                zancada
-    ''' local     [0x1C]-[0x18]     0x14142B620  add r9d,2 / r8,8   0x140C3D219  add r9d,2/r8,8    8
-    ''' global    [0x20]-[0x1C]     0x14142B580  add r10d,3/r8,0xC  0x140C3D1AB  add r9d,3/r8,0xC 12
-    ''' virtual   [0x24]-[0x20]     0x14142B690  add r10d,3/rsi,0xC 0x140C3CCCC  add esi,3/rbx,0xC 12
+    ''' local     [0x1C]-[0x18]     0x14142B620  add r9d,2 / r8,8   0x140C3D467  add r9d,2/r8,8    8
+    ''' global    [0x20]-[0x1C]     0x14142B580  add r10d,3/r8,0xC  0x140C3D3F9  add r9d,3/r8,0xC 12
+    ''' virtual   [0x24]-[0x20]     0x14142B690  add r10d,3/rsi,0xC 0x140C3CF1C  add esi,3/rbx,0xC 12
     ''' </code></para>
     ''' <para>La entrada local es `(source, destination)` = 2 x int32; la global y la virtual suman
     ''' un tercer int32. El `-1` que corta el recorrido es el mismo centinela que el motor compara

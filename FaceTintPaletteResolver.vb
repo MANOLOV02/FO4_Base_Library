@@ -203,7 +203,7 @@ Public Module FaceTintPaletteResolver
         Return (resolvedColor, CkBlendOpWithSkinToneNet(opt, resolvedColor, tl.Value, pm), matched, opacityScale)
     End Function
 
-    ''' <summary>Blend-op EXACTO del CK (FUN_14041D220): itera TemplateColors EN ORDEN; por cada preset cuyo
+    ''' <summary>Blend-op EXACTO del CK (FUN_14041E760): itera TemplateColors EN ORDEN; por cada preset cuyo
     ''' CLFM color == layerColor (RGB exacto) recuerda su BlendOp (LAST gana); si ademas Alpha == value*0.0099999998
     ''' EXACTO corta. Sin color-match -> 0. THE rule: unica fuente del blend-op por capa (via
     ''' ResolvePaletteLayerEffective).</summary>

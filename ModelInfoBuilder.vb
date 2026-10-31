@@ -9,7 +9,7 @@ Imports NiflySharp.Blocks
 ''' MALLA: la lista de texturas, la de materiales, la de addon nodes y el contador de color.
 '''
 ''' <para><b>Quien construye el bloque de verdad es el CreationKit</b>, no el juego. Las direcciones,
-''' sobre `CreationKit.exe` de Fallout 4:</para>
+''' sobre `CreationKit.exe` de Fallout 4 (CK):</para>
 ''' <list type="bullet">
 ''' <item><c>0x1408E8DC0</c> — <c>TESModel::SaveBuffer</c>. Si el nombre de archivo esta vacio SALE SIN
 ''' ESCRIBIR NADA, ni el nombre ni el bloque. Esa es la ley detras de "el MODL y su bloque viajan

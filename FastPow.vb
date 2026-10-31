@@ -53,10 +53,15 @@ Public Module FastPow
         End Sub
     End Structure
 
-    ' Los cuatro exponentes que usa el compose. Se calculan en Double y se angostan aca, igual que
-    ' InvG22/InvG24 del compositor: escribirlos como literales daria OTRO float y por lo tanto otra imagen.
-    Public ReadOnly G22 As New PowExp(2.2)
-    Public ReadOnly InvG22 As New PowExp(1.0 / 2.2)
+    ' Los cuatro exponentes que usa el compose.
+    ' G22 / InvG22 = los binary32 del MOTOR, leidos de su sede (S0-E, X20): el decode Shader_Base_Class.EngineGamma (2.2f,
+    ' 0x400CCCCD) y el encode Shader_Base_Class.EngineGammaEncode (el token 0x3EE8BA2F del DXBC del compose, NO 1/EngineGamma).
+    ' PowExp los parte EXACTOS: Hi en grilla 2^-12 y Lo = el resto, que con un binary32 de entrada (multiplo de su ulp, 2^-22 y
+    ' 2^-25, y menor que 2^-13) entra entero en un Single, asi que Hi + Lo ES el exponente del motor (ParityGate
+    ' facetint-compose-exponents). Antes salian del DOUBLE decimal 2.2 y 1/2.2, y Hi + Lo llevaba esos decimales.
+    ' G24 / InvG24 = la curva sRGB IEC 61966-2-1 (2.4 y su inversa), calculados en Double y angostados aca.
+    Public ReadOnly G22 As New PowExp(CDbl(Shader_Base_Class.EngineGamma))
+    Public ReadOnly InvG22 As New PowExp(CDbl(Shader_Base_Class.EngineGammaEncode))
     Public ReadOnly G24 As New PowExp(2.4)
     Public ReadOnly InvG24 As New PowExp(1.0 / 2.4)
 

@@ -53,9 +53,9 @@ Public Module EquipResolver
     '   `(forma, slot)` en la lista de ítems adjuntos y lo DESENLAZA Y LIBERA. El ítem nuevo queda.
     '
     ' · Skyrim SE 1.6.1170.0 (desempacado con Steamless; VAs cruzadas contra la Address Library
-    '   `versionlib-1-6-1170-0.bin`) — `Actor::AddWornItem 0x1406A0AA0` (slot 0x2B8 de la vtable de Actor):
+    '   `versionlib-1-6-1170-0.bin`) — `Actor::AddWornItem 0x1406B3650` (slot 0x2B8 de la vtable de Actor):
     '   recorre los 32 slots del caché de equipados y por cada ocupante que solapa llama a
-    '   `ActorEquipManager::UnequipObject 0x1406CA010` sobre EL VIEJO, y después marca el nuevo como worn.
+    '   `ActorEquipManager::UnequipObject 0x1406DCB00` sobre EL VIEJO, y después marca el nuevo como worn.
     '   El motor tiene además dos particularidades: (a) el ARMO de PIEL está exento de ser tratado como
     '   ocupante desplazable — eso la app SÍ lo cumple, la piel ni entra al torneo
     '   (`NpcMeshCollector.SelectWinningCandidates`); (b) si el ocupante viejo está protegido por quest la
@@ -69,10 +69,10 @@ Public Module EquipResolver
     '
     ' Y el ORDEN con el que se resuelve el torneo ES el del INAM, ascendente — también
     ' verificado con bytes (SSE 1.6.1170.0), porque con last-wins el resultado depende enteramente de él:
-    ' `InitOutfitItems 0x14022E730` → worker `0x14023A2B0` recorre `BGSOutfit::outfitItems`
+    ' `InitOutfitItems 0x140233F90` → worker `0x14023FA80` recorre `BGSOutfit::outfitItems`
     ' (data `+0x20`, count `+0x30`) hacia ADELANTE (`add rsi,8` / `cmp rsi,end`), y por cada ítem inserta
-    ' en el `entryList` de `InventoryChanges` con `0x14023B3A0`, que camina hasta `next==NULL` y hace
-    ' `[tail+8] = nuevo`: es APPEND, no prepend. Después `AddWornOutfit 0x1402E1B00` recorre ese mismo
+    ' en el `entryList` de `InventoryChanges` con `0x140240B70`, que camina hasta `next==NULL` y hace
+    ' `[tail+8] = nuevo`: es APPEND, no prepend. Después `AddWornOutfit 0x1402E8070` recorre ese mismo
     ' `entryList` de cabeza a cola equipando cada entrada tageada con el FormID del outfit. Leer-adelante
     ' + insertar-al-final + recorrer-adelante ⇒ el orden del INAM se preserva de punta a punta.
     '
@@ -80,7 +80,7 @@ Public Module EquipResolver
     ' LVLI de sombrero DESPUÉS del de cuerpo, así que con last-wins un sombrero {31,42} desequipa una
     ' túnica con capucha {31,32,42} y el NPC queda sin torso en el 3,2 % de las realizaciones. El orden es
     ' el correcto y la dirección también, así que falta OTRA regla del motor. Único candidato vivo: una
-    ' pasada posterior de "el NPC se pone lo de mayor valor" en `0x1403BD380`, gateada por un contador
+    ' pasada posterior de "el NPC se pone lo de mayor valor" en `0x1403C4440`, gateada por un contador
     ' persistente del NPC_ (`TESNPC+0x241`, que arranca en 1, no en 0) y por un predicado virtual del
     ' actor; no está confirmado que corra al instanciar un NPC genérico. Divergencia conocida y medida.
 
@@ -90,8 +90,8 @@ Public Module EquipResolver
     ''' · FO4: `SlotsOverlap 0x1402FCB00` = `mov eax,[rdx+8]; test [rcx+8],eax; setne al`; sus llamadores de
     '''   equip gatean `cmp byte [rcx+0x1a],0x1d` (sólo ARMO) y `AsBipedObjectForm 0x1402FCB60` mapea
     '''   ARMO → `+0x1E0`.
-    ''' · SSE: `SlotsOverlap 0x1401CCA90` (un único call-site en los 24 MB de `.text`, `0x1403BD5A2`) y
-    '''   `AsBipedObjectForm 0x1401CCAF0` mapea ARMO(0x1A) → `+0x1B0` y ARMA(0x66) → `+0x30`, offsets que
+    ''' · SSE: `SlotsOverlap 0x1401D2160` (un único call-site en los 24 MB de `.text`, `0x1403C4662`) y
+    '''   `AsBipedObjectForm 0x1401D21C0` mapea ARMO(0x1A) → `+0x1B0` y ARMA(0x66) → `+0x30`, offsets que
     '''   coinciden byte a byte con `BGSBipedObjectForm` en CommonLibSSE. `Actor::AddWornItem` compara la
     '''   máscara propia del ítem nuevo contra la de cada ocupante; nunca toca `armorAddons`.
     '''

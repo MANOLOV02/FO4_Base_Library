@@ -609,6 +609,10 @@ Public Class Config_App
     ' Ruta fija al archivo de configuración en la carpeta de la aplicación
     Private Shared ReadOnly ConfigFilePath As String = Path.Combine(Application.StartupPath, "config.json")
 
+    ''' <summary>The program binary cache's folder (ProgramBinaryCache, S0-A): ShaderCache next to config.json, the app's own folder -
+    ''' never the GL driver's cache (user order 27-oct-2026).</summary>
+    Friend Shared ReadOnly ShaderCacheDirectory As String = Path.Combine(Path.GetDirectoryName(ConfigFilePath), "ShaderCache")
+
     Public Sub New()
         Try
             If FO4ExePath = "" Then

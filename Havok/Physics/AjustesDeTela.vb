@@ -23,7 +23,7 @@ Namespace Havok.Physics
         Friend BAnimClothLOD As Boolean = True
         ''' <summary>`fClothLODDistanceSqr:Cloth` — `0x142F357D0`, 5.000.000. Lectores `0x140DB3C47`, `0x140DB3DAC`.</summary>
         Friend FClothLODDistanceSqr As Single = 5000000.0F
-        ''' <summary>`fClothTimingBudget:Cloth` — `0x142F357E8`, 0,01 (`0x3C23D70A`). Lector `0x140DB3DD0`.</summary>
+        ''' <summary>`fClothTimingBudget:Cloth` — `0x142F357E8`, 0,01 (`0x3C23D70A`). Lector `0x140DB3DD1`.</summary>
         Friend FClothTimingBudget As Single = 0.01F
         ''' <summary>`uMaxClothCount:Cloth` (primer objeto) — `0x142F35800`, 100. Lector `0x140DB3DA0`.</summary>
         Friend UMaxClothCount As UInteger = 100UI
@@ -36,7 +36,7 @@ Namespace Havok.Physics
         Friend BAnimateClothOnSwim As Boolean = True
         ''' <summary>`bAnimateClothOnDown:Cloth` — `0x142F35740`, 1. Lector `0x140DB3C78`.</summary>
         Friend BAnimateClothOnDown As Boolean = True
-        ''' <summary>`bAnimateClothOnDead:Cloth` — `0x142F35758`, 0. Lector `0x140DB3CD0`.</summary>
+        ''' <summary>`bAnimateClothOnDead:Cloth` — `0x142F35758`, 0. Lector `0x140DB3CD1`.</summary>
         Friend BAnimateClothOnDead As Boolean = False
         ''' <summary>`bSimulateClothDisable:Cloth` — `0x142F35770`, 0. Lector `0x140DB3D0A`.</summary>
         Friend BSimulateClothDisable As Boolean = False

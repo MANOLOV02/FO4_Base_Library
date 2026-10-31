@@ -123,7 +123,7 @@ Namespace Havok.Canon
         ''' <summary>
         ''' ⛔⛔⛔ A QUE SE ALINEA ESTE MIEMBRO, CON LA LEY DEL MOTOR.
         ''' <para>Es `max(alineacion del TIPO, alineacion de los FLAGS)` — ver `AlineacionDe`, que
-        ''' transcribe `hkStructureLayout::getMemberAlignment` (FO4 0x14142F360, SSE 0x140B2F580).
+        ''' transcribe `hkStructureLayout::getMemberAlignment` (FO4 0x14142F360, SSE 0x140B2F7E0).
         ''' La del tipo sale de la tabla que el motor trae adentro; la de los flags, del enum
         ''' `hkClassMember|FlagValues`, por igualdad y no por el bit mas alto prendido.</para>
         ''' <para>0 = la reflexion no alcanza para determinarla: `struct` (haria falta la clase
@@ -225,7 +225,7 @@ Namespace Havok.Canon
         ''' no declara —las `hcl*SetupObject` que el compilador de cloth emite offline— y el censo por
         ''' byte necesita esa tabla para decir que byte de esos bloques cubre un miembro declarado.
         ''' Es una pregunta distinta de "que lee la app": el motor SALTEA esos bloques (FO4
-        ''' 0x14142B7B1, Skyrim 0x140B2E6C0) y la libreria replica al motor, asi que la tabla del CK
+        ''' 0x14142B7B1, Skyrim 0x140B2E920) y la libreria replica al motor, asi que la tabla del CK
         ''' vive en `Tools/HkxLoadOrderAudit/Generated/` y NO viaja adentro de este binario.</para>
         ''' <para>Lo unico que aporta esta fabrica es el PARSEO, que ya vive aca: sin ella el
         ''' instrumento tendria que escribir una segunda copia de `ParseRow`, de la ley de alineacion
@@ -318,16 +318,16 @@ Namespace Havok.Canon
 
         ''' <summary>
         ''' ⛔⛔⛔ LA LEY DE ALINEACION ES DEL MOTOR, Y ES POR IGUALDAD, NO POR MAXIMO.
-        ''' <para><c>hkStructureLayout::getMemberAlignment</c> —FO4 0x14142F360, SSE 0x140B2F580—
+        ''' <para><c>hkStructureLayout::getMemberAlignment</c> —FO4 0x14142F360, SSE 0x140B2F7E0—
         ''' enmascara los flags del miembro (<c>hkClassMember</c>+0x1C) y compara el resultado por
         ''' IGUALDAD: FO4 0x14142F434 <c>and ecx,0x980</c> y despues ==0x800 da 32, ==0x100 da 16, otro
-        ''' no-cero da 8; SSE 0x140B2F654 <c>and ecx,0x180</c>, ==0x100 da 16, otro no-cero da 8.
-        ''' La usa <c>computeMemberOffsets</c> (FO4 0x14142F4B0, SSE 0x140B2F6C0) para correr el offset
-        ''' de cada miembro, con <c>idiv</c> —FO4 0x14142F6A7, SSE 0x140B2F8C4— y no con mascara de
+        ''' no-cero da 8; SSE 0x140B2F8B4 <c>and ecx,0x180</c>, ==0x100 da 16, otro no-cero da 8.
+        ''' La usa <c>computeMemberOffsets</c> (FO4 0x14142F4B0, SSE 0x140B2F920) para correr el offset
+        ''' de cada miembro, con <c>idiv</c> —FO4 0x14142F6A7, SSE 0x140B2FB24— y no con mascara de
         ''' bits, que es donde estuve buscando el relleno del .hkx y por eso no aparecia.</para>
         ''' <para>LA MASCARA NO SE HARDCODEA: es el OR de los bits que el propio enum declara con
         ''' nombre <c>ALIGN_*</c>. FO4 128|256|2048 = 0x980, el mismo inmediato de 0x14142F434; SSE
-        ''' 128|256 = 0x180, el mismo de 0x140B2F654. Sale de la reflexion Y coincide con el binario.</para>
+        ''' 128|256 = 0x180, el mismo de 0x140B2F8B4. Sale de la reflexion Y coincide con el binario.</para>
         ''' <para>Yo tomaba el MAXIMO de los bits prendidos. Es distinto: con <c>ALIGN_16</c> y
         ''' <c>ALIGN_8</c> a la vez, <c>v = 0x180</c> no es 0x800 ni 0x100, asi que el motor contesta 8
         ''' y yo contestaba 16. Medido sobre las tablas de hoy no cambia nada —ningun miembro prende
@@ -364,10 +364,10 @@ Namespace Havok.Canon
         ''' ⛔⛔⛔ LA ALINEACION DE UN MIEMBRO: LA DEL TIPO, Y DESPUES EL MAXIMO CON LA DE LOS FLAGS.
         ''' <para>Estuvo mal de dos maneras, las dos mias: la calculaba SOLO para los miembros con un
         ''' flag `ALIGN_*` (56 en FO4, 36 en SSE) cuando el motor le da alineacion a TODOS; y trataba
-        ''' la etapa de flags como un reemplazo cuando es un MAXIMO — FO4 0x14142F44A y 0x14142F468,
-        ''' SSE 0x140B2F66F: `cmp eax,ebx` + `cmovg ebx,eax`, con `ebx` = alineacion del tipo. Un
+        ''' la etapa de flags como un reemplazo cuando es un MAXIMO — FO4 0x14142F449 y 0x14142F469,
+        ''' SSE 0x140B2F8CF: `cmp eax,ebx` + `cmovg ebx,eax`, con `ebx` = alineacion del tipo. Un
         ''' miembro con `ALIGN_8` sobre un tipo que alinea a 16 queda en 16.</para>
-        ''' <para>Las ramas de `getMemberAlignment` (FO4 0x14142F360 / SSE 0x140B2F580): `zero` se
+        ''' <para>Las ramas de `getMemberAlignment` (FO4 0x14142F360 / SSE 0x140B2F7E0): `zero` se
         ''' resuelve por el subtipo (0x14142F3B2); la familia de punteros —`pointer`,
         ''' `functionpointer`, `array`, `simplearray`, `homogeneousarray`, `variant`, `cstring`,
         ''' `ulong`, `stringptr`— alinea a `ptrSize` (0x14142F3AE); `enum` y `flags` por el subtipo;

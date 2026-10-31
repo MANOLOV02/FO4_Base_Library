@@ -94,7 +94,7 @@ Public Class HierarchiBone_class
     ''' <c>NpcMountingResolver.PlumbNoAnimSyncMasks</c> (lee <c>nn.Flags_ui</c> del chunk NIF; el esqueleto base = 0,
     ''' MEDIDO). La lee <c>HkxPoseImportSession.BuildPose</c>: para las componentes flagueadas mantiene la
     ''' traslación/escala ESTRUCTURAL (S = OriginalLocaL∘Mount = socket ensamblado) y solo aplica la ROTACIÓN del
-    ''' clip = pose-writer del motor (Fallout4.exe 0x1413995D0, gate .data 0x2F32638=0). 0 = sin flag ⇒ anim normal.</summary>
+    ''' clip = pose-writer del motor (Fallout4.exe 0x1413998F0, gate .data 0x2F3D628=0). 0 = sin flag ⇒ anim normal.</summary>
     Public NoAnimSyncMask As Byte = 0
     Public OriginalLocaLTransform As Transform_Class
     Public BoneName As String

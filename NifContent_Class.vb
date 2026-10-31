@@ -1237,7 +1237,7 @@ Public Class Nifcontent_Class_Manolo
 
     ''' <summary>SSE per-partition skin occlusion — the engine-faithful analog of FO4's per-segment
     ''' <see cref="BSTriShapeGeometry.ComputeHiddenTriangles"/>. Byte-level RE of SkyrimSE.exe
-    ''' (ApplyOcclusionToGeometry 0x1403C56B0 → SetPartitionVisible 0x14021A530, see
+    ''' (ApplyOcclusionToGeometry 0x1403CC770 → SetPartitionVisible 0x14021FE10, see
     ''' 23-armor-oclusion-sse-re): Skyrim hides a skinned shape PER-PARTITION — the
     ''' BSDismemberSkinInstance partition whose body-part biped slot is covered by a worn item is
     ''' hidden, its siblings stay visible. Returns a per-triangle "hidden" array aligned with the
@@ -1254,7 +1254,7 @@ Public Class Nifcontent_Class_Manolo
     ''' <param name="hideOutOfBand">Qué hacer con una partición cuyo slot plegado NO cae en [30,61] — el
     ''' punto donde los dos caminos del motor son OPUESTOS, y por eso es un parámetro y no una constante:
     ''' <list type="bullet">
-    ''' <item><b>False</b> = camino de <b>head parts</b> (<c>ApplyOcclusionToGeometry 0x1403CC770</c>):
+    ''' <item><b>False</b> = camino de <b>head parts</b> (SSE <c>ApplyOcclusionToGeometry 0x1403CC770</c>):
     ''' <c>visible = (folded == 30+B) ? !hide : 1</c>. El <c>cmovne ecx, r10d</c> con <c>r10d=1</c> fuerza
     ''' VISIBLE todo lo que no sea la partición del slot de pelo.</item>
     ''' <item><b>True</b> = camino de <b>worn items</b> (<c>0x14021DAE0</c> fase 1): la visibilidad nace en 0

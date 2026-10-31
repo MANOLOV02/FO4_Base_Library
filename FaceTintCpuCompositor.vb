@@ -50,14 +50,9 @@ Public Module FaceTintCpuCompositor
     ' costo de la LLAMADA domina sobre su cuerpo. Es una hint de compilacion: no cambia ninguna operacion ni
     ' el orden, y .NET usa SSE sin precision excedente, asi que la salida es BIT-IDENTICA.
 
-    ''' <summary>Exponentes de las transfer functions. Se calculan en Double y RECIÉN AHÍ se angostan: el
-    ''' float más cercano al exponente real. Escribirlos como <c>1.0F/2.2F</c> daría OTRO float
-    ''' (0,45454544 en vez de 0,45454547) y por lo tanto otra imagen.
-    ''' <para>El <c>pow</c> ya NO es <c>MathF.Pow</c>: es <see cref="FastPow"/>, la MISMA ley en escalar,
-    ''' Vector128 y Vector256 (probadas bit-idénticas entre sí). Los exponentes de acá quedan porque los usan
-    ''' los <c>MathF.Pow</c> de exponente VARIABLE que sobreviven (Illusions soft-light).</para></summary>
-    Private ReadOnly InvG22 As Single = CSng(1.0 / 2.2)
-    Private ReadOnly InvG24 As Single = CSng(1.0 / 2.4)
+    ' Los exponentes de las transfer functions viven en FastPow (G22 / InvG22 / G24 / InvG24), y los de gamma 2.2 salen de la
+    ' sede del motor (Shader_Base_Class.EngineGamma / EngineGammaEncode, S0-E X20). Acá no hay copia: el pow es FastPow, la
+    ' MISMA ley en escalar, Vector128 y Vector256 (probadas bit-idénticas entre sí).
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function Clamp01(c As Single) As Single
@@ -1462,8 +1457,8 @@ Public Module FaceTintCpuCompositor
     ''' 0x00B9B410) arranca de <c>r32 = (0,0,0,1)</c> (diffuse), <c>r2.xy = 0</c> (normal) y <c>r33.xy = 0</c> (spec) y escribe
     ''' <c>o0 = pow(r32,1/2.2)</c>, <c>o1/o2 = (xy,0,1)</c>. Lo que el RT tenía antes NO queda debajo:
     ''' <list type="bullet">
-    ''' <item>El ejecutor (juego 0x1406ED320, CK 0x140ED8080) fija los tres RT con SetCurrentRenderTarget MODO 0 (0x1406ED413/428/43F;
-    ''' CK 0x140ED81F0/8205/821C), y el flush 0x141823CF0 los LIMPIA (ClearRenderTargetView, 0x141823D9A / 0x141823DEC) con el color
+    ''' <item>El ejecutor (juego FO4 0x1406ED320, CK 0x140ED8080) fija los tres RT con SetCurrentRenderTarget MODO 0 (FO4 0x1406ED413/428/43F;
+    ''' CK 0x140ED81F0/8205/821C), y el flush Fallout4.exe 0x141823CF0 los LIMPIA (ClearRenderTargetView, 0x141823D9A / 0x141823DEC) con el color
     ''' de clear del estado <c>[estado+0x8E0]</c>. Ese color es estado mutable del renderer (SetClearColor 0x141818650 lo apila en
     ''' +0x8F0 y lo cambia, 40 llamadores; 0x1418186E0 lo restaura): no es una constante de esta pasada.</item>
     ''' <item>La pasada es UN triángulo de pantalla completa (vértices (-1,1) (-1,-3) (3,1), UV hasta 2: 0x142223608..0x1422236DA,

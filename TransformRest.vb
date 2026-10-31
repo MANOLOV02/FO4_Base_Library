@@ -31,7 +31,7 @@ Friend Module TransformRestLaw
         Friend Scale As Single?
     End Structure
 
-    ''' <summary>A component the controller treats as valid: not the marker -FLT_MAX ([0x14246849C] FO4 / [0x1417F4248] SSE) and
+    ''' <summary>A component the controller treats as valid: not the marker -FLT_MAX ([0x14246849C] FO4 / SSE [0x1417F4248] SSE) and
     ''' ordered (`ucomiss v, marker; je` skips equal and unordered alike).</summary>
     Private Function Valid(v As Single) As Boolean
         Return Not (v = NegMax OrElse Single.IsNaN(v))

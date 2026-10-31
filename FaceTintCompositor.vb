@@ -568,6 +568,9 @@ void main() {
     ' alpha here would corrupt callers passing alpha-tested diffuses. The current callers
     ' (face diffuse with AlphaTest=False) make this a no-op visually, but the contract stays
     ' honest so future callers can reuse this shader on alpha-tested textures safely.
+    '
+    ' The gamma exponents (g22ToLin1 / linToG22_1) are the engine's, from their one owner (S0-E, X20):
+    ' Shader_Base_Class.EngineGammaGlsl / EngineGammaEncodeGlsl, concatenated, never a hand-copied number.
     Private Const FragmentShaderSource As String = "#version 430
 in vec2 vUV;
 out vec4 fragColor;
@@ -836,8 +839,10 @@ float linearToSrgb1(float c) {
 }
 // ---- Derived-model helpers (parity with test_conventions.to_space). ASCII only. ----
 float srgbToLin1(float c){ c=clamp(c,0.0,1.0); return (c<=0.04045)?(c/12.92):pow((c+0.055)/1.055,2.4); }
-float g22ToLin1(float c){ return pow(clamp(c,0.0,1.0),2.2); }
-float linToG22_1(float c){ return pow(clamp(c,0.0,1.0),1.0/2.2); }
+// gamma 2.2: the engine's binary32 exponents from Shader_Base_Class (decode 2.2f; encode the token of BSFaceCustomizationShader's
+// log * 0.454545 * exp, rec3582 L1974 - not 1.0/2.2 in float).
+float g22ToLin1(float c){ return pow(clamp(c,0.0,1.0)," & Shader_Base_Class.EngineGammaGlsl & "); }
+float linToG22_1(float c){ return pow(clamp(c,0.0,1.0)," & Shader_Base_Class.EngineGammaEncodeGlsl & "); }
 float g24ToLin1(float c){ return pow(clamp(c,0.0,1.0),2.4); }
 float linToG24_1(float c){ return pow(clamp(c,0.0,1.0),1.0/2.4); }
 // sRGB stored value -> working space (ws: 0=linear 1=srgb 2=g22)
@@ -998,7 +1003,7 @@ void main() {
     //     TINT   = el facetint  = texture-set slot 6 -> material+0xA0 -> PS t3  (llega en uLayer/layerSample)
     //     DETAIL = texture-set slot 3 -> material+0xA8 -> PS t4                 (llega en uFoldDetail)
     //     [engine: off=(1/255,0,1/255), amp=255/64]
-    // RE: SetupMaterial 0x1414DC310 rama facegen 0x1414DC542; OnLoadTextureSet 0x1414BA6E0.
+    // RE: SetupMaterial SSE 0x141548820 rama facegen SSE 0x141548A52; OnLoadTextureSet SSE 0x141526B00.
     // ESPACIOS = los del bucket Fold (SseFaceGenBaker.FoldSpaces), NO una curva escrita aca:
     //     prev (complexion) en uSrcSpace, TINT en uFoldTintSpace, la cuenta en uWorkingSpace, salida en uOutputSpace.
     // Con la ley SSE los cuatro coinciden y cvt devuelve la entrada: la cadena corre sobre los valores CRUDOS,
@@ -1031,7 +1036,7 @@ void main() {
     if (uFgTintFold == 1) {
         vec3 cw = cvt(prev, uSrcSpace, uWorkingSpace);
         // Slot 3 vacio: el engine NO deja el amplify en identidad, usa su default BSShader_DefFacegenDetail
-        // (RE byte-level SkyrimSE.exe init 0x140E57E30, fill 0x40404040 = vanilla blankdetailmap). Llega por
+        // (RE byte-level SkyrimSE.exe init 0x14101D750, fill 0x40404040 = vanilla blankdetailmap). Llega por
         // uniform desde SseFaceGenBaker.EngineDefaultDetail: el MISMO numero que usa el CPU, no una copia.
         vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(uFoldDefaultDetail);
         // EL DISPATCH COMPARTIDO, no una expresion propia. Espejo de SseFaceGenBaker.FoldOne.
@@ -2204,55 +2209,19 @@ void main() {
     Private Sub EnsureCompositorInitialized(state As FaceTintCompositorState)
         If state._program <> 0 AndAlso state._quadVao <> 0 Then Return
 
-        Dim vs = GL.CreateShader(ShaderType.VertexShader)
-        Gl43.ShaderSource(vs, VertexShaderSource)
-        GL.CompileShader(vs)
-        Dim vsOk As Integer
-        GL.GetShader(vs, ShaderParameter.CompileStatus, vsOk)
-        If vsOk = 0 Then
-            Dim vsErr = GL.GetShaderInfoLog(vs)
-            Logger.LogLazy(Function() $"[FACETINT-SHADER] VERTEX compile FAILED: {vsErr}")
-            GL.DeleteShader(vs)
+        ' The compositor's program through the one builder (ProgramCompiler: its binary cache included); a build that fails leaves the
+        ' compositor without a program (state._program 0), as before.
+        Try
+            state._program = ProgramCompiler.Build(VertexShaderSource, FragmentShaderSource)
+        Catch ex As ProgramBuildException
+            Dim buildErr = ex.Message
+            Logger.LogLazy(Function() $"[FACETINT-SHADER] program build FAILED: {buildErr}")
+            state._program = 0
             Return
-        End If
-
-        Dim fs = GL.CreateShader(ShaderType.FragmentShader)
-        Gl43.ShaderSource(fs, FragmentShaderSource)
-        GL.CompileShader(fs)
-        Dim fsOk As Integer
-        GL.GetShader(fs, ShaderParameter.CompileStatus, fsOk)
-        If fsOk = 0 Then
-            Dim fsErr = GL.GetShaderInfoLog(fs)
-            Logger.LogLazy(Function() $"[FACETINT-SHADER] FRAGMENT compile FAILED: {fsErr}")
-            GL.DeleteShader(vs)
-            GL.DeleteShader(fs)
-            Return
-        End If
-
-        state._program = GL.CreateProgram()
+        End Try
 #If DEBUG Then
         PreviewControl.GateProg("FaceTintCompositor", True)
 #End If
-        GL.AttachShader(state._program, vs)
-        GL.AttachShader(state._program, fs)
-        GL.LinkProgram(state._program)
-        GL.DetachShader(state._program, vs)
-        GL.DetachShader(state._program, fs)
-        GL.DeleteShader(vs)
-        GL.DeleteShader(fs)
-
-        Dim linkOk As Integer
-        GL.GetProgram(state._program, GetProgramParameterName.LinkStatus, linkOk)
-        If linkOk = 0 Then
-            Dim linkErr = GL.GetProgramInfoLog(state._program)
-            Logger.LogLazy(Function() $"[FACETINT-SHADER] PROGRAM link FAILED: {linkErr}")
-            GL.DeleteProgram(state._program)
-#If DEBUG Then
-            PreviewControl.GateProg("FaceTintCompositor", False)
-#End If
-            state._program = 0
-            Return
-        End If
         Logger.LogLazy(Function() $"[FACETINT-SHADER] program linked OK id={state._program}")
 
         state._uPrevLoc = UniLoc(state._program, "uPrev", _uniMissing)

@@ -173,7 +173,7 @@ Friend Module Fo4EffectTechnique
     End Function
 
     ''' <summary>The UI-mask veto (SetupTechnique 0x1422250F9..11E): UI_MASK_RECTS with the rect count [0x143E5E120] = 0 draws nothing.
-    ''' The count's only writer is the interface render 0x140A3D4C0..5EA (the rects of a menu): 0 in the preview's world frame.</summary>
+    ''' The count's only writer is the interface render 0x140A3D4BF..5EA (the rects of a menu): 0 in the preview's world frame.</summary>
     Friend Function UiMaskVetoed(technique As UInteger) As Boolean
         Return (technique And TechUiMaskRects) <> 0UI
     End Function

@@ -505,22 +505,37 @@ Friend NotInheritable Class Fo4ImageSpaceChain
     End Sub
 End Class
 
-''' <summary>The programs of the chain's app passes (Fo4ImageSpaceAppSource), one context.</summary>
+''' <summary>The programs of the chain's app passes (Fo4ImageSpaceAppSource), one context, each built on its first use (S0-A,
+''' LazyProgram: a failure aborts the frame). Creating the object builds nothing.</summary>
 Friend NotInheritable Class Fo4ImageSpaceAppPrograms
-    Friend ReadOnly Unpremultiply, ActorMean, Present As Fo4_Deferred_Shader_Class
-    Friend Sub New()
-        Try
-            Unpremultiply = New Fo4_Deferred_Shader_Class(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_Unpremultiply)
-            ActorMean = New Fo4_Deferred_Shader_Class(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_ActorMean)
-            Present = New Fo4_Deferred_Shader_Class(BackgroundFadeSource.Vertex_Background, Fo4ImageSpaceAppSource.Fragment_Present)
-        Catch
-            Dispose()
-            Throw
-        End Try
-    End Sub
+    Private ReadOnly _unpremultiply As New LazyProgram(Of Fo4_Deferred_Shader_Class)("FO4 post Unpremultiply", Function() New Fo4_Deferred_Shader_Class(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_Unpremultiply))
+    Private ReadOnly _actorMean As New LazyProgram(Of Fo4_Deferred_Shader_Class)("FO4 post ActorMean", Function() New Fo4_Deferred_Shader_Class(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_ActorMean))
+    Private ReadOnly _present As New LazyProgram(Of Fo4_Deferred_Shader_Class)("FO4 post Present", Function() New Fo4_Deferred_Shader_Class(BackgroundFadeSource.Vertex_Background, Fo4ImageSpaceAppSource.Fragment_Present))
+    Friend ReadOnly Property Unpremultiply As Fo4_Deferred_Shader_Class
+        Get
+            Return _unpremultiply.GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property ActorMean As Fo4_Deferred_Shader_Class
+        Get
+            Return _actorMean.GetProgram()
+        End Get
+    End Property
+    Friend ReadOnly Property Present As Fo4_Deferred_Shader_Class
+        Get
+            Return _present.GetProgram()
+        End Get
+    End Property
+    ''' <summary>The three slots (the control's program census and its release).</summary>
+    Friend ReadOnly Property Slots As IReadOnlyList(Of IProgramSlot)
+        Get
+            Return {_unpremultiply, _actorMean, _present}
+        End Get
+    End Property
+    ''' <summary>Deletes the programs built so far; the next use builds them again.</summary>
     Friend Sub Dispose()
-        For Each p In {Unpremultiply, ActorMean, Present}
-            p?.Dispose()
+        For Each s In Slots
+            s.Release()
         Next
     End Sub
 End Class

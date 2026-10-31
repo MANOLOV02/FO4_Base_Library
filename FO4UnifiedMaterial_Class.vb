@@ -435,7 +435,7 @@ Public Class FO4UnifiedMaterial_Class
     End Function
 
     ''' <summary>⛔ EL TIPO QUE DA EL FACTORY sobre los flags de ESTE material, con <paramref name="ojo"/> como bit 17: la clase que
-    ''' 0x14216B610 (Fallout4.exe 1.11.240; CK 0x142BC6F00) construye sobre los bits que deja el aplicador 0x14216AF90 (CK 0x142BC6860),
+    ''' 0x14216B610 (Fallout4.exe 1.11.240; CK 0x142BC6F00) construye sobre los bits que deja el aplicador Fallout4.exe 0x14216AF90 (CK 0x142BC6860),
     ''' que es el Shader Type que el CK escribe al guardar (SaveBinary CK 0x142BD96C0: material-&gt;GetType(), 0x142BD96D5..96FB).
     ''' El bit 17 entra aparte porque el aplicador NO lo escribe (su lista cerrada no lo tiene): sale del bloque del NIF.
     ''' No repite ni la cascada (<see cref="Fo4EngineMaterial.CascadaDelFactory"/>) ni el aplicador

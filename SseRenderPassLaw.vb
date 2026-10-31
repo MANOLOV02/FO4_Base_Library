@@ -209,7 +209,7 @@ Friend Module SseRenderPassLaw
     ''' (Shader_Class SHADOW SYNC CONTRACT; the compared quantity is Fragment_ShadowDepth's, app design; Fallout 4's pair is
     ''' Fo4RenderPassLaw.ShadowPassAlphaTest, read by RenderShadowMapFo4). Test: the lighting slot 0x2B builds the utility SHADOWMAP technique with bit 7 (the
     ''' only SHADOWMAP PS that discard: 34 of 177 utility PS, bit 7 or stipple) exactly when the NiAlphaProperty has its test
-    ''' bit 9 (0x14151B641..65A); SLSF2 bit 54 (No_Transparency_Multisampling) does not enter the technique. Threshold: cb11[0].x
+    ''' bit 9 (SSE 0x14151B641..65A); SLSF2 bit 54 (No_Transparency_Multisampling) does not enter the technique. Threshold: cb11[0].x
     ''' of the batch, SubgroupThreshold (shadow-map finish 0x1415206A0 -> slot 0x2B -> 0x141521190 -> 0x14155FF40 ->
     ''' 0x141560340 -> 0x141562270 -> 0x141578930). Who reaches the pass is not decided here: an effect never reaches the shadow
     ''' pass (SseRenderPassLaw.ShadowMapCasts / the caster filter; effect slot 0x2B 0x14152A0C2 builds a pass only in mode 0xC),
@@ -224,7 +224,7 @@ Friend Module SseRenderPassLaw
         Return s.HasNormals AndAlso (Not s.AlphaPropertyPresent OrElse s.Test) AndAlso s.ZTest AndAlso s.ZWrite
     End Function
 
-    ''' <summary>BSLightingShaderProperty::GetRenderPasses 0x14151A160: prop+0x30 = material +0x80 * fade (0x14151A471..4AA; fade 1)
+    ''' <summary>BSLightingShaderProperty::GetRenderPasses 0x14151A160: prop+0x30 = material +0x80 * fade (0x14151A470..4AA; fade 1)
     ''' equal to 0 or unordered (NaN) clears the pass list: 0x14151A550 ucomiss / 0x14151A554 je 0x14151B185 -> 0x1414E77F0. No decal
     ''' exception. It comes before the refraction branch (0x14151A6BB). Effects have no such branch. Scalar, ONE formula: Classify applies
     ''' it to SseShapeInputs.Alpha, the alpha the preview draws (C2 v3 L1c); MaterialData.AlphaLawSkips to the raw alpha for the notice.</summary>
@@ -282,7 +282,7 @@ Friend Module SseRenderPassLaw
     End Enum
 
     ''' <summary>Item 2b (Addendum r19b-4): how Skyrim SE's accumulator walks the list a pass lands in (EngineListWalk; the FO4 owner is
-    ''' Fo4RenderPassLaw.ListWalk). Holder ctor 0x14155E1C0: linked lists (bit 0) are 0, 0xD, 0xE, 0xF, 0x10 (0x14155E4CE, 0x14155E9A2,
+    ''' Fo4RenderPassLaw.ListWalk). Holder ctor SSE 0x14155E1C0: linked lists (bit 0) are 0, 0xD, 0xE, 0xF, 0x10 (0x14155E4CE, 0x14155E9A2,
     ''' 0x14155EA05..ACB), lists 1..0xC are batches (+0x26 = 0, 0x14155E51A..E99B).
     ''' <list type="bullet">
     ''' <item>Opaque batch and lists 9 / 8 / 1 (OpaqueSlot): batches - PassBatches. List 0 (group 6, LOD landscape): linked, append
@@ -375,6 +375,47 @@ Friend Module SseRenderPassLaw
             If s.Slsf2Bit23 Then d = d Or &H40000UI
         End If
         Return d
+    End Function
+
+    ''' <summary>The bytes SetupTechnique 0x141547D20 tests before it picks the records (.data defaults of SkyrimSE.exe 1.7.104; their
+    ''' runtime writers are not in the preview frame): [0x1420D681F] = 1 keeps technique type 0x12 (0x141547D43), [0x1420D8D60] = 0 turns
+    ''' type 7 into type 0 (0x141547D68).</summary>
+    Friend Const LodLandscapeKeepExeDefault As Boolean = True
+    Friend Const ParallaxOcclusionExeDefault As Boolean = False
+
+    ''' <summary>The lighting descriptor SetupTechnique 0x141547D20 draws with (0x141547D2C..D71): the pass ID minus 0x4800002D (the
+    ''' descriptor LitDescriptor builds), with type 0x12 rewritten to (d And &amp;HC9FFFFFF) Or &amp;H9000000 when [0x1420D681F] = 0
+    ''' (0x141547D4C..D52) and type 7 to type 0 when [0x1420D8D60] = 0 (and ebp, 0xC0FFFFFF at 0x141547D71). Gate: ParityGate
+    ''' sse-technique-law against Tools\ShaderTranscription\sse-common\sse_law.py over the SSE corpus.</summary>
+    Friend Function LitSetupTechnique(descriptor As UInteger) As UInteger
+        Dim ty = descriptor And &H3F000000UI
+        If ty = &H12000000UI AndAlso Not LodLandscapeKeepExeDefault Then Return (descriptor And &HC9FFFFFFUI) Or &H9000000UI
+        If ty = &H7000000UI AndAlso Not ParallaxOcclusionExeDefault Then Return descriptor And &HC0FFFFFFUI
+        Return descriptor
+    End Function
+
+    ''' <summary>The lighting VS key 0x1415896A0: (t And &amp;H48007), bit 9 when t And &amp;H20A00, and the type bits.</summary>
+    Friend Function LitVsKey(t As UInteger) As UInteger
+        Dim k = t And &H48007UI
+        If (t And &H20A00UI) <> 0UI Then k = k Or &H200UI
+        Return k Or (t And &H3F000000UI)
+    End Function
+
+    ''' <summary>The lighting PS key 0x1415896D0: t And (&amp;HFFFFFE05 Or ((t >> 1) And 2)), Or 1 - the light-count bits 3-8
+    ''' dropped, bit 1 kept only with bit 2.</summary>
+    Friend Function LitPsKey(t As UInteger) As UInteger
+        Return (t And (&HFFFFFE05UI Or ((t >> 1) And 2UI))) Or 1UI
+    End Function
+
+    ''' <summary>The effect VS key 0x14158DAB0: t And &amp;HFFC7FFFF.</summary>
+    Friend Function EffectVsKey(t As UInteger) As UInteger
+        Return t And &HFFC7FFFFUI
+    End Function
+
+    ''' <summary>The effect PS key 0x14158DAC0: bit 3 dropped unless bit 15 (cmovne), then bit 24 cleared (btr eax, 0x18).</summary>
+    Friend Function EffectPsKey(t As UInteger) As UInteger
+        Dim k = If((t And &H8000UI) <> 0UI, t, t And &HFFFFFFF7UI)
+        Return k And Not &H1000000UI
     End Function
 
     ''' <summary>BSEffectShaderProperty's technique 0x14152A2B0 (dump of 7-oct-2026, 0x14152A2B0..5FB) for a mesh shape: no particles

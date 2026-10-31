@@ -3,7 +3,7 @@
 ''' <summary>Sede ÚNICA de la pregunta «¿qué biped slots DECLARA este archivo de malla?». La respuesta
 ''' sale del ARCHIVO y es distinta por juego, porque los dos motores leen cosas distintas: Skyrim las
 ''' particiones de <c>BSDismemberSkinInstance</c> (el hider es per-partición, <c>ApplyOcclusionToGeometry
-''' 0x1403C56B0</c>) y Fallout 4 los biped objects de los segmentos de <c>BSSubIndexTriShape</c> (el
+''' 0x1403CC770</c>) y Fallout 4 los biped objects de los segmentos de <c>BSSubIndexTriShape</c> (el
 ''' resolver per-slot es <c>0x14035E3B0</c>).
 ''' <para>⛔ Nace porque la MISMA aritmética estaba escrita en CUATRO lugares: las dos funciones privadas
 ''' del colector de mallas, el resolvedor de material (por shape) y el probe de medición. Acá el plegado

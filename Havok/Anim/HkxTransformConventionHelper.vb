@@ -57,7 +57,7 @@ Public NotInheritable Class HkxTransformConventionHelper
         ' ⛔⛔ NI LA ESCALA SE CORRIGE NI EL CUATERNION SE NORMALIZA. LOS DOS SALEN DEL BINARIO.
         '
         ' (1) LA ESCALA PASA COMO LA DECLARA EL ARCHIVO. En las CINCO operaciones canonicas de
-        '     `hkQsTransform` que se leyeron —`setMul` (FO4 0x141594490 / SSE 0x140BBCB6C, cola
+        '     `hkQsTransform` que se leyeron —`setMul` (FO4 0x141594490 / SSE 0x140BBCDCC, cola
         '     `mulps xmm0,[rsi+0x20]` y `movups [rax+0x20],xmm0` en 0x1415945CC/DA, sin una sola
         '     comparacion), `setInterpolate4` (0x141594309), `setInverse` (0x141594451),
         '     `fastRenormalize` (0x141594EA0) e `isOk` (0x141594B10 -> 0x141483D70)— la escala 0 pasa

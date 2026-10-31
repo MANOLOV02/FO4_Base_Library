@@ -38,7 +38,7 @@ uniform mat4 matView;
 // Se apunta al NETO y no a la key: si el fill pesa casi tanto, el punto claro va ENTRE las dos.
 uniform vec3 netDirWorld;
 uniform float rigDirectionality;
-// True while the frame draws in D3D row order (Fallout 4's forward stage, PreviewControl.SubirUniformsDeFondo): the window
+// True while the frame draws in D3D row order (the engine frame's D3D-order stage, both games; PreviewControl.SubirUniformsDeFondo): the window
 // rows then count from the top and the background is a function of the display's rows, y = H - y.
 uniform bool backgroundRowsD3D;
 
@@ -1535,8 +1535,8 @@ void main(void)
 					// OJO: ELIMINADA la rama `if (bBacklight)` que forzaba specFactor = normalMap.a.
 					// Partia de que con backlight el slot 7 lleva el backlight y NO el specular, o sea que
 					// eran EXCLUYENTES. El motor los lee A LA VEZ desde la MISMA textura: TXST slot 7 ->
-					// material+0x68 (OnLoadTextureSet 0x1414B7920) y SetupMaterial lo bindea DOS veces --
-					// t2 bajo MODELSPACENORMALS (0x14DCB65) y t9 bajo BACK_LIGHTING (0x14DCD22, `bts eax,9`).
+					// material+0x68 (OnLoadTextureSet SSE 0x141523D20) y SetupMaterial lo bindea DOS veces --
+					// t2 bajo MODELSPACENORMALS (0x1549075) y t9 bajo BACK_LIGHTING (0x154923F, `bts eax,9`).
 					// Son gates independientes: una malla MSN con backlight alimenta specular Y backlight
 					// desde el slot 7. Por eso la fuente del mask especular la decide SOLO MODELSPACENORMALS,
 					// sin importar el backlight, y el backlight sigue leyendo texSpecular mas arriba.
@@ -1664,9 +1664,9 @@ void main(void)
 			outSpecular = vec3(0.0);
 
 				// GREYSCALE-TO-PALETTE: SSE-only divergence from FO4. The Skyrim BSLightingShader
-				// pixel shader has NO greyscale path: VanillaGetLightingShaderDefines (0x14151C2D0)
+				// pixel shader has NO greyscale path: VanillaGetLightingShaderDefines (SSE 0x141589240)
 				// emits no greyscale #define, and GRAYSCALE_TO_COLOR/GRAYSCALE_TO_ALPHA live ONLY in
-				// the BSEffectShader define block (BSXShaderSamplers, 0x1ac7840/58) alongside the
+				// the BSEffectShader define block (BSXShaderSamplers, 0x1b50790/58) alongside the
 				// dedicated GrayscaleSampler. In SSE the recolor is exclusively a BSEffectShaderProperty
 				// feature, handled in the effect path below (bIsEffectShader). So a BSLightingShaderProperty
 				// that carries the SLSF1 greyscale flag is rendered WITHOUT recolor by the engine -> no-op
@@ -1684,15 +1684,15 @@ void main(void)
 			//   sample r3,t3 ; mul r3,r0,r3 ; add r3,r3,r3 ; mad r3,-r3,r0,r3 ; mad r0,r0,r0,r3
 			//   mul r0,r2,r0            <- SIN _sat en ningun paso (no hay clamp, ni aca ni en el engine)
 			// Quien es quien (RE):
-			//   BSLightingShader::SetupMaterial 0x1414DC310, jump table 0x14DCFD4, rama Facegen 0x1414DC542:
+			//   BSLightingShader::SetupMaterial SSE 0x141548820, jump table SSE 0x15494E4, rama Facegen SSE 0x141548A52:
 			//     SetPSTexture(3, mat+0xA0)   SetPSTexture(4, mat+0xA8)   SetPSTexture(12, mat+0xB0)
-			//   OnLoadTextureSet 0x1414BA6E0: GetTexture(6)->+0xA0, GetTexture(3)->+0xA8, GetTexture(2)->+0xB0
-			//   El facetint canonico se escribe en mat+0xA0 (0x1403BC573, tras GetFeature()==4 = 0x1414BAA00).
+			//   OnLoadTextureSet SSE 0x141526B00: GetTexture(6)->+0xA0, GetTexture(3)->+0xA8, GetTexture(2)->+0xB0
+			//   El facetint canonico se escribe en mat+0xA0 (SSE 0x1403C3633, tras GetFeature()==4 = SSE 0x141526E20).
 			// => el x255/64 = 255/64 es la NORMALIZACION DEL DETAIL (neutro 64 -> 1.0), NO del facetint.
 			// El facetint entra por soft-light igual que el skin tint del CUERPO (tecnica FacegenRGBTint:
 			// softlight(diffuse, cb1[1]) * l(1.011719,0.996094,1.011719)); por eso cuello y pecho matchean
 			// in-game: mismo termino softlight, y las constantes difieren solo 0.39% en los 3 canales.
-			// Defaults del engine con el slot VACIO (init 0x140E57E30, manager singleton 0x328CC20):
+			// Defaults del engine con el slot VACIO (init SSE 0x14101D750, manager singleton SSE 0x33363A0):
 			//   slot 6 vacio -> DefaultGreyMap            = 0x80 = 0.5   => softlight IDENTIDAD
 			//   slot 3 vacio -> BSShader_DefFacegenDetail = 0x40 = 0.251 => amplify (1.015625, 1.0, 1.015625)
 			// Los bindea Render.vb, por eso aca NO hay gate por textura-presente: el engine tampoco lo tiene.
@@ -1809,10 +1809,10 @@ void main(void)
 				// Escala del cubemap = cb1[2].x * cb2[3].x (Envmap tech: `mul r3.x, cb1[2].x, cb2[3].x`).
 				//   cb1[2].x = EnvmapData.x = el envmap scale del MATERIAL -> uniform envReflection.
 				//   cb2[3].x <- BSLightingShaderProperty + 0x104, escrito SOLO en el case Envmap de la
-				//               jump-table por tecnica de BSLightingShader::SetupGeometry (0x1414DD21C:
+				//               jump-table por tecnica de BSLightingShader::SetupGeometry (SSE 0x141549730:
 				//               `mov eax,[r14+0x104] ; mov [rcx+rdx*4], eax`, constante #0x47 offset +0).
 				// specularStrength NO es ese factor: es cb2[3].**y** <- property+0x100, escrito solo bajo
-				// SPECULAR (0x1414DDB80, `bt eax,9`) y usado UNICAMENTE para escalar el specular
+				// SPECULAR (SSE 0x14154A09C, `bt eax,9`) y usado UNICAMENTE para escalar el specular
 				// (`mul r4.xyz, r4.xyzx, cb2[3].yyyy`). Multiplicar el cubemap por el SpecularMult del
 				// material era una divergencia lisa y llana; se quita. cb2[3].x queda SIN ligar (la app no
 				// tiene ese campo del property) y se asume 1.0, que es el neutro -- no se inventa un valor.
@@ -1831,11 +1831,11 @@ void main(void)
 					// cambia de fuente segun MODELSPACENORMALS y puede valer 0 (default negro del
 					// slot 7 en piel MSN sin _s). Acoplarlos apagaba la reflexion de mallas MSN.
 					// El 1.0 del fallback NO es arbitrario: el motor rellena su slot de normal de forma
-					// INCONDICIONAL (default-fill 0x14B7B00, +0x58) con BSShader_DefNormalMap, cuyo fill
+					// INCONDICIONAL (default-fill 0x1523F00, +0x58) con BSShader_DefNormalMap, cuyo fill
 					// 0xffff8080 son los bytes RGBA (128,128,255,255) => ALPHA = 255 = 1.0.
 					// (Yo habia puesto 0.501961 confundiendo el canal R (0x80) con el alpha (0xff).)
 					// El lerp del motor es `lerp(normal.a, t5, cb1[2].y)` con cb1[2].y en {0,1} -- es un
-					// selector de si-hay-mascara-bindeada, no un peso libre (SetupMaterial 0x14DC4AB/0x14DCA5D:
+					// selector de si-hay-mascara-bindeada, no un peso libre (SetupMaterial 0x15489BB/0x1548F6D:
 					// cmp [rbx+0xA8],0 -> xmm0 = 0 o xmm6=1.0). Por eso esta forma de dos ramas es fiel.
 					cube.rgb *= bNormalMap ? normalMap.a : 1.0;
 				}
@@ -2008,7 +2008,7 @@ void main(void)
 		}
 
 		// RAW, LIKE THE ENGINE: SSE's PS (lighting and effect) write their colour with no curve and no encode, into
-		// the R11G11B10 HDR target; the curve is the post (ImageSpace HDR PS 12545, PostProcess.vb).
+		// the R11G11B10 HDR target; the curve is the post (ImageSpace HDR PS record 15846, PostProcess.vb).
 		// POST OFF (bLegacyDisplay): THE 2.3.8 DISPLAY TAIL, NOT THE ENGINE, applied to the value in the space
 		// 2.3.8 gave it. Lit: 2.3.8 shaded it LINEAR (sRGB-SRV diffuse) and encoded 1/2.2; the SSE value is raw
 		// (display) now -> to linear (2.2), Hable / Hable(1), 1/2.2. Effect: 2.3.8 tonemapped its display-space
@@ -2408,38 +2408,42 @@ void main(void)
 "
 End Module
 
-''' <summary>The SSE SAO composite's colour law as the preview runs it (Sse_Opaque_Composite_Shader_Class). ASCII only.</summary>
+''' <summary>The SSE SAO composite's colour law as the preview runs it (Sse_Opaque_Composite_Shader_Class): inside the frame's
+''' D3D-order stage (PreviewControl.BeginD3dRowsStage, UPPER_LEFT), on the SAO's full-screen triangle (SseSaoSource.Vs_Fullscreen:
+''' v1 = the D3D uv, row 0 = the top row), so every input is read at the pixel's own texel as the engine's PS reads them with one uv -
+''' the scene, the coverage, kSAO and kSNOW_SPECALPHA are all in the stage's D3D rows. ASCII only.</summary>
 Friend Module SseCompositeSource
     Friend Const Fragment As String = "#version 430
 // SSE ISSAOCompositeSAOFog (PS 16004): c = scene (+ SSR, + snow); c *= ao; geometry: c = lerp(c, fog, F) * invFrameBufferRange;
 // sky (depth >= 0.999999): no fog, no invFBR; out = saturate(c). Preview: no SSR / snow / fog / AO pass: a mesh pixel gets
 // saturate(scene * invFBR), alpha saturate(scene.a). The engine's geometry is the meshes: a pixel no mesh drew (coverage g,
 // written only by mesh draws, is 0: the background and the app's floor) is left as it is.
+// ROWS: the frame's D3D-order stage (UPPER_LEFT): v1 is the D3D uv of the SAO's triangle, and every input below is in D3D rows.
 uniform sampler2D texScene;
 uniform sampler2D texCoverage;
-// kSAO (RT 0x2E), written by the SAO passes in D3D row order: read at (u, 1 - v), point sampling at texel centres (RE_SAO_BOTH 1.7).
+// kSAO (RT 0x2E), written by the SAO passes in D3D row order like the scene: read at v1, point sampling at texel centres (RE_SAO_BOTH 1.7).
 uniform sampler2D texSao;
 // kSNOW_SPECALPHA (RT 0x70, R8G8_UNORM; o3 of the snow PS, 0 elsewhere: cleared 0, 0x1406575EA..678), written by the scene draws
-// in GL row order like texScene. sseImprovedSnow = cb2[5].w (EyePosition.w = [0x1420D6CE8]); sseDeactivateAoOnSnow = cb2[8].x.
+// in the stage's D3D rows like texScene. sseImprovedSnow = cb2[5].w (EyePosition.w = [0x1420D6CE8]); sseDeactivateAoOnSnow = cb2[8].x.
 uniform sampler2D texSnowSpecAlpha;
 uniform float sseImprovedSnow;
 uniform float sseDeactivateAoOnSnow;
 uniform float sseInvFramebufferRange;
-in vec2 vUv;
+layout(location = 0) in vec2 v1;
 out vec4 oColor;
 void main(void)
 {
-	vec4 c = texture(texScene, vUv);
-	if (texture(texCoverage, vUv).g == 0.0)
+	vec4 c = texture(texScene, v1);
+	if (texture(texCoverage, v1).g == 0.0)
 	{
 		oColor = c;
 		return;
 	}
-	float ao = texture(texSao, vec2(vUv.x, 1.0 - vUv.y)).x;
+	float ao = texture(texSao, v1).x;
 	if (sseImprovedSnow != 0.0)
 	{
 		// PS 16004: mad r2.xyz, t4.x, t4.y, r2 ; snow pixel = t4.y > 1e-5 ; ao = min(ao + cb2[8].x, 1). Sparkles: not drawn (notice).
-		vec2 snow = texture(texSnowSpecAlpha, vUv).xy;
+		vec2 snow = texture(texSnowSpecAlpha, v1).xy;
 		c.rgb += vec3(snow.x * snow.y);
 		if (snow.y > 0.00001)
 			ao = min(ao + sseDeactivateAoOnSnow, 1.0);
@@ -2567,12 +2571,13 @@ vec3 tonemap(in vec3 x)
 }
 
 // THE 2.3.8 DISPLAY TAIL OF A LIT VALUE: 2.3.8 shaded lit surfaces and the floor in LINEAR, tonemapped them with
-// Hable / Hable(1) and encoded 1/2.2. toLinear = exponent from the current scene space to linear: 1 for FO4
+// Hable / Hable(1) and encoded 1/2.2 - with the engine's encode token (rec3648 L38, Shader_Base_Class.EngineGammaEncodeGlsl;
+// user decision 30-oct, S0-E P1). toLinear = exponent from the current scene space to linear: 1 for FO4
 // (linear scene), 2.2 for SSE (raw scene).
 vec3 legacyLitDisplay(in vec3 x, in float toLinear)
 {
     vec3 lin = pow(max(x, vec3(0.0)), vec3(toLinear));
-    return pow(max(tonemap(lin) / tonemap(vec3(1.0)), vec3(0.0)), vec3(1.0 / 2.2));
+    return pow(max(tonemap(lin) / tonemap(vec3(1.0)), vec3(0.0)), vec3(" & Shader_Base_Class.EngineGammaEncodeGlsl & "));
 }
 "
 End Module
@@ -3020,70 +3025,27 @@ Public MustInherit Class Shader_Base_Class
     ''' interleaved (OpenGL 4.6 11.1.2.1: declared before the link).</param>
     Public Sub New(VertexShaderSource As String, FragmentShaderSource As String, Optional TessControlSource As String = Nothing,
                    Optional TessEvaluationSource As String = Nothing, Optional TransformFeedbackVaryings As String() = Nothing)
-        Dim stages As New List(Of Integer) From {CompileShader(ShaderType.VertexShader, VertexShaderSource),
-                                                 CompileShader(ShaderType.FragmentShader, FragmentShaderSource)}
+        Dim stages As New List(Of (Type As ShaderType, Source As String)) From {(ShaderType.VertexShader, VertexShaderSource),
+                                                                             (ShaderType.FragmentShader, FragmentShaderSource)}
         ' Ola 2: the engine's HS / DS of a tessellated technique (0x14181D4A0 binds them; topology 0x23, 0x14181D60E).
-        If TessControlSource IsNot Nothing Then stages.Add(CompileShader(ShaderType.TessControlShader, TessControlSource))
-        If TessEvaluationSource IsNot Nothing Then stages.Add(CompileShader(ShaderType.TessEvaluationShader, TessEvaluationSource))
-        program = GL.CreateProgram()
+        If TessControlSource IsNot Nothing Then stages.Add((ShaderType.TessControlShader, TessControlSource))
+        If TessEvaluationSource IsNot Nothing Then stages.Add((ShaderType.TessEvaluationShader, TessEvaluationSource))
+        program = ProgramCompiler.Build(stages, TransformFeedbackVaryings)
 #If DEBUG Then
         PreviewControl.GateProg(Me.GetType().Name, True)
 #End If
-        For Each s In stages : GL.AttachShader(program, s) : Next
-        If TransformFeedbackVaryings IsNot Nothing Then GL.TransformFeedbackVaryings(program, TransformFeedbackVaryings.Length, TransformFeedbackVaryings, TransformFeedbackMode.InterleavedAttribs)
-        GL.LinkProgram(program)
-
-        Dim linkStatus As Integer
-        GL.GetProgram(program, GetProgramParameterName.LinkStatus, linkStatus)
-        If linkStatus <> CInt(All.True) Then
-            Dim linkInfo = GL.GetProgramInfoLog(program)
-            Throw New Exception($"Shader program link error: {linkInfo}")
-        End If
-
-        For Each s In stages
-            GL.DetachShader(program, s)
-            GL.DeleteShader(s)
-        Next
         HasTessellation = TessControlSource IsNot Nothing
     End Sub
     ''' <summary>The program draws GL_PATCHES of 3 control points (D3D11_PRIMITIVE_TOPOLOGY 0x23).</summary>
     Public ReadOnly Property HasTessellation As Boolean
 
-    ''' <summary>A compute program (one stage), with the same compile/link checks and uniform API.</summary>
+    ''' <summary>A compute program (one stage), with the same build (ProgramCompiler) and uniform API.</summary>
     Protected Sub New(computeShaderSource As String)
-        Dim computeShader = CompileShader(ShaderType.ComputeShader, computeShaderSource)
-        program = GL.CreateProgram()
+        program = ProgramCompiler.BuildCompute(computeShaderSource)
 #If DEBUG Then
         PreviewControl.GateProg(Me.GetType().Name, True)
 #End If
-        GL.AttachShader(program, computeShader)
-        GL.LinkProgram(program)
-
-        Dim linkStatus As Integer
-        GL.GetProgram(program, GetProgramParameterName.LinkStatus, linkStatus)
-        If linkStatus <> CInt(All.True) Then
-            Dim linkInfo = GL.GetProgramInfoLog(program)
-            Throw New Exception($"Shader program link error: {linkInfo}")
-        End If
-
-        GL.DetachShader(program, computeShader)
-        GL.DeleteShader(computeShader)
     End Sub
-
-    Private Shared Function CompileShader(type As ShaderType, source As String) As Integer
-        Dim shader = GL.CreateShader(type)
-        Gl43.ShaderSource(shader, source)
-        GL.CompileShader(shader)
-
-        Dim compileStatus As Integer
-        GL.GetShader(shader, ShaderParameter.CompileStatus, compileStatus)
-        If compileStatus <> CInt(All.True) Then
-            Dim info = GL.GetShaderInfoLog(shader)
-            Throw New Exception($"Error compiling {type}: {info}")
-        End If
-
-        Return shader
-    End Function
 
     Public Sub Use()
         Gl43.UseProgram(program)
@@ -3135,8 +3097,35 @@ Public MustInherit Class Shader_Base_Class
     ''' powf(colour, 2.2) of Fallout 4's material and geometry setup loads it and calls powf 0x1422C47F8: the effect base colour
     ''' (0x142225AA8..AD8), the skin tint (0x142206AA2), the emissive (0x142207459, the same register of that function) and the sun
     ''' (0x142226589). Ola 9 (decision del usuario 29-oct): the ONE owner of that exponent; Math.Pow widens it to CDbl(2.2F), not to
-    ''' the decimal 2.2 (up to 2 ulp apart, ParityGate effect-engine-law / effect-vs-key-law).</summary>
+    ''' the decimal 2.2 (up to 2 ulp apart, ParityGate effect-engine-law / effect-vs-key-law).
+    ''' <para>The same binary32 DECODES in the engine's shaders (Shaders011.fxp, the one shader file of Fallout 4 and of its Creation
+    ''' Kit; S0-E, X20): BSFaceCustomizationShader's PS rec3582, the soft-light log * 2.2 * exp (L1370 L1437 L1522 L1589 L1674 L1741
+    ''' L1826 L1893); the G-buffer VS rec2288 L120 and the effect PS rec513 L33, the vertex colour's law. And in the Creation Kit's
+    ''' facetint builder: CreationKit.exe FUN_140ED6820 decodes every tint colour byte with powf(byte / 255, [0x142FA9864] =
+    ''' 0x400CCCCD) (CreationKit.exe 0x140ED6D88 loads it, 0x140ED744F..0x140ED7491 pass it to powf 0x142D78172).
+    ''' FastPow.G22 reads it from here; the app's GLSL from <see cref="EngineGammaGlsl"/>.</para></summary>
     Public Const EngineGamma As Single = 2.2F
+
+    ''' <summary>THE ENGINE'S GAMMA ENCODE (linear -&gt; gamma 2.2), the binary32 token 0x3EE8BA2F (0.4545454680919647216796875) that
+    ''' the engine's shaders multiply between log and exp (Shaders011.fxp, SHA-256 13569a49..., the only file of Fallout4 -
+    ''' Shaders.ba2, which Fallout4.exe and CreationKit.exe both load as 'SHADERSFX/Shaders%03u.fxp' with version 11: CreationKit.exe
+    ''' global 0x143C72D24 read at 0x142BDE7DB, Fallout4.exe global 0x142F97550 read at 0x142180E48):
+    ''' BSFaceCustomizationShader's PS rec3582 (59 components: the coverage pow(mask, 1/2.2) L1308 L1316 L1468 L1620 L1772, the
+    ''' soft-light encodes, the diffuse output o0 = pow(acc, 1/2.2) L1974) and GammaCorrectLUT's PS rec3648 L38 (the post's
+    ''' g = pow(c, 1/2.2), PostProcess.Fragment_PostFo4). A token of its OWN, written by its bits: NOT 1 / <see cref="EngineGamma"/>
+    ''' (1.0F / 2.2F rounds to 0x3EE8BA2E) and NOT the decimal the disassembler prints (l(0.454545) is 0x3EE8BA1F).</summary>
+    Public Const EngineGammaEncodeBits As Integer = &H3EE8BA2F
+
+    ''' <summary><see cref="EngineGammaEncodeBits"/> as the binary32 it is. FastPow.InvG22 reads it from here.</summary>
+    Public Shared ReadOnly EngineGammaEncode As Single = BitConverter.Int32BitsToSingle(EngineGammaEncodeBits)
+
+    ''' <summary><see cref="EngineGamma"/> as the GLSL expression of its bits (the uintBitsToFloat form of the transcriptions'
+    ''' FO4_L_ macros: no decimal printing in between). A Const, so the shader texts that are Consts (and the readers of the VB
+    ''' source, Tools/FabricGen vbglsl) concatenate it; ParityGate facetint-compose-exponents proves it is the same bits.</summary>
+    Public Const EngineGammaGlsl As String = "uintBitsToFloat(0x400CCCCDu)"
+
+    ''' <summary><see cref="EngineGammaEncode"/> as the GLSL expression of its bits (see <see cref="EngineGammaGlsl"/>).</summary>
+    Public Const EngineGammaEncodeGlsl As String = "uintBitsToFloat(0x3EE8BA2Fu)"
 
     ''' <summary>powf(x, <see cref="EngineGamma"/>) as the engine computes it, rounded to binary32.</summary>
     Public Shared Function EnginePowGamma(x As Single) As Single
@@ -3156,19 +3145,19 @@ Public MustInherit Class Shader_Base_Class
         Return If(isSSE, Color_to_Vector(color), Color_to_Vector_Linear(color))
     End Function
 
-    ''' <summary>THE GAME'S DISPLAY ENCODE as an exponent, for the ground shadow and the SSE post: FO4 1/2.2 (the value
-    ''' the ground shadow already used), SSE 1 (fGamma = 1.0, cb12[42].x of PS 12545). ⛔ NOT the only owner:
-    ''' Fragment_PostFo4 writes i3648's DXBC literal 0.454545 itself (PostProcess.vb:318), which differs from 1/2.2F in
-    ''' the 7th decimal; that shader is read verbatim by Tools/FabricGen and is not touched.</summary>
+    ''' <summary>THE GAME'S DISPLAY ENCODE as an exponent, for the ground shadow and the SSE post: FO4 the encode of
+    ''' GammaCorrectLUT, rec3648 L38 = <see cref="EngineGammaEncode"/> (the same token Fragment_PostFo4 raises to, S0-E), SSE 1
+    ''' (fGamma = 1.0, cb12[42].x of PS record 15846).</summary>
     Public Shared Function DisplayExponent(isSSE As Boolean) As Single
-        Return If(isSSE, 1.0F, 1.0F / 2.2F)
+        Return If(isSSE, 1.0F, EngineGammaEncode)
     End Function
 
     ''' <summary>FROM THE GAME'S SCENE SPACE TO LINEAR, as an exponent: FO4 1 (the scene is linear: MaterialColor uses
-    ''' Color_to_Vector_Linear), SSE 2.2 (the scene is raw: MaterialColor uses Color_to_Vector). It feeds the 2.3.8 tail of
+    ''' Color_to_Vector_Linear), SSE <see cref="EngineGamma"/> (the scene is raw: MaterialColor uses Color_to_Vector; user decision
+    ''' 30-oct, S0-E P2: the 2.3.8 tail's decode is the engine's 2.2f, from its owner). It feeds the 2.3.8 tail of
     ''' the frames without post (LegacyDisplaySource.legacyLitDisplay): fragments and floor read it from here.</summary>
     Public Shared Function SceneToLinearExponent(isSSE As Boolean) As Single
-        Return If(isSSE, 2.2F, 1.0F)
+        Return If(isSSE, EngineGamma, 1.0F)
     End Function
 
     ''' <summary>Vector3 sRGB-&gt;lineal (powf 2.2f, <see cref="EngineGamma"/>) por componente. Para el light-rig (Ambient/diffuse,

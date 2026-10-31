@@ -135,7 +135,7 @@ uniform bool bWireframe;
 uniform vec3 color;              // the shape's Wirecolor (edit view)
 uniform vec3 subColor;           // the shape's TintColor (edit view)
 // Post off (Apply post-process unchecked), not in the G-buffer stage and not a debug view (RenderableMesh.ApplyFo4EffectDraw): the
-// 2.3.8 display law of an effect, pow(1/2.2) of the linear colour.
+// 2.3.8 display law of an effect, pow(1/2.2) of the linear colour, with the engine's encode token (rec3648 L38; S0-E P1).
 uniform bool bLegacyDisplay;
 // What this draw adds to the coverage of the HDR target (attachment 1, SceneTargets): 0 covers (1), 1 its alpha, 2 nothing.
 uniform int uCoverageMode;
@@ -156,14 +156,14 @@ void main()
     {
         vec3 e = clamp(color, 0.0, 1.0);
         if (!bWireframe) e *= subColor;
-        o0.rgb = vec3(d3d_exp2(2.2 * d3d_log2(e.r)), d3d_exp2(2.2 * d3d_log2(e.g)), d3d_exp2(2.2 * d3d_log2(e.b)));
+        o0.rgb = vec3(d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.r)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.g)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.b)));
     }
     if (bShowMask) o0.rgb *= maskFactor;
     if (bShowWeight) o0.rgb *= weightColor;
     if (bHide || (bApplyZap && ZappedVert == 1)) kill = true;
     if (kill) discard;
     if ((uDecalBaseMode == 1 && o0.a <= 0.0) || uDecalBaseMode == 3 || (uDecalBaseMode == 4 && o0.a >= 1.0)) discard;
-    if (bLegacyDisplay) o0.rgb = pow(max(o0.rgb, vec3(0.0)), vec3(1.0 / 2.2));
+    if (bLegacyDisplay) o0.rgb = pow(max(o0.rgb, vec3(0.0)), vec3(" & Shader_Base_Class.EngineGammaEncodeGlsl & "));
     fragColor = o0;
     if (uCoverageMode == 1) coverageOut = vec4(o0.a, o0.a, 0.0, o0.a);
     else if (uCoverageMode == 2) coverageOut = vec4(0.0);

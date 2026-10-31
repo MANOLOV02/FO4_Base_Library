@@ -3963,8 +3963,8 @@ Public Class RecalcTBN
         ' `weldPosEpsOrig` es una DISTANCIA en unidades de modelo, que es lo que declaran los
         ' llamadores y lo que dice el control de la UI. NO consumirlo como fraccion de la escala de la malla
         ' (k * L): el epsilon efectivo cambiaria con el tamano del mesh y dejaria de ser el que el usuario pide.
-        ' Techo del epsilon. FUENTE: CreationKit.exe 0x142677EF0 usa el MISMO predicado que ClosePos
-        ' (comparacion POR COMPONENTE, L-infinito) con tolerancia 1e-5 — constante @0x2FC4848 =
+        ' Techo del epsilon. FUENTE: CreationKit.exe 0x14267DAC0 usa el MISMO predicado que ClosePos
+        ' (comparacion POR COMPONENTE, L-infinito) con tolerancia 1e-5 — constante @0x2FD4A98 =
         ' 0x3727C5AC (float 1.0e-5). Pedir mas que eso sobre-suelda respecto del CK.
         Dim weldPosEps As Double = Math.Min(0.00001, Math.Max(0.0, weldPosEpsOrig))
 

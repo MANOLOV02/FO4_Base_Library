@@ -6,7 +6,7 @@
 ''' cambiables y unificables sin tocar el shader ni el builder.
 '''
 ''' Modelo ENGINE-FAITHFUL (re-derivado del b12 BSFaceCustomizationShader, V2 DXBC + V1 CK builder
-''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified; reemplaza el modelo empírico "ws=entry_type" que
+''' FUN_140ED6820 — ck_bake_facetint_RULE_verified; reemplaza el modelo empírico "ws=entry_type" que
 ''' 50-facetint-leyes-y-compositor describía y que el shader REFUTÓ):
 '''   - mask conv = G22Encode (= shader pow(maskSample,1/2.2)·opacity), universal D y N/S.
 '''   - DIFFUSE: el ENGINE acumula en LINEAL y lerpea por cobertura en LINEAL (cs). El BLEND OP corre en su
@@ -265,7 +265,7 @@ Public Module FaceTintConvention
     ''' <summary>WORKING SPACE del blend op POR CADA op del record (0..4) en el canal DIFFUSE. PARAMETRIZABLE
     ''' (config.json, NO hardcodeado): el espacio donde corre el blend depende del op, y el usuario lo puede
     ''' cambiar por op. Defaults ENGINE-FAITHFUL (b12 BSFaceCustomizationShader V2 DXBC + V1 CK builder
-    ''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified §4): el engine corre SoftLight en gamma-2.2 (decode
+    ''' FUN_140ED6820 — ck_bake_facetint_RULE_verified §4): el engine corre SoftLight en gamma-2.2 (decode
     ''' dst+color, GIMP, re-encode) y Normal/Multiply/Overlay/HardLight en LINEAR. Replace cancela el ws por
     ''' construcción (Cvt(Cvt(src,ss→ws),ws→cs)=Cvt(src,ss→cs)) — se expone igual por completitud. Persistido
     ''' como objeto plano (System.Text.Json); configs viejos sin el campo caen al default del constructor.</summary>
@@ -314,9 +314,9 @@ Public Module FaceTintConvention
         Public Property DiffuseWorkingSpaceByBlend As FaceTintBlendWorkingSpaces
         ''' <summary>SrcSpace de TODA TEXTURA de color del DIFFUSE — tint TextureSet, SWAP, y la base-seed
         ''' (las 3 son texturas de color sampleadas). Engine-faithful = Srgb: el engine las bindea como SRV
-        ''' sRGB (MakeSRGB FUN_14183e1c0) → el shader las recibe LINEALES (IEC) y el softlight les hace
+        ''' sRGB (MakeSRGB FUN_14183e680) → el shader las recibe LINEALES (IEC) y el softlight les hace
         ''' pow(1/2.2). El color SÓLIDO (uColor PaletteMask) NO pasa por acá: el builder lo decodea con γ2.2
-        ''' (powf, FUN_140ED0E40 ~363-369) ⇒ usa Diffuse.SrcSpace=G22. Las MÁSCARAS tampoco (crudas + MaskConv
+        ''' (powf, FUN_140ED6820 ~363-369) ⇒ usa Diffuse.SrcSpace=G22. Las MÁSCARAS tampoco (crudas + MaskConv
         ''' g22encode). Parametrizable; default Srgb. (Lo consume ResolveConvention para tint+swap y el seed
         ''' del base en ambos compositores.)</summary>
         Public Property DiffuseTextureSrcSpace As FaceTintWorkingSpace
@@ -820,7 +820,7 @@ Public Module FaceTintConvention
 
         ' WORKING SPACE del DIFFUSE = POR BLEND OP, leído del config (PARAMETRIZABLE, no hardcodeado):
         ' s.DiffuseWorkingSpaceByBlend. Defaults engine-faithful (b12 BSFaceCustomizationShader V2 DXBC +
-        ' V1 CK builder FUN_140ED0E40, ck_bake_facetint_RULE_verified §4): SoftLight en gamma-2.2 (decode
+        ' V1 CK builder FUN_140ED6820, ck_bake_facetint_RULE_verified §4): SoftLight en gamma-2.2 (decode
         ' dst+color, GIMP, re-encode), Normal/Multiply/Overlay/HardLight en LINEAR. Replace cancela el ws por
         ' construcción (Cvt(Cvt(src,ss→ws),ws→cs)=Cvt(src,ss→cs)) ⇒ con los defaults esto es BYTE-IDÉNTICO en
         ' TODA la data vanilla (scan: 4008/4008 TemplateColors de las 110 RACE de Fallout4.esm+DLCs son bop 0 ó
