@@ -30,81 +30,59 @@ void main()
 vec2 litSvPosition;
 "
 
-    ''' <summary>The stage texts (PS / VS / CPU-route VS classes) are the embedded resource Fo4LightingBlocks.glsl.txt generated with
-    ''' this module, read once (gen_fo4_sources.py's block format).</summary>
+    ''' <summary>The stage texts (PS / VS / CPU-route VS classes). They are the embedded block Fo4LightingBlocks (Fo4LightingBlocks.glsl.gz, one GZip member per class, and its index
+    ''' Fo4LightingBlocks.glsl.idx: Tools/ShaderTranscription/common/glslgz.py) generated with this module; a class is read when first asked for
+    ''' (GlslBlockStore).</summary>
+    Private ReadOnly Block As GlslBlock = GlslBlockStore.Embedded("Fo4LightingBlocks")
+
+    ''' <summary>The text of class <paramref name="name"/> of Block.</summary>
     Friend Function ProgramText(name As String) As String
-        Return _blocks.Value(name)
+        Return Block.Text(name)
     End Function
-    Private ReadOnly _blocks As New Lazy(Of Dictionary(Of String, String))(
-        Function()
-            Dim d As New Dictionary(Of String, String)(StringComparer.Ordinal)
-            Using st = GetType(Fo4LightingResourceAnchor).Assembly.GetManifestResourceStream("FO4_Base_Library.Fo4LightingBlocks.glsl.txt")
-                If st Is Nothing Then Throw New InvalidOperationException("embedded resource FO4_Base_Library.Fo4LightingBlocks.glsl.txt missing")
-                Using rd As New IO.StreamReader(st, Text.Encoding.ASCII)
-                    Dim name As String = Nothing
-                    Dim sb As New Text.StringBuilder()
-                    Do
-                        Dim l = rd.ReadLine()
-                        If l Is Nothing Then Exit Do
-                        If name Is Nothing Then
-                            If l.StartsWith("//#### BEGIN ", StringComparison.Ordinal) Then name = l.Substring(13, l.Length - 18) : sb.Clear()
-                        ElseIf l = "//#### END " & name & " ####" Then
-                            d(name) = sb.ToString() : name = Nothing
-                        Else
-                            sb.Append(l).Append(ChrW(10))
-                        End If
-                    Loop
-                    If name IsNot Nothing Then Throw New InvalidOperationException("unterminated block " & name)
-                End Using
-            End Using
-            Return d
-        End Function)
-    Private NotInheritable Class Fo4LightingResourceAnchor
-    End Class
 
     ''' <summary>The source's closed list of the PS (18): PS id -&gt; (record, its class block or empty for a declared gap, the resource
     ''' blocks it declares, the app entry of its output shape, why the preview cannot draw it - empty when it can).</summary>
-    Friend ReadOnly PixelShaders As New Dictionary(Of UInteger, (Record As Integer, Fn As String, Resources As String, Entry As String, Gap As String)) From {
-        {&H00000001UI, (1498, "", "", "", "b06 ps rec1498 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000005UI, (1511, "", "", "", "b06 ps rec1511 L190 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000011UI, (1506, "", "", "", "b06 ps rec1506 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000041UI, (1514, "", "", "", "b06 ps rec1514 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000051UI, (1515, "", "", "", "b06 ps rec1515 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000081UI, (1501, "", "", "", "b06 ps rec1501 L210 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000101UI, (1507, "", "", "", "b06 ps rec1507 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000111UI, (1508, "", "", "", "b06 ps rec1508 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000141UI, (1510, "", "", "", "b06 ps rec1510 L220 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000201UI, (1512, "", "", "", "b06 ps rec1512 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000211UI, (1513, "", "", "", "b06 ps rec1513 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000401UI, (1499, "", "", "", "b06 ps rec1499 L210 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000501UI, (1500, "", "", "", "b06 ps rec1500 L211 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000601UI, (1502, "", "", "", "b06 ps rec1502 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000611UI, (1503, "", "", "", "b06 ps rec1503 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000641UI, (1504, "", "", "", "b06 ps rec1504 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000651UI, (1505, "", "", "", "b06 ps rec1505 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
-        {&H00000C01UI, (1509, "", "", "", "b06 ps rec1509 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")}}
+    Friend ReadOnly PixelShaders As New Dictionary(Of UInteger, GlslPixelStage) From {
+        {&H00000001UI, New GlslPixelStage(Block, 1498, "", "", "", "b06 ps rec1498 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000005UI, New GlslPixelStage(Block, 1511, "", "", "", "b06 ps rec1511 L190 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000011UI, New GlslPixelStage(Block, 1506, "", "", "", "b06 ps rec1506 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000041UI, New GlslPixelStage(Block, 1514, "", "", "", "b06 ps rec1514 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000051UI, New GlslPixelStage(Block, 1515, "", "", "", "b06 ps rec1515 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000081UI, New GlslPixelStage(Block, 1501, "", "", "", "b06 ps rec1501 L210 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000101UI, New GlslPixelStage(Block, 1507, "", "", "", "b06 ps rec1507 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000111UI, New GlslPixelStage(Block, 1508, "", "", "", "b06 ps rec1508 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000141UI, New GlslPixelStage(Block, 1510, "", "", "", "b06 ps rec1510 L220 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000201UI, New GlslPixelStage(Block, 1512, "", "", "", "b06 ps rec1512 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000211UI, New GlslPixelStage(Block, 1513, "", "", "", "b06 ps rec1513 L209 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000401UI, New GlslPixelStage(Block, 1499, "", "", "", "b06 ps rec1499 L210 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000501UI, New GlslPixelStage(Block, 1500, "", "", "", "b06 ps rec1500 L211 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000601UI, New GlslPixelStage(Block, 1502, "", "", "", "b06 ps rec1502 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000611UI, New GlslPixelStage(Block, 1503, "", "", "", "b06 ps rec1503 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000641UI, New GlslPixelStage(Block, 1504, "", "", "", "b06 ps rec1504 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000651UI, New GlslPixelStage(Block, 1505, "", "", "", "b06 ps rec1505 L218 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")},
+        {&H00000C01UI, New GlslPixelStage(Block, 1509, "", "", "", "b06 ps rec1509 L207 PointLightPosition: the point-light loop runs min(floor(PointLightColor[0].w), 20) rows (rec1498 L194-206); the count is byte [pass + 0x50] - 1 (SG 0x14223B874..879), its bound not traced, and the writer writes min(count, 6) rows (0x14223CE5D..E6C)")}}
 
     ''' <summary>The source's closed list of the VS (18): id -&gt; (record, its class block or empty for a declared gap, the resource blocks,
     ''' whether rule D2 put AppSkinLaw in it; for a skinned VS its CPU route - block, resources, AppSkinLaw, layout -; the gap).</summary>
-    Friend ReadOnly VertexStages As New Dictionary(Of UInteger, (Record As Integer, Fn As String, Resources As String, SkinLaw As Boolean, CpuFn As String, CpuResources As String, CpuSkinLaw As Boolean, CpuLayout As Fo4CpuRouteLayout, Gap As String)) From {
-        {&H00000000UI, (1480, ProgramText("Fo4LitVs_rec1480"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000001UI, (1481, ProgramText("Fo4LitVs_rec1481"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000002UI, (1488, ProgramText("Fo4LitVs_rec1488"), Fo4GBufferSource.VsCb10, False, ProgramText("Fo4LitVsCpu_rec1488"), "", False, Fo4CpuRouteLayout.Tbn, "")},
-        {&H00000003UI, (1493, ProgramText("Fo4LitVs_rec1493"), Fo4GBufferSource.VsCb10, False, ProgramText("Fo4LitVsCpu_rec1493"), "", False, Fo4CpuRouteLayout.Tbn, "")},
-        {&H00000004UI, (1495, ProgramText("Fo4LitVs_rec1495"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000100UI, (1489, ProgramText("Fo4LitVs_rec1489"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000101UI, (1490, ProgramText("Fo4LitVs_rec1490"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000102UI, (1491, ProgramText("Fo4LitVs_rec1488"), Fo4GBufferSource.VsCb10, False, ProgramText("Fo4LitVsCpu_rec1488"), "", False, Fo4CpuRouteLayout.Tbn, "")},
-        {&H00000103UI, (1492, ProgramText("Fo4LitVs_rec1493"), Fo4GBufferSource.VsCb10, False, ProgramText("Fo4LitVsCpu_rec1493"), "", False, Fo4CpuRouteLayout.Tbn, "")},
-        {&H00000200UI, (1496, ProgramText("Fo4LitVs_rec1480"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000201UI, (1497, ProgramText("Fo4LitVs_rec1481"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000400UI, (1482, ProgramText("Fo4LitVs_rec1480"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000401UI, (1483, ProgramText("Fo4LitVs_rec1481"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000500UI, (1484, ProgramText("Fo4LitVs_rec1480"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000501UI, (1485, ProgramText("Fo4LitVs_rec1481"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000600UI, (1486, ProgramText("Fo4LitVs_rec1480"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000601UI, (1487, ProgramText("Fo4LitVs_rec1481"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
-        {&H00000C01UI, (1494, ProgramText("Fo4LitVs_rec1494"), "", False, "", "", False, Fo4CpuRouteLayout.None, "")}}
+    Friend ReadOnly VertexStages As New Dictionary(Of UInteger, GlslVertexStage) From {
+        {&H00000000UI, New GlslVertexStage(Block, 1480, "Fo4LitVs_rec1480", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000001UI, New GlslVertexStage(Block, 1481, "Fo4LitVs_rec1481", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000002UI, New GlslVertexStage(Block, 1488, "Fo4LitVs_rec1488", Fo4GBufferSource.VsCb10, False, "Fo4LitVsCpu_rec1488", "", False, Fo4CpuRouteLayout.Tbn, "")},
+        {&H00000003UI, New GlslVertexStage(Block, 1493, "Fo4LitVs_rec1493", Fo4GBufferSource.VsCb10, False, "Fo4LitVsCpu_rec1493", "", False, Fo4CpuRouteLayout.Tbn, "")},
+        {&H00000004UI, New GlslVertexStage(Block, 1495, "Fo4LitVs_rec1495", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000100UI, New GlslVertexStage(Block, 1489, "Fo4LitVs_rec1489", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000101UI, New GlslVertexStage(Block, 1490, "Fo4LitVs_rec1490", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000102UI, New GlslVertexStage(Block, 1491, "Fo4LitVs_rec1488", Fo4GBufferSource.VsCb10, False, "Fo4LitVsCpu_rec1488", "", False, Fo4CpuRouteLayout.Tbn, "")},
+        {&H00000103UI, New GlslVertexStage(Block, 1492, "Fo4LitVs_rec1493", Fo4GBufferSource.VsCb10, False, "Fo4LitVsCpu_rec1493", "", False, Fo4CpuRouteLayout.Tbn, "")},
+        {&H00000200UI, New GlslVertexStage(Block, 1496, "Fo4LitVs_rec1480", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000201UI, New GlslVertexStage(Block, 1497, "Fo4LitVs_rec1481", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000400UI, New GlslVertexStage(Block, 1482, "Fo4LitVs_rec1480", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000401UI, New GlslVertexStage(Block, 1483, "Fo4LitVs_rec1481", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000500UI, New GlslVertexStage(Block, 1484, "Fo4LitVs_rec1480", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000501UI, New GlslVertexStage(Block, 1485, "Fo4LitVs_rec1481", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000600UI, New GlslVertexStage(Block, 1486, "Fo4LitVs_rec1480", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000601UI, New GlslVertexStage(Block, 1487, "Fo4LitVs_rec1481", "", False, "", "", False, Fo4CpuRouteLayout.None, "")},
+        {&H00000C01UI, New GlslVertexStage(Block, 1494, "Fo4LitVs_rec1494", "", False, "", "", False, Fo4CpuRouteLayout.None, "")}}
 
     ''' <summary>The tuples (VS, PS) the law draws (common\pairs.py over the closed list: VS present): 25.</summary>
     Friend ReadOnly LawTuples As (Vs As UInteger, Ps As UInteger)() = {(&H00000001UI, &H00000001UI), (&H00000001UI, &H00000011UI), (&H00000001UI, &H00000041UI), (&H00000001UI, &H00000051UI), (&H00000001UI, &H00000081UI), (&H00000003UI, &H00000001UI), (&H00000003UI, &H00000011UI), (&H00000003UI, &H00000041UI), (&H00000003UI, &H00000051UI), (&H00000003UI, &H00000081UI), (&H00000101UI, &H00000101UI), (&H00000101UI, &H00000111UI), (&H00000101UI, &H00000141UI), (&H00000103UI, &H00000101UI), (&H00000103UI, &H00000111UI), (&H00000103UI, &H00000141UI), (&H00000201UI, &H00000201UI), (&H00000201UI, &H00000211UI), (&H00000401UI, &H00000401UI), (&H00000501UI, &H00000501UI), (&H00000601UI, &H00000601UI), (&H00000601UI, &H00000611UI), (&H00000601UI, &H00000641UI), (&H00000601UI, &H00000651UI), (&H00000C01UI, &H00000C01UI)}

@@ -1,0 +1,10 @@
+# The diff driver of the generated blocks <block>.glsl.gz (.gitattributes: *.glsl.gz binary diff=glslgz; format:
+# Tools/ShaderTranscription/common/glslgz.py). textconv = gzip -dc gives the block's whole text (its members concatenated, RFC 1952
+# 2.2), so git diff / git log -p / git show compare the GLSL class by class. gzip ships with Git for Windows. Git does not read a
+# versioned config by itself: turn it on once per clone, from this repository:
+#     git config --local include.path ../glslgz.gitconfig
+# (the path is relative to .git). Without it, a .glsl.gz shows as "Binary files differ"; Tools/ShaderTranscription/common/dump_glsl.py
+# prints a class or a whole block either way.
+[diff "glslgz"]
+	textconv = gzip -dc
+	binary = true
