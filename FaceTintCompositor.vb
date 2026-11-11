@@ -482,9 +482,9 @@ Public Module FaceTintCompositor
             ("RENDER-FLOOR-FRAGMENT", Floor_Shader_Class.Fragment_Floor),
             ("RENDER-SSE-VERTEX", Shader_Class_SSE.Vertex_SSE),
             ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE),
-            ("SHADOW-DEPTH-FRAGMENT", ShadowDepthShaderSource.Fragment_ShadowDepth),
-            ("SHADOW-UNIFORMS", ShadowDepthShaderSource.SharedUniformsGlsl),
-            ("SHADOW-LOOKUP", ShadowDepthShaderSource.SharedLookupGlsl),
+            ("RENDER-SSE-DECALBASESURFACE-FRAGMENT", Shader_Class_SSE.Fragment_SseDecalBaseSurface),
+            ("GROUND-SHADOW-UNIFORMS", GroundShadowLookupSource.SharedUniformsGlsl),
+            ("GROUND-SHADOW-LOOKUP", GroundShadowLookupSource.SharedLookupGlsl),
             ("SKINTINT-PEGTOP-FN", SseOverlayCompositor.SoftLightPegtopEngineGlslFn),
             ("SKINTINT-RGBFIX", SseOverlayCompositor.SkinTintRgbFixGlsl),
             ("GROUND-VERTEX", GroundShadowShaderSource.Vertex_Ground),
@@ -533,9 +533,9 @@ Public Module FaceTintCompositor
             ("LUMINANCE-PARTIALS-COMPUTE", PostProcessShaderSource.Compute_LumPartials),
             ("LUMINANCE-RESOLVE-COMPUTE", PostProcessShaderSource.Compute_LumResolve),
             ("D3D11-SEMANTICS", D3d11SemanticsSource.Glsl),
-            ("SHADOW-WORLDDIR", ShadowDepthShaderSource.WorldDirGlsl),
             ("FO4-DEFERRED-APP-FULLSCREEN", Fo4DeferredAppSource.Vertex_Fullscreen),
             ("FO4-DEFERRED-APP-RESOLVE", Fo4DeferredAppSource.Fragment_DirectResolve),
+            ("FO4-DEFERRED-APP-LIGHTSUM", Fo4DeferredAppSource.Fragment_LightSum),
             ("FO4-DEFERRED-APP-DECALBASE", Fo4DeferredAppSource.Fragment_DecalBase),
             ("FO4-DEFERRED-APP-DECALBASESURFACE", Fo4DeferredAppSource.Fragment_DecalBaseSurface),
             ("FO4-DEFERRED-APP-DECALBASESURFACE-EFFECT", Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect),
@@ -547,10 +547,16 @@ Public Module FaceTintCompositor
             ("APP-SKIN-LAW", AppSkinLaw.Glsl),
             ("APP-EDIT-VIEWS-COLORRAMP", AppEditViewsSource.ColorRamp)}).
             Concat(Fo4GBufferSource.AllSources()).Concat(Fo4EffectSource.AllSources()).Concat(Fo4LightingSource.AllSources()).
-            Concat(Fo4UtilitySource.AllSources()).Concat(Fo4DFLightSource.AllSources()).Concat(Fo4DFCompositeSource.AllSources()).
+            Concat(Fo4UtilitySource.AllSources()).Concat(SseUtilitySource.AllSources()).Concat(SseLightingSource.AllSources()).Concat(Fo4DFLightSource.AllSources()).Concat(Fo4DFCompositeSource.AllSources()).
             Concat(Fo4ImageSpaceSource.AllSources()).ToArray()
     End Function
 #End If
+
+    ''' <summary>F9: the compositor's program spec - the one place its two texts are paired (its build, EnsureCompositorInitialized, and
+    ''' ProgramCatalog's "other" family read it; in Release too).</summary>
+    Friend Function CompositorSpec() As ProgramSpec
+        Return Shader_Base_Class.SpecOf(VertexShaderSource, FragmentShaderSource)
+    End Function
 
     Private Const VertexShaderSource As String = "#version 430
 " & Gl43.ClipGlsl & "layout(location = 0) in vec2 aPos;
@@ -2212,7 +2218,7 @@ void main() {
         ' The compositor's program through the one builder (ProgramCompiler: its binary cache included); a build that fails leaves the
         ' compositor without a program (state._program 0), as before.
         Try
-            state._program = ProgramCompiler.Build(VertexShaderSource, FragmentShaderSource)
+            state._program = ProgramCompiler.Build(CompositorSpec())
         Catch ex As ProgramBuildException
             Dim buildErr = ex.Message
             Logger.LogLazy(Function() $"[FACETINT-SHADER] program build FAILED: {buildErr}")

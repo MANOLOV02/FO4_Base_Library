@@ -348,7 +348,13 @@ End Class
 ''' own in Fo4DeferredPrograms): one program set per game, so that one game's build failure leaves the other its frame (rev-50).</summary>
 Public Class DecalBase_Mark_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DecalBase)
     Sub New()
-        MyBase.New(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DecalBase)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class

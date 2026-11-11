@@ -40,9 +40,13 @@ Friend Module Fo4DeferredLightLaw
         Return If(postOn, &HB60UI, &H160UI)
     End Function
 
+    ''' <summary>The focus shadow's pass: 0x50202 | 0x142271530(uiOrthoShadowFilter .data 3) = 1 &lt;&lt; (3 + 0x12) (0x1421F6681..693): 0x00250202,
+    ''' DIRECTIONAL_SHADOW|SPECULAR|DIRSPLITS1|SHADOW_ONLY|FILTER_POISSON, rec3271.</summary>
+    Friend Const FocusTechnique As UInteger = &H250202UI
+
     ''' <summary>The techniques the frame draws, built at the programs' start.</summary>
     Friend ReadOnly AppLightTechniques As UInteger() = {SunTechnique(True, True), SunTechnique(True, False), SunTechnique(False, True),
-                                                        SunTechnique(False, False), AmbientTechnique}
+                                                        SunTechnique(False, False), AmbientTechnique, FocusTechnique}
     Friend ReadOnly AppCompositeTechniques As UInteger() = {CompositePass1, CompositePass2(True), CompositePass2(False)}
 
     ''' <summary>The rows 3k .. 3k + 2 of ShadowMapProj (cb2 name 9) for cascade k of the BLENDSPLIT writer (0x142247E3E..FD3): the
@@ -124,21 +128,26 @@ Friend Module Fo4DeferredLightLaw
         Return 1.0F - Math.Clamp(darkness, 0.0F, 1.0F)
     End Function
 
-    ''' <summary>FadeDistances (cb2 name 8): .x = d(s_k), .y = d(s_k + blend) with d(s) = (f s - f n) / ((f - n) s), the device depth
+    ''' <summary>FadeDistances (cb2 name 8): .x = d(s_0), .y = d(s_0 + blend) with d(s) = (f s - f n) / ((f - n) s), the device depth
     ''' of the view distance s (0x142247D81..DD3; n, f the frame's near and far), blend = [0x143E71D94] = 100 (fBlendSplitDirShadow .data).
-    ''' s_k = [light + 0x250 + 4 k] is the cascade fit's split (0x142250A00, not traced: re.md H-3); the rig's one map covers the whole
-    ''' scene the camera sees: its split is the camera's far, so every pixel takes cascade 0 (z' &lt; .y) and none cascade 1 (.x &lt; z' is
-    ''' false: z' &lt;= 1 = d(f)). .zw only with 3 splits (iDirShadowSplits .data 2: not written).</summary>
-    Friend Function FadeDistances(near As Single, far As Single) As Vector4
-        Const Blend As Single = 100.0F
+    ''' s_0 = [light + 0x250] (0x142251643), the end of the sun's split 0: 800 [0x14292968C] (EngineSunBox.Fo4Splits). A pixel nearer than
+    ''' d(s_0) reads cascade 0, past d(s_0 + blend) cascade 1, between the two the PS blends them. .zw only with 3 splits (iDirShadowSplits .data 2).</summary>
+    Friend Function FadeDistances(near As Single, far As Single, s0 As Single) As Vector4
         Dim d = Function(s As Single) (far * s - far * near) / ((far - near) * s)
-        Return New Vector4(d(far), d(far + Blend), 0.0F, 0.0F)
+        Return New Vector4(d(s0), d(s0 + SplitBlend), 0.0F, 0.0F)
     End Function
+
+    ''' <summary>[0x143E71D94] = max(fBlendSplitDirShadow:Display .data 100, 0) (0x142181AD0..AE7): the blend of the sun's splits, the one owner
+    ''' (FadeDistances; EngineSunBox.Fo4Splits, the start of split 1).</summary>
+    Friend ReadOnly SplitBlend As Single = Math.Max(100.0F, 0.0F)
+
+    ''' <summary>[0x143E71D8C] = max(fDirShadowDistance:Display .data 3000 (0x142F99698), 1000 [0x1429296B0]) (0x142181AA4..AC8): the sun's
+    ''' shadow distance, the one owner (ShadowFadeParam; EngineSunBox.Fo4Splits, the end of the last split).</summary>
+    Friend ReadOnly DirShadowDistance As Single = Math.Max(3000.0F, 1000.0F)
 
     ''' <summary>ShadowFadeParam.x (cb2 name 12) = [0x143E71D8C]^2, [0x143E71D8C] = max(fDirShadowDistance, 1000) = 3000
     ''' (fDirShadowDistance .data 3000, 0x142F99698; 0x142181AA4..AC8; written 0x1422482C6). .yzw are never written.</summary>
     Friend Function ShadowFadeParam() As Vector4
-        Const DirShadowDistance As Single = 3000.0F
         Return New Vector4(DirShadowDistance * DirShadowDistance, 0.0F, 0.0F, 0.0F)
     End Function
 

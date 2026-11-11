@@ -107,8 +107,8 @@ Public NotInheritable Class SkinMatricesSoA
         Secciones(9)(i) = acc(12) : Secciones(10)(i) = acc(13) : Secciones(11)(i) = acc(14)
     End Sub
 
-    ''' <summary>Escribe las 12 secciones desde las tres FILAS del 3x4 del motor (Fo4EngineSkin.Blend / BlendSkin): la fila r del motor
-    ''' es la columna r de la Matrix4 de OpenTK (Fo4EngineSkin.MatrixOfRows), asi que M1r = fila r .x, M2r = .y, M3r = .z, M4r = .w.</summary>
+    ''' <summary>Escribe las 12 secciones desde las tres FILAS del 3x4 del motor (EngineSkin.Blend / BlendSkin): la fila r del motor
+    ''' es la columna r de la Matrix4 de OpenTK (EngineSkin.MatrixOfRows), asi que M1r = fila r .x, M2r = .y, M3r = .z, M4r = .w.</summary>
     <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
     Friend Sub EstablecerDesdeFilas(i As Integer, r0 As Vector4, r1 As Vector4, r2 As Vector4)
         Secciones(0)(i) = r0.X : Secciones(1)(i) = r1.X : Secciones(2)(i) = r2.X

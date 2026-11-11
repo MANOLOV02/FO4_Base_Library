@@ -122,13 +122,15 @@ Public Class NiTriShapeGeometry
         End Get
     End Property
 
-    ''' <summary>
-    ''' Eye data is FO4 BSTriShape-specific (face shape eye scleral mask).  NiTriShape /
-    ''' BSLODTriShape have no equivalent — always False.
-    ''' </summary>
+    ''' <summary>V-2b (f1\informe.md 5): Skyrim SE packs an eye float per vertex for a v83 geometry it converts (EngineConvertsToBSTriShape)
+    ''' WITH a skin - the eye pointer is set only in the skinned converter SkyrimSE.exe 0x14101AB30 (0x14101ADFE..E17; the unskinned branches
+    ''' pass 0: 0x14101B3B0, 0x14101B4BB, 0x14101B542) - and only when its NiTriShapeData's Additional Data is a NiAdditionalGeometryData whose
+    ''' first block was read (0x140F1C2C0 returns its buffer [+0x28], null without one). The block buffer must hold the 4 * nVerts bytes the
+    ''' packer reads (0x141016801..80D); a shorter one (0 corpus shapes, f1\out\v2b.txt) is read past its end by the engine: not
+    ''' representable, reported as no eye data.</summary>
     Public ReadOnly Property HasEyeData As Boolean Implements IShapeGeometry.HasEyeData
         Get
-            Return False
+            Return EngineEyeBuffer() IsNot Nothing
         End Get
     End Property
 
@@ -271,19 +273,132 @@ Public Class NiTriShapeGeometry
         Return d.VertexColors.ToList()
     End Function
 
+    ''' <summary>V-2b: the eye float of vertex v = the dword at 4 v of the first block's buffer (HasEyeData).</summary>
     Public Function GetEyeData() As List(Of Single) Implements IShapeGeometry.GetEyeData
-        Return New List(Of Single)()
+        Dim buf = EngineEyeBuffer()
+        Dim r As New List(Of Single)
+        If buf Is Nothing Then Return r
+        For v = 0 To VertexCount - 1 : r.Add(BitConverter.ToSingle(buf, 4 * v)) : Next
+        Return r
     End Function
 
-    ''' <summary>S-83A (D-L5): Skyrim SE loads a NiTriShape with a skin and a NiSkinPartition (bsver 72..100, 0x140EE5E3C/E54) as a
-    ''' BSTriShape (0x14101B070) and draws it partition by partition (0x141560519 -&gt; 0x140F08460 -&gt; 0x140F084C0 -&gt; 0x14100BCD0): the
-    ''' triangles of partition 0, then 1, ..., each in its own order, through its VertexMap. Nothing (data order) when the law does
-    ''' not apply or when the partitions are not the data's triangle set (an edit with stale partitions; declared) or use strips (0 in
-    ''' the corpus, declared).</summary>
-    Public Function GetEngineDrawTriangleOrder() As Integer() Implements IShapeGeometry.GetEngineDrawTriangleOrder
-        If TypeOf _shape IsNot NiTriShape OrElse Not _shape.IsSkinned Then Return Nothing
+    ''' <summary>Does Skyrim SE convert this geometry into a BSTriShape when it loads the NIF (P3, re_vertices.md 3)? A NIF loads with a
+    ''' stream version in 72..100 (SkyrimSE.exe 0x140EE5E3C / 0x140EE5E54); the converter 0x14101B070 takes the object only when its
+    ''' vtable slot 15 returns it (0x14101B09E..0A7): NiTriShape, BSLODTriShape and BSSegmentedTriShape do, NiTriStrips returns 0 and is not
+    ''' converted; it reads the NiTriShapeData (0x14101B1A1: [geom+0x120]).</summary>
+    Friend Function EngineConvertsToBSTriShape() As Boolean
+        If TypeOf _shape IsNot NiTriShape AndAlso TypeOf _shape IsNot BSLODTriShape Then Return False
         Dim bsver = _nif.Header?.Version?.StreamVersion
-        If Not bsver.HasValue OrElse bsver.Value < 72UI OrElse bsver.Value > 100UI Then Return Nothing
+        If Not bsver.HasValue OrElse bsver.Value < 72UI OrElse bsver.Value > 100UI Then Return False
+        Return TypeOf GetData() Is NiTriShapeData
+    End Function
+
+    ''' <summary>The NiAdditionalGeometryData's first block buffer in the engine's reading order (LoadBinary SkyrimSE.exe 0x140F1B910: Num
+    ''' Vertices u16, Num Block Infos u32, 25 bytes per info - the channel offset read and dropped, 0x140F1BAF0..B0C -, Num Blocks u32; with
+    ''' blocks, one Has Data byte (0x140F1BC0D) and ONE block through 0x140F1CBA0: Block Size, Num Sub-blocks, their offsets, then per
+    ''' sub-block Num Data, Data Sizes and nVerts * sum(sizes) bytes at its offset). NiflySharp parses the block by nif.xml (one Num Data
+    ''' and Num Data * Block Size bytes of data, NiAGDDataBlock), which is not the engine's order: the block is written back to its bytes
+    ''' by NiflySharp's own reversible stream (the bytes it read) and read here in the engine's order. Nothing when HasEyeData's conditions
+    ''' do not hold.</summary>
+    Private Function EngineEyeBuffer() As Byte()
+        If Not EngineConvertsToBSTriShape() OrElse Not _shape.IsSkinned Then Return Nothing
+        Dim d = GetData()
+        If d Is Nothing OrElse Not d.HasAdditionalData Then Return Nothing
+        Dim ix = CInt(d.AdditionalDataRef.Index)
+        If ix < 0 OrElse ix >= _nif.Blocks.Count Then Return Nothing
+        If _nif.Header.GetBlockTypeNameById(ix) <> "NiAdditionalGeometryData" Then Return Nothing
+        Dim blk = TryCast(_nif.Blocks(ix), NiflySharp.INiStreamable)
+        If blk Is Nothing Then Return Nothing
+        Dim raw As Byte()
+        Using ms As New IO.MemoryStream()
+            blk.Sync(New NiflySharp.Stream.NiStreamReversible(New NiflySharp.Stream.NiStreamWriter(ms, _nif)))
+            raw = ms.ToArray()
+        End Using
+        Dim o = 0
+        Dim nv = BitConverter.ToUInt16(raw, o) : o += 2
+        Dim nInfo = BitConverter.ToUInt32(raw, o) : o += 4
+        o += 25 * CInt(nInfo)
+        Dim nBlocks = BitConverter.ToUInt32(raw, o) : o += 4
+        If nBlocks = 0UI Then Return Nothing
+        Dim has = raw(o) : o += 1
+        If has = 0 Then Return Nothing
+        Dim size = BitConverter.ToUInt32(raw, o), nSub = BitConverter.ToUInt32(raw, o + 4) : o += 8
+        Dim subOff(CInt(nSub) - 1) As UInteger
+        For i = 0 To CInt(nSub) - 1 : subOff(i) = BitConverter.ToUInt32(raw, o) : o += 4 : Next
+        Dim buf(CInt(size) - 1) As Byte
+        For i = 0 To CInt(nSub) - 1
+            Dim nd = BitConverter.ToUInt32(raw, o) : o += 4
+            Dim sum As Long = 0
+            For j = 0 To CInt(nd) - 1 : sum += BitConverter.ToUInt32(raw, o) : o += 4 : Next
+            Dim n = CInt(nv * sum)
+            Array.Copy(raw, o, buf, CInt(subOff(i)), n) : o += n
+        Next
+        If buf.Length < 4 * VertexCount Then Return Nothing
+        Return buf
+    End Function
+
+    ''' <summary>P3 skin (SkyrimSE.exe 0x14101AB30): the weights (float x 4 per vertex) and bone indices (byte x 4) the converter builds,
+    ''' both zeroed first (0x14101AC71 / 0x14101AC7E). Per partition in order and per local vertex li of it (vg = VertexMap[li],
+    ''' 0x14101ACD2): weights[vg] = the 16 bytes at li * 16 of the partition's weights (0x14101ACEB..CEF, NOT normalised); index k =
+    ''' the low byte of the partition's Bones[BoneIndices[li * 4 + k]] (0x14101ACFB..D5E); a vertex in two partitions keeps the last
+    ''' one's. False (not representable: the engine reads or writes outside the arrays) when a partition uses strips (the NIF does not
+    ''' load: 0x140EE639E), has no vertex map, weights or bone indices, or one of those reads falls outside its array (a partition with
+    ''' other than 4 weights per vertex: 0 in the corpus, s1_re.md 12.5).</summary>
+    Friend Function EngineV83Skin(ByRef weights As Single(), ByRef indices As Byte()) As Boolean
+        Dim part = ResolvePartition(ResolveSkinInstance())
+        If part?.Partitions Is Nothing Then Return False
+        Dim n = VertexCount
+        weights = New Single(n * 4 - 1) {} : indices = New Byte(n * 4 - 1) {}
+        For Each p In part.Partitions
+            If p.NumStrips <> 0 OrElse p.VertexMap Is Nothing OrElse p.VertexWeights Is Nothing OrElse p.BoneIndices Is Nothing OrElse p.Bones Is Nothing Then Return False
+            For li = 0 To p.VertexMap.Count - 1
+                Dim vg = CInt(p.VertexMap(li))
+                If vg >= n OrElse li * 4 + 3 >= p.VertexWeights.Count OrElse li * 4 + 3 >= p.BoneIndices.Count Then Return False
+                For k = 0 To 3
+                    weights(vg * 4 + k) = p.VertexWeights(li * 4 + k)
+                    Dim b = CInt(p.BoneIndices(li * 4 + k))
+                    If b >= p.Bones.Count Then Return False
+                    indices(vg * 4 + k) = CByte(p.Bones(b) And &HFFUS)
+                Next
+            Next
+        Next
+        Return True
+    End Function
+
+    ''' <summary>D4 (ola SSE S1 F2.4): the skin the engine DRAWS a converted v83 shape with - P3's (EngineV83Skin) as its packer writes it
+    ''' into the vertex buffer the VS reads: each weight through the packer's float-to-half B (EngineVertexPacker.EngineHalfB,
+    ''' SkyrimSE.exe 0x14101BD20, called from 0x141015CA0 for the weights), the indices as written (the low byte of the partition's bone).
+    ''' 4 slots per vertex (16 bytes of weights, 0x14101ACEB..CEF). False when the converter does not take the shape
+    ''' (EngineConvertsToBSTriShape), it has no skin, or its partitions cannot be read the converter's way (EngineV83Skin).</summary>
+    Friend Function EngineDrawSkinning(ByRef skin As ShapeSkinningData) As Boolean
+        If Not EngineConvertsToBSTriShape() OrElse Not _shape.IsSkinned Then Return False
+        Dim w As Single() = Nothing, idx As Byte() = Nothing
+        If Not EngineV83Skin(w, idx) Then Return False
+        Dim h(w.Length - 1) As SysHalf
+        For k = 0 To w.Length - 1 : h(k) = BitConverter.UInt16BitsToHalf(EngineVertexPacker.EngineHalfB(w(k))) : Next
+        skin = New ShapeSkinningData With {.BoneIndices = idx, .BoneWeights = h, .WeightsPerVertex = 4, .VertexCount = VertexCount}
+        Return True
+    End Function
+
+    ''' <summary>S-83A, the engine's index list (u16) of a converted geometry: with a skin, each partition's triangle list remapped in place
+    ''' through its VertexMap (0x140F075A0: tri[i] = map[tri[i]], 3 * NumTriangles entries) and one TriShape per partition, in partition order
+    ''' (0x14101AFF0..03D); without one, the data triangles in their order (0x141017BB0 -&gt; 0x14100B770 with the 0x140F17860 list). Nothing
+    ''' when the converter does not take the shape or a partition cannot be read (see EngineV83Skin).</summary>
+    Friend Function EngineV83Indices() As UShort()
+        If Not EngineConvertsToBSTriShape() Then Return Nothing
+        If Not _shape.IsSkinned Then
+            Dim r As New List(Of UShort)
+            For Each t In GetTriangles() : r.Add(t.V1) : r.Add(t.V2) : r.Add(t.V3) : Next
+            Return r.ToArray()
+        End If
+        Dim parts = EnginePartitions()
+        If parts Is Nothing Then Return Nothing
+        Return PartitionIndices(parts)
+    End Function
+
+    ''' <summary>The partitions of the skin as the S-83A law reads them; Nothing with strips (the NIF does not load, 0x140EE639E) or without
+    ''' a vertex map or triangles.</summary>
+    Private Function EnginePartitions() As List(Of (Map As IList(Of UShort), Tris As IList(Of Triangle)))
         Dim part = ResolvePartition(ResolveSkinInstance())
         If part?.Partitions Is Nothing OrElse part.Partitions.Count = 0 Then Return Nothing
         Dim parts As New List(Of (Map As IList(Of UShort), Tris As IList(Of Triangle)))
@@ -291,13 +406,44 @@ Public Class NiTriShapeGeometry
             If p.NumStrips <> 0 OrElse p.VertexMap Is Nothing OrElse p.Triangles Is Nothing Then Return Nothing
             parts.Add((p.VertexMap, p.Triangles))
         Next
-        Return EngineTriangleOrder(GetTriangles(), parts)
+        Return parts
     End Function
 
-    ''' <summary>S-83A, pure (gate draw-order-law): the data triangle each partition triangle is, in partition order. Triangles are
-    ''' matched ORIENTED (same winding: a cyclic rotation; the corpus has the same oriented multiset in 265 of 265). Nothing when a
-    ''' partition triangle has no unused data triangle or the counts differ.</summary>
-    Friend Shared Function EngineTriangleOrder(dataTris As IList(Of Triangle), parts As IList(Of (Map As IList(Of UShort), Tris As IList(Of Triangle)))) As Integer()
+    ''' <summary>S-83A, pure: the partitions' triangles through their vertex maps, in partition order (0x140F075A0 + 0x14101AFF0..03D);
+    ''' Nothing when a local index falls outside its map.</summary>
+    Friend Shared Function PartitionIndices(parts As IList(Of (Map As IList(Of UShort), Tris As IList(Of Triangle)))) As UShort()
+        Dim r As New List(Of UShort)
+        For Each p In parts
+            For Each t In p.Tris
+                If t.V1 >= p.Map.Count OrElse t.V2 >= p.Map.Count OrElse t.V3 >= p.Map.Count Then Return Nothing
+                r.Add(p.Map(t.V1)) : r.Add(p.Map(t.V2)) : r.Add(p.Map(t.V3))
+            Next
+        Next
+        Return r.ToArray()
+    End Function
+
+    ''' <summary>S-83A (D-L5) for the app's draw: Skyrim SE draws a converted geometry with a skin partition by partition (0x141560519 -&gt;
+    ''' 0x140F08460 -&gt; 0x140F084C0 -&gt; 0x14100BCD0) with the index list EngineV83Indices gives. Expressed over the DATA triangles, so the
+    ''' edit API (GetTriangles, zap and occlusion masks) keeps its order: the data triangle each engine triangle is (Order) and the
+    ''' rotation that turns it into the engine's corners (<paramref name="rotation"/>: corner c of the engine triangle = data corner
+    ''' (rotation + c) mod 3). Nothing (data order) when the law does not apply or the partitions are not the data's triangle set (an
+    ''' edit with stale partitions; declared).</summary>
+    Public Function GetEngineDrawTriangleOrder(ByRef rotation As Byte()) As Integer() Implements IShapeGeometry.GetEngineDrawTriangleOrder
+        rotation = Nothing
+        If Not EngineConvertsToBSTriShape() OrElse Not _shape.IsSkinned Then Return Nothing
+        Dim parts = EnginePartitions()
+        If parts Is Nothing Then Return Nothing
+        Return EngineTriangleOrder(GetTriangles(), parts, rotation)
+    End Function
+
+    ''' <summary>S-83A, pure (gate draw-order-law): each engine triangle (PartitionIndices) as the data triangle it is - matched ORIENTED (a
+    ''' cyclic rotation, the same winding; the corpus has the same oriented multiset in 265 of 265) - and the rotation that gives the
+    ''' engine's first corner. Nothing when an engine triangle has no unused data triangle or the counts differ.</summary>
+    Friend Shared Function EngineTriangleOrder(dataTris As IList(Of Triangle), parts As IList(Of (Map As IList(Of UShort), Tris As IList(Of Triangle))),
+                                               ByRef rotation As Byte()) As Integer()
+        rotation = Nothing
+        Dim eng = PartitionIndices(parts)
+        If eng Is Nothing Then Return Nothing
         Dim key = Function(a As Integer, b As Integer, c As Integer) As (Integer, Integer, Integer)
                       If a <= b AndAlso a <= c Then Return (a, b, c)
                       If b <= a AndAlso b <= c Then Return (b, c, a)
@@ -312,16 +458,22 @@ Public Class NiTriShapeGeometry
             q.Enqueue(i)
         Next
         Dim order As New List(Of Integer)(dataTris.Count)
-        For Each p In parts
-            For Each t In p.Tris
-                If t.V1 >= p.Map.Count OrElse t.V2 >= p.Map.Count OrElse t.V3 >= p.Map.Count Then Return Nothing
-                Dim k = key(p.Map(t.V1), p.Map(t.V2), p.Map(t.V3))
-                Dim q As Queue(Of Integer) = Nothing
-                If Not pool.TryGetValue(k, q) OrElse q.Count = 0 Then Return Nothing
-                order.Add(q.Dequeue())
-            Next
+        Dim rot As New List(Of Byte)(dataTris.Count)
+        For e = 0 To eng.Length \ 3 - 1
+            Dim a = CInt(eng(3 * e)), b = CInt(eng(3 * e + 1)), c = CInt(eng(3 * e + 2))
+            Dim q As Queue(Of Integer) = Nothing
+            If Not pool.TryGetValue(key(a, b, c), q) OrElse q.Count = 0 Then Return Nothing
+            Dim d = q.Dequeue()
+            Dim dt = dataTris(d)
+            Dim dv = {CInt(dt.V1), CInt(dt.V2), CInt(dt.V3)}
+            Dim r As Byte = 0
+            While Not (dv(r) = a AndAlso dv((r + 1) Mod 3) = b AndAlso dv((r + 2) Mod 3) = c)
+                r = CByte(r + 1)
+            End While
+            order.Add(d) : rot.Add(r)
         Next
         If order.Count <> dataTris.Count Then Return Nothing
+        rotation = rot.ToArray()
         Return order.ToArray()
     End Function
 
@@ -480,9 +632,8 @@ Public Class NiTriShapeGeometry
     End Sub
 
     ''' <summary>
-    ''' No-op for NiTriShape / BSLODTriShape — neither supports per-vertex eye data.
-    ''' Provided to satisfy the IShapeGeometry contract; callers should gate writes on
-    ''' HasEyeData (which is always False here).
+    ''' No-op: the eye data of this family is the NiAdditionalGeometryData block (V-2b, HasEyeData), which the app
+    ''' keeps as NiflySharp read it and never rewrites.
     ''' </summary>
     Public Sub SetEyeData(eyeData As List(Of Single)) Implements IShapeGeometry.SetEyeData
         ' intentional no-op

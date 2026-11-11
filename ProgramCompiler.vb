@@ -16,6 +16,23 @@ Friend NotInheritable Class ProgramBuildException
     End Sub
 End Class
 
+''' <summary>WHAT A PROGRAM IS BUILT FROM (F9 r2 §1.2 / rev-06): its stages (type and text, in order), the transform-feedback varyings
+''' (captured interleaved) and the fragment-shader derivative hint the context compiles it under (GL 4.6 §21.5, table 23.51: DONT_CARE is
+''' the initial value). Everything in it is in the program's digest (ProgramCompiler.ProgramDigest); nothing else a link sees is set by
+''' the app (the census of F9 r2 §2.1, kept closed by ParityGate program-compiler-single).</summary>
+Friend Structure ProgramSpec
+    Friend ReadOnly Stages As IReadOnlyList(Of (Type As ShaderType, Source As String))
+    Friend ReadOnly Varyings As String()
+    Friend ReadOnly DerivativeHint As HintMode
+
+    Friend Sub New(stages As IReadOnlyList(Of (Type As ShaderType, Source As String)), Optional varyings As String() = Nothing,
+                   Optional derivativeHint As HintMode = HintMode.DontCare)
+        Me.Stages = stages
+        Me.Varyings = varyings
+        Me.DerivativeHint = derivativeHint
+    End Sub
+End Structure
+
 ''' <summary>THE ONE OWNER OF BUILDING A GL PROGRAM (S0-A, user decision P2 of 29-oct-2026). Every program of the library and of its
 ''' tools is built here (Shader_Base_Class, FaceTintCompositor, TextOverlayRenderer, the ShadowGate harnesses); nothing else calls
 ''' glCreateShader / glCompileShader / glLinkProgram / glProgramBinary (ParityGate program-compiler-single).
@@ -34,8 +51,14 @@ Friend NotInheritable Class ProgramCompiler
     Private Sub New()
     End Sub
 
+    ''' <summary>The name a G-buffer record's variant without early tests is requested under (F9: Fo4DeferredPrograms.GBufferProgram's
+    ''' unit); in Debug, the name GateBuildingSlot takes while it is built (S0 fase 7d), so GateFailStageSlot can make that variant's
+    ''' fragment fail while its record compiles - the case that orphaned the record (ShadowGate --program-abort). It is not a program
+    ''' slot: "*" (the first slot that compiles a fragment) never takes it, only its own name does.</summary>
+    Friend Const GateEarlyZVariantSlot As String = "FO4 G-buffer record without early tests"
+
     ''' <summary>A stage's shader object in its context: compiled once, its status asked once (Nothing = not asked yet).</summary>
-    Private NotInheritable Class StageObject
+    Friend NotInheritable Class StageObject
         Friend Id As Integer
         Friend Type As ShaderType
         Friend Compiled As Boolean?
@@ -44,7 +67,7 @@ Friend NotInheritable Class ProgramCompiler
 
     ''' <summary>What a context holds for building: its cache identity (driver and build of the app), the binary formats it lists, its
     ''' stage objects by (type, SHA-256 of the text).</summary>
-    Private NotInheritable Class ContextState
+    Friend NotInheritable Class ContextState
         Friend Identity As ProgramBinaryCache.CacheIdentity
         Friend ReadOnly Formats As New HashSet(Of Integer)
         Friend ReadOnly Stages As New Dictionary(Of String, StageObject)(StringComparer.Ordinal)
@@ -75,11 +98,6 @@ Friend NotInheritable Class ProgramCompiler
     ''' ever turned on by it): the program error card shows with its Retry button, and Retry compiles the stage again and draws the frame. Until it fires, the
     ''' slot it waits for is built without the program binary cache (Build), so it fires with a warm cache too.</summary>
     Friend Shared GateFailStageSlot As String = Nothing
-    ''' <summary>DEBUG ONLY (S0 fase 7d): the name GBufferProgram builds a record's variant without early tests under
-    ''' (GateBuildingSlot), so GateFailStageSlot can make that variant's fragment fail while its record compiles - the case that orphaned
-    ''' the record (ShadowGate --program-abort). It is not a program slot: "*" (the first slot that compiles a fragment) never takes it,
-    ''' only its own name does.</summary>
-    Friend Const GateEarlyZVariantSlot As String = "FO4 G-buffer record without early tests"
     ''' <summary>DEBUG ONLY: the one-shot failure waits for the slot being built on this thread (not fired yet).</summary>
     Private Shared Function GateFailStagePending() As Boolean
         Return Not GateFailStageFired AndAlso GateFailStageSlot IsNot Nothing AndAlso GateBuildingSlot IsNot Nothing AndAlso
@@ -95,12 +113,10 @@ Friend NotInheritable Class ProgramCompiler
 #End If
 
     ''' <summary>The current context <paramref name="ctx"/> starts (Gl43.InitContext): its identity (the driver's four strings and the
-    ''' build of the app, ProgramBinaryCache.AppBuild) and binary formats are read.</summary>
+    ''' two values of its creation a link sees, CONTEXT_FLAGS and CONTEXT_PROFILE_MASK, fixed for the context's life) and binary formats
+    ''' are read.</summary>
     Friend Shared Sub InitContext(ctx As IntPtr)
-        Dim st As New ContextState With {.Identity = New ProgramBinaryCache.CacheIdentity With {
-            .Vendor = GL.GetString(StringName.Vendor), .Renderer = GL.GetString(StringName.Renderer),
-            .Version = GL.GetString(StringName.Version), .GlslVersion = GL.GetString(StringName.ShadingLanguageVersion),
-            .AppBuild = ProgramBinaryCache.AppBuild}}
+        Dim st As New ContextState With {.Identity = ReadIdentity()}
         Dim n = GL.GetInteger(GetPName.NumProgramBinaryFormats)
         If n > 0 Then
             Dim formats(n - 1) As Integer
@@ -109,6 +125,14 @@ Friend NotInheritable Class ProgramCompiler
         End If
         _contexts(ctx) = st
     End Sub
+
+    ''' <summary>The identity of the current context (InitContext; F9's hidden builder context compares its own with its control's).</summary>
+    Friend Shared Function ReadIdentity() As ProgramBinaryCache.CacheIdentity
+        Return New ProgramBinaryCache.CacheIdentity With {
+            .Vendor = GL.GetString(StringName.Vendor), .Renderer = GL.GetString(StringName.Renderer),
+            .Version = GL.GetString(StringName.Version), .GlslVersion = GL.GetString(StringName.ShadingLanguageVersion),
+            .ContextFlags = GL.GetInteger(GetPName.ContextFlags), .ProfileMask = GL.GetInteger(CType(&H9126, GetPName))}
+    End Function
 
     ''' <summary>Context <paramref name="ctx"/> is released (Gl43.ReleaseContext): its state forgotten, its stage objects deleted when
     ''' <paramref name="deleteObjects"/> (the context alive and current; otherwise they go with the context).</summary>
@@ -194,14 +218,34 @@ Friend NotInheritable Class ProgramCompiler
     ''' interleaved (OpenGL 4.6 11.1.2.1: declared before the link); returns the linked program. A stage that does not compile or a
     ''' link that fails throws ProgramBuildException with the driver's log, the program deleted.</summary>
     Friend Shared Function Build(stages As IReadOnlyList(Of (Type As ShaderType, Source As String)), Optional varyings As String() = Nothing) As Integer
+        Return Build(New ProgramSpec(stages, varyings))
+    End Function
+
+    ''' <summary>Builds the program of <paramref name="spec"/> in the current context (see the other overload). The context's
+    ''' FRAGMENT_SHADER_DERIVATIVE_HINT is the spec's: in Debug a different one throws (F9 r8 rev-06: a caller that changes the hint with
+    ''' GL.Hint states it in its spec).</summary>
+    Friend Shared Function Build(spec As ProgramSpec) As Integer
+        Dim stages = spec.Stages
+        Dim varyings = spec.Varyings
         Dim st = Current()
 #If DEBUG Then
+        Dim hint = CType(GL.GetInteger(GetPName.FragmentShaderDerivativeHint), HintMode)
+        If hint <> spec.DerivativeHint Then
+            Throw New InvalidOperationException($"ProgramCompiler.Build: the context's fragment-shader derivative hint is {hint}, the spec's {spec.DerivativeHint}")
+        End If
         Dim reloj = Stopwatch.StartNew()
+        ' GATE (F9 rev-20, ShadowGate --exit-during-first-frame): the run's salt in every stage (GateSalt).
+        If GateSalt IsNot Nothing Then stages = stages.Select(Function(x) (x.Type, Salted(x.Source))).ToList()
 #End If
         For Each s In stages
             Gl43.CheckShaderText(s.Source)
         Next
         Dim hashes = stages.Select(Function(s) SHA256.HashData(Encoding.UTF8.GetBytes(s.Source))).ToArray()
+        Dim digest = ProgramDigest(stages, hashes, varyings, spec.DerivativeHint)
+#If DEBUG Then
+        ' F9 r3 rev-08: the one check of the catalog's domain - a program outside the installed manifest is counted and logged, never cut.
+        ProgramCatalog.NoteBuilt(digest, hashes, GateBuildingSlot)
+#End If
         Dim useCache = CacheUsable(st)
 #If DEBUG Then
         ' The one-shot compile failure (GateFailStageSlot) needs a compile: the slot it waits for is built without the cache until it fires
@@ -210,7 +254,7 @@ Friend NotInheritable Class ProgramCompiler
 #End If
         Dim key As Byte() = Nothing
         If useCache Then
-            key = ProgramKey(st.Identity, stages, hashes, varyings)
+            key = ProgramKey(st.Identity, digest)
             Dim fmt As Integer, bin As Byte() = Nothing
             If ProgramBinaryCache.TryLoad(key, st.Identity, st.Formats, fmt, bin) Then
                 Dim loaded = GL.CreateProgram()
@@ -265,26 +309,19 @@ Friend NotInheritable Class ProgramCompiler
         Return If(s.Compiled.Value, Nothing, s.Log)
     End Function
 
-    ''' <summary>The cache key of a program: SHA-256 of FormatVersion, the cache identity (the driver's four strings and the build of the
-    ''' app), each stage's type and text hash in order, the varyings in order and their mode (ProgramBinaryCache).</summary>
-    Private Shared Function ProgramKey(id As ProgramBinaryCache.CacheIdentity, stages As IReadOnlyList(Of (Type As ShaderType, Source As String)),
-                                       hashes As Byte()(), varyings As String()) As Byte()
-        Dim version = If(id.Version, "")
-        Dim build = If(id.AppBuild, "")
+    ''' <summary>THE PROGRAM'S DIGEST (F9 r2 §3 / r3 rev-17, the first level of the key and what the manifest ProgramCatalog.keys lists):
+    ''' SHA-256 of each stage's type and text hash in order, the varyings in order and their mode, the derivative hint and the
+    ''' retrievable hint (1: set before every cached link, OpenGL 4.6 7.5). Independent of the context.</summary>
+    Friend Shared Function ProgramDigest(stages As IReadOnlyList(Of (Type As ShaderType, Source As String)), hashes As Byte()(),
+                                         varyings As String(), derivativeHint As HintMode) As Byte()
+        Dim hint = CInt(derivativeHint)
 #If DEBUG Then
-        ' GATE (ShadowGate --program-cache, subject mutants): the driver's version, the build of the app out of the key (and of the
-        ' identity check).
-        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-version") Then version = ""
-        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-appbuild") Then build = ""
+        ' GATE (ShadowGate --program-cache, subject mutant): the derivative hint out of the digest (a program built under another hint
+        ' would load this one's binary).
+        If Fo4GBufferConstants.GateMutantOn("hint-not-in-key") Then hint = 0
 #End If
         Using ms As New MemoryStream()
             Using w As New BinaryWriter(ms, Encoding.UTF8, leaveOpen:=True)
-                w.Write(ProgramBinaryCache.FormatVersion)
-                w.Write(If(id.Vendor, ""))
-                w.Write(If(id.Renderer, ""))
-                w.Write(version)
-                w.Write(If(id.GlslVersion, ""))
-                w.Write(build)
                 w.Write(stages.Count)
                 For i = 0 To stages.Count - 1
                     w.Write(CInt(stages(i).Type))
@@ -297,6 +334,40 @@ Friend NotInheritable Class ProgramCompiler
                     For Each v In varyings : w.Write(v) : Next
                     w.Write(CInt(TransformFeedbackMode.InterleavedAttribs))
                 End If
+                w.Write(hint)
+                w.Write(1)
+            End Using
+            Return SHA256.HashData(ms.ToArray())
+        End Using
+    End Function
+
+    ''' <summary>The digest of <paramref name="spec"/> (its texts hashed here).</summary>
+    Friend Shared Function ProgramDigest(spec As ProgramSpec) As Byte()
+        Dim hashes = spec.Stages.Select(Function(s) SHA256.HashData(Encoding.UTF8.GetBytes(s.Source))).ToArray()
+        Return ProgramDigest(spec.Stages, hashes, spec.Varyings, spec.DerivativeHint)
+    End Function
+
+    ''' <summary>The cache key of a program (ProgramBinaryCache): SHA-256 of FormatVersion, the identity (the driver's four strings and the
+    ''' context's flags and profile) and the program's digest.</summary>
+    Friend Shared Function ProgramKey(id As ProgramBinaryCache.CacheIdentity, digest As Byte()) As Byte()
+        Dim version = If(id.Version, "")
+        Dim flags = id.ContextFlags, profile = id.ProfileMask
+#If DEBUG Then
+        ' GATE (ShadowGate --program-cache, subject mutants): a field out of the key (and of the identity check).
+        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-version") Then version = ""
+        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-context-flags") Then flags = 0
+        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-profile") Then profile = 0
+#End If
+        Using ms As New MemoryStream()
+            Using w As New BinaryWriter(ms, Encoding.UTF8, leaveOpen:=True)
+                w.Write(ProgramBinaryCache.FormatVersion)
+                w.Write(If(id.Vendor, ""))
+                w.Write(If(id.Renderer, ""))
+                w.Write(version)
+                w.Write(If(id.GlslVersion, ""))
+                w.Write(flags)
+                w.Write(profile)
+                w.Write(digest)
             End Using
             Return SHA256.HashData(ms.ToArray())
         End Using
@@ -371,7 +442,21 @@ Friend NotInheritable Class ProgramCompiler
         SyncLock GateBuildLog
             GateBuildLog.Add((program, ms, hit))
         End SyncLock
+        GateBuildNote?.Invoke($"build {If(GateBuildingSlot, "(record)")}: {ms:F0} ms{If(hit, " (cache hit)", "")}")
     End Sub
+
+    ''' <summary>GATE ONLY (F9 rev-20, ShadowGate --exit-during-first-frame): a GUID per run; Nothing = off. Every stage text Build gets
+    ''' carries "// harness salt GUID" after its #version line (Salted), declared with Gl43.GateHarnessText.</summary>
+    Friend Shared GateSalt As String = Nothing
+    ''' <summary>GATE ONLY (F9 rev-20): told of every Build (slot name or "(record)", milliseconds, cache hit), on the thread that built it.</summary>
+    Friend Shared GateBuildNote As Action(Of String) = Nothing
+
+    Private Shared Function Salted(source As String) As String
+        Dim v = source.IndexOf("#version", StringComparison.Ordinal)
+        Dim eol = source.IndexOf(ChrW(10), Math.Max(0, v))
+        If v < 0 OrElse eol < 0 Then Return source
+        Return Gl43.GateHarnessText("F9 rev-20 harness salt", source.Insert(eol + 1, "// harness salt " & GateSalt & ChrW(10)))
+    End Function
 #End If
 
 End Class

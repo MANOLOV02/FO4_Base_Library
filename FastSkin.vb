@@ -261,7 +261,7 @@ Friend Module FastSkin
 
     ''' <summary>The inverse-transpose rows of a skin matrix's 3x3 (cofactors / det; the identity when EsDegenerada decides it is
     ''' degenerate): the normal law of UnVertice, computed ONCE per vertex and per matrix. TransformarDirecto, UnVertice and the
-    ''' engine stage's CPU route (Fo4EngineVertexPacker.PackCpuRouteBlended, review note "performance": the legacy VBOs and the
+    ''' engine stage's CPU route (EngineVertexPacker.PackCpuRouteBlended, review note "performance": the legacy VBOs and the
     ''' CPU-route stream of one vertex share it) read it from here.</summary>
     Friend Structure MatrizNormal
         Friend E11, E12, E13, E21, E22, E23, E31, E32, E33 As Single
@@ -321,7 +321,7 @@ Friend Module FastSkin
 
     ''' <summary>THE POSITION LAW of <see cref="UnVertice"/>, on one point: the local point rounded to Single, then accumulated in
     ''' Single (rows of OpenTK's Matrix4). One place for every point that has to land where the CPU-skinned vertices land: the
-    ''' vertex itself (UnVertice) and the SSE eye's reflection centre (Render.vb EyeCentresForUpload, S-O1).</summary>
+    ''' vertex itself (UnVertice).</summary>
     Friend Function Punto(m As Matrix4, p As Vector3d) As Vector3
         Dim px = CSng(p.X), py = CSng(p.Y), pz = CSng(p.Z)
         Return New Vector3(px * m.M11 + py * m.M21 + pz * m.M31 + m.M41,

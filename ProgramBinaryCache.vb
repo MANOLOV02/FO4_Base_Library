@@ -9,10 +9,17 @@ Imports System.Threading
 ''' sped up by a standard cache that works on any card). glGetProgramBinary / glProgramBinary are core since OpenGL 4.1 (inside the
 ''' app's OpenGL 4.3, no extension); ProgramCompiler is its one user. Its root is Folder (Config_App.ShaderCacheDirectory: ShaderCache
 ''' next to config.json), never the driver's own cache (user order 27-oct-2026).
-''' <para>THE IDENTITY (CacheIdentity): the context's GL_VENDOR / GL_RENDERER / GL_VERSION / GL_SHADING_LANGUAGE_VERSION and the build of
-''' the library (AppBuild: the MVID of FO4_Base_Library, the code that writes and compiles every program text - S0 fase 7 rev-01,
-''' 7c). THE KEY (ProgramCompiler.ProgramKey): the SHA-256 of FormatVersion, the identity, every stage's type and text in order and
-''' the transform-feedback varyings with their mode. Another driver, card, build or text never meets an entry of the old one.</para>
+''' <para>THE IDENTITY (CacheIdentity): the context's GL_VENDOR / GL_RENDERER / GL_VERSION / GL_SHADING_LANGUAGE_VERSION and the state of
+''' its creation that a link sees and the text does not (F9 r2 §2, the closed census of GL 4.6 §23's tables): GL_CONTEXT_FLAGS (its
+''' robust-access bit included) and GL_CONTEXT_PROFILE_MASK. GL_RESET_NOTIFICATION_STRATEGY is not in it: it is not a core 4.3 token
+''' (ARB / KHR_robustness, core in 4.5), and it is the same for every context the app creates, by construction - none asks for
+''' robustness (OpenTK 4.7.4's NativeWindowSettings has no robustness attribute, GLFW's default is GLFW_NO_ROBUSTNESS, and without
+''' WGL_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB the strategy is NO_RESET_NOTIFICATION_ARB, WGL_ARB_create_context_robustness), watched by
+''' ParityGate program-compiler-single (no source asks for it). The build of the app is NOT in it (F9: a new build with the same texts
+''' keeps its entries). THE KEY (ProgramCompiler.ProgramKey) has two levels: the program's digest (ProgramCompiler.ProgramDigest:
+''' every stage's type and text hash in order, the transform-feedback varyings with their mode, the derivative hint and the
+''' retrievable hint of its ProgramSpec), then the SHA-256 of FormatVersion, the identity and that digest. Another driver, card,
+''' context or text never meets an entry of the old one.</para>
 ''' <para>ONE FOLDER PER RENDERER (S0 fase 7 rev-02, decided: a machine with two GPUs - an integrated and a discrete one - keeps both
 ''' sets): RendererFolder = the root's subfolder named by the SHA-256 of GL_VENDOR and GL_RENDERER. A process reads, writes and
 ''' cleans only its context's folder.</para>
@@ -25,7 +32,9 @@ Imports System.Threading
 ''' rename on the volume), so a reader never sees half an entry and two instances writing the same key leave one whole entry.</para>
 ''' <para>CLEANUP, by rule (no size or age limit), the first time a process uses the root with an identity: in its renderer's folder,
 ''' every entry whose header is not of this FormatVersion and of exactly this identity is deleted - another driver version, GLSL
-''' version or build of the app: its key can no longer be met by this driver and this build -, and every pending file no writer
+''' version or context: its key can no longer be met by this driver -, every entry of this identity whose key is not one of the
+''' installed manifest's programs or of the host's registered ones (ProgramCatalog.KeptKeys, F9 r2 rev-07 (b): another text - no
+''' build of the app asks for it; with no usable manifest nothing is deleted by text, and the log says so), and every pending file no writer
 ''' holds (a writer killed mid-write); in the root itself, the files of the flat layout of FormatVersion 1 (no reader looks there any
 ''' more). The other renderers' folders are not touched: each is cleaned by the processes that run on its renderer. So a renderer's
 ''' folder holds only programs its current driver and the current build of the app can ask for: it grows with the programs used,
@@ -36,30 +45,25 @@ Friend NotInheritable Class ProgramBinaryCache
     End Sub
 
     ''' <summary>The layout of an entry and of the folder, and the key's first field: a change of either changes it, and the cleanup
-    ''' deletes the old ones. 2 (S0 fase 7): the build of the app in the identity, one folder per renderer.</summary>
-    Friend Const FormatVersion As Integer = 2
+    ''' deletes the old ones. 2 (S0 fase 7): one folder per renderer. 3 (F9): the identity without the build of the app and with the
+    ''' context's flags and profile; the key in two levels.</summary>
+    Friend Const FormatVersion As Integer = 3
     ''' <summary>"FPBC" read as a little-endian Int32: the first four bytes of every entry.</summary>
     Private Const Magic As Integer = &H43425046
     Friend Const EntryExtension As String = ".glprog"
     Private Const PendingExtension As String = ".pending"
 
-    ''' <summary>What an entry is valid for: the four strings of a context that name its driver, and the build of the app (AppBuild) -
-    ''' part of the key and of every entry's header.</summary>
+    ''' <summary>What an entry is valid for: the four strings of a context that name its driver and the two values of its creation a
+    ''' link sees (GL 4.6 §23: CONTEXT_FLAGS, CONTEXT_PROFILE_MASK, read with glGet in ProgramCompiler.ReadIdentity; the reset
+    ''' notification strategy is the same for every context of the app, see the class) - part of the key and of every entry's header.</summary>
     Friend Structure CacheIdentity
         Friend Vendor As String
         Friend Renderer As String
         Friend Version As String
         Friend GlslVersion As String
-        Friend AppBuild As String
+        Friend ContextFlags As Integer
+        Friend ProfileMask As Integer
     End Structure
-
-    ''' <summary>THE BUILD OF THE LIBRARY: the MVID of FO4_Base_Library as an "N" GUID - the library writes and compiles every program
-    ''' text (ProgramCompiler). Not the entry assembly's (S0 fase 7c): two programs of the same build of the library that share
-    ''' ShaderCache (Wardrobe Manager and NPC Manager) keep each other's entries; with the entry assembly in it each one's cleanup
-    ''' deleted the other's. A text a tool writes itself is in the key by its own hash, like every text. A deterministic build gives
-    ''' the same MVID to the same code; any change of the library changes it, and the cleanup then deletes the entries of the build
-    ''' before.</summary>
-    Friend Shared ReadOnly AppBuild As String = GetType(ProgramBinaryCache).Assembly.ManifestModule.ModuleVersionId.ToString("N")
 
     ''' <summary>What a cache operation did (counted in Debug: GateTally).</summary>
     Friend Enum Outcome
@@ -74,8 +78,10 @@ Friend NotInheritable Class ProgramBinaryCache
         ForeignRemoved
         PendingRemoved
         WriteFailure
+        ''' <summary>F9: an entry of this identity whose program is not in the installed manifest nor registered (another text).</summary>
+        TextRemoved
     End Enum
-    Friend Const OutcomeCount As Integer = 11
+    Friend Const OutcomeCount As Integer = 12
 
     ''' <summary>An entry's header: what the cleanup reads, and what a load checks before the binary.</summary>
     Private NotInheritable Class Header
@@ -121,17 +127,18 @@ Friend NotInheritable Class ProgramBinaryCache
         Return Path.Combine(dir, Convert.ToHexString(key) & EntryExtension)
     End Function
 
-    ''' <summary>The identity an entry names is the caller's: the five strings, ordinal.</summary>
-    Private Shared Function IdentityMatches(a As CacheIdentity, b As CacheIdentity) As Boolean
+    ''' <summary>The identity an entry names is the caller's: the four strings ordinal and the two context values.</summary>
+    Friend Shared Function IdentityMatches(a As CacheIdentity, b As CacheIdentity) As Boolean
         Dim version = String.Equals(a.Version, b.Version, StringComparison.Ordinal)
-        Dim build = String.Equals(a.AppBuild, b.AppBuild, StringComparison.Ordinal)
+        Dim flags = a.ContextFlags = b.ContextFlags
+        Dim profile = a.ProfileMask = b.ProfileMask
 #If DEBUG Then
-        ' GATE (ShadowGate --program-cache, subject mutants): the driver's version out of the identity (and out of the key,
-        ' ProgramCompiler.ProgramKey); the build of the app out of them (rev-01: the entries of an older build kept).
+        ' GATE (ShadowGate --program-cache, subject mutants): a field out of the identity (and out of the key, ProgramCompiler.ProgramKey).
         If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-version") Then version = True
-        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-appbuild") Then build = True
+        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-context-flags") Then flags = True
+        If Fo4GBufferConstants.GateMutantOn("program-cache-key-no-profile") Then profile = True
 #End If
-        Return version AndAlso build AndAlso String.Equals(a.Vendor, b.Vendor, StringComparison.Ordinal) AndAlso
+        Return version AndAlso flags AndAlso profile AndAlso String.Equals(a.Vendor, b.Vendor, StringComparison.Ordinal) AndAlso
                String.Equals(a.Renderer, b.Renderer, StringComparison.Ordinal) AndAlso
                String.Equals(a.GlslVersion, b.GlslVersion, StringComparison.Ordinal)
     End Function
@@ -158,7 +165,7 @@ Friend NotInheritable Class ProgramBinaryCache
         End If
         If Not h.Key.SequenceEqual(key) OrElse Not IdentityMatches(h.Identity, id) Then
             Count(Outcome.HeaderRejected)
-            Logger.LogLazy(Function() $"[PROGRAM-CACHE] {Path.GetFileName(p)}: header of another key, driver or build ({h.Identity.Renderer} / {h.Identity.Version} / {h.Identity.AppBuild}), deleted")
+            Logger.LogLazy(Function() $"[PROGRAM-CACHE] {Path.GetFileName(p)}: header of another key, driver or context ({h.Identity.Renderer} / {h.Identity.Version} / flags 0x{h.Identity.ContextFlags:X} / profile 0x{h.Identity.ProfileMask:X}), deleted")
             TryDelete(p)
             Return False
         End If
@@ -217,7 +224,8 @@ Friend NotInheritable Class ProgramBinaryCache
                 w.Write(If(id.Renderer, ""))
                 w.Write(If(id.Version, ""))
                 w.Write(If(id.GlslVersion, ""))
-                w.Write(If(id.AppBuild, ""))
+                w.Write(id.ContextFlags)
+                w.Write(id.ProfileMask)
                 w.Write(binaryFormat)
                 w.Write(binary.Length)
                 w.Write(SHA256.HashData(binary))
@@ -235,7 +243,7 @@ Friend NotInheritable Class ProgramBinaryCache
     ''' <summary>The cleanup of root <paramref name="root"/> for identity <paramref name="id"/>, once per process (see the class): the
     ''' root's flat files of FormatVersion 1, then the renderer's folder - never another renderer's.</summary>
     Private Shared Sub EnsureCleaned(root As String, id As CacheIdentity)
-        Dim memo = String.Join(ChrW(0), root, id.Vendor, id.Renderer, id.Version, id.GlslVersion, id.AppBuild)
+        Dim memo = String.Join(ChrW(0), root, id.Vendor, id.Renderer, id.Version, id.GlslVersion, id.ContextFlags, id.ProfileMask)
         SyncLock _lock
             If Not _cleaned.Add(memo) Then Return
         End SyncLock
@@ -258,12 +266,18 @@ Friend NotInheritable Class ProgramBinaryCache
         ' other GPU of the machine deleted by this one's first use, and back).
         If Fo4GBufferConstants.GateMutantOn("program-cache-clean-every-renderer") Then folders = Directory.EnumerateDirectories(root).ToList()
 #End If
+        ' F9 r2 rev-07 (b): the keys of the installed manifest's programs and of the registered ones; Nothing = no usable manifest.
+        Dim kept = ProgramCatalog.KeptKeys(id)
         For Each rendererDir In folders
             If Not Directory.Exists(rendererDir) Then Continue For
             For Each f In Directory.EnumerateFiles(rendererDir)
                 If f.EndsWith(EntryExtension, StringComparison.OrdinalIgnoreCase) Then
                     Dim h As Header = Nothing
-                    If ReadEntry(f, False, h, Nothing) AndAlso h.Version = FormatVersion AndAlso IdentityMatches(h.Identity, id) Then Continue For
+                    If ReadEntry(f, False, h, Nothing) AndAlso h.Version = FormatVersion AndAlso IdentityMatches(h.Identity, id) Then
+                        If kept Is Nothing OrElse kept.Contains(Convert.ToHexString(h.Key)) Then Continue For
+                        If TryDelete(f) Then Count(Outcome.TextRemoved)
+                        Continue For
+                    End If
                     If TryDelete(f) Then Count(Outcome.ForeignRemoved)
                 ElseIf f.EndsWith(PendingExtension, StringComparison.OrdinalIgnoreCase) Then
                     DeleteIfAbandoned(f)
@@ -296,7 +310,7 @@ Friend NotInheritable Class ProgramBinaryCache
                 If h.Version <> FormatVersion Then Return True
                 h.Key = r.ReadBytes(32)
                 h.Identity = New CacheIdentity With {.Vendor = r.ReadString(), .Renderer = r.ReadString(), .Version = r.ReadString(),
-                                                     .GlslVersion = r.ReadString(), .AppBuild = r.ReadString()}
+                                                     .GlslVersion = r.ReadString(), .ContextFlags = r.ReadInt32(), .ProfileMask = r.ReadInt32()}
                 h.BinaryFormat = r.ReadInt32()
                 h.Length = r.ReadInt32()
                 h.Hash = r.ReadBytes(32)

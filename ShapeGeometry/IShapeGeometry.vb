@@ -107,14 +107,17 @@ Public Interface IShapeGeometry
     ''' <summary>Per-vertex colors; empty when HasVertexColors = False.</summary>
     Function GetVertexColors() As List(Of Color4)
 
-    ''' <summary>Per-vertex eye data scalar (FO4 face shapes); empty when HasEyeData = False.</summary>
+    ''' <summary>Per-vertex eye data scalar (the BSTriShape eye data; a Skyrim SE v83 skinned NiTriShape's NiAdditionalGeometryData,
+    ''' V-2b); empty when HasEyeData = False.</summary>
     Function GetEyeData() As List(Of Single)
 
     ''' <summary>Triangle list (V1,V2,V3 are vertex indices into the position array).</summary>
     Function GetTriangles() As List(Of Triangle)
-    ''' <summary>S-83A (chunk C8): the order the game draws this shape's triangles in, as indices into GetTriangles(); Nothing = the data
-    ''' order. The edit API (GetTriangles, zap and occlusion masks) keeps the data order; only the draw is permuted.</summary>
-    Function GetEngineDrawTriangleOrder() As Integer()
+    ''' <summary>S-83A (chunk C8; ola SSE S1 F2.3 adds the rotation): the order the game draws this shape's triangles in, as indices into
+    ''' GetTriangles(), and per drawn triangle the rotation of its corners (<paramref name="rotation"/>: engine corner c = data corner
+    ''' (rotation + c) mod 3); Nothing = the data order. The edit API (GetTriangles, zap and occlusion masks) keeps the data order; only
+    ''' the draw is permuted.</summary>
+    Function GetEngineDrawTriangleOrder(ByRef rotation As Byte()) As Integer()
 
     ''' <summary>
     ''' Per-vertex bone influences in flat layout (4 slots / vertex padded with zeros).

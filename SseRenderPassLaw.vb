@@ -71,6 +71,12 @@ Friend Module SseRenderPassLaw
         Public ModelSpaceNormals As Boolean ' SLSF1 12: descriptor bit 2 (the save writes ModelSpace from ModelSpaceNormals)
         Public TwoSided As Boolean         ' SLSF2 4 (bit 36): batch sub-list bit 1 (the save writes DoubleSided from TwoSided)
         Public PackedTangent As Boolean    ' SLSF2 8 (bit 40): descriptor bit 22 (the save does not write it)
+        ''' <summary>SLSF1 8 Receive_Shadows (bit 8 of the mask 0x800C000100, 0x14151A8D7; the save does not write it): see
+        ''' <see cref="ReceivesShadowMask"/>.</summary>
+        Public ReceiveShadows As Boolean
+        ''' <summary>SLSF2 7 Assume_Shadowmask (bit 39 of the masks 0x800C000000, 0x14151A621 / 0x14151A6A7, and 0x800C000100; the save
+        ''' does not write it): see <see cref="ReceivesShadowMask"/>.</summary>
+        Public AssumeShadowmask As Boolean
         Public AnisoLighting As Boolean    ' SLSF2 21 (bit 53): descriptor bit 16 (the save writes it from AnisoLighting)
         Public Slsf2Bit23 As Boolean       ' SLSF2 23 (bit 55): the descriptor tail's bit 18 (0x14151AE2E..E56; the save does not write it)
         Public EffectLighting As Boolean   ' SLSF2 30 (bit 62) of a BSEffect: technique bit 16 (the BGEM save writes it from EffectLightingEnabled)
@@ -193,9 +199,10 @@ Friend Module SseRenderPassLaw
     ''' NiAlphaProperty with blend (flags +0x30 bit 0) gives the immediate 0x3F7EFEFF (254/255, 0x141567EE7..EF5); else
     ''' AlphaRefLaw.ScaledBiased(ref +0x32) (0x141567EF7..F17) and, for ref 4, one more addss of the same [0x141B5BDC8] on the
     ''' stored sum (0x141567F1C..F27). With 8-bit alpha (k/255) it keeps k &gt;= ref + 1 for every ref except 4, which keeps
-    ''' k &gt;= 6 (the only exception among the 256 refs). Hole, declared: with effectData (utility bit 20,
-    ''' 0x1415678D3..8E1) the exe writes effectData+0x7C * 1/255 without bias (0x141567EC3..EE0); effectData is set at runtime,
-    ''' never from the NIF. The BSEffect writer 0x1415583F6..436 (technique bit 23) uses this same arithmetic.</summary>
+    ''' k &gt;= 6 (the only exception among the 256 refs). With effect data ([property +0x68] in the geometry branch with utility bit
+    ''' 20, 0x1415678D3..8E1) the exe writes effectData+0x7C * 1/255 without bias (0x141567EC3..EE0): the whole .x / .w law of that
+    ''' block is SseUtilityConstants.PrepassAlphaTestRef, which reads this one. The BSEffect writer 0x1415583F6..436 (technique bit
+    ''' 23) uses this same arithmetic.</summary>
     Friend ReadOnly PrepassBlendThreshold As Single = BitConverter.Int32BitsToSingle(&H3F7EFEFF)
 
     Friend Function PrepassThrG(blend As Boolean, ref As Byte) As Single
@@ -203,20 +210,6 @@ Friend Module SseRenderPassLaw
         Dim t = AlphaRefLaw.ScaledBiased(ref)
         If ref = 4 Then t += AlphaRefLaw.Inv255
         Return t
-    End Function
-
-    ''' <summary>THE alpha test of a SSE shape's shadow-map pass: whether it runs and against which threshold, for RenderDepthOnly
-    ''' (Shader_Class SHADOW SYNC CONTRACT; the compared quantity is Fragment_ShadowDepth's, app design; Fallout 4's pair is
-    ''' Fo4RenderPassLaw.ShadowPassAlphaTest, read by RenderShadowMapFo4). Test: the lighting slot 0x2B builds the utility SHADOWMAP technique with bit 7 (the
-    ''' only SHADOWMAP PS that discard: 34 of 177 utility PS, bit 7 or stipple) exactly when the NiAlphaProperty has its test
-    ''' bit 9 (SSE 0x14151B641..65A); SLSF2 bit 54 (No_Transparency_Multisampling) does not enter the technique. Threshold: cb11[0].x
-    ''' of the batch, SubgroupThreshold (shadow-map finish 0x1415206A0 -> slot 0x2B -> 0x141521190 -> 0x14155FF40 ->
-    ''' 0x141560340 -> 0x141562270 -> 0x141578930). Who reaches the pass is not decided here: an effect never reaches the shadow
-    ''' pass (SseRenderPassLaw.ShadowMapCasts / the caster filter; effect slot 0x2B 0x14152A0C2 builds a pass only in mode 0xC),
-    ''' and the lighting slot 0x2B's own exclusions (blend, alpha * fade below 1) are that same filter's. Gates: `sse-pass-law`
-    ''' (values), `fo4-alpha-wiring` (the SSE branch of the shadow upload).</summary>
-    Friend Function ShadowAlphaTest(s As SseShapeInputs) As (Test As Boolean, Threshold As Single)
-        Return (s.AlphaPropertyPresent AndAlso s.Test, SubgroupThreshold(s))
     End Function
 
     ''' <summary>BSEffect technique bit 26 (0x14152A43A..47C): NORMAL ∧ (no NiAlphaProperty ∨ its test) ∧ ZTest ∧ ZWrite. Its PS has no alpha test (RE_SAO_BOTH 12.6.1) and writes the vertex normal to o2 (12.6.3).</summary>
@@ -251,10 +244,14 @@ Friend Module SseRenderPassLaw
         Return Not blend OrElse depthWriteDecal
     End Function
 
-    ''' <summary>Does Skyrim SE build a SHADOW-MAP pass for this shape? An effect: never - BSEffectShaderProperty slot 0x2B
-    ''' (0x14152A0A0) returns null outside mode 0xC (0x14152A0C2; RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 9.5). A lighting
-    ''' shape: LightingSlot2BPasses, except a decal (a declared hole, below). Cast_Shadows: where Skyrim SE reads it is not
-    ''' traced; the caster filter reads the material's CastShadows (as before). Gate: `sse-pass-law`.</summary>
+    ''' <summary>Does Skyrim SE draw this shape into the SHADOW MAP the mask reads? An effect: never - BSEffectShaderProperty slot 0x2B
+    ''' (0x14152A0A0) returns null outside mode 0xC (0x14152A0C2; RE_FO4_PASS_GROUPS_DEPTH_2026-10-03.md 9.5). A lighting shape:
+    ''' LightingSlot2BPasses and the shadow accumulators' registration of a decal (<see cref="ShadowMapCastsCut"/>).
+    ''' <para>Cast_Shadows (SLSF1 bit 9, the caster filter reads the material's CastShadows): without it, in Skyrim SE, mode 0xE with [0x1420D6D00] = 2 and [acc+0x12E] builds the pass of group 8
+    ''' (0x14151B42F..52C), registered in list 0xF (0x14151ED04..D0F, 0x141561610); the finish 0x1415206A0 draws that list only with flag 0x100 (0x1415207AE..803), the directional
+    ''' light's first loop (r9 = 0x100, split +0x54 = 3, 0x14157EBC9..C2C), and +0x54 is the depth-stencil index the split draws into (0x14155D397, 0x141015670): index 3, not the
+    ''' map. The second loop sets +0x54 = 2 (0x14157EC56) before the casters, and the mask binds t4 from that +0x54 of split 0 (0x1415680BA..C1 reads it after both loops): index 2.
+    ''' So a shape without Cast_Shadows does not reach the map the mask reads.</para> Gate: `sse-pass-law`.</summary>
     Friend Function ShadowMapCasts(s As SseShapeInputs) As Boolean
         Return ShadowMapCastsCut(s) Is Nothing
     End Function
@@ -263,10 +260,11 @@ Friend Module SseRenderPassLaw
     ''' 0x2B leaves it out - the diagnostics (ShadowGate --casters) report it.</summary>
     Friend Function ShadowMapCastsCut(s As SseShapeInputs) As String
         If s.IsEffect Then Return "an effect (slot 0x2B null outside mode 0xC, 0x14152A0C2)"
-        ' HOLE, declared: a decal (bits 26 | 27). Slot 0x2B lets some through and alpha-tests every decal (0x20080,
-        ' 0x14151B5ED..5F6 / 0x14151B6C8..6D2), but whether the shadow-map accumulators register a decal (0x14151EC10,
-        ' +0x12C / +0x12D) and the cb11 of a decal without a NiAlphaProperty test are not traced: kept out, as before group B.
-        If s.Decal OrElse s.DynamicDecal Then Return "a decal (declared hole: kept out)"
+        ' A decal (bits 26 | 27): the registration 0x14151EC10 lets one through only with [acc+0x12C] set, or [acc+0x12D] set with ZBuffer_Write (bit 32), bit 18 and a
+        ' NiAlphaProperty that blends (0x14151EC24..C7D); the shadow accumulators have +0x12C = 0, +0x12D = 1 (0x14158161C / 2F, 0x14155D1FC / 20A, 0x141587DAC / DBE, 0x141588396 / 3A9).
+        If (s.Decal OrElse s.DynamicDecal) AndAlso Not (s.ZWrite AndAlso s.HairSoftLighting AndAlso s.AlphaPropertyPresent AndAlso s.Blend) Then
+            Return "a decal the shadow accumulators do not register (0x14151EC24..C7D: ZBuffer_Write, bit 18 and blend)"
+        End If
         If Not LightingSlot2BPasses(s) Then Return "the lighting slot 0x2B builds no pass (LightingSlot2BPasses: blend, alpha, refraction)"
         Return Nothing
     End Function
@@ -344,9 +342,9 @@ Friend Module SseRenderPassLaw
     ''' <summary>The lighting descriptor in the preview frame (D-L2), transcribed from 0x14151A932..AE58 (dump of 7-oct-2026). Two
     ''' masks of the exe: the snow tests use 0x8000400600000000 (0x14151AA2C, 0x14151AADC; bits 63|46|34|33) and the tail
     ''' 0x8000000600000000 (0x14151AE2E; bits 63|34|33, NOT 46).</summary>
-    Friend Function LitDescriptor(s As SseShapeInputs) As UInteger
+    Friend Function LitDescriptor(s As SseShapeInputs, Optional shadow As SseLitShadowState = SseLitShadowState.None) As UInteger
         Dim decal = s.Decal OrElse s.DynamicDecal                                   ' bits 26|27 (f &amp; 0xC000000)
-        Dim translucent = Not (s.Alpha >= 1.0F) OrElse s.Blend                      ' T, 0x14151A598..5B0 (fade 1)
+        Dim translucent = LitTranslucent(s)                                         ' T, 0x14151A598..5B0 (fade 1)
         Dim tailLod = s.LodLandscape OrElse s.LodObjects OrElse s.HdLodObjects      ' 0x8000000600000000
         Dim snowLod = tailLod OrElse s.NoLodLandBlend                               ' 0x8000400600000000
         Dim d As UInteger = 0UI                                                     ' bits 3-8: lights, 0 in the preview frame
@@ -357,7 +355,10 @@ Friend Module SseRenderPassLaw
         If s.SoftLighting Then d = d Or &H400UI                                     ' bit 57, 0x14151A9BE..9D6
         If s.RimLighting Then d = d Or &H800UI                                      ' bit 58, 0x14151A9DA..9F1
         If s.BackLighting Then d = d Or &H1000UI                                    ' bit 59, 0x14151A9F5..A0E
-        ' bits 14 (r9b) and 13 ([rsp+0x50]): 0 in the preview frame (0x14151AA11..A27)
+        ' bits 14 (r9b: bts r8d, 0xe / cmove, 0x14151AA11..A1C) and 13 ([rsp+0x50]: bts r8d, 0xd, 0x14151AA20..A27): the frame's
+        ' shadow state (SseLitShadowState; None = the preview frame before S1). The tail below clears bit 14 again for the LOD mask.
+        If shadow <> SseLitShadowState.None Then d = d Or &H4000UI
+        If shadow = SseLitShadowState.DirAndDefShadow Then d = d Or &H2000UI
         If s.ProjectedUV Then                                                       ' bit 23, 0x14151AA3E..A5F
             d = d Or &H8000UI
             If s.Slsf1Bit30 AndAlso Not snowLod AndAlso ImprovedSnowExeDefault Then d = d Or &H80000UI
@@ -376,6 +377,55 @@ Friend Module SseRenderPassLaw
         End If
         Return d
     End Function
+
+    ''' <summary>T of GetRenderPasses 0x14151A160 ([rsp+0x54], 0x14151A598..5B0): the drawn alpha below 1 (alpha x fade, prop+0x30,
+    ''' 0x14151A478..4AA; fade 1 in the preview frame) or the NiAlphaProperty's blend (flags bit 0, [rdi+0x30]). Read by the descriptor
+    ''' (LitDescriptor) and by the shadow-mask rule (ReceivesShadowMask).</summary>
+    Friend Function LitTranslucent(s As SseShapeInputs) As Boolean
+        Return Not (s.Alpha >= 1.0F) OrElse s.Blend
+    End Function
+
+    ''' <summary>The shape side of the engine-shadow bits 13 / 14 of a lighting pass (GetRenderPasses 0x14151A160): does the shape read
+    ''' the directional light's shadow mask when the frame's light has one. Two tests on the property flags r14 = [r15+0x38] (SLSF1 in
+    ''' the low dword, SLSF2 in the high one):
+    ''' <list type="number">
+    ''' <item>r9b, 0x14151A669..6B2: [acc+0x178] (the frame's) AND ((alpha x fade &gt;= 1 AND no blend AND NOT flags &amp; 0x200000000
+    ''' LOD_Landscape) OR flags &amp; 0x800C000000 - SLSF1 26 Decal, 27 Dynamic_Decal, SLSF2 7 Assume_Shadowmask). The other branch
+    ''' (dl = [rsp+0x51] set: r9b = [acc+0x178] for a shape without blend, 0x14151A67E..68B) needs alpha x fade &lt; 1 at 0x14151A60A..60E
+    ''' with the fade (xmm9) below 1: the preview frame's fade is 1, so dl = 0.</item>
+    ''' <item>0x14151A8D7..8F7: flags AND 0x800C000100 (SLSF1 8 Receive_Shadows, 26, 27, SLSF2 7) = 0 and [r15+0xB8] = 0 clear r9b and
+    ''' [rsp+0x50]; [r15+0xB8] is the shape's shadow-casting point lights, none in the preview (D-9).</item>
+    ''' </list>
+    ''' Directed mutants (ParityGate sse-technique-law [lit-mask]): sse-mask-no-translucent-rule (without test 1),
+    ''' sse-mask-high-word-bits (the 0x0C taken in the high dword, S1 before 6-nov: SLSF1 8, SLSF2 2, 7; its SLSF2 3 has no field here).</summary>
+    Friend Function ReceivesShadowMask(s As SseShapeInputs) As Boolean
+        Dim decalOrAssume = s.Decal OrElse s.DynamicDecal OrElse s.AssumeShadowmask          ' flags AND 0x800C000000
+        Dim keep = s.ReceiveShadows OrElse decalOrAssume                                    ' flags AND 0x800C000100
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("sse-mask-high-word-bits") Then keep = s.ReceiveShadows OrElse s.LodObjects OrElse s.AssumeShadowmask
+        If Fo4GBufferConstants.GateMutantOn("sse-mask-no-translucent-rule") Then Return keep
+#End If
+        Dim opaqueNotLodLand = Not LitTranslucent(s) AndAlso Not s.LodLandscape             ' 0x14151A691..6A5
+        Return (opaqueNotLodLand OrElse decalOrAssume) AndAlso keep
+    End Function
+
+    ''' <summary>The engine-shadow state the lighting descriptor sees for one pass (Ola SSE S1 F2.1; s1_re.md 4.3, 5): bit 14 DEFSHADOW =
+    ''' r9b and bit 13 SHADOW_DIR = [rsp+0x50] of GetRenderPasses 0x14151A160 (0x14151AA11..A27). Three states only: r9b = 0 clears
+    ''' [rsp+0x50] (0x14151A8B2..8BC), so bit 13 never comes without bit 14 (sse_law.lit_report enumerates the same three). Which state a
+    ''' pass gets is the frame's (F3.4: pass k with the bits of light k, [acc+0x178]) AND the shape's (ReceivesShadowMask).</summary>
+    Friend Function LitShadowState(s As SseShapeInputs, lightInMask As Boolean) As SseLitShadowState
+        If Not lightInMask OrElse Not ReceivesShadowMask(s) Then Return SseLitShadowState.None
+        Return SseLitShadowState.DirAndDefShadow
+    End Function
+
+    Friend Enum SseLitShadowState
+        ''' <summary>Bits 13 and 14 clear: no engine shadow reaches the pass.</summary>
+        None = 0
+        ''' <summary>Bit 14 only (r9b set, [rsp+0x50] clear).</summary>
+        DefShadow = 1
+        ''' <summary>Bits 13 and 14: the directional light's shadow (the mask's t14.x, s1_re.md 4.3).</summary>
+        DirAndDefShadow = 2
+    End Enum
 
     ''' <summary>The bytes SetupTechnique 0x141547D20 tests before it picks the records (.data defaults of SkyrimSE.exe 1.7.104; their
     ''' runtime writers are not in the preview frame): [0x1420D681F] = 1 keeps technique type 0x12 (0x141547D43), [0x1420D8D60] = 0 turns
@@ -644,7 +694,9 @@ Friend Module SseRenderPassLaw
 
     ''' <summary>THE LIGHTING TECHNIQUE TYPE the descriptor builds (bits 24-29), the selector 0x14151AB5E..0x14151ADB5 in its order (a
     ''' later rule overrides an earlier one). The bypass before it ([0x1420D9668] != 0 -> type 0, 0x14151AB52..AB58) is off: the byte is
-    ''' 0 in .data and its writer is not traced. SetupTechnique 0x141547D2C..D71 then rewrites only 7 (parallax occlusion off) and 0x12,
+    ''' the value of the Setting bSimpleLighting:Display (object 0x1420D9660, its .data value 0; the static initializer 0x1417C7160
+    ''' only registers it with the settings collection, 0x1417C7174..198, so only an INI could change it: the exe default, no INI).
+    ''' Its one reader is 0x14151AB52 (ripx over .text). SetupTechnique 0x141547D2C..D71 then rewrites only 7 (parallax occlusion off) and 0x12,
     ''' never 3 or 11. The landscape branch (bit 14) walks the textures (0x14151ABD1..AD16) for descriptor bit 21, not the type. An
     ''' effect (BSEffectShader, its own descriptor 0x14152A2B0) has no lighting type: -1, so no caller tests IsEffect itself (rev-09).
     ''' The one selector of the type: Classify (Hair 6), the eye (16), TREE_ANIM (12), Parallax (3), MultiLayerParallax (11).</summary>

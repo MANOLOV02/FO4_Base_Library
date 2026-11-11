@@ -83,8 +83,19 @@ Friend Structure Fo4EffectPixelStage
     End Function
 End Structure
 
-''' <summary>A VS of b05 / b06 / b07 / b10 / b11 / image space: (record, its class block or empty for a declared gap, the resource
-''' blocks, whether rule D2 put AppSkinLaw in it; for a skinned VS its CPU route - block, resources, AppSkinLaw, layout -; the gap).</summary>
+''' <summary>A2-N (Ola SSE S1 F2): why a VS entry has no CPU-route text - the table's structure, not a missing transcription. RigidVs: the
+''' VS has no skin input (no BLENDINDICES: stage_text.skin_rule); NoPalette: a skinned VS that reads no palette (block_source NO_PALETTE:
+''' nothing to skin). None: the VS has its CPU route - a skinned VS with an empty CpuFn is a failed route (ParityGate glsl-blockstore
+''' FAILs on it).</summary>
+Friend Enum Fo4CpuRouteAbsence
+    None = 0
+    RigidVs = 1
+    NoPalette = 2
+End Enum
+
+''' <summary>A VS of b05 / b06 / b07 / b10 / b11 / image space / Skyrim SE g6 / g7: (record, its class block, the resource blocks, whether
+''' rule D2 put AppSkinLaw in it; for a skinned VS its CPU route - block, resources, AppSkinLaw, layout -; why it has none; why the
+''' preview cannot draw it - empty when it can).</summary>
 Friend Structure GlslVertexStage
     Friend ReadOnly Record As Integer
     Private ReadOnly _fn As GlslText
@@ -94,17 +105,18 @@ Friend Structure GlslVertexStage
     Friend ReadOnly CpuResources As String
     Friend ReadOnly CpuSkinLaw As Boolean
     Friend ReadOnly CpuLayout As Fo4CpuRouteLayout
+    Friend ReadOnly CpuAbsence As Fo4CpuRouteAbsence
     Friend ReadOnly Gap As String
 
     Friend Sub New(block As GlslBlock, record As Integer, fnKey As String, resources As String, skinLaw As Boolean, cpuFnKey As String,
-                   cpuResources As String, cpuSkinLaw As Boolean, cpuLayout As Fo4CpuRouteLayout, gap As String)
-        Me.New(record, GlslText.OfClass(block, fnKey), resources, skinLaw, GlslText.OfClass(block, cpuFnKey), cpuResources, cpuSkinLaw, cpuLayout, gap)
+                   cpuResources As String, cpuSkinLaw As Boolean, cpuLayout As Fo4CpuRouteLayout, cpuAbsence As Fo4CpuRouteAbsence, previewReason As String)
+        Me.New(record, GlslText.OfClass(block, fnKey), resources, skinLaw, GlslText.OfClass(block, cpuFnKey), cpuResources, cpuSkinLaw, cpuLayout, cpuAbsence, previewReason)
     End Sub
 
     Private Sub New(record As Integer, fn As GlslText, resources As String, skinLaw As Boolean, cpuFn As GlslText, cpuResources As String,
-                    cpuSkinLaw As Boolean, cpuLayout As Fo4CpuRouteLayout, gap As String)
+                    cpuSkinLaw As Boolean, cpuLayout As Fo4CpuRouteLayout, cpuAbsence As Fo4CpuRouteAbsence, previewReason As String)
         Me.Record = record : _fn = fn : Me.Resources = resources : Me.SkinLaw = skinLaw : _cpuFn = cpuFn
-        Me.CpuResources = cpuResources : Me.CpuSkinLaw = cpuSkinLaw : Me.CpuLayout = cpuLayout : Me.Gap = gap
+        Me.CpuResources = cpuResources : Me.CpuSkinLaw = cpuSkinLaw : Me.CpuLayout = cpuLayout : Me.CpuAbsence = cpuAbsence : Me.Gap = previewReason
     End Sub
 
     Friend ReadOnly Property Fn As String
@@ -130,7 +142,7 @@ Friend Structure GlslVertexStage
 
     ''' <summary>GATE: this entry with the class text <paramref name="text"/> (the GPU route's).</summary>
     Friend Function WithFn(text As String) As GlslVertexStage
-        Return New GlslVertexStage(Record, GlslText.OfLiteral(text), Resources, SkinLaw, _cpuFn, CpuResources, CpuSkinLaw, CpuLayout, Gap)
+        Return New GlslVertexStage(Record, GlslText.OfLiteral(text), Resources, SkinLaw, _cpuFn, CpuResources, CpuSkinLaw, CpuLayout, CpuAbsence, Gap)
     End Function
 End Structure
 
@@ -198,12 +210,13 @@ Friend Structure Fo4GBufferVertexStage
     Friend ReadOnly CpuResources As String
     Friend ReadOnly CpuSkinLaw As Boolean
     Friend ReadOnly CpuLayout As Fo4CpuRouteLayout
+    Friend ReadOnly CpuAbsence As Fo4CpuRouteAbsence
 
     Friend Sub New(block As GlslBlock, record As Integer, fnKey As String, resources As String, skinLaw As Boolean, notTranscribed As String,
-                   cpuFnKey As String, cpuResources As String, cpuSkinLaw As Boolean, cpuLayout As Fo4CpuRouteLayout)
+                   cpuFnKey As String, cpuResources As String, cpuSkinLaw As Boolean, cpuLayout As Fo4CpuRouteLayout, cpuAbsence As Fo4CpuRouteAbsence)
         Me.Record = record : _fn = GlslText.OfClass(block, fnKey) : Me.Resources = resources : Me.SkinLaw = skinLaw
         Me.NotTranscribed = notTranscribed : _cpuFn = GlslText.OfClass(block, cpuFnKey) : Me.CpuResources = cpuResources
-        Me.CpuSkinLaw = cpuSkinLaw : Me.CpuLayout = cpuLayout
+        Me.CpuSkinLaw = cpuSkinLaw : Me.CpuLayout = cpuLayout : Me.CpuAbsence = cpuAbsence
     End Sub
 
     Friend ReadOnly Property Fn As String

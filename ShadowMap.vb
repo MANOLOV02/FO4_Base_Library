@@ -45,8 +45,13 @@ Public Structure PreviewShadowSettings
     ''' Config_App.LoadConfig lo repara con Defaults(). Un mapa de 0 texeles no es un valor legitimo,
     ''' que es justo lo que se le pide a un centinela (ver memoria 10-stack-json-structure-defaults).</summary>
     Public Property MapSize As Integer
-    ''' <summary>16 bits de profundidad en vez de 24 ⇒ **la MITAD de VRAM** en los dos arrays. Default
-    ''' **True** (16 bits) — ver <see cref="Defaults"/>.
+    ''' <summary>THE STORED CHOICE OF 16-BIT DEPTH. The render does not read it: both games draw their maps in 16 bits always
+    ''' (<see cref="ShadowMapMath.MapDepth16"/>, user decision 14-oct-2026, rev-E08), and the dialog's box shows that fixed state. It stays
+    ''' a field because the saved configs carry it and the config gates use it as the canary of the key rename (Config_App
+    ''' Setting_ShadowMaps16_*: a missing key loads it False, the opposite of the default). What follows is the measurement that chose
+    ''' 16 bits.
+    ''' <para>16 bits de profundidad en vez de 24 ⇒ **la MITAD de VRAM** en los dos arrays. Default
+    ''' **True** (16 bits) — ver <see cref="Defaults"/>.</para>
     '''
     ''' <para>POR QUE ES DEFENDIBLE Y ESTA MEDIDO: la cuantizacion no la fija la precision del formato
     ''' sino el RANGO. Este ortho abarca ~161 u, asi que 16 bits dan 161/65536 = <b>0,0025 u</b> de escalon
@@ -112,7 +117,24 @@ Public Structure PreviewShadowSettings
         ' MapSize 0 es el default del TIPO (una estructura recien construida), no una eleccion del usuario:
         ' se lo lleva al default de la feature. `Enabled` y el resto se respetan tal como vinieron.
         If s.MapSize <= 0 Then s.MapSize = Defaults().MapSize
-        s.MapSize = Math.Clamp(RoundToPowerOfTwo(s.MapSize), 256, 8192)
+        s.MapSize = Math.Clamp(RoundToPowerOfTwo(s.MapSize), 256, MaxMapSize)
+        Return s
+    End Function
+
+    ''' <summary>The largest map side (user decision 6-nov-2026): with the engine's sun box every casting light takes two layers in both
+    ''' games, and 8192 put Fallout 4's character map at 1 GiB with four lights; the quality combo offers up to it (LightRigForm).</summary>
+    Public Const MaxMapSize As Integer = 4096
+
+    ''' <summary>THE SETTINGS WITH THEIR MAP SIZE IN RANGE: a saved side above <see cref="MaxMapSize"/> is brought to it, where a value ENTERS
+    ''' the settings - the config's load (Config_App.LoadConfig, which logs the change and saves the file once), the way
+    ''' PreviewLightRig.WithShadowBiasInRange keeps the bias. The type's 0 (the key missing) is the sentinel Sanitized repairs: untouched.
+    ''' Pure: a gate tests it without the user's config.</summary>
+    Public Shared Function WithMapSizeInRange(s As PreviewShadowSettings) As PreviewShadowSettings
+#If DEBUG Then
+        ' ParityGate shadow-settings: the rule without the range (a side saved above it stays).
+        If Fo4GBufferConstants.GateMutantOn("shadow-mapsize-no-range") Then Return s
+#End If
+        If s.MapSize > MaxMapSize Then s.MapSize = MaxMapSize
         Return s
     End Function
 
@@ -142,6 +164,36 @@ End Structure
 ''' que su gate es un self-test de BUILD (Tools/ParityGate, slug <c>shadow-fit</c>) y no puede viajar
 ''' adentro del binario. Ver memoria 00-reglas-self-tests-no-van-en-el-binario.</para></summary>
 Friend Module ShadowMapMath
+
+    ''' <summary>THE LAYERS ONE CASTING LIGHT RESERVES IN THE CHARACTER'S MAP: the one owner of the shape the render reserves
+    ''' (PreviewModel.RenderShadowPass) and of the memory the rig dialog shows (LightRigForm.ActualizarCartelDeVram). User decision
+    ''' 10-nov-2026: the shape is a function of the config only, never of the camera (a shape that followed the camera recreated the
+    ''' whole texture when the view crossed the second split). Each split of the game's sun has its own layer - Skyrim SE iNumSplits
+    ''' .data 2 (SseUtilityConstants.EngineSplitCount), Fallout 4 iDirShadowSplits .data 2 (EngineSunBox.Fo4SplitCount) - and, with the
+    ''' focus shadow (the rig's Darkness above 0, the knob PreviewModel's focus needs), the focus map has one more of its own.</summary>
+    Friend Function CharacterLayersPerLight(isSse As Boolean, darkness As Single) As Integer
+        Return SunSplitLayers(isSse) + If(FocusReserved(darkness), 1, 0)
+    End Function
+
+    ''' <summary>THE FOCUS SHADOW HAS A PLACE IN THE FRAME: the rig's Darkness is above 0 (at 0 every shadow factor is 1, the focus contributes nothing:
+    ''' Fo4DeferredLightLaw.RigShadowLift). The one predicate: the layer the character's map reserves (<see cref="CharacterLayersPerLight"/>), the
+    ''' render's focus of the frame (PreviewModel, with a subject to fit) and the dialog's memory notice.</summary>
+    Friend Function FocusReserved(darkness As Single) As Boolean
+        Return darkness > 0.0F
+    End Function
+
+    ''' <summary>The layers of a light's sun splits (see <see cref="CharacterLayersPerLight"/>).</summary>
+    Friend Function SunSplitLayers(isSse As Boolean) As Integer
+        Return If(isSse, SseUtilityConstants.EngineSplitCount, EngineSunBox.Fo4SplitCount)
+    End Function
+
+    ''' <summary>The precision of every shadow map array of both games: 16-bit depth, the games' D16_UNORM (Fallout 4: the shadow
+    ''' maps' DS descriptors 0x142234B8E..BEA, created by 0x141822330 as R16_TYPELESS / D16_UNORM; Skyrim SE: s1_propuesta F3.2; user
+    ''' decision 14-oct-2026, rev-E08: fixed). The one owner: the render's arrays (PreviewModel.MapaEn16Bits), the dialog's box and its
+    ''' memory notice.</summary>
+    Friend Const MapDepth16 As Boolean = True
+    ''' <summary>The bytes of one texel of <see cref="MapDepth16"/>.</summary>
+    Friend Const MapDepthBytes As Integer = 2
 
     ''' <summary>Cuanto MAS GRANDE que su huella se dibuja el quad receptor. El margen existe para que
     ''' el desvanecido del borde tenga donde ocurrir SIN comerse la sombra.
@@ -215,6 +267,12 @@ Friend Module ShadowMapMath
         Public TexelWorld As Single
         Public Radius As Single
         Public Center As Vector3
+        ''' <summary>The world translate of the camera of View: the emitter's eye (cb12[40], H-S3 0x14101C738..762). Fit anchors its view at the
+        ''' world origin (zero); EngineSunBox at the split camera.</summary>
+        Public Origin As Vector3
+        ''' <summary>The step of the sun box's grid (EngineSunBox): SSE k = trunc([split + 0xCC]) = 1 on the light axes (a, b, D); FO4 the texel
+        ''' 1 / k or n the camera and the frustum's left / bottom are snapped to. 0 for Fit (no grid).</summary>
+        Public SnapStep As Single
         ''' <summary>Rango de profundidad del ortho (far - near). Convierte el bias de texeles a
         ''' unidades de profundidad normalizada.</summary>
         Public DepthRange As Single
@@ -263,6 +321,7 @@ Friend Module ShadowMapMath
         Dim L = Vector3.Normalize(lightDir)
 
         r.Center = (sceneMin + sceneMax) * 0.5F
+        r.Origin = Vector3.Zero
         ' Radio de la ESFERA envolvente = media diagonal. Cubre el AABB desde cualquier direccion.
         r.Radius = (sceneMax - sceneMin).Length * 0.5F
         ' Escena de tamano cero (una sola shape degenerada): sin esto el ortho es singular.
@@ -474,6 +533,14 @@ Friend Class ShadowMapTarget
     Implements IDisposable
 
     Private _fbo As Integer
+    ''' <summary>Which allocation holds the map (never 0 once allocated; a texture name can come back after a release).</summary>
+    Friend ReadOnly Property StorageSerial As Long
+        Get
+            Return _storageSerial
+        End Get
+    End Property
+    Private _storageSerial As Long
+    Private Shared _storages As Long
     Private _tex As Integer
     Private _size As Integer
     Private _layers As Integer
@@ -484,6 +551,12 @@ Friend Class ShadowMapTarget
     ''' textura. Es lo que el receptor de Fallout 4 liga como su t5 (el Texture2DArray del DS de la cascada, re.md 2.3): el
     ''' programa del juego indexa la cascada como coordenada de capa, y la capa de cada luz del rig es la cascada 0 de su vista.</summary>
     Private _views As Integer() = Array.Empty(Of Integer)()
+    ''' <summary>One view per light over its <c>_splits</c> consecutive layers (its sun splits): what an engine receiver binds as its
+    ''' cascades (SSE's mask t4, FO4's sun t5), the split index picking the layer. Made with the texture (GL 4.3 8.18).</summary>
+    Private _splitViews As Integer() = Array.Empty(Of Integer)()
+    Private _splits As Integer = 1
+    ''' <summary>The layers one light takes in the array: its splits, then what else it has (the focus map, EngineSunBox.FocusFit).</summary>
+    Private _stride As Integer = 1
     ''' <summary>Que capa esta attacheada al FBO ahora mismo. -1 = ninguna (recien creado o liberado).
     ''' Tiene que resetearse en <see cref="Release"/> Y quedar en 0 despues del attach de
     ''' <see cref="Ensure"/>: si mintiera, <see cref="BindForWrite"/> saltearia el attach y el pase
@@ -516,6 +589,21 @@ Friend Class ShadowMapTarget
     ''' <summary>La vista de UNA capa de <paramref name="layer"/> (ver <c>_views</c>); 0 fuera de rango.</summary>
     Friend Function LayerView(layer As Integer) As Integer
         Return If(layer >= 0 AndAlso layer < _views.Length, _views(layer), 0)
+    End Function
+
+    ''' <summary>The last layer of light <paramref name="capa"/>: its focus map (with two layers a light, the second split's when no pixel reads that split).</summary>
+    Friend Function FocusLayer(capa As Integer) As Integer
+        Return capa * _stride + _stride - 1
+    End Function
+
+    ''' <summary>The first layer of light <paramref name="capa"/> (split 0).</summary>
+    Friend Function FirstLayer(capa As Integer) As Integer
+        Return capa * _stride
+    End Function
+
+    ''' <summary>The view of light <paramref name="capa"/>'s split layers (see <c>_splitViews</c>); 0 out of range.</summary>
+    Friend Function SplitsView(capa As Integer) As Integer
+        Return If(capa >= 0 AndAlso capa < _splitViews.Length, _splitViews(capa), 0)
     End Function
 
     ''' <summary>Cuantas veces se creo la textura desde que arranco el proceso. **ES UN INSTRUMENTO**, no
@@ -561,17 +649,20 @@ Friend Class ShadowMapTarget
     ''' <para>Hoy lo pasan LOS DOS arrays con el mismo valor; el parametro existe para poder volver atras uno
     ''' solo. ⚠️ Separarlos hace que el mapa del personaje y el del suelo cuanticen distinto, y el borde donde
     ''' se tocan es justo la banda de PCF.</para></param>
-    Friend Function Ensure(size As Integer, layers As Integer, Optional media As Boolean = False) As Boolean
-        If size <= 0 OrElse layers <= 0 Then Return False
-        If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers AndAlso _media = media Then Return True
+    ''' <param name="splits">The layers of one light (its sun splits): the views <see cref="SplitsView"/> group them.</param>
+    ''' <param name="stride">The layers of one light, its splits and its focus map (0: only its splits).</param>
+    Friend Function Ensure(size As Integer, layers As Integer, Optional media As Boolean = False, Optional splits As Integer = 1, Optional stride As Integer = 0) As Boolean
+        If stride = 0 Then stride = splits
+        If size <= 0 OrElse layers <= 0 OrElse splits <= 0 OrElse stride < splits OrElse layers Mod stride <> 0 Then Return False
+        If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers AndAlso _media = media AndAlso _splits = splits AndAlso _stride = stride Then Return True
         ' NO SE REINTENTA UNA COMBINACION QUE YA FALLO. Sin esto, una reserva que no entra en la placa
         ' se reintenta ENTERA EN CADA FRAME: GenTexture + TexImage3D + GenFramebuffer +
         ' CheckFramebufferStatus + DeleteTexture + una linea de log, decenas de veces por segundo mientras
         ' el usuario arrastra la camara. Se ve como un cuelgue, y el log dice "FBO incompleto", que no
         ' apunta a la causa real (no entra en VRAM).
-        ' Y NO ES TEORICO: la reserva es lado^2 x 4 x CAPAS x DOS ARRAYS, asi que con MapSize 8192 —que
-        ' Sanitized permite, y al que se llega escribiendo 6000 a mano en el config, porque
-        ' RoundToPowerOfTwo(6000) = 8192— y las cuatro luces casteando son 2 GB.
+        ' Y NO ES TEORICO: la reserva es lado^2 x 2 (D16) x CAPAS (ShadowMapMath.CharacterLayersPerLight por luz: las dos divisiones del
+        ' sol y la del foco) mas el array del suelo (una por luz); con MaxMapSize = 4096, las cuatro luces casteando y el foco son
+        ' 384 MiB + 128 MiB del suelo (8192 ya no se acepta: user decision 6-nov-2026).
         ' El centinela se limpia solo en cuanto cambia el pedido, asi que bajar la calidad o destildar una
         ' luz vuelve a intentar en el frame siguiente.
         ' PERO SOBREVIVE A UN CICLO DE APAGAR/PRENDER con los MISMOS (lado, capas): `Release()` no lo
@@ -590,6 +681,7 @@ Friend Class ShadowMapTarget
         ' ALMACENAMIENTO INMUTABLE (TexStorage3D, core 4.2): glTextureView exige una textura inmutable (GL 4.3 8.18:
         ' INVALID_OPERATION si TEXTURE_IMMUTABLE_FORMAT es FALSE). Un solo nivel, como el TexImage3D de antes.
         Dim fmt = If(media, SizedInternalFormat.DepthComponent16, SizedInternalFormat.DepthComponent24)
+        _storages += 1L : _storageSerial = _storages
         _tex = Gl43.CreateTexture(TextureTarget.Texture2DArray)
         Gl43.TexStorage3D(_tex, TextureTarget3d.Texture2DArray, 1, fmt, size, size, layers)
         GL.BindTexture(TextureTarget.Texture2DArray, _tex)
@@ -612,6 +704,13 @@ Friend Class ShadowMapTarget
             _views(i) = GL.GenTexture()
             GL.TextureView(_views(i), TextureTarget.Texture2DArray, _tex, CType(fmt, PixelInternalFormat), 0, 1, i, 1)
         Next
+        ReDim _splitViews(layers \ stride - 1)
+        For i = 0 To _splitViews.Length - 1
+            _splitViews(i) = GL.GenTexture()
+            GL.TextureView(_splitViews(i), TextureTarget.Texture2DArray, _tex, CType(fmt, PixelInternalFormat), 0, 1, i * stride, splits)
+        Next
+        _splits = splits
+        _stride = stride
 
         Dim prevFbo As Integer = GL.GetInteger(GetPName.FramebufferBinding)
         _fbo = GL.GenFramebuffer()
@@ -683,6 +782,13 @@ Friend Class ShadowMapTarget
             End If
         Next
         _views = Array.Empty(Of Integer)()
+        For Each v In _splitViews
+            If v > 0 Then
+                Try : GL.DeleteTexture(v) : Catch : End Try
+            End If
+        Next
+        _splitViews = Array.Empty(Of Integer)()
+        _splits = 1
         If _tex > 0 Then
             Try : GL.DeleteTexture(_tex) : Catch : End Try
             _tex = 0

@@ -74,8 +74,8 @@ Public Structure PreviewLight
     ''' dibujan las sombras" (calidad, suavidad, oscuridad, bias, receptor de suelo) es global a todas y
     ''' vive del otro lado. Mezclarlas obligaria a versionar dos esquemas por el mismo cambio.</para>
     ''' <para>Cuantas castean lo decide CADA preset (ver <see cref="Presets"/>): la mayoria solo la key,
-    ''' Studio las cuatro. Cada luz casteante extra cuesta un mapa de profundidad completo —+16 MB a 2048, y
-    ''' +32 si ademas esta el receptor de suelo, que reserva su propio array del mismo tamano— mas un lookup
+    ''' Studio las cuatro. Cada luz casteante extra cuesta las dos divisiones de la caja del sol (EngineSunBox, en los dos juegos)
+    ''' —2 capas D16 de 8 MiB a 2048 = 16 MiB, y 8 MiB mas si esta el receptor de suelo, que reserva una capa por luz— mas un lookup
     ''' de PCF por fragmento.</para></summary>
     Public Property CastsShadow As Boolean
 
@@ -476,6 +476,17 @@ Public Structure PreviewLightRig
     ''' lo cace.</para></summary>
     Public Function AmbientGroundDiffuse() As OpenTK.Mathematics.Vector3
         Return AmbientGroundColor.ToVector3() * AmbientIntensity
+    End Function
+
+    ''' <summary>THE RIG'S HEMISPHERE AS THE ENGINES' LINEAR DIRECTIONAL AMBIENT, one channel (rev-22, the rule of both games): the
+    ''' ambient a normal N receives is Mean + ZSlope N.z on world Z - the sky (<paramref name="sky"/>) on what faces up (+Z), the ground
+    ''' (<paramref name="ground"/>) on what faces down, the sides their mean. Both engines take the ambient as rows dotted with (N, 1)
+    ''' (Fallout 4: the deferred light PS, PreviewModel.BuildFo4DeferredFrame; Skyrim SE: DirectionalAmbient, SseLightingConstants), so
+    ''' the row is (0, 0, ZSlope) on Z plus Mean. Each game hands its own sky and ground (Fallout 4 the raw colours with the ground level
+    ''' as level^(1/2.2), because its PS raises the result to 2.2; Skyrim SE the raw colours with the ground times its level, its PS does
+    ''' not). ZSlope = 0.5 (sky - ground) in double, Mean = 0.5f (sky + ground) in single: the arithmetic Fallout 4's frame always had.</summary>
+    Public Shared Function HemisphereAmbient(sky As Single, ground As Single) As (ZSlope As Double, Mean As Single)
+        Return (0.5 * (sky - ground), 0.5F * (sky + ground))
     End Function
 End Structure
 

@@ -81,6 +81,19 @@ End Module
 ''' (ISM + 0x28: (-1, 1, 0) uv (0, 0), (-1, -3, 0) uv (0, 2), (3, 1, 0) uv (2, 0); 0x14218D4DD..5B6, chosen by 0x1421856EC..703)
 ''' under UPPER_LEFT: storage row r of each input maps to storage row r of each output, whatever the frame's row order.</summary>
 Friend NotInheritable Class Fo4ImageSpaceChain
+    ' ---- the image-space records the chain draws (Fo4DeferredPrograms.ImageSpaceProgram): named once, used by their passes and asked from
+    ' the builder together before the chain runs (F9 r2 "Pedidos juntos": Records) ----
+    Friend Const RecDownSample4 As UInteger = 3706UI      ' HDRDownSample4
+    Friend Const RecRgb2Lum As UInteger = 3710UI          ' the pyramid's first level (RGB2Lum)
+    Friend Const Rec16Lum As UInteger = 3708UI            ' the pyramid's next levels (16Lum)
+    Friend Const RecBright As UInteger = 3768UI           ' the bloom's bright pass
+    Friend Const RecBlur As UInteger = 3737UI             ' the bloom's blur
+    Friend Const RecTonemap As UInteger = 3700UI          ' the HDR tonemap
+    Friend Const RecRefraction As UInteger = 3658UI       ' ISRefraction (effect 5)
+    Friend Const RecLut As UInteger = 3648UI              ' the LUT pass
+    ''' <summary>The chain's closed list of records (the Rec* above).</summary>
+    Friend Shared ReadOnly Records As UInteger() = {RecDownSample4, RecRgb2Lum, Rec16Lum, RecBright, RecBlur, RecTonemap, RecRefraction, RecLut}
+
     Private _w As Integer, _h As Integer
     Private _vao, _vbo As Integer
     Private _point, _linear As Integer
@@ -282,7 +295,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
     ''' into <paramref name="dst"/> (RT 0x46's size), BlurScale = (1 / W, 1 / H, 0, 0) and DynamicResolutionParam = (1, 1, 1 - 0.5 /
     ''' W, 1 - 0.5 / H) of the scene (0x142209FED / 0x14220A034; the dynamic resolution [0x142F4E708 / 70C] = 1.0), the 4 taps.</summary>
     Private Sub DownSample4(progs As Fo4DeferredPrograms, src As Integer, dst As Integer)
-        Dim p = progs.ImageSpaceProgram(3706UI)
+        Dim p = progs.ImageSpaceProgram(RecDownSample4)
         p.Use()
         p.SetVector4("BlurScale", New Vector4(1.0F / _w, 1.0F / _h, 0.0F, 0.0F))
         p.SetVector4("DynamicResolutionParam", New Vector4(1.0F, 1.0F, 1.0F - 0.5F / _w, 1.0F - 0.5F / _h))
@@ -299,7 +312,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
     Private Sub RunPyramid(progs As Fo4DeferredPrograms, pyr As List(Of (Tex As Integer, W As Integer, H As Integer)))
         For k = 1 To pyr.Count - 1
             Dim first = k = 1
-            Dim p = progs.ImageSpaceProgram(If(first, 3710UI, 3708UI))
+            Dim p = progs.ImageSpaceProgram(If(first, RecRgb2Lum, Rec16Lum))
             p.Use()
             p.SetVector4("BlurScale", New Vector4(1.0F / pyr(k - 1).W, 1.0F / pyr(k - 1).H, 0.0F, 0.0F))
             p.SetVector4("DynamicResolutionParam", Vector4.One)
@@ -358,7 +371,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
             ' vertical offsets, t1 = the adaptation's result; pass 2 Blur15 (i3737) RT 0x44 -> RT 0x45, the horizontal offsets (both
             ' over RT 0x44's size).
             Dim bw = Math.Max(_w >> 2, 1), bh = Math.Max(_h >> 2, 1)
-            Dim bright = progs.ImageSpaceProgram(3768UI)
+            Dim bright = progs.ImageSpaceProgram(RecBright)
             bright.Use()
             Dim bloomScale = imgs.BloomScale
 #If DEBUG Then
@@ -368,7 +381,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
             bright.SetVector4("BlurBrightPass", New Vector4(imgs.BloomThreshold, bloomScale, 0.0F, 0.0F))
             bright.SetVector4Array("BlurOffsets", BloomOffsets(bh, vertical:=True))
             Pass(bright, _rt44, bw, bh, {(0, _rt46, False), (1, _avg, False)})
-            Dim blur = progs.ImageSpaceProgram(3737UI)
+            Dim blur = progs.ImageSpaceProgram(RecBlur)
             blur.Use()
             blur.SetVector4Array("BlurOffsets", BloomOffsets(bw, vertical:=False))
             Pass(blur, _rt45, bw, bh, {(0, _rt44, False)})
@@ -380,7 +393,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
             ' ShadowGate --fo4-post-law / --fo4-h5-scene mutant: the clear's texel whatever the frame's RT 0x1E (no pixel bypasses).
             If Fo4GBufferConstants.GateMutantOn("h5-t3-cleared") Then t3 = _glossCleared
 #End If
-            Dim tone = progs.ImageSpaceProgram(3700UI)
+            Dim tone = progs.ImageSpaceProgram(RecTonemap)
             tone.Use()
             imgs.UploadTonemap(tone)
             tone.SetVector4("DynamicResolutionParam", Vector4.One)
@@ -389,7 +402,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
             ' +0x1C = 1 (FILT 1, bilinear), t1 the refraction normals with +0x1C = 0 (POINT).
             Dim graded = _tone
             If refractionNormals <> 0 Then
-                Dim refr = progs.ImageSpaceProgram(3658UI)
+                Dim refr = progs.ImageSpaceProgram(RecRefraction)
                 refr.Use()
                 refr.SetVector4("Tint", refractionTint)
                 Pass(refr, _refracted, _w, _h, {(0, _tone, True), (1, refractionNormals, False)})
@@ -398,7 +411,7 @@ Friend NotInheritable Class Fo4ImageSpaceChain
             ' 4. GammaCorrectLUT (effect 15, i3648; writer 0x1421AA3A0): t0 the image (FILT 0), t3..t6 the four LUTs (ADDR 0, FILT 1),
             ' LUTWeights: one image space = one LUT with weight 1, the other three the identity with weight 0 (0x1406BFDF0,
             ' 0x1404AFE1A..E22); a LUT that does not load is the identity (0x14218DBFA / DCF8) with its weight.
-            Dim lutPass = progs.ImageSpaceProgram(3648UI)
+            Dim lutPass = progs.ImageSpaceProgram(RecLut)
             lutPass.Use()
             lutPass.SetVector4("LUTWeights", New Vector4(1.0F, 0.0F, 0.0F, 0.0F))
 #If DEBUG Then
@@ -506,23 +519,45 @@ Friend NotInheritable Class Fo4ImageSpaceChain
 End Class
 
 ''' <summary>The programs of the chain's app passes (Fo4ImageSpaceAppSource), one context, each built on its first use (S0-A,
-''' LazyProgram: a failure aborts the frame). Creating the object builds nothing.</summary>
+''' LazyProgram: a failure aborts the frame) by the control's builder (F9), the three asked together. Creating the object builds nothing.</summary>
 Friend NotInheritable Class Fo4ImageSpaceAppPrograms
-    Private ReadOnly _unpremultiply As New LazyProgram(Of Fo4_Deferred_Shader_Class)("FO4 post Unpremultiply", Function() New Fo4_Deferred_Shader_Class(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_Unpremultiply))
-    Private ReadOnly _actorMean As New LazyProgram(Of Fo4_Deferred_Shader_Class)("FO4 post ActorMean", Function() New Fo4_Deferred_Shader_Class(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_ActorMean))
-    Private ReadOnly _present As New LazyProgram(Of Fo4_Deferred_Shader_Class)("FO4 post Present", Function() New Fo4_Deferred_Shader_Class(BackgroundFadeSource.Vertex_Background, Fo4ImageSpaceAppSource.Fragment_Present))
+    ''' <summary>F9: the specs of the three passes (name, spec) - the one place each pairs its texts (the slots and ProgramCatalog).</summary>
+    Friend Shared Function Specs() As (Name As String, Spec As ProgramSpec)()
+        Return {("FO4 post Unpremultiply", Shader_Base_Class.SpecOf(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_Unpremultiply)),
+                ("FO4 post ActorMean", Shader_Base_Class.SpecOf(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4ImageSpaceAppSource.Fragment_ActorMean)),
+                ("FO4 post Present", Shader_Base_Class.SpecOf(BackgroundFadeSource.Vertex_Background, Fo4ImageSpaceAppSource.Fragment_Present))}
+    End Function
+    Private ReadOnly _unpremultiply, _actorMean, _present As LazyProgram(Of Fo4_Deferred_Shader_Class)
+
+    ''' <param name="builder">The builder of the control these passes are drawn in (mandatory, F9 r4 rev-19).</param>
+    Friend Sub New(builder As ProgramBuilder)
+        Dim s = Specs()
+        Dim slot = Function(i As Integer) New LazyProgram(Of Fo4_Deferred_Shader_Class)(s(i).Name, builder, s(i).Spec, Function(id As Integer) New Fo4_Deferred_Shader_Class(id, s(i).Spec))
+        _unpremultiply = slot(0)
+        _actorMean = slot(1)
+        _present = slot(2)
+    End Sub
+
+    ''' <summary>F9 (r2 "Pedidos juntos"): the three asked from the builder at once.</summary>
+    Friend Sub RequestAll()
+        For Each s In Slots : s.RequestOnly() : Next
+    End Sub
+
     Friend ReadOnly Property Unpremultiply As Fo4_Deferred_Shader_Class
         Get
+            RequestAll()
             Return _unpremultiply.GetProgram()
         End Get
     End Property
     Friend ReadOnly Property ActorMean As Fo4_Deferred_Shader_Class
         Get
+            RequestAll()
             Return _actorMean.GetProgram()
         End Get
     End Property
     Friend ReadOnly Property Present As Fo4_Deferred_Shader_Class
         Get
+            RequestAll()
             Return _present.GetProgram()
         End Get
     End Property

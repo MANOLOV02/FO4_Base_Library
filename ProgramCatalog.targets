@@ -1,0 +1,21 @@
+﻿<Project>
+  <!-- F9 (Ola SSE S1, r3 rev-17 / r4 rev-17): THE PROGRAM CATALOG'S MANIFEST of a host that builds programs. Imported by Wardrobe
+       Manager, NPC Manager, ShadowGate and ParityGate. After the host's build, Tools\ProgramCatalogTool writes ProgramCatalog.keys into
+       $(OutDir), from the FO4_Base_Library.dll of $(OutDir) (so Publish, whose OutDir is bin\<platform>\Publish\, gets the manifest of
+       the library it ships). The library reads it next to itself at runtime (ProgramCatalog.InstalledDigests: the cleanup of the
+       program cache, and the Debug counter of programs outside it); ParityGate program-catalog-manifest checks every one it finds.
+       The tool is a ProjectReference that is not referenced (ReferenceOutputAssembly false): it is built before the host, with the
+       host's configuration and platform (SetConfiguration / SetPlatform: also when a solution that does not list it builds the host;
+       an x86 host's library loads only in an x86 process), and its path comes back in the item ProgramCatalogToolOutput. -->
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\Tools\ProgramCatalogTool\ProgramCatalogTool.vbproj"
+                      ReferenceOutputAssembly="false"
+                      OutputItemType="ProgramCatalogToolOutput"
+                      SetConfiguration="Configuration=$(Configuration)"
+                      SetPlatform="Platform=$(Platform)" />
+  </ItemGroup>
+  <Target Name="WriteProgramCatalogManifest" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'@(ProgramCatalogToolOutput)' == ''" Text="ProgramCatalog.targets: the path of Tools\ProgramCatalogTool did not come back from its ProjectReference (OutputItemType)." />
+    <Exec Command="&quot;@(ProgramCatalogToolOutput->'%(RootDir)%(Directory)%(Filename).exe')&quot; &quot;$(OutDir).&quot;" />
+  </Target>
+</Project>

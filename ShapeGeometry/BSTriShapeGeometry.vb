@@ -286,9 +286,51 @@ Public Class BSTriShapeGeometry
         Return If(_tri.EyeData?.ToList(), New List(Of Single)())
     End Function
 
+    ''' <summary>The slot-0 vertex buffer as the block holds it, <paramref name="stride"/> bytes per vertex (the writer's Sync of the block's format through NiflySharp's own reversible stream):
+    ''' what each engine copies raw into its VB (SkyrimSE.exe 0x14100B530: ((desc * 4) AND 0x3C) * nVerts bytes, 0x14100B58B..596; Fallout4.exe 0x141818910: the same size 0x141818937..948, read
+    ''' 0x1418189B4..C1, copied 0x14184F65B..667, 0x14185209D, 0x14185214C). Nothing when a vertex does not write the desc's stride.</summary>
+    Friend Function NifVertexBytes(stride As Integer) As Byte()
+        If _tri.VertexDesc Is Nothing OrElse stride = 0 Then Return Nothing
+        Dim sse = Version.IsSSE
+        Dim n = If(sse, _tri.VertexDataSSE?.Count, _tri.VertexData?.Count)
+        If Not n.HasValue Then Return Nothing
+        Dim r(n.Value * stride - 1) As Byte
+        Using ms As New IO.MemoryStream()
+            Dim st As New NiflySharp.Stream.NiStreamReversible(New NiflySharp.Stream.NiStreamWriter(ms, _nif)) With {.Argument = _tri.VertexDesc.Value >> 44}
+            For i = 0 To n.Value - 1
+                ms.SetLength(0)
+                If sse Then
+                    Dim v = _tri.VertexDataSSE(i) : v.Sync(st)
+                Else
+                    Dim v = _tri.VertexData(i) : v.Sync(st)
+                End If
+                If ms.Length <> stride Then Return Nothing
+                Array.Copy(ms.GetBuffer(), 0, r, i * stride, stride)
+            Next
+        End Using
+        Return r
+    End Function
+
+    ''' <summary>The slot-1 stream of a BSDynamicTriShape as the block holds it (the dynamic data: x, y, z, w floats per vertex, the type-4 buffer of
+    ''' SkyrimSE.exe 0x14100C090); Nothing for any other shape.</summary>
+    Friend Function NifDynamicBytes() As Byte()
+        Dim d = TryCast(_tri, NiflySharp.Blocks.BSDynamicTriShape)
+        Dim v = d?.Vertices
+        If v Is Nothing Then Return Nothing
+        Dim r(v.Count * 16 - 1) As Byte
+        For i = 0 To v.Count - 1
+            BitConverter.GetBytes(v(i).X).CopyTo(r, 16 * i)
+            BitConverter.GetBytes(v(i).Y).CopyTo(r, 16 * i + 4)
+            BitConverter.GetBytes(v(i).Z).CopyTo(r, 16 * i + 8)
+            BitConverter.GetBytes(v(i).W).CopyTo(r, 16 * i + 12)
+        Next
+        Return r
+    End Function
+
     ''' <summary>S-83A: a BSTriShape is drawn in its data order (bsver 100 with skin: NifFile concatenates the partitions' triangles as
     ''' the game, NifFile.cs:445-468 - row S-83A, no divergence).</summary>
-    Public Function GetEngineDrawTriangleOrder() As Integer() Implements IShapeGeometry.GetEngineDrawTriangleOrder
+    Public Function GetEngineDrawTriangleOrder(ByRef rotation As Byte()) As Integer() Implements IShapeGeometry.GetEngineDrawTriangleOrder
+        rotation = Nothing
         Return Nothing
     End Function
 

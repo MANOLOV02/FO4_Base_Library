@@ -162,6 +162,15 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- F9 (Ola SSE S1, r3 rev-17): Tools/ProgramCatalogTool writes the program catalog's manifest (ProgramCatalog.WriteManifest, Friend)
+         after each host's build; it reaches it by reflection on the library of the host's output, the compile reference only orders the
+         build. NADA se vuelve Public por esto. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ProgramCatalogTool</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <!-- Shared\ NO se compila dentro de esta lib: son fuentes que cada APP linkea a su propio ensamblado.
        CrashReport tiene que sobrevivir a que este DLL no cargue (cuarentena del antivirus, extraccion
        parcial) — adentro de la lib se caeria junto con ella y el usuario volveria al silencio.

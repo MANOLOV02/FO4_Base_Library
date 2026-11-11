@@ -225,9 +225,10 @@ Partial Public Class LightRigForm
         ' de presets como "Custom", que es exactamente lo que no significa.
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         chkShadows.Checked = sh.Enabled
-        ' Fallout 4 draws its shadow maps in 16-bit depth always, the game's D16_UNORM (user decision 14-oct-2026, rev-E08;
-        ' PreviewModel.MapaEn16Bits): the box shows it and cannot change it; the stored Fallout 4 setting is left as it is.
-        chkDepth16.Checked = sh.Depth16 OrElse Not EsSkyrim()
+        ' Both games draw their shadow maps in 16-bit depth always, the games' D16_UNORM (user decision 14-oct-2026, rev-E08; Skyrim SE: Ola SSE S1 F3.2, s1_re.md 4.1;
+        ' ShadowMapMath.MapDepth16): the box shows that fixed state and cannot change it; the stored setting (PreviewShadowSettings.Depth16) is left as it
+        ' is and nothing in the render reads it.
+        chkDepth16.Checked = ShadowMapMath.MapDepth16
         PonerAyudasDeSombraPorJuego()
         AlinearFilaDeSombras()
         ' ESTOS TRES SALEN DEL RIG, no de ActiveShadows(): blandura, oscuridad y receptor de suelo son
@@ -625,11 +626,6 @@ Partial Public Class LightRigForm
                                                        VolcarUIenModelo()
                                                        ActualizarCartelDeVram()
                                                    End Sub
-        ' La precision parte la cuenta de VRAM al medio, asi que el cartel se refresca con ella.
-        AddHandler chkDepth16.CheckedChanged, Sub(sender, e)
-                                                  VolcarSombrasEnModelo()
-                                                  ActualizarCartelDeVram()
-                                              End Sub
         AddHandler chkLightsFollowCamera.CheckedChanged, Sub(sender, e)
                                                              If _preventchanges Then Return
                                                              Config_App.Current.Setting_LightsFollowCamera = chkLightsFollowCamera.Checked
@@ -654,7 +650,11 @@ Partial Public Class LightRigForm
                                                               ActualizarCartelDeVram()
                                                           End Sub
         AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarUIenModelo()
-        AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarUIenModelo()
+        ' Darkness 0 / above 0 takes the focus map's layer out / in (ShadowMapMath.CharacterLayersPerLight): the memory notice follows it.
+        AddHandler tShadowStrength.ValueChanged, Sub(sender, e)
+                                                     VolcarUIenModelo()
+                                                     ActualizarCartelDeVram()
+                                                 End Sub
         AddHandler tShadowBias.ValueChanged, Sub(sender, e) VolcarUIenModelo()
 
         ' "Show errors" / "Show warnings" / "Show info" (grupo Notices): sólo cambian el aviso del cuadro, así que REPINTAN
@@ -859,8 +859,8 @@ Partial Public Class LightRigForm
         Dim idx = Array.FindIndex(ShadowQualities, Function(q) q.Size = mapSize)
         ' ⛔ UN TAMANO FUERA DE LA LISTA NO SE PISA EN SILENCIO. `VolcarSombrasEnModelo` es el handler de
         ' TODAS las perillas de sombra (la casilla, el suelo, suavidad, intensidad), asi que escribir
-        ' `sh.MapSize` desde el combo en cada pasada le borra la calidad a un usuario con MapSize = 8192
-        ' —legitimo: Sanitized() lo permite y hay un gate que lo prueba— apenas mueve el slider de Darkness,
+        ' `sh.MapSize` desde el combo en cada pasada le borra la calidad a un usuario con un MapSize fuera de la lista (256 o 512:
+        ' Sanitized() los permite y hay un gate que lo prueba; 8192 ya no, PreviewShadowSettings.MaxMapSize) apenas mueve el slider de Darkness,
         ' sin haber tocado la calidad.
         ' Se recuerda el valor original y se sigue escribiendo ESE hasta que el usuario cambie el combo a
         ' proposito. El combo, mientras tanto, muestra el mas cercano para no mentir.
@@ -911,7 +911,6 @@ Partial Public Class LightRigForm
                                 "(shadow = mix(1, game shadow, Darkness)). Also used by the ground catcher.")
             ToolTip1.SetToolTip(tShadowBias, "Shadow bias: scales the whole depth bias of Fallout 4's shadow - the shadow map's raster bias (DepthBias 12, slope 6.0) " &
                                 "and the receiver's 0.275 units - and the ground catcher's. 1.00, every preset's value, is the game's bias; 0 removes it; 2.00 doubles it.")
-            ToolTip1.SetToolTip(chkDepth16, "Fallout 4 always draws its shadow maps in 16-bit depth (D16_UNORM), like the game: fixed.")
         End If
     End Sub
 
@@ -937,7 +936,7 @@ Partial Public Class LightRigForm
         ActualizarCartelDeVram()
         lblShadowQuality.Enabled = on_
         cmbShadowQuality.Enabled = on_
-        chkDepth16.Enabled = on_ AndAlso EsSkyrim()            ' fixed in Fallout 4 (rev-E08)
+        chkDepth16.Enabled = False            ' fixed (rev-E08; Ola SSE S1 F3.2)
         lblShadowSoft.Enabled = on_
         tShadowSoft.Enabled = on_
         lblShadowStrength.Enabled = on_
@@ -978,22 +977,21 @@ Partial Public Class LightRigForm
         End If
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         Dim lado As Integer = sh.MapSize
-        ' Los DOS arrays van a DepthComponent16 = 2 B por texel (el receptor de suelo reserva el suyo del
-        ' mismo lado y con las mismas capas: reserva fija, es lo que evita recrearlo al orbitar).
-        ' La cuenta tiene que seguir a la del render. Fueron 4 B (DepthComponent24, que el driver guarda
-        ' en 32) hasta que se midio que en un ortho de rango corto los 16 bits no mueven un pixel: el escalon
-        ' de profundidad queda 30x mas fino que el TEXEL, que es lo unico que se ve en el borde. Si algun dia
-        ' alguno vuelve a 24 y esto no se actualiza, el cartel miente — y un cartel que miente sobre bytes es
-        ' peor que no tenerlo.
+        ' THE SAME COUNT AS THE RENDER'S RESERVATION, from the same owners: the layers of each casting light in the character's map
+        ' (ShadowMapMath.CharacterLayersPerLight: the game's sun splits and, with the rig's Darkness above 0, the focus map; a function of
+        ' the config only, user decision 10-nov-2026), one layer per light in the ground catcher's map when it is on, every texel
+        ' ShadowMapMath.MapDepthBytes (both games' fixed 16-bit depth).
         Dim conSuelo As Boolean = chkGroundShadow.Checked AndAlso chkGroundShadow.Enabled
-        ' 24 bits los guarda el driver en 32 = 4 B por texel; 16 bits son 2. Por array.
-        Dim bytesPorArray As Double = If(chkDepth16.Checked, 2.0, 4.0)
-        Dim bytesPorTexel As Double = bytesPorArray * If(conSuelo, 2.0, 1.0)
-        Dim mb As Double = CDbl(lado) * lado * bytesPorTexel * n / (1024.0 * 1024.0)
+        Dim esSse = Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+        Dim conFoco = ShadowMapMath.FocusReserved(rigActual.ShadowDarkness)
+        Dim capasPersonaje = ShadowMapMath.CharacterLayersPerLight(esSse, rigActual.ShadowDarkness)
+        Dim capas As Integer = n * (capasPersonaje + If(conSuelo, 1, 0))
+        Dim mb As Double = CDbl(lado) * lado * ShadowMapMath.MapDepthBytes * capas / (1024.0 * 1024.0)
         grpShadows.Text = $"Shadows ({mb:0} MB)"
         ToolTip1.SetToolTip(grpShadows,
-            $"{n} shadow map(s) of {lado}x{lado} at {If(chkDepth16.Checked, 16, 24)}-bit depth" &
-            If(conSuelo, $", plus {n} more for the ground catcher.", "."))
+            $"{n * capasPersonaje} shadow map layer(s) of {lado}x{lado} at 16-bit depth: for each casting light, the sun's {ShadowMapMath.SunSplitLayers(esSse)} splits" &
+            If(conFoco, " and the character's focus map", "") &
+            If(conSuelo, $"; plus {n} more for the ground catcher.", "."))
     End Sub
 
     ''' <summary>MapSize del config cuando NO esta entre las opciones del combo (0 = esta en la lista).
@@ -1004,7 +1002,7 @@ Partial Public Class LightRigForm
         If _preventchanges Then Return
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         sh.Enabled = chkShadows.Checked
-        If EsSkyrim() Then sh.Depth16 = chkDepth16.Checked     ' Fallout 4's box is fixed (rev-E08): its stored value is not touched
+        ' The box is fixed (rev-E08; Ola SSE S1 F3.2): the stored value is not touched.
         If _mapSizeFueraDeLista > 0 Then
             ' El usuario tiene un tamano propio y todavia no eligio uno de la lista: se conserva.
             sh.MapSize = _mapSizeFueraDeLista

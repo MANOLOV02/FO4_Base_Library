@@ -426,8 +426,14 @@ End Module
 ''' <summary>Program of the SSE post pass: fullscreen triangle of the background + <see cref="PostProcessShaderSource.Fragment_PostSse"/>.</summary>
 Public Class PostProcess_Sse_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(BackgroundFadeSource.Vertex_Background, PostProcessShaderSource.Fragment_PostSse)
     Sub New()
-        MyBase.New(BackgroundFadeSource.Vertex_Background, PostProcessShaderSource.Fragment_PostSse)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class
 
@@ -435,16 +441,28 @@ End Class
 ''' RefractionSource vertex terms) and the normals PS.</summary>
 Public Class Refraction_Normals_Sse_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(Shader_Class_SSE.Vertex_SSE, RefractionSource.Normals_Fragment)
     Sub New()
-        MyBase.New(Shader_Class_SSE.Vertex_SSE, RefractionSource.Normals_Fragment)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class
 
 ''' <summary>ISRefraction (both games; the constants per game, RefractionLaw.ImageSpaceConstants).</summary>
 Public Class Refraction_ImageSpace_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(RefractionSource.ImageSpace_Vertex, RefractionSource.ImageSpace_Fragment)
     Sub New()
-        MyBase.New(RefractionSource.ImageSpace_Vertex, RefractionSource.ImageSpace_Fragment)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class
 
@@ -535,50 +553,75 @@ End Class
 ''' (PreviewControl.ApplySseOpaqueComposite).</para></summary>
 Public Class Sse_Opaque_Composite_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(SseSaoSource.Vs_Fullscreen, SseCompositeSource.Fragment)
     Sub New()
-        MyBase.New(SseSaoSource.Vs_Fullscreen, SseCompositeSource.Fragment)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class
 
 ''' <summary>One pass of the Skyrim SE SAO: the full-screen VS of the transcription + one of SseSaoSource's six fragments.</summary>
 Public Class Sse_Sao_Pass_Shader_Class
     Inherits Shader_Base_Class
-    Sub New(fragment As String)
-        MyBase.New(SseSaoSource.Vs_Fullscreen, fragment)
+    ''' <summary>F9: the spec of the pass whose fragment is <paramref name="fragment"/>.</summary>
+    Friend Shared Function SpecOfPass(fragment As String, Optional derivativeHint As OpenTK.Graphics.OpenGL4.HintMode = OpenTK.Graphics.OpenGL4.HintMode.DontCare) As ProgramSpec
+        Return SpecOf(SseSaoSource.Vs_Fullscreen, fragment, DerivativeHint:=derivativeHint)
+    End Function
+    Sub New(fragment As String, Optional derivativeHint As OpenTK.Graphics.OpenGL4.HintMode = OpenTK.Graphics.OpenGL4.HintMode.DontCare)
+        MyBase.New(SpecOfPass(fragment, derivativeHint))
+    End Sub
+    ''' <summary>F9: the program of <paramref name="spec"/> (SseSaoPrograms.Specs), built now.</summary>
+    Friend Sub New(spec As ProgramSpec)
+        MyBase.New(spec)
+    End Sub
+    ''' <summary>F9: the program already built from <paramref name="spec"/>.</summary>
+    Friend Sub New(programId As Integer, spec As ProgramSpec)
+        MyBase.New(programId, spec)
     End Sub
 End Class
 
 ''' <summary>The six SAO programs (CameraZ 15997, Minify 16006, MinifyContrast 16008, RawAO 16012, BlurH 15991, BlurV 15993), each
-''' built on its first use (S0-A, LazyProgram: a failure aborts the frame). Creating the object builds nothing.</summary>
+''' built on its first use (S0-A, LazyProgram: a failure aborts the frame) by the control's builder (F9), the six asked together.
+''' Creating the object builds nothing.</summary>
 Friend NotInheritable Class SseSaoPrograms
     Private ReadOnly _slots As LazyProgram(Of Sse_Sao_Pass_Shader_Class)()
     Friend ReadOnly Property CameraZ As Sse_Sao_Pass_Shader_Class
         Get
+            RequestAll()
             Return _slots(0).GetProgram()
         End Get
     End Property
     Friend ReadOnly Property Minify As Sse_Sao_Pass_Shader_Class
         Get
+            RequestAll()
             Return _slots(1).GetProgram()
         End Get
     End Property
     Friend ReadOnly Property MinifyContrast As Sse_Sao_Pass_Shader_Class
         Get
+            RequestAll()
             Return _slots(2).GetProgram()
         End Get
     End Property
     Friend ReadOnly Property RawAO As Sse_Sao_Pass_Shader_Class
         Get
+            RequestAll()
             Return _slots(3).GetProgram()
         End Get
     End Property
     Friend ReadOnly Property BlurH As Sse_Sao_Pass_Shader_Class
         Get
+            RequestAll()
             Return _slots(4).GetProgram()
         End Get
     End Property
     Friend ReadOnly Property BlurV As Sse_Sao_Pass_Shader_Class
         Get
+            RequestAll()
             Return _slots(5).GetProgram()
         End Get
     End Property
@@ -589,26 +632,44 @@ Friend NotInheritable Class SseSaoPrograms
         End Get
     End Property
 
-    Friend Sub New()
-        Me.New(Function(s As String) s)
+    ''' <param name="builder">The builder of the control the passes are drawn in (mandatory, F9 r4 rev-19).</param>
+    Friend Sub New(builder As ProgramBuilder)
+        Me.New(builder, Function(s As String) s, OpenTK.Graphics.OpenGL4.HintMode.DontCare)
+    End Sub
+
+    ''' <summary>F9 (r2 "Pedidos juntos"): the six asked from the builder at once (the SAO runs them one after another).</summary>
+    Friend Sub RequestAll()
+        For Each s In _slots : s.RequestOnly() : Next
     End Sub
 
 #If DEBUG Then
     ''' <summary>DEBUG ONLY (ShadowGate --sse-sao-law and its probe): the six passes with each fragment text through
-    ''' <paramref name="gateMutation"/> (Nothing = the identity). A named factory, not a second constructor (ola 9 ronda 4: the overload
-    ''' needed a dead Boolean on the private constructor to keep the signatures apart).</summary>
-    Friend Shared Function ConMutacionDeGate(gateMutation As Func(Of String, String)) As SseSaoPrograms
-        Return New SseSaoPrograms(If(gateMutation, Function(s As String) s))
+    ''' <paramref name="gateMutation"/> (Nothing = the identity), built under <paramref name="derivativeHint"/> (F9 r8 rev-06: the
+    ''' harness's rev-G2 data loop states the hint it sets in the passes' spec). A named factory, not a second constructor (ola 9
+    ''' ronda 4: the overload needed a dead Boolean on the private constructor to keep the signatures apart).</summary>
+    Friend Shared Function ConMutacionDeGate(builder As ProgramBuilder, gateMutation As Func(Of String, String),
+                                             Optional derivativeHint As OpenTK.Graphics.OpenGL4.HintMode = OpenTK.Graphics.OpenGL4.HintMode.DontCare) As SseSaoPrograms
+        Return New SseSaoPrograms(builder, If(gateMutation, Function(s As String) s), derivativeHint)
     End Function
 #End If
 
-    ''' <summary>The six passes, each fragment text through <paramref name="m"/> (the identity but for a Debug gate's mutation), each
-    ''' built on its first use.</summary>
-    Private Sub New(m As Func(Of String, String))
-        Dim pase = Function(nombre As String, fragment As String) New LazyProgram(Of Sse_Sao_Pass_Shader_Class)("SSE SAO " & nombre, Function() New Sse_Sao_Pass_Shader_Class(m(fragment)))
-        _slots = {pase("CameraZ", SseSaoSource.Fragment_CameraZ), pase("Minify", SseSaoSource.Fragment_Minify),
-                  pase("MinifyContrast", SseSaoSource.Fragment_MinifyContrast), pase("RawAO", SseSaoSource.Fragment_RawAO),
-                  pase("BlurH", SseSaoSource.Fragment_BlurH), pase("BlurV", SseSaoSource.Fragment_BlurV)}
+    ''' <summary>F9: the specs of the six passes, in slot order (name, spec): each fragment text through <paramref name="m"/> (the
+    ''' identity but for a Debug gate's mutation) under <paramref name="derivativeHint"/> - the one place they pair their texts (the slots
+    ''' and ProgramCatalog).</summary>
+    Friend Shared Function Specs(Optional m As Func(Of String, String) = Nothing,
+                                 Optional derivativeHint As OpenTK.Graphics.OpenGL4.HintMode = OpenTK.Graphics.OpenGL4.HintMode.DontCare) As (Name As String, Spec As ProgramSpec)()
+        Dim f = If(m, Function(s As String) s)
+        Return Array.ConvertAll({("CameraZ", SseSaoSource.Fragment_CameraZ), ("Minify", SseSaoSource.Fragment_Minify),
+                                 ("MinifyContrast", SseSaoSource.Fragment_MinifyContrast), ("RawAO", SseSaoSource.Fragment_RawAO),
+                                 ("BlurH", SseSaoSource.Fragment_BlurH), ("BlurV", SseSaoSource.Fragment_BlurV)},
+                                Function(p) ("SSE SAO " & p.Item1, Sse_Sao_Pass_Shader_Class.SpecOfPass(f(p.Item2), derivativeHint)))
+    End Function
+
+    ''' <summary>The six passes of Specs(<paramref name="m"/>, <paramref name="derivativeHint"/>), each built on its first use by
+    ''' <paramref name="builder"/>.</summary>
+    Private Sub New(builder As ProgramBuilder, m As Func(Of String, String), derivativeHint As OpenTK.Graphics.OpenGL4.HintMode)
+        _slots = Array.ConvertAll(Specs(m, derivativeHint),
+                                  Function(s) New LazyProgram(Of Sse_Sao_Pass_Shader_Class)(s.Name, builder, s.Spec, Function(id As Integer) New Sse_Sao_Pass_Shader_Class(id, s.Spec)))
     End Sub
 
     ''' <summary>Deletes the passes built so far; the next use builds them again.</summary>
@@ -966,16 +1027,28 @@ End Class
 ''' <summary>Compute program, pass 1 of the mean luminance.</summary>
 Public Class Luminance_Partials_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = ComputeSpecOf(PostProcessShaderSource.Compute_LumPartials)
     Sub New()
-        MyBase.New(PostProcessShaderSource.Compute_LumPartials)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class
 
 ''' <summary>Compute program, pass 2 of the mean luminance.</summary>
 Public Class Luminance_Resolve_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
+    Friend Shared ReadOnly Spec As ProgramSpec = ComputeSpecOf(PostProcessShaderSource.Compute_LumResolve)
     Sub New()
-        MyBase.New(PostProcessShaderSource.Compute_LumResolve)
+        MyBase.New(Spec)
+    End Sub
+    ''' <summary>F9: the program already built from Spec.</summary>
+    Friend Sub New(programId As Integer)
+        MyBase.New(programId, Spec)
     End Sub
 End Class
 
@@ -1206,6 +1279,19 @@ Friend NotInheritable Class SceneTargets
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _displayFbo)
         GL.Viewport(0, 0, _w, _h)
     End Sub
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate --sse-character-light, mutant sse-t11-frame): the mean luminance the last ReduceLuminance left in the result buffer,
+    ''' read back (the post chain's own measure of the frame). 0 before the first reduction.</summary>
+    Friend Function GateReadMeanLuminance() As Single
+        If _lumResult = 0 Then Return 0.0F
+        Dim v(0) As Single
+        GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _lumResult)
+        GL.GetBufferSubData(BufferTarget.ShaderStorageBuffer, IntPtr.Zero, 4, v)
+        GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
+        Return v(0)
+    End Function
+#End If
 
     ''' <summary>Mean luminance of the HDR target into the result buffer (GPU only, no readback).</summary>
     Public Sub ReduceLuminance(partials As Shader_Base_Class, resolve As Shader_Base_Class)

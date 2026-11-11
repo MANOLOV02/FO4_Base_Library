@@ -1,4 +1,4 @@
-Imports OpenTK.Graphics.OpenGL4
+﻿Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
 ''' <summary>The app's small passes of the FO4 deferred frame that are not transcribed shaders. ASCII only (GLSL).</summary>
@@ -14,6 +14,21 @@ void main() {}
 {
     vec2 p = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0);
     gl_Position = gl43ClipToGl(vec4(p, 1.0, 1.0));
+}
+"
+
+    ''' <summary>THE SUM OF ONE RIG LIGHT (Fo4DeferredTargets.SumLightOne; an app pass: the engine has one sun, the rig up to four): the light's
+    ''' isolated targets - its diffuse (texLightD, unit 6) and specular (texLightS, unit 7), already multiplied by its focus pass
+    ''' (DrawFocusPass) - read texel for texel into the frame's light targets RT 0x21 / 0x22 under the lights' additive state.</summary>
+    Friend Const Fragment_LightSum As String = "#version 430
+layout(binding = 6) uniform sampler2D texLightD;
+layout(binding = 7) uniform sampler2D texLightS;
+layout(location = 0) out vec4 oD;
+layout(location = 1) out vec4 oS;
+void main()
+{
+    oD = texelFetch(texLightD, ivec2(gl_FragCoord.xy), 0);
+    oS = texelFetch(texLightS, ivec2(gl_FragCoord.xy), 0);
 }
 "
 
@@ -184,6 +199,14 @@ Public Class Fo4_Deferred_Shader_Class
             Optional transformFeedbackVaryings As String() = Nothing)
         MyBase.New(vertex, fragment, control, evaluation, transformFeedbackVaryings)
     End Sub
+    ''' <summary>F9: the program of <paramref name="spec"/>, built now (the catalog's spec of a record or a slot).</summary>
+    Friend Sub New(spec As ProgramSpec)
+        MyBase.New(spec)
+    End Sub
+    ''' <summary>F9: the program already built from <paramref name="spec"/>.</summary>
+    Friend Sub New(programId As Integer, spec As ProgramSpec)
+        MyBase.New(programId, spec)
+    End Sub
     ''' <summary>A compute program (the image-space CS, Fo4ImageSpaceSource.ComputeOf).</summary>
     Sub New(compute As String)
         MyBase.New(compute)
@@ -198,9 +221,20 @@ End Class
 ''' closed list, Fo4GBufferSource.Records), the effect programs, the utility programs (the shadow map's emitter and the refraction
 ''' normals, b07, Fo4UtilitySource), the image-space programs (Fo4ImageSpaceSource) and the decals' base surfaces, a record whose build
 ''' fails remembered with its error and its draw reported (GBufferProgram; never a silent "not drawn"). Every program of every
-''' transcribed closed list is built by ShadowGate --program-census, not by a start. Creating the object builds nothing.</summary>
+''' transcribed closed list is built by ShadowGate --program-census, not by a start. Creating the object builds nothing.
+''' <para>F9: every program is built by the control's builder thread (ProgramBuilder, received at construction: r4 rev-19). In a frame a
+''' record still being built answers Nothing and marks the frame pending (the frame goes on, discovering every record it needs, and is
+''' not presented: "Compiling shaders n/m (once per build)"); outside a frame it is waited for. A record and its variant without early tests are one
+''' request (r3 rev-12).</para></summary>
 Friend NotInheritable Class Fo4DeferredPrograms
-    Private ReadOnly _directResolve, _decalBase, _prepassRigid, _prepassAlpha As LazyProgram(Of Fo4_Deferred_Shader_Class)
+    Private ReadOnly _builder As ProgramBuilder
+    Private ReadOnly _directResolve, _decalBase, _prepassRigid, _prepassAlpha, _lightSum As LazyProgram(Of Fo4_Deferred_Shader_Class)
+    ''' <summary>An app pass: a rig light's isolated targets onto the frame's (Fo4DeferredTargets.RunLights; the engine has one sun: Fragment_LightSum).</summary>
+    Friend ReadOnly Property LightSum As Fo4_Deferred_Shader_Class
+        Get
+            Return _lightSum.GetProgram()
+        End Get
+    End Property
     ''' <summary>The app passes, built on their first use (LazyProgram: a failure aborts the frame).</summary>
     Friend ReadOnly Property DirectResolve As Fo4_Deferred_Shader_Class
         Get
@@ -253,48 +287,150 @@ Friend NotInheritable Class Fo4DeferredPrograms
     Private ReadOnly _lights As New Dictionary(Of UInteger, LazyProgram(Of Fo4_Deferred_Shader_Class))
     Private ReadOnly _composites As New Dictionary(Of UInteger, LazyProgram(Of Fo4_Deferred_Shader_Class))
 
-    Private Function Build(vertex As String, fragment As String) As Fo4_Deferred_Shader_Class
-        Dim p As New Fo4_Deferred_Shader_Class(vertex, fragment)
-        _built.Add(p)
-        Return p
+    ''' <summary>F9: the records' requests (the requests not resolved yet are its Pending, by record: family, route and key).</summary>
+    Private ReadOnly _requests As ProgramRecordRequests(Of Fo4_Deferred_Shader_Class)
+
+    ''' <summary>F9: ONE RECORD THROUGH THE BUILDER (ProgramRecordRequests, the one code with SseEnginePrograms).</summary>
+    Private Function Pedir(clave As String, names As String(), specs As Func(Of ProgramSpec()), ByRef programs As Fo4_Deferred_Shader_Class(),
+                           ByRef errorText As String) As ProgramState
+        Return _requests.Ask(clave, names, specs, programs, errorText)
     End Function
 
-    Private Function BuildCompute(compute As String) As Fo4_Deferred_Shader_Class
-        Dim p As New Fo4_Deferred_Shader_Class(compute)
-        _built.Add(p)
-        Return p
+    ''' <summary>F9: where a record is without asking for it (r3 rev-13 / rev-18: the admission of a shape outside a frame - DrawsShape -
+    ''' never enqueues nor waits).</summary>
+    Private Function Estado(clave As String) As ProgramState
+        Return _requests.State(clave)
+    End Function
+
+    ' ---- F9 (r2 "Duplicacion" (i)): THE SPECS of the deferred frame's programs - the one place each pairs its texts. These programs
+    ' build from them and ProgramCatalog enumerates them (the manifest, the census). <paramref name="cpuRoute"/> is the
+    ' EFFECTIVE route (the CPU route of a VS that has one, Fo4*Source.EffectiveCpuLayout). ----
+
+    ''' <summary>An app pass: DirectResolve (the fullscreen VS and its resolve).</summary>
+    Friend Shared Function DirectResolveSpec() As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DirectResolve)
+    End Function
+    ''' <summary>An app pass: LightSum (the fullscreen VS and a rig light's sum).</summary>
+    Friend Shared Function LightSumSpec() As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_LightSum)
+    End Function
+    ''' <summary>An app pass: DecalBase (the fullscreen VS and the decals' base mark).</summary>
+    Friend Shared Function DecalBaseSpec() As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DecalBase)
+    End Function
+    ''' <summary>An app pass: the rigid prepass (0x14181FBCF..C19).</summary>
+    Friend Shared Function PrepassRigidSpec() As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4GBufferSource.PrepassVertex(3928), Fo4GBufferSource.PrepassFragmentNone)
+    End Function
+    ''' <summary>An app pass: the alpha-tested prepass (0x14181FC99..D01).</summary>
+    Friend Shared Function PrepassAlphaSpec() As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4GBufferSource.PrepassVertex(3929), Fo4GBufferSource.PrepassFragment(3930))
+    End Function
+
+    ''' <summary>A light program's (VS, PS) pair (b10).</summary>
+    Friend Shared Function LightPairSpec(vs As UInteger, ps As UInteger) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4DFLightSource.VertexOf(vs), Fo4DFLightSource.FragmentOf(ps))
     End Function
 
     ''' <summary>The program of light technique <paramref name="t"/> (b10: BSDFLightShader SetupTechnique 0x142246B40, VS / PS by
     ''' Fo4DFLightSource.VertexShaderId / PixelShaderId). A technique whose program the engine does not have throws: the frame's
     ''' techniques are a closed list built at start.</summary>
-    Private Function BuildLight(t As UInteger) As Fo4_Deferred_Shader_Class
+    Friend Shared Function LightSpec(t As UInteger) As ProgramSpec
         Dim missing = Fo4DFLightSource.MissingEnginePrograms(t)
         If missing IsNot Nothing Then Throw New InvalidOperationException($"light technique 0x{t:X8}: {missing}")
-        Return Build(Fo4DFLightSource.VertexOf(Fo4DFLightSource.VertexShaderId(t)), Fo4DFLightSource.FragmentOf(Fo4DFLightSource.PixelShaderId(t)))
+        Return LightPairSpec(Fo4DFLightSource.VertexShaderId(t), Fo4DFLightSource.PixelShaderId(t))
+    End Function
+
+    ''' <summary>A composite program's (VS, PS) pair (b11).</summary>
+    Friend Shared Function CompositePairSpec(vs As UInteger, ps As UInteger) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4DFCompositeSource.VertexOf(vs), Fo4DFCompositeSource.FragmentOf(ps))
     End Function
 
     ''' <summary>The program of composite technique <paramref name="t"/> (b11: BSDFCompositeShader SetupTechnique 0x142216AC0, VS / PS
     ''' by Fo4DFCompositeSource.VertexShaderId / PixelShaderId; no tiled lighting, Fo4DeferredLightLaw.SunTechnique).</summary>
-    Private Function BuildComposite(t As UInteger) As Fo4_Deferred_Shader_Class
+    Friend Shared Function CompositeSpec(t As UInteger) As ProgramSpec
         Dim missing = Fo4DFCompositeSource.MissingEnginePrograms(t)
         If missing IsNot Nothing Then Throw New InvalidOperationException($"composite technique 0x{t:X8}: {missing}")
-        Return Build(Fo4DFCompositeSource.VertexOf(Fo4DFCompositeSource.VertexShaderId(t)), Fo4DFCompositeSource.FragmentOf(Fo4DFCompositeSource.PixelShaderId(t)))
+        Return CompositePairSpec(Fo4DFCompositeSource.VertexShaderId(t), Fo4DFCompositeSource.PixelShaderId(t))
     End Function
 
-    Friend Sub New()
+    ''' <summary>A utility program (b07): VS <paramref name="vs"/> on its route with PS <paramref name="ps"/>, or with the null fragment
+    ''' (the rasterised depth only, Fo4UtilitySource.NullFragment) when <paramref name="nullPs"/>.</summary>
+    Friend Shared Function UtilitySpec(vs As UInteger, ps As UInteger, nullPs As Boolean, cpuRoute As Boolean) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4UtilitySource.VertexOf(vs, cpuRoute), If(nullPs, Fo4UtilitySource.NullFragment(), Fo4UtilitySource.FragmentOf(ps)))
+    End Function
+
+    ''' <summary>An image-space (VS, PS) pair.</summary>
+    Friend Shared Function ImageSpacePairSpec(vs As UInteger, ps As UInteger) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4ImageSpaceSource.VertexOf(vs), Fo4ImageSpaceSource.FragmentOf(ps))
+    End Function
+
+    ''' <summary>The image-space program of PS or CS record <paramref name="rec"/>: the CS alone, or the PS with the VS of its program
+    ''' (the first of Fo4ImageSpaceSource.Programs with that PS).</summary>
+    Friend Shared Function ImageSpaceSpec(rec As UInteger) As ProgramSpec
+        If Fo4ImageSpaceSource.ComputeStages.ContainsKey(rec) Then Return Shader_Base_Class.ComputeSpecOf(Fo4ImageSpaceSource.ComputeOf(rec))
+        Return ImageSpacePairSpec(Fo4ImageSpaceSource.Programs.First(Function(x) x.Ps = rec).Vs, rec)
+    End Function
+
+    ''' <summary>A G-buffer record's program: the tuple's engine stages (VS, + TCS / TES when it tessellates, 0x14181D60E) and the
+    ''' record's PS, with its early depth tests or, for the variant (<paramref name="earlyTests"/> False), without them.</summary>
+    Friend Shared Function GBufferSpec(key As (Vs As UInteger, Hs As UInteger, Ds As UInteger, Ps As UInteger), cpuRoute As Boolean,
+                                       Optional earlyTests As Boolean = True) As ProgramSpec
+        Dim st = Fo4GBufferSource.StageOf(key.Vs, key.Hs, key.Ds, cpuRoute)
+        Return Shader_Base_Class.SpecOf(st.Vertex, Fo4GBufferSource.FragmentOf(key.Ps, earlyTests:=earlyTests), st.Control, st.Evaluation)
+    End Function
+
+    ''' <summary>The decals' base surface of a G-buffer tuple: its engine stages and the app's surface fragment (revisor-25).</summary>
+    Friend Shared Function DecalSurfaceSpec(key As (Vs As UInteger, Hs As UInteger, Ds As UInteger, Ps As UInteger), cpuRoute As Boolean) As ProgramSpec
+        Dim st = Fo4GBufferSource.StageOf(key.Vs, key.Hs, key.Ds, cpuRoute)
+        Return Shader_Base_Class.SpecOf(st.Vertex, Fo4DeferredAppSource.Fragment_DecalBaseSurface, st.Control, st.Evaluation)
+    End Function
+
+    ''' <summary>The position capture of engine VS <paramref name="vs"/>: the VS alone, gl_Position captured by transform feedback.</summary>
+    Friend Shared Function PositionSpec(vs As UInteger, cpuRoute As Boolean) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4GBufferSource.StageOf(vs, 0UI, 0UI, cpuRoute, positionCapture:=True).Vertex,
+                                        Fo4DeferredAppSource.Fragment_PositionCapture, Nothing, Nothing, {"gl_Position"})
+    End Function
+
+    ''' <summary>An effect technique's program: Fo4EffectSource.VertexOf + FragmentOf (<paramref name="vertexEdit"/>: a Debug gate's
+    ''' declared edit of the vertex text, GateWithEffectVertex; Nothing in production).</summary>
+    Friend Shared Function EffectSpec(key As (Vs As UInteger, Ps As UInteger), cpuRoute As Boolean,
+                                      Optional vertexEdit As Func(Of String, String) = Nothing) As ProgramSpec
+        Dim vertex = Fo4EffectSource.VertexOf(key.Vs, cpuRoute)
+        If vertexEdit IsNot Nothing Then vertex = vertexEdit(vertex)
+        Return Shader_Base_Class.SpecOf(vertex, Fo4EffectSource.FragmentOf(key.Ps))
+    End Function
+
+    ''' <summary>An effect VS's decals' base surface: the VS with the surface foot and Fragment_DecalBaseSurfaceEffect
+    ''' (<paramref name="fragment"/>: a Debug gate's fragment, GateWithEffectSurfaceFragment; Nothing in production).</summary>
+    Friend Shared Function EffectSurfaceSpec(vs As UInteger, cpuRoute As Boolean, Optional fragment As String = Nothing) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(Fo4EffectSource.VertexOf(vs, cpuRoute, surface:=True),
+                                        If(fragment, Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect))
+    End Function
+
+    ''' <summary>A slot of these programs: <paramref name="specOf"/> composed on its first request, wrapped as the deferred class.</summary>
+    Private Function NewSlot(name As String, specOf As Func(Of ProgramSpec)) As LazyProgram(Of Fo4_Deferred_Shader_Class)
+        Return New LazyProgram(Of Fo4_Deferred_Shader_Class)(name, _builder, specOf, Function(id As Integer, s As ProgramSpec) New Fo4_Deferred_Shader_Class(id, s))
+    End Function
+
+    ''' <param name="builder">The builder of the control these programs are drawn in (mandatory, r4 rev-19).</param>
+    Friend Sub New(builder As ProgramBuilder)
+        If builder Is Nothing Then Throw New ArgumentNullException(NameOf(builder))
+        _builder = builder
+        _requests = New ProgramRecordRequests(Of Fo4_Deferred_Shader_Class)(_builder, Function(id, sp) New Fo4_Deferred_Shader_Class(id, sp), _built)
         For Each t In Fo4DeferredLightLaw.AppLightTechniques
             Dim tl = t
-            If Not _lights.ContainsKey(t) Then _lights(t) = New LazyProgram(Of Fo4_Deferred_Shader_Class)($"light technique 0x{t:X8}", Function() BuildLight(tl))
+            If Not _lights.ContainsKey(t) Then _lights(t) = NewSlot($"light technique 0x{t:X8}", Function() LightSpec(tl))
         Next
         For Each t In Fo4DeferredLightLaw.AppCompositeTechniques
             Dim tc = t
-            If Not _composites.ContainsKey(t) Then _composites(t) = New LazyProgram(Of Fo4_Deferred_Shader_Class)($"composite technique 0x{t:X8}", Function() BuildComposite(tc))
+            If Not _composites.ContainsKey(t) Then _composites(t) = NewSlot($"composite technique 0x{t:X8}", Function() CompositeSpec(tc))
         Next
-        _directResolve = New LazyProgram(Of Fo4_Deferred_Shader_Class)("DirectResolve", Function() Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DirectResolve))
-        _decalBase = New LazyProgram(Of Fo4_Deferred_Shader_Class)("DecalBase", Function() Build(Fo4DeferredAppSource.Vertex_Fullscreen, Fo4DeferredAppSource.Fragment_DecalBase))
-        _prepassRigid = New LazyProgram(Of Fo4_Deferred_Shader_Class)("PrepassRigid", Function() Build(Fo4GBufferSource.PrepassVertex(3928), Fo4GBufferSource.PrepassFragmentNone))   ' 0x14181FBCF..C19
-        _prepassAlpha = New LazyProgram(Of Fo4_Deferred_Shader_Class)("PrepassAlpha", Function() Build(Fo4GBufferSource.PrepassVertex(3929), Fo4GBufferSource.PrepassFragment(3930)))  ' 0x14181FC99..D01
+        _directResolve = NewSlot("DirectResolve", AddressOf DirectResolveSpec)
+        _lightSum = NewSlot("LightSum", AddressOf LightSumSpec)
+        _decalBase = NewSlot("DecalBase", AddressOf DecalBaseSpec)
+        _prepassRigid = NewSlot("PrepassRigid", AddressOf PrepassRigidSpec)
+        _prepassAlpha = NewSlot("PrepassAlpha", AddressOf PrepassAlphaSpec)
 #If DEBUG Then
         ' rev-E08: the rig's Darkness reaches the shadowed sun techniques the rig draws only through the line the generator
         ' rewrote in their PS (Fo4DFLightSource.AppShadowDarknessLines): a law technique outside that list would lose it. The
@@ -311,13 +447,16 @@ Friend NotInheritable Class Fo4DeferredPrograms
     ''' <summary>The light program of technique <paramref name="t"/> (one of Fo4DeferredLightLaw.AppLightTechniques; a GateWithLight
     ''' copy answers its own for the overridden technique). gates-v6 (rev-E16): Nothing for a technique outside the closed list built
     ''' at start (the caller does not draw that light and says so: RunLights / SkippedLightTechniques) - except in Debug while a
-    ''' library mutant is on (Fo4GBufferConstants.GateMutantOn), where a technique the engine has is built on demand.</summary>
-    Friend Function LightProgram(t As UInteger) As Fo4_Deferred_Shader_Class
+    ''' library mutant is on (Fo4GBufferConstants.GateMutantOn), where a technique the engine has is built on demand. F9 (r2 rev-01): the
+    ''' lights and composites of the closed lists are asked from the builder together at the first ask; in a frame, while pending, Nothing
+    ''' with <paramref name="state"/> Pending (the frame is pending: no "skipped" notice).</summary>
+    Friend Function LightProgram(t As UInteger, Optional ByRef state As ProgramState = ProgramState.NotBuilt) As Fo4_Deferred_Shader_Class
+        state = ProgramState.Built
 #If DEBUG Then
         If _gateLight.HasValue AndAlso _gateLight.Value.Technique = t Then Return _gateLight.Value.Program
 #End If
 #If DEBUG Then
-        If _gbufferSource IsNot Nothing Then Return _gbufferSource.LightProgram(t)
+        If _gbufferSource IsNot Nothing Then Return _gbufferSource.LightProgram(t, state)
 #End If
         Dim slot As LazyProgram(Of Fo4_Deferred_Shader_Class) = Nothing
 #If DEBUG Then
@@ -325,28 +464,43 @@ Friend NotInheritable Class Fo4DeferredPrograms
         ' ambient, the technique of a rig's second and later shadowed lights - so the frame meets a light without a program
         If Fo4GBufferConstants.GateMutantOn("dfl-drop-light") AndAlso t = Fo4DeferredLightLaw.SunTechnique(True, False) Then Return Nothing
 #End If
-        If _lights.TryGetValue(t, slot) Then Return slot.GetProgram()
+        If _lights.TryGetValue(t, slot) Then
+            PedirLucesYComposites()
+            Return slot.GetOrPending(state)
+        End If
 #If DEBUG Then
         ' GATE (ShadowGate --fo4-light-law, gates-v6 rev-E16): the mutated technique built on demand, the mutant reaches a verdict
         If Fo4GBufferConstants.GateVertexConstantsMutant IsNot Nothing AndAlso Fo4DFLightSource.MissingEnginePrograms(t) Is Nothing Then
-            slot = New LazyProgram(Of Fo4_Deferred_Shader_Class)($"light technique 0x{t:X8}", Function() BuildLight(t))
+            slot = NewSlot($"light technique 0x{t:X8}", Function() LightSpec(t))
             _lights(t) = slot
-            Return slot.GetProgram()
+            Return slot.GetOrPending(state)
         End If
 #End If
+        state = ProgramState.NotBuilt
         Return Nothing
     End Function
 
+    ''' <summary>F9 (r2 rev-01, "pedidos juntos"): the lights and composites of the closed lists asked from the builder at once, at the
+    ''' first ask of any of them (the frame meets them one after another; the builder has them all queued).</summary>
+    Private Sub PedirLucesYComposites()
+        For Each s In _lights.Values : s.RequestOnly() : Next
+        For Each s In _composites.Values : s.RequestOnly() : Next
+    End Sub
+
     ''' <summary>The composite program of technique <paramref name="t"/> (one of Fo4DeferredLightLaw.AppCompositeTechniques; a
-    ''' GateWithComposite copy answers its own for the overridden technique).</summary>
-    Friend Function CompositeProgram(t As UInteger) As Fo4_Deferred_Shader_Class
+    ''' GateWithComposite copy answers its own for the overridden technique). F9: Nothing while pending in a frame, as LightProgram.</summary>
+    Friend Function CompositeProgram(t As UInteger, Optional ByRef state As ProgramState = ProgramState.NotBuilt) As Fo4_Deferred_Shader_Class
+        state = ProgramState.Built
 #If DEBUG Then
         If _gateComposite.HasValue AndAlso _gateComposite.Value.Technique = t Then Return _gateComposite.Value.Program
 #End If
 #If DEBUG Then
-        If _gbufferSource IsNot Nothing Then Return _gbufferSource.CompositeProgram(t)
+        If _gbufferSource IsNot Nothing Then Return _gbufferSource.CompositeProgram(t, state)
 #End If
-        Return _composites(t).GetProgram()
+        Dim slot As LazyProgram(Of Fo4_Deferred_Shader_Class) = Nothing
+        If Not _composites.TryGetValue(t, slot) Then Throw New InvalidOperationException($"composite technique 0x{t:X8} is not one of Fo4DeferredLightLaw.AppCompositeTechniques")
+        PedirLucesYComposites()
+        Return slot.GetOrPending(state)
     End Function
 
     ''' <summary>Ola 4: the utility programs (b07) of one vertex route, keyed by (VS, PS, null PS): built on first use, the failed
@@ -381,24 +535,53 @@ Friend NotInheritable Class Fo4DeferredPrograms
         Dim p As Fo4_Deferred_Shader_Class = Nothing
         If route.Programs.TryGetValue(key, p) Then Return p
         If route.Errors.TryGetValue(key, errorText) Then Return Nothing
-        Try
-            p = Build(Fo4UtilitySource.VertexOf(vs, route Is _utilityCpu),
-                      If(nullPs, Fo4UtilitySource.NullFragment(), Fo4UtilitySource.FragmentOf(key.Item2)))
-        Catch ex As Exception
-            errorText = ex.Message
-            route.Errors(key) = errorText
-            Return Nothing
-        End Try
-        route.Programs(key) = p
-        Return p
+        Dim cpu = route Is _utilityCpu
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        Select Case Pedir($"ut|{cpu}|{key}", {Nothing}, Function() {UtilitySpec(vs, key.Item2, nullPs, cpu)}, ps, errorText)
+            Case ProgramState.Built
+                route.Programs(key) = ps(0)
+                Return ps(0)
+            Case ProgramState.Failed
+                route.Errors(key) = errorText
+        End Select
+        Return Nothing
     End Function
 
     ''' <summary>Ola 4: the image-space programs by record (the PS of a VS / PS program, or the CS), built on first use.</summary>
     Private ReadOnly _imageSpace As New Dictionary(Of UInteger, Fo4_Deferred_Shader_Class)
+    ''' <summary>F9 (r2 table B): the image-space records whose build failed, with the message (remembered as the records'; a gesture's
+    ''' retry forgets them, ForgetFailures).</summary>
+    Private ReadOnly _imageSpaceErrors As New Dictionary(Of UInteger, String)
+
+    ''' <summary>F9 (r2 "pedidos juntos"): the chain's closed list (Fo4ImageSpaceChain.Records) asked from the builder at once, before the
+    ''' chain runs.</summary>
+    Friend Sub RequestImageSpace(records As IEnumerable(Of UInteger))
+#If DEBUG Then
+        If _gbufferSource IsNot Nothing Then
+            _gbufferSource.RequestImageSpace(records)
+            Return
+        End If
+#End If
+        For Each rec In records
+            If _imageSpace.ContainsKey(rec) OrElse _imageSpaceErrors.ContainsKey(rec) OrElse _requests.Pending.ContainsKey($"is|{rec}") Then Continue For
+            If Fo4ImageSpaceSource.GapOf(rec) <> "" Then Continue For
+            Dim r = rec
+            Dim sp As ProgramSpec
+            Try
+                sp = ImageSpaceSpec(r)
+            Catch ex As Exception
+                _imageSpaceErrors(r) = ex.Message
+                Continue For
+            End Try
+            _requests.Pending($"is|{r}") = _builder.Request({Nothing}, {sp})
+        Next
+    End Sub
 
     ''' <summary>The image-space program of PS or CS record <paramref name="rec"/> (Fo4ImageSpaceSource.Programs: a PS with the VS of its
     ''' program, a CS alone), built on its first use; a declared gap throws (the post's chain uses none: its records are a closed
-    ''' list, Fo4ImageSpaceChain).</summary>
+    ''' list, Fo4ImageSpaceChain). F9 (r2 table B): a build that fails is remembered and thrown as ProgramUnavailableException (the card
+    ''' with Retry); in a frame, a record still being built throws ProgramPendingException (the chain's records were asked whole,
+    ''' RequestImageSpace); outside a frame it is waited for.</summary>
     Friend Function ImageSpaceProgram(rec As UInteger) As Fo4_Deferred_Shader_Class
 #If DEBUG Then
         If _gateImageSpace.HasValue AndAlso _gateImageSpace.Value.Rec = rec Then Return _gateImageSpace.Value.Program
@@ -410,66 +593,70 @@ Friend NotInheritable Class Fo4DeferredPrograms
         If _imageSpace.TryGetValue(rec, p) Then Return p
         Dim gap = Fo4ImageSpaceSource.GapOf(rec)
         If gap <> "" Then Throw New InvalidOperationException($"image-space record {rec}: {gap}")
-        If Fo4ImageSpaceSource.ComputeStages.ContainsKey(rec) Then
-            p = BuildCompute(Fo4ImageSpaceSource.ComputeOf(rec))
-        Else
-            Dim pr = Fo4ImageSpaceSource.Programs.First(Function(x) x.Ps = rec)
-            p = Build(Fo4ImageSpaceSource.VertexOf(pr.Vs), Fo4ImageSpaceSource.FragmentOf(rec))
-        End If
-        _imageSpace(rec) = p
-        Return p
+        Dim errorText As String = Nothing
+        If _imageSpaceErrors.TryGetValue(rec, errorText) Then Throw New ProgramUnavailableException($"image-space record {rec}: {errorText}", Nothing)
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        Select Case Pedir($"is|{rec}", {Nothing}, Function() {ImageSpaceSpec(rec)}, ps, errorText)
+            Case ProgramState.Built
+                _imageSpace(rec) = ps(0)
+                Return ps(0)
+            Case ProgramState.Failed
+                _imageSpaceErrors(rec) = errorText
+                Throw New ProgramUnavailableException($"image-space record {rec}: {errorText}", Nothing)
+            Case Else
+                Throw New ProgramPendingException($"image-space record {rec}")
+        End Select
     End Function
 
     ''' <summary>The program of the G-buffer technique <paramref name="t"/> on the vertex route of the draw (<paramref name="cpuRoute"/>,
     ''' RenderableMesh.EngineCpuRoute), built on its first use; Nothing when its build failed, with the error in
-    ''' <paramref name="errorText"/> (remembered: it is not rebuilt).</summary>
-    Friend Function GBufferProgram(t As Fo4Technique, ByRef errorText As String, Optional cpuRoute As Boolean = False) As Fo4_Deferred_Shader_Class
+    ''' <paramref name="errorText"/> (remembered: it is not rebuilt). F9 (r3 rev-12): a record with forceEarlyDepthStencil and its variant
+    ''' without early tests are ONE request, published when both are built (the variant under its own name for the one-shot compile
+    ''' failure, ProgramCompiler.GateEarlyZVariantSlot), failed if either fails (the builder deletes the other: S0 fase 7d's rule). In a
+    ''' frame, while pending, Nothing with <paramref name="state"/> Pending.</summary>
+    Friend Function GBufferProgram(t As Fo4Technique, ByRef errorText As String, Optional cpuRoute As Boolean = False,
+                                   Optional ByRef state As ProgramState = ProgramState.NotBuilt) As Fo4_Deferred_Shader_Class
         errorText = Nothing
+        state = ProgramState.Built
         Dim key = t.Key()
         Dim route = RouteOf(key.Vs, cpuRoute)
         Dim program As Fo4_Deferred_Shader_Class = Nothing
         If route.Records.TryGetValue(key, program) Then Return program
 #If DEBUG Then
-        If _gbufferSource IsNot Nothing Then Return _gbufferSource.GBufferProgram(t, errorText, cpuRoute)
+        If _gbufferSource IsNot Nothing Then Return _gbufferSource.GBufferProgram(t, errorText, cpuRoute, state)
 #End If
+        state = ProgramState.Failed
         If route.Errors.TryGetValue(key, errorText) Then Return Nothing
-        Try
-            Dim st = Fo4GBufferSource.StageOf(key.Vs, key.Hs, key.Ds, route Is _cpuRoute)
-            program = BuildStages(st, Fo4GBufferSource.FragmentOf(key.Ps))
-            If Fo4GBufferSource.Records(key.Ps).EarlyZ Then
+        Dim cpu = route Is _cpuRoute
+        Dim early = Fo4GBufferSource.Records(key.Ps).EarlyZ
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        state = Pedir($"gb|{cpu}|{key}", If(early, {Nothing, ProgramCompiler.GateEarlyZVariantSlot}, {CType(Nothing, String)}),
+                      Function() If(early, {GBufferSpec(key, cpu), GBufferSpec(key, cpu, earlyTests:=False)}, {GBufferSpec(key, cpu)}), ps, errorText)
+        Select Case state
+            Case ProgramState.Built
 #If DEBUG Then
-                ' the variant built under its own name, for the one-shot compile failure (ProgramCompiler.GateEarlyZVariantSlot)
-                Dim previous = ProgramCompiler.GateBuildingSlot
-                ProgramCompiler.GateBuildingSlot = ProgramCompiler.GateEarlyZVariantSlot
-                Try
-                    route.Base(key) = BuildStages(st, Fo4GBufferSource.FragmentOf(key.Ps, earlyTests:=False))
-                Finally
-                    ProgramCompiler.GateBuildingSlot = previous
-                End Try
-#Else
-                route.Base(key) = BuildStages(st, Fo4GBufferSource.FragmentOf(key.Ps, earlyTests:=False))
+                If early AndAlso ps.Length <> 2 Then Throw New InvalidOperationException($"G-buffer record {key}: published without its variant without early tests (r3 rev-12)")
 #End If
-            End If
-        Catch ex As Exception
-            errorText = ex.Message
-            route.Errors(key) = errorText
-            ' S0 fase 7d: the record built and its variant without early tests failed - the record is not kept (the failure is the
-            ' tuple's), so it is deleted here; left in _built, every gesture's retry (ForgetFailures) orphaned one more program. The
-            ' only builder of this class that builds two programs in one try: the others build one, whose constructor throws before
-            ' it reaches _built. Gate: ShadowGate --program-abort (the holder's programs do not grow with the gestures).
-            Dim release = program IsNot Nothing
+                route.Records(key) = ps(0)
+                If early Then route.Base(key) = ps(1)
+                Return ps(0)
+            Case ProgramState.Failed
+                route.Errors(key) = errorText
+        End Select
+        Return Nothing
+    End Function
+
+    ''' <summary>F9 (r3 rev-13 / rev-18): where the G-buffer record of <paramref name="t"/> is, without asking for it nor waiting
+    ''' (DrawsShape's admission outside a frame: only Failed leaves the shape out).</summary>
+    Friend Function PeekGBuffer(t As Fo4Technique, Optional cpuRoute As Boolean = False) As ProgramState
+        Dim key = t.Key()
+        Dim route = RouteOf(key.Vs, cpuRoute)
+        If route.Records.ContainsKey(key) Then Return ProgramState.Built
 #If DEBUG Then
-            ' GATE (ShadowGate --program-abort, subject mutant): the record left in _built, as before 7d.
-            If Fo4GBufferConstants.GateMutantOn("gbuffer-variant-failure-keeps-record") Then release = False
+        If _gbufferSource IsNot Nothing Then Return _gbufferSource.PeekGBuffer(t, cpuRoute)
 #End If
-            If release Then
-                _built.Remove(program)
-                program.Dispose()
-            End If
-            Return Nothing
-        End Try
-        route.Records(key) = program
-        Return program
+        If route.Errors.ContainsKey(key) Then Return ProgramState.Failed
+        Return Estado($"gb|{route Is _cpuRoute}|{key}")
     End Function
 
     ''' <summary>The engine VS <paramref name="vs"/> on a vertex route, alone, its clip position (gl_Position, invariant in the app
@@ -488,24 +675,17 @@ Friend NotInheritable Class Fo4DeferredPrograms
             route.PositionErrors.TryGetValue(vs, errorText)
             Return p
         End If
-        Try
-            p = New Fo4_Deferred_Shader_Class(Fo4GBufferSource.StageOf(vs, 0UI, 0UI, route Is _cpuRoute, positionCapture:=True).Vertex,
-                                              Fo4DeferredAppSource.Fragment_PositionCapture, Nothing, Nothing, {"gl_Position"})
-            _built.Add(p)
-        Catch ex As Exception
-            p = Nothing
-            errorText = ex.Message
-            route.PositionErrors(vs) = errorText
-        End Try
-        route.Position(vs) = p
-        Return p
-    End Function
-
-    ''' <summary>The engine stages of one tuple (VS, + TCS / TES when it tessellates, 0x14181D60E) and a fragment.</summary>
-    Private Function BuildStages(st As (Vertex As String, Control As String, Evaluation As String), fragment As String) As Fo4_Deferred_Shader_Class
-        Dim p As New Fo4_Deferred_Shader_Class(st.Vertex, fragment, st.Control, st.Evaluation)
-        _built.Add(p)
-        Return p
+        Dim cpu = route Is _cpuRoute
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        Select Case Pedir($"pos|{cpu}|{vs}", {Nothing}, Function() {PositionSpec(vs, cpu)}, ps, errorText)
+            Case ProgramState.Built
+                route.Position(vs) = ps(0)
+                Return ps(0)
+            Case ProgramState.Failed
+                route.PositionErrors(vs) = errorText
+                route.Position(vs) = Nothing
+        End Select
+        Return Nothing
     End Function
 
     ''' <summary>Ola 3: the effect programs of one vertex route (the CPU route only for a skinned VS, Fo4EffectSource.EffectiveCpuLayout):
@@ -526,29 +706,34 @@ Friend NotInheritable Class Fo4DeferredPrograms
     ''' <summary>The program of the effect technique <paramref name="t"/> on the draw's vertex route (RenderableMesh.EngineCpuRoute):
     ''' Fo4EffectSource.VertexOf + FragmentOf, built on its first use (user decision 13-oct-2026); Nothing when its build failed,
     ''' with the error in <paramref name="errorText"/> (remembered: not rebuilt).</summary>
-    Friend Function EffectProgram(t As Fo4EffectTech, ByRef errorText As String, Optional cpuRoute As Boolean = False) As Fo4_Deferred_Shader_Class
+    Friend Function EffectProgram(t As Fo4EffectTech, ByRef errorText As String, Optional cpuRoute As Boolean = False,
+                                  Optional ByRef state As ProgramState = ProgramState.NotBuilt) As Fo4_Deferred_Shader_Class
         errorText = Nothing
+        state = ProgramState.Built
         Dim key = t.Key()
         Dim route = EffectRouteOf(key.Vs, cpuRoute)
         Dim p As Fo4_Deferred_Shader_Class = Nothing
         If route.Programs.TryGetValue(key, p) Then Return p
 #If DEBUG Then
-        If _gbufferSource IsNot Nothing AndAlso _gateEffectVertex Is Nothing Then Return _gbufferSource.EffectProgram(t, errorText, cpuRoute)
+        If _gbufferSource IsNot Nothing AndAlso _gateEffectVertex Is Nothing Then Return _gbufferSource.EffectProgram(t, errorText, cpuRoute, state)
 #End If
+        state = ProgramState.Failed
         If route.Errors.TryGetValue(key, errorText) Then Return Nothing
-        Try
-            Dim vertex = Fo4EffectSource.VertexOf(key.Vs, route Is _effectCpu)
+        Dim vertexEdit As Func(Of String, String) = Nothing
 #If DEBUG Then
-            If _gateEffectVertex IsNot Nothing Then vertex = _gateEffectVertex(vertex)
+        vertexEdit = _gateEffectVertex
 #End If
-            p = Build(vertex, Fo4EffectSource.FragmentOf(key.Ps))
-        Catch ex As Exception
-            errorText = ex.Message
-            route.Errors(key) = errorText
-            Return Nothing
-        End Try
-        route.Programs(key) = p
-        Return p
+        Dim cpu = route Is _effectCpu
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        state = Pedir($"fx|{cpu}|{key}", {Nothing}, Function() {EffectSpec(key, cpu, vertexEdit)}, ps, errorText)
+        Select Case state
+            Case ProgramState.Built
+                route.Programs(key) = ps(0)
+                Return ps(0)
+            Case ProgramState.Failed
+                route.Errors(key) = errorText
+        End Select
+        Return Nothing
     End Function
 
     ''' <summary>The translucent decals' base surface program of an effect technique (D16; ola 3, Q2): its engine VS with the surface
@@ -568,22 +753,27 @@ Friend NotInheritable Class Fo4DeferredPrograms
 #If DEBUG Then
         If _gbufferSource IsNot Nothing AndAlso _gateEffectSurfaceFragment Is Nothing Then Return _gbufferSource.EffectSurfaceProgram(t, cpuRoute, errorText)
 #End If
-        Try
+        Dim fragment As String = Nothing
 #If DEBUG Then
-            If GateFailSurfaces Then Throw New ProgramBuildException("build failed (gate decal surfaces)")
-#End If
-            Dim fragment = Fo4DeferredAppSource.Fragment_DecalBaseSurfaceEffect
-#If DEBUG Then
-            If _gateEffectSurfaceFragment IsNot Nothing Then fragment = _gateEffectSurfaceFragment
-#End If
-            p = Build(Fo4EffectSource.VertexOf(vs, route Is _effectCpu, surface:=True), fragment)
-        Catch ex As Exception
-            p = Nothing
-            errorText = ex.Message
+        fragment = _gateEffectSurfaceFragment
+        If GateFailSurfaces Then
+            errorText = "build failed (gate decal surfaces)"
             route.SurfaceErrors(vs) = errorText
-        End Try
-        route.Surface(vs) = p
-        Return p
+            route.Surface(vs) = Nothing
+            Return Nothing
+        End If
+#End If
+        Dim cpu = route Is _effectCpu
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        Select Case Pedir($"fxs|{cpu}|{vs}", {Nothing}, Function() {EffectSurfaceSpec(vs, cpu, fragment)}, ps, errorText)
+            Case ProgramState.Built
+                route.Surface(vs) = ps(0)
+                Return ps(0)
+            Case ProgramState.Failed
+                route.SurfaceErrors(vs) = errorText
+                route.Surface(vs) = Nothing
+        End Select
+        Return Nothing
     End Function
 
 #If DEBUG Then
@@ -650,20 +840,29 @@ Friend NotInheritable Class Fo4DeferredPrograms
         ' Built on its first use (S0-A), as an effect's base surface (EffectSurfaceProgram). DIVERGENCE (ola 2 ensayo): the surface's
         ' law reads the VS layout (rows TEXCOORD0..2, uv TEXCOORD3.w / 4.w, rec2273 L103-105); a tessellated tuple's DS writes another
         ' layout (uv TEXCOORD0.xy, 29 of 69 DS without TEXCOORD4): no surface.
-        If Not Fo4GBufferSource.Tessellates(key.Hs) Then
-            Try
-#If DEBUG Then
-                If GateFailSurfaces Then Throw New ProgramBuildException("build failed (gate decal surfaces)")
-#End If
-                p = BuildStages(Fo4GBufferSource.StageOf(key.Vs, key.Hs, key.Ds, route Is _cpuRoute), Fo4DeferredAppSource.Fragment_DecalBaseSurface)
-            Catch ex As Exception
-                p = Nothing
-                errorText = ex.Message
-                route.SurfaceErrors(key) = errorText
-            End Try
+        If Fo4GBufferSource.Tessellates(key.Hs) Then
+            route.Surface(key) = Nothing
+            Return Nothing
         End If
-        route.Surface(key) = p
-        Return p
+#If DEBUG Then
+        If GateFailSurfaces Then
+            errorText = "build failed (gate decal surfaces)"
+            route.SurfaceErrors(key) = errorText
+            route.Surface(key) = Nothing
+            Return Nothing
+        End If
+#End If
+        Dim cpu = route Is _cpuRoute
+        Dim ps As Fo4_Deferred_Shader_Class() = Nothing
+        Select Case Pedir($"ds|{cpu}|{key}", {Nothing}, Function() {DecalSurfaceSpec(key, cpu)}, ps, errorText)
+            Case ProgramState.Built
+                route.Surface(key) = ps(0)
+                Return ps(0)
+            Case ProgramState.Failed
+                route.SurfaceErrors(key) = errorText
+                route.Surface(key) = Nothing
+        End Select
+        Return Nothing
     End Function
 
     ''' <summary>The record programs built so far on a vertex route (ShadowGate's program census).</summary>
@@ -699,7 +898,12 @@ Friend NotInheritable Class Fo4DeferredPrograms
 #If DEBUG Then
         If _gbufferSource IsNot Nothing Then Return _gbufferSource.RecordWithoutEarlyTests(t, cpuRoute)
 #End If
-        Return RouteOf(t.Key().Vs, cpuRoute).Base(t.Key())
+        ' F9 (r3 rev-12): the variant is published with its record (one request), so a built record has it; its absence is a defect.
+        Dim baseProgram As Fo4_Deferred_Shader_Class = Nothing
+        If Not RouteOf(t.Key().Vs, cpuRoute).Base.TryGetValue(t.Key(), baseProgram) Then
+            Throw New InvalidOperationException($"G-buffer record {t.Key()}: built without its variant without early tests (r3 rev-12)")
+        End If
+        Return baseProgram
     End Function
 
 #If DEBUG Then
@@ -808,8 +1012,12 @@ Friend NotInheritable Class Fo4DeferredPrograms
             Throw New ArgumentException("no deferred program role " & role)
         End If
 #End If
-        ' The source's slots (a copy owns nothing: what they build is the source's), the role's replaced when a program is given.
+        ' The source's slots (a copy owns nothing: what they build is the source's), the role's replaced when a program is given; the
+        ' source's builder (r4 rev-19: a GateWith copy inherits it).
+        _builder = src._builder
+        _requests = New ProgramRecordRequests(Of Fo4_Deferred_Shader_Class)(_builder, Function(id, sp) New Fo4_Deferred_Shader_Class(id, sp), _built)
         _directResolve = If(role = "DirectResolve" AndAlso program IsNot Nothing, LazyProgram(Of Fo4_Deferred_Shader_Class).Fixed(role, program), src._directResolve)
+        _lightSum = src._lightSum
         _decalBase = If(role = "DecalBase" AndAlso program IsNot Nothing, LazyProgram(Of Fo4_Deferred_Shader_Class).Fixed(role, program), src._decalBase)
         _prepassRigid = If(role = "PrepassRigid" AndAlso program IsNot Nothing, LazyProgram(Of Fo4_Deferred_Shader_Class).Fixed(role, program), src._prepassRigid)
         _prepassAlpha = If(role = "PrepassAlpha" AndAlso program IsNot Nothing, LazyProgram(Of Fo4_Deferred_Shader_Class).Fixed(role, program), src._prepassAlpha)
@@ -821,16 +1029,18 @@ Friend NotInheritable Class Fo4DeferredPrograms
     End Sub
 #End If
 
+    ''' <summary>Every program these programs hold: the records built (_built) and the slots' (F9: a slot wraps its own program, not in
+    ''' _built).</summary>
     Friend Function All() As IEnumerable(Of Shader_Base_Class)
-        Return _built
+        Return _built.Concat(Slots().Select(Function(s) s.BuiltProgram).Where(Function(p) p IsNot Nothing))
     End Function
 
     ''' <summary>The slots of the programs the frame takes by technique or role: the lights and composites of the closed lists and the
-    ''' four app passes (ForgetFailures; ShadowGate --program-census through GateStartSlots).</summary>
+    ''' five app passes (All, ForgetFailures, Dispose; ShadowGate --program-census through GateStartSlots).</summary>
     Private Iterator Function Slots() As IEnumerable(Of IProgramSlot)
         For Each s In _lights.Values : Yield s : Next
         For Each s In _composites.Values : Yield s : Next
-        For Each s As IProgramSlot In {_directResolve, _decalBase, _prepassRigid, _prepassAlpha}
+        For Each s As IProgramSlot In {_directResolve, _lightSum, _decalBase, _prepassRigid, _prepassAlpha}
             Yield s
         Next
     End Function
@@ -859,6 +1069,9 @@ Friend NotInheritable Class Fo4DeferredPrograms
             For Each k In route.SurfaceErrors.Keys.ToList() : route.Surface.Remove(k) : Next
             route.SurfaceErrors.Clear()
         Next
+        ' F9: the image-space failures (r2 table B) and the builder's own (a dead builder let go; a live one forgets its failed stages).
+        _imageSpaceErrors.Clear()
+        _builder.ForgetFailures()
     End Sub
 
 #If DEBUG Then
@@ -870,7 +1083,18 @@ Friend NotInheritable Class Fo4DeferredPrograms
 #End If
 
     Friend Sub Dispose()
-        For Each p In All() : p.Dispose() : Next
+        For Each p In _built : p.Dispose() : Next
+        _built.Clear()
+        Dim propios = True
+#If DEBUG Then
+        propios = _gbufferSource Is Nothing   ' a GateWith copy shares its source's slots and owns nothing
+#End If
+        ' F9: the slots release their programs and let go of a request still in the builder (LazyProgram.Release).
+        If propios Then
+            For Each s In Slots() : s.Release() : Next
+        End If
+        ' F9: a record still in the builder is let go (its programs deleted when it finishes, ProgramBuilder.Abandon).
+        _requests.AbandonAll()
     End Sub
 End Class
 
@@ -883,8 +1107,14 @@ Friend Structure Fo4DeferredLight
     Public Color As Vector3
     ''' <summary>The layer of the frame's shadow map this light draws (ShadowMapMath.SlotsDeSombra), -1 when it casts none.</summary>
     Public ShadowLayer As Integer
-    ''' <summary>The light's map framing (ShadowMapMath.Fit; Valid only with a layer).</summary>
+    ''' <summary>The light's splits (EngineSunBox.Fo4Splits over the preview's camera; Valid only with a layer): cascade 0 and cascade 1,
+    ''' and where cascade 0 ends (s_0, FadeDistances).</summary>
     Public ShadowFit As ShadowMapMath.LightFit
+    Public ShadowFit1 As ShadowMapMath.LightFit
+    Public SplitEnd0 As Single
+    ''' <summary>The light's focus shadow (EngineSunBox.FocusFit; Valid only when the frame has it) and its layer of the frame's map.</summary>
+    Public FocusFit As ShadowMapMath.LightFit
+    Public FocusLayer As Integer
 End Structure
 
 ''' <summary>What the light and composite passes of one frame receive (built by PreviewModel.BuildFo4DeferredFrame from the frame's
@@ -935,6 +1165,8 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' <summary>RT 0x28's mip count (LinearZLevels; RT 0x29 + i is its mip i).</summary>
     Private _linZLevels As Integer
     Private _fboG, _fboL, _fboC1 As Integer
+    ''' <summary>A rig light with a focus shadow alone (RunLights): its diffuse and specular, and their framebuffer over the frame's depth.</summary>
+    Private _lightOneD, _lightOneS, _fboOne As Integer
     ''' <summary>The translucent decals' base (BeginDecalBase / EndDecalBase), with its alpha and coverage targets.</summary>
     Private ReadOnly _base As New DecalBaseTarget(deferred:=True)
     ''' <summary>This frame's G-buffer stage drew the base (BeginDecalBase succeeded since BeginGBuffer): composite 2 takes the coverage
@@ -1098,6 +1330,13 @@ Friend NotInheritable Class Fo4DeferredTargets
         Gl43.FramebufferTexture(_fboL, FramebufferAttachment.ColorAttachment1, _lightS, 0)
         Gl43.FramebufferTexture(_fboL, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
         ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboL, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        _lightOneD = Tex(SizedInternalFormat.R11fG11fB10f, w, h)
+        _lightOneS = Tex(SizedInternalFormat.R11fG11fB10f, w, h)
+        _fboOne = Gl43.CreateFramebuffer()
+        Gl43.FramebufferTexture(_fboOne, FramebufferAttachment.ColorAttachment0, _lightOneD, 0)
+        Gl43.FramebufferTexture(_fboOne, FramebufferAttachment.ColorAttachment1, _lightOneS, 0)
+        Gl43.FramebufferTexture(_fboOne, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
+        ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboOne, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
         _fboC1 = Gl43.CreateFramebuffer()
         Gl43.FramebufferTexture(_fboC1, FramebufferAttachment.ColorAttachment0, _rt2, 0)
         Gl43.FramebufferTexture(_fboC1, FramebufferAttachment.DepthStencilAttachment, _depth, 0)
@@ -1200,8 +1439,12 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' ((W &gt;&gt; 1) + 7) &gt;&gt; 3 x ((H &gt;&gt; 1) + 7) &gt;&gt; 3 (0x14220D10F..112, 0x14220D164..1A7; W' = ceil(W sx), sx = 1). It runs in
     ''' every frame: RT 0x28 is the composite's input whatever the post does (the SAO's own passes, slots 1..9, are not run: user
     ''' decision 14-oct-2026 Q-AO, no AO).</summary>
+    ''' <summary>The record of CameraZAndMipsCS (RunCameraZ): the post's one image-space program outside its chain
+    ''' (Fo4ImageSpaceChain.Records); ParityGate program-catalog-domain reads it as part of the domain.</summary>
+    Friend Const RecCameraZ As UInteger = 3860UI
+
     Private Sub RunCameraZ(progs As Fo4DeferredPrograms, near As Single, far As Single)
-        Dim p = progs.ImageSpaceProgram(3860UI)
+        Dim p = progs.ImageSpaceProgram(RecCameraZ)
         p.Use()
         p.SetVector4("g_ClipInfos", New Vector4(near * far, near - far, far, 0.0F))
 #If DEBUG Then
@@ -1310,6 +1553,9 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' <summary>GATE ONLY (no UI): ShadowGate --fo4-light-law mutant. True draws the ambient in its own pass (0x20000 rec3107) after the
     ''' lights instead of fused into the first one.</summary>
     Friend Shared GateAmbientApart As Boolean = False
+    ''' <summary>GATE ONLY (ShadowGate [dos-luces]): every light of the frame through the same operations whether it casts or not (alone, its focus pass when it has one, summed; the ambient
+    ''' apart): each is a monotone rounding of its input, so more casters never lighten a channel, exactly. The route the frame takes (RunLights) differs only by rounding, [ambient-route].</summary>
+    Friend Shared GateSameLightRoute As Boolean = False
 #End If
 
     ''' <summary>gates-v6 (rev-E16): the light techniques the last RunLights could not draw (no built program,
@@ -1322,7 +1568,10 @@ Friend NotInheritable Class Fo4DeferredTargets
     Friend Shared Sub ReportSkippedLights(model As PreviewModel, skipped As IEnumerable(Of (Technique As UInteger, Light As Integer)))
         If model Is Nothing Then Return
         For Each sk In skipped
-            model.ReportUndrawn(If(sk.Light < 0, "rig ambient", $"rig light {sk.Light + 1}"), $"Light technique 0x{sk.Technique:X8} has no program: the light is not drawn", PreviewModel.FrameNoticeId.RigLightWithoutProgram)
+            ' The focus technique missing leaves the light drawn without its focus shadow (RunLights: the light's own program still draws it); any other
+            ' missing technique leaves the light out.
+            Dim efecto = If(sk.Technique = Fo4DeferredLightLaw.FocusTechnique, "the light is drawn without its focus shadow", "the light is not drawn")
+            model.ReportUndrawn(If(sk.Light < 0, "rig ambient", $"rig light {sk.Light + 1}"), $"Light technique 0x{sk.Technique:X8} has no program: {efecto}", PreviewModel.FrameNoticeId.RigLightWithoutProgram)
         Next
     End Sub
 
@@ -1330,13 +1579,105 @@ Friend NotInheritable Class Fo4DeferredTargets
     ''' sun's technique of the exe's Settings (Fo4DeferredLightLaw.SunTechnique: with its shadow map when it casts), the ambient fused
     ''' into the first one (AMBIENT, 0x1421F5E9F..ECB: the preview has no tiled lighting, no entry in the list 0x143E62198 and no
     ''' [ssn + 0x150]) - or, with no light, alone (0x20000 rec3107, 0x1421F739E..7470) -, additive. A light that casts: t5 = the view of
-    ''' its layer of the frame's map (ShadowMapTarget.LayerView: the map is the light's cascade 0), s5 = the comparison sampler, and the
-    ''' receiver's constants of Fo4DeferredLightLaw (ShadowMapProj, ShadowWorldScale, ShadowSampleParam, FadeDistances,
-    ''' ShadowFadeParam); the rows of cascade 1 (3..5 of ShadowMapProj, 1 of ShadowWorldScale) are never selected
-    ''' (FadeDistances.x = d(far) = 1) and stay unwritten. APP (rev-E08): the rig's Darkness (AppShadowLift) and Softness (the radius
+    ''' its two layers of the frame's map (ShadowMapTarget.SplitsView: cascades 0 and 1), s5 = the comparison sampler, and the
+    ''' receiver's constants of Fo4DeferredLightLaw (ShadowMapProj rows 0..5, ShadowWorldScale 0..1, ShadowSampleParam, FadeDistances,
+    ''' ShadowFadeParam) of both cascades (EngineSunBox; user decision 6-nov-2026). APP (rev-E08): the rig's Darkness (AppShadowLift) and Softness (the radius
     ''' scale in ShadowSampleParam.z), the game's values for the default rig; the Shadow Bias (AppShadowBiasGrowth, 26-oct-2026).</summary>
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (ShadowGate --sun-box-law [receiver]): each sun pass that casts, as the GL holds it before its draw (GateFo4SunLight).
+    ''' Nothing = no capture.</summary>
+    Friend Shared GateFo4SunLights As List(Of GateFo4SunLight) = Nothing
+#End If
+
+    ''' <summary>THE FOCUS SHADOW'S PASS over a light's targets (0x1421F6530..69E2, after the sun): technique Fo4DeferredLightLaw.FocusTechnique, rec3271 with the focus map as its t5
+    ''' and cascade 0 (SplitDistances: .y = [pass + 0x4D], .z = that + 1, 0x142247D30..56, written 0x14224828B; the pass's bytes 0x4D.. are 0, 0x1421F671C), blend mode 3 = DEST_COLOR / ZERO (0x1421F68DF, table 0x141855271: the factor multiplies the light
+    ''' the sun left), the two targets (RT 0x21, 0x22, 0x1421F661E..654). The engine bounds it with a volume (special stencil states 1 and 2, the sphere of the bound + 2000 along the
+    ''' light, 0x14226F950..9B1); in the preview all that is seen receives it (user decision 8-nov-2026): the whole screen. Its constants as the sun's, with the rig's knobs.</summary>
+    Private Sub DrawFocusPass(p As Shader_Base_Class, f As Fo4DeferredFrame, light As Fo4DeferredLight)
+        p.Use()
+        p.SetVector4("SplitDistances", New Vector4(0.0F, 0.0F, 1.0F, 0.0F))
+        p.SetVector4Array("ShadowMapProj", Fo4DeferredLightLaw.ShadowMapProjRows(light.FocusFit.ViewProj, f.View, f.Eye))
+        p.SetVector4Array("ShadowWorldScale", {Fo4DeferredLightLaw.ShadowWorldScale(light.FocusFit)})
+        Dim lift = f.ShadowLift, scale = 1.0F + f.ShadowRadiusGrowth, biasGrowth = f.ShadowBiasGrowth
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("rig-knobs-off") Then lift = 0.0F : scale = 1.0F : biasGrowth = 0.0F
+        If Fo4GBufferConstants.GateMutantOn("shadow-bias-off") Then biasGrowth = 0.0F
+#End If
+        p.SetVector4("ShadowSampleParam", Fo4DeferredLightLaw.ShadowSampleParam(f.ShadowMap.Size, scale))
+        p.SetFloat("AppShadowLift", lift)
+        p.SetFloat("AppShadowBiasGrowth", biasGrowth)
+        p.SetVector4("ShadowFadeParam", Fo4DeferredLightLaw.ShadowFadeParam())
+        Gl43.BindTextureUnit(5, TextureTarget.Texture2DArray, f.ShadowMap.LayerView(light.FocusLayer))
+        GL.BindSampler(5, _shadowCompare)
+#If DEBUG Then
+        GateFo4FocusPasses += 1
+#End If
+        GL.BlendFuncSeparate(BlendingFactorSrc.DstColor, BlendingFactorDest.Zero, BlendingFactorSrc.One, BlendingFactorDest.Zero)
+#If DEBUG Then
+        ' ShadowGate full [dos-luces]: the factor lightens by 3 % of what is there.
+        If Fo4GBufferConstants.GateMutantOn("focus-pass-gain") Then
+            GL.BlendColor(0.03F, 0.03F, 0.03F, 0.03F)
+            GL.BlendFuncSeparate(BlendingFactorSrc.DstColor, BlendingFactorDest.ConstantColor, BlendingFactorSrc.One, BlendingFactorDest.Zero)
+        End If
+#End If
+        DrawQuad(p, f)
+        GL.BlendFunc(BlendingFactor.One, BlendingFactor.One)
+        Gl43.UnbindTextureUnit(5) : GL.BindSampler(5, 0)
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>GATE: the focus passes drawn since a gate reset it (ShadowGate --ray-law [focus-present]).</summary>
+    Friend Shared GateFo4FocusPasses As Integer
+    ''' <summary>GATE (ShadowGate --ray-law): each casting light's diffuse with its shadow and without (GateLightFactor). Nothing = no capture.</summary>
+    Friend Shared GateLightFactors As Dictionary(Of Integer, GateLightFactor) = Nothing
+
+    ''' <summary>GATE (ShadowGate [ambient-route]): the two light accumulators (RT 0x21 / 0x22, R11G11B10_FLOAT) of the last frame, their values as stored.</summary>
+    Friend Function GateReadAccumulators() As Single()()
+        Dim r(1)() As Single
+        Dim prevRead = GL.GetInteger(GetPName.ReadFramebufferBinding)
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fboL)
+        GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
+        For k = 0 To 1
+            ReDim r(k)(_w * _h * 3 - 1)
+            GL.ReadBuffer(If(k = 0, ReadBufferMode.ColorAttachment0, ReadBufferMode.ColorAttachment1))
+            GL.ReadPixels(0, 0, _w, _h, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.Float, r(k))
+        Next
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, prevRead)
+        Return r
+    End Function
+
+    Private Function GateLeerUno() As Single()
+        Dim rgb(_w * _h * 3 - 1) As Single
+        Dim prevRead = GL.GetInteger(GetPName.ReadFramebufferBinding)
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fboOne)
+        GL.ReadBuffer(ReadBufferMode.ColorAttachment0)
+        GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
+        GL.ReadPixels(0, 0, _w, _h, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.Float, rgb)
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, prevRead)
+        Dim r(_w * _h - 1) As Single
+        For i = 0 To r.Length - 1 : r(i) = rgb(i * 3) + rgb(i * 3 + 1) + rgb(i * 3 + 2) : Next
+        Return r
+    End Function
+#End If
+
+    ''' <summary>A rig light's isolated targets added to the frame's (the engine has one sun, so its focus pass multiplies just its light; the rig has four: each light is drawn
+    ''' and multiplied alone, then summed, the additive state of the lights).</summary>
+    Private Sub SumLightOne(progs As Fo4DeferredPrograms)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboL)
+        Gl43.DrawBuffers(_fboL, 2, LightBuffers)
+        GL.Disable(EnableCap.DepthTest)
+        progs.LightSum.Use()
+        Gl43.BindTextureUnit(6, TextureTarget.Texture2D, _lightOneD) : Gl43.BindTextureUnit(7, TextureTarget.Texture2D, _lightOneS)
+        GL.BindVertexArray(_emptyVao) : GL.DrawArrays(PrimitiveType.Triangles, 0, 3) : GL.BindVertexArray(0)
+        Gl43.UnbindTextureUnit(6) : Gl43.UnbindTextureUnit(7)
+        GL.Enable(EnableCap.DepthTest)
+    End Sub
+
     Public Sub RunLights(progs As Fo4DeferredPrograms, f As Fo4DeferredFrame)
         SkippedLightTechniques.Clear()
+#If DEBUG Then
+        GateFo4FocusPasses = 0
+#End If
         Dim lightIndex = -1
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboL)
         Gl43.DrawBuffers(_fboL, 2, LightBuffers)
@@ -1346,24 +1687,63 @@ Friend NotInheritable Class Fo4DeferredTargets
         LightState()
         BindGBufferInputs()
         Dim ambientDrawn = False
+        ' The ambient is fused into the first light (bit 17) only with no focus shadow in the frame ([0x142F97B44] .data 1 and the focus count [0x143E621A8], 0x1421F5EA9..EB9):
+        ' with one it goes apart after them, so the focus factor multiplies the direct light alone.
+        Dim focoEnElCuadro = f.ShadowMap IsNot Nothing AndAlso f.Lights.Any(Function(l) l.ShadowLayer >= 0 AndAlso l.FocusFit.Valid)
+        Dim hayLuz = False
         For Each light In f.Lights
             Dim shadow = light.ShadowLayer >= 0 AndAlso f.ShadowMap IsNot Nothing
-            Dim fuse = Not ambientDrawn
+            Dim fuse = Not ambientDrawn AndAlso Not focoEnElCuadro
 #If DEBUG Then
-            If GateAmbientApart Then fuse = False
+            If GateAmbientApart OrElse GateSameLightRoute Then fuse = False
 #End If
             lightIndex += 1
             Dim tech = Fo4DeferredLightLaw.SunTechnique(shadow, fuse)
-            Dim p = progs.LightProgram(tech)
+            Dim lightState As ProgramState
+            Dim p = progs.LightProgram(tech, lightState)
+            ' F9 (r2 rev-01): a light still being built leaves the frame pending (not presented): not a skipped light, no notice
+            If lightState = ProgramState.Pending Then Continue For
             If p Is Nothing Then SkippedLightTechniques.Add((tech, lightIndex)) : Continue For
+            ' The light with a focus shadow: drawn alone, multiplied, summed (DrawFocusPass, SumLightOne).
+            Dim foco As Shader_Base_Class = Nothing
+            If shadow AndAlso light.FocusFit.Valid Then
+                Dim focoState As ProgramState
+                foco = progs.LightProgram(Fo4DeferredLightLaw.FocusTechnique, focoState)
+                If focoState = ProgramState.Pending Then Continue For
+                If foco Is Nothing Then SkippedLightTechniques.Add((Fo4DeferredLightLaw.FocusTechnique, lightIndex))
+            End If
+            ' Alone only with light already in the frame's targets: the first light is alone in them (cleared, the ambient goes after), and x + 0 is x.
+            Dim aislada = foco IsNot Nothing AndAlso hayLuz
+#If DEBUG Then
+            If GateLightFactors IsNot Nothing Then aislada = foco IsNot Nothing
+            If GateSameLightRoute Then aislada = True
+#End If
+            If aislada Then
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboOne)
+                Gl43.DrawBuffers(_fboOne, 2, LightBuffers)
+                Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 0, New Single() {0, 0, 0, 0})
+                Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 1, New Single() {0, 0, 0, 0})
+            End If
+            hayLuz = True
             p.Use()
             p.SetVector4("LightVector", New Vector4(light.Dir, 0.0F))
             p.SetVector4("LightColor", New Vector4(light.Color, 0.0F))
             If fuse Then p.SetVector4Array("DirectionalAmbient", f.Ambient)
             If shadow Then
-                Dim proj = Fo4DeferredLightLaw.ShadowMapProjRows(light.ShadowFit.ViewProj, f.View, f.Eye)
+                Dim proj = Fo4DeferredLightLaw.ShadowMapProjRows(light.ShadowFit.ViewProj, f.View, f.Eye).
+                           Concat(Fo4DeferredLightLaw.ShadowMapProjRows(light.ShadowFit1.ViewProj, f.View, f.Eye)).ToArray()
+                Dim worldScale = {Fo4DeferredLightLaw.ShadowWorldScale(light.ShadowFit), Fo4DeferredLightLaw.ShadowWorldScale(light.ShadowFit1)}
+                Dim splitEnd0 = light.SplitEnd0
+                Dim view = f.ShadowMap.SplitsView(light.ShadowLayer)
+#If DEBUG Then
+                ' ShadowGate --sun-box-law [receiver]: one cascade, as before the sun box (rows 0..2, its scale, FadeDistances of the far, the layer's view).
+                If Fo4GBufferConstants.GateMutantOn("sun-fo4-one-cascade") Then
+                    proj = proj.Take(3).ToArray() : worldScale = {worldScale(0)} : splitEnd0 = f.Far
+                    view = f.ShadowMap.LayerView(f.ShadowMap.FirstLayer(light.ShadowLayer))
+                End If
+#End If
                 p.SetVector4Array("ShadowMapProj", proj)
-                p.SetVector4Array("ShadowWorldScale", {Fo4DeferredLightLaw.ShadowWorldScale(light.ShadowFit)})
+                p.SetVector4Array("ShadowWorldScale", worldScale)
                 Dim lift = f.ShadowLift, scale = 1.0F + f.ShadowRadiusGrowth, biasGrowth = f.ShadowBiasGrowth
 #If DEBUG Then
                 ' ShadowGate --fo4-rig-knobs's mutant: the rig's knobs do not reach the engine receiver.
@@ -1374,22 +1754,65 @@ Friend NotInheritable Class Fo4DeferredTargets
                 p.SetVector4("ShadowSampleParam", Fo4DeferredLightLaw.ShadowSampleParam(f.ShadowMap.Size, scale))
                 p.SetFloat("AppShadowLift", lift)
                 p.SetFloat("AppShadowBiasGrowth", biasGrowth)
-                p.SetVector4("FadeDistances", Fo4DeferredLightLaw.FadeDistances(f.Near, f.Far))
+                p.SetVector4("FadeDistances", Fo4DeferredLightLaw.FadeDistances(f.Near, f.Far, splitEnd0))
                 p.SetVector4("ShadowFadeParam", Fo4DeferredLightLaw.ShadowFadeParam())
-                Gl43.BindTextureUnit(5, TextureTarget.Texture2DArray, f.ShadowMap.LayerView(light.ShadowLayer))
+                Gl43.BindTextureUnit(5, TextureTarget.Texture2DArray, view)
                 GL.BindSampler(5, _shadowCompare)
+#If DEBUG Then
+                If GateFo4SunLights IsNot Nothing Then GateFo4SunLights.Add(GateFo4SunLight.Capture(p.ProgramId, lightIndex, light.ShadowLayer, view))
+#End If
             End If
             DrawQuad(p, f)
             If shadow Then Gl43.UnbindTextureUnit(5) : GL.BindSampler(5, 0)
+            If foco IsNot Nothing Then
+#If DEBUG Then
+                ' ShadowGate --ray-law: the same light without its shadow first (Darkness 0 on the sun's PS, no focus pass), then the frame's own.
+                If GateLightFactors IsNot Nothing Then
+                    Dim lf As New GateLightFactor
+                    Gl43.BindTextureUnit(5, TextureTarget.Texture2DArray, f.ShadowMap.SplitsView(light.ShadowLayer))
+                    GL.BindSampler(5, _shadowCompare)
+                    p.Use()
+                    p.SetFloat("AppShadowLift", 1.0F)
+                    Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 0, New Single() {0, 0, 0, 0})
+                    Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 1, New Single() {0, 0, 0, 0})
+                    DrawQuad(p, f)
+                    lf.Without = GateLeerUno()
+                    p.SetFloat("AppShadowLift", f.ShadowLift)
+                    Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 0, New Single() {0, 0, 0, 0})
+                    Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 1, New Single() {0, 0, 0, 0})
+                    DrawQuad(p, f)
+                    Gl43.UnbindTextureUnit(5) : GL.BindSampler(5, 0)
+                    DrawFocusPass(foco, f, light)
+                    lf.WithShadow = GateLeerUno()
+                    GateLightFactors(lightIndex) = lf
+                    GateFo4FocusPasses -= 1
+                    Gl43.BindTextureUnit(5, TextureTarget.Texture2DArray, f.ShadowMap.SplitsView(light.ShadowLayer))
+                    GL.BindSampler(5, _shadowCompare)
+                    p.Use()
+                    Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 0, New Single() {0, 0, 0, 0})
+                    Gl43.ClearFramebuffer(_fboOne, ClearBuffer.Color, 1, New Single() {0, 0, 0, 0})
+                    DrawQuad(p, f)
+                    Gl43.UnbindTextureUnit(5) : GL.BindSampler(5, 0)
+                End If
+#End If
+                DrawFocusPass(foco, f, light)
+            End If
+            If aislada Then SumLightOne(progs)
             ambientDrawn = ambientDrawn OrElse fuse
         Next
         If Not ambientDrawn Then
-            Dim a = progs.LightProgram(Fo4DeferredLightLaw.AmbientTechnique)
+            Dim ambientState As ProgramState
+            Dim a = progs.LightProgram(Fo4DeferredLightLaw.AmbientTechnique, ambientState)
             If a Is Nothing Then
-                SkippedLightTechniques.Add((Fo4DeferredLightLaw.AmbientTechnique, -1))
+                ' F9 (r2 rev-01): pending is not skipped (the frame is pending)
+                If ambientState <> ProgramState.Pending Then SkippedLightTechniques.Add((Fo4DeferredLightLaw.AmbientTechnique, -1))
             Else
                 a.Use()
                 a.SetVector4Array("DirectionalAmbient", f.Ambient)
+#If DEBUG Then
+                ' ShadowGate full [ambient-route]: the ambient apart is not the fused one.
+                If Fo4GBufferConstants.GateMutantOn("ambient-apart-gain") Then a.SetVector4Array("DirectionalAmbient", f.Ambient.Select(Function(v) v * 1.25F).ToArray())
+#End If
                 DrawQuad(a, f)
             End If
         End If
@@ -1406,6 +1829,11 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.ColorMask(True, True, True, False)
         GL.Disable(EnableCap.CullFace)
         Dim p = progs.CompositeProgram(Fo4DeferredLightLaw.CompositePass1)
+        ' F9 (r2 rev-01): a composite still being built: the pass is not drawn, the frame is pending (not presented)
+        If p Is Nothing Then
+            GL.ColorMask(True, True, True, True)
+            Return
+        End If
         p.Use()
         p.SetVector4("VPOSOffset", New Vector4(1.0F / f.W, 1.0F / f.H, 1.0F, 1.0F))   ' 0x142217560..0x1422175D0
         p.SetBool("uDecalBaseCoverage", False)                                         ' RT 2 has no coverage output (draw buffer 0 only)
@@ -1465,6 +1893,8 @@ Friend NotInheritable Class Fo4DeferredTargets
         GL.Disable(EnableCap.CullFace)
         GL.Enable(EnableCap.TextureCubeMapSeamless)
         Dim p = progs.CompositeProgram(Fo4DeferredLightLaw.CompositePass2(f.PostOn))
+        ' F9 (r2 rev-01): a composite still being built: the pass is not drawn, the frame is pending (not presented)
+        If p Is Nothing Then Return
         p.Use()
         p.SetVector4("VPOSOffset", New Vector4(1.0F / f.W, 1.0F / f.H, 1.0F, 1.0F))
         p.SetVector4("DynamicResolutionParams", Fo4DeferredLightLaw.DynamicResolutionParams(f.W, f.H))
@@ -1516,16 +1946,16 @@ Friend NotInheritable Class Fo4DeferredTargets
     End Sub
 
     Public Sub Free()
-        For Each fb In {_fboG, _fboL, _fboC1}
+        For Each fb In {_fboG, _fboL, _fboC1, _fboOne}
             If fb <> 0 Then GL.DeleteFramebuffer(fb)
         Next
-        _fboG = 0 : _fboL = 0 : _fboC1 = 0
-        For Each t In {_albedo, _normal, _env, _gloss, _emit, _depth, _depthCopy, _lightD, _lightS, _rt2, _linZ, _noAo, _noSsr}
+        _fboG = 0 : _fboL = 0 : _fboC1 = 0 : _fboOne = 0
+        For Each t In {_albedo, _normal, _env, _gloss, _emit, _depth, _depthCopy, _lightD, _lightS, _rt2, _linZ, _noAo, _noSsr, _lightOneD, _lightOneS}
             If t <> 0 Then GL.DeleteTexture(t)
         Next
         _noAo = 0 : _noSsr = 0
         _albedo = 0 : _normal = 0 : _env = 0 : _gloss = 0 : _emit = 0 : _depth = 0 : _depthCopy = 0
-        _lightD = 0 : _lightS = 0 : _rt2 = 0 : _linZ = 0 : _linZLevels = 0
+        _lightD = 0 : _lightS = 0 : _rt2 = 0 : _linZ = 0 : _linZLevels = 0 : _lightOneD = 0 : _lightOneS = 0
         _base.Free()
         For Each v In {_quadVao, _triVao, _emptyVao}
             If v <> 0 Then GL.DeleteVertexArray(v)

@@ -384,6 +384,10 @@ Friend NotInheritable Class MaterialRest
         Throw New ArgumentOutOfRangeException(NameOf(v), v, "a colour variable has no Single field")
     End Function
 
+    ''' <summary>Fallout 4's BONE_TINTING clock in the frame's notice (user decision 10-nov-2026: listed with the values driven at rest,
+    ''' MaterialData.RestDrivenNotice; UI in English).</summary>
+    Friend Const BoneTintingTimingName As String = "bone tinting timing"
+
     ''' <summary>The variable's name in the frame's notice (rev-04; UI in English).</summary>
     Friend Shared Function DisplayName(v As RestVariable, isSse As Boolean) As String
         Select Case v

@@ -65,6 +65,14 @@ Public Structure SkinnedGeometry
     Public Normals() As Vector3
     Public Tangents() As Vector3
     Public Bitangents() As Vector3
+    ''' <summary>The frame the load left (the extraction, with its own tangent pass) when the preview loaded the shape with Recalculate normals off (user decision 5-nov-2026); Nothing with it on.
+    ''' What the engine stage compares a live vertex with: unchanged, the vertex keeps the NIF's bytes (RenderableMesh.PackOne).</summary>
+    Public LoadNormals() As Vector3, LoadTangents() As Vector3, LoadBitangents() As Vector3
+
+    ''' <summary>Takes the load's frame: PreviewModel.LoadShapeSafe, right after the extraction.</summary>
+    Friend Sub TakeLoadFrame()
+        LoadNormals = CType(Normals.Clone(), Vector3()) : LoadTangents = CType(Tangents.Clone(), Vector3()) : LoadBitangents = CType(Bitangents.Clone(), Vector3())
+    End Sub
     Public Uvs_Weight() As Vector3
 
     ' UVs TAL COMO SALIERON DEL NIF, antes de cualquier slider uv. Las hace falta por lo mismo que
@@ -105,18 +113,56 @@ Public Structure SkinnedGeometry
     ''' EngineWorldBound.Centre places the bone spheres with. Written where BoneMatsPose is.</summary>
     Public BoneWorldPose() As Transform_Class
     Public SkinRootPose As Transform_Class
-    ''' <summary>D-L6: per palette bone, the local box of the vertices it weighs (&gt; 0); BoneBoxesValid = built for the current
-    ''' Vertices; BoneBoxesUsable = every vertex has a weight &gt; 0 (else the exact box is used).</summary>
+    ''' <summary>D-L6: per palette bone, the local box of the referenced vertices (ReferencedVertex) it weighs (&gt; 0); BoneBoxesValid =
+    ''' built for the current Vertices; BoneBoxesUsable = every referenced vertex has a weight &gt; 0 and none a weight &lt; 0 (else the exact
+    ''' box is used: a weight &lt; 0 breaks the convex combination the box rests on - the 6 Sotha Sil shapes, rev-25).</summary>
     Public BoneBoxMin() As Vector3
     Public BoneBoxMax() As Vector3
     Public BoneBoxesValid As Boolean
     Public BoneBoxesUsable As Boolean
+    ''' <summary>A referenced vertex has a weight &gt; 0 on a bone past the palette: its rows read 0 (D3D11.3 7.5; Skyrim SE rows 3 * bones
+    ''' .. 239: EngineSkin.PaletteTailSeat), so that term of the blend is the point (0, 0, 0) - B holds the origin (BoneBoxUnion).</summary>
+    Public BoneBoxesHoldOrigin As Boolean
     ''' <summary>S-83A (chunk C8): the order the game draws this shape's triangles in (indices into Indices / 3), Nothing = data order.</summary>
     Public DrawTriangleOrder() As Integer
+    ''' <summary>S-83A (ola SSE S1 F2.3): per entry of DrawTriangleOrder, the rotation of the data triangle's corners the engine draws
+    ''' (corner c = data corner (rotation + c) mod 3; IShapeGeometry.GetEngineDrawTriangleOrder). Read only together with DrawTriangleOrder.</summary>
+    Public DrawTriangleRotation() As Byte
     ''' <summary>S-83A (rev-03): the Indices array DrawTriangleOrder was computed for. A later replacement of Indices
     ''' (MorphingHelper.RemoveZaps compacts them in place of a re-extraction) makes the order unusable: the draw then uses the data
     ''' order (Render.vb DrawOrderTriangles / DrawOrderIndices test ReferenceEquals).</summary>
     Public DrawTriangleOrderFor() As UInteger
+    ''' <summary>Design F2.4 (rev-29 (b), user decision): per vertex, does a triangle of Indices reference it - the shape's index list
+    ''' before the zap (the zap is the user's state: it filters the draw, not Indices). ONE seat for both games: the framing and the
+    ''' BLENDED centre (Minv / Maxv / Boundingcenter, SkinningHelper.ReferencedWorldBounds), the per-bone boxes (BuildBoneBoxes) and the
+    ''' range of the eye term (EyeTMin / EyeTMax). Built by SkinningHelper.EnsureReferencedVertex for the Indices array it names
+    ''' (ReferencedVertexFor), rebuilt when Indices is replaced.</summary>
+    Public ReferencedVertex() As Boolean
+    ''' <summary>The Indices array ReferencedVertex (and EyeTMin / EyeTMax / HasNegativeWeight) was computed for.</summary>
+    Public ReferencedVertexFor() As UInteger
+    ''' <summary>D4 (s1_re.md 13.1): per vertex, t = 1 - S of the eye term - the vertex the engine draws is q + t * eye, q = sum(w M v) -,
+    ''' S = the sum of its four draw weights in Double (EngineSkin.EyeT: exact). Written by ExtractSkinnedGeometry when the skin takes
+    ''' the engine's law (EngineSkin.UsesEngineLaw, both games: the VS of either subtracts the eye from each bone row); Nothing = no eye
+    ''' term (a rigid or single-bone shape, a skin of another slot count: their VS has no bone rows). The weights do not change with the
+    ''' pose: neither does t.</summary>
+    Public EyeT() As Double
+    ''' <summary>The range of EyeT over the referenced vertices (EnsureReferencedVertex): t_min = 1 - S_max, t_max = 1 - S_min (rev-28);
+    ''' 0 and 0 without an eye term or without a referenced vertex.</summary>
+    Public EyeTMin As Double
+    Public EyeTMax As Double
+    ''' <summary>A referenced vertex has a draw weight &lt; 0 (GPUBoneWeights): the per-bone box does not hold it (rev-25: the exact box
+    ''' per frame instead, BoneBoxesUsable False).</summary>
+    Public HasNegativeWeight As Boolean
+    ''' <summary>The skin the engine draws when it is not Skinning's: a v83 NiTriShape the engine converts, whose weights and indices are
+    ''' P3's (NiTriShapeGeometry.EngineDrawSkinning; Skyrim SE). Read through SkinningHelper.DrawSkinning only while Skinning still holds
+    ''' the BoneWeights array it was taken with (EngineDrawSkinFor): a later replacement of Skinning (MorphingHelper.RemoveZaps compacts
+    ''' the shape, which is then no longer the file the engine converts) makes Skinning the draw's.</summary>
+    Public EngineDrawSkin As ShapeSkinningData
+    Public EngineDrawSkinFor() As System.Half
+    ''' <summary>C3: the skinned draws the engine makes of this geometry, in order, each with the palette it sees
+    ''' (SkinningHelper.EnginePaletteDraws): Skyrim SE one per NiSkinPartition partition, Fallout 4 one for the BSSkin::Instance. Nothing
+    ''' for a geometry without either.</summary>
+    Public PaletteDraws() As SkinningHelper.PaletteDraw
     Public VertexColors() As Vector4
     Public VertexMask() As Single
     Public Indices() As UInteger
@@ -141,7 +187,7 @@ Public Structure SkinnedGeometry
     ' marca si PerVertexSkinMatrix está al día; si no, EnsurePerVertexSkinMatrix lo recompone lazy desde
     ' BoneMatsPose cuando un lector (bounds/picking/export/occlusion) realmente lo pide.
     Public PerVertexMatrixValid As Boolean
-    ''' <summary>PerVertexSkinMatrix holds the engine's blend (Fo4EngineSkin.BlendSkin, Fallout 4's view: UsesEngineLaw) of the palette
+    ''' <summary>PerVertexSkinMatrix holds the engine's blend (EngineSkin.BlendSkin, the row of the active game: UsesEngineLaw) of the palette
     ''' GPUBoneMatrices holds, vertex by vertex - written with it by its three writers (ExtractSkinnedGeometry, RecomputeGPUBoneMatrices,
     ''' EnsurePerVertexSkinMatrix: FillPerVertexSkinMatrix's result). The engine stage's CPU route reuses it instead of blending again
     ''' (RenderableMesh.EngineSharesViewSkin).</summary>
@@ -175,23 +221,33 @@ Public Class SkinningHelper
     ''' píxel (compositores, bakers) NO usan esto a propósito: un bitmap de 0 píxeles sería otro bug y
     ''' taparlo lo escondería.
     ''' </summary>
+    ''' <summary>A frame vector (normal, tangent, bitangent) of the file as the app holds it: normalised in Double, rounded to Single, zero when it has no length. The one law of the
+    ''' live arrays (SkinnedGeometry.Normals / Tangents / Bitangents).</summary>
+    Friend Shared Function FileFrameVector(v As System.Numerics.Vector3) As Vector3
+        Dim d As New Vector3d(v.X, v.Y, v.Z)
+        Dim l = d.Length
+        Return If(l > 0.000001, RecalcTBN.ASng(d / l), Vector3.Zero)
+    End Function
+
     Public Shared Function RangosDe(n As Integer) As Partitioner(Of Tuple(Of Integer, Integer))
         If n <= 0 Then Return Partitioner.Create(Array.Empty(Of Tuple(Of Integer, Integer))())
         Return Partitioner.Create(0, n)
     End Function
 
-    ' SYNC: CPU/GPU skinning — blend de bone matrices del lado CPU (double).
-    '   Fórmula: skinMatrix = Σ(bones[idx[j]] · weight[j]) / sumW.  Fallback (sumW=0): bones[idx[0]].
+    ' SYNC: CPU/GPU skinning — blend de bone matrices del lado CPU.
+    '   Fórmula, piel de 4 ranuras de los dos juegos (EngineSkin.UsesEngineLaw): la del motor, Σ(bones[idx[j]] · w[j]) con los pesos
+    '   de EngineSkin (FO4: w3 = 1 - sat; SSE: los 4 half crudos, sin dividir por la suma - D4). Otra cantidad de ranuras:
+    '   Σ(bones[idx[j]] · weight[j]) / sumW, fallback (sumW=0): bones[idx[0]].
     '   Sitios gemelos que hay que mover JUNTOS (si divergen, el bug es silencioso: compila, no tira, y
     '   sólo se ve mal el OTRO camino, que el usuario alterna con el toggle):
     '     1. Shader_Class.vb — bloque de skinning del vertex shader (DUPLICADO en FO4 y en SSE)
     '     2. esta función
     '     3. RecomputeGPUBoneMatrices  (composición de matrices → SSBO)
-    '     4. ExtractSkinnedGeometry    (arrays de GPU: índices/pesos, normalizados a sum=1)
-    '     5. Render.UpdateSkinBuffers_GL (pre-skin del camino CPU)
-    '     + SkinBakeMath / FaceGenBuildPipeline (el bake usa la misma fórmula)
-    '   Diferencias POR DISEÑO, no drift: la GPU va en float con pesos ya normalizados; la CPU en double y
-    '   normaliza en runtime; la GPU aplica transpose(inverse(mat3)) a N/T/B y la CPU los deja en local.
+    '     4. ExtractSkinnedGeometry    (arrays de GPU: índices y los pesos del motor tal como los lee el VS)
+    '     5. Render.UpdateSkinBuffers_GL (pre-skin del camino CPU: q = Σ w M v; el término del ojo lo suma el VS, D4)
+    '     + SkinBakeMath / FaceGenBuildPipeline (el bake: sólo FO4, el de SSE no skinnea)
+    '   Diferencias POR DISEÑO, no drift: la GPU va en float en el orden del motor; la CPU en Single (EngineSkin.BlendSkin) o en la
+    '   acumulación propia del bake; la normal va por AppSkinLaw en los dos caminos.
     '   Test de paridad: alternar Setting_GPUSkinning sobre un shape posado — debe verse idéntico.
     '   Ver 00-reglas-ui-y-vb.md (§10) y 00-reglas-comentarios.md.
     ''' <summary>
@@ -244,12 +300,14 @@ Public Class SkinningHelper
         ' SIN Array.Clear. `TryEngineWeights` llena `ckW` cuando devuelve True, y cuando devuelve False
         ' el contenido no se lee: limpiarlo por vertice eran 130.500 clears por frame de un buffer que o se
         ' sobrescribe entero o se ignora.
-        ' LA LEY DEL MOTOR EN FALLOUT 4, SIEMPRE (decisión del usuario 12-oct-2026, D21: sin casilla): Fo4EngineSkin.TryEngineWeights
-        ' (Fallout 4 y 4 slots; Skyrim SE sigue con la normalizada de abajo).
+        ' LA LEY DEL MOTOR, SIEMPRE, EN LOS DOS JUEGOS (FO4: decisión del usuario 12-oct-2026, D21, sin casilla; SSE: D4, ola SSE S1):
+        ' EngineSkin.TryEngineWeights (piel de 4 ranuras); qué ranura entra a la suma, EngineSkin.BakeSlotCounts (FO4: peso > 0; SSE:
+        ' todas, cero y negativo incluidos). Otra cantidad de ranuras: la normalizada de abajo.
         Dim ckW = sc.CkW
-        If available >= Fo4EngineSkin.Slots AndAlso Fo4EngineSkin.TryEngineWeights(boneWeights, baseIdx, wpv, ckW) Then
-            For j = 0 To Fo4EngineSkin.Slots - 1
-                If ckW(j) > 0.0F Then
+        If available >= EngineSkin.Slots AndAlso EngineSkin.TryEngineWeights(boneWeights, baseIdx, wpv, ckW) Then
+            Dim juego = EngineSkin.LawGame()
+            For j = 0 To EngineSkin.Slots - 1
+                If EngineSkin.BakeSlotCounts(juego, ckW(j)) Then
                     Dim idxc = boneIndices(baseIdx + j)
                     If idxc >= 0 AndAlso idxc < precomputed.Length Then
                         sc.Idx(nUsed) = CInt(idxc) : sc.W(nUsed) = ckW(j) : nUsed += 1
@@ -303,7 +361,7 @@ Public Class SkinningHelper
             Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
         End If
         Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
-        Dim sc = GetBlendScratch(Math.Max(available, Fo4EngineSkin.Slots))
+        Dim sc = GetBlendScratch(Math.Max(available, EngineSkin.Slots))
 
         If flatPal IsNot Nothing Then
             Dim listo = BlendEnScratch(boneWeights, boneIndices, baseIdx, wpv, precomputed, flatPal, sc)
@@ -316,9 +374,10 @@ Public Class SkinningHelper
         ' vectorial contra escalar DENTRO del camino de la paleta, con FastGeom.ForzarEscalarS.
         Dim nUsed As Integer = 0
         Dim ckW = sc.CkW
-        If available >= Fo4EngineSkin.Slots AndAlso Fo4EngineSkin.TryEngineWeights(boneWeights, baseIdx, wpv, ckW) Then
-            For j = 0 To Fo4EngineSkin.Slots - 1
-                If ckW(j) > 0.0F Then
+        If available >= EngineSkin.Slots AndAlso EngineSkin.TryEngineWeights(boneWeights, baseIdx, wpv, ckW) Then
+            Dim juego = EngineSkin.LawGame()
+            For j = 0 To EngineSkin.Slots - 1
+                If EngineSkin.BakeSlotCounts(juego, ckW(j)) Then
                     Dim idxc = boneIndices(baseIdx + j)
                     If idxc >= 0 AndAlso idxc < precomputed.Length Then
                         sc.Idx(nUsed) = CInt(idxc) : sc.W(nUsed) = ckW(j) : nUsed += 1
@@ -359,8 +418,8 @@ Public Class SkinningHelper
         Public Sub Grow(slots As Integer)
             Dim n = Math.Max(1, slots)
             ' CkW siempre tiene al menos los slots del CK: el call site lo indexa por esos, no por `slots`.
-            If CkW Is Nothing OrElse CkW.Length < Fo4EngineSkin.Slots Then
-                ReDim CkW(Fo4EngineSkin.Slots - 1)
+            If CkW Is Nothing OrElse CkW.Length < EngineSkin.Slots Then
+                ReDim CkW(EngineSkin.Slots - 1)
             End If
             If Idx Is Nothing OrElse Idx.Length < n Then
                 ReDim Idx(n - 1)
@@ -519,11 +578,10 @@ Public Class SkinningHelper
             Return "[skin-blend-wpv0] wpv=0 no devolvio precomputed(0)"
         End If
 
-        ' LA RAMA DE LA LEY DEL MOTOR (Fo4EngineSkin.UsesEngineLaw: Fallout 4, 4 slots). Se corre cuando el juego activo es
-        ' Fallout 4, que es cuando esa rama hornea; NO se toca el juego activo: un test no muta estado de produccion en
-        ' caliente. Cubrir las dos ramas en un mismo proceso (cambiando el juego) es un gate de BUILD y vive en
-        ' Tools/ParityGate.
-        If Fo4EngineSkin.UsesEngineLaw(Fo4EngineSkin.Slots) Then
+        ' LA RAMA DE LA LEY DEL MOTOR (EngineSkin.UsesEngineLaw: Fallout 4 o Skyrim SE, 4 slots), con la fila del juego activo; NO se
+        ' toca el juego activo: un test no muta estado de produccion en caliente. Cubrir las dos filas en un mismo proceso (cambiando
+        ' el juego) es un gate de BUILD y vive en Tools/ParityGate.
+        If EngineSkin.UsesEngineLaw(EngineSkin.Slots) Then
             For iter As Integer = 0 To 499
                 For s = 0 To wgt.Length - 1
                     wgt(s) = CType(pesos(CInt(NextB() Mod CULng(pesos.Length))), System.Half)
@@ -556,9 +614,10 @@ Public Class SkinningHelper
 
     ''' <summary>Extrae vértices, normales, tangentes y bitangentes del shape, aplicando el mismo skinning
     ''' que LoadShapeSafe, y arma los arrays de índices y pesos que consume la GPU.
-    ''' <para>SYNC: CPU/GPU skinning — acá se NORMALIZAN los pesos que después usa el vertex shader
-    ''' (sum=1), así que un cambio en este sitio mueve la GPU sin tocar el camino CPU. Lista completa de
-    ''' sitios gemelos en el contrato de <c>BlendBoneMatrices</c> y en 00-reglas-ui-y-vb.md §10.</para></summary>
+    ''' <para>SYNC: CPU/GPU skinning — acá se arman los pesos que después usa el vertex shader: los del motor tal como los lee su VS
+    ''' (EngineSkin; Skyrim SE: los half del NIF, los de P3 en una v83 que el motor convierte, sin normalizar - D4), así que un cambio en
+    ''' este sitio mueve la GPU sin tocar el camino CPU. Lista completa de sitios gemelos en el contrato de <c>BlendBoneMatrices</c> y
+    ''' en 00-reglas-ui-y-vb.md §10.</para></summary>
     ''' <param name="skeleton">SkeletonInstance to read bind/pose transforms from. If Nothing,
     ''' falls back to <see cref="SkeletonInstance.Default"/>. Pose application is implicit:
     ''' bones whose <see cref="HierarchiBone_class.DeltaTransform"/> is set get pose-folded;
@@ -611,9 +670,7 @@ Public Class SkinningHelper
             Parallel.ForEach(RangosDe(rawVerts.Length),
                 Sub(rango As Tuple(Of Integer, Integer))
                     For i = rango.Item1 To rango.Item2 - 1
-                        Dim v As New Vector3d(srcNormals(i).X, srcNormals(i).Y, srcNormals(i).Z)
-                        Dim l = v.Length
-                        rawNormals(i) = If(l > 0.000001, RecalcTBN.ASng(v / l), Vector3.Zero)
+                        rawNormals(i) = FileFrameVector(srcNormals(i))
                     Next
                 End Sub)
         Else
@@ -628,14 +685,8 @@ Public Class SkinningHelper
             Parallel.ForEach(RangosDe(rawVerts.Length),
                 Sub(rango As Tuple(Of Integer, Integer))
                     For i = rango.Item1 To rango.Item2 - 1
-                        Dim t = srcTan(i)
-                        Dim b = srcBit(i)
-                        Dim tv As New Vector3d(t.X, t.Y, t.Z)
-                        Dim bv As New Vector3d(b.X, b.Y, b.Z)
-                        Dim tl = tv.Length
-                        Dim bl = bv.Length
-                        rawTangents(i) = If(tl > 0.000001, RecalcTBN.ASng(tv / tl), Vector3.Zero)
-                        rawBitangs(i) = If(bl > 0.000001, RecalcTBN.ASng(bv / bl), Vector3.Zero)
+                        rawTangents(i) = FileFrameVector(srcTan(i))
+                        rawBitangs(i) = FileFrameVector(srcBit(i))
                     Next
                 End Sub)
         Else
@@ -645,6 +696,8 @@ Public Class SkinningHelper
 
         ' Polymorphic per-vertex skinning data (BSTriShape inline, NiTriShape NiSkinPartition).
         Dim shapeSkin As ShapeSkinningData = shapeGeom.GetSkinning()
+        ' The skin the engine draws (D4: the weights as its VS reads them): Skinning's, or P3's for a v83 shape the engine converts.
+        Dim drawSkin As ShapeSkinningData = EngineDrawSkinOf(shapeGeom, shapeSkin)
 
         Dim vertexCount As Integer = rawVerts.Length
         Dim vertexColorsList = If(shapeGeom.HasVertexColors, shapeGeom.GetVertexColors(), Nothing)
@@ -760,6 +813,7 @@ Public Class SkinningHelper
         Dim gpuBoneWgt(vertexCount * 4 - 1) As Single
         Dim gpuBoneMats() As Matrix4 = Nothing
         Dim perVertexEsMotor As Boolean = False   ' SkinnedGeometry.PerVertexIsEngineBlend: the multibone branch's motorVista
+        Dim eyeT As Double() = Nothing            ' SkinnedGeometry.EyeT (D4): the multibone branch, engine law with the eye term
 
         ' Branching predicate: shape.IsSkinned (parity con Outfit Studio Anim.cpp:692, 706,
         ' GLSurface.cpp:1247 — IsSkinned() es !skinInstanceRef.IsEmpty()). NO usamos bones.Length
@@ -789,10 +843,10 @@ Public Class SkinningHelper
 
                 ' Multibone skinning inner loop — GPU path: store perVertexMtot + extract bone data, do NOT transform rawVerts/N/T/B.
                 ' Per-vertex bone influences come from the polymorphic ShapeSkinningData (BSTriShape inline or NiSkinPartition).
-                Dim skinFlatIdx = shapeSkin.BoneIndices
-                Dim skinFlatWgt = shapeSkin.BoneWeights
-                Dim skinWpv = If(shapeSkin.WeightsPerVertex > 0, shapeSkin.WeightsPerVertex, 4)
-                Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso shapeSkin.VertexCount = vertexCount)
+                Dim skinFlatIdx = drawSkin.BoneIndices
+                Dim skinFlatWgt = drawSkin.BoneWeights
+                Dim skinWpv = If(drawSkin.WeightsPerVertex > 0, drawSkin.WeightsPerVertex, 4)
+                Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso drawSkin.VertexCount = vertexCount)
 
                 ' LOS MISMOS CUATRO PATRONES QUE EL BLEND. Este bucle NO corre por frame —corre al re-extraer
                 ' geometria: cambiar un morph, un preset, un outfit— pero es lo que el usuario siente como
@@ -800,23 +854,25 @@ Public Class SkinningHelper
                 ' Suit. Los cuatro, ya probados en FillPerVertexSkinMatrix:
                 '   1. delegate por vertice -> se llama desde un bucle por RANGOS
                 '   2. `Dim ckWg(3) As Single` adentro = alocacion en heap POR VERTICE -> al scratch por hilo
-                '   3. la ley del motor por vertice sin corto-circuito de la compuerta (hoy Fo4EngineSkin.UsesEngineLaw)
+                '   3. la ley del motor por vertice sin corto-circuito de la compuerta (hoy EngineSkin.UsesEngineLaw)
                 '   4. `AMatrix4(Mtot)` -> Matrix4 intermedia -> indexador -> 12 escrituras
-                ' LA VISTA DE FALLOUT 4 (D21): la matriz por vértice y los pesos de GPU del VS de vistas de edicion van por la ley del motor
-                ' (Fo4EngineSkin), siempre. Ver FillPerVertexSkinMatrix.
-                Dim motorVista = hasSkin AndAlso Fo4EngineSkin.UsesEngineLaw(skinWpv)
+                ' LA VISTA DE LOS DOS JUEGOS (FO4: D21; SSE: D4): la matriz por vértice y los pesos de GPU van por la ley del motor
+                ' (EngineSkin, la fila del juego activo), siempre. Ver FillPerVertexSkinMatrix.
+                Dim motorVista = hasSkin AndAlso EngineSkin.UsesEngineLaw(skinWpv)
                 perVertexEsMotor = motorVista
                 Dim filasMotor As Vector4() = Nothing
-                If motorVista Then Fo4EngineSkin.PaletteRows(precomputedBoneMatrices, filasMotor)
+                Dim juegoLey = EngineSkin.LawGame()
+                If motorVista Then EngineSkin.PaletteRows(precomputedBoneMatrices, filasMotor)
                 Dim skinningBody As Action(Of Integer, BlendScratch) = Sub(i, scE)
                                                              Dim Mtot As Matrix4d
                                                              Dim baseIdx = i * 4
 
                                                              If motorVista Then
-                                                                 ' Los cuatro pesos del motor (w3 = 1 - sat) tal cual, y los índices del NIF: el VS de
-                                                                 ' vistas de edicion los suma en el orden del VS del motor (Shader_Class_Fo4EditView).
+                                                                 ' Los cuatro pesos del motor tal cual (FO4: w3 = 1 - sat; SSE: los half crudos) y los
+                                                                 ' índices: el VS de la app los suma en el orden del VS del motor (Shader_Class_Fo4EditView,
+                                                                 ' Vertex_SSE).
                                                                  Dim r0, r1, r2 As Vector4, s As Single
-                                                                 Fo4EngineSkin.BlendSkin(filasMotor, skinFlatIdx, skinFlatWgt, i * 4, scE.CkW, r0, r1, r2, s)
+                                                                 EngineSkin.BlendSkin(juegoLey, filasMotor, skinFlatIdx, skinFlatWgt, i * 4, scE.CkW, r0, r1, r2, s)
                                                                  For j = 0 To 3
                                                                      gpuBoneIdx(baseIdx + j) = skinFlatIdx(i * 4 + j)
                                                                      gpuBoneWgt(baseIdx + j) = scE.CkW(j)
@@ -830,7 +886,7 @@ Public Class SkinningHelper
                                                                  Mtot = BlendBoneMatrices(skinFlatWgt, skinFlatIdx, baseSkin, skinWpv, precomputedBoneMatrices, flatPalette)
 
                                                                  ' GPU arrays: copy up to 4 slots, normalize weights to sum=1 (the law of a skin without the
-                                                                 ' engine's: Skyrim SE or another slot count; Fallout 4's view took motorVista above).
+                                                                 ' engine's: another slot count; a 4-slot skin of either game took motorVista above).
                                                                  Dim copySlots = Math.Min(4, skinWpv)
                                                                  Dim localSumW As Double = 0
                                                                  For j = 0 To copySlots - 1
@@ -863,17 +919,19 @@ Public Class SkinningHelper
                     ' Por RANGOS: el scratch se toma una vez por rango en vez de alocar por vertice.
                     Parallel.ForEach(RangosDe(vertexCount),
                         Sub(rango As Tuple(Of Integer, Integer))
-                            Dim scE = GetBlendScratch(Math.Max(skinWpv, Fo4EngineSkin.Slots))
+                            Dim scE = GetBlendScratch(Math.Max(skinWpv, EngineSkin.Slots))
                             For i = rango.Item1 To rango.Item2 - 1
                                 skinningBody(i, scE)
                             Next
                         End Sub)
                 Else
-                    Dim scE = GetBlendScratch(Math.Max(skinWpv, Fo4EngineSkin.Slots))
+                    Dim scE = GetBlendScratch(Math.Max(skinWpv, EngineSkin.Slots))
                     For i As Integer = 0 To vertexCount - 1
                         skinningBody(i, scE)
                     Next
                 End If
+                ' D4: t = 1 - S of every vertex for the eye term, from the engine's weights just written (EngineSkin.EyeTs; both games).
+                If motorVista Then eyeT = EngineSkin.EyeTs(gpuBoneWgt, vertexCount)
 
             Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Count > 0
                 ' Single-bone: pre-compute once — GPU path: do NOT transform rawVerts/N/T/B
@@ -934,21 +992,7 @@ Public Class SkinningHelper
                     gpuBoneIdx(baseIdx + 3) = 0 : gpuBoneWgt(baseIdx + 3) = 0.0F
                 Next
         End Select
-        ' 7) Bounding center — rawVerts is now local-space, compute world-space bounds via PerVertexSkinMatrix
-        Dim minV As New Vector3d(Double.MaxValue)
-        Dim maxV As New Vector3d(Double.MinValue)
-        For i As Integer = 0 To rawVerts.Length - 1
-            ' Sin la Matrix4 ni la Matrix4d intermedias: ver SkinMatricesSoA.TransformarPosicion.
-            Dim wv = perVertexMtot.TransformarPosicion(i, rawVerts(i))
-            If wv.X < minV.X Then minV.X = wv.X
-            If wv.Y < minV.Y Then minV.Y = wv.Y
-            If wv.Z < minV.Z Then minV.Z = wv.Z
-
-            If wv.X > maxV.X Then maxV.X = wv.X
-            If wv.Y > maxV.Y Then maxV.Y = wv.Y
-            If wv.Z > maxV.Z Then maxV.Z = wv.Z
-        Next
-        Dim center = (minV + maxV) * 0.5
+        ' 7) Bounding box and centre: below, once the geometry holds Indices (ReferencedWorldBounds: the referenced vertices only).
 
         ' Pre-compute indices (avoid SelectMany creating thousands of temp arrays)
         Dim trianglesList = shapeGeom.GetTriangles()
@@ -985,6 +1029,8 @@ Public Class SkinningHelper
         Array.Fill(dirtyVFlags, True)
         Array.Fill(dirtyMFlags, True)
 
+        Dim drawRotation As Byte() = Nothing
+        Dim drawOrder = shapeGeom.GetEngineDrawTriangleOrder(drawRotation)
         Dim geo = New SkinnedGeometry With {
             .Vertices = rawVerts,
             .BaseVertices = rawVerts.ToArray,
@@ -1002,21 +1048,23 @@ Public Class SkinningHelper
             .SkinRootPose = SkinRootWorld(shape, effectiveSkel, Nothing, singleboneskinning, ownDrawn, layerRep, trace),
             .RestLayer = NodeRestLayer.Summary(layerRep),
             .RestTrace = trace,
-            .DrawTriangleOrder = shapeGeom.GetEngineDrawTriangleOrder(),
+            .DrawTriangleOrder = drawOrder,
+            .DrawTriangleRotation = drawRotation,
             .DrawTriangleOrderFor = flatIndices,
             .Indices = flatIndices,
             .VertexColors = vtxColors,
             .Eyedata = If(shapeGeom.HasEyeData, shapeGeom.GetEyeData().ToArray(), New Single(vertexCount - 1) {}),
             .Geometry = shapeGeom,
             .Skinning = shapeSkin,
+            .EngineDrawSkin = drawSkin,
+            .EngineDrawSkinFor = If(drawSkin.BoneWeights Is shapeSkin.BoneWeights, Nothing, shapeSkin.BoneWeights),
+            .EyeT = eyeT,
+            .PaletteDraws = EnginePaletteDraws(shape),
             .VertexMask = vtxMask,
             .dirtyVertexIndices = ConjuntoDeSucios.Todos(vertexCount),
             .dirtyMaskIndices = ConjuntoDeSucios.Todos(vertexCount),
             .dirtyMaskFlags = dirtyMFlags,
             .dirtyVertexFlags = dirtyVFlags,
-             .Boundingcenter = center,
-             .Minv = minV,
-             .Maxv = maxV,
              .CachedTBN = Nothing,
              .Version = Nifversion,
              .GPUBoneIndices = gpuBoneIdx,
@@ -1027,6 +1075,8 @@ Public Class SkinningHelper
              .PerVertexIsEngineBlend = perVertexEsMotor,
              .ZapTopologyDirty = True
         }
+        ' 7) The world box (Minv / Maxv / Boundingcenter) of the referenced vertices, through PerVertexSkinMatrix: the one seat.
+        ReferencedWorldBounds(geo)
 
         ' Uvs_Weight packs per-vertex UV (X,Y) and the first bone weight (Z) — used by the
         ' shader weight-paint visualization.  Sourced from the polymorphic skinning data so it
@@ -1076,6 +1126,10 @@ Public Class SkinningHelper
         ' `Setting_TBN` es una Structure devuelta POR VALOR desde una Property, así que esto es una COPIA
         ' y mutarla no toca el config del usuario. (Verificado: Config_Class.vb:520.)
         If Not (RecalculateNormals OrElse Not shapeGeom.HasNormals) Then opts.KeepExistingNormals = True
+#If DEBUG Then
+        ' ShadowGate [stage-frame] / --stage-file-bytes [live-normal]: the box off still recalculating the normals.
+        If Fo4GBufferConstants.GateMutantOn("stage-box-off-recalculates") Then opts.KeepExistingNormals = False
+#End If
         RecalcTBN.RecalcularParaShape(geo, shape, opts, geometriaSinNormales)
         Return geo
     End Function
@@ -1102,12 +1156,6 @@ Public Class SkinningHelper
         FastSkin.UnVertice(m, p, vn, vt, vb, msn, pos, nrm, tan, bit)
     End Sub
 
-    ''' <summary>Puente a la ley de posicion de <see cref="FastSkin"/> sobre un punto (FastSkin.Punto): el centro de reflexion
-    ''' del ojo SSE con skinning de CPU (Render.vb EyeCentresForUpload, S-O1).</summary>
-    Friend Shared Function FastSkinPunto(m As Matrix4, p As Vector3d) As Vector3
-        Return FastSkin.Punto(m, p)
-    End Function
-
     ''' <summary>Puente al kernel de <see cref="FastSkin"/>. Existe para que Render.vb no tenga que
     ''' conocer un Module aparte: el punto de entrada del skinning de CPU sigue siendo SkinningHelper.
     ''' </summary>
@@ -1122,6 +1170,61 @@ Public Class SkinningHelper
             FastSkin.TransformarDirecto(mats, lv, ln, lt, lb, msn, n, posOut, nrmOut, tanOut, bitOut)
         End If
     End Sub
+
+    ''' <summary>One skinned draw. Skyrim SE: a partition of the geometry (NiSkinPartition::RenderPartition 0x140F084C0) - its NumVertices
+    ''' (+0x38), NumTriangles (+0x3A, the draw's count, 0x140F08537 / 0x140F08579) and NumBones (+0x3C), whether the SetBoneMatrix before
+    ''' its draw writes cb10 (EngineSkin.SetBoneMatrixWritesPalette) and whether its draw sees its own skin's palette
+    ''' (EngineSkin.SeesOwnPalette; False = the previous write of the frame's). Fallout 4: the geometry's one draw - its vertices and
+    ''' triangles, the BSSkin::Instance NumBones, EngineSkin.Fo4SkinWritesPalette, and sees its own palette when it writes.</summary>
+    Public Structure PaletteDraw
+        Public Vertices As Integer
+        Public Triangles As Integer
+        Public Bones As Integer
+        Public WritesPalette As Boolean
+        Public SeesOwnPalette As Boolean
+    End Structure
+
+    ''' <summary>The skinned draws of <paramref name="shape"/> in the engine's order. Skyrim SE: the Partitions of the NiSkinPartition
+    ''' its NiSkinInstance / BSDismemberSkinInstance names (the engine's [skin + 0x18], 0x140F09CA0). Fallout 4: one, its BSSkin::Instance's
+    ''' ([geom + 0x140], 0x1422303D0). Nothing without either.</summary>
+    Friend Shared Function EnginePaletteDraws(shape As IRenderableShape) As PaletteDraw()
+        Dim nif = shape?.NifContent
+        Dim ns = shape?.NifShape
+        If nif Is Nothing OrElse ns?.SkinInstanceRef Is Nothing OrElse ns.SkinInstanceRef.IsEmpty() Then Return Nothing
+        Dim bsSkin = nif.GetBlock(Of BSSkin_Instance)(ns.SkinInstanceRef)
+        If bsSkin IsNot Nothing Then
+            Dim tri = TryCast(ns, BSTriShape)
+            Dim w = EngineSkin.Fo4SkinWritesPalette(bsSkin.NumBones)
+            Return {New PaletteDraw With {.Vertices = If(tri Is Nothing, 0, CInt(tri.VertexCount)), .Triangles = If(tri Is Nothing, 0, tri.TriangleCount),
+                                          .Bones = CInt(bsSkin.NumBones), .WritesPalette = w, .SeesOwnPalette = w}}
+        End If
+        Dim skin = nif.GetBlock(Of NiSkinInstance)(ns.SkinInstanceRef)
+        If skin Is Nothing OrElse skin.SkinPartition Is Nothing OrElse skin.SkinPartition.IsEmpty() Then Return Nothing
+        Dim part = nif.GetBlock(skin.SkinPartition)
+        If part?.Partitions Is Nothing Then Return Nothing
+        Dim n = part.Partitions.Count
+        Dim writes(n - 1) As Boolean
+        For i = 0 To n - 1 : writes(i) = EngineSkin.SetBoneMatrixWritesPalette(True, part.Partitions(i).NumBones) : Next
+        Dim r(n - 1) As PaletteDraw
+        For i = 0 To n - 1
+            Dim p = part.Partitions(i)
+            r(i) = New PaletteDraw With {.Vertices = p.NumVertices, .Triangles = p.NumTriangles, .Bones = p.NumBones,
+                                         .WritesPalette = writes(i), .SeesOwnPalette = EngineSkin.SeesOwnPalette(writes, i)}
+        Next
+        Return r
+    End Function
+
+    ''' <summary>The triangles of <paramref name="draws"/> whose draw sees the previous write's palette (PaletteDraw.SeesOwnPalette False):
+    ''' the game draws them with another draw's bones, the preview with the shape's own (RenderableMesh's notice
+    ''' FrameNoticeId.PaletteOfPreviousDraw). Measured over the Data (ParityGate sse-palette-writes / fo4-palette-writes): 0 in both games.</summary>
+    Friend Shared Function TrianglesWithPreviousPalette(draws As PaletteDraw()) As Integer
+        If draws Is Nothing Then Return 0
+        Dim n = 0
+        For Each d In draws
+            If Not d.SeesOwnPalette Then n += d.Triangles
+        Next
+        Return n
+    End Function
 
     ''' <summary>O-PT: the posed global of the shape's skin root (NiSkinInstance / BSSkin_Instance SkeletonRoot) by the bones' own rule:
     ''' the skeleton bone of that name (posed; bind in single-bone mode), else the NIF node (NifOwnWorld: drawn when
@@ -1902,7 +2005,7 @@ Public Class SkinningHelper
         ' "por las dudas": hoy seria un no-op demostrable, y codigo especulativo en un camino que
         ' corre por frame es ruido. Si algun dia esos dos valores pudieran diferir, lo que hace falta
         ' es un TEST que lo detecte, no una escritura preventiva.
-        geo.PerVertexIsEngineBlend = FillPerVertexSkinMatrix(mats, geo.Skinning, BuildPosePalette(poseMats, geo.ParentGlobalTransform))
+        geo.PerVertexIsEngineBlend = FillPerVertexSkinMatrix(mats, DrawSkinning(geo), BuildPosePalette(poseMats, geo.ParentGlobalTransform))
         geo.PerVertexMatrixValid = True
     End Sub
 
@@ -1938,18 +2041,19 @@ Public Class SkinningHelper
         Dim wpv = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, 4)
         Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso skinning.VertexCount = vc)
         Dim sinSkin = If(palette.Length > 0, palette(0), Matrix4d.Identity)
-        ' LA VISTA DE FALLOUT 4 (decisión del usuario 12-oct-2026, D21): esta matriz alimenta el skinning de CPU del VS de vistas de
-        ' edicion, el picking, los bounds y el world cache, y en FO4 va SIEMPRE por la ley del motor (Fo4EngineSkin.BlendSkin, la
-        ' misma función que el stream de la ruta CPU). Una sola compuerta para la vista y el horneado: Fo4EngineSkin.UsesEngineLaw.
-        If hasSkin AndAlso Fo4EngineSkin.UsesEngineLaw(wpv) Then
+        ' LA VISTA DE LOS DOS JUEGOS (FO4: decisión del usuario 12-oct-2026, D21; SSE: D4): esta matriz alimenta el skinning de CPU,
+        ' el picking, los bounds y el world cache, y va SIEMPRE por la ley del motor (EngineSkin.BlendSkin con la fila del juego activo,
+        ' la misma función que el stream de la ruta CPU). Una sola compuerta para la vista y el horneado: EngineSkin.UsesEngineLaw.
+        If hasSkin AndAlso EngineSkin.UsesEngineLaw(wpv) Then
             Dim rows As Vector4() = Nothing
-            Fo4EngineSkin.PaletteRows(palette, rows)
+            Dim juego = EngineSkin.LawGame()
+            EngineSkin.PaletteRows(palette, rows)
             Dim motor As Action(Of Tuple(Of Integer, Integer)) =
                 Sub(rango)
                     Dim w(3) As Single
                     Dim r0, r1, r2 As Vector4, s As Single
                     For i = rango.Item1 To rango.Item2 - 1
-                        Fo4EngineSkin.BlendSkin(rows, flatIdx, flatWgt, i * 4, w, r0, r1, r2, s)
+                        EngineSkin.BlendSkin(juego, rows, flatIdx, flatWgt, i * 4, w, r0, r1, r2, s)
                         mats.EstablecerDesdeFilas(i, r0, r1, r2)
                     Next
                 End Sub
@@ -1982,7 +2086,7 @@ Public Class SkinningHelper
                     ' El scratch se toma UNA vez por RANGO. `GetBlendScratch` es un acceso ThreadStatic
                     ' con una guarda de tamano, y hacerlo por vertice son 130.500 lookups por frame para
                     ' devolver siempre el mismo objeto: el rango entero corre en un solo hilo.
-                    Dim scR = GetBlendScratch(Math.Max(wpv, Fo4EngineSkin.Slots))
+                    Dim scR = GetBlendScratch(Math.Max(wpv, EngineSkin.Slots))
                     ' SIN MEMO POR VERTICE PREVIO: MEDIDO y NEUTRO, con tendencia a costar. Reusar el blend
                     ' cuando la tupla (indices, pesos) repite la del vertice anterior toca al 14,0 % de los
                     ' vertices del Serena Battle Suit (18.205 de 130.180), pero las 8 comparaciones se pagan
@@ -2062,9 +2166,9 @@ Public Class SkinningHelper
     ''' <para>NO deja el cache valido, a proposito: quien necesite normales de mundo (picking, export,
     ''' el raytracer de oclusion) lo va a pedir y lo va a computar entero. Lo que no se puede es dejarlo
     ''' MEDIO lleno, con posiciones nuevas y normales viejas.</para>
-    ''' <para>El resultado es identico al de <see cref="ComputeWorldBounds"/>: la misma matriz por vertice,
-    ''' el mismo TransformPosition, el mismo min/max en Double. Es la misma cuenta sin la parte que sobra.
-    ''' </para></summary>
+    ''' <para>El resultado es identico al de <see cref="ComputeWorldBounds"/>: los dos son <see cref="ReferencedWorldBounds"/>, la misma
+    ''' matriz por vertice, la misma posicion, el mismo min/max en Double sobre los vertices referenciados. Es la misma cuenta sin la
+    ''' parte que sobra.</para></summary>
     Public Shared Sub ComputeWorldBoundsSinNormales(ByRef geo As SkinnedGeometry)
         ' SI EL CACHE YA ESTA VIVO, NO SE RECALCULA NADA. Sin esta salida, el camino FUERA DE PLAY hacia
         ' DOS pasadas O(vertices): RecomputeGPUBoneMatrices invalida el cache y —con updateWorldCache=True,
@@ -2078,78 +2182,46 @@ Public Class SkinningHelper
             Exit Sub
         End If
         EnsurePerVertexSkinMatrix(geo)   ' Option B: recompone PerVertexSkinMatrix si pass-2 se salteo
-        Dim count = geo.Vertices.Length
-        If count = 0 Then Exit Sub
-        Dim localVerts = geo.Vertices
-        Dim localMats = geo.PerVertexSkinMatrix
-
-        ' Chunks explicitos en vez de RangosDe: hace falta INDEXAR los rangos para el scatter->gather, y
-        ' RangosDe devuelve un Partitioner, que no se indexa.
-        Dim chunk As Integer = Math.Max(4096, count \ Math.Max(1, Environment.ProcessorCount * 4))
-        Dim nChunks As Integer = (count + chunk - 1) \ chunk
-        Dim mins(nChunks - 1) As Vector3d
-        Dim maxs(nChunks - 1) As Vector3d
-        ' SCATTER->GATHER, no un acumulador compartido: cada chunk escribe SU celda y despues se pliegan
-        ' en serie. Un min/max compartido entre hilos es una carrera. (El pliegue es exacto en cualquier
-        ' orden —min y max sobre Double no redondean—, asi que el resultado es determinista igual.)
-        Parallel.For(0, nChunks,
-            Sub(r As Integer)
-                Dim mn As New Vector3d(Double.MaxValue)
-                Dim mx As New Vector3d(Double.MinValue)
-                Dim i1 = Math.Min(r * chunk + chunk, count)
-                ' SIN Matrix4 NI Matrix4d POR VERTICE. `AMatrix4d(localMats(i))` hacia dos pasadas:
-                ' el indexador reconstruia una Matrix4 (64 B) desde las 12 secciones y despues se ensanchaba
-                ' a Matrix4d (128 B) — dos structs para usar 12 floats. Se leen las secciones directo.
-                ' BIT A BIT IDENTICO: `TransformPosition` acumula en Double, y `Single -> Double` es
-                ' exacto, asi que multiplicar `v.X * CDbl(s0(i))` da el mismo bit que el camino largo.
-                ' Este bucle es el que corre POR FRAME cuando hay sombras (es el `bounds-en-play` que
-                ' mide 9-13 ms sobre el Serena Battle Suit), asi que es donde mas duele la pasada de mas.
-                Dim s0 = localMats.Secciones(0), s3 = localMats.Secciones(3), s6 = localMats.Secciones(6), s9 = localMats.Secciones(9)
-                Dim s1 = localMats.Secciones(1), s4 = localMats.Secciones(4), s7 = localMats.Secciones(7), s10 = localMats.Secciones(10)
-                Dim s2 = localMats.Secciones(2), s5 = localMats.Secciones(5), s8 = localMats.Secciones(8), s11 = localMats.Secciones(11)
-                For i = r * chunk To i1 - 1
-                    Dim lv = localVerts(i)
-                    Dim w As New Vector3d(lv.X * s0(i) + lv.Y * s3(i) + lv.Z * s6(i) + s9(i),
-                                          lv.X * s1(i) + lv.Y * s4(i) + lv.Z * s7(i) + s10(i),
-                                          lv.X * s2(i) + lv.Y * s5(i) + lv.Z * s8(i) + s11(i))
-                    If w.X < mn.X Then mn.X = w.X
-                    If w.Y < mn.Y Then mn.Y = w.Y
-                    If w.Z < mn.Z Then mn.Z = w.Z
-                    If w.X > mx.X Then mx.X = w.X
-                    If w.Y > mx.Y Then mx.Y = w.Y
-                    If w.Z > mx.Z Then mx.Z = w.Z
-                Next
-                mins(r) = mn : maxs(r) = mx
-            End Sub)
-
-        Dim minV As New Vector3d(Double.MaxValue)
-        Dim maxV As New Vector3d(Double.MinValue)
-        For r = 0 To nChunks - 1
-            minV = Vector3d.ComponentMin(minV, mins(r))
-            maxV = Vector3d.ComponentMax(maxV, maxs(r))
-        Next
-        geo.Boundingcenter = (minV + maxV) * 0.5
-        geo.Minv = minV
-        geo.Maxv = maxV
+        If geo.Vertices.Length = 0 Then Exit Sub
+        ReferencedWorldBounds(geo)
     End Sub
 
-    ''' <summary>D-L6: per palette bone, the local box of the vertices with a weight &gt; 0 on it (GPUBoneIndices / GPUBoneWeights,
-    ''' 4 slots per vertex - the same buffers the shader blends). BoneBoxesUsable = False when a vertex has no weight &gt; 0.</summary>
+    ''' <summary>D-L6: per palette bone, the local box of the referenced vertices (ReferencedVertex) with a weight &gt; 0 on it
+    ''' (GPUBoneIndices / GPUBoneWeights, 4 slots per vertex - the same buffers the shader blends). BoneBoxesUsable = False when a
+    ''' referenced vertex has no weight &gt; 0, or has a weight &lt; 0 (HasNegativeWeight, rev-25: the convex combination of the bones'
+    ''' points the box rests on needs every weight &gt;= 0).</summary>
     Public Shared Sub BuildBoneBoxes(ByRef geo As SkinnedGeometry)
+        EnsureReferencedVertex(geo)
         Dim nB = geo.GPUBoneMatrices.Length
         ReDim geo.BoneBoxMin(nB - 1) : ReDim geo.BoneBoxMax(nB - 1)
         For k = 0 To nB - 1
             geo.BoneBoxMin(k) = New Vector3(Single.MaxValue) : geo.BoneBoxMax(k) = New Vector3(Single.MinValue)
         Next
-        Dim usable = geo.GPUBoneWeights IsNot Nothing AndAlso geo.GPUBoneWeights.Length >= geo.Vertices.Length * 4
+        Dim negativa = geo.HasNegativeWeight
+#If DEBUG Then
+        ' ParityGate sse-editor-box mutant "sothasil-bonebox": a shape with a weight < 0 by the per-bone box (rev-25).
+        If Fo4GBufferConstants.GateMutantOn("sothasil-bonebox") Then negativa = False
+#End If
+        Dim usable = geo.GPUBoneWeights IsNot Nothing AndAlso geo.GPUBoneWeights.Length >= geo.Vertices.Length * 4 AndAlso Not negativa
+        Dim origen = False
         If usable Then
+            Dim referenced = geo.ReferencedVertex
             For v = 0 To geo.Vertices.Length - 1
+                If Not referenced(v) Then Continue For
                 Dim p As New Vector3(CSng(geo.Vertices(v).X), CSng(geo.Vertices(v).Y), CSng(geo.Vertices(v).Z))
                 Dim any = False
                 For j = 0 To 3
                     If geo.GPUBoneWeights(v * 4 + j) <= 0.0F Then Continue For
                     Dim k = CInt(geo.GPUBoneIndices(v * 4 + j))
-                    If k < 0 OrElse k >= nB Then Continue For
+                    If k < 0 OrElse k >= nB Then
+                        ' a bone past the palette: its rows read 0, the term w * 0 * v is the origin (BoneBoxesHoldOrigin)
+#If DEBUG Then
+                        ' ParityGate fo4-editor-box mutant "box-tail-ignored": the term of a bone past the palette left out of B.
+                        If Fo4GBufferConstants.GateMutantOn("box-tail-ignored") Then Continue For
+#End If
+                        origen = True : any = True
+                        Continue For
+                    End If
                     geo.BoneBoxMin(k) = Vector3.ComponentMin(geo.BoneBoxMin(k), p)
                     geo.BoneBoxMax(k) = Vector3.ComponentMax(geo.BoneBoxMax(k), p)
                     any = True
@@ -2158,6 +2230,7 @@ Public Class SkinningHelper
             Next
         End If
         geo.BoneBoxesUsable = usable
+        geo.BoneBoxesHoldOrigin = origen
         geo.BoneBoxesValid = True
     End Sub
 
@@ -2171,20 +2244,275 @@ Public Class SkinningHelper
     ''' Computes world-space bounding box from the world-space cache.
     ''' </summary>
     Public Shared Sub ComputeWorldBounds(ByRef geo As SkinnedGeometry)
-        Dim wv = GetWorldVertices(geo)
+        ReferencedWorldBounds(geo, GetWorldVertices(geo))
+    End Sub
+
+    ''' <summary>The skin the engine draws for <paramref name="shapeGeom"/> (D4: the weights as its VS reads them): a v83 NiTriShape that
+    ''' SkyrimSE.exe converts takes P3's weights and indices (NiTriShapeGeometry.EngineDrawSkinning: the partitions' floats through the
+    ''' packer's half B, 0x14101BD20; the low byte of the partition's bone, 0x14101ACFB..D5E); every other shape, the app's skin
+    ''' (<paramref name="appSkin"/>: a BSTriShape's are the NIF's halves the engine copies raw, 0x14100B530).</summary>
+    Friend Shared Function EngineDrawSkinOf(shapeGeom As IShapeGeometry, appSkin As ShapeSkinningData) As ShapeSkinningData
+        If EngineSkin.LawGame() <> Config_App.Game_Enum.Skyrim Then Return appSkin
+        Dim tri = TryCast(shapeGeom, NiTriShapeGeometry)
+        If tri Is Nothing Then Return appSkin
+        Dim skin As ShapeSkinningData = Nothing
+        If Not tri.EngineDrawSkinning(skin) Then Return appSkin
+        skin.BoneRefIndices = appSkin.BoneRefIndices
+        Return skin
+    End Function
+
+    ''' <summary>The skin the view blends <paramref name="geo"/> with: EngineDrawSkin while Skinning still holds the BoneWeights array it
+    ''' was taken with (EngineDrawSkinFor), else Skinning (see SkinnedGeometry.EngineDrawSkin).</summary>
+    Friend Shared Function DrawSkinning(ByRef geo As SkinnedGeometry) As ShapeSkinningData
+        If geo.EngineDrawSkinFor IsNot Nothing AndAlso geo.Skinning.BoneWeights Is geo.EngineDrawSkinFor Then Return geo.EngineDrawSkin
+        Return geo.Skinning
+    End Function
+
+    ''' <summary>Builds SkinnedGeometry.ReferencedVertex for the current Indices (design F2.4, rev-29 (b)): a vertex is referenced when an
+    ''' entry of Indices names it - the shape's triangles before the zap. With the same mask: EyeTMin / EyeTMax, the extremes of EyeT
+    ''' (rev-28: t_min = 1 - S_max, t_max = 1 - S_min, over the referenced vertices only - the 8,617 Skyrim SE vertices with S = 0 are
+    ''' referenced by no triangle, s1_re.md 12.7, so t_max &lt; 1 in every shape and the eye enters no play box), and HasNegativeWeight (a
+    ''' referenced vertex with a draw weight &lt; 0, rev-25). Once per Indices array (ReferencedVertexFor).</summary>
+    Friend Shared Sub EnsureReferencedVertex(ByRef geo As SkinnedGeometry)
+        Dim n = If(geo.Vertices Is Nothing, 0, geo.Vertices.Length)
+        If geo.ReferencedVertex IsNot Nothing AndAlso geo.ReferencedVertex.Length = n AndAlso geo.ReferencedVertexFor Is geo.Indices Then Exit Sub
+        Dim m(n - 1) As Boolean
+        Dim todos = False
+#If DEBUG Then
+        ' ParityGate sse-editor-box mutant "refvtx-all": every vertex counts (rev-29 (b) "encuadre con todos los vertices").
+        todos = Fo4GBufferConstants.GateMutantOn("refvtx-all")
+#End If
+        If todos Then
+            Array.Fill(m, True)
+        ElseIf geo.Indices IsNot Nothing Then
+            For Each ix In geo.Indices
+                If ix < CUInt(n) Then m(CInt(ix)) = True
+            Next
+        End If
+        Dim t = geo.EyeT, conT = t IsNot Nothing AndAlso t.Length = n
+        Dim w = geo.GPUBoneWeights, conW = w IsNot Nothing AndAlso w.Length >= 4 * n
+        Dim tMin = 0.0, tMax = 0.0, primero = True, negativa = False
+        For v = 0 To n - 1
+            If Not m(v) Then Continue For
+            If conT Then
+                If primero Then
+                    tMin = t(v) : tMax = t(v) : primero = False
+                Else
+                    If t(v) < tMin Then tMin = t(v)
+                    If t(v) > tMax Then tMax = t(v)
+                End If
+            End If
+            If conW AndAlso Not negativa Then
+                For j = 0 To 3
+                    If w(4 * v + j) < 0.0F Then negativa = True
+                Next
+            End If
+        Next
+#If DEBUG Then
+        ' ParityGate sse-editor-box mutant "smax-zero": s_max = 0 fixed (t_min never below 0).
+        If Fo4GBufferConstants.GateMutantOn("smax-zero") AndAlso tMin < 0.0 Then tMin = 0.0
+#End If
+        geo.ReferencedVertex = m
+        geo.ReferencedVertexFor = geo.Indices
+        geo.EyeTMin = tMin : geo.EyeTMax = tMax
+        geo.HasNegativeWeight = negativa
+    End Sub
+
+    ''' <summary>THE ONE AABB of a shape's world vertices (design F2.4, rev-29 (b); regla 5: the three counts of ExtractSkinnedGeometry,
+    ''' ComputeWorldBoundsSinNormales and ComputeWorldBounds, unified): Minv / Maxv / Boundingcenter over the referenced vertices
+    ''' (EnsureReferencedVertex), q_j = PerVertexSkinMatrix(j) applied to Vertices(j) - or <paramref name="cached"/>(j), the world cache,
+    ''' which holds the same Double by the same formula -, compared with If v &lt; min / If v &gt; max: a NaN vertex never enters (rev-34),
+    ''' never Math.Min. A shape none of whose vertices a triangle references keeps the empty box (Double.MaxValue / Double.MinValue). q does
+    ''' not hold the eye term (camera independent: the framing and the BLENDED key, rev-26).</summary>
+    Friend Shared Sub ReferencedWorldBounds(ByRef geo As SkinnedGeometry, Optional cached As Vector3d() = Nothing)
+        EnsureReferencedVertex(geo)
+        Dim count = If(geo.Vertices Is Nothing, 0, geo.Vertices.Length)
         Dim minV As New Vector3d(Double.MaxValue)
         Dim maxV As New Vector3d(Double.MinValue)
-        For Each v In wv
-            If v.X < minV.X Then minV.X = v.X
-            If v.Y < minV.Y Then minV.Y = v.Y
-            If v.Z < minV.Z Then minV.Z = v.Z
-            If v.X > maxV.X Then maxV.X = v.X
-            If v.Y > maxV.Y Then maxV.Y = v.Y
-            If v.Z > maxV.Z Then maxV.Z = v.Z
-        Next
+        If count > 0 Then
+            Dim referenced = geo.ReferencedVertex
+            Dim localVerts = geo.Vertices
+            Dim localMats = geo.PerVertexSkinMatrix
+            Dim delCache = cached IsNot Nothing AndAlso cached.Length = count
+            Dim conMathMin = False
+#If DEBUG Then
+            ' ParityGate sse-editor-box mutant "bounds-mathmin": Math.Min / Math.Max per vertex (a NaN vertex poisons the box, rev-34).
+            conMathMin = Fo4GBufferConstants.GateMutantOn("bounds-mathmin")
+#End If
+            ' Chunks with their own cell (scatter -> gather): a shared min / max between threads is a race; the fold is exact in any
+            ' order (min and max over Double do not round).
+            Dim chunk As Integer = Math.Max(4096, count \ Math.Max(1, Environment.ProcessorCount * 4))
+            Dim nChunks As Integer = (count + chunk - 1) \ chunk
+            Dim mins(nChunks - 1) As Vector3d
+            Dim maxs(nChunks - 1) As Vector3d
+            Parallel.For(0, nChunks,
+                Sub(r As Integer)
+                    Dim mn As New Vector3d(Double.MaxValue)
+                    Dim mx As New Vector3d(Double.MinValue)
+                    Dim i1 = Math.Min(r * chunk + chunk, count)
+                    ' The sections read directly (no Matrix4 / Matrix4d per vertex): Single -> Double is exact, so the products are the
+                    ' same bits as SkinMatricesSoA.TransformarPosicion and the world cache (ComputeWorldSpaceCache).
+                    Dim s0 As Single() = Nothing, s1 As Single() = Nothing, s2 As Single() = Nothing, s3 As Single() = Nothing, s4 As Single() = Nothing, s5 As Single() = Nothing
+                    Dim s6 As Single() = Nothing, s7 As Single() = Nothing, s8 As Single() = Nothing, s9 As Single() = Nothing, s10 As Single() = Nothing, s11 As Single() = Nothing
+                    If Not delCache Then
+                        s0 = localMats.Secciones(0) : s1 = localMats.Secciones(1) : s2 = localMats.Secciones(2) : s3 = localMats.Secciones(3)
+                        s4 = localMats.Secciones(4) : s5 = localMats.Secciones(5) : s6 = localMats.Secciones(6) : s7 = localMats.Secciones(7)
+                        s8 = localMats.Secciones(8) : s9 = localMats.Secciones(9) : s10 = localMats.Secciones(10) : s11 = localMats.Secciones(11)
+                    End If
+                    For i = r * chunk To i1 - 1
+                        If Not referenced(i) Then Continue For
+                        Dim w As Vector3d
+                        If delCache Then
+                            w = cached(i)
+                        Else
+                            Dim lv = localVerts(i)
+                            w = New Vector3d(lv.X * s0(i) + lv.Y * s3(i) + lv.Z * s6(i) + s9(i),
+                                             lv.X * s1(i) + lv.Y * s4(i) + lv.Z * s7(i) + s10(i),
+                                             lv.X * s2(i) + lv.Y * s5(i) + lv.Z * s8(i) + s11(i))
+                        End If
+                        If conMathMin Then
+                            mn = New Vector3d(Math.Min(mn.X, w.X), Math.Min(mn.Y, w.Y), Math.Min(mn.Z, w.Z))
+                            mx = New Vector3d(Math.Max(mx.X, w.X), Math.Max(mx.Y, w.Y), Math.Max(mx.Z, w.Z))
+                        Else
+                            If w.X < mn.X Then mn.X = w.X
+                            If w.Y < mn.Y Then mn.Y = w.Y
+                            If w.Z < mn.Z Then mn.Z = w.Z
+                            If w.X > mx.X Then mx.X = w.X
+                            If w.Y > mx.Y Then mx.Y = w.Y
+                            If w.Z > mx.Z Then mx.Z = w.Z
+                        End If
+                    Next
+                    mins(r) = mn : maxs(r) = mx
+                End Sub)
+            For r = 0 To nChunks - 1
+                If conMathMin Then
+                    minV = New Vector3d(Math.Min(minV.X, mins(r).X), Math.Min(minV.Y, mins(r).Y), Math.Min(minV.Z, mins(r).Z))
+                    maxV = New Vector3d(Math.Max(maxV.X, maxs(r).X), Math.Max(maxV.Y, maxs(r).Y), Math.Max(maxV.Z, maxs(r).Z))
+                Else
+                    If mins(r).X < minV.X Then minV.X = mins(r).X
+                    If mins(r).Y < minV.Y Then minV.Y = mins(r).Y
+                    If mins(r).Z < minV.Z Then minV.Z = mins(r).Z
+                    If maxs(r).X > maxV.X Then maxV.X = maxs(r).X
+                    If maxs(r).Y > maxV.Y Then maxV.Y = maxs(r).Y
+                    If maxs(r).Z > maxV.Z Then maxV.Z = maxs(r).Z
+                End If
+            Next
+        End If
         geo.Boundingcenter = (minV + maxV) * 0.5
         geo.Minv = minV
         geo.Maxv = maxV
+    End Sub
+
+    ''' <summary>The positions the engine draws (D4, s1_re.md 13.1): p_j = q_j + t_j * <paramref name="eye"/>, q the world cache
+    ''' (GetWorldVertices), t = SkinnedGeometry.EyeT; the world cache itself when the skin has no eye term (EyeT Nothing). Picking and the
+    ''' CPU readers of what is drawn, with the camera they look through (rev-26).</summary>
+    Public Shared Function DrawnPositions(ByRef geo As SkinnedGeometry, eye As Vector3d) As Vector3d()
+        Dim q = GetWorldVertices(geo)
+        Dim t = geo.EyeT
+        If t Is Nothing OrElse q Is Nothing OrElse t.Length <> q.Length Then Return q
+        Dim p(q.Length - 1) As Vector3d
+        For i = 0 To q.Length - 1
+            p(i) = New Vector3d(q(i).X + t(i) * eye.X, q(i).Y + t(i) * eye.Y, q(i).Z + t(i) * eye.Z)
+        Next
+        Return p
+    End Function
+
+    ''' <summary>D-L6: the union of the per-bone boxes through the bones' pose matrices (GPUBoneMatrices): per palette bone with a box, its
+    ''' 8 corners through the bone's matrix (the box B of rev-18 / rev-28). In Double: a Single corner times a Single matrix element is exact
+    ''' in Double, so each coordinate rounds only in its three additions - in Single, the rounding of the corner transform could leave B
+    ''' short of a vertex it holds by more than the one ulp OutwardBox adds (measured by ParityGate sse-editor-box: a vertex of
+    ''' treemadagascarpalm01.nif 0.07 ulp past the Single box). <paramref name="mn"/> / <paramref name="mx"/> stay MaxValue / MinValue when
+    ''' no bone has a box.</summary>
+    Friend Shared Sub BoneBoxUnion(ByRef geo As SkinnedGeometry, ByRef mn As Vector3d, ByRef mx As Vector3d)
+        Dim mats = geo.GPUBoneMatrices
+        mn = New Vector3d(Double.MaxValue) : mx = New Vector3d(Double.MinValue)
+        If geo.BoneBoxesHoldOrigin Then mn = Vector3d.Zero : mx = Vector3d.Zero
+        For k = 0 To mats.Length - 1
+            Dim a = geo.BoneBoxMin(k), b = geo.BoneBoxMax(k)
+            If a.X > b.X Then Continue For
+            Dim m = mats(k)
+            For c = 0 To 7
+                Dim x As Double = If((c And 1) = 0, a.X, b.X), y As Double = If((c And 2) = 0, a.Y, b.Y), z As Double = If((c And 4) = 0, a.Z, b.Z)
+                Dim wx = x * m.M11 + y * m.M21 + z * m.M31 + m.M41
+                Dim wy = x * m.M12 + y * m.M22 + z * m.M32 + m.M42
+                Dim wz = x * m.M13 + y * m.M23 + z * m.M33 + m.M43
+                If wx < mn.X Then mn.X = wx
+                If wy < mn.Y Then mn.Y = wy
+                If wz < mn.Z Then mn.Z = wz
+                If wx > mx.X Then mx.X = wx
+                If wy > mx.Y Then mx.Y = wy
+                If wz > mx.Z Then mx.Z = wz
+            Next
+        Next
+    End Sub
+
+    ''' <summary>The base of the play frame's culling box (D-L6; rev-25, rev-05): the per-bone union B (BoneBoxUnion, builds the bone
+    ''' boxes when BoneBoxesValid is False) when the bone boxes hold every referenced vertex (BoneBoxesUsable) - True, a box of the
+    ''' bones' points that EyeTermBox scales -; else the exact box AABB(Q) of this frame (ComputeWorldBoundsSinNormales: Minv / Maxv) -
+    ''' False. The one decision of RenderableMesh.ComputeBoundsFromBoneBoxes and of ParityGate sse-editor-box.</summary>
+    Friend Shared Function PlayBoxBase(ByRef geo As SkinnedGeometry, ByRef mn As Vector3d, ByRef mx As Vector3d) As Boolean
+        If Not geo.BoneBoxesValid Then BuildBoneBoxes(geo)
+        If Not geo.BoneBoxesUsable Then
+            ComputeWorldBoundsSinNormales(geo)
+            mn = geo.Minv : mx = geo.Maxv
+            Return False
+        End If
+        BoneBoxUnion(geo, mn, mx)
+        Return True
+    End Function
+
+    ''' <summary>THE EYE TERM OF THE EDITOR'S BOX (D4; rev-18 user decision (b), rev-28, rev-29 (a); s1_re.md 13.1), exact, no margin:
+    ''' <list type="bullet">
+    ''' <item><paramref name="scaled"/> = True, the play box: <paramref name="bMin"/>..<paramref name="bMax"/> = B, the per-bone box union
+    ''' (it holds every M_i v of a referenced vertex with w_i &gt; 0); each vertex is p = (1 - t) c + t e with c = sum(w_i / S) M_i v in
+    ''' hull(B), t = 1 - S in [t_min, t_max], linear in t: AABB{(1 - t_min) B + t_min e, (1 - t_max) B + t_max e}.</item>
+    ''' <item><paramref name="scaled"/> = False, the exact box off play: bMin..bMax = AABB(Q), q_j = sum(w_i M_i v_j) holds S already, and
+    ''' p_j = q_j + t_j e: AABB(Q) + [t_min, t_max] e as an interval product by component, by the sign of e_c (rev-29 (a)).</item>
+    ''' </list>
+    ''' In Double: 1 - t = S and the products by t (25 significant bits at most, the sum of four halves) of a Single are exact, so each
+    ''' value rounds once; the caller rounds outward to Single (OutwardBox).</summary>
+    Friend Shared Sub EyeTermBox(bMin As Vector3d, bMax As Vector3d, tMin As Double, tMax As Double, e As Vector3d, scaled As Boolean,
+                                 ByRef mn As Vector3d, ByRef mx As Vector3d)
+#If DEBUG Then
+        ' ParityGate sse-editor-box mutants (rev-28 / rev-29 (a)): the box without the eye term; "e entero en lugar de t_max e" (the
+        ' bound of the first round, AABB{B, e, ...}); without the t_min end; the limits not ordered by the sign of e_c.
+        If Fo4GBufferConstants.GateMutantOn("box-no-eye") Then mn = bMin : mx = bMax : Return
+        If Fo4GBufferConstants.GateMutantOn("box-eye-whole") Then tMax = 1.0
+        If Fo4GBufferConstants.GateMutantOn("box-no-tmin") Then tMin = 0.0
+        Dim sinOrden = Fo4GBufferConstants.GateMutantOn("box-unsorted")
+#Else
+        Const sinOrden As Boolean = False
+#End If
+        Dim lo(2), hi(2) As Double
+        For c = 0 To 2
+            Dim b0 = If(c = 0, bMin.X, If(c = 1, bMin.Y, bMin.Z)), b1 = If(c = 0, bMax.X, If(c = 1, bMax.Y, bMax.Z))
+            Dim ec = If(c = 0, e.X, If(c = 1, e.Y, e.Z))
+            If scaled Then
+                Dim v0 = (1.0 - tMin) * b0 + tMin * ec, v1 = (1.0 - tMin) * b1 + tMin * ec
+                Dim v2 = (1.0 - tMax) * b0 + tMax * ec, v3 = (1.0 - tMax) * b1 + tMax * ec
+                lo(c) = v0 : hi(c) = v0
+                For Each v In {v1, v2, v3}
+                    If v < lo(c) Then lo(c) = v
+                    If v > hi(c) Then hi(c) = v
+                Next
+            Else
+                Dim u = tMin * ec, w = tMax * ec
+                If sinOrden Then
+                    lo(c) = b0 + u : hi(c) = b1 + w
+                Else
+                    lo(c) = b0 + If(u < w, u, w) : hi(c) = b1 + If(u > w, u, w)
+                End If
+            End If
+        Next
+        mn = New Vector3d(lo(0), lo(1), lo(2)) : mx = New Vector3d(hi(0), hi(1), hi(2))
+    End Sub
+
+    ''' <summary>A Double box rounded OUTWARD to Single (the culling's boxes): toward -infinity at the minimum and +infinity at the
+    ''' maximum, one ulp past the nearest Single - inward, a box that touches the frustum's edge could drop a visible shape by an ulp. A
+    ''' Single box widened to Double gives its own Single back, so a Single box rounds exactly as it did before (BitDecrement / BitIncrement).</summary>
+    Friend Shared Sub OutwardBox(mn As Vector3d, mx As Vector3d, ByRef fmn As Vector3, ByRef fmx As Vector3)
+        fmn = New Vector3(MathF.BitDecrement(CSng(mn.X)), MathF.BitDecrement(CSng(mn.Y)), MathF.BitDecrement(CSng(mn.Z)))
+        fmx = New Vector3(MathF.BitIncrement(CSng(mx.X)), MathF.BitIncrement(CSng(mx.Y)), MathF.BitIncrement(CSng(mx.Z)))
     End Sub
 
     ''' <summary>bindMount global del hueso (Original×Mount): de la cache de pase si está, o recursivo
@@ -2331,7 +2659,7 @@ Public Class SkinningHelper
             ' re-snapshot tri.VertexData/VertexDataSSE here, those arrays are already encoded
             ' in geo.Skinning (and they're empty for NiTriShape, where the partition path was used).
             Dim perVertexSkinMatrix = geo.PerVertexSkinMatrix
-            Dim localSkinning = geo.Skinning
+            Dim localSkinning = DrawSkinning(geo)
 
             If updatePerVertexSkin Then
                 ' UN SOLO cuerpo, compartido con la recomposición perezosa. Ver FillPerVertexSkinMatrix.
@@ -4401,7 +4729,7 @@ Public Class RecalcTBN
     ''' <c>b/255*2-1</c>. El redondeo es a entero mas cercano.
     ''' </summary>
     Friend Shared Function NormalComoLaVeElCanonico(v As Vector3) As Vector3
-        Return Fo4EngineVertexPacker.RoundTrip(v)   ' U1: the NIF writer's byte (H11), decoded as UNORM (one round trip, review rev-06 d)
+        Return EngineVertexPacker.RoundTrip(v)   ' U1: the NIF writer's byte (H11), decoded as UNORM (one round trip, review rev-06 d)
     End Function
 
     ''' <summary>Sobrecarga en Single: la cadena del TBN trabaja entera en esta precision.</summary>

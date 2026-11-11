@@ -19,6 +19,7 @@ Friend Module Fo4GBufferTechnique
     Friend Const TechEye As UInteger = 1UI << 6
     Friend Const TechGlowMap As UInteger = 1UI << 14         ' t3 (0x1422074DB..51F)
     Friend Const TechGradientRemap As UInteger = 1UI << 26   ' t5 (0x14220462A..706)
+    Friend Const TechBoneTinting As UInteger = 1UI << 30     ' t13 / t14 (0x142205CD1..CDB, 0x142205E1E..F89)
     Friend Const TechFace As UInteger = 1UI << 31            ' t8 (0x142204EB0..FCC)
 
     ''' <summary>Bit <paramref name="n"/> of a property's 64-bit flags (shared with Fo4EffectTechnique, ola 3).</summary>

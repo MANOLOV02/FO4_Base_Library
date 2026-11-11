@@ -122,6 +122,42 @@ Friend Module Fo4GBufferConstants
                                       .AppInvViewProj = vp.Inverted()}
     End Function
 
+    ''' <summary>cb12_viewproj_nojitter[4] (Fallout4.exe cb12 rows 37..40, read only by the motion-vector code of the G-buffer PS o5, under #ifdef
+    ''' ENGINE_MOTION_VECTORS): [block + 0x7E0] transposed (0x14181E795..80A) = the camera entry +0x110 (0x14182BC80 0x14182BE32..E63), the
+    ''' view x projection before the sub-pixel jitter (0x14182D750 0x14182D9D9..A0F; the jitter 0x14182DA2D..AE2 rewrites +0xD0 only, the
+    ''' rows 8..11 source, 0x14182BDA1..DCB): the app's frame has no jitter, so the rows of ViewProj.</summary>
+    Friend Function Cb12ViewProjNoJitter(fr As Fo4FrameRows) As Vector4()
+        Return fr.ViewProj
+    End Function
+
+    ''' <summary>One call of a Fallout 4 caller on a camera entry (EngineCameraMotionEntry.Run, the order of <paramref name="caller"/>: Fallout4.exe 0x1421C3ED0 /
+    ''' 0x1421F30B0 write and rotate, 0x140A3DCA0 writes only, 0x1421F9B10 rotates only): 0x14182D750 writes +0x110 =
+    ''' the view x projection before the jitter, whose transpose is rows 37..40 (Cb12ViewProjNoJitter), and +0x210 = [camera + 0xA0..0xA8]
+    ''' (0x14182DAE9..DB27), row 35 .xyz through block +0x6B0 (0x14182BEB5..EEA, 0x14181E70B..729: the frame's Eye); then the rotation
+    ''' 0x14182C050.</summary>
+    Friend Sub Fo4CameraFrame(entry As EngineCameraMotionEntry, fr As Fo4FrameRows, caller As EngineCameraCaller)
+        entry.Run(caller, EngineCameraMotionEntry.TransposeRows(Cb12ViewProjNoJitter(fr)), fr.Eye.Xyz)
+    End Sub
+
+    ''' <summary>cb12_prevviewproj_nojitter[4] (Fallout4.exe cb12 rows 31..34, read only by the motion-vector code of the G-buffer PS o5): [block + 0x860]
+    ''' transposed (0x14181E680..6ED) = the camera entry +0x190 (0x14182BDFA..E2B) after the frame's rotation 0x14182C050 = the view x
+    ''' projection before the jitter of the frame before (EngineCameraMotionEntry; the independent verification
+    ''' D:\WinTmp\rc\olasse\s1\f2\A2\V\verif_cb12_engine_no_writer.md: 0x14182DD70 is an unreferenced copy of the rotation). Nothing on a new array entry's first frame
+    ''' (the array buffer's bytes, EngineCameraMotionEntry.NewFo4ListEntry; the engine-no-writer seat "cb12 entry +0x190..+0x1CF first
+    ''' frame", EngineCameraMotionEntry.FirstFrameSeats) - and on every call of 0x140A3DCA0 until a rotation has run (it reads with no
+    ''' rotation); 0 for the embedded entry (Fo4EmbeddedEntry).</summary>
+    Friend Function Cb12PrevViewProjNoJitter(entry As EngineCameraMotionEntry) As Vector4()
+        Return EngineCameraMotionEntry.TransposeRows(entry.Previous)
+    End Function
+
+    ''' <summary>cb12_preveye (Fallout4.exe cb12 row 36 .xyz, read only by the motion-vector code): [block + 0x6C0] (0x14181E743..780, 12 bytes: .w not
+    ''' written) = the camera entry +0x228 (0x14182BE7A..E9F) after the frame's rotation 0x14182C050 = the eye of the frame before
+    ''' (EngineCameraMotionEntry). Nothing on a new array entry's first frame (+0x228 / +0x21C hold the array buffer's bytes: the seat
+    ''' "cb12 entry +0x228..+0x233 first frame", EngineCameraMotionEntry.FirstFrameSeats); 0 for the embedded entry.</summary>
+    Friend Function Cb12PrevEye(entry As EngineCameraMotionEntry) As Vector3?
+        Return entry.PreviousEye
+    End Function
+
     ''' <summary>The engine view -&gt; world rotation's rows, in double (one owner: cb12 12..14 and the deferred ambient,
     ''' PreviewModel.BuildFo4DeferredFrame): R = inverse(GL view rotation) * diag(1, 1, -1) in the column-vector convention - OpenTK
     ''' stores the row-vector matrix, so the column-vector rotation is its transpose, inverted in general, then the columns' z negated.</summary>
@@ -164,6 +200,7 @@ Friend Module Fo4GBufferConstants
     ''' "dfl-no-blendsplit", "dfl-smp-gl-rows") and Fo4DeferredTargets.Ensure ("dfl-cmp-lequal"); --fo4-camz, Fo4DeferredTargets.RunCameraZ
     ''' ("camz-clipinfos", "camz-dispatch-w"); --fo4-post-law, Fo4ImageSpaceChain ("post-bloom-row6", "post-offsets-no7", "post-drp-zw1",
     ''' "post-lut-noweight"); --fo4-refraction-normals, Render.vb RenderRefractionNormalsFo4 ("utl-refr-power0", "utl-eyepos-world").
+    ''' Ola SSE S1 F1.b: ParityGate engine-camera-motion, EngineCameraMotionEntry.Rotate ("camera-rotation-order") and .Run ("camera-fo4-a3dca0-rotates").
     ''' ParityGate (19-oct) fo4-lut-loader, SceneTargets.LutFromBytes ("lut-dx10-ignored", "lut-no-swap", "lut-xz-transposed",
     ''' "lut-skip-flags", "lut-skip-bitcount", "lut-skip-width", "lut-skip-height", "lut-truncated-loaded", "lut-sig-check"; LutVolume
     ''' "lut-volume-nofile"); alpha-sort-key,
@@ -196,7 +233,7 @@ Friend Module Fo4GBufferConstants
     ''' Fo4EnvMapArray.SeededBefore ("tcl-seed-self-counts").
     ''' Ola 8 (ShadowGate full, subjects of the corpus): RenderableMesh.ShadowCasterCut and Fo4RenderPassLaw.ShadowMapCastsCut
     ''' ("cast-flag-ignored"), FO4UnifiedMaterial_Class.Deserialize ("bgem-castshadows-unread").
-    ''' Ola 9 (5b): the CPU route's frame mutants of review rev-04, Fo4EngineVertexPacker.CpuRouteAttributes ("swap-cycx": Cy' and Cx'
+    ''' Ola 9 (5b): the CPU route's frame mutants of review rev-04, EngineVertexPacker.CpuRouteAttributes ("swap-cycx": Cy' and Cx'
     ''' swapped in the Tbn layout) and PackCpuRouteTail ("no-vs-normalize": the VS's normalisation skipped) - before, two Boolean
     ''' switches of their own that a Release build carried.
     ''' Nothing = the laws. Read only under #If DEBUG: a
@@ -227,6 +264,14 @@ Friend Module Fo4GBufferConstants
     ''' camera's framing and the shadow map's, Render.vb), so a frame with some shapes hidden keeps the framing of the frame it is
     ''' compared with. Nothing = the visible shapes' own bounds.</summary>
     Friend GateSceneBounds As (Min As Vector3, Max As Vector3)? = Nothing
+
+    ''' <summary>DEBUG ONLY (ShadowGate --fo4-shadow-law, a FIXTURE, not a mutant): the sun's maps drawn with the app's box of the scene
+    ''' (ShadowMapMath.Fit, as the mutant sun-box-app) - the emitter's VS law (the pancaking on the light's near plane, the far clip, the raster
+    ''' against the oracle) does not depend on the box, and the engine's box over the preview's camera (EngineSunBox, the camera 15000 toward
+    ''' the sun) never has a mesh across its near plane: the fixture's tight box over the gate's shrunk bounds gives that subject.</summary>
+    Friend GateSunBoxAppFixture As Boolean = False
+    ''' <summary>DEBUG ONLY (ShadowGate --sun-box-law [subject], [eye]; a FIXTURE, not a mutant, so a mutant of the command line stays on): the frame without the focus shadow, the sun's maps alone.</summary>
+    Friend GateFocusOffFixture As Boolean = False
 
     ''' <summary>DEBUG ONLY (ShadowGate --effect-exposure, ola 3 rev-C1): the mean luminance the post reads (SceneTargets.Composite
     ''' writes it over the frame's own reduction, the rest of the post unchanged), so a frame can be shown with another frame's

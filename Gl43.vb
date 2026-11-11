@@ -663,6 +663,26 @@ vec4 gl43ClipToGl(vec4 p) { return p; }
         GL.UseProgram(program)
     End Sub
 
+    ''' <summary>F9 (r3, GL 4.6 D.3.3): programs linked in another context of the share group (ProgramBuilder's worker) made complete in
+    ''' this one - each bound once, then none (an object changed in another context is guaranteed visible after it is bound here). No draw
+    ''' follows: not UseProgram's clip-buffer check nor its draw log.</summary>
+    Friend Shared Sub MakeLinkedProgramsCurrent(ids As IEnumerable(Of Integer))
+        For Each id In ids
+            GL.UseProgram(id)
+#If DEBUG Then
+            GateLinkedProgramsBound += 1
+#End If
+        Next
+        GL.UseProgram(0)
+    End Sub
+
+#If DEBUG Then
+    ''' <summary>DEBUG ONLY (F9 r2 rev-10; the census of every ShadowGate run, subject mutant wrap-without-rebind): the programs
+    ''' MakeLinkedProgramsCurrent bound. The driver shows nothing when the re-bind is missing, so the law is this count against
+    ''' ProgramBuilder.GateProgramsWrapped. UI thread only.</summary>
+    Friend Shared GateLinkedProgramsBound As Integer
+#End If
+
 #If DEBUG Then
     ''' <summary>DEBUG ONLY (ola 7f tester, ShadowGate --ola7f): the GL program ids UseProgram bound, in order, while not Nothing.</summary>
     Friend Shared GateUseLog As List(Of Integer) = Nothing

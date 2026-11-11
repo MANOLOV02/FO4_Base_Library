@@ -102,6 +102,18 @@ Friend Module SamplerLaw
         Return r
     End Function
 
+    ''' <summary>Skyrim SE's lighting draw over its own slots (DrawSseEngineLit: unit = EngineSlot): the slots Slots lists for the technique's type - t4 is the facegen detail or the cube, t3 the tint or the
+    ''' height, never both - and t9 (the back light): SetupMaterial 0x141549232..25B writes its texture and the material's address, no writer of its filter (the slot keeps the frame's last). t14 and t11: the frame's (MaskSlot).</summary>
+    Friend Function SseLitSlots(s As SamplerInputs) As List(Of SlotSampler)
+        Dim r = Slots(s)
+        r.RemoveAll(Function(x) x.Unit = If(s.Facegen, AppUnit.Cube, AppUnit.Detail))
+        r.Add(New SlotSampler With {.Unit = AppUnit.Specular, .EngineSlot = 9, .Addr = s.Clamp And 3, .Filt = FiltInherit, .Lod = 0})
+        Return r
+    End Function
+
+    ''' <summary>t14, the mask of the colour pass (SetupTechnique 0x1415486F0..746): address 0, filter = iShadowMaskQuarter != 4 (cl, setne 0x141548731; Setting 0x1420D7300, .data 4): 0, point.</summary>
+    Friend ReadOnly MaskSlot As New SlotSampler With {.Unit = AppUnit.Diffuse, .EngineSlot = 14, .Addr = 0, .Filt = 0, .Lod = 0}
+
     ''' <summary>The utility draws' t0 (z-prepass alpha test, shadow maps, refraction normals): SSE lighting +0x70 / effect +0x80,
     ''' FILT 3 (0x141567010); FO4 always mat+0x48 with mat+0x70 - the shadow map's BSUtilityShader (0x142240F40) and the z-prepass's
     ''' own draw (0x141828FA3..90C: the entry's texture [mat+0x48], its sampler from the table 0x1438E25F0 of 0x141856390 at

@@ -674,6 +674,18 @@ Public Class Config_App
                     hayQueGrabar = True
                 End If
             Next
+            ' The shadow map's side above PreviewShadowSettings.MaxMapSize (8192 left the options: user decision 6-nov-2026) is brought to
+            ' it, logged and saved once (PreviewShadowSettings.WithMapSizeInRange, the pure rule).
+            For Each esSse In {False, True}
+                Dim guardadas = If(esSse, Current.Setting_ShadowMaps16_SSE, Current.Setting_ShadowMaps16_FO4)
+                Dim enRango = PreviewShadowSettings.WithMapSizeInRange(guardadas)
+                If enRango.MapSize <> guardadas.MapSize Then
+                    Dim juego = If(esSse, "Skyrim SE", "Fallout 4"), antes = guardadas.MapSize, despues = enRango.MapSize
+                    Logger.LogLazy(Function() $"[CFG] {juego} shadows: map size {antes} -> {despues}, brought into its range (PreviewShadowSettings.WithMapSizeInRange); the config is saved.")
+                    If esSse Then Current.Setting_ShadowMaps16_SSE = enRango Else Current.Setting_ShadowMaps16_FO4 = enRango
+                    hayQueGrabar = True
+                End If
+            Next
             ' MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
             ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0, o sea
             ' que la estrenaria APAGADA sin haberlo pedido. Si el archivo declara una version anterior,

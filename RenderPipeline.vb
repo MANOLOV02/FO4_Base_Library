@@ -208,6 +208,11 @@ Public Class RenderIntent
     ''' control; ClearDirty does not touch it (user rule: composite = fidelity, piece / picker = editable with a notice).</summary>
     Public Property DrawEngineSkippedForEditing As Boolean = False
 
+    ''' <summary>The view draws an actor's 3D (the NPC view): Skyrim SE's load of an actor's 3D sets flag 40 on all of it (0x1402EA5CD..5DA -&gt; 0x1414E81F0(node, 0x28, 1, 0), inside
+    ''' 0x1402E9EE0), so every lighting shape takes technique bit 22 CharacterLight (s1_re.md 6, P5). False (default): a loose piece takes it only from its own NIF. Set once by the host
+    ''' right after it creates the control; ClearDirty does not touch it.</summary>
+    Public Property EngineActorView As Boolean = False
+
     ' ── Pluggable resolvers (Nothing = skip that step) ──
     Public Property SkeletonResolver As ISkeletonResolver
     ''' <summary>Provee la geometría BASE pre-skin de un shape antes de aplicar los morphs.
