@@ -1226,34 +1226,134 @@ Public Class SkinningHelper
         Return n
     End Function
 
-    ''' <summary>O-PT: the posed global of the shape's skin root (NiSkinInstance / BSSkin_Instance SkeletonRoot) by the bones' own rule:
-    ''' the skeleton bone of that name (posed; bind in single-bone mode), else the NIF node (NifOwnWorld: drawn when
-    ''' <paramref name="ownDrawn"/>). Nothing without a skin root.</summary>
+    ''' <summary>O-PT: the posed global of the shape's skin root. A skin placed by the biped's mount (MountedSkin): the mount's parent
+    ''' (MountParentWorld) whatever the file says - BipedAnim::AttachSkinnedObject writes [skin+0x48] := parent for every skinned direct
+    ''' child it mounts (0x14035EE87..EE98, the skin tested non-null at 0x14035EDED..EE00), replacing the file's SkeletonRoot that LinkObject
+    ''' linked at load (0x1416D7851). Otherwise the file's SkeletonRoot (NiSkinInstance / BSSkin_Instance) by the bones' own rule: the
+    ''' skeleton bone of that name (posed; bind in single-bone mode), else the NIF node (NifOwnWorld: drawn when <paramref name="ownDrawn"/>).
+    ''' Nothing without a skin, or when the file's root is not a node.</summary>
     Friend Shared Function SkinRootWorld(shape As IRenderableShape, skel As SkeletonInstance, cache As SkeletonGlobalTransformCache,
                                          singleBone As Boolean, ownDrawn As Boolean, report As NodeRestLayer.ChainReport,
                                          Optional trace As RestLawTrace = RestLawTrace.Untraced) As Transform_Class
         Dim nif = shape?.NifContent
         Dim ns = shape?.NifShape
         If nif Is Nothing OrElse ns?.SkinInstanceRef Is Nothing OrElse ns.SkinInstanceRef.IsEmpty() Then Return Nothing
-        Dim skin = nif.GetBlock(ns.SkinInstanceRef)
-        Dim root As NiAVObject = Nothing
-        Dim a = TryCast(skin, NiSkinInstance)
-        If a IsNot Nothing Then root = nif.GetBlock(a.SkeletonRoot)
-        Dim b = TryCast(skin, BSSkin_Instance)
-        If b IsNot Nothing Then root = nif.GetBlock(b.SkeletonRoot)
-        Dim rootNode = TryCast(root, NiNode)
+        If MountedSkin(shape, trace) Then Return MountParentWorld()
+        Dim rootNode = TryCast(FileSkinRoot(nif, nif.GetBlock(ns.SkinInstanceRef)).Root, NiNode)
         If rootNode Is Nothing Then Return Nothing
         Dim bone As HierarchiBone_class = Nothing
         Dim es = If(skel, SkeletonInstance.Default)
         If es IsNot Nothing AndAlso es.SkeletonDictionary.TryGetValue(rootNode.Name.String, bone) Then
             Return If(singleBone, CachedBindMount(bone, cache), CachedDisplay(bone, cache))
         End If
-        Dim rootIsBone = False
+        ' Off the mount (MountedSkin returned above): the file's root by the rule of a NIF-own node. The one trace that notes a NIF-own
+        ' node as a skin bone (Fallout 4's biped, NodeRestLayer.NoteMounted) always mounts (MountedSkin: a Fallout 4 NIF on its biped;
+        ' RestTraceOf gives RestLawTrace.Biped to no other), so a skin root never reaches that note here (rev-03).
+        Return NifOwnWorld(rootNode, nif, ownDrawn, report, trace)
+    End Function
+
+    ''' <summary>The skin root the file declares: <c>Known</c> when <paramref name="skin"/> is a skin instance (NiSkinInstance /
+    ''' BSSkin_Instance), <c>Root</c> the block its SkeletonRoot names (Nothing for the link -1 or a missing block).</summary>
+    Private Shared Function FileSkinRoot(nif As Nifcontent_Class_Manolo, skin As NiObject) As (Known As Boolean, Root As NiAVObject)
+        Dim a = TryCast(skin, NiSkinInstance)
+        If a IsNot Nothing Then Return (True, nif.GetBlock(a.SkeletonRoot))
+        Dim b = TryCast(skin, BSSkin_Instance)
+        If b IsNot Nothing Then Return (True, nif.GetBlock(b.SkeletonRoot))
+        Return (False, Nothing)
+    End Function
+
+    ''' <summary>THE ONE DECISION OF THE MOUNT LAW (SkinRootWorld: the skin root; EngineWorldBound.WorldBound: the geometry's world,
+    ''' MountedShapeWorld): True when the preview places <paramref name="shape"/>'s skin as the game's biped mounts it. Per engine
+    ''' (NifSceneVisibility.TracedEngine: a Fallout 4 or a Skyrim SE NIF; any other NIF keeps its file's rule):
+    ''' FALLOUT 4. (1) The biped (<paramref name="trace"/> = RestLawTrace.Biped) with a skin instance: Fallout4.exe's AttachSkinnedObject
+    ''' 0x14035E960 writes [skin+0x48] := the mount's parent (0x14035EE87..EE98) and hangs the geometry from it (0x14035EEA3).
+    ''' SKYRIM SE (SkyrimSE.exe, the same law at its own addresses): the dispatcher 0x14021CE30 (the mount's parent: a node named
+    ''' "SkinAttachment" under [biped+8] (fixed string +0x230, 0x14022514F; 0x14021CF1C..F4A), else the parent of [biped+8] or its
+    ''' grandparent, 0x14021CF53..FB2) calls AttachSkinnedObject 0x14021D170, which for each direct child of the root that is a
+    ''' BSTriShape (vfunc +0x38 AsTriShape non-null: BSTriShape, BSDynamicTriShape, BSSubIndexTriShape; not BSLODTriShape / NiTriShape /
+    ''' NiTriStrips, 0x1401B4CB0 xor eax, eax) with a skin ([geo+0x130], 0x14021D6FF..70A) links its bones and writes [skin+0x20] := the
+    ''' mount's parent (0x14021D840..844; LinkObject's link, 0x140F09775) and hangs the geometry from it or from a new NiNode when the
+    ''' root has two or more (0x14021D2E9..349, 0x14021D851); a child that is not a BSTriShape is detached (0x14021D504..55B). A root that
+    ''' derives from BSFadeNode (RTTI 0x1433D3C88: BSFadeNode, BSLeafAnimNode, BSTreeNode - their C++ class hierarchy) takes the other
+    ''' path: each child with parent 0 (0x14021CEA2..EAB, 0x14021D01B), so no root is written (0x14021D836..83E) and the file's stays.
+    ''' (2) A skin whose SkeletonRoot names no block, off the biped (a loose NIF, a head part, a connect point): placed AS IF WORN, by the
+    ''' same law (user decision 11-nov-2026) - Fallout 4 always; Skyrim SE where its worn law writes the root (the BSTriShape and root
+    ''' rule above; elsewhere the worn game has no root either and the file's rule stays). Why the mount and not the file: the file has
+    ''' no root to place it by, and off the biped the game faults on it. Fallout4.exe: LinkObject 0x1416D7830 stores [skin+0x48] :=
+    ''' GetObjectFromLinkID(SkeletonRoot) (0x1416D7849..851), null for the link -1 (0x1416DE584..58F: cmp ecx, -1 / xor eax, eax);
+    ''' BSGeometry::UpdateWorldBound 0x1416D54A0, with a skin instance (+0x140, 0x1416D5502..50C), calls 0x1416D7D50 (0x1416D5555), which
+    ''' reads the root's world with no null test (0x1416D7F37 / F3E). SkyrimSE.exe: LinkObject 0x140F096E0 stores [skin+0x20] :=
+    ''' GetObjectFromLinkID (0x140F0976D..775), null for the link -1 (0x140EE53C8..3CF); BSGeometry::UpdateWorldBound 0x140EFC810 (skin
+    ''' +0x130, 0x140EFC870; vfunc +0x1B0 null on BSTriShape, 0x14026D4C0) and NiGeometry's 0x140F0C600 (skin +0x128, 0x140F0C668) call
+    ''' 0x140F09CB0, which reads the root's world with no null test (mov rcx, [rbp+0x20] / add rcx, 0x7C, 0x140F09E6F..E78; read
+    ''' [rcx+0x14] at 0x1406BDFD4).
+    ''' A root the file names keeps the file's rule off the biped (Untraced, ConnectPoint), unchanged.</summary>
+    Friend Shared Function MountedSkin(shape As IRenderableShape, trace As RestLawTrace) As Boolean
+        Dim nif = shape?.NifContent
+        Dim ns = shape?.NifShape
+        If nif Is Nothing OrElse ns?.SkinInstanceRef Is Nothing OrElse ns.SkinInstanceRef.IsEmpty() Then Return False
+        Dim skin = nif.GetBlock(ns.SkinInstanceRef)
+        If skin Is Nothing Then Return False
+        Dim engine = NifSceneVisibility.TracedEngine(nif)
+        If Not engine.HasValue Then Return False
+        Dim sseMountable = engine.Value AndAlso SseMountsSkin(nif, ns)
+        Dim biped = If(engine.Value, sseMountable AndAlso GameAttachLaw.WornBySseBiped(shape), trace = RestLawTrace.Biped)
 #If DEBUG Then
-        ' ParityGate fo4-attach-law directed mutant: the skin root annotated like a bone (the law before 7b)
-        rootIsBone = Fo4GBufferConstants.GateMutantOn("ga-root-annotated")
+        ' ParityGate fo4-attach-law [raiz-montaje] / [raiz-montaje-sse] directed mutant: the biped's root read from the file (the law before
+        ' the mount)
+        If Fo4GBufferConstants.GateMutantOn("ga-root-from-file") Then biped = False
 #End If
-        Return NifOwnWorld(rootNode, nif, ownDrawn, report, trace, unresolvedBone:=rootIsBone)
+        If biped Then Return True
+        Dim fileRoot = FileSkinRoot(nif, skin)
+        Dim nullRoot = fileRoot.Known AndAlso fileRoot.Root Is Nothing AndAlso (Not engine.Value OrElse sseMountable)
+#If DEBUG Then
+        ' ParityGate fo4-attach-law [raiz-nula] / ShadowGate --notice-classes c7 directed mutant: a null root off the biped left without the
+        ' mount (the law before 11-nov-2026: no skin root, no world bound)
+        If Fo4GBufferConstants.GateMutantOn("ga-null-root-unmounted") Then nullRoot = False
+#End If
+        Return nullRoot
+    End Function
+
+    ''' <summary>Skyrim SE's AttachSkinnedObject writes the skin root of <paramref name="ns"/> (MountedSkin): a BSTriShape-family shape
+    ''' (AsTriShape, 0x14021D504..511) under a NIF root that does not derive from BSFadeNode (the dispatcher's test, 0x14021CE73..EAB).</summary>
+    Private Shared Function SseMountsSkin(nif As Nifcontent_Class_Manolo, ns As INiShape) As Boolean
+        If Not TypeOf ns Is BSTriShape Then Return False
+        Dim root = nif.GetRootNode()
+#If DEBUG Then
+        ' ParityGate fo4-attach-law [raiz-montaje-sse] directed mutant: the BSFadeNode root mounted like any other
+        If Fo4GBufferConstants.GateMutantOn("ga-sse-fadenode-mounted") Then Return True
+#End If
+        Return Not (TypeOf root Is BSFadeNode OrElse TypeOf root Is BSLeafAnimNode OrElse TypeOf root Is BSTreeNode)
+    End Function
+
+    ''' <summary>The world of the node Fallout 4's biped mounts a skinned object under (the `parent` of BipedAnim::AttachSkinnedObject,
+    ''' chosen by the dispatcher 0x14035DCF9..DD5C: the parent of [biped+8] when it is a BSFadeNode with bit 14, else its grandparent;
+    ''' Skyrim SE's dispatcher 0x14021CE30: a node named "SkinAttachment" under [biped+8] - none in any Skyrim SE skeleton of the corpus -
+    ''' else the parent of [biped+8] or its grandparent, 0x14021CF1C..FB2) in
+    ''' the preview's frame. The preview's world frame IS the actor's: the app draws the actor at the origin and takes [biped+8] for the
+    ''' skeleton's root at world identity (RE_FO4_SKINNED_ATTACH_2026-10-19 re.md H6, the app's design input); the mount parent is
+    ''' above it, in the same frame - the identity. The one seat of that frame: SkinRootWorld (the skin root, 0x14035EE98) and
+    ''' MountedShapeWorld (the geometry's parent, 0x14035EEA3) read it.</summary>
+    Friend Shared Function MountParentWorld() As Transform_Class
+        Return New Transform_Class()
+    End Function
+
+    ''' <summary>The world of a skinned geometry Fallout 4's biped mounts: it is AttachChild'ed to the mount's parent (0x14035EEA3,
+    ''' r12 = [rsp+0x58]: the parent, 0x14035E98B), or to a new NiNode attached to the parent when the object has two or more skinned
+    ''' geometries (0x14035EC52..ECCA; NiNode ctor 0x1416BE500 -&gt; NiAVObject ctor 0x1416C91F0 -&gt; 0x1416B6A50: local = rows
+    ''' [0x1429248D0] [0x142924750] [0x142924A50] = identity, T [0x143448450..458] = 0, S 1.0) - either way parent x the geometry's own
+    ''' local, which the attach does not touch (AttachParent 0x1416C9080) and which keeps its controller chain. The local is the one the
+    ''' preview's rule for the shape's own NIF chain gives (NodeRestLayer.DrawnLocal when <paramref name="ownDrawn"/>, else the file's) -
+    ''' the file's chain above the geometry (the NIF root and any node) is not in the game's world.</summary>
+    Friend Shared Function MountedShapeWorld(ns As INiShape, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean) As Transform_Class
+        Dim o = TryCast(ns, NiAVObject)
+        Dim local As Transform_Class = Nothing
+        If ownDrawn AndAlso o IsNot Nothing Then
+            Dim driven As Boolean, hole As String = Nothing
+            local = NodeRestLayer.DrawnLocal(o, nif, driven, hole)
+        End If
+        If local Is Nothing Then local = New Transform_Class(ns)
+        Return MountParentWorld().ComposeTransforms(local)
     End Function
 
     ''' <summary>THE world transform of a shape's own NIF block AS DRAWN: shape T/R/S x the parent chain (Outfit Studio Anim.cpp:692-704
@@ -1280,29 +1380,29 @@ Public Class SkinningHelper
         Return True
     End Function
 
-    ''' <summary>Ola 0c parte 2: the world of a NIF-own node (a bone the skeleton does not resolve, a skin root) as the shape draws it,
-    ''' or Nothing when that is the file's: NodeRestLayer.DrawnGlobalOrNothing when <paramref name="ownDrawn"/>; else Nothing, and the node
-    ''' noted by the shape's rest trace (NodeRestLayer.NoteMounted; Ola 7b ronda 3): <paramref name="trace"/> Untraced - the default, the law
-    ''' before 7b - reports the blocks the layer would move as excluded; Fallout 4's biped notes a skin bone the skeleton does not resolve
-    ''' (<paramref name="unresolvedBone"/>; a skin root is not one) by its own controller.</summary>
+    ''' <summary>Ola 0c parte 2: the world of a NIF-own node (a bone the skeleton does not resolve, a skin root off the mount) as the shape
+    ''' draws it, or Nothing when that is the file's: NodeRestLayer.DrawnGlobalOrNothing when <paramref name="ownDrawn"/>; else Nothing, and
+    ''' the node noted by the shape's rest trace (NodeRestLayer.NoteMounted; Ola 7b ronda 3): <paramref name="trace"/> Untraced - the default,
+    ''' the law before 7b - reports the blocks the layer would move as excluded; Fallout 4's biped notes a skin bone the skeleton does not
+    ''' resolve by its own controller (a skin root never comes here on that trace: SkinRootWorld, rev-03).</summary>
     Friend Shared Function NifOwnDrawnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport,
-                                            Optional trace As RestLawTrace = RestLawTrace.Untraced, Optional unresolvedBone As Boolean = True) As Transform_Class
+                                            Optional trace As RestLawTrace = RestLawTrace.Untraced) As Transform_Class
         If ownDrawn Then Return NodeRestLayer.DrawnGlobalOrNothing(node, nif, report)
 #If DEBUG Then
         ' ParityGate fo4-attach-law directed mutants, Fallout 4's biped: the bone not noted at all / the whole chain noted (the law before 7b)
-        If trace = RestLawTrace.Biped AndAlso unresolvedBone Then
+        If trace = RestLawTrace.Biped Then
             If Fo4GBufferConstants.GateMutantOn("ga-reparented-off") Then Return Nothing
             If Fo4GBufferConstants.GateMutantOn("ga-chain-annotated") Then NodeRestLayer.GateNoteChain(node, nif, report) : Return Nothing
         End If
 #End If
-        NodeRestLayer.NoteMounted(node, nif, report, trace, unresolvedBone)
+        NodeRestLayer.NoteMounted(node, nif, report, trace, unresolvedBone:=True)
         Return Nothing
     End Function
 
     ''' <summary>NifOwnDrawnWorld, or the file's world (Transform_Class.GetGlobalTransform) when it gives Nothing.</summary>
     Friend Shared Function NifOwnWorld(node As NiNode, nif As Nifcontent_Class_Manolo, ownDrawn As Boolean, report As NodeRestLayer.ChainReport,
-                                       Optional trace As RestLawTrace = RestLawTrace.Untraced, Optional unresolvedBone As Boolean = True) As Transform_Class
-        Return If(NifOwnDrawnWorld(node, nif, ownDrawn, report, trace, unresolvedBone), Transform_Class.GetGlobalTransform(node, nif))
+                                       Optional trace As RestLawTrace = RestLawTrace.Untraced) As Transform_Class
+        Return If(NifOwnDrawnWorld(node, nif, ownDrawn, report, trace), Transform_Class.GetGlobalTransform(node, nif))
     End Function
 
     ''' <summary>Matrix4d -> Matrix4. Se usa al GUARDAR en <c>PerVertexSkinMatrix</c>: el blend sigue

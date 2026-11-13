@@ -490,12 +490,12 @@ uniform bool bShowWeight;
 out float maskFactor;
 out vec3 weightColor;
 flat out int ZappedVert;
-" & AppEditViewsSource.ColorRamp & "
+" & AppEditViewsSource.ColorRamp & AppEditViewsSource.MaskFactor & "
 void main()
 {
     engine_main();
     ZappedVert = (bApplyZap && appVertexMask < 0.0) ? 1 : 0;
-    maskFactor = !bShowMask ? 1.0 : (ZappedVert == 1 ? 1.0 - (-appVertexMask) / 1.5 : 1.0 - appVertexMask / 1.5);
+    maskFactor = !bShowMask ? 1.0 : appMaskFactor(appVertexMask, bApplyZap);
     weightColor = bShowWeight ? colorRamp(appVertexWeight) : vec3(1.0);
 }
 "

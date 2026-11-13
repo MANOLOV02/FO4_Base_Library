@@ -4063,34 +4063,15 @@ Public Class FO4UnifiedMaterial_Class
         If Not paletteColor Then rgb *= baseColorScale
         Dim lin As New OpenTK.Mathematics.Vector3(Shader_Base_Class.EnginePowGamma(rgb.X), Shader_Base_Class.EnginePowGamma(rgb.Y),
                                                   Shader_Base_Class.EnginePowGamma(rgb.Z))
-        Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
+        Dim liByte = LightingInfluenceByte(lightingInfluence)
         Return (lin, liByte, effectLighting AndAlso liByte > 0)
     End Function
 
-    ''' <summary>THE CONSTANTS AN SSE EFFECT SHADER PROPERTY GIVES ITS PIXEL SHADER (SetupMaterial 0x141556C40).
-    ''' <list type="bullet">
-    ''' <item>cb1[0].rgb = BaseColor.rgb * BaseColorScale (0x141556F29..F5B); with palette colour (technique bit 19)
-    ''' cb1[0] = BaseColor raw and cb1[1].x = BaseColorScale (0x141556F10..F24). SSE is raw: no powf.</item>
-    ''' <item>LightingInfluence: LoadBinary writes the byte into +0x81 ONLY when it is not 0 (0x14152952D) over a
-    ''' constructor value of 0xFF, so a 0 in the file reads as 255; cb1[2].x = byte / 255 (0x141556F5F..F86).</item>
-    ''' <item>LIGHTING (technique bit 16) = SLSF2 Effect_Lighting AND byte [0x1420D6D70] != 0 (static 1)
-    ''' (0x14152A377..A39B).</item>
-    ''' </list></summary>
-    Public Shared Function EngineSseEffectConstants(baseColor As Color, baseColorScale As Single, paletteColor As Boolean,
-                                                    lightingInfluence As Single, effectLighting As Boolean) As (BaseColor As OpenTK.Mathematics.Vector3, Influence As Single, LightingTechnique As Boolean)
-        Return EngineSseEffectConstants(New OpenTK.Mathematics.Vector3(baseColor.R / 255.0F, baseColor.G / 255.0F, baseColor.B / 255.0F), baseColorScale,
-                                        paletteColor, lightingInfluence, effectLighting)
-    End Function
-
-    ''' <summary>EngineSseEffectConstants on the base colour as the engine stores it (floats): the file's colour / 255, or a colour
-    ''' controller's value at rest (C10, raw in Skyrim SE).</summary>
-    Public Shared Function EngineSseEffectConstants(baseColor As OpenTK.Mathematics.Vector3, baseColorScale As Single, paletteColor As Boolean,
-                                                    lightingInfluence As Single, effectLighting As Boolean) As (BaseColor As OpenTK.Mathematics.Vector3, Influence As Single, LightingTechnique As Boolean)
-        Dim rgb = baseColor
-        If Not paletteColor Then rgb *= baseColorScale
-        Dim liByte = CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
-        If liByte = 0 Then liByte = &HFF
-        Return (rgb, liByte / 255.0F, effectLighting)
+    ''' <summary>THE LIGHTING-INFLUENCE BYTE, the one seat of both games: the material's float to the byte the engine keeps, (int)trunc(LI x 255)
+    ''' stored in a byte (Fallout 4 0x142171806; Skyrim SE's material +0x81 the same byte, SseEffectConstants.InfluenceByte adds its loader's
+    ''' 0 -&gt; 255, 0x14152952D).</summary>
+    Friend Shared Function LightingInfluenceByte(lightingInfluence As Single) As Integer
+        Return CInt(Math.Truncate(lightingInfluence * 255.0F)) And &HFF
     End Function
 
     ''' <summary>The pure law behind ResolveEngineAlpha (one place, testable without a NIF: Tools\ParityGate

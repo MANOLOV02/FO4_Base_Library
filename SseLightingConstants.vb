@@ -34,42 +34,6 @@ Friend Module SseLightingConstants
         Return Not litSkinned AndAlso Not SseRenderPassLaw.LitPsWorldSpace(litType)
     End Function
 
-    ''' <summary>The D3DXMATRIX 0x140FDEEC0 builds with rdx = 0 (every call of the constant laws passes xor edx, edx: 0x141549AAB,
-    ''' 0x141567AEC) from the NiTransform at rcx (m[i][j] at 4 (3 i + j), t at +0x24, s at +0x30) into r8: inv = 1.0 / s (1.0 =
-    ''' [0x141B5BE28], 0x140FDEEEB..EF3); row i = (inv m[i][0], inv m[i][1], inv m[i][2], 0) (0x140FDEFED..F0BD, the zeros
-    ''' 0x140FDEFFB / F006 / F08A); row 3 = (-(inv ((t.y m[1][0] + t.x m[0][0]) + t.z m[2][0])), -(inv ((t.x m[0][1] + t.y m[1][1]) +
-    ''' t.z m[2][1])), -(inv ((t.y m[1][2] + t.x m[0][2]) + t.z m[2][2])), 1) (0x140FDEF05..FD4 / FE1..003 / F03C..054; the sign
-    ''' mask [0x141B5C730]; 1.0 at 0x140FDF098). The inverse of the world transform: the model-space branches' matrix.</summary>
-    Friend Function InverseWorldMatrix(world As SseNiTransform) As Matrix4
-        Dim inv As Single = 1.0F / world.Scale
-        Dim m = world.Rotation
-        Dim t = world.Translation
-        Dim r3x As Single = -(((t.Y * m.M21 + t.X * m.M11) + t.Z * m.M31) * inv)
-        Dim r3y As Single = -(((t.X * m.M12 + t.Y * m.M22) + t.Z * m.M32) * inv)
-        Dim r3z As Single = -(((t.Y * m.M23 + t.X * m.M13) + t.Z * m.M33) * inv)
-        Return New Matrix4(inv * m.M11, inv * m.M12, inv * m.M13, 0.0F,
-                           inv * m.M21, inv * m.M22, inv * m.M23, 0.0F,
-                           inv * m.M31, inv * m.M32, inv * m.M33, 0.0F,
-                           r3x, r3y, r3z, 1.0F)
-    End Function
-
-    ''' <summary>The camera-relative D3DXMATRIX 0x1415170C0 builds from the NiTransform at rdx into rcx: row r = (s m[0][r], s m[1][r],
-    ''' s m[2][r], 0) (s = +0x30; mulss of s by each element, 0x1415170C0..13B; the zeros 0x1415170EA / 114 / 138), row 3 = (t - eye, 1)
-    ''' (subss of the frame eye [0x1420CFF5C..64], 0x141517140..178). <paramref name="eye"/> = that eye (cb12 row 40's source; the
-    ''' previous-frame callers swap [0x1420CFF68..70] into it first, 0x14154980A..858).</summary>
-    Friend Function WorldRelativeMatrix(t As SseNiTransform, eye As Vector3) As Matrix4
-        Dim s As Single = t.Scale
-        Dim m = t.Rotation
-        Dim tx As Single = t.Translation.X - eye.X, ty As Single = t.Translation.Y - eye.Y, tz As Single = t.Translation.Z - eye.Z
-#If DEBUG Then
-        ' ParityGate sse-constants-law [geometry]: the eye not subtracted.
-        If Fo4GBufferConstants.GateMutantOn("sse-world-noeye") Then tx = t.Translation.X : ty = t.Translation.Y : tz = t.Translation.Z
-#End If
-        Return New Matrix4(s * m.M11, s * m.M21, s * m.M31, 0.0F,
-                           s * m.M12, s * m.M22, s * m.M32, 0.0F,
-                           s * m.M13, s * m.M23, s * m.M33, 0.0F,
-                           tx, ty, tz, 1.0F)
-    End Function
     ''' <summary>The dimmer NiLight +0x134 of a light nobody dims: the NiLight ctor 0x140EED140 writes 1.0 (0x140EED180). The rig's light
     ''' is a NiDirectionalLight whose diffuse is the rig colour as PreviewModel.ResolveFrameLights resolves it (raw in SSE).</summary>
     Friend Const NiLightCtorDimmer As Single = 1.0F
@@ -98,7 +62,7 @@ Friend Module SseLightingConstants
     Friend Function DirLightDirection(lightDirection As Vector3, modelSpace As Boolean, world As SseNiTransform,
                                       route As SseD3dx9.SseD3dxRoute) As Vector4
         Dim d As New Vector3(-lightDirection.X, -lightDirection.Y, -lightDirection.Z)
-        If modelSpace Then d = SseD3dx9.Vec3TransformNormal(route, d, InverseWorldMatrix(world))
+        If modelSpace Then d = SseD3dx9.Vec3TransformNormal(route, d, SseWorldMatrix.InverseWorldMatrix(world))
         Return New Vector4(SseD3dx9.Vec3Normalize(route, d), 0.0F)
     End Function
 
@@ -190,78 +154,31 @@ Friend Module SseLightingConstants
     ''' <summary>[0x1420D68F6] after 0x1400FFA60 = bCharacterLighting:Display .data 1.</summary>
     Friend Const CharacterLightingSetting As Byte = 1
 
-    ''' <summary>FogParam with the fog off: 0x14154C010 with fog near == far == 0 (+0x50 / +0x54, ucomiss 0x14154C0A2..B4) loads the
-    ''' constant [0x141B44EA0] = (5e6, 0.1, 1.0, 0.0) (0x14154C0B6) and stores it to FogParam (0x14154C141). The VS then gives
-    ''' min(sat(d 0.1 - 5e6) 1, 0) = 0 (rec 3901 L88..92): the fog factor COLOR1.w is 0 and the PS's lerp leaves the colour.</summary>
-    Friend ReadOnly FogParamOff As New Vector4(BitConverter.UInt32BitsToSingle(&H4A989680UI), BitConverter.UInt32BitsToSingle(&H3DCCCCCDUI),
-                                               1.0F, 0.0F)
-
-    ''' <summary>The fog property 0x14154C010 reads: 0x1414EC040([0x1420D6970]) (0x14154C020..02F; null = the function writes nothing,
-    ''' je 0x14154C1BB). Its near colour +0x38..+0x40, far colour +0x44..+0x4C, near +0x50, far +0x54, +0x84 and +0x88.</summary>
-    Friend Structure SseFogProperty
-        Public NearColour As Vector3
-        Public FarColour As Vector3
-        Public Near As Single
-        Public Far As Single
-        Public F84 As Single
-        Public F88 As Single
-    End Structure
-
-    ''' <summary>THE FOG LAW 0x14154C010 (ST): with no fog property nothing is written (Nothing). FogParam: near == far == 0 (ucomiss /
-    ''' jne both, 0x14154C0A2..0B4; an unordered compare does not jump either) = the constant [0x141B44EA0] (0x14154C0B6); else
-    ''' r = 1.0 / (far - near) (0x14154C0BF..0CB) and (r near, r, +0x84, +0x88) (mulss and the shufps chain 0x14154C0CF..0EE), stored
-    ''' at 0x14154C141. FogNearColor = (near colour, [0x1420D694C]) (0x14154C035..08E, store 0x14154C163); FogFarColor = (far colour,
-    ''' the stack slot [rsp+0x4C] the function never writes: no VS reads .w) (store 0x14154C184); FogColor (PS) = FogNearColor's 16
-    ''' bytes (xmm6, 0x14154C145 / 0x14154C1B3).</summary>
-    Friend Function FogLaw(fog As SseFogProperty?) As (Param As Vector4, NearColor As Vector4, FarColor As Vector4, Color As Vector4)?
-        If Not fog.HasValue Then Return Nothing
-        Dim g = fog.Value
-        Dim param As Vector4
-        If (g.Far = 0.0F OrElse Single.IsNaN(g.Far)) AndAlso (g.Near = 0.0F OrElse Single.IsNaN(g.Near)) Then
-            param = FogParamOff
-        Else
-            Dim r As Single = 1.0F / (g.Far - g.Near)
-            param = New Vector4(r * g.Near, r, g.F84, g.F88)
-        End If
-        Dim nc As New Vector4(g.NearColour, PreviewModel.RenderableMesh.SseInvFrameBufferRangeWorld)
-        Return (param, nc, New Vector4(g.FarColour, 0.0F), nc)
-    End Function
-
-    ''' <summary>The preview's fog property: the BSFogProperty ctor's (0x14155C1A0): colours from 0x14331D6F0 (.bss, no writer: 0),
-    ''' near = far = 0 - the user decision "no fog" is the engine's off branch.</summary>
-    Friend Function PreviewFog() As SseFogProperty
-        Return New SseFogProperty With {.NearColour = FogPropertyColour, .FarColour = FogPropertyColour}
-    End Function
-
     ''' <summary>FogParam of the preview (user decision: no fog = the engine's branch near = far = 0).</summary>
     Friend Function FogParam() As Vector4
 #If DEBUG Then
         ' ParityGate sse-constants-law [fog-off] / [exe]: a fog that is on (5000 .. 50000, the shape of 0x14154C0BF..EE).
         If Fo4GBufferConstants.GateMutantOn("sse-fog-on") Then Return New Vector4(1.0F / 45000.0F, 5000.0F / 45000.0F, 1.0F, 1.0F)
 #End If
-        Return FogLaw(PreviewFog()).Value.Param
+        Return SseFogLaw.FogLaw(SseFogLaw.PreviewFog()).Value.Param
     End Function
-
-    ''' <summary>The fog property's colours (+0x38..+0x4C) the preview has: the BSFogProperty ctor's (0x14155C1A0) NiColor 0x14331D6F0
-    ''' (0x14155C231..25A; .bss, no writer, s1_re 9: 0, 0, 0).</summary>
-    Friend ReadOnly FogPropertyColour As Vector3 = Vector3.Zero
 
     ''' <summary>FogNearColor (VS cb0, ST 0x14154C105 / store 0x14154C163) = (fog +0x38, +0x3C, +0x40, invFrameBufferRange
     ''' [0x1420D694C]) (0x14154C035..08E).</summary>
     Friend Function FogNearColor() As Vector4
-        Return FogLaw(PreviewFog()).Value.NearColor
+        Return SseFogLaw.FogLaw(SseFogLaw.PreviewFog()).Value.NearColor
     End Function
 
     ''' <summary>FogFarColor (VS cb0, ST 0x14154C10D / store 0x14154C184) = (fog +0x44, +0x48, +0x4C, [rsp+0x4C]): the last float is a
     ''' stack slot 0x14154C010 never writes; no VS reads FogFarColor.w (0 here).</summary>
     Friend Function FogFarColor() As Vector4
-        Return FogLaw(PreviewFog()).Value.FarColor
+        Return SseFogLaw.FogLaw(SseFogLaw.PreviewFog()).Value.FarColor
     End Function
 
     ''' <summary>FogColor (PS cb0, ST 0x14154C11C / store 0x14154C1B3) = the same 16 bytes as FogNearColor (xmm6, 0x14154C145). The PS
     ''' reads .w (the tail's k, rec 4071 L139).</summary>
     Friend Function FogColor() As Vector4
-        Return FogLaw(PreviewFog()).Value.Color
+        Return SseFogLaw.FogLaw(SseFogLaw.PreviewFog()).Value.Color
     End Function
 
     ''' <summary>NumLightNumShadowLight (cb2, SG 0x141549FA0..FE0): (float(technique bits 3..5), float(bits 6..8)) (shr / and 7,
@@ -302,7 +219,7 @@ Friend Module SseLightingConstants
         Dim pos = New Vector4(6) {}, col = New Vector4(6) {}
         Dim mask(3) As Single
         Dim o = If(mode3DB0 = &H16 OrElse mode3DB0 = &H11, ssn2E8, SseUtilityConstants.ShadowRebaseOrigin)
-        Dim inv = If(modelSpace AndAlso world.HasValue, InverseWorldMatrix(world.Value), Matrix4.Identity)
+        Dim inv = If(modelSpace AndAlso world.HasValue, SseWorldMatrix.InverseWorldMatrix(world.Value), Matrix4.Identity)
         For i = 0 To lights.Length - 1
             Dim L = lights(i)
             Dim p As Single = L.Dimmer * L.Factor
@@ -762,11 +679,11 @@ Friend Module SseLightingConstants
         Return (technique And 2UI) = 0UI
     End Function
 
-    ''' <summary>World[3] (VS cb2, 0x14154B6A0 with r8d = 0): M = <see cref="WorldRelativeMatrix"/> of the geometry's world transform
+    ''' <summary>World[3] (VS cb2, 0x14154B6A0 with r8d = 0): M = <see cref="SseWorldMatrix.WorldRelativeMatrix"/> of the geometry's world transform
     ''' (geom +0x7C) and the frame eye (0x14154B6C3); row c = (M[0][c], M[1][c], M[2][c], M[3][c]) for c = 0..2 (0x14154B6C8..751).
     ''' PreviousWorld is the same function with r8d = 1 and the previous eye.</summary>
     Friend Function World(worldTransform As SseNiTransform, eye As Vector3) As Vector4()
-        Dim m = WorldRelativeMatrix(worldTransform, eye)
+        Dim m = SseWorldMatrix.WorldRelativeMatrix(worldTransform, eye)
         Return {m.Column0, m.Column1, m.Column2}
     End Function
 
@@ -929,7 +846,7 @@ Friend Module SseLightingConstants
         ' ParityGate sse-constants-law [eye]: the model-space branch dropped.
         If Fo4GBufferConstants.GateMutantOn("sse-eyepos-world") Then modelSpace = False
 #End If
-        If modelSpace Then Return New Vector4(SseD3dx9.Vec3TransformCoord(route, accumulatorEye, InverseWorldMatrix(world)), 0.0F)
+        If modelSpace Then Return New Vector4(SseD3dx9.Vec3TransformCoord(route, accumulatorEye, SseWorldMatrix.InverseWorldMatrix(world)), 0.0F)
         Return New Vector4(accumulatorEye.X - eye.X, accumulatorEye.Y - eye.Y, accumulatorEye.Z - eye.Z, 0.0F)
     End Function
 
@@ -993,8 +910,8 @@ Friend Module SseLightingConstants
 
     ''' <summary>TextureProj[3] (VS cb2, technique bit 15 and type != 6, 0x14154A116..124): when the geometry's vfunc +0x1A8 answers
     ''' non-null (0x14154A2D9..2E8), rows c = 0..2 = column c of the 4x4 at geometry +0x16C (0x14154A2FC..37F); else A =
-    ''' <see cref="WorldRelativeMatrix"/> of (TextureProjBasis, eye, 1) (0x14154A389..3DF); type 1: A (0x14154A3E4..40A); else B =
-    ''' WorldRelativeMatrix(world, eye) with its row 3 xyz + eye (0x14154A40C..456), M = D3DXMatrixMultiply(B, A) (0x14154A45B);
+    ''' <see cref="SseWorldMatrix.WorldRelativeMatrix"/> of (TextureProjBasis, eye, 1) (0x14154A389..3DF); type 1: A (0x14154A3E4..40A); else B =
+    ''' SseWorldMatrix.WorldRelativeMatrix(world, eye) with its row 3 xyz + eye (0x14154A40C..456), M = D3DXMatrixMultiply(B, A) (0x14154A45B);
     ''' rows c = 0..2 = column c of the result (0x14154A481..517).</summary>
     Friend Function TextureProj(technique As UInteger, geometryProjection As Matrix4?, world As SseNiTransform, eye As Vector3,
                                 route As SseD3dx9.SseD3dxRoute) As Vector4()
@@ -1006,12 +923,12 @@ Friend Module SseLightingConstants
         Dim basis As New SseNiTransform With {
             .Rotation = New Matrix3(TextureProjBasis.X, TextureProjBasis.Y, TextureProjBasis.Z, TextureProjBasis.W, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F),
             .Translation = eye, .Scale = 1.0F}
-        Dim a = WorldRelativeMatrix(basis, eye)
+        Dim a = SseWorldMatrix.WorldRelativeMatrix(basis, eye)
         Dim m As Matrix4
         If LitType(technique) = 1 Then
             m = a
         Else
-            Dim b = WorldRelativeMatrix(world, eye)
+            Dim b = SseWorldMatrix.WorldRelativeMatrix(world, eye)
             b.M41 = b.M41 + eye.X : b.M42 = b.M42 + eye.Y : b.M43 = b.M43 + eye.Z
             m = SseD3dx9.MatrixMultiply(route, b, a)
         End If

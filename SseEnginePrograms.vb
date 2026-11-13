@@ -26,7 +26,7 @@ Friend NotInheritable Class SseEnginePrograms
         Friend ReadOnly Programs As New Dictionary(Of (UInteger, UInteger, Boolean), Sse_Engine_Shader_Class)
         Friend ReadOnly Errors As New Dictionary(Of (UInteger, UInteger, Boolean), String)
     End Class
-    Private ReadOnly _utility As New RecordPrograms, _lighting As New RecordPrograms
+    Private ReadOnly _utility As New RecordPrograms, _lighting As New RecordPrograms, _effect As New RecordPrograms, _effectSurface As New RecordPrograms
 
     Friend Sub New(builder As ProgramBuilder)
         _builder = builder
@@ -45,6 +45,17 @@ Friend NotInheritable Class SseEnginePrograms
     ''' <summary>A g6 program: VS <paramref name="vs"/> on its route with PS <paramref name="ps"/>.</summary>
     Friend Shared Function LightingSpec(vs As UInteger, ps As UInteger, cpuRoute As Boolean) As ProgramSpec
         Return Shader_Base_Class.SpecOf(SseLightingSource.VertexOf(vs, cpuRoute), SseLightingSource.FragmentOf(ps))
+    End Function
+
+    ''' <summary>A g5 program (Ola SSE S2 F3.1): VS <paramref name="vs"/> on its route with PS <paramref name="ps"/>.</summary>
+    Friend Shared Function EffectSpec(vs As UInteger, ps As UInteger, cpuRoute As Boolean) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(SseEffectSource.VertexOf(vs, cpuRoute), SseEffectSource.FragmentOf(ps))
+    End Function
+
+    ''' <summary>The translucent decals' base surface of an effect decal (Ola SSE S2 F3.8, Fallout 4's Fo4DeferredPrograms.EffectSurfaceSpec):
+    ''' its engine VS with the surface foot and SseEffectSource.AppSurfaceFragment.</summary>
+    Friend Shared Function EffectSurfaceSpec(vs As UInteger, cpuRoute As Boolean) As ProgramSpec
+        Return Shader_Base_Class.SpecOf(SseEffectSource.VertexOf(vs, cpuRoute, surface:=True), SseEffectSource.AppSurfaceFragment)
     End Function
 
     ''' <summary>One record through the builder, remembered in <paramref name="list"/>.</summary>
@@ -90,10 +101,34 @@ Friend NotInheritable Class SseEnginePrograms
         Return Record(_lighting, "lit", (vs, ps, cpu), Function() LightingSpec(vs, ps, cpu), errorText, state)
     End Function
 
+    ''' <summary>The g5 program of effect technique <paramref name="t"/> (Ola SSE S2 F3.1; SetupTechnique 0x141556840, keys 0x14158DAB0 /
+    ''' 0x14158DAC0), on the draw's vertex route. The same answers as LightingProgram (0x141556877 -&gt; 0x141556C22: no record, the pass is
+    ''' not drawn).</summary>
+    Friend Function EffectProgram(t As UInteger, cpuRoute As Boolean, ByRef errorText As String, ByRef state As ProgramState) As Sse_Engine_Shader_Class
+        errorText = SseEffectTechnique.MissingEnginePrograms(t)
+        If errorText IsNot Nothing Then state = ProgramState.Failed : Return Nothing
+        Dim vs = SseEffectTechnique.VertexShaderKey(t)
+        Dim ps = SseEffectTechnique.PixelShaderKey(t)
+        Dim cpu = SseEffectSource.EffectiveCpuLayout(vs, cpuRoute) <> Fo4CpuRouteLayout.None
+        Return Record(_effect, "eff", (vs, ps, cpu), Function() EffectSpec(vs, ps, cpu), errorText, state)
+    End Function
+
+    ''' <summary>The decals' base surface program of effect technique <paramref name="t"/>'s VS on the draw's route (EffectSurfaceSpec); the
+    ''' same answers as EffectProgram.</summary>
+    Friend Function EffectSurfaceProgram(t As UInteger, cpuRoute As Boolean, ByRef errorText As String, ByRef state As ProgramState) As Sse_Engine_Shader_Class
+        errorText = SseEffectTechnique.MissingEnginePrograms(t)
+        If errorText IsNot Nothing Then state = ProgramState.Failed : Return Nothing
+        Dim vs = SseEffectTechnique.VertexShaderKey(t)
+        Dim cpu = SseEffectSource.EffectiveCpuLayout(vs, cpuRoute) <> Fo4CpuRouteLayout.None
+        Return Record(_effectSurface, "effsurf", (vs, 0UI, cpu), Function() EffectSurfaceSpec(vs, cpu), errorText, state)
+    End Function
+
     ''' <summary>The remembered build failures forgotten (a gesture's retry, PreviewControl.ForgetProgramFailures).</summary>
     Friend Sub ForgetFailures()
         _utility.Errors.Clear()
         _lighting.Errors.Clear()
+        _effect.Errors.Clear()
+        _effectSurface.Errors.Clear()
     End Sub
 
     ''' <summary>Every program deleted, every request still in the builder let go (the control's Clean, the context current).</summary>
@@ -102,6 +137,8 @@ Friend NotInheritable Class SseEnginePrograms
         _built.Clear()
         _utility.Programs.Clear() : _utility.Errors.Clear()
         _lighting.Programs.Clear() : _lighting.Errors.Clear()
+        _effect.Programs.Clear() : _effect.Errors.Clear()
+        _effectSurface.Programs.Clear() : _effectSurface.Errors.Clear()
         _requests.AbandonAll()
     End Sub
 End Class

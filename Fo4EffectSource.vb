@@ -75,13 +75,13 @@ uniform bool bShowWeight;
 out float maskFactor;
 out vec3 weightColor;
 flat out int ZappedVert;
-" & AppEditViewsSource.ColorRamp & "
+" & AppEditViewsSource.ColorRamp & AppEditViewsSource.MaskFactor & "
 void main()
 {
     engine_main();
     if (bEnginePosition) gl_Position = gl43ClipToGl(enginePosition[gl_VertexID]);
     ZappedVert = (bApplyZap && appVertexMask < 0.0) ? 1 : 0;
-    maskFactor = !bShowMask ? 1.0 : (ZappedVert == 1 ? 1.0 - (-appVertexMask) / 1.5 : 1.0 - appVertexMask / 1.5);
+    maskFactor = !bShowMask ? 1.0 : appMaskFactor(appVertexMask, bApplyZap);
     weightColor = bShowWeight ? colorRamp(appVertexWeight) : vec3(1.0);
 }
 "
@@ -103,13 +103,13 @@ out vec3 weightColor;
 flat out int ZappedVert;
 uniform mat4 appInvViewProj;
 out vec3 appRel;
-" & AppEditViewsSource.ColorRamp & "
+" & AppEditViewsSource.ColorRamp & AppEditViewsSource.MaskFactor & "
 void main()
 {
     engine_main();
     if (bEnginePosition) gl_Position = gl43ClipToGl(enginePosition[gl_VertexID]);
     ZappedVert = (bApplyZap && appVertexMask < 0.0) ? 1 : 0;
-    maskFactor = !bShowMask ? 1.0 : (ZappedVert == 1 ? 1.0 - (-appVertexMask) / 1.5 : 1.0 - appVertexMask / 1.5);
+    maskFactor = !bShowMask ? 1.0 : appMaskFactor(appVertexMask, bApplyZap);
     weightColor = bShowWeight ? colorRamp(appVertexWeight) : vec3(1.0);
     vec4 c = gl_Position;
     vec4 r = appInvViewProj * vec4(c.x, c.y * gl43ClipOrigin.x, 0.5 * (c.z + c.w), c.w);
@@ -119,22 +119,14 @@ void main()
     Friend Const PsGlobals As String = "// APP: SV_POSITION.xy of the effect PS - the D3D pixel position (gl_FragCoord.xy; the frame is in D3D rows), set by the app entry.
 vec2 efxSvPosition;
 "
-    Friend Const AppMain As String = "// APP ENTRY of the engine effect PS (ola 3): the record's engine_main writes o0 and its kill (its own alpha test against
+    ''' <summary>The app entry of every effect PS (APP_Main of gen_effect_vb.py).</summary>
+    Friend ReadOnly Property AppMain As String
+        Get
+            Return "// APP ENTRY of the engine effect PS (ola 3): the record's engine_main writes o0 and its kill (its own alpha test against
 // AlphaTestRef); SV_POSITION.xy = gl_FragCoord.xy (the frame is in D3D rows, as the G-buffer stage). After it, the app's parts of
 // the draw: the flat view, mask / weight / hide / zap, the translucent decals' base modes, the coverage of the
 // HDR target and, post off, the 2.3.8 display law of an effect (pow 1/2.2).
-in float maskFactor;
-in vec3 weightColor;
-flat in int ZappedVert;
-uniform bool bHide;
-uniform bool bApplyZap;
-uniform bool bShowMask;
-uniform bool bShowWeight;
-uniform bool bShowTexture;
-uniform bool bWireframe;
-uniform vec3 color;              // the shape's Wirecolor (edit view)
-uniform vec3 subColor;           // the shape's TintColor (edit view)
-// Post off (Apply post-process unchecked), not in the G-buffer stage and not a debug view (RenderableMesh.ApplyFo4EffectDraw): the
+" & AppEditViewsSource.EffectEditFootDecl & "// Post off (Apply post-process unchecked), not in the G-buffer stage and not a debug view (RenderableMesh.ApplyFo4EffectDraw): the
 // 2.3.8 display law of an effect, pow(1/2.2) of the linear colour, with the engine's encode token (rec3648 L38; S0-E P1).
 uniform bool bLegacyDisplay;
 // What this draw adds to the coverage of the HDR target (attachment 1, SceneTargets): 0 covers (1), 1 its alpha, 2 nothing.
@@ -152,24 +144,16 @@ void main()
     // THE EDITOR'S FLAT VIEW (app design; Q1 of ola 3, the rule of D17 12-oct-2026 for the G-buffer records): without texture the
     // effect's colour is the edit colour - the Wirecolor times the TintColor outside wireframe - through the colour law exp2(2.2 *
     // log2(c)); its alpha stays the record's.
-    if (!bShowTexture)
-    {
-        vec3 e = clamp(color, 0.0, 1.0);
-        if (!bWireframe) e *= subColor;
-        o0.rgb = vec3(d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.r)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.g)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.b)));
-    }
-    if (bShowMask) o0.rgb *= maskFactor;
-    if (bShowWeight) o0.rgb *= weightColor;
-    if (bHide || (bApplyZap && ZappedVert == 1)) kill = true;
-    if (kill) discard;
-    if ((uDecalBaseMode == 1 && o0.a <= 0.0) || uDecalBaseMode == 3 || (uDecalBaseMode == 4 && o0.a >= 1.0)) discard;
-    if (bLegacyDisplay) o0.rgb = pow(max(o0.rgb, vec3(0.0)), vec3(" & Shader_Base_Class.EngineGammaEncodeGlsl & "));
+" & AppEditViewsSource.EffectFlatViewOpen & "        o0.rgb = vec3(d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.r)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.g)), d3d_exp2(" & Shader_Base_Class.EngineGammaGlsl & " * d3d_log2(e.b)));
+" & AppEditViewsSource.EffectEditFootClose & "    if (bLegacyDisplay) o0.rgb = pow(max(o0.rgb, vec3(0.0)), vec3(" & Shader_Base_Class.EngineGammaEncodeGlsl & "));
     fragColor = o0;
     if (uCoverageMode == 1) coverageOut = vec4(o0.a, o0.a, 0.0, o0.a);
     else if (uCoverageMode == 2) coverageOut = vec4(0.0);
     else coverageOut = vec4(1.0);
 }
 "
+        End Get
+    End Property
 
     ''' <summary>The stage texts (PS / VS / CPU-route VS classes). They are the embedded block Fo4EffectBlocks (Fo4EffectBlocks.glsl.gz, one GZip member per class, and its index
     ''' Fo4EffectBlocks.glsl.idx: Tools/ShaderTranscription/common/glslgz.py) generated with this module; a class is read when first asked for

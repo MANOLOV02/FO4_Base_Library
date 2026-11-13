@@ -482,6 +482,7 @@ Public Module FaceTintCompositor
             ("RENDER-FLOOR-FRAGMENT", Floor_Shader_Class.Fragment_Floor),
             ("RENDER-SSE-VERTEX", Shader_Class_SSE.Vertex_SSE),
             ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE),
+            ("RENDER-SSE-FRAGMENT-SPEC", Shader_Class_SSE.GateFragmentSseMutants(Shader_Class_SSE.Fragment_SSE)),
             ("RENDER-SSE-DECALBASESURFACE-FRAGMENT", Shader_Class_SSE.Fragment_SseDecalBaseSurface),
             ("GROUND-SHADOW-UNIFORMS", GroundShadowLookupSource.SharedUniformsGlsl),
             ("GROUND-SHADOW-LOOKUP", GroundShadowLookupSource.SharedLookupGlsl),
@@ -493,9 +494,8 @@ Public Module FaceTintCompositor
             ("OVERLAY-FRAGMENT", TextOverlayRenderer.FragmentOverlaySrc),
             ("BACKGROUND-FADE-HELPER", BackgroundFadeSource.Fade_Helper),
             ("LEGACY-DISPLAY-TONEMAP", LegacyDisplaySource.Tonemap_Glsl),
-            ("SOFT-EFFECT", SoftEffectSource.Soft_Glsl),
             ("SSE-LIT-TAIL", SseLitTailSource.Tail_Glsl),
-            ("SSE-PREPASS", SsePrepassSource.Prepass_Glsl),
+            ("SSE-BASE-SURFACE-LIGHT", SseBaseSurfaceSource.Light_Glsl),
             ("REFRACTION-VERTEX", RefractionSource.Vertex_Glsl),
             ("REFRACTION-NORMALS-FRAGMENT", RefractionSource.Normals_Fragment),
             ("REFRACTION-IS-VERTEX", RefractionSource.ImageSpace_Vertex),
@@ -522,9 +522,8 @@ Public Module FaceTintCompositor
             ("SSE-SAO-BODY_RAWAO", SseSaoSource.Body_RawAO),
             ("SSE-SAO-BODY_BLURH", SseSaoSource.Body_BlurH),
             ("SSE-SAO-BODY_BLURV", SseSaoSource.Body_BlurV),
-            ("SSE-AONRM-ENGINEFRAME_GLSL", SseAoNormalSource.EngineFrame_Glsl),
-            ("SSE-AONRM-VS_GLSL", SseAoNormalSource.Vs_Glsl),
             ("SSE-AONRM-PS_GLSL", SseAoNormalSource.Ps_Glsl),
+            ("APP-SKIN-LAW-SSE-GPU-BLEND", AppSkinLaw.SseGpuBlendGlsl),
             ("BACKGROUND-VERTEX", BackgroundFadeSource.Vertex_Background),
             ("BACKGROUND-FRAGMENT", BackgroundFadeSource.Fragment_Background),
             ("POST-FO4-FRAGMENT", PostProcessShaderSource.Fragment_PostFo4),
@@ -545,9 +544,13 @@ Public Module FaceTintCompositor
             ("FO4-POST-APP-ACTORMEAN", Fo4ImageSpaceAppSource.Fragment_ActorMean),
             ("FO4-POST-APP-PRESENT", Fo4ImageSpaceAppSource.Fragment_Present),
             ("APP-SKIN-LAW", AppSkinLaw.Glsl),
-            ("APP-EDIT-VIEWS-COLORRAMP", AppEditViewsSource.ColorRamp)}).
+            ("APP-EDIT-VIEWS-COLORRAMP", AppEditViewsSource.ColorRamp),
+            ("APP-EDIT-VIEWS-MASKFACTOR", AppEditViewsSource.MaskFactor),
+            ("APP-EDIT-VIEWS-EFFECT-FOOT-DECL", AppEditViewsSource.EffectEditFootDecl),
+            ("APP-EDIT-VIEWS-EFFECT-FLAT-OPEN", AppEditViewsSource.EffectFlatViewOpen),
+            ("APP-EDIT-VIEWS-EFFECT-FOOT-CLOSE", AppEditViewsSource.EffectEditFootClose)}).
             Concat(Fo4GBufferSource.AllSources()).Concat(Fo4EffectSource.AllSources()).Concat(Fo4LightingSource.AllSources()).
-            Concat(Fo4UtilitySource.AllSources()).Concat(SseUtilitySource.AllSources()).Concat(SseLightingSource.AllSources()).Concat(Fo4DFLightSource.AllSources()).Concat(Fo4DFCompositeSource.AllSources()).
+            Concat(Fo4UtilitySource.AllSources()).Concat(SseUtilitySource.AllSources()).Concat(SseLightingSource.AllSources()).Concat(SseEffectSource.AllSources()).Concat(Fo4DFLightSource.AllSources()).Concat(Fo4DFCompositeSource.AllSources()).
             Concat(Fo4ImageSpaceSource.AllSources()).ToArray()
     End Function
 #End If

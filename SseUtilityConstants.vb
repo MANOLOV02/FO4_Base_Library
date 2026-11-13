@@ -193,7 +193,7 @@ Friend Module SseUtilityConstants
     ''' <summary>World[4] (VS cb2): without technique bit 2 (0x1415674E1): the geometry's world transform - a particle system's (geometry
     ''' vfunc +0x80 non-null, 0x1415674EA..4F9) with its translation moved to the world point of geometry +0x110..+0x118 c:
     ''' (((m[0][1] c.y + m[0][0] c.x) + m[0][2] c.z) s + t.x, ((m[1][1] c.y + m[1][0] c.x) + m[1][2] c.z) s + t.y, ((m[2][0] c.x +
-    ''' m[2][1] c.y) + m[2][2] c.z) s + t.z) (0x1415674FF..60B) - through <see cref="SseLightingConstants.WorldRelativeMatrix"/>
+    ''' m[2][1] c.y) + m[2][2] c.z) s + t.z) (0x1415674FF..60B) - through <see cref="SseWorldMatrix.WorldRelativeMatrix"/>
     ''' (0x141567617 / 0x14156763C) and D3DXMatrixTranspose (0x14156765D). Then, outside the mask techniques and the paraboloid
     ''' branch, (t AND &H1E00100) = 0x100 rewrites it with the plain world transform (0x1415679D4..A05). Nothing = not written.</summary>
     Friend Function UtlWorld(t As UInteger, world As SseLightingConstants.SseNiTransform, particleCenter As Vector3?, eye As Vector3,
@@ -211,10 +211,10 @@ Friend Module SseUtilityConstants
                                             ((r.M22 * c.Y + r.M21 * c.X) + r.M23 * c.Z) * s + tr.Y,
                                             ((r.M31 * c.X + r.M32 * c.Y) + r.M33 * c.Z) * s + tr.Z)
             End If
-            m = SseD3dx9.MatrixTranspose(route, SseLightingConstants.WorldRelativeMatrix(w, eye))
+            m = SseD3dx9.MatrixTranspose(route, SseWorldMatrix.WorldRelativeMatrix(w, eye))
         End If
         If Not UtlMaskTechnique(t) AndAlso Not UtlParaboloidBranch(t) AndAlso (t And &H1E00100UI) = &H100UI Then
-            m = SseD3dx9.MatrixTranspose(route, SseLightingConstants.WorldRelativeMatrix(world, eye))
+            m = SseD3dx9.MatrixTranspose(route, SseWorldMatrix.WorldRelativeMatrix(world, eye))
         End If
         If Not m.HasValue Then Return Nothing
         Return {m.Value.Row0, m.Value.Row1, m.Value.Row2, m.Value.Row3}
@@ -243,7 +243,7 @@ Friend Module SseUtilityConstants
                               route As SseD3dx9.SseD3dxRoute) As (Value As Vector4, XyzWritten As Boolean)?
         If Not UtlGeometryBranch(t) OrElse (t And &H1200UI) = &H1200UI OrElse (t And &H200UI) = 0UI Then Return Nothing
         If (t And &H400UI) = 0UI Then Return (New Vector4(0.0F, 0.0F, 0.0F, prop104), False)
-        Dim p = SseD3dx9.Vec3TransformCoord(route, accumulatorEye, SseLightingConstants.InverseWorldMatrix(world))
+        Dim p = SseD3dx9.Vec3TransformCoord(route, accumulatorEye, SseWorldMatrix.InverseWorldMatrix(world))
         Return (New Vector4(p, prop104), True)
     End Function
 

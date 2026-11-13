@@ -44,7 +44,7 @@ Friend Module ProgramCatalog
 
     ''' <summary>The families, in the census's order: the control's slots and its holders' (both games), the programs outside them (the
     ''' labels, the facetint compositor, Gl43's offset probe), then Fallout 4's transcribed lists and Skyrim SE's (s1_propuesta.md §F3 point 8).</summary>
-    Friend ReadOnly Families As String() = {"app-sets", "other", "fo4-gbuffer", "fo4-effect", "fo4-b10", "fo4-b11", "fo4-b07", "fo4-imagespace", "fo4-b06", "sse-lighting", "sse-utility"}
+    Friend ReadOnly Families As String() = {"app-sets", "other", "fo4-gbuffer", "fo4-effect", "fo4-b10", "fo4-b11", "fo4-b07", "fo4-imagespace", "fo4-b06", "sse-lighting", "sse-utility", "sse-effect"}
 
     ''' <summary>Every entry of <paramref name="family"/> (one of Families).</summary>
     Friend Function Entries(family As String) As IEnumerable(Of Entry)
@@ -60,6 +60,7 @@ Friend Module ProgramCatalog
             Case "fo4-b06" : Return LightingEntries()
             Case "sse-lighting" : Return SseLightingEntries()
             Case "sse-utility" : Return SseUtilityEntries()
+            Case "sse-effect" : Return SseEffectEntries()
             Case Else : Throw New ArgumentOutOfRangeException(NameOf(family), family, "not a family of the program catalog")
         End Select
     End Function
@@ -140,6 +141,27 @@ Friend Module ProgramCatalog
                 ' PS key 0x2000: what the key function answers exactly when the technique takes the null PS (0x14158EA10..; PixelShaderNull), which looks no PS up: a record production never binds.
                 Dim pedido = k.Ps <> &H2000UI AndAlso (Not esMascara OrElse (k.Ps And &H1E0000UI) = (1UI << 19))
                 Yield New Entry("sse-utility", $"SSE utility (VS 0x{k.Vs:X8}{Ruta(c)}, PS 0x{k.Ps:X8})", Function() SseEnginePrograms.UtilitySpec(k.Vs, k.Ps, False, c), pedido)
+            Next
+        Next
+    End Function
+
+    ''' <summary>g5 (Ola SSE S2 F3.1): every (VS, PS) of the law (SseEffectSource.LawTuples, the closed list's tuples: SetupTechnique 0x141556840) on its
+    ''' VS's routes, and every VS with the translucent decals' base surface (SseEnginePrograms.EffectSurfaceSpec). Asked: the colour draw
+    ''' (SseEnginePrograms.EffectProgram) and the base surface (EffectSurfaceProgram) ask for the technique's records whatever they are, and
+    ''' compose only the keys.</summary>
+    Private Iterator Function SseEffectEntries() As IEnumerable(Of Entry)
+        For Each tu In SseEffectSource.LawTuples
+            Dim k = tu
+            For Each cpu In Routes(Function(cr) SseEffectSource.EffectiveCpuLayout(k.Vs, cr))
+                Dim c = cpu
+                Yield New Entry("sse-effect", $"SSE effect (VS 0x{k.Vs:X8}{Ruta(c)}, PS 0x{k.Ps:X8})", Function() SseEnginePrograms.EffectSpec(k.Vs, k.Ps, c), True)
+            Next
+        Next
+        For Each kv In SseEffectSource.VertexStages
+            Dim vs = kv.Key
+            For Each cpu In Routes(Function(cr) SseEffectSource.EffectiveCpuLayout(vs, cr))
+                Dim c = cpu
+                Yield New Entry("sse-effect", $"SSE effect decal base surface (VS 0x{vs:X8}{Ruta(c)})", Function() SseEnginePrograms.EffectSurfaceSpec(vs, c), True)
             Next
         Next
     End Function

@@ -9,7 +9,8 @@ Imports NiflySharp.Blocks
 ''' NiSkinData overall transform (SSE only) and the shape's world (SSE 0x140F09CB0, FO4 0x1416D7D50). Union: SSE 0x140EFECA0, FO4
 ''' inline in 0x1416D7D50. Measured over both corpora by sort_anchor2.py and re2/anim (row O-PT).
 ''' <para>Bone and root worlds: the posed globals the app skins with (skeleton bone by name, else the NIF node), the same rule
-''' sort_anchor2.py used. Placements in the app's Double (they are the app's pose); the union in float32 as the engine.</para></summary>
+''' sort_anchor2.py used; a shape Fallout 4's biped mounts takes the mount's parent for its skin root and for its geometry's parent
+''' (SkinningHelper.SkinRootWorld / MountedShapeWorld, 0x14035EE98 / 0x14035EEA3), not the file's. Placements in the app's Double (they are the app's pose); the union in float32 as the engine.</para></summary>
 Friend Module EngineWorldBound
 
     Friend Structure Sphere
@@ -146,8 +147,17 @@ Friend Module EngineWorldBound
             Return New Sphere(c, Place(NodeRestLayer.DrawnGlobal(TryCast(ns, NiAVObject), nif), New Sphere(Vector3.Zero, b.Radius)).Radius)
         End If
         If geo.BoneWorldPose Is Nothing OrElse geo.SkinRootPose Is Nothing Then Return Nothing
-        ' Ola 0c parte 2: drawn (NodeRestLayer) when the shape's own NIF chain is (SkinnedGeometry.NifOwnDrawn), else the file's.
-        Dim geomWorld = If(geo.NifOwnDrawn, NodeRestLayer.DrawnGlobal(TryCast(ns, NiAVObject), nif), Transform_Class.GetGlobalTransform(ns, nif))
+        ' A skin the biped's mount places (SkinningHelper.MountedSkin, the one decision: Fallout 4's biped, or a null root off it as if worn):
+        ' the geometry hangs from the mount's parent (SkinningHelper.MountedShapeWorld, 0x14035EEA3), the skin root is that parent
+        ' (SkinRootPose, 0x14035EE98). Otherwise, ola 0c parte 2: drawn (NodeRestLayer) when the shape's own NIF chain is
+        ' (SkinnedGeometry.NifOwnDrawn), else the file's.
+        Dim mounted = SkinningHelper.MountedSkin(shape, geo.RestTrace)
+#If DEBUG Then
+        ' ParityGate fo4-attach-law [raiz-montaje] directed mutant: the biped's geometry placed by the file's chain (the law before this one)
+        If Fo4GBufferConstants.GateMutantOn("ga-geom-from-file") Then mounted = False
+#End If
+        Dim geomWorld = If(mounted, SkinningHelper.MountedShapeWorld(ns, nif, geo.NifOwnDrawn),
+                           If(geo.NifOwnDrawn, NodeRestLayer.DrawnGlobal(TryCast(ns, NiAVObject), nif), Transform_Class.GetGlobalTransform(ns, nif)))
         Dim skin = nif.GetBlock(skinRef)
         Dim u As Sphere? = Nothing
         Dim local As Transform_Class

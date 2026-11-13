@@ -100,6 +100,26 @@ Friend Module SseUtilityTechnique
         Return t
     End Function
 
+    ''' <summary>THE TECHNIQUE OF AN EFFECT'S SLOT 0x2B (BSEffectShaderProperty 0x14152A0A0; Ola SSE S2 F2.4, s2_re.md 6.3): built only in mode
+    ''' 0xC with NORMAL in the vertex desc, no NiAlphaProperty or its test, ZTest and ZWrite (0x14152A0C2..121: SseRenderPassLaw.
+    ''' EffectTechniqueBit26, the caller's InPrepass): &amp;H20002000 (0x14152A12C); with the NiAlphaProperty's test (0x14152A134..144)
+    ''' &amp;H20002082 + 1 when the vertex desc has a colour stream (AND &amp;H0802000000000000, 0x14152A14E..15E) and bit 15 with SLSF1 5 and
+    ''' the palette texture (0x140EB12C0 on material + 0x78, 0x14152A164..17C: SseShapeInputs.PaletteAlpha); | 4 with a skin instance
+    ''' [geom + 0x130] (0x14152A185..1A8); the pass is the technique + 0x2B (0x14152A1B0) on BSUtilityShader.</summary>
+    Friend Function EffectSlot2BTechnique(s As SseRenderPassLaw.SseShapeInputs, geometryHasSkin As Boolean) As UInteger
+        Dim t As UInteger = &H20002000UI
+        If s.AlphaPropertyPresent AndAlso s.Test Then
+            t = &H20002082UI + If(s.HasVertexColors, 1UI, 0UI)
+#If DEBUG Then
+            ' ParityGate sse-effect-slot2b-oracle directed mutant (the tester's MA): the vertex-colour + 1 of 0x14152A14E..15E dropped
+            If Fo4GBufferConstants.GateMutantOn("sse-eff-slot2b-no-vc") Then t = &H20002082UI
+#End If
+            If s.PaletteAlpha Then t = t Or &H8000UI
+        End If
+        If geometryHasSkin Then t = t Or 4UI
+        Return t
+    End Function
+
     ''' <summary>The pass ID of a utility technique (0x14151B6D5: add eax, 0x2B).</summary>
     Friend Function PassId(technique As UInteger) As UInteger
         Return technique + &H2BUI
@@ -225,14 +245,24 @@ Friend Module SseUtilityTechnique
             If Not SseUtilitySource.PixelShaders.TryGetValue(PixelShaderKey(t), p) Then Continue For
             r(p.Record) = p.FnKey
         Next
+        ' Ola SSE S2 (U5): an effect's slot 0x2B technique (EffectSlot2BTechnique) on every combination of what it reads - the test on (the
+        ' cut exists only with it), the vertex colour, the palette alpha, the skin instance.
+        For m = 0 To 7
+            Dim s As New SseRenderPassLaw.SseShapeInputs With {.IsEffect = True, .AlphaPropertyPresent = True, .Test = True,
+                .HasVertexColors = (m And 1) <> 0, .PaletteAlpha = (m And 2) <> 0}
+            Dim t = EffectSlot2BTechnique(s, (m And 4) <> 0)
+            If PixelShaderNull(t) Then Continue For
+            Dim p As GlslPixelStage = Nothing
+            If Not SseUtilitySource.PixelShaders.TryGetValue(PixelShaderKey(t), p) Then Continue For
+            r(p.Record) = p.FnKey
+        Next
         Return r
     End Function
 
-    ''' <summary>The record of the depth PS the z-prepass of a lighting shape binds (Slot2BTechnique mode 0xC, PixelShaderKey): 0 = the null PS (no
-    ''' alpha test: the prepass keeps every fragment), -1 = no record in the cache (the prepass draws nothing: DrawSseEnginePrepass's
-    ''' notice; the views keep nothing of it either).</summary>
-    Friend Function PrepassCutRecord(s As SseRenderPassLaw.SseShapeInputs) As Integer
-        Dim t = Slot2BTechnique(s, SseUtilityMode.Depth, castShadows:=True, acc12E:=False)
+    ''' <summary>The record of the depth PS the z-prepass technique <paramref name="t"/> binds (a lighting shape's Slot2BTechnique mode 0xC, an
+    ''' effect's EffectSlot2BTechnique; PixelShaderKey): 0 = the null PS (no alpha test: the prepass keeps every fragment), -1 = no record in
+    ''' the cache (the prepass draws nothing: DrawSseEnginePrepass's notice; the views keep nothing of it either).</summary>
+    Friend Function PrepassCutRecord(t As UInteger) As Integer
         If PixelShaderNull(t) Then Return 0
         Dim rec = PixelRecord(PixelShaderKey(t))
         Return If(rec >= 0, rec, -1)

@@ -42,7 +42,7 @@ Friend Module SseRenderPassLaw
         Public TreeAnim As Boolean       ' SLSF2 29 (bit 61)
         Public HdLodObjects As Boolean   ' SLSF2 31 (bit 63)
         ' The rest of the lighting technique-type selector (LitTechniqueType), of the cb2[6] write (LitViewVectorWritten) and the
-        ' effect's BLOOD bit (EffectBloodTechnique).
+        ' effect's BLOOD bit (SseEffectTechnique.Technique, its one owner).
         Public EnvMap As Boolean         ' SLSF1 7
         Public FaceGenDetail As Boolean  ' SLSF1 10
         Public Parallax As Boolean       ' SLSF1 11
@@ -91,7 +91,21 @@ Friend Module SseRenderPassLaw
         ''' <summary>The NiAlphaProperty blend functions the effect technique reads (flags bits 1-4 and 5-8, 0x14152A4B9..4FD).</summary>
         Public AlphaSrc As Integer
         Public AlphaDst As Integer
+        ''' <summary>Ola SSE S2: the geometry kind the effect technique 0x14152A2B0 reads - a particle system (its vfunc 0x80 non-null and
+        ''' its RTTI not BSStripParticleSystem, 0x14152A329..350) or a strip system (RTTI BSStripParticleSystem, 0x14152A355..36F); Mesh
+        ''' (0) for every shape the preview draws (particles: notice, user decision 12-oct-2026).</summary>
+        Public EffectGeometry As SseEffectGeometry
+        ''' <summary>Ola SSE S2: the sub-texture byte of 0x14152A492..4B7 - the geometry's vfunc 0x80 non-null and its particle data's
+        ''' sub-texture count [[geom + 0x158] + 0x68] above 0 (NiPSysData's Subtexture Offsets); False for a mesh.</summary>
+        Public ParticleSubTexture As Boolean
     End Structure
+
+    ''' <summary>The geometry kinds of BSEffectShaderProperty's technique 0x14152A2B0 (SseShapeInputs.EffectGeometry).</summary>
+    Friend Enum SseEffectGeometry
+        Mesh = 0
+        Particles = 1
+        StripParticles = 2
+    End Enum
 
     Friend Enum SseDepthFunc
         ''' <summary>Depth mode 0: DepthEnable off, no test and no write (0x14102B178).</summary>
@@ -313,8 +327,8 @@ Friend Module SseRenderPassLaw
     ''' 13, 14 and 23 are 0, and [rsp+0x50] = [rsp+0x58] = 0 clear r9b (0x14151A8C3..8D3).</summary>
     Private Const PreviewHasEngineShadowLight As Boolean = False
 
-    ''' <summary>[0x1420D6D70] (effect lighting), image value.</summary>
-    Private Const EffectLightingOn As Boolean = True
+    ''' <summary>[0x1420D6D70] (effect lighting), image value (read by SseEffectTechnique.Technique, 0x14152A38A).</summary>
+    Friend Const EffectLightingOn As Boolean = True
 
     ''' <summary>O-OP: the list of the opaque finish a shape of the opaque batch list lands in. Lighting (0x14151ACB6..ACFF): bits
     ''' 33|34|63 -&gt; group 6 (bit 33) or 7; bit 61 -&gt; 0xB; no engine shadow (the preview frame) -&gt; 0xF; else 0. Effect: group 0 (batch).</summary>
@@ -335,7 +349,7 @@ Friend Module SseRenderPassLaw
     ''' <summary>O-OP: the pass ID the batch orders by. Lighting: the descriptor (0x14151A932..AE58) + 0x4800002D (0x14151AE58); effect:
     ''' the technique (0x14152A2B0) + 0x4000002C (0x141529E13).</summary>
     Friend Function PassId(s As SseShapeInputs) As UInteger
-        If s.IsEffect Then Return EffectTechnique(s) + &H4000002CUI
+        If s.IsEffect Then Return SseEffectTechnique.Technique(s) + &H4000002CUI
         Return LitDescriptor(s) + &H4800002DUI
     End Function
 
@@ -457,43 +471,6 @@ Friend Module SseRenderPassLaw
         Return (t And (&HFFFFFE05UI Or ((t >> 1) And 2UI))) Or 1UI
     End Function
 
-    ''' <summary>The effect VS key 0x14158DAB0: t And &amp;HFFC7FFFF.</summary>
-    Friend Function EffectVsKey(t As UInteger) As UInteger
-        Return t And &HFFC7FFFFUI
-    End Function
-
-    ''' <summary>The effect PS key 0x14158DAC0: bit 3 dropped unless bit 15 (cmovne), then bit 24 cleared (btr eax, 0x18).</summary>
-    Friend Function EffectPsKey(t As UInteger) As UInteger
-        Dim k = If((t And &H8000UI) <> 0UI, t, t And &HFFFFFFF7UI)
-        Return k And Not &H1000000UI
-    End Function
-
-    ''' <summary>BSEffectShaderProperty's technique 0x14152A2B0 (dump of 7-oct-2026, 0x14152A2B0..5FB) for a mesh shape: no particles
-    ''' and no strip (the preview draws none: 0x84, bit 12, 0x2013 never set).</summary>
-    Friend Function EffectTechnique(s As SseShapeInputs) As UInteger
-        Dim t As UInteger = If(s.VertexColorsFlag, 1UI, 0UI)                       ' bit 37, 0x14152A2CF..2E2, 0x14152A50D..510
-        If s.EffectBaseTexture Then t = t Or &H42UI                                 ' 0x14152A2E5, 0x14152A514..518
-        If s.Skinned Then t = t Or 8UI                                              ' 0x14152A2F2..312, 0x14152A527..534
-        If s.Falloff Then t = t Or &H110UI                                          ' bit 6, 0x14152A31A..324, 0x14152A537..541
-        If s.AlphaPropertyPresent Then                                              ' 0x14152A4B9..4FD
-            If s.AlphaDst = 0 Then t = t Or &H400UI                                 ' (ap &amp; 0x1E0) = 0, 0x14152A562..56B
-            If s.AlphaSrc = 4 AndAlso s.AlphaDst = 7 Then
-                t = t Or &H400000UI                                                 ' (ap &amp; 0x1E) = 8, (ap &amp; 0x1E0) = 0xE0, 0x14152A57A..583
-            ElseIf s.AlphaDst = 2 Then
-                t = t Or &H800UI                                                    ' (ap &amp; 0x1E0) = 0x40, 0x14152A56E..577
-            End If
-        End If
-        If s.WeaponBlood Then t = t Or &H4000UI                                     ' bit 49, 0x14152A3A3..3B6, 0x14152A586..592
-        If s.EffectLighting AndAlso EffectLightingOn Then t = t Or &H10000UI        ' bit 62, 0x14152A377..399, 0x14152A595..5A3
-        If s.ProjectedUV Then t = t Or &H20012UI                                    ' bit 23, 0x14152A3BB..3C4, 0x14152A5A6..5B3
-        If s.SoftEffect Then t = t Or &H40000UI                                     ' bit 30, 0x14152A3C9..3D2, 0x14152A5B6..5C2
-        If s.PaletteColor Then t = t Or &H80000UI                                   ' bit 4 + texture, 0x14152A3D7..3F6, 0x14152A5C5..5D3
-        If s.PaletteAlpha Then t = t Or &H100000UI                                  ' bit 5 + texture, 0x14152A3FE..41C, 0x14152A5D6..5E1
-        If s.Billboard Then t = t Or &H1000000UI                                    ' bit 45, 0x14152A421..432, 0x14152A5E4..5ED
-        If EffectTechniqueBit26(s) Then t = t Or &H4000000UI                        ' 0x14152A43A..47C, 0x14152A5F0..5FB
-        Return t
-    End Function
-
     Friend Function Classify(s As SseShapeInputs) As SsePass
         Dim r As New SsePass With {.Drawn = True}
         Dim decal = s.Decal OrElse s.DynamicDecal
@@ -547,9 +524,10 @@ Friend Module SseRenderPassLaw
         ' ---- prepass: slot 0x2B (FOGTAIL 1.2 / 1.3) and the registration filter (1.4) ----
         Dim decalPasaFiltro = Not decal OrElse (s.ZWrite AndAlso s.HairSoftLighting AndAlso blend)   ' 0x14151EC1A..C7D
         If s.IsEffect Then
-            r.InPrepass = decalPasaFiltro AndAlso EffectTechniqueBit26(s)                ' 0x14152A0CB..A102 (slot 0x2B = the bit-26 condition)
-            ' Palette alpha with the test needs PS 0x2000a083; 0x2000a082 (no vertex colour) is not in the cache (10.1).
-            If r.InPrepass AndAlso test AndAlso s.PaletteAlpha AndAlso Not s.HasVertexColors Then r.InPrepass = False
+            ' 0x14152A0C2..121 (slot 0x2B = the bit-26 condition). Its technique (SseUtilityTechnique.EffectSlot2BTechnique) without a record
+            ' in the cache - &H2000A082 / &H2000A086, palette alpha with the test and no vertex colour - is the key law's (Ola SSE S2 F2.4: the
+            ' prepass draw finds no program, DrawSseEnginePrepass, 0x1415667A2), not a rule here.
+            r.InPrepass = decalPasaFiltro AndAlso EffectTechniqueBit26(s)
         Else
             ' Slot 0x2B's own filters (LightingSlot2BPasses, shared with the shadow map) and the prepass registration filter.
             r.InPrepass = LightingSlot2BPasses(s) AndAlso decalPasaFiltro
@@ -632,22 +610,6 @@ Friend Module SseRenderPassLaw
         If s.IsEffect AndAlso decal AndAlso Not p.EffectNoAlphaTest Then listOnAfter = True : Return False
         If Not s.IsEffect AndAlso p.List = SseList.DecalTranslucent AndAlso s.ZWrite Then Return True
         Return listOn
-    End Function
-
-    ''' <summary>Which VS law produces the o2 normal of a bit-26 effect (RE_SAO_BOTH 12.6.3, 12.7): FALLOFF (VS 431/440/441) = world
-    ''' normal; SKINNED (VS 425) = raw bind-pose normal; else (VS 420) = view normal. MEMBRANE never reaches bit 26 at runtime (12.7).</summary>
-    Friend Enum SseAoEffectNormal
-        None
-        View
-        RawSkinned
-        World
-    End Enum
-
-    Friend Function AoEffectNormalClass(s As SseShapeInputs) As SseAoEffectNormal
-        If Not s.IsEffect OrElse Not EffectTechniqueBit26(s) Then Return SseAoEffectNormal.None
-        If s.Falloff Then Return SseAoEffectNormal.World
-        If s.Skinned Then Return SseAoEffectNormal.RawSkinned
-        Return SseAoEffectNormal.View
     End Function
 
     ''' <summary>[0x1420D6CE8] = bEnableImprovedSnow:Display, the byte both snow tests of the lighting descriptor read
@@ -736,12 +698,6 @@ Friend Module SseRenderPassLaw
     Friend Function LitViewVectorWritten(s As SseShapeInputs) As Boolean
         Return LitPsWorldSpace(LitTechniqueType(s)) OrElse SpecularTechnique(s, ImprovedSnowExeDefault) OrElse
                s.SoftLighting OrElse s.RimLighting OrElse s.BackLighting
-    End Function
-
-    ''' <summary>Effect technique bit 14 BLOOD: property flag bit 49 (SLSF2 17 Weapon_Blood; 0x14152A3A3..3B6 and bts 0xE at
-    ''' 0x14152A588..592). PS 0x4842 / 0x4843 (re2/snowblood validate_blood.py).</summary>
-    Friend Function EffectBloodTechnique(s As SseShapeInputs) As Boolean
-        Return s.IsEffect AndAlso s.WeaponBlood
     End Function
 
     ''' <summary>Lighting technique type 12 TREE_ANIM: LitTechniqueType (the full selector 0x14151AB5E..ADB5) gives &amp;HC - flag bit 61

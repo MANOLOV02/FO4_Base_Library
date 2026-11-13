@@ -347,7 +347,7 @@ out vec4 vColor;
 out vec2 vUV;
 out vec3 vFo4PrepassTexcoord;   // the z-prepass VS's TEXCOORD0.xyz (rec3929), for the prepass's cut in the fragment stage
 
-" & AppSkinLaw.Glsl & "
+" & AppEditViewsSource.MaskFactor & AppSkinLaw.Glsl & "
 void main(void)
 {
 	// Initialization
@@ -360,14 +360,8 @@ void main(void)
     }
 	if (bShowMask)
 	{
-		maskFactor = 1.0 - vertexMask / 1.5;
-
-    if (ZappedVert==1) //zapped
-        {
-    		maskFactor = 1.0 - (-vertexMask) / 1.5;
-        }
-
-   	}
+		maskFactor = appMaskFactor(vertexMask, bApplyZap);
+	}
 	vColor = vec4(1.0, 1.0, 1.0, 1.0);
 	vUV = vertexUV;
 	// The z-prepass VS's TEXCOORD0 (rec3929 L47-48: mad o1.xy, v1.xyxx, cb2[4].zwzz, cb2[4].xyxx / mov o1.z, v2.w): the UV through the
@@ -743,14 +737,8 @@ layout(location = 8) in float vertexWeight;
 layout(location = 9) in vec4 boneIndicesF;
 layout(location = 10) in vec4 boneWeightsIn;
 layout(location = 11) in vec3 vertexPreSkinNormal;
-uniform int uSseAoEffectClass;
-out vec3 vSseAoEffectNormal;
 
-layout(std430, binding = 0) buffer BoneMatrices {
-    mat4 bones[];
-};
-uniform bool bGPUSkinning;
-uniform int uBoneCount;
+// The bone palette (SSBO 0), bGPUSkinning and uBoneCount: AppSkinLaw.SseGpuBlendGlsl, included below.
 // The eye of the skin's eye term (D4, s1_re.md 13.1; EngineSkin): the engine VS adds -cb12[40] (the eye) to each bone row's w before
 // weighting (rec 3902 L62 / L82), so the drawn vertex is sum(w M v) + (1 - S) eye, S = the sum of the four weights. The frame's camera
 // in the view (RenderableMesh.DrawMaterial, the refraction normals); the origin of the shadow camera in the shadow emitter (0, 0, 0:
@@ -760,8 +748,9 @@ uniform vec3 uSkinEye;
 // fallback or matrix composition in one of them WITHOUT the others is a silent bug
 // (it compiles, throws nothing, and only the other path renders wrong):
 //   1. The GPU blend: TWO texts, one per game's law - Shader_Class_Fo4EditView.Vertex_Fo4EditView (Fallout 4: the engine's order and weights) and
-//      Vertex_SSE (Skyrim SE: the engine's raw sum and its eye term, D4); the normal law they apply after it, AppSkinLaw.Glsl, is ONE text
-//      included by both and by the transcribed engine VS (G-buffer).
+//      AppSkinLaw.SseGpuBlendGlsl (Skyrim SE: the engine's raw sum, D4; ONE text for this VS and the base surface foot of Skyrim SE's
+//      effect decals, SseEffectSource.AppSurfaceVertexFoot), its eye term here; the normal law they apply after it, AppSkinLaw.Glsl, is
+//      ONE text included by both and by the transcribed engine VS (G-buffer).
 //   2. SkinningHelper.BlendBoneMatrices        (CPU blend: EngineSkin's weights, its own accumulation)
 //   3. SkinningHelper.RecomputeGPUBoneMatrices (bone matrix composition -> SSBO)
 //   4. SkinningHelper.ExtractSkinnedGeometry   (GPU arrays: idx / the engine's weights as the VS reads them - Skyrim SE: the NIF's
@@ -811,20 +800,15 @@ out vec3 vSsePrepassTexcoord;
 // WORLD-space position of the skinned vertex. Only consumer: the shadow lookup in the fragment.
 // matModel is Identity today (nobody ever writes MeshData.Transform), so this is skinnedPos verbatim
 // -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
-// introduced, which is the same thing hemiAmbient() does with the normal.
+// introduced, which is the same thing the base surface's ambient (SseBaseSurfaceSource) does with the normal.
 out vec3 vWorldPos;
 
-// SSE EFFECT FALLOFF, PER VERTEX (BSEffect VS t00010153: o1.z). Off on geometry without
-// vertex normals (model-space-normal geometry), where the PS keeps its per-pixel evaluation.
-uniform bool bVertexFalloff;
-uniform vec4 effectFalloffParams;   // cb1[2]: x startAngle, y stopAngle, z startOpacity, w stopOpacity
-out float vEffectFalloff;
 
-" & AppEditViewsSource.ColorRamp & "
+" & AppEditViewsSource.ColorRamp & AppEditViewsSource.MaskFactor & "
 
 " & RefractionSource.Vertex_Glsl & "
-" & D3d11SemanticsSource.Glsl & SseAoNormalSource.EngineFrame_Glsl & SseAoNormalSource.Vs_Glsl & "
-" & AppSkinLaw.Glsl & "
+" & D3d11SemanticsSource.Glsl & "
+" & AppSkinLaw.Glsl & AppSkinLaw.SseGpuBlendGlsl & "
 void main(void)
 {
 	// Initialization
@@ -837,14 +821,8 @@ void main(void)
     }
 	if (bShowMask)
 	{
-		maskFactor = 1.0 - vertexMask / 1.5;
-
-    if (ZappedVert==1) //zapped
-        {
-    		maskFactor = 1.0 - (-vertexMask) / 1.5;
-        }
-
-   	}
+		maskFactor = appMaskFactor(vertexMask, bApplyZap);
+	}
 	weightColor = vec3(1.0, 1.0, 1.0);
 	vColor = vec4(1.0, 1.0, 1.0, 1.0);
 	vUV = vertexUV;
@@ -871,24 +849,13 @@ void main(void)
 	// (1, 0, 0, 0): t = 0, as its rigid VS has no eye.
 	float sseEyeT = 1.0 - (((boneWeightsIn.x + boneWeightsIn.y) + boneWeightsIn.z) + boneWeightsIn.w);
 	if (bGPUSkinning) {
-	    // GPU skinning, Skyrim SE's engine law (D4, EngineSkin; rec 3902 L62-108): the four weights raw - no normalisation, no
-	    // clamp, no weight dropped, zero and negative included -, each bone times its weight, added ((w0 M0 + w1 M1) + w2 M2) + w3 M3.
-	    // A bone outside the palette adds nothing (a row past the bound buffer reads 0, D3D11.3 7.5).
-	    ivec4 bIdx = ivec4(boneIndicesF);
-	    vec4 bWgt = boneWeightsIn;
-	    mat4 b0 = (bIdx.x >= 0 && bIdx.x < uBoneCount) ? bones[bIdx.x] : mat4(0.0);
-	    mat4 b1 = (bIdx.y >= 0 && bIdx.y < uBoneCount) ? bones[bIdx.y] : mat4(0.0);
-	    mat4 b2 = (bIdx.z >= 0 && bIdx.z < uBoneCount) ? bones[bIdx.z] : mat4(0.0);
-	    mat4 b3 = (bIdx.w >= 0 && bIdx.w < uBoneCount) ? bones[bIdx.w] : mat4(0.0);
-	    mat4 skinMatrix = b0 * bWgt.x + b1 * bWgt.y;
-	    skinMatrix = skinMatrix + b2 * bWgt.z;
-	    skinMatrix = b3 * bWgt.w + skinMatrix;
+	    // GPU skinning, Skyrim SE's engine law (D4, EngineSkin; rec 3902 L62-108): AppSkinLaw.SseGpuBlendGlsl, the one text.
+	    mat4 skinMatrix = sseAppSkinMatrix(ivec4(boneIndicesF), boneWeightsIn);
 
 	    skinnedPos = vec3(skinMatrix * vec4(vertexPosition, 1.0)) + sseEyeT * uSkinEye;
 
-	    // Correct normal matrix: transpose of inverse of upper-left 3x3
-	    vec3 sr0 = vec3(skinMatrix[0][0], skinMatrix[1][0], skinMatrix[2][0]), sr1 = vec3(skinMatrix[0][1], skinMatrix[1][1], skinMatrix[2][1]), sr2 = vec3(skinMatrix[0][2], skinMatrix[1][2], skinMatrix[2][2]);
-	    mat3 skinNormalMat = appSkinNormalMatrix(sr0, sr1, sr2);   // AppSkinLaw (D2 / revisor-22): the one law text
+	    // Correct normal matrix: transpose of inverse of upper-left 3x3 (AppSkinLaw, D2 / revisor-22: the one law text)
+	    mat3 skinNormalMat = sseAppSkinNormalMatrix(skinMatrix);
 	    skinnedNormal = appSkinRotate(skinNormalMat, vertexNormal);
 	    // TANGENT AND BITANGENT GO WITH THE RAW MATRIX, not with the normal matrix. They are directions
 	    // ALONG the surface: they move the way the geometry moves. The inverse-transpose is the law of the
@@ -937,23 +904,6 @@ void main(void)
 	viewDirRaw = normalize(-vPos);
 	refractVertex(skinnedNormal, vPos);
 
-	// SAO o2 normal of a bit-26 effect (RE_SAO_BOTH 12.6.3): VS 420 / 431 transform the node's posed normal (World = the app's
-	// matModel frame with the pose, user decision rev-31 A); VS 425 reads the bind-pose normal raw.
-	vec3 sseAoNPre = bGPUSkinning ? vertexNormal : vertexPreSkinNormal;
-	SseEngineFrame sseAoF = SseEngineFrameFromGL(matModel, matView);
-	if (uSseAoEffectClass == 1)      vSseAoEffectNormal = SseAoN_VS420(skinnedNormal, sseAoF);
-	else if (uSseAoEffectClass == 2) vSseAoEffectNormal = SseAoN_VS425(sseAoNPre);
-	else if (uSseAoEffectClass == 3) vSseAoEffectNormal = SseAoN_VS431(skinnedNormal, sseAoF);
-	else                             vSseAoEffectNormal = vec3(0.0, 0.0, 1.0);
-	// t00010153: v = normalize(-pos), n = normalize(3x3 * normal) in the same frame;
-	// t = sat((|n.v| - start) / (stop - start)); o1.z = t*t*(3 - 2t) * (stopOpacity - startOpacity) + startOpacity.
-	vEffectFalloff = 1.0;
-	if (bVertexFalloff)
-	{
-		float nv = abs(dot(normalize(mv_normalMatrix * skinnedNormal), viewDirRaw));
-		float t = clamp((nv - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
-		vEffectFalloff = (t * t * (-2.0 * t + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
-	}
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
@@ -1007,7 +957,6 @@ void main(void)
 
 uniform sampler2D texDiffuse;
 uniform sampler2D texNormal;
-uniform sampler2D texGreyscale;
 
 uniform bool bLightEnabled;
 uniform bool bShowTexture;
@@ -1022,30 +971,14 @@ uniform bool bApplyZap;
 uniform bool bNormalMap;
 uniform bool bModelSpace;
 uniform bool bAlphaTest;
-uniform bool bGreyscaleColor;
 uniform bool bHairTint;
 uniform bool bDoubleSided;
 uniform bool bHide;
 
 uniform bool bIsEffectShader;
-uniform bool bEffectFalloff;
-uniform bool bEffectGreyscaleAlpha;
-uniform float effectLightingInfluence;
-uniform vec4 effectFalloffParams;
-uniform vec3 effectBaseColor;
-uniform float effectBaseColorAlpha;
-uniform float effectBaseColorScale;
-// LIGHTING technique (bit 16): Effect_Lighting AND a static byte that is 1 (0x14152A377..A39B).
-uniform bool bEffectLighting;
-// L of the effect PS (cb2[7] + up to 4 point lights, no N.L): the effect light of the chosen weather and moment kept
-// in the game's proportion to the preview key (PreviewImagingRow.EffectLightForKey), raw. Flat: one value per draw.
-uniform vec3 effectLight;
 // APP OPTION, NOT THE ENGINE: the post-off 2.3.8 display tail (LegacyDisplaySource; ApplyMaterial uploads both).
 uniform bool bLegacyDisplay;
 uniform float uSceneToLinear;
-// The falloff arrives from the VS (vEffectFalloff), see Vertex_SSE.
-uniform bool bVertexFalloff;
-in float vEffectFalloff;
 
 uniform mat4 matModel;
 uniform mat4 matModelViewInverse;
@@ -1109,8 +1042,6 @@ const bool sseDecalBaseSurface = true;
 const bool sseDecalBaseSurface = false;
 #endif
 " & BackgroundFadeSource.Fade_Helper & "
-uniform int uSseAoNormal;        // SseAoNormal: 0 none, 1 normal, 2 colour
-in vec3 vSseAoEffectNormal;      // TEXCOORD7.yzw of the bit-26 effect VS
 vec3 sseAoLitNormal = vec3(0.0, 0.0, 1.0);
 // What this draw adds to the coverage of the HDR target (see SceneTargets): 0 unblended (1),
 // 1 blended with its own light (alpha), 2 destination-only blend (0).
@@ -1128,20 +1059,13 @@ vec3 normal = vec3(0.0);
 
 vec2 uv = vec2(0.0);
 vec3 albedo = vec3(0.0);
-vec3 emissive = vec3(0.0);
 
 vec4 baseMap = vec4(0.0);
 vec4 normalMap = vec4(0.0);
 
 
 
-" & LegacyDisplaySource.Tonemap_Glsl & SoftEffectSource.Soft_Glsl & SseLitTailSource.Tail_Glsl & "
-// SSE MULTBLEND (technique bit 11 = NiAlphaProperty dest blend SRC_COLOR, 0x14152A4BE..A570): the soft
-// permutation has no 0.003 discard (census of the 3216 PS: discard <=> SOFT and not MULTBLEND,
-// Tools/re-docs/RE_SSE_EFFECT_BIT11_2026-10-03.md).
-uniform bool bSseMultBlend;
-// SSE MULTBLEND_DECAL (technique bit 22 = src DEST_COLOR + dst INV_SRC_ALPHA, same builder).
-uniform bool bSseMultBlendDecal;
+" & LegacyDisplaySource.Tonemap_Glsl & SseLitTailSource.Tail_Glsl & "
 // SSE BSLighting Hair technique with DEPTH_WRITE_DECALS (SseRenderPassLaw): the 4/255 discard and saturate(1.05 a).
 uniform bool bSseHairDepthWriteDecal;
 // l(-0.015686) of that discard (PS idx 9031: mad r0.w, a, v11.w, l(-0.015686)) is the token 0xBC808081 = -4/255 in float32;
@@ -1156,20 +1080,10 @@ uniform mat3 uSseLitSpace;
 // rim = (w > 1e-5) * x * pow(1 - sat(Ng.V), y) * pow(1 - sat(n.V), z); uSseSnowRim = cb1[13] (SseRenderPassLaw.SnowRimLightParameters).
 uniform bool bSseSnow;
 uniform vec4 uSseSnowRim;
-// SSE effect BLOOD (technique bit 14, SseRenderPassLaw.EffectBloodTechnique; PS 0x4842 / 0x4843): G = t0.g * vc.g * bc.g,
-// Bl = t0.b * vc.b * bc.b * vc.a, alpha = G * cb2[8].w; s = sat(G - p.x), k = (s < p.y) ? (s / p.y) * Bl : Bl, m = 1 - k * p.z,
-// c = m * (sat(2 - k), sat(1 - k), sat(1 - k)); PropertyColor (1,1,1) and no fog here. uSseBloodParams = cb2[9] = (NiAlphaProperty
-// threshold / 255, fWeaponBloodFalloffThreshold, fWeaponBloodAlphaToRGBScale): the last two are 0 at rest (globals 0x1434866F0 / F4).
-uniform bool bSseBlood;
-uniform vec3 uSseBloodParams;
 // SKYRIM SE PARALLAX (technique type 3) and MULTILAYER PARALLAX (type 11), S-P / S-M (Render.vb ApplyMaterial): texHeight = slot 3
 // (PS t3), texInnerLayer = slot 6 (PS t8), uMlpLayer = PS cb1[6] (inner layer thickness, refraction scale, inner scale u, v).
 uniform bool bSseParallax;
 uniform sampler2D texHeight;
-vec4 colorLookup(in float x, in float y)
-{
-	return texture(texGreyscale, vec2(clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)));
-}
 
 // VIEW-space direction -> WORLD (the parallax offset; the base surface's hemisphere).
 vec3 toWorldDir(in vec3 v)
@@ -1178,17 +1092,9 @@ vec3 toWorldDir(in vec3 v)
 }
 
 #ifdef SSE_DECAL_BASE_SURFACE
-// The base surface's ambient, the app's hemisphere (as before F4): sky from world-up (+Z), ground from world-down (-Z), blended
-// by the up component of the shading normal in world space.
-vec3 hemiAmbient(in vec3 nrm)
-{
-	vec3 nWS = toWorldDir(nrm);
-	return mix(ambientGround, ambientSky, clamp(nWS.z * 0.5 + 0.5, 0.0, 1.0));
-}
-#endif
+" & SseBaseSurfaceSource.Light_Glsl & "#endif
 
-" & SsePrepassSource.Prepass_Glsl & "
-" & D3d11SemanticsSource.Glsl & SseAoNormalSource.Ps_Glsl & SseUtilitySource.Literals & "
+" & D3d11SemanticsSource.Glsl & SseUtilitySource.Literals & "
 // THE Z-PREPASS'S CUT OF THE DEBUG AND EDIT VIEWS (as Fallout 4's, Shader_Class_Fo4EditView; RenderableMesh.ApplySseEditViewDepthCut):
 // a shape the z-prepass draws (SseRenderPassLaw InPrepass) keeps the prepass's fragments: uSsePrepassPs = the record of its depth
 // PS (SseUtilityTechnique.Slot2BTechnique mode 0xC, PixelShaderKey; 0 = the null PS, no cut), run with its own text
@@ -1199,7 +1105,11 @@ uniform bool bSsePrepassCut;
 uniform int uSsePrepassPs;
 uniform vec4 AlphaTestRef;
 uniform vec4 cb11_AlphaTestRef;
+// An effect's prepass PS (Ola SSE S2, U5: 11464 / 11465 / 11466, technique bit 29) read BaseColor, PropertyColor and the palette t7.
+uniform vec4 BaseColor;
+uniform vec4 PropertyColor;
 layout(binding = " & CStr(CInt(SamplerLaw.AppUnit.EditViewPrepassT0)) & ") uniform sampler2D t0;
+layout(binding = " & CStr(CInt(SamplerLaw.AppUnit.EditViewPrepassT7)) & ") uniform sampler2D t7;
 in vec3 vSsePrepassTexcoord;
 vec4 sutl_TEXCOORD2;
 vec4 sutl_TEXCOORD4;
@@ -1217,20 +1127,6 @@ void main(void)
 {
 	viewDir = normalize(viewDirRaw);   // engine: rsq(dot(v6,v6)) por pixel, ver la nota del varying
     uv = vUV * uvScale + uvOffset;
-	// Z-PREPASS draw of an EFFECT shape (SseRenderPassLaw / SsePrepassSource; until S2): depth only, the colour is masked off.
-	if (bSsePrepass)
-	{
-		if (bHide || (bApplyZap && ZappedVert == 1))
-			discard;
-		if (bSsePrepassAlphaTest)
-		{
-			float texA = bShowTexture ? texture(texDiffuse, uv).a : 1.0;
-			if (!ssePrepassKeepsEffect(texA, vColor.a, bEffectGreyscaleAlpha, effectBaseColorAlpha))
-				discard;
-		}
-		fragColor = vec4(0.0);
-		return;
-	}
 	// The views' cut (uniform control flow: the texture reads of the depth PS keep their derivatives).
 	bool ssePrepassKill = false;
 	if (!bWireframe && bSsePrepassCut && uSsePrepassPs != 0)
@@ -1244,9 +1140,6 @@ void main(void)
 	// HairTint technique (6): its PS reads COLOR0.yw only (input signature `COLOR 0 xyzw 12 NONE float y w`, PS 0x06010203
 	// rec 8996): no vertex-colour rgb multiply; COLOR0.y is the tint mask (the hair tint below), .w the alpha.
 	albedo = (bHairTint && !bIsEffectShader) ? vec3(1.0) : vColor.rgb;
-	vec3 outDiffuse = vec3(0.0);
-	vec3 outSpecular = vec3(0.0);
-
 	if (!bWireframe)
 	{
 		if (bShowTexture)
@@ -1349,18 +1242,10 @@ void main(void)
 		// the frame's mask is the engine's and the base is the app's pass, where the frame has no depth.
 		if (bLightEnabled)
 		{
-			outDiffuse = vec3(0.0);
-			outSpecular = vec3(0.0);
 			normal = geoNormal;
-			outDiffuse += max(dot(normal, lightFrontal), 0.0) * frontal.diffuse;
-			outDiffuse += max(dot(normal, lightDirectional0), 0.0) * directional0.diffuse;
-			outDiffuse += max(dot(normal, lightDirectional1), 0.0) * directional1.diffuse;
-			outDiffuse += max(dot(normal, lightDirectional2), 0.0) * directional2.diffuse;
 			albedo = backgroundAt(gl_FragCoord.xy);
-			vec3 ambientS = hemiAmbient(normal);
-			vec3 lightSum = outDiffuse + (ambientS + emissive);
-			vec3 lit = albedo * lightSum;
-			color.rgb = sseLitOutput(lit, outSpecular, 1.0, sseLitTailZ);
+			vec3 lit = albedo * sseBaseSurfaceLight(normal, lightFrontal, lightDirectional0, lightDirectional1, lightDirectional2, toWorldDir(normal).z);
+			color.rgb = sseLitOutput(lit, vec3(0.0), 1.0, sseLitTailZ);
 			if (bSseSnow)
 			{
 				float snowRim = (uSseSnowRim.w > 0.00001 ? uSseSnowRim.x : 0.0)
@@ -1371,66 +1256,6 @@ void main(void)
 		}
 #endif
 
-		// SSE BSEffectShader (the effect PS family, permutations 0x42 / 0x10042 / 0x10153 / 0x90073 / 0x100042 /
-		// 0x8042 of the dump): NO cube, NO emissive, NO N.L, NO Fresnel (0 of its 3216 PS declare a cube).
-		//   colour : tex.rgb * cb1[0].rgb * vc.rgb; with palette colour (bit 19) palette(U = tex.g,
-		//            V = bc.r * vc.r).rgb * scale -- V takes no falloff and no scale.
-		//   alpha  : tex.a * falloff * bc.a * vc.a * cb2[8].w (1 unfaded); with palette alpha (bit 20)
-		//            palette(U = tex.a, V = falloff * bc.a * vc.a).a, not multiplied again.
-		//   light  : LIGHTING c = lerp(c, c * L, cb1[2].x), L = 4 point lights (none here) + cb2[7]; without
-		//            it lerp(c, c * PropertyColor, cb1[2].x) with PropertyColor (1,1,1) for a NIF effect = c.
-		//   tail   : SOFT (bit 18) on the alpha, then rgb * invFrameBufferRange (TEXCOORD5) unless MULTBLEND /
-		//            MULTBLEND_DECAL; no clamp. The fog lerp before it is the identity here (no fog in the preview).
-		if (bIsEffectShader)
-		{
-			float effFalloff = 1.0;
-			if (bVertexFalloff)
-				effFalloff = vEffectFalloff;
-			else if (bEffectFalloff)
-			{
-				// Geometry without vertex normals: per-pixel with the same curve (see Vertex_SSE).
-				float nvP = abs(dot(normal, viewDir));
-				float tP = clamp((nvP - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
-				effFalloff = (tP * tP * (-2.0 * tP + 3.0)) * (effectFalloffParams.w - effectFalloffParams.z) + effectFalloffParams.z;
-			}
-			float aBase = effectBaseColorAlpha * vColor.a;
-			vec3 effRgb = bGreyscaleColor
-				? colorLookup(baseMap.g, effectBaseColor.r * vColor.r).rgb * effectBaseColorScale
-				: baseMap.rgb * effectBaseColor * vColor.rgb;
-			// SOFT (idx 795 L40-58; palette alpha idx 1045): it scales the accumulated alpha A, or with palette
-			// alpha the V coordinate before the lookup, never rgb; discard when A*soft < 0.003 unless MULTBLEND.
-			float softA = bEffectGreyscaleAlpha ? effFalloff * aBase : baseMap.a * effFalloff * aBase;
-			if (bSoftEffect)
-			{
-				float soft = softSse();
-				if (!bSseMultBlend && softA * soft - 0.003 < 0.0)
-					discard;
-				softA *= soft;
-			}
-			// cb2[8].w = prop+0x30 = currentFade * baseColor.a (0x141557B7D..B82): baseColor.a enters a second time, after
-			// SOFT; with palette alpha it goes into V and the looked-up alpha is not multiplied again (idx 691 / 800 / 956;
-			// Tools/re-docs/RE_SSE_PASS_GROUPS_DEPTH_2026-10-03.md 12.2).
-			float effAlpha = bEffectGreyscaleAlpha
-				? colorLookup(baseMap.a, softA * sseEffectPropAlpha).a
-				: softA * sseEffectPropAlpha;
-			if (bEffectLighting)
-				effRgb = mix(effRgb, effRgb * effectLight, effectLightingInfluence);
-			if (!bSseMultBlend && !bSseMultBlendDecal)
-				effRgb *= sseInvFramebufferRange;
-			// BLOOD: vColor is 1 without vertex colours, as PS 0x4842 reads none (Vertex_SSE starts vColor at 1 and only bShowVertexColor /
-			// bShowVertexAlpha load the stream; SkinningHelper fills a shape without colours with (1, 1, 1, 1)).
-			if (bSseBlood)
-			{
-				float bloodG = baseMap.g * vColor.g * effectBaseColor.g;
-				float bloodB = baseMap.b * vColor.b * effectBaseColor.b * vColor.a;
-				effAlpha = bloodG * sseEffectPropAlpha;
-				float bloodS = clamp(bloodG - uSseBloodParams.x, 0.0, 1.0);
-				float bloodK = (bloodS < uSseBloodParams.y) ? (bloodS / uSseBloodParams.y) * bloodB : bloodB;
-				float bloodM = 1.0 - bloodK * uSseBloodParams.z;
-				effRgb = bloodM * clamp(vec3(2.0 - bloodK, 1.0 - bloodK, 1.0 - bloodK), 0.0, 1.0);
-			}
-			color = vec4(sseDecalBaseSurface ? color.rgb : effRgb, effAlpha);
-		}
 
 		if (bShowMask)
 		{
@@ -1450,10 +1275,7 @@ void main(void)
 		// value with no encode; raw now -> Hable / Hable(1).
 		if (bLegacyDisplay)
 		{
-			if (bIsEffectShader && !sseDecalBaseSurface)
-				color.rgb = tonemap(max(color.rgb, vec3(0.0))) / tonemap(vec3(1.0));
-			else
-				color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
+			color.rgb = legacyLitDisplay(color.rgb, uSceneToLinear);
 		}
 	}
 	else
@@ -1617,9 +1439,13 @@ if (bHide)
 
    	if (!bWireframe)
 	{
-		// BGSM: apply material alpha (NifSkope sk_default.frag does this)
-		// BGEM: alpha already baked as effectBaseColorAlpha^2 (NifSkope sk_effectshader.frag does NOT)
-		if (!bIsEffectShader)
+		// BGSM: apply material alpha (NifSkope sk_default.frag does this). An EFFECT (Ola SSE S2, U5 - user decision 10-nov-2026, Fallout 4's
+		// rule of 21-oct, Shader_Class_Fo4EditView): this program draws it only in the debug views, which write no effect colour - the
+		// shape keeps the cut of its depth (its prepass's below, or the test of its colour pass on the value the view writes, 1.0) and
+		// its output alpha is 1.0.
+		if (bIsEffectShader)
+			fragColor.a = 1.0;
+		else
 			fragColor.a *= alpha;
 		// Hair technique with DEPTH_WRITE_DECALS (descriptor bit 15; SseRenderPassLaw): a < 4/255 is discarded, then
 		// the alpha is saturate(1.05 a) for the test below AND for the output (idx 9031 l. 62-69, 96;
@@ -1656,14 +1482,8 @@ if (bHide)
 	// surface keeps the decal's alpha (its opacity: the base follows the decal's alpha).
 	if ((uDecalBaseMode == 1 && fragColor.a <= 0.0) || uDecalBaseMode == 3 || (uDecalBaseMode == 4 && fragColor.a >= 1.0)) discard;
 
-	// SAO normals target (RE_SAO_BOTH 11-12): an effect's (VS 420 / 425 / 431, uSseAoEffectClass 1..3); a lighting shape's is its
-	// engine PS's o2 (F3). Engine view = (x, y, -z_gl).
-	if (uSseAoNormal == 2)
-		aoNormalOut = fragColor;
-	else if (uSseAoNormal == 1)
-		aoNormalOut = SseAoN_PS2357(vSseAoEffectNormal);
-	else
-		aoNormalOut = vec4(0.0);
+	// SAO normals target: an effect's and a lighting shape's are their engine PS's o2 (Ola SSE S1 F3, S2 F3.3); this program writes none.
+	aoNormalOut = vec4(0.0);
 	if (uCoverageMode == 1)
 		coverageOut = vec4(fragColor.a, fragColor.a, 0.0, fragColor.a);
 	else if (uCoverageMode == 2)
@@ -1673,7 +1493,21 @@ if (bHide)
 }
 "
     ''' <summary>F9: the program's spec (ProgramCatalog and the slot read it).</summary>
-    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(Vertex_SSE, Fragment_SSE)
+    Friend Shared ReadOnly Spec As ProgramSpec = SpecOf(Vertex_SSE, GateFragmentSseMutants(Fragment_SSE))
+
+    ''' <summary>DEBUG / GATE (ShadowGate --sse-effect-edit-frames, rev-13): Fragment_SSE under the mutant sse-dbg-eff-computed-alpha - an effect in a
+    ''' debug view cut by its computed alpha (the base texture's alpha times the material's against the threshold: the effect branch S2 retired)
+    ''' instead of the test of its colour pass on the 1.0 the view writes (U5). The text unchanged otherwise (the text Spec compiles,
+    ''' listed as RENDER-SSE-FRAGMENT-SPEC in FaceTintCompositor.AllShaderSources).</summary>
+    Friend Shared Function GateFragmentSseMutants(text As String) As String
+#If DEBUG Then
+        If Fo4GBufferConstants.GateMutantOn("sse-dbg-eff-computed-alpha") Then
+            Dim cut = "		else if (bIsEffectShader && bAlphaTest && texture(texDiffuse, uv).a * alpha < alphaThreshold)" & vbLf & "			discard;" & vbLf
+            Return text.Replace("		else if (bAlphaTest)", cut & "		else if (bAlphaTest)")
+        End If
+#End If
+        Return text
+    End Function
 
     ''' <summary>THE TRANSLUCENT DECALS' BASE SURFACE OF SKYRIM SE (user decision 7-oct-2026; Ola SSE S1 F4): Fragment_SSE's own text compiled
     ''' with SSE_DECAL_BASE_SURFACE - the same inputs, discards and alpha as the decal's base depth draw, the plain surface's light of the app
@@ -1722,40 +1556,6 @@ Public Class Shader_Class_SseDecalBaseSurface
     End Sub
 #End If
 End Class
-
-''' <summary>THE ALPHA TEST OF SKYRIM SE'S Z-PREPASS OF AN EFFECT SHAPE (BSEffectShader technique bit 26, slot 0x2B), in one place:
-''' Fragment_SSE runs it in its prepass branch and ShadowGate --sse-prepass-law runs this same text. Tools/re-docs/
-''' RE_SSE_PASS_GROUPS_DEPTH_2026-10-03.md 10. ASCII only (GLSL). Uses colorLookup (texGreyscale) of the including fragment.
-''' <para>Only the effects' since Ola SSE S1 F4: a lighting shape's z-prepass is the engine's g7 depth technique
-''' (RenderableMesh.DrawSseEnginePrepass), and the debug views cut with that PS's own text (SseUtilityTechnique.PrepassAlphaKill).
-''' The effects keep this test until S2 transcribes their VS (the engine's effect depth PS 11464 / 11465 / 11466 then draw them):
-''' it leaves in S2 (plan_ola_sse.md, S2).</para></summary>
-Friend Module SsePrepassSource
-    Friend Const Prepass_Glsl As String = "
-// Z-PREPASS OF AN EFFECT SHAPE (SseRenderPassLaw decides who enters and the thresholds; Render.vb uploads them). Until S2.
-uniform bool bSsePrepass;
-// The prepass PS has the alpha test (technique bit 7 = the NiAlphaProperty test).
-uniform bool bSsePrepassAlphaTest;
-// thrG = cb2[2].x (0x141567EE2..F27) = SseRenderPassLaw.PrepassThrG: 0x3F7EFEFF with blend, else the exe's float32
-// ref * 0x3B808081 + 0x3B80802C (+ 0x3B808081 once more when ref == 4).
-uniform float ssePrepassThrG;
-// thrS = cb11[0].x: the engine's alpha-test reference when the batch subgroup has the test, else 0 (0x14101118D).
-uniform float ssePrepassThrS;
-// cb2[8].w / cb2[1].w = prop+0x30 = currentFade * baseColor.a of an effect (0x141567EBE, 0x141557B7D).
-uniform float sseEffectPropAlpha;
-
-// True when the prepass keeps the fragment. Every test discards on value - threshold < 0 (lt + discard_nz): equality
-// is kept. texA = the base texture alpha (t0); vc = the linear vertex alpha the VS passes (COLOR.w; 1 without).
-// Effect (idx 11465; palette 11466): k = baseColor.a (cb1[1].w) * prop+0x30 (cb2[1].w) * vc; A0 = tex.a * k, or
-// palette(U = tex.a, V = tex.a * k).a; tests A0 vs thrS, A0 * vc vs thrG, A0 * vc vs thrS. No falloff, no SOFT.
-bool ssePrepassKeepsEffect(float texA, float vc, bool paletteAlpha, float baseColorA)
-{
-	float k = baseColorA * sseEffectPropAlpha * vc;
-	float a0 = paletteAlpha ? colorLookup(texA, texA * k).a : texA * k;
-	return !(a0 - ssePrepassThrS < 0.0) && !(a0 * vc - ssePrepassThrG < 0.0) && !(a0 * vc - ssePrepassThrS < 0.0);
-}
-"
-End Module
 
 ''' <summary>THE REFRACTION OF BOTH GAMES, in one place (Tools/re-docs/RE_REFRACTION_BOTH_2026-10-03.md): the refraction-normals
 ''' pass of a refracting shape (BSUtilityShader technique bit 9; SSE 0x141520A10, FO4 0x1421D6540) and the image-space
@@ -1927,6 +1727,25 @@ End Module
 ''' <summary>SSE invFrameBufferRange and THE OUTPUT TAIL OF THE SSE LIGHTING PS, in one place (Fragment_SSE calls it; the
 ''' gate ShadowGate --lit-tail runs this same text). Tools/re-docs/RE_SSE_LIGHTING_PREPASS_FOGTAIL_2026-10-03.md 2.
 ''' ASCII only (GLSL).</summary>
+Friend Module SseBaseSurfaceSource
+    ''' <summary>THE PLAIN SURFACE OF SKYRIM SE'S TRANSLUCENT DECALS' BASE (user decision 7-oct-2026; an app law, lit "as today"), ONE text
+    ''' (Ola SSE S2 rev-06) for Fragment_SSE's SSE_DECAL_BASE_SURFACE (a lighting decal) and SseEffectSource.AppSurfaceFragment (an effect
+    ''' decal): the rig's four directional lights' N.L (no specular, back, soft or rim light) plus the app's hemisphere ambient. ASCII (GLSL).</summary>
+    Friend Const Light_Glsl As String = "// THE BASE SURFACE'S LIGHT (SseBaseSurfaceSource): the rig's four directional lights' N.L plus the hemisphere ambient - sky from world
+// up (+Z), ground from world down, blended by the up component of the normal in world space (worldUp). n and the light directions in one
+// frame: Fragment_SSE's view space (its VS's lightFrontal / lightDirectional0..2), the effect surface's world frame (the rig's uniforms).
+// The including text declares frontal, directional0..2, ambientSky and ambientGround.
+vec3 sseBaseSurfaceLight(in vec3 n, in vec3 lF, in vec3 l0, in vec3 l1, in vec3 l2, in float worldUp)
+{
+	vec3 d = max(dot(n, lF), 0.0) * frontal.diffuse;
+	d += max(dot(n, l0), 0.0) * directional0.diffuse;
+	d += max(dot(n, l1), 0.0) * directional1.diffuse;
+	d += max(dot(n, l2), 0.0) * directional2.diffuse;
+	return d + mix(ambientGround, ambientSky, clamp(worldUp * 0.5 + 0.5, 0.0, 1.0));
+}
+"
+End Module
+
 Friend Module SseLitTailSource
     Friend Const Tail_Glsl As String = "
 // invFrameBufferRange k (BSShaderManager::State+0x9C, Address Library 390951; world value 1/1.2, .data 0x1420D694C).
@@ -1979,48 +1798,6 @@ vec3 sseLitOutput(vec3 lit, vec3 spec, float Y, float Z)
 "
 End Module
 
-''' <summary>THE SOFT FADE OF THE EFFECT SHADERS (FO4 technique bit 12, SSE bit 18; SLSF1 bit 30 = BGEM SoftEnabled), the
-''' part both engines share: the scene depth behind the pixel and the base factor. Each fragment adds its own game's
-''' terms. Tools/re-docs/RE_BGEM_SOFT_FO4_2026-10-03.md, RE_BGEM_SOFT_SSE_2026-10-03.md. ASCII only (GLSL).</summary>
-Friend Module SoftEffectSource
-    Friend Const Soft_Glsl As String = "
-// SOFT. uNearFar = (n, f) of the frame's projection (FO4 CameraData.y = n / .z = f - n, 0x1422253CD; SSE cb0[0].y/.z,
-// 0x141556A3D). texSceneDepth = the scene depth copied after the opaque groups (SceneDepthCopy; FO4 t3 = depth 1,
-// SSE t3 = depth 7), read unfiltered at the pixel (t3.Load(SV_Position.xy)). softDepth = S, raw (FO4 material +0x80,
-// SSE +0x68; default 100).
-uniform bool bSoftEffect;
-uniform float softDepth;
-uniform vec2 uNearFar;
-uniform sampler2D texSceneDepth;
-
-// The factor both engines compute (FO4 b05 rec1027 L35-49, SSE idx 795 L40-58), as the bytecode writes it:
-// K = f*n/S (CPU: FO4 cb1[2].y 0x142225B50, SSE cb1[2].y 0x141556F8F), the pixel's w/S from the VS (FO4 TEXCOORD5.z,
-// SSE v1.w; w = 1 / gl_FragCoord.w in a perspective projection), saturate(K / ((1 - d)(f - n) + n) - w/S).
-// S = 0: the engine divides with no guard (inf - inf = NaN) and D3D saturate(NaN) = 0, so the effect vanishes;
-// GLSL leaves clamp(NaN) undefined, hence the explicit branch.
-float softBase(out float wOverS)
-{
-	float n = uNearFar.x;
-	float f = uNearFar.y;
-	wOverS = (1.0 / gl_FragCoord.w) / softDepth;
-	if (softDepth == 0.0)
-		return 0.0;
-	float d = texelFetch(texSceneDepth, ivec2(gl_FragCoord.xy), 0).r;
-	float K = f * n / softDepth;
-	return clamp(K / ((1.0 - d) * (f - n) + n) - wOverS, 0.0, 1.0);
-}
-
-// SSE: the base factor alone (idx 795 L40-58).
-float softSse()
-{
-	float wOverS;
-	return softBase(wOverS);
-}
-
-// Fallout 4's SOFT is its transcribed b05 PS's (ola 3, Fo4EffectSource: rec1027 L35-49 in all 311 SOFT PS).
-"
-End Module
-
 ''' <summary>THE DISPLAY CURVE OF 2.3.8 (Hable, A..F = .15/.50/.10/.20/.02/.30) and its lit tail, in ONE place (each
 ''' fragment keeps its own effect tail, since 2.3.8 treated the effect differently per game). It is NOT the
 ''' engine: the game tonemaps in its post (PostProcess.vb). It is the law of the frames that do not go through
@@ -2069,7 +1846,7 @@ Friend Module GroundShadowLookupSource
 //   (dp4 cb2[11..13].vec4(N,1)) is likewise added after.
 // That is why the factor is applied by scaling EACH light-s own diffuse before directionalLight()
 // instead of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission,
-// subsurface) plus the specular get it, and hemiAmbient() does not.
+// subsurface) plus the specular get it, and the base surface's ambient (SseBaseSurfaceSource) does not.
 //
 // !!!! COMPOSITION HAPPENS IN THE LIGHT ACCUMULATOR, NOT IN A SHADOW BUFFER. Do NOT combine the N
 // occlusions into one scalar and multiply the whole accumulator by it: that darkens light arriving
@@ -2081,7 +1858,6 @@ Friend Module GroundShadowLookupSource
 #define MAX_SHADOW_LIGHTS 4
 uniform sampler2DArrayShadow texShadowMap;
 uniform mat4 matShadowViewProj[MAX_SHADOW_LIGHTS];  // world -> light clip space, PER LAYER
-uniform int  uShadowSlot[MAX_SHADOW_LIGHTS];        // rig light index -> layer, -1 = does not cast
 uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
 uniform float uShadowIntensity;   // 1 = the light goes fully dark in shadow (what the engine does)
 uniform float uShadowNormalBias;  // WORLD units, SCALAR: see below

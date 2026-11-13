@@ -484,117 +484,14 @@ void main()
 End Module
 
 ''' <summary>WHAT THE SSE OPAQUE PASS WRITES TO THE SAO NORMALS TARGET (o2), transcribed (RE_SAO_BOTH 7.1, 12.1, 12.5-12.7): the
-''' bit-26 effect VS laws and the two PS encodes. The normal is the app's (user decision 3-oct-2026); the transformation,
-''' normalisation and encode are the engine's. Vertex_SSE includes EngineFrame + Vs, Fragment_SSE includes Ps (both after
-''' D3d11SemanticsSource.Glsl). ASCII only (GLSL).</summary>
+''' PS 4255 encode from the normal the app lights with (user decision 3-oct-2026); the normalisation and encode are the engine's.
+''' The bit-26 effect part (VS 420 / 425 / 431, PS 2357, the engine-frame adapter) left the app in Ola SSE S2 F4: Skyrim SE's effects
+''' draw with the engine's g5 programs, which write o2 themselves (SseEffectSource). ASCII only (GLSL).</summary>
 Friend Module SseAoNormalSource
-    ''' <summary>Engine constant rows (World cb2[0..2], view cb12[0..3]) from the app's GL matrices (AONRM_ENGINE_FRAME).</summary>
-    Friend Const EngineFrame_Glsl As String = "// Engine constant rows used by the normal paths, built from the app's GL matrices.
-//   cb2[0..2]  : World rows (VS 420 l.14..47 compose clip = sum_k cb12[8+i].k * cb2[k] => cb2[k] = row k of World).
-//   cb12[0..2] : view rotation rows (RE_REFRACTION_BOTH 1.3: rows of 0x1420CFFB0, output 1 of 0x14101D400, copied
-//                transposed by 0x14100AE80 at 14100AEA4..14100AF69 into cb12[0..3] = rsp+0x40..0x70).
-//   cb12[3]    : (0,0,0,1): 0x14101D400 writes out1[+0x0C], [+0x1C] = 0 (14101D444, 14101D45B), [+0x2C..+0x3B] = 0
-//                (14101D47F, 14101D483), [+0x3C] = 1.0 (14101D487); the transposed column 3 is stored at rsp+0x70 =
-//                cb12[3] (14100AF69). Only .xyz of cb12[0..3] enter the normal paths, so only the zero .xyz matters.
-// The app's view is GL (-z forward): engine view row k = row k of S * mat3(matView), S = diag(1, 1, -1).
-struct SseEngineFrame
-{
-    vec4 cb2_0;   // World row 0
-    vec4 cb2_1;   // World row 1
-    vec4 cb2_2;   // World row 2
-    vec4 cb12_0;  // engine view row 0
-    vec4 cb12_1;  // engine view row 1
-    vec4 cb12_2;  // engine view row 2
-    vec4 cb12_3;  // (0, 0, 0, 1)
-};
-
-vec4 sse_row(mat4 m, int k) { return vec4(m[0][k], m[1][k], m[2][k], m[3][k]); }
-
-SseEngineFrame SseEngineFrameFromGL(mat4 matModel, mat4 matView)
-{
-    SseEngineFrame f;
-    f.cb2_0  = sse_row(matModel, 0);
-    f.cb2_1  = sse_row(matModel, 1);
-    f.cb2_2  = sse_row(matModel, 2);
-    f.cb12_0 = vec4(sse_row(matView, 0).xyz, 0.0);
-    f.cb12_1 = vec4(sse_row(matView, 1).xyz, 0.0);
-    f.cb12_2 = vec4(-sse_row(matView, 2).xyz, 0.0);   // S = diag(1,1,-1): GL -z forward -> engine +z forward
-    f.cb12_3 = vec4(0.0, 0.0, 0.0, 1.0);
-    return f;
-}
-"
-
-    ''' <summary>The bit-26 effect VS laws 420 / 425 / 431 on the app's normal (AONRM_VS).</summary>
-    Friend Const Vs_Glsl As String = "// Input n = the value of the VS's first line `mad r, NORMAL.xyz, l(2,2,2), l(-1,-1,-1)`: the IA decode 2*NORMAL-1, replaced by the app's vertex normal (user decision 3-oct-2026).
-
-// Row composite used by VS 420 l.49..51 / l.54..65 and VS 3901 l.76..95:
-//   r.xyz = cb12[k].y * cb2[1].xyz ; r.xyz = cb12[k].x * cb2[0].xyz + r ; r.xyz = cb12[k].z * cb2[2].xyz + r
-vec3 sse_viewWorldRow(vec4 cb12k, SseEngineFrame f)
-{
-    vec3 r = cb12k.y * f.cb2_1.xyz;            // mul r.xyz, cb12[k].yyyy, cb2[1].xyzx
-    r = cb12k.x * f.cb2_0.xyz + r;             // mad r.xyz, cb12[k].xxxx, cb2[0].xyzx, r
-    r = cb12k.z * f.cb2_2.xyz + r;             // mad r.xyz, cb12[k].zzzz, cb2[2].xyzx, r
-    return r;
-}
-
-// VS 420 (bit 26, no SKINNED/FALLOFF): o2.yzw = TEXCOORD7.yzw, view space, normalised over FOUR components.
-// The 4th component is NOT NORMAL.w (the VS declares dcl_input v1.xyz, l.6) and not the bitangent byte: it is
-// dot((View row 3 o World).xyz, n) with View row 3 = cb12[3] = (0,0,0,1) -> exactly 0 for finite World rows.
-vec3 SseAoN_VS420(vec3 n, SseEngineFrame f)
-{
-    vec4 r0;
-    r0.xyz = sse_viewWorldRow(f.cb12_3, f);                        // l.49..51  (cb12[3] row composite)
-    vec3 r2 = n;                                                   // l.52  mad r2.xyz, v1.xyzx, l(2,2,2), l(-1,-1,-1) (the IA decode 2*NORMAL-1, replaced by the app's vertex normal (user decision 3-oct-2026))
-    r0.w = dot(r0.xyz, r2);                                        // l.53  dp3 r0.w, r0.xyzx, r2.xyzx
-    vec3 r3 = sse_viewWorldRow(f.cb12_0, f);                       // l.54..56
-    r0.x = dot(r3, r2);                                            // l.57  dp3 r0.x
-    r3 = sse_viewWorldRow(f.cb12_1, f);                            // l.58..60
-    r0.y = dot(r3, r2);                                            // l.61  dp3 r0.y
-    r3 = sse_viewWorldRow(f.cb12_2, f);                            // l.62..64
-    r0.z = dot(r3, r2);                                            // l.65  dp3 r0.z
-    float l = dot(r0, r0);                                         // l.66  dp4 r0.w, r0.xyzw, r0.xyzw
-    l = d3d_rsq(l);                                             // l.67  rsq
-    return vec3(l) * r0.xyz;                                       // l.68  mul o2.yzw, r0.wwww, r0.xxyz
-}
-
-// VS 425 (bit 26, SKINNED, no MEMBRANE): raw object (bind-pose) normal, no bones, no world, no view, not normalised.
-vec3 SseAoN_VS425(vec3 n)
-{
-    return n;                                                      // l.74  mad o2.yzw, v2.xxyz, l(0,2,2,2), l(0,-1,-1,-1) (the IA decode 2*NORMAL-1, replaced by the app's vertex normal (user decision 3-oct-2026))
-}
-
-// VS 431 / 441 (bit 26, FALLOFF; 440 same law into o2.yzw): world-space normal, normalised.
-vec3 SseAoN_VS431(vec3 n, SseEngineFrame f)
-{
-    vec3 r0 = n;                                                   // l.52  mad r0.xyz, v2.xyzx, l(2,2,2), l(-1,-1,-1) (the IA decode 2*NORMAL-1, replaced by the app's vertex normal (user decision 3-oct-2026))
-    vec3 r2;
-    r2.x = dot(f.cb2_0.xyz, r0);                                   // l.53  dp3 r2.y, cb2[0].xyzx, r0.xyzx
-    r2.y = dot(f.cb2_1.xyz, r0);                                   // l.54  dp3 r2.z, cb2[1].xyzx
-    r2.z = dot(f.cb2_2.xyz, r0);                                   // l.55  dp3 r2.w, cb2[2].xyzx
-    float l = dot(r2, r2);                                         // l.56  dp3 r0.x, r2.yzwy, r2.yzwy
-    l = d3d_rsq(l);                                             // l.57  rsq
-    return vec3(l) * r2;                                           // l.58  mul r0.xyz, r0.xxxx, r2.yzwy ; l.67 mov o3.yzw
-}
-// VS 3901 (the lighting rows) is not used: the lighting class writes the normal the app lights with (user decision 3-oct).
-"
-
-    ''' <summary>The o2 encode of PS 2357 (bit-26 effect) and PS 4255 (lighting) (AONRM_PS).</summary>
+    ''' <summary>The o2 encode of PS 4255 (lighting) (AONRM_PS).</summary>
     Friend Const Ps_Glsl As String = "#define SSE_O2_EIGHT      8.0
 #define SSE_O2_SQRT_FLOOR uintBitsToFloat(0x3A83126Fu)   // l(0.001000) token 0x3A83126F
 #define SSE_O2_SPEC_BIAS  uintBitsToFloat(0xB727C5ACu)   // l(-0.000010) token 0xB727C5AC (PS 4255 l.98)
-
-// PS 2357 (bit-26 effect): v2yzw = TEXCOORD7.yzw interpolated (dcl_input_ps linear v2.yzw, l.7).
-vec4 SseAoN_PS2357(vec3 v2yzw)
-{
-    float l = dot(v2yzw, v2yzw);                                   // l.33  dp3 r0.x, v2.yzwy, v2.yzwy
-    l = d3d_rsq(l);                                                // l.34  rsq r0.x, r0.x
-    vec3 n = vec3(l) * v2yzw;                                      // l.35  mul r0.xyz, r0.xxxx, v2.yzwy
-    float d = n.z * (-SSE_O2_EIGHT) + SSE_O2_EIGHT;                // l.36  mad r0.z, r0.z, l(-8), l(8)
-    d = d3d_sqrt(d);                                               // l.37  sqrt r0.z, r0.z
-    d = d3d_max(d, SSE_O2_SQRT_FLOOR);                             // l.38  max r0.z, r0.z, l(0.001)
-    vec2 e = n.xy / vec2(d);                                       // l.39  div r0.xy, r0.xyxx, r0.zzzz
-    return vec4(e + 0.5, 0.0, 0.0);                                // l.40  add o2.xy, l(0.5) ; l.41 mov o2.zw, l(0,0,0,0)
-}
 
 // PS 4255 (lighting) o2 from the normal the app lights with (user decision 3-oct-2026: the app's recalculated normals stay):
 //   nE    = that normal in engine view space (x, y, -z_gl); it stands for the result of lines 92..94 (the TBN rows)

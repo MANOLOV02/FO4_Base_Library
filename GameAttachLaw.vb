@@ -127,6 +127,13 @@ Public Module GameAttachLaw
         End Select
     End Function
 
+    ''' <summary>Skyrim SE's biped puts <paramref name="shape"/> on through its AttachSkinnedObject (SkyrimSE.exe 0x14021D170, reached from
+    ''' the dispatcher 0x14021CE30): the host declared it worn (BipedWorn). The one reading SkinningHelper.MountedSkin makes of the path for a
+    ''' Skyrim SE NIF (the Fallout 4 biped is RestTraceOf's RestLawTrace.Biped).</summary>
+    Friend Function WornBySseBiped(shape As IRenderableShape) As Boolean
+        Return shape IsNot Nothing AndAlso shape.GameAttach = GameAttachKind.BipedWorn
+    End Function
+
     ''' <summary>[geo+0x140] (the skin instance) set: the test of 0x1403602D0 / 0x14035EDED.</summary>
     Private Function HasSkin(nif As NifFile, ns As INiShape) As Boolean
         Return ns.HasSkinInstance AndAlso nif.GetBlock(ns.SkinInstanceRef) IsNot Nothing

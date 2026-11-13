@@ -61,20 +61,21 @@ Friend Module SseLightingSource
 layout(location = 14) in float appVertexMask;
 layout(location = 15) in float appVertexWeight;
 uniform bool bShowMask;
+uniform bool bApplyZap;          // the mask view's zap mark (AppEditViewsSource.MaskFactor, U12; RenderableMesh.BindSseLitPass)
 uniform bool bShowWeight;
 #ifdef APP_LIT_EYE_VS
 uniform bool uAppEyeWithoutData;   // RenderableMesh.DrawSseEngineLit (Q-ojo (b)): the layout has no eye data, the reflection about the vertex normal
 #endif
 out float maskFactor;
 out vec3 weightColor;
-" & AppEditViewsSource.ColorRamp & "
+" & AppEditViewsSource.ColorRamp & AppEditViewsSource.MaskFactor & "
 void main()
 {
     engine_main();
 #ifdef APP_LIT_EYE_VS
     if (uAppEyeWithoutData) slit_TEXCOORD6.xyz = normalize(vec3(slit_TEXCOORD1.z, slit_TEXCOORD2.z, slit_TEXCOORD3.z));
 #endif
-    maskFactor = !bShowMask ? 1.0 : (appVertexMask < 0.0 ? 1.0 - (-appVertexMask) / 1.5 : 1.0 - appVertexMask / 1.5);
+    maskFactor = !bShowMask ? 1.0 : appMaskFactor(appVertexMask, bApplyZap);
     weightColor = bShowWeight ? colorRamp(appVertexWeight) : vec3(1.0);
 }
 "

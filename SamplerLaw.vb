@@ -26,6 +26,9 @@ Friend Module SamplerLaw
         ''' <summary>Fallout 4's edit views (Shader_Class_Fo4EditView): the z-prepass's t0 for the prepass's cut (ola 7f round 2, p7f-03;
         ''' Render ApplyFo4EditViewDepthCut) - its own unit, so its sampler (UtilityDiffuse) does not replace the colour slot 0's.</summary>
         EditViewPrepassT0 = 13
+        ''' <summary>Skyrim SE's debug views (Fragment_SSE, U5 of Ola SSE S2): the z-prepass's t7 of an effect - its palette, the utility
+        ''' PS 11465 / 11466's - for the prepass's cut (Render ApplySseEditViewDepthCut), at its own unit.</summary>
+        EditViewPrepassT7 = 14
     End Enum
 
     Friend Const FiltInherit As Integer = -1

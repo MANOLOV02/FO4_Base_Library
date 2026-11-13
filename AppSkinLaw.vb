@@ -33,4 +33,35 @@ vec3 appSkinRotate(mat3 e, vec3 v)
 }
 vec3 appSkinNormal(vec3 r0, vec3 r1, vec3 r2, vec3 n) { return appSkinRotate(appSkinNormalMatrix(r0, r1, r2), n); }
 "
+
+    ''' <summary>SKYRIM SE'S GPU BLEND OF THE APP'S SKIN (D4, EngineSkin; rec 3902 L62-108) - ONE text for the two vertex stages that skin
+    ''' the app's own vertices on Skyrim SE's law: Vertex_SSE and the base surface foot of Skyrim SE's effect decals (SseEffectSource.
+    ''' AppSurfaceVertexFoot, Ola SSE S2 F3.8: the surface's normal is Vertex_SSE's). The bone palette (SSBO 0, SkinningHelper.
+    ''' RecomputeGPUBoneMatrices), the four weights raw - no normalisation, no clamp, no weight dropped, zero and negative included -, each
+    ''' bone times its weight, added ((w0 M0 + w1 M1) + w2 M2) + w3 M3; a bone outside the palette adds nothing (a row past the bound buffer
+    ''' reads 0, D3D11.3 7.5). The normal matrix of the blend is Glsl's (included before this text). ASCII, no double quotes.</summary>
+    Friend Const SseGpuBlendGlsl As String = "
+layout(std430, binding = 0) buffer BoneMatrices {
+    mat4 bones[];
+};
+uniform bool bGPUSkinning;
+uniform int uBoneCount;
+mat4 sseAppSkinMatrix(ivec4 bIdx, vec4 bWgt)
+{
+    mat4 b0 = (bIdx.x >= 0 && bIdx.x < uBoneCount) ? bones[bIdx.x] : mat4(0.0);
+    mat4 b1 = (bIdx.y >= 0 && bIdx.y < uBoneCount) ? bones[bIdx.y] : mat4(0.0);
+    mat4 b2 = (bIdx.z >= 0 && bIdx.z < uBoneCount) ? bones[bIdx.z] : mat4(0.0);
+    mat4 b3 = (bIdx.w >= 0 && bIdx.w < uBoneCount) ? bones[bIdx.w] : mat4(0.0);
+    mat4 skinMatrix = b0 * bWgt.x + b1 * bWgt.y;
+    skinMatrix = skinMatrix + b2 * bWgt.z;
+    skinMatrix = b3 * bWgt.w + skinMatrix;
+    return skinMatrix;
+}
+// The normal matrix of the blend: AppSkinLaw over its rows (M * v = (dot(r0,v), dot(r1,v), dot(r2,v))).
+mat3 sseAppSkinNormalMatrix(mat4 skinMatrix)
+{
+    vec3 sr0 = vec3(skinMatrix[0][0], skinMatrix[1][0], skinMatrix[2][0]), sr1 = vec3(skinMatrix[0][1], skinMatrix[1][1], skinMatrix[2][1]), sr2 = vec3(skinMatrix[0][2], skinMatrix[1][2], skinMatrix[2][2]);
+    return appSkinNormalMatrix(sr0, sr1, sr2);
+}
+"
 End Module

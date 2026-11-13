@@ -17,8 +17,9 @@ Imports OpenTK.Graphics.OpenGL4
 ''' <item>The depth draws, every decal (RenderableMesh.ApplyDecalBaseState: its own program, depth GREATER + write) under
 ''' DepthDrawStencil: they pass where MarkBit is set and on depth pass set CoveredBit (GL 4.6 17.3.3: the test compares the
 ''' reference and the stored value both ANDed with the value mask; 17.4.2: the write mask limits the bits a stencil op writes). The
-''' farthest painting fragment's depth stays. With the alpha target (Fallout 4), each depth draw also writes its colour output's
-''' alpha there (colour mask A only): the value left is the farthest fragment's, the one whose depth stays.</item>
+''' farthest painting fragment's depth stays. Each depth draw also writes its colour output's alpha into the alpha target (colour
+''' mask A only): the value left is the farthest fragment's, the one whose depth stays (Fallout 4's base surface reads it; Skyrim SE's
+''' since Ola SSE S2 F3.8 the base surface of an EFFECT decal, whose engine PS computes the alpha in the depth draw).</item>
 ''' <item>The surface draws, every decal again, AFTER all the depth draws (BeginSurfaces; RenderableMesh.DrawDecalBaseSurface)
 ''' under SurfaceDrawStencil: depth EQUAL against the final base depth (only the farthest decal's fragments pass), stencil
 ''' CoveredBit set and SurfacedBit clear, SurfacedBit set on pass (GL 4.6 17.3.3, INVERT under write mask SurfacedBit): one surface
@@ -37,8 +38,9 @@ Friend NotInheritable Class DecalBaseTarget
     Private Const CoveredBit As Integer = &H40
     Private Const SurfacedBit As Integer = &H80
 
-    ''' <summary>True: Fallout 4's deferred base, which needs the alpha target (the base surface is its own program, Fragment_
-    ''' DecalBaseSurface, and reads the farthest decal's alpha) and the coverage target (composite 2 takes the coverage from it).</summary>
+    ''' <summary>True: Fallout 4's deferred base, which needs the coverage target (composite 2 takes the coverage from it). Both games
+    ''' have the alpha target: the base surface is its own program and reads the farthest decal's alpha (Fallout 4's Fragment_
+    ''' DecalBaseSurface; Skyrim SE's effect decals, SseEffectSource.AppSurfaceFragment, Ola SSE S2 F3.8).</summary>
     Private ReadOnly _deferred As Boolean
     Private _w As Integer, _h As Integer
     ''' <summary>Skyrim SE only: the sampled copy of the frame's depth the mark reads (Fallout 4 passes the G-buffer's, Begin).</summary>
@@ -71,7 +73,8 @@ Friend NotInheritable Class DecalBaseTarget
     End Property
 #End If
 
-    ''' <summary>Fallout 4: the farthest painting decal's colour-output alpha per pixel (RGBA16 UNORM, .a; D3D rows; 0 before Ensure).</summary>
+    ''' <summary>The farthest painting decal's colour-output alpha per pixel (.a; D3D rows; 0 before Ensure): Fallout 4 RGBA16 UNORM,
+    ''' Skyrim SE RGBA32F (Ensure).</summary>
     Friend ReadOnly Property AlphaTexture As Integer
         Get
             Return _alpha
@@ -119,7 +122,10 @@ Friend NotInheritable Class DecalBaseTarget
     End Function
 
     ''' <summary>Allocates for w x h (D24S8 like the frames' depth: the raw copy needs the same format, GL 4.6 18.3.2; the FO4 blit
-    ''' back too, 18.3.1). Skyrim SE: the auxiliary target and the sampled copy (8 B/px). Fallout 4: the auxiliary target, the alpha
+    ''' back too, 18.3.1). Skyrim SE: the auxiliary target, the sampled copy and the alpha target RGBA32F (24 B/px): its decals blend
+    ''' into the R11F_G11F_B10F scene target, where the blend takes the source alpha unclamped (GL 4.6 17.3.6: no clamping for a
+    ''' floating-point buffer), or post off into the RGBA8 display, which clamps it - so the target keeps the shader's float alpha and
+    ''' the surface hands it to its blend as the surface's own fragment did before S2. Fallout 4: the auxiliary target, the alpha
     ''' target RGBA16 UNORM and the coverage target RGBA8 (16 B/px; the sampled copy is the G-buffer's). The alpha target: the depth
     ''' draws write their colour output 0, whose alpha is .w (there is no alpha-only colour format in GL core); UNORM clamps it to
     ''' [0, 1] - the law, the fixed-point RT 0 blend clamps it, GL 4.6 17.3.6 - and converts it to 16 bits (GL 4.6 2.3.5.2: one of
@@ -139,16 +145,16 @@ Friend NotInheritable Class DecalBaseTarget
         Gl43.DrawBuffer(_fbo, DrawBufferMode.None)
         Gl43.ReadBuffer(_fbo, ReadBufferMode.None)
         Dim ok = Gl43.CheckFramebufferStatus(_fbo, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
-        If _deferred Then
-            Dim formatoAlfa = SizedInternalFormat.Rgba16
+        Dim formatoAlfa = If(_deferred, SizedInternalFormat.Rgba16, SizedInternalFormat.Rgba32f)
 #If DEBUG Then
-            If GateAlphaFloat Then formatoAlfa = SizedInternalFormat.Rgba32f
+        If GateAlphaFloat Then formatoAlfa = SizedInternalFormat.Rgba32f
 #End If
-            _alpha = ColourTexture(formatoAlfa, w, h)
+        _alpha = ColourTexture(formatoAlfa, w, h)
+        _fboDepth = AuxFramebuffer(_alpha)
+        ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboDepth, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
+        If _deferred Then
             _coverage = ColourTexture(SizedInternalFormat.Rgba8, w, h)
-            _fboDepth = AuxFramebuffer(_alpha)
             _fboCoverage = AuxFramebuffer(_coverage)
-            ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboDepth, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
             ok = ok AndAlso Gl43.CheckFramebufferStatus(_fboCoverage, FramebufferTarget.Framebuffer) = FramebufferStatus.FramebufferComplete
         End If
         _emptyVao = GL.GenVertexArray()
@@ -229,7 +235,7 @@ Friend NotInheritable Class DecalBaseTarget
         FullscreenPass.Draw(mark, _emptyVao, 1, writesDepth:=True)
         GL.BindSampler(0, 0)
         GL.ColorMask(False, False, False, False)
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, If(_deferred, _fboDepth, _fbo))
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fboDepth)
         DepthDrawStencil()
         Return True
     End Function
@@ -242,13 +248,13 @@ Friend NotInheritable Class DecalBaseTarget
         GL.StencilMask(CoveredBit)
     End Sub
 
-    ''' <summary>Fallout 4, inside a depth draw (step 2): the alpha target takes the draw's colour output alpha (attachment 0, mask A).</summary>
+    ''' <summary>Inside a depth draw (step 2), both games: the alpha target takes the draw's colour output alpha (attachment 0, mask A).</summary>
     Friend Sub DepthDrawAlpha()
-        If _deferred Then GL.ColorMask(0, False, False, False, True)
+        GL.ColorMask(0, False, False, False, True)
     End Sub
 
-    ''' <summary>Fallout 4, the surface draw: runs <paramref name="draw"/> with the alpha target bound to TEXTURE_2D of texture unit
-    ''' <paramref name="unit"/> (Fragment_DecalBaseSurface tBaseAlpha, read by texelFetch: no sampler state), then that unit's previous
+    ''' <summary>The surface draw (Fallout 4's; Skyrim SE's of an effect decal): runs <paramref name="draw"/> with the alpha target bound
+    ''' to TEXTURE_2D of texture unit <paramref name="unit"/> (tBaseAlpha, read by texelFetch: no sampler state), then that unit's previous
     ''' TEXTURE_2D binding and the active unit back - the coverage draw that follows samples, with the decal's own program, the units
     ''' ApplyMaterial bound.</summary>
     Friend Sub WithAlphaBound(unit As Integer, draw As Action)

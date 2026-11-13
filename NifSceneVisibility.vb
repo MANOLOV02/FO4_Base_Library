@@ -472,8 +472,8 @@ Public Module NifSceneVisibility
     End Function
 
     ''' <summary>The engine whose laws this module transcribes for <paramref name="nif"/>: True Skyrim SE, False Fallout 4, Nothing any
-    ''' other (no law is applied).</summary>
-    Private Function TracedEngine(nif As NifFile) As Boolean?
+    ''' other (no law is applied). Also SkinningHelper.MountedSkin's engine.</summary>
+    Friend Function TracedEngine(nif As NifFile) As Boolean?
         Dim ver = nif.Header?.Version
         If ver Is Nothing Then Return Nothing
         If ver.IsSSE() Then Return True

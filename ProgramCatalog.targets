@@ -12,7 +12,16 @@
        false, and the SDK adds an executable's deps.json / runtimeconfig.json to those items for its referencing projects
        (Microsoft.NET.Sdk.targets, AddDepsJsonAndRuntimeConfigToCopyItemsForReferencingProjects): the host copied the tool's two
        files, and failed (MSB3030) when Visual Studio had not built the tool. The tool is also listed in the Wardrobe Manager and
-       NPC Manager solutions, because Visual Studio does not build a ProjectReference to a project outside the open solution. -->
+       NPC Manager solutions, because Visual Studio does not build a ProjectReference to a project outside the open solution.
+       A host built with a global OutDir (msbuild -p:OutDir=..., the gates' builds) passes it to this reference with its other global
+       properties, so the tool - and the libraries it references - are the SAME project instances as the host's references (one build of
+       FO4_Base_Library per host build, one writer of its obj\): the tool builds into the host's OutDir. Its files there are the host
+       build's writes too (target ProgramCatalogToolFileWrites below): the host's IncrementalClean deletes the files of its previous build
+       under OutDir that are not in this build's FileWrites, and it deleted the tool's deps.json / runtimeconfig.json listed by an older
+       build of the host (its FileListAbsolute) - the Exec below then failed (MSB3073, 10-nov-2026; reproduced 12-nov-2026 by listing them
+       in the host's FileListAbsolute). Ola SSE S2 rev-04: the first fix (GlobalPropertiesToRemove OutDir) made the tool a second instance
+       of every library under it (measured msbuild -m: FO4_Base_Library, NiflySharp, its generator, MaterialLib and the BA2 library each
+       compiled twice into the same obj\), so it left. -->
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\Tools\ProgramCatalogTool\ProgramCatalogTool.vbproj"
                       ReferenceOutputAssembly="false"
@@ -21,6 +30,18 @@
                       SetConfiguration="Configuration=$(Configuration)"
                       SetPlatform="Platform=$(Platform)" />
   </ItemGroup>
+  <!-- The tool's files in the host's OutDir (a global OutDir: the same folder) are this build's writes (FileWrites), so the host's
+       IncrementalClean keeps them; built from Visual Studio or without a global OutDir the tool has its own folder and nothing is added. -->
+  <Target Name="ProgramCatalogToolFileWrites" AfterTargets="ResolveProjectReferences" Condition="'$(DesignTimeBuild)' != 'true' AND '@(ProgramCatalogToolOutput)' != ''">
+    <PropertyGroup>
+      <_ProgramCatalogToolDir>@(ProgramCatalogToolOutput->'%(RootDir)%(Directory)')</_ProgramCatalogToolDir>
+      <_ProgramCatalogToolDir>$([MSBuild]::NormalizeDirectory($(_ProgramCatalogToolDir)))</_ProgramCatalogToolDir>
+      <_ProgramCatalogHostOutDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)'))</_ProgramCatalogHostOutDir>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(_ProgramCatalogToolDir)' == '$(_ProgramCatalogHostOutDir)'">
+      <FileWrites Include="$(_ProgramCatalogToolDir)ProgramCatalogTool.*" />
+    </ItemGroup>
+  </Target>
   <Target Name="WriteProgramCatalogManifest" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <Error Condition="'@(ProgramCatalogToolOutput)' == ''" Text="ProgramCatalog.targets: the path of Tools\ProgramCatalogTool did not come back from its ProjectReference (OutputItemType)." />
     <Exec Command="&quot;@(ProgramCatalogToolOutput->'%(RootDir)%(Directory)%(Filename).exe')&quot; &quot;$(OutDir).&quot;" />
